@@ -1,0 +1,355 @@
+You are a senior full-stack architect. Scaffold a production-ready admin application with the following exact tech stack and requirements.
+
+## Project Overview
+Admin application for a mobile LMS platform called TBT (Tamil Business Tribe).
+The platform has 4 core modules: LMS (courses, curriculum), Task Management, Community, and Webinar Management.
+Expected concurrent users: 500 members.
+
+---
+
+## Tech Stack
+
+### Admin Panel (Web)
+- Framework: Next.js 14+ with App Router
+- Language: TypeScript (strict mode)
+- Styling: Tailwind CSS
+- UI Components: shadcn/ui
+- State Management: Zustand
+- Data Fetching: TanStack Query (React Query)
+- Form Handling: React Hook Form + Zod validation
+- Auth: Clerk
+- Hosting: Vercel
+
+### Backend API
+- Runtime: Node.js
+- Framework: Fastify with TypeScript
+- ORM: Prisma
+- Validation: Zod
+- Auth Middleware: Clerk JWT verification
+- WebSocket: Socket.io (for real-time features)
+- Job Queue: BullMQ + Redis
+- Hosting: Railway
+
+### Database & Services
+- Primary Database: PostgreSQL via Supabase
+- Cache: Redis via Upstash
+- Media Storage: Cloudflare R2 (images, documents)
+- Video Storage: Bunny Stream (course videos)
+- Real-time: Supabase Realtime + Socket.io
+- Push Notifications: Firebase Cloud Messaging
+- Email: Resend
+- SMS/OTP: Twilio
+- Webinar: Agora.io
+- Error Tracking: Sentry
+- Monitoring: Better Stack
+
+---
+
+## Project Structure to Generate
+
+### 1. Admin Panel (Next.js)
+Generate the following folder structure:
+/admin-panel
+  /app
+    /dashboard
+    /admins
+    /members
+    /courses
+    /tasks
+    /community
+    /webinar
+    /settings
+  /components
+    /ui (shadcn components)
+    /layout (sidebar, topbar, breadcrumb)
+    /modules (per feature components)
+  /lib
+    /api (API client, axios/fetch config)
+    /hooks (custom React hooks)
+    /store (Zustand stores)
+    /utils
+    /validators (Zod schemas)
+  /types
+  /constants
+  middleware.ts (Clerk auth middleware)
+  next.config.ts
+  tailwind.config.ts
+  tsconfig.json
+  .env.example
+
+### 2. Backend API (Fastify)
+Generate the following folder structure:
+/backend
+  /src
+    /modules
+      /auth
+      /admins
+      /members
+      /courses
+      /tasks
+      /community
+      /webinar
+      /notifications
+    /plugins
+      /clerk.ts (JWT verification plugin)
+      /redis.ts (Upstash Redis plugin)
+      /supabase.ts (Supabase client plugin)
+      /socket.ts (Socket.io plugin)
+      /sentry.ts (Sentry plugin)
+    /queues
+      /notification.queue.ts
+      /email.queue.ts
+      /video.queue.ts
+    /middleware
+      /auth.middleware.ts
+      /ratelimit.middleware.ts
+      /rbac.middleware.ts
+    /utils
+    /types
+    /config
+      /env.ts (typed env variables with Zod)
+  /prisma
+    schema.prisma
+  server.ts
+  tsconfig.json
+  .env.example
+
+---
+
+## Database Schema (Prisma)
+Generate complete Prisma schema for:
+
+1. Admin Table
+   - id, adminId (TBT-ADMIN-2026-XXXX), fullName, email, contactNumber,
+     alternateContact, dateOfBirth, bloodGroup, profilePhoto
+   - role (SuperAdmin, Manager, Moderator, Viewer)
+   - department, designation, reportingManagerId, employeeId
+   - country, state, city, address
+   - username, accountStatus (Active, Inactive, Suspended)
+   - twoFactorEnabled, createdBy, notes, tags
+   - timestamps
+
+2. Member Table
+   - id, memberId, fullName, email, phone
+   - enrolledCourses, completedCourses, activeTasks
+   - membershipStatus, joinedAt, lastActive
+   - timestamps
+
+3. Course Table
+   - id, courseId, title, description, thumbnail, category
+   - curriculum (JSON), totalDuration, totalLessons
+   - instructor, status (Draft, Published, Archived)
+   - enrollmentCount, completionRate
+   - timestamps
+
+4. Task Table
+   - id, taskId, title, description, priority (Low, Medium, High, Critical)
+   - status (Todo, InProgress, Review, Done)
+   - assignedTo, assignedBy, dueDate, completedAt
+   - attachments, tags
+   - timestamps
+
+5. Community Table
+   - id, postId, authorId, content, mediaUrls
+   - type (Post, Announcement, Poll)
+   - likes, comments, shares, isPinned
+   - timestamps
+
+6. Webinar Table
+   - id, webinarId, title, description, thumbnail
+   - hostId, scheduledAt, duration, status (Scheduled, Live, Ended)
+   - agoraChannelId, registeredCount, attendedCount
+   - recordingUrl, timestamps
+
+7. Notification Table
+   - id, userId, title, body, type, isRead
+   - metadata (JSON), timestamps
+
+8. RBAC Table
+   - id, adminId, module, canView, canCreate, canEdit, canDelete
+   - timestamps
+
+---
+
+## API Routes to Scaffold
+
+### Auth Module
+POST   /api/auth/verify-token
+POST   /api/auth/refresh
+GET    /api/auth/me
+
+### Admin Module
+GET    /api/admins (list with pagination, search, filter)
+POST   /api/admins (create new admin)
+GET    /api/admins/:id
+PUT    /api/admins/:id
+DELETE /api/admins/:id
+PUT    /api/admins/:id/status
+PUT    /api/admins/:id/rbac
+
+### Member Module
+GET    /api/members
+POST   /api/members
+GET    /api/members/:id
+PUT    /api/members/:id
+DELETE /api/members/:id
+GET    /api/members/:id/progress
+GET    /api/members/:id/tasks
+
+### Course Module
+GET    /api/courses
+POST   /api/courses
+GET    /api/courses/:id
+PUT    /api/courses/:id
+DELETE /api/courses/:id
+POST   /api/courses/:id/publish
+GET    /api/courses/:id/enrollments
+POST   /api/courses/:id/curriculum
+
+### Task Module
+GET    /api/tasks
+POST   /api/tasks
+GET    /api/tasks/:id
+PUT    /api/tasks/:id
+DELETE /api/tasks/:id
+PUT    /api/tasks/:id/status
+PUT    /api/tasks/:id/assign
+
+### Community Module
+GET    /api/community/posts
+POST   /api/community/posts
+GET    /api/community/posts/:id
+DELETE /api/community/posts/:id
+PUT    /api/community/posts/:id/pin
+GET    /api/community/posts/:id/comments
+
+### Webinar Module
+GET    /api/webinars
+POST   /api/webinars
+GET    /api/webinars/:id
+PUT    /api/webinars/:id
+DELETE /api/webinars/:id
+POST   /api/webinars/:id/start
+POST   /api/webinars/:id/end
+GET    /api/webinars/:id/attendees
+
+### Dashboard Module
+GET    /api/dashboard/metrics
+GET    /api/dashboard/recent-activity
+GET    /api/dashboard/analytics
+
+### Notification Module
+GET    /api/notifications
+POST   /api/notifications/send
+PUT    /api/notifications/:id/read
+POST   /api/notifications/broadcast
+
+---
+
+## Environment Variables
+Generate .env.example for both admin panel and backend with all required keys:
+
+### Backend .env.example
+DATABASE_URL=
+DIRECT_URL=
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_KEY=
+CLERK_SECRET_KEY=
+CLERK_PUBLISHABLE_KEY=
+UPSTASH_REDIS_URL=
+UPSTASH_REDIS_TOKEN=
+CLOUDFLARE_R2_ACCOUNT_ID=
+CLOUDFLARE_R2_ACCESS_KEY=
+CLOUDFLARE_R2_SECRET_KEY=
+CLOUDFLARE_R2_BUCKET_NAME=
+BUNNY_STREAM_API_KEY=
+BUNNY_STREAM_LIBRARY_ID=
+AGORA_APP_ID=
+AGORA_APP_CERTIFICATE=
+FIREBASE_PROJECT_ID=
+FIREBASE_PRIVATE_KEY=
+FIREBASE_CLIENT_EMAIL=
+RESEND_API_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
+SENTRY_DSN=
+BETTER_STACK_SOURCE_TOKEN=
+PORT=8000
+NODE_ENV=development
+
+### Admin Panel .env.example
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+NEXT_PUBLIC_API_URL=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SENTRY_DSN=
+SENTRY_AUTH_TOKEN=
+
+---
+
+## Additional Requirements
+
+1. Generate package.json for both projects with all required dependencies and scripts:
+   - dev, build, start, lint, format, typecheck, prisma:generate, prisma:migrate
+
+2. Generate a root level monorepo setup:
+   - /tbt-admin (root)
+     /admin-panel (Next.js)
+     /backend (Fastify)
+     package.json (workspaces)
+     .gitignore
+     README.md
+
+3. Generate Prisma schema with all relations, indexes, and enums properly defined.
+
+4. Generate base Fastify server.ts with:
+   - All plugins registered (cors, helmet, rate-limit, clerk, redis, supabase, socket, sentry)
+   - All routes registered under /api prefix
+   - Error handler
+   - Health check endpoint GET /health
+   - Graceful shutdown
+
+5. Generate base Next.js middleware.ts with Clerk auth protection for all /dashboard routes.
+
+6. Generate a GitHub Actions CI/CD workflow:
+   - On push to main: typecheck, lint, build both projects
+   - Auto deploy backend to Railway
+   - Auto deploy admin panel to Vercel
+
+7. Add README.md with:
+   - Project overview
+   - Tech stack list
+   - Local development setup instructions
+   - Environment variable descriptions
+   - Deployment guide for Railway and Vercel
+
+---
+
+## Code Quality Requirements
+- TypeScript strict mode enabled everywhere
+- Zod validation on all API inputs
+- Proper error handling with typed error responses
+- All API responses follow consistent format:
+  { success: boolean, data: T | null, error: string | null, meta?: pagination }
+- RBAC middleware checks on every protected route
+- Rate limiting on all public endpoints
+- Request logging with correlation IDs
+- No any types — proper TypeScript throughout
+
+---
+
+Start by generating the complete monorepo folder structure first, then generate each file one by one starting with:
+1. Root package.json (workspaces config)
+2. Backend server.ts
+3. Prisma schema.prisma
+4. All backend module files
+5. Next.js middleware.ts
+6. Admin panel layout components
+7. All environment variable files
+8. GitHub Actions workflow
+9. README.md
+
+Generate complete, production-ready code for every file. No placeholders, no TODOs, no incomplete implementations.

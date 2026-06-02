@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TBT – Admin Portal Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #0d0404;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* radial glow background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 50% 60%, rgba(160,10,10,0.18) 0%, transparent 70%),
+      radial-gradient(ellipse 80% 60% at 50% 100%, rgba(100,5,5,0.25) 0%, transparent 65%);
+    pointer-events: none;
+  }
+
+  /* CARD */
+  .card {
+    background: #1c1c1c;
+    border-radius: 16px;
+    padding: 44px 44px 40px;
+    width: 100%;
+    max-width: 420px;
+    position: relative;
+    z-index: 10;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.06),
+      0 24px 60px rgba(0,0,0,0.6),
+      0 4px 16px rgba(0,0,0,0.4);
+    animation: cardIn .4s cubic-bezier(.22,1,.36,1) both;
+  }
+
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(20px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* LOGO */
+  .logo-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .logo-icon {
+    width: 48px; height: 48px;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  /* SVG logo mark — two overlapping T shapes in red/white */
+  .logo-icon svg { width: 100%; height: 100%; }
+
+  .logo-text-wrap {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+  }
+  .logo-text-wrap span {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 2px;
+    color: #fff;
+  }
+  .logo-text-wrap small {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: #888;
+    font-weight: 500;
+    margin-top: 1px;
+  }
+
+  /* HEADING */
+  .card-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: #fff;
+    text-align: center;
+    letter-spacing: -.2px;
+    margin-bottom: 6px;
+  }
+  .card-sub {
+    font-size: 13px;
+    color: #666;
+    text-align: center;
+    margin-bottom: 32px;
+    font-weight: 400;
+  }
+
+  /* FORM */
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 8px;
+  }
+
+  .input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .input-icon {
+    position: absolute;
+    left: 14px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+    transition: color .2s;
+  }
+
+  .input-wrap:focus-within .input-icon { color: #e02020; }
+
+  input {
+    width: 100%;
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    color: #e0e0e0;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    padding: 13px 14px 13px 42px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+
+  input::placeholder { color: #444; }
+
+  input:focus {
+    border-color: #e02020;
+    box-shadow: 0 0 0 3px rgba(224,32,32,.12);
+  }
+
+  .eye-btn {
+    position: absolute;
+    right: 14px;
+    background: none;
+    border: none;
+    color: #555;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    padding: 4px;
+    transition: color .2s;
+  }
+  .eye-btn:hover { color: #aaa; }
+
+  /* FORGOT */
+  .forgot-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -10px;
+    margin-bottom: 24px;
+  }
+  .forgot-link {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    color: #e02020;
+    text-decoration: none;
+    transition: color .2s;
+  }
+  .forgot-link:hover { color: #ff4444; }
+
+  /* SIGN IN BTN */
+  .btn-signin {
+    width: 100%;
+    background: #e02020;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 15px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: background .2s, transform .1s, box-shadow .2s;
+    box-shadow: 0 4px 20px rgba(224,32,32,.35);
+  }
+  .btn-signin:hover {
+    background: #f02525;
+    box-shadow: 0 6px 28px rgba(224,32,32,.5);
+  }
+  .btn-signin:active { transform: scale(.985); }
+
+  /* ripple */
+  .btn-signin::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,.08) 0%, transparent 100%);
+    pointer-events: none;
+  }
+
+  /* 2FA NOTICE */
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #181818;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 11px 14px;
+    margin-top: 20px;
+  }
+  .notice svg { flex-shrink: 0; color: #e02020; }
+  .notice span {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.4;
+  }
+
+  /* FOOTER */
+  footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    z-index: 5;
+  }
+  .footer-copy {
+    font-size: 11px;
+    color: #3a3a3a;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .footer-links { display: flex; gap: 24px; }
+  .footer-links a {
+    font-size: 11px;
+    color: #3a3a3a;
+    text-decoration: none;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    transition: color .2s;
+  }
+  .footer-links a:hover { color: #777; }
+
+  /* loading state */
+  .btn-signin.loading { pointer-events: none; opacity: .8; }
+  .btn-signin.loading .btn-text { opacity: 0; }
+  .btn-signin.loading::before {
+    content: '';
+    position: absolute;
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+  }
+  @keyframes spin { to { transform: translate(-50%,-50%) rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- LOGO -->
+  <div class="logo-wrap">
+    <div class="logo-icon">
+      <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- hammer / T mark -->
+        <rect x="4" y="6" width="22" height="7" rx="1.5" fill="#e02020"/>
+        <rect x="11" y="13" width="8" height="22" rx="1.5" fill="#e02020"/>
+        <!-- second T offset white -->
+        <rect x="18" y="12" width="22" height="6" rx="1.5" fill="#ffffff" opacity=".9"/>
+        <rect x="25" y="18" width="8" height="20" rx="1.5" fill="#ffffff" opacity=".9"/>
+      </svg>
+    </div>
+    <div class="logo-text-wrap">
+      <span>TAMIL BUSINESS</span>
+      <small>TRIBE</small>
+    </div>
+  </div>
+
+  <h1 class="card-title">Admin Portal Login</h1>
+  <p class="card-sub">Secure access for authorized personnel only</p>
+
+  <!-- FORM -->
+  <div class="field">
+    <label>Username or Email</label>
+    <div class="input-wrap">
+      <span class="input-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.58-7 8-7s8 3 8 7"/>
+        </svg>
+      </span>
+      <input type="text" id="username" placeholder="e.g. admin_jdoe" autocomplete="username" />
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Password</label>
+    <div class="input-wrap">
+      <span class="input-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </span>
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+      <button class="eye-btn" type="button" onclick="togglePass()" id="eyeBtn" aria-label="Toggle password">
+        <svg id="eyeIcon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="forgot-row">
+    <a href="#" class="forgot-link">Forgot Password?</a>
+  </div>
+
+  <button class="btn-signin" id="signInBtn" onclick="handleSignIn()">
+    <span class="btn-text">Sign In</span>
+  </button>
+
+  <div class="notice">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+    <span>2FA may be required for Super Admin roles.</span>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-copy">© 2026 Tamil Business Tribe. All Rights Reserved.</div>
+  <div class="footer-links">
+    <a href="#">Privacy Policy</a>
+    <a href="#">Terms of Service</a>
+  </div>
+</footer>
+
+<script>
+  function togglePass() {
+    const input = document.getElementById('password');
+    const icon = document.getElementById('eyeIcon');
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    icon.innerHTML = isHidden
+      ? `<line x1="1" y1="1" x2="23" y2="23"/><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>`
+      : `<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>`;
+  }
+
+  function handleSignIn() {
+    const btn = document.getElementById('signInBtn');
+    const user = document.getElementById('username').value.trim();
+    const pass = document.getElementById('password').value;
+
+    if (!user || !pass) {
+      shake(btn);
+      return;
+    }
+
+    btn.classList.add('loading');
+    setTimeout(() => {
+      btn.classList.remove('loading');
+      // replace with actual auth logic
+    }, 2000);
+  }
+
+  function shake(el) {
+    el.style.animation = 'none';
+    el.offsetHeight; // reflow
+    el.style.animation = 'shake .4s ease';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleSignIn();
+  });
+</script>
+
+<style>
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    20%      { transform: translateX(-6px); }
+    40%      { transform: translateX(6px); }
+    60%      { transform: translateX(-4px); }
+    80%      { transform: translateX(4px); }
+  }
+</style>
+</body>
+</html>

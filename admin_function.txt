@@ -1,0 +1,315 @@
+You are a senior full-stack engineer. I have a fully built "Create New Admin" UI page for a TBT (Tamil Business Tribe) admin portal. The UI is complete — do NOT change any HTML structure, CSS classes, styling, colors, layout, or design. Your job is ONLY to wire up full production-level functionality on top of the existing UI.
+
+---
+
+## Context
+
+This is a Next.js 14 App Router frontend with TypeScript. The backend is Node.js + Fastify + TypeScript with Prisma ORM. Database is PostgreSQL via Supabase. Auth is handled by Clerk. File storage is Cloudflare R2. The page is at `/app/admins/create/page.tsx`.
+
+The existing HTML has been converted to a Next.js component. All class names, element IDs, and structure remain exactly as in the original HTML. Do not restructure, restyle, or rename anything in the UI.
+
+---
+
+## Functionalities to implement — one by one, complete, production-ready
+
+---
+
+### 1. Admin ID Auto-Generation
+
+On page mount, call `GET /api/admins/generate-id` which returns the next sequential Admin ID in format `TBT-ADMIN-2026-XXXX` (4-digit zero-padded sequence from DB). Display it in the readonly Admin ID field. The sequence must be generated server-side using a Supabase sequence or auto-increment counter. Never generate it on the client.
+
+Backend: Create the Fastify route `GET /api/admins/generate-id` that queries the DB for the next ID, formats it, and returns it. Use a dedicated `admin_id_sequence` table or PostgreSQL sequence object to ensure no duplicates even under concurrent requests.
+
+---
+
+### 2. Profile Photo Upload
+
+Wire up the "Upload Profile Photo" button to a hidden `<input type="file">`. On file select:
+- Validate file type (JPG, PNG, WEBP only) and size (max 2MB) client-side
+- Show real-time preview in the avatar box immediately
+- On form submit (not on file select), upload the file to Cloudflare R2 via a backend presigned URL
+- Backend route: `POST /api/upload/presigned-url` — accepts `{ filename, contentType }`, returns `{ uploadUrl, publicUrl }`
+- Store the returned `publicUrl` in the form payload as `profilePhoto`
+- If no photo selected, submit without photo (it's optional)
+- Show upload progress indicator on the avatar box during upload
+
+---
+
+### 3. Complete Form Validation (Zod)
+
+Implement a Zod schema `createAdminSchema` that validates the entire form. Apply it using React Hook Form's `zodResolver`. Validate:
+
+- `fullName`: required, min 2 chars, max 100 chars, no special characters
+- `email`: required, valid email format
+- `contactNumber`: required, valid Indian mobile number (10 digits after +91)
+- `alternateContact`: optional, valid phone if provided
+- `dateOfBirth`: required, must be at least 18 years old, not future date
+- `bloodGroup`: required, must be one of [A+ve, A-ve, B+ve, B-ve, O+ve, O-ve, AB+ve, AB-ve]
+- `role`: required
+- `department`: required
+- `designation`: optional, max 100 chars
+- `employeeId`: optional
+- `country`, `state`, `city`: required
+- `address`: required, min 10 chars
+- `username`: required, min 4 chars, max 30 chars, alphanumeric + underscore + dot only, no spaces
+- `accountStatus`: required
+- `password`: required, min 8 chars, must contain uppercase, lowercase, number, and special character
+- `confirmPassword`: must match password exactly
+- `rbac`: at least one permission must be checked across all modules
+- `tags`: optional array of strings
+
+Show inline error messages directly under each field using the existing field structure. Error text style: `font-size: 11px; color: #e02020; margin-top: 4px;`. Do not show all errors at once — only show error for a field after it has been touched/blurred.
+
+---
+
+### 4. Real-time Username Availability Check
+
+On the username input `onBlur` event:
+- If username is valid format (passes Zod check), call `GET /api/admins/check-username?username=xxx`
+- Show a loading spinner inside the input while checking
+- If taken: show red inline error "Username already taken" + red border on input
+- If available: show green checkmark icon inside the input + green border
+- Debounce: 500ms
+
+Backend: `GET /api/admins/check-username` queries the admins table for existing username, returns `{ available: boolean }`.
+
+---
+
+### 5. Real-time Email Availability Check
+
+Same pattern as username check but for email field.
+Backend: `GET /api/admins/check-email?email=xxx` returns `{ available: boolean }`.
+
+---
+
+### 6. Reporting Manager Live Search
+
+On the Reporting Manager input field:
+- Debounce 400ms after user types
+- Call `GET /api/admins/search?q=xxx&role=manager,superadmin&limit=8`
+- Show a dropdown below the input listing matching admins (full name + designation + employee ID)
+- Click to select — populate the input with the name, store the admin ID in a hidden field
+- Show "No managers found" if empty results
+- Close dropdown on outside click
+- Keyboard navigation (arrow up/down, Enter to select, Escape to close)
+
+Backend: Full-text search on `fullName` using PostgreSQL `ILIKE` or `pg_trgm` extension.
+
+---
+
+### 7. Country → State → City Cascade Dropdowns
+
+- On country select: fetch `GET /api/location/states?country=India` and populate state dropdown, reset city
+- On state select: fetch `GET /api/location/cities?state=Tamil Nadu` and populate city dropdown
+- Show loading state in dropdown while fetching
+- Pre-populate with India → Tamil Nadu → Chennai as defaults
+
+Backend: Create a static location data file (JSON) with India's states and cities. Serve it via Fastify routes. No external API needed.
+
+---
+
+### 8. Auto-Generate Password
+
+On clicking "Auto-generate" button:
+- Call `GET /api/auth/generate-password` which returns a cryptographically secure password (12 chars, uppercase + lowercase + numbers + symbols)
+- Populate both password and confirm password fields
+- Automatically show the password (switch input type to text temporarily for 3 seconds then hide)
+- Show a "Password copied to clipboard" toast
+
+Backend: Use Node.js `crypto.randomBytes` to generate the password server-side. Never generate passwords on the client.
+
+---
+
+### 9. RBAC State Collection
+
+On form submit, collect the RBAC table state as a structured object:
+```json
+{
+  "rbac": [
+    { "module": "Dashboard Metrics", "view": true, "create": false, "edit": false, "delete": false },
+    { "module": "Members Management", "view": true, "create": true, "edit": true, "delete": false },
+    { "module": "Course Curriculum", "view": true, "create": true, "edit": true, "delete": true },
+    { "module": "Financial Audit", "view": false, "create": false, "edit": false, "delete": false }
+  ]
+}
+```
+Validate that at least one permission is enabled across all modules before allowing submit.
+
+The preset buttons (Super Admin Preset, Manager Preset, Clear All) must also update this collected state in React state, not just the DOM class.
+
+---
+
+### 10. Tags Input
+
+Replace the `prompt()` based tag input with a proper inline input:
+- Click "+ Add Tag" to show a small text input inline
+- Press Enter or click a confirm button to add the tag
+- Press Escape to cancel
+- Prevent duplicate tags (case insensitive)
+- Max 10 tags
+- Max tag length 20 characters
+- Remove tag on clicking ✕
+- Tags stored as `string[]` in form state
+
+---
+
+### 11. 2FA Toggle
+
+Wire the toggle to React state `twoFactorEnabled: boolean`. On toggle click, update state. Send the boolean value in the form payload.
+
+---
+
+### 12. Form Submission — Create Admin API
+
+On clicking "Create Admin":
+
+1. Trigger React Hook Form's `handleSubmit`
+2. Run all Zod validations — if any fail, scroll to the first error field and focus it
+3. If profile photo selected, upload to R2 first via presigned URL
+4. Collect full payload:
+```json
+{
+  "adminId": "TBT-ADMIN-2026-0001",
+  "fullName": "",
+  "email": "",
+  "contactNumber": "",
+  "alternateContact": "",
+  "dateOfBirth": "",
+  "bloodGroup": "",
+  "profilePhoto": "",
+  "role": "",
+  "department": "",
+  "designation": "",
+  "reportingManagerId": "",
+  "employeeId": "",
+  "country": "",
+  "state": "",
+  "city": "",
+  "address": "",
+  "username": "",
+  "accountStatus": "",
+  "password": "",
+  "twoFactorEnabled": true,
+  "rbac": [],
+  "notes": "",
+  "tags": []
+}
+```
+5. POST to `POST /api/admins`
+6. On success (201): show success toast "Admin created successfully", redirect to `/admins` after 1.5 seconds
+7. On error (400 validation): map API field errors back to React Hook Form fields using `setError`
+8. On error (409 conflict): show "Email or username already exists" inline error
+9. On error (500): show generic error toast "Something went wrong. Please try again."
+10. During submission: disable all form inputs, show spinner on Create Admin button, change button text to "Creating..."
+
+---
+
+### 13. Cancel Button
+
+- If form is untouched (pristine): navigate directly to `/admins`
+- If form is dirty (any field changed): show a confirmation modal dialog:
+  - Title: "Discard Changes?"
+  - Body: "You have unsaved changes. Are you sure you want to leave? All changes will be lost."
+  - Buttons: "Stay on Page" (close modal) | "Discard & Leave" (navigate to /admins)
+- Also intercept browser back button and tab close with `beforeunload` event if form is dirty
+
+---
+
+### 14. Session & Permission Guard
+
+Wrap the entire page with an auth check:
+- Use Clerk's `auth()` in the server component to verify session
+- If not logged in: redirect to `/login`
+- If logged in but does not have `canCreate: true` on the Admins module in their RBAC: show a 403 "Access Denied" screen — do not redirect, show it inline with a "Go Back" button
+- The permission check must be done server-side in the page's server component, not client-side
+
+---
+
+### 15. Audit Trail Auto-Population
+
+- "Created By" field: auto-populate from Clerk session (logged-in admin's full name + role). Read-only, not editable by user.
+- "Created At" field: do not show a static date — show "Will be set on creation" placeholder. After creation, the backend sets this server-side using `new Date()` and returns it in the response.
+
+---
+
+### 16. Loading & Skeleton States
+
+- On page mount while fetching the Admin ID: show a pulsing skeleton placeholder in the Admin ID field
+- While checking username/email availability: show a small spinner icon inside the input (right side)
+- While searching reporting managers: show a loading row in the dropdown
+- While submitting: full form overlay with subtle opacity reduction + spinner on button
+
+---
+
+### 17. Toast Notification System
+
+Implement a toast system (or use an existing one like `react-hot-toast` or `sonner`):
+- Success toast: green, bottom-right, auto-dismiss 3 seconds
+- Error toast: red, bottom-right, auto-dismiss 5 seconds
+- Info toast: blue, auto-dismiss 3 seconds
+- Toast must not block form interaction
+
+---
+
+### 18. Form Dirty State + Page Leave Warning
+
+- Track form dirty state using React Hook Form's `formState.isDirty`
+- Add a `beforeunload` event listener when form is dirty
+- Remove the listener when form is clean or submitted
+- Also guard Next.js route transitions using router events or a custom hook
+
+---
+
+## Backend Routes to Generate (Fastify + TypeScript)
+
+Generate complete, production-ready Fastify route handlers for:
+
+1. `GET  /api/admins/generate-id` — generate next Admin ID
+2. `GET  /api/admins/check-username?username=xxx` — check uniqueness
+3. `GET  /api/admins/check-email?email=xxx` — check uniqueness
+4. `GET  /api/admins/search?q=xxx&limit=8` — manager search
+5. `POST /api/upload/presigned-url` — R2 presigned upload URL
+6. `GET  /api/auth/generate-password` — secure password generation
+7. `GET  /api/location/states?country=xxx` — state list
+8. `GET  /api/location/cities?state=xxx` — city list
+9. `POST /api/admins` — create admin (full logic below)
+
+For `POST /api/admins`:
+- Validate entire payload with Zod
+- Check email uniqueness
+- Check username uniqueness
+- Hash password using bcrypt (salt rounds: 12)
+- Upload profilePhoto URL is already done client-side — just store the URL
+- Insert admin record into PostgreSQL via Prisma
+- Insert RBAC records into rbac table (one row per module)
+- Send welcome email via Resend with username + temporary password
+- Send welcome SMS via Twilio with login URL
+- Create audit log entry (who created, when, IP address)
+- Return created admin object (exclude password hash)
+- All DB operations in a Prisma transaction — if any step fails, rollback everything
+
+---
+
+## Error Handling Requirements
+
+Every API route must:
+- Return consistent error format: `{ success: false, error: { code: string, message: string, fields?: Record<string, string> } }`
+- Return consistent success format: `{ success: true, data: T }`
+- Log errors to Sentry with full context (admin ID, route, payload shape without sensitive data)
+- Never expose stack traces or internal error details to the client
+- Rate limit the create admin endpoint: max 10 requests per minute per IP
+
+---
+
+## Code Quality Requirements
+
+- Full TypeScript, no `any` types anywhere
+- All async operations properly awaited with try/catch
+- All environment variables accessed through a typed config object (Zod-validated at startup)
+- Every function has a single responsibility
+- All API calls from the frontend go through a centralized `apiClient` with base URL, auth headers, and error interceptor
+- React Query (`useQuery`, `useMutation`) used for all server state — no raw `fetch` in components
+- No business logic inside React components — extract to custom hooks
+
+---
+

@@ -1,0 +1,234 @@
+I need you to create an "Add New Member" page for my existing TBT Admin web application. I already have a working sidebar navigation and Supabase connected. Do NOT touch the existing sidebar or layout wrapper — only create the content area for this page and integrate it into my existing routing under the "Members" menu.
+TECH STACK (already in use)
+
+React (check my project for whether it's Next.js, Vite, or CRA — match whatever I'm using)
+Supabase (already initialized and connected — reuse my existing Supabase client instance, do NOT create a new one)
+Tailwind CSS (if already in use) or match my existing CSS approach
+Look at my existing pages/components to match the exact patterns, imports, and folder structure I'm already using
+
+DESIGN SPECIFICATIONS
+Theme: Dark theme admin panel
+
+Page background: #0a0a0a or match my existing dark background
+Card/Section background: #141414 with 1px border #1f1f1f and border-radius: 12px
+Input fields: background #1a1a1a, border #2a2a2a, text white, placeholder #555, border-radius 8px, height 44px
+Label text: #888 uppercase, font-size 11px, letter-spacing 0.05em, font-weight 600
+Section title: white, font-size 20px, font-weight 700
+Section subtitle: #666, font-size 13px
+Primary accent/active color: #dc2626 (red)
+All text: white unless specified otherwise
+
+Page Layout:
+
+Breadcrumb at top: DASHBOARD / MEMBERS / ADD MEMBER — gray text, / as separator
+Page title: "Add New Member" with a small user-plus icon to the left
+Content is a single scrollable column, max-width 900px, centered, with padding: 32px
+Four distinct card sections stacked vertically with gap: 32px
+
+
+SECTION 1: BASIC INFO
+Card with title "BASIC INFO" and subtitle "Personal details and identity verification."
+Row 1:
+
+Profile Photo upload (left): A square 80x80 placeholder box with a camera icon. Clicking opens file picker. Shows image preview after upload. Upload to Supabase Storage bucket profile-photos.
+Member ID (right): Read-only input, auto-generated value TBT-ID-AUTO placeholder. Generate a unique ID format TBT-XXXX (random 4-digit number) on page load.
+
+Row 2:
+
+First Name (text input, half width)
+Second Name (text input, half width)
+
+Row 3:
+
+DOB (date picker input, half width) — placeholder mm/dd/yyyy
+Gender (dropdown select, half width) — options: Male, Female, Other, Prefer not to say
+
+Row 4:
+
+Email (text input, half width) — validate email format
+Phone (+91) (text input with +91 prefix shown inside the input, half width) — validate 10 digits
+
+Row 5:
+
+City (text input, ~35% width)
+State (text input, ~35% width)
+Pincode (text input, ~30% width) — validate 6 digits
+
+
+SECTION 2: BUSINESS INFO
+Card with title "BUSINESS INFO" and subtitle "Corporate information and scale indicators."
+Row 1:
+
+Business Name (text input, half width)
+Business Established On (date picker, half width)
+
+Row 2:
+
+Product/Service Type (dropdown, half width) — options: Product-based, Service-based, Both, Other
+Instagram Link (text input with @ icon prefix, half width)
+
+Row 3:
+
+Turnover (Annual) (dropdown, half width) — options: Under 10L, 10L - 25L, 25L - 50L, 50L - 1Cr, 1Cr - 5Cr, 5Cr+
+Goal after 90 days (text input, half width)
+
+Row 4:
+
+Preferred Session Mode (dropdown, half width) — options: Online, Offline, Hybrid
+GST Number (text input, half width) — placeholder 22AAAAA0000A1Z5
+
+Row 5: Existing Marketing Channel
+
+Label: "EXISTING MARKETING CHANNEL"
+Render as horizontal toggle chip buttons (NOT checkboxes): SEO, Paid Ads, Social Media, Email, Referral, Offline
+Multiple can be selected. Selected state: red background #dc2626 with white text. Unselected: #2a2a2a background with gray text.
+Store as an array of strings in the database.
+
+Row 6:
+
+Name of the Marketing Channel (full-width text input)
+
+Row 7:
+
+Domain & Hosting Details (full-width text input) — placeholder "Provider, expiry dates, etc."
+
+Row 8:
+
+Business Address (full-width textarea, 3 rows)
+
+
+SECTION 3: KEY CHALLENGES & SUPPORT
+Card with title "KEY CHALLENGES & SUPPORT" and subtitle "Identifying pain points and resources."
+Row 1:
+
+Challenge 1 (full-width text input) — placeholder "Primary business obstacle"
+
+Row 2:
+
+Challenge 2 (full-width text input) — placeholder "Secondary concern"
+
+Row 3:
+
+Challenge 3 (full-width text input) — placeholder "Other support needed"
+
+Row 4: Two side-by-side toggle cards
+
+Left card: "Social Media Manager" — subtitle "Existing support available?" — toggle switch on the right — below the toggle: a small text input (placeholder "...")
+Right card: "Video Editing" — subtitle "In-house or outsourced?" — toggle switch on the right — below the toggle: a small text input (placeholder "...")
+Toggle switches: off = gray pill, on = red #dc2626 pill
+
+Row 5:
+
+Notes (full-width textarea, 3 rows) — placeholder "Specific notes regarding Instagram presence or strategy..."
+
+
+SECTION 4: ACCOUNT MANAGEMENT
+Card with title "ACCOUNT MANAGEMENT" and subtitle "Administrative controls and verification status."
+Row 1:
+
+Member ID (read-only input, half width) — same auto-generated ID from Section 1
+Membership Plan (dropdown, half width) — options: Standard (Monthly), Standard (Annual), Premium (Monthly), Premium (Annual), Trial
+
+Row 2:
+
+Status (dropdown, half width) — options: Active, Inactive, Suspended, Pending. "Active" should show with green text color.
+Verification Status (read-only display, half width) — show an icon + text "AWAITING KYC" in yellow/amber color. This updates automatically when KYC docs are uploaded.
+
+Row 3:
+
+Assign Account Manager (dropdown, half width) — Fetch manager names from Supabase table managers (columns: id, name). If the table doesn't exist, create it.
+Task (dropdown, half width) — options: 90 days Track, 180 days Track, Annual Track, Custom
+
+Row 4:
+
+Assigned By (dropdown, half width) — same managers list
+Assigned At (read-only datetime display, half width) — auto-set to current date/time when form is saved
+
+Row 5: KYC Document Upload
+
+A dashed-border upload zone, centered
+Icon: cloud upload
+Text: "Click to upload Aadhaar / GST Certificate"
+Subtext: "PDF, JPG UP TO 10MB"
+On click, open file picker. Accept .pdf, .jpg, .jpeg, .png — max 10MB
+Upload file to Supabase Storage bucket kyc-documents
+Show filename after upload with a remove option
+
+
+FOOTER (sticky at bottom of the page)
+
+Left side: "Logout" text button with a logout icon (this should call my existing logout function — look for it in my codebase)
+Right side: "CANCEL" text button (gray, navigates back to members list) and "SAVE MEMBER" button (red #dc2626 background, white text, border-radius: 8px, padding 12px 32px)
+
+
+SUPABASE DATABASE
+Create a Supabase migration or directly create this table if it doesn't exist:
+Table: members
+id                        UUID, primary key, default gen_random_uuid()
+member_id                 TEXT, unique, not null (format: TBT-XXXX)
+profile_photo_url         TEXT
+first_name                TEXT, not null
+second_name               TEXT
+dob                       DATE
+gender                    TEXT
+email                     TEXT, not null, unique
+phone                     TEXT
+city                      TEXT
+state                     TEXT
+pincode                   TEXT
+business_name             TEXT
+business_established_on   DATE
+product_service_type      TEXT
+instagram_link            TEXT
+annual_turnover           TEXT
+goal_after_90_days        TEXT
+preferred_session_mode    TEXT
+gst_number                TEXT
+marketing_channels        TEXT[] (array of strings)
+marketing_channel_name    TEXT
+domain_hosting_details    TEXT
+business_address          TEXT
+challenge_1               TEXT
+challenge_2               TEXT
+challenge_3               TEXT
+has_social_media_manager  BOOLEAN, default false
+social_media_manager_note TEXT
+has_video_editing          BOOLEAN, default false
+video_editing_note        TEXT
+notes                     TEXT
+membership_plan           TEXT, default 'Standard (Annual)'
+status                    TEXT, default 'Active'
+verification_status       TEXT, default 'AWAITING KYC'
+account_manager_id        UUID, references managers(id)
+task                      TEXT
+assigned_by_id            UUID, references managers(id)
+assigned_at               TIMESTAMPTZ
+kyc_document_url          TEXT
+created_at                TIMESTAMPTZ, default now()
+updated_at                TIMESTAMPTZ, default now()
+Table: managers (if not exists)
+id          UUID, primary key, default gen_random_uuid()
+name        TEXT, not null
+created_at  TIMESTAMPTZ, default now()
+Insert sample managers: Ajith, Guru, Priya, Ravi
+Also create Supabase Storage buckets profile-photos and kyc-documents if they don't exist (with public access for profile photos, private for KYC).
+
+FORM BEHAVIOR
+
+All fields in a single form — NO multi-step wizard
+On "SAVE MEMBER": validate required fields (first_name, email), upload any files to Supabase Storage first, then insert the full row into the members table
+Show a success toast/notification on save and redirect to the members list page
+Show inline validation errors under fields (red text, 12px)
+"CANCEL" button: navigate back to the members list without saving
+Auto-generate member_id on page load (format TBT- + random 4-digit number) — check for uniqueness against existing records
+Auto-set assigned_at to current timestamp on save
+All dropdowns should have a default placeholder "Select..." as the first disabled option
+
+IMPORTANT RULES
+
+Do NOT modify my existing layout, sidebar, or routing setup — just add the new page component and register the route
+Match my existing code style, file naming, and folder conventions exactly
+Reuse my existing Supabase client — find it in my codebase, do not create a new one
+If I'm using TypeScript, create proper types/interfaces for the member and manager data
+Make sure the page is scrollable and responsive down to 768px width
+All form state should be managed with React state (useState or react-hook-form — match what I'm already using)

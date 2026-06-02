@@ -1,0 +1,181 @@
+I need you to create a "Create Task Initiative" page for my existing TBT Portal web application. I already have a working sidebar navigation and Supabase connected. Do NOT touch or modify the existing sidebar, layout wrapper, or any other existing pages. Only create the content area for this new page and integrate it into my existing routing under the "Task Manager" menu.
+
+**CRITICAL:** Before writing any code, scan my entire project. Identify my existing:
+- Framework (Next.js / Vite / CRA)
+- Supabase client file (reuse it — do NOT create a new one)
+- Routing approach (file-based / react-router / etc.)
+- Component folder structure and naming convention
+- CSS approach (Tailwind / CSS modules / styled-components)
+- Any shared UI components (buttons, inputs, dropdowns, toggles) — reuse them, do not duplicate
+
+Match everything exactly. Follow the same patterns, imports, and conventions already in the codebase.
+
+---
+
+### PAGE HEADER
+
+**Top bar (inside content area, not sidebar):**
+- Top left bold heading: "TASK MANAGER"
+- Breadcrumb below it: `DASHBOARD > 90-DAY TASKS > ADD NEW TASK` — "ADD NEW TASK" in a gold/amber accent color `#d4a853`, rest in `#666`
+- Page title below breadcrumb: **"Create Task Initiative"** — white, `font-size: 32px`, `font-weight: 800`
+- Subtitle: "Define a new operational task for the 90-day onboarding sequence." — `#888`, `font-size: 15px`
+
+---
+
+### DESIGN SYSTEM (match existing, but these are the specs from the Figma)
+
+- Page background: `#0c0c0c` or match existing dark background
+- Section card background: `#111111` or `#141414`, with `border: 1px solid #1e1e1e`, `border-radius: 12px`
+- **Each section card has a LEFT BORDER ACCENT:** a thin vertical crimson/red line `3px solid #8b1a1a` on the left edge of the card — this is a distinctive design element, do not skip it
+- Input fields: background `#1a1a1a`, border `1px solid #2a2a2a`, text white, placeholder `#555`, `border-radius: 8px`, height `48px`, `padding: 12px 16px`
+- Labels: `#999` uppercase, `font-size: 11px`, `letter-spacing: 0.08em`, `font-weight: 700`
+- Section title: white, `font-size: 16px`, `font-weight: 700`, uppercase, `letter-spacing: 0.05em`
+- Section titles have a small icon to the left (use any icon library already in the project, or lucide-react / react-icons)
+- Primary action color: `#8b1a1a` to `#dc2626` (dark red/crimson gradient or solid crimson)
+- All text: white unless otherwise noted
+- Cards have internal padding: `32px`
+- Cards stacked vertically with `gap: 28px`
+- Content max-width: `900px`
+
+---
+
+### SECTION 01: BASIC INFORMATION
+
+Card with left red border accent. Section icon (info/clock circle icon) + title **"SECTION 01: BASIC INFORMATION"**
+
+**Row 1 (two columns, 40/60 split):**
+
+- **DAY NUMBER** (left, ~40%): Text input. Placeholder `D01-D90`. This represents which day of the 90-day program the task falls on. Admin types a value like `D01`, `D15`, `D45`, etc. Validate that it matches pattern `D` followed by 1-3 digits between 01 and 90.
+
+- **STEP CATEGORY** (right, ~60%): Dropdown select with these exact options:
+  - Step 0 – Onboarding
+  - Step 1 – BMC & Metrics
+  - Step 2 – Reels
+  - Step 3 – Canva
+  - Step 4 – Website
+  - Step 5 – Ecom Ads
+  - Step 6 – Drip Marketing
+  - Step 7&8 – Thinking
+  - Step 9&10 – Automation
+
+  Dropdown styling: dark background `#1a1a1a`, border `#2a2a2a`. When open, the dropdown menu has background `#1a1a1a` with items on hover showing a subtle highlight. Selected item should have a gold/amber left border or highlight. The dropdown trigger shows current selection with a chevron-down icon on the right.
+
+**Row 2 (full width):**
+- **TASK TITLE**: Text input, full width. Placeholder "Enter high-level objective title".
+
+**Row 3 (full width):**
+- **TASK DESCRIPTION & INSTRUCTIONS**: Textarea, full width, min-height `160px`, resizable vertically. Placeholder "Detailed breakdown of requirements..."
+
+---
+
+### SECTION 02: POINTS & PROOF
+
+Card with left red border accent. Section icon (checkmark-circle icon) + title **"SECTION 02: POINTS & PROOF"**
+
+**Row 1 (two columns, 50/50 split):**
+
+- **BASE POINTS (MAX)** (left): Number input. Default value `100`. Has a suffix label "XP" inside the input on the right side (gray text `#666`). Min: 0, Max: 1000. The "XP" text sits inside the input field, right-aligned — use a relative/absolute positioned span or input group pattern.
+
+- **PROOF TYPE REQUIRED** (right): Dropdown select with these exact options and icons:
+  - ✅ Tick Completion (green checkmark icon — this is the "mandatory checkmark" default option)
+  - 📷 Screenshot (camera icon)
+  - 📎 Upload File (paperclip/attachment icon)
+  - 🎥 Video (video/play icon)
+  - 🔗 Link (link/chain icon)
+
+  Each dropdown option should show a small icon on the left of the option text. The dropdown trigger also shows the icon of the selected option. Default selection: "Tick Completion" with a checkmark. Dropdown styled same as Section 01.
+
+---
+
+### SECTION 03: MILESTONE CONFIGURATION
+
+Card with left red border accent. Section icon (target/crosshair icon) + title **"SECTION 03: MILESTONE CONFIGURATION"**
+
+**Row 1 (full width): Toggle Card**
+- A sub-card/row with slightly different background `#161616` or subtle distinction, `border-radius: 8px`, `padding: 16px 20px`
+- Left side: diamond/gem icon (small, `#dc2626`) + bold text **"Mark as Milestone Day"** + subtitle below: "Elevates this task to a critical success milestone" in `#666`
+- Right side: Toggle switch. Off = gray pill `#333` with circle. On = crimson pill `#dc2626` with white circle. Default: ON (toggled on in the design).
+- When toggle is ON, the two fields below (Milestone Label and Bonus Points) are visible and enabled.
+- When toggle is OFF, hide or disable those two fields with a fade/collapse transition.
+
+**Row 2 (two columns, 60/40 split) — CONDITIONAL, shown when toggle is ON:**
+- **MILESTONE LABEL** (left, ~60%): Text input. Placeholder "e.g. Phase 1 Completion"
+- **BONUS POINTS** (right, ~40%): Number input. Placeholder "+50". This is additional XP on top of base points.
+
+---
+
+### STICKY FOOTER BAR
+
+A fixed/sticky bottom bar spanning the full content width (not overlapping sidebar). Background `#0a0a0a` with a top border `1px solid #1a1a1a`. Height: `60px`. Padding: `0 32px`. Flex layout, items centered vertically.
+
+**Left side:**
+- Green dot (small `8px` circle, `#22c55e`) + text "READY FOR DEPLOYMENT" in `#666`, `font-size: 12px`, uppercase, `letter-spacing: 0.05em`
+- Separator `|`
+- Text "LAST AUTOSAVE: " + current time in `HH:MM AM/PM` format — update this every 30 seconds or on any field change to simulate autosave (store draft in localStorage or Supabase)
+
+**Right side:**
+- **CANCEL** button: Ghost/text button, gray text `#888`, no background. On hover: lighter text. Navigates back to the task list page.
+- **CREATE TASK** button: Crimson/red background `#8b1a1a` to `#dc2626`, white text, `font-weight: 700`, `border-radius: 8px`, `padding: 12px 28px`. Small rocket/launch icon to the left of the text. On hover: slightly lighter red.
+
+---
+
+### SUPABASE DATABASE
+
+Check if a `tasks` table already exists in my Supabase. If it does, adapt to its schema. If not, create this table:
+
+**Table: `tasks`**
+```
+id                      UUID, primary key, default gen_random_uuid()
+day_number              TEXT, not null (e.g., "D01", "D45")
+step_category           TEXT, not null
+task_title              TEXT, not null
+task_description        TEXT
+base_points             INTEGER, default 100
+proof_type              TEXT, default 'Tick Completion'
+is_milestone            BOOLEAN, default false
+milestone_label         TEXT
+bonus_points            INTEGER, default 0
+status                  TEXT, default 'active'
+created_by              TEXT
+created_at              TIMESTAMPTZ, default now()
+updated_at              TIMESTAMPTZ, default now()
+```
+
+Enable Row Level Security (RLS) on the table. Create a policy that allows authenticated users full CRUD access, or match whatever RLS pattern is already used in the project.
+
+---
+
+### FORM BEHAVIOR & LOGIC
+
+1. **Single-page form** — no steps, no wizard. All three sections visible at once, scrollable.
+
+2. **On "CREATE TASK" click:**
+   - Validate required fields: `day_number` (must match D01-D90 pattern), `step_category` (must be selected), `task_title` (non-empty)
+   - If `is_milestone` is true, `milestone_label` becomes required
+   - Show inline validation errors below fields in red `#dc2626`, `font-size: 12px`
+   - If valid: insert row into `tasks` table via Supabase
+   - On success: show a success toast/notification and redirect to the task list page
+   - On failure: show error toast with Supabase error message
+
+3. **Autosave draft (optional but matches design):** Every 30 seconds if any field has changed, save the current form state to `localStorage` with key `task_draft`. On page load, check for a draft and ask the user if they want to restore it. Update the "LAST AUTOSAVE" timestamp in the footer when a draft is saved.
+
+4. **Day number validation:** Only accept values D01 through D90. On blur, validate and show error if invalid. Also check against existing tasks in the database — warn (not block) if a task already exists for that day number.
+
+5. **Milestone toggle:** When toggled OFF, clear the milestone_label and bonus_points values. Animate the conditional fields with a smooth slide-down/slide-up or fade transition.
+
+6. **Base points:** Default to 100. Only accept integers 0-1000. Show "XP" suffix inside the input.
+
+7. **CANCEL:** Navigate back to the task list or previous page. If form has unsaved changes, show a confirmation dialog: "You have unsaved changes. Are you sure you want to leave?"
+
+---
+
+### IMPORTANT RULES
+
+- Do NOT modify my existing sidebar, layout, navigation, auth, or any other page
+- Only add the new page component and register its route in my existing routing
+- Reuse my existing Supabase client — find it, import it, use it
+- Reuse any existing shared components (buttons, inputs, dropdowns, modals, toasts)
+- If I'm using TypeScript, create proper interfaces for the task data
+- The page must scroll properly within my existing layout — the sticky footer should be at the bottom of the content area, not the viewport (unless my layout already handles this differently)
+- Make the form responsive: on screens below `768px`, all two-column rows stack to single column
+- Test that the dropdown options match EXACTLY what I specified — do not rename or reorder them
