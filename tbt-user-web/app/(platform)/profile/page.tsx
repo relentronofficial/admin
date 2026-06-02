@@ -1,189 +1,335 @@
 "use client";
 
 import { useState } from "react";
-import { User, Mail, Phone, MapPin, Building2, Award } from "lucide-react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { PageLoader } from "@/components/common/LoadingSpinner";
+import Image from "next/image";
+import { useClerk } from "@clerk/nextjs";
+import { CheckCircle2, Lock, Pencil, X, Save } from "lucide-react";
 import { useMe, useUpdateProfile } from "@/lib/hooks/useUser";
 import { cn } from "@/lib/utils/cn";
-import { toast } from "react-hot-toast";
-import { planLabel } from "@/lib/utils/format";
+import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge } from "@/types";
 
-const profileSchema = z.object({
-  firstName: z.string().min(1, "Required"),
-  lastName: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  businessName: z.string().optional(),
-});
+// ─── Avatar ───────────────────────────────────────────────────────────────────
 
-type ProfileForm = z.infer<typeof profileSchema>;
+function Avatar({
+  avatarUrl,
+  avatarGradient,
+  firstName,
+}: {
+  avatarUrl: string | null;
+  avatarGradient: string | null;
+  firstName: string;
+}) {
+  if (avatarUrl) {
+    return (
+      <div className="relative w-20 h-20 rounded-full overflow-hidden ring-4 ring-border flex-shrink-0">
+        <Image src={avatarUrl} alt={firstName} fill className="object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold ring-4 ring-border flex-shrink-0"
+      style={{ background: avatarGradient ?? "var(--color-accent)" }}
+    >
+      {firstName[0]?.toUpperCase() ?? "?"}
+    </div>
+  );
+}
 
-export default function ProfilePage() {
-  const { data: me, isLoading } = useMe();
-  const updateProfile = useUpdateProfile();
+// ─── Badge chip ───────────────────────────────────────────────────────────────
+
+function BadgeChip({ badge }: { badge: ProfileBadge }) {
+  return (
+    <span
+      className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold"
+      style={{ color: badge.color, background: badge.bgColor }}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
+// ─── Tier row ─────────────────────────────────────────────────────────────────
+
+function TierRow({ tier }: { tier: ProfileTier }) {
+  const unlocked = tier.status === "unlocked";
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 p-3 rounded-lg border",
+        unlocked ? "border-border" : "border-border/40 opacity-60"
+      )}
+    >
+      <div className="mt-0.5 flex-shrink-0">
+        {unlocked ? (
+          <CheckCircle2 size={16} style={{ color: "var(--color-success)" }} />
+        ) : (
+          <Lock size={16} className="text-muted-foreground" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground">{tier.label}</p>
+        {!unlocked && tier.unlockConditionText && (
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+            {tier.unlockConditionText}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Personal details section (editable) ─────────────────────────────────────
+
+function PersonalSection({
+  section,
+  profile,
+}: {
+  section: ProfileSection;
+  profile: MemberProfile;
+}) {
   const [editing, setEditing] = useState(false);
-
-  const { register, handleSubmit, formState: { errors } } = useForm<ProfileForm>({
-    resolver: zodResolver(profileSchema),
-    values: {
-      firstName: me?.firstName ?? "",
-      lastName: me?.lastName ?? "",
-      city: me?.city ?? "",
-      state: me?.state ?? "",
-      businessName: me?.businessName ?? "",
-    },
+  const [form, setForm] = useState({
+    firstName: profile.firstName,
+    lastName: profile.lastName ?? "",
+    phone: profile.phone,
+    dob: profile.dob ?? "",
   });
+  const updateProfile = useUpdateProfile();
+  const fl = section.fieldLabels;
+  const READONLY = new Set(["email"]);
 
-  if (isLoading) return <PageLoader />;
-  if (!me) return null;
+  const handleSave = async () => {
+    await updateProfile.mutateAsync({
+      firstName: form.firstName || undefined,
+      lastName: form.lastName || undefined,
+      phone: form.phone || undefined,
+      dob: form.dob || null,
+    });
+    setEditing(false);
+  };
 
-  const onSubmit = async (data: ProfileForm) => {
-    try {
-      await updateProfile.mutateAsync(data);
-      toast.success("Profile updated");
-      setEditing(false);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update");
+  const fieldValue = (field: string) => {
+    switch (field) {
+      case "firstName": return profile.firstName;
+      case "lastName": return profile.lastName ?? "—";
+      case "email": return profile.email;
+      case "phone": return profile.phone;
+      case "dob": return profile.dob ?? "—";
+      default: return "—";
     }
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">My Profile</h2>
-        <p className="text-muted-foreground text-sm mt-1">Manage your account information.</p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {section.fields.map((field) => {
+          const label = fl[field] ?? field;
+          const readonly = READONLY.has(field) || !editing;
+
+          if (!readonly) {
+            return (
+              <div key={field} className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                  {label}
+                </label>
+                <input
+                  type={field === "dob" ? "date" : "text"}
+                  value={form[field as keyof typeof form] ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm text-foreground outline-none focus:border-ring transition-colors"
+                />
+              </div>
+            );
+          }
+
+          return (
+            <div key={field} className="space-y-0.5">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                {label}
+                {READONLY.has(field) && (
+                  <span className="ml-1.5 normal-case font-normal text-muted-foreground/60">
+                    (read-only)
+                  </span>
+                )}
+              </p>
+              <p className="text-sm text-foreground">{fieldValue(field)}</p>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Member card */}
-      <div className="rounded-xl border border-border bg-card p-6">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center shrink-0">
-            {me.profilePhotoUrl ? (
-              <img src={me.profilePhotoUrl} alt={me.firstName} className="w-full h-full rounded-full object-cover" />
-            ) : (
-              <User size={28} className="text-brand-600" />
-            )}
-          </div>
-          <div className="min-w-0">
-            <h3 className="font-bold text-lg">{me.firstName} {me.lastName}</h3>
-            <p className="text-sm text-muted-foreground">{me.memberId}</p>
-            <span className="inline-block mt-1 text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400">
-              {planLabel[me.membershipPlan] ?? me.membershipPlan}
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Mail size={14} className="shrink-0" /><span className="truncate">{me.email}</span>
-          </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Phone size={14} className="shrink-0" /><span>{me.phone}</span>
-          </div>
-          {(me.city || me.state) && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin size={14} className="shrink-0" /><span>{[me.city, me.state].filter(Boolean).join(", ")}</span>
-            </div>
-          )}
-          {me.businessName && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Building2 size={14} className="shrink-0" /><span className="truncate">{me.businessName}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-5 grid grid-cols-3 gap-4">
-          <div className="text-center">
-            <p className="text-2xl font-black">{me.totalPoints}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Points</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-black">{me.currentStreak}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Streak</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-black">{me.healthScore}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">Health</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Edit form */}
-      <div className="rounded-xl border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="font-semibold">Edit Information</h3>
-          {!editing && (
-            <button onClick={() => setEditing(true)} className="text-sm text-brand-600 hover:text-brand-700 font-medium">
-              Edit
+      <div className="flex gap-2 pt-1">
+        {editing ? (
+          <>
+            <button
+              onClick={handleSave}
+              disabled={updateProfile.isPending}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: "var(--color-accent)" }}
+            >
+              <Save size={13} />
+              {profile.saveLabel}
             </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium border border-border hover:bg-accent transition-colors"
+            >
+              <X size={13} />
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium border border-border hover:bg-accent transition-colors"
+          >
+            <Pencil size={13} />
+            Edit
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Subscription section ─────────────────────────────────────────────────────
+
+function SubscriptionSection({
+  section,
+  profile,
+}: {
+  section: ProfileSection;
+  profile: MemberProfile;
+}) {
+  const fl = section.fieldLabels;
+  const sub = profile.subscription;
+
+  if (!sub) {
+    return <p className="text-sm text-muted-foreground">—</p>;
+  }
+
+  const valueOf = (field: string) => {
+    if (field === "startDate") return sub.startDate;
+    if (field === "endDate") return sub.endDate;
+    return "—";
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {section.fields.map((field) => (
+          <div key={field} className="space-y-0.5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              {fl[field] ?? field}
+            </p>
+            <p className="text-sm text-foreground">{valueOf(field)}</p>
+          </div>
+        ))}
+      </div>
+      <div className="space-y-0.5">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+          Status
+        </p>
+        <span
+          className="inline-block text-xs font-bold px-2.5 py-0.5 rounded-full text-white capitalize"
+          style={{
+            background:
+              sub.status === "active" ? "var(--color-success)" : "var(--color-alert)",
+          }}
+        >
+          {sub.status}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function ProfileSkeleton() {
+  return (
+    <div className="max-w-2xl mx-auto space-y-5">
+      {[80, 48, 64, 48].map((h, i) => (
+        <div
+          key={i}
+          className="rounded-2xl animate-pulse"
+          style={{ height: h, background: "var(--color-bg-surface)" }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function ProfilePage() {
+  const { data: profile, isLoading } = useMe();
+  const { signOut } = useClerk();
+
+  if (isLoading || !profile) return <ProfileSkeleton />;
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-5">
+      {/* Header — avatar + name + badges */}
+      <div className="flex items-center gap-5 p-6 rounded-2xl border border-border bg-card">
+        <Avatar
+          avatarUrl={profile.avatarUrl}
+          avatarGradient={profile.avatarGradient}
+          firstName={profile.firstName}
+        />
+        <div className="flex-1 min-w-0">
+          <h2 className="text-lg font-bold text-foreground truncate">
+            {profile.firstName}
+            {profile.lastName ? ` ${profile.lastName}` : ""}
+          </h2>
+          <p className="text-sm text-muted-foreground truncate">{profile.email}</p>
+          {profile.badges.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {profile.badges.map((b) => (
+                <BadgeChip key={b.id} badge={b} />
+              ))}
+            </div>
           )}
         </div>
+      </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">First Name</label>
-              <input
-                {...register("firstName")}
-                disabled={!editing}
-                className={cn("w-full h-10 px-3 rounded-lg border text-sm outline-none transition-colors",
-                  editing ? "border-border focus:border-brand-600 bg-background" : "border-transparent bg-muted"
-                )}
-              />
-              {errors.firstName && <p className="text-xs text-destructive mt-1">{errors.firstName.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Last Name</label>
-              <input {...register("lastName")} disabled={!editing}
-                className={cn("w-full h-10 px-3 rounded-lg border text-sm outline-none transition-colors",
-                  editing ? "border-border focus:border-brand-600 bg-background" : "border-transparent bg-muted"
-                )}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">City</label>
-              <input {...register("city")} disabled={!editing}
-                className={cn("w-full h-10 px-3 rounded-lg border text-sm outline-none transition-colors",
-                  editing ? "border-border focus:border-brand-600 bg-background" : "border-transparent bg-muted"
-                )}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">State</label>
-              <input {...register("state")} disabled={!editing}
-                className={cn("w-full h-10 px-3 rounded-lg border text-sm outline-none transition-colors",
-                  editing ? "border-border focus:border-brand-600 bg-background" : "border-transparent bg-muted"
-                )}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Business Name</label>
-            <input {...register("businessName")} disabled={!editing}
-              className={cn("w-full h-10 px-3 rounded-lg border text-sm outline-none transition-colors",
-                editing ? "border-border focus:border-brand-600 bg-background" : "border-transparent bg-muted"
+      {/* Dynamic sections — order, labels, and fields all from API */}
+      {profile.sections.map((section) => (
+        <div
+          key={section.id}
+          className="p-6 rounded-2xl border border-border bg-card space-y-4"
+        >
+          <h3 className="text-sm font-bold text-foreground">{section.label}</h3>
+
+          {section.id === "personal" && (
+            <PersonalSection section={section} profile={profile} />
+          )}
+          {section.id === "subscription" && (
+            <SubscriptionSection section={section} profile={profile} />
+          )}
+          {section.id === "tiers" && (
+            <div className="space-y-2">
+              {profile.tiers.length > 0 ? (
+                profile.tiers.map((tier) => (
+                  <TierRow key={tier.tierNumber} tier={tier} />
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">—</p>
               )}
-            />
-          </div>
-
-          {editing && (
-            <div className="flex gap-3 pt-2">
-              <button type="submit" disabled={updateProfile.isPending}
-                className="px-5 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-60 transition-colors">
-                {updateProfile.isPending ? "Saving..." : "Save Changes"}
-              </button>
-              <button type="button" onClick={() => setEditing(false)}
-                className="px-5 py-2 rounded-lg border border-border text-sm font-medium hover:bg-muted transition-colors">
-                Cancel
-              </button>
             </div>
           )}
-        </form>
+        </div>
+      ))}
+
+      {/* Sign out — label from API */}
+      <div className="pb-4">
+        <button
+          onClick={() => signOut({ redirectUrl: "/login" })}
+          className="w-full py-3 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-accent transition-colors"
+        >
+          {profile.signOutLabel}
+        </button>
       </div>
     </div>
   );

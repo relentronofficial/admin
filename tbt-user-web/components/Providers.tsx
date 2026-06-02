@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "react-hot-toast";
 import { initApiClient } from "@/lib/api/client";
+import { SiteConfigProvider } from "@/lib/context/SiteConfigContext";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,12 +37,14 @@ export function Providers({ children }: ProvidersProps) {
     <ClerkProvider
       signInUrl="/login"
       signUpUrl="/sign-up"
-      afterSignInUrl="/dashboard"
-      afterSignUpUrl="/dashboard"
+      afterSignInUrl="/eiflix"
+      afterSignUpUrl="/eiflix"
     >
       <QueryClientProvider client={queryClient}>
         <AuthInterceptor />
+        <SiteConfigProvider>
         {children}
+        </SiteConfigProvider>
         <Toaster
           position="top-right"
           toastOptions={{

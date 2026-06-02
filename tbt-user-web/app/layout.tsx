@@ -15,17 +15,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Tamil Business Tribe",
-    template: "%s | Tamil Business Tribe",
+    default: "EiFlix",
+    template: "%s | EiFlix",
   },
-  description:
-    "Learn, grow, and scale your business with Tamil Business Tribe — a curated learning and community platform for Tamil entrepreneurs.",
+  description: "Your learning platform.",
   icons: { icon: "/favicon.ico" },
-  openGraph: {
-    type: "website",
-    locale: "en_IN",
-    siteName: "Tamil Business Tribe",
-  },
 };
 
 export default function RootLayout({

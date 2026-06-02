@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "img.clerk.com" },
       { protocol: "https", hostname: "images.clerk.dev" },
       { protocol: "https", hostname: "uploadthing.com" },
+      { protocol: "https", hostname: "**.b-cdn.net" },
+      { protocol: "https", hostname: "**.supabase.co" },
     ],
   },
   experimental: {

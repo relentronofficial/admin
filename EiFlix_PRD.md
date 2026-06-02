@@ -5,7 +5,7 @@
 > Brand: "EiFlix — a Product of Antano & Harini (Evolution Scientists)"
 
 ---
-
+replace the the word EiFlix with TBT
 ## 1. Product Overview
 
 EiFlix is a gated, subscription-based learning platform that combines on-demand video content with live cohort-based workshops. It serves students enrolled in Antano & Harini's (A&H) personal excellence and business development programs.
