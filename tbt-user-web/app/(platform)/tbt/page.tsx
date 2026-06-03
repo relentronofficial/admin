@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock } from "lucide-react";
+import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock, LayoutGrid, List } from "lucide-react";
 import { useHomeHero, useHomeSections } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useMe } from "@/lib/hooks/useUser";
@@ -238,6 +238,7 @@ function EpisodeRow({ ep, index }: { ep: ContentEpisode; index: number }) {
 function ContentItemCard({ item }: { item: ContentItem }) {
   const { uiStrings } = useSiteConfig();
   const [hovered, setHovered] = useState(false);
+  const [viewMode, setViewMode] = useState<"thumbnail" | "list">("thumbnail");
   const cardRef = useRef<HTMLDivElement>(null);
 
   const episodes = item.episodes ?? [];
@@ -246,7 +247,7 @@ function ContentItemCard({ item }: { item: ContentItem }) {
   return (
     <div
       ref={cardRef}
-      className="relative flex-shrink-0 w-44 cursor-pointer"
+      className={cn("relative flex-shrink-0 w-44", item.isLocked ? "cursor-not-allowed" : "cursor-pointer")}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -270,7 +271,7 @@ function ContentItemCard({ item }: { item: ContentItem }) {
               <Lock size={18} className="text-white/60" />
               {item.lockBadgeText ?? uiStrings?.lockedContentMessage ? (
                 <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded text-white"
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
                   style={{ background: "var(--color-alert)" }}
                 >
                   {item.lockBadgeText ?? uiStrings?.lockedContentMessage}
@@ -325,44 +326,70 @@ function ContentItemCard({ item }: { item: ContentItem }) {
           className="absolute left-0 right-0 top-0 z-50 rounded-xl overflow-hidden shadow-2xl border border-white/10"
           style={{ background: "var(--color-bg-surface, #111)" }}
         >
-          {/* Thumbnail + play */}
-          <div className="relative aspect-video">
-            {item.thumbnailUrl ? (
-              <Image src={item.thumbnailUrl} alt={item.title} fill className="object-cover" />
-            ) : (
-              <div className="w-full h-full" style={{ background: "var(--color-bg-primary)" }} />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-            {item.playUrl && (
-              <Link
-                href={item.playUrl}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center"
-                  style={{ background: "var(--color-accent)" }}
+          {/* Thumbnail + play — hidden in list mode */}
+          {viewMode === "thumbnail" && (
+            <div className="relative aspect-video">
+              {item.thumbnailUrl ? (
+                <Image src={item.thumbnailUrl} alt={item.title} fill className="object-cover" />
+              ) : (
+                <div className="w-full h-full" style={{ background: "var(--color-bg-primary)" }} />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              {item.playUrl && (
+                <Link
+                  href={item.playUrl}
+                  className="absolute inset-0 flex items-center justify-center"
                 >
-                  <Play size={16} className="text-white fill-current ml-0.5" />
-                </div>
-              </Link>
-            )}
-          </div>
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    <Play size={16} className="text-white fill-current ml-0.5" />
+                  </div>
+                </Link>
+              )}
+            </div>
+          )}
 
-          {/* Meta */}
-          <div className="px-3 pt-2.5 pb-1">
-            <p className="text-xs font-semibold text-white line-clamp-1">{item.title}</p>
-            <div className="flex items-center gap-2 mt-0.5">
-              {item.categoryTag && (
-                <span
-                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                  style={{ color: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 15%, transparent)" }}
-                >
-                  {item.categoryTag}
-                </span>
-              )}
-              {item.episodeCount != null && (
-                <span className="text-[10px] text-white/50">{item.episodeCount} episodes</span>
-              )}
+          {/* Meta + view toggle */}
+          <div className="px-3 pt-2.5 pb-1 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-white line-clamp-1">{item.title}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                {item.categoryTag && (
+                  <span
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                    style={{ color: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 15%, transparent)" }}
+                  >
+                    {item.categoryTag}
+                  </span>
+                )}
+                {item.episodeCount != null && (
+                  <span className="text-[10px] text-white/50">{item.episodeCount} episodes</span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); setViewMode("thumbnail"); }}
+                className={cn(
+                  "p-1 rounded transition-colors",
+                  viewMode === "thumbnail" ? "text-white" : "text-white/30 hover:text-white/60"
+                )}
+                aria-label="Thumbnail view"
+              >
+                <LayoutGrid size={12} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setViewMode("list"); }}
+                className={cn(
+                  "p-1 rounded transition-colors",
+                  viewMode === "list" ? "text-white" : "text-white/30 hover:text-white/60"
+                )}
+                aria-label="List view"
+              >
+                <List size={12} />
+              </button>
             </div>
           </div>
 
@@ -398,8 +425,20 @@ function SectionRow({ section }: { section: ContentSection }) {
         )}
       </div>
 
-      {/* Locked section — show upgrade prompt */}
-      {section.isLocked ? (
+      {/* Cards — always render when items exist; locked items carry their own overlay */}
+      {section.items.length > 0 ? (
+        <div className="relative">
+          <div
+            className="flex gap-3 overflow-x-auto pb-2 -mb-2 scrollbar-hide"
+            style={{ overflowY: "visible" }}
+          >
+            {section.items.map((item) => (
+              <ContentItemCard key={item.id} item={item} />
+            ))}
+          </div>
+        </div>
+      ) : section.isLocked ? (
+        /* Fallback: locked section with no items from API */
         <div
           className="rounded-xl px-6 py-8 flex flex-col items-center gap-2 border border-dashed"
           style={{
@@ -412,19 +451,7 @@ function SectionRow({ section }: { section: ContentSection }) {
             {section.lockLabel ?? uiStrings?.lockedContentMessage}
           </p>
         </div>
-      ) : (
-        /* Card row — overflow-visible wrapper preserves hover panels above siblings */
-        <div className="relative">
-          <div
-            className="flex gap-3 overflow-x-auto pb-2 -mb-2 scrollbar-hide"
-            style={{ overflowY: "visible" }}
-          >
-            {section.items.map((item) => (
-              <ContentItemCard key={item.id} item={item} />
-            ))}
-          </div>
-        </div>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -463,7 +490,7 @@ function SectionsSkeleton() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function EiFlixPage() {
+export default function TBTHomePage() {
   const { data: me } = useMe();
   const { data: heroData, isLoading: heroLoading } = useHomeHero();
   const { uiStrings } = useSiteConfig();

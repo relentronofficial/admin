@@ -1,9 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, ChevronDown, ChevronUp, CheckCircle2, Lock } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  Lock,
+  Star,
+  Video,
+  FileText,
+} from "lucide-react";
 import {
   useWorkshopDetail,
   useWorkshopFlow,
@@ -18,9 +27,18 @@ import {
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils/cn";
-import type { WorkshopFlowItem } from "@/types";
+import { withResumeTime } from "@/lib/utils/format";
+import { getServerNow } from "@/lib/api/client";
+import type {
+  WorkshopFlowItem,
+  WorkshopTab,
+  LearningProgress,
+  WorkshopAssignment,
+  QAPost,
+  QAReply,
+} from "@/types";
 
-// ─── Countdown (digit clock — unit labels from uiStrings/API) ────────────────
+// ─── Countdown ────────────────────────────────────────────────────────────────
 
 function Countdown({
   scheduledAt,
@@ -34,7 +52,7 @@ function Countdown({
 
   useEffect(() => {
     const target = new Date(scheduledAt).getTime();
-    const tick = () => setDiff(Math.max(0, target - Date.now()));
+    const tick = () => setDiff(Math.max(0, target - getServerNow()));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
@@ -53,7 +71,7 @@ function Countdown({
         {units.map(([val, label], i) => (
           <div key={i} className="flex flex-col items-center min-w-[52px]">
             <span
-              className="text-4xl font-bold tabular-nums leading-none"
+              className="text-4xl font-bold font-mono tabular-nums leading-none"
               style={{ color: "var(--color-accent)" }}
             >
               {String(val).padStart(2, "0")}
@@ -71,93 +89,145 @@ function Countdown({
   );
 }
 
-// ─── Main Area Countdown (§7.4) ───────────────────────────────────────────────
-// Shows the full live-call context around the countdown clock.
-// All text/colors come from the flow item — no hardcoded strings.
+// ─── Main Area: Live Call Countdown ──────────────────────────────────────────
+// Pure black background, centered layout, date label in teal, monospace digits.
 
 function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const { uiStrings } = useSiteConfig();
+  const [diff, setDiff] = useState(0);
+
+  useEffect(() => {
+    if (!item.scheduledAt) return;
+    const target = new Date(item.scheduledAt).getTime();
+    const tick = () => setDiff(Math.max(0, target - getServerNow()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [item.scheduledAt]);
 
   if (!item.scheduledAt || !item.countdownConfig) return null;
 
+  const teal = item.countdownConfig.stayTunedColor || "#2dd4bf";
+
+  const units = [
+    [Math.floor(diff / 86400000), uiStrings?.countdownDays ?? "DAYS"],
+    [Math.floor((diff % 86400000) / 3600000), uiStrings?.countdownHours ?? "HOURS"],
+    [Math.floor((diff % 3600000) / 60000), uiStrings?.countdownMins ?? "MINS"],
+    [Math.floor((diff % 60000) / 1000), uiStrings?.countdownSecs ?? "SECS"],
+  ] as [number, string][];
+
+  const dateLabel = new Date(item.scheduledAt)
+    .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    .toUpperCase();
+
   return (
-    <div className="rounded-xl border border-border overflow-hidden">
-      <div className="px-5 pt-5 pb-3 space-y-2">
-        {/* LIVE CALL: label — color from API */}
-        {item.label && (
-          <p
-            className="text-[11px] font-bold uppercase tracking-wider"
-            style={{ color: item.labelColor ?? "var(--color-alert)" }}
-          >
-            {item.label}
-          </p>
-        )}
+    <div
+      className="rounded-xl overflow-hidden flex flex-col items-center justify-center text-center py-12 px-6 space-y-6"
+      style={{ background: "#000", minHeight: 300 }}
+    >
+      {/* LIVE CALL label */}
+      {item.label && (
+        <p
+          className="text-xs font-bold uppercase tracking-[0.2em]"
+          style={{ color: item.labelColor ?? "var(--color-alert)" }}
+        >
+          {item.label}
+        </p>
+      )}
 
-        {/* Call title */}
-        {item.title && (
-          <h2 className="text-lg font-bold text-foreground leading-snug">
-            {item.title}
-          </h2>
-        )}
+      {/* Call title */}
+      {item.title && (
+        <h2 className="text-xl md:text-2xl font-bold text-white leading-snug max-w-md -mt-3">
+          {item.title}
+        </h2>
+      )}
 
-        {/* Facilitator name · title, then description */}
-        {item.facilitatorName && (
-          <div className="space-y-0.5 pt-1">
-            <p className="text-sm text-muted-foreground">
-              {item.facilitatorName}
-              {item.facilitatorTitle ? ` · ${item.facilitatorTitle}` : ""}
-            </p>
-            {item.facilitatorDescription && (
-              <p className="text-xs text-muted-foreground/70 leading-snug">
-                {item.facilitatorDescription}
-              </p>
-            )}
+      {/* Countdown digits */}
+      <div className="flex gap-5 md:gap-8">
+        {units.map(([val, label], i) => (
+          <div key={i} className="flex flex-col items-center">
+            <span className="text-4xl md:text-5xl font-bold tabular-nums text-white font-mono leading-none">
+              {String(val).padStart(2, "0")}
+            </span>
+            <span
+              className="text-[10px] font-bold tracking-[0.2em] mt-2 uppercase"
+              style={{ color: teal }}
+            >
+              {label}
+            </span>
           </div>
-        )}
-
-        {/* Prerequisite note — alert color from design system */}
-        {item.prerequisiteNote && (
-          <p className="text-xs pt-1" style={{ color: "var(--color-alert)" }}>
-            {item.prerequisiteNote}
-          </p>
-        )}
+        ))}
       </div>
 
-      {/* Countdown digits + stayTunedMessage */}
-      <Countdown scheduledAt={item.scheduledAt} config={item.countdownConfig} />
+      {/* Date label — "JUNE 2, 2026" in teal small-caps */}
+      <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: teal }}>
+        {dateLabel}
+      </p>
 
-      {/* Join button — shown when liveUrl is unlocked; label from uiStrings */}
+      {/* Stay tuned message */}
+      {item.countdownConfig.stayTunedMessage && (
+        <p className="text-sm italic max-w-sm -mt-3" style={{ color: teal }}>
+          {item.countdownConfig.stayTunedMessage}
+        </p>
+      )}
+
+      {/* Join button — only when liveUrl is unlocked */}
       {item.liveUrl && (
-        <div className="px-5 pb-5">
-          <a
-            href={item.liveUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-bold text-white"
-            style={{ background: "var(--color-accent)" }}
-          >
-            {uiStrings?.liveCallJoinLabel}
-          </a>
-        </div>
+        <a
+          href={item.liveUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-bold text-white"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {uiStrings?.liveCallJoinLabel}
+        </a>
       )}
     </div>
   );
 }
 
-// ─── Episode Player ───────────────────────────────────────────────────────────
+// ─── Main Area: Episode Player ────────────────────────────────────────────────
 
-function EpisodePlayer({ episodeId }: { episodeId: string }) {
+function EpisodePlayer({
+  episodeId,
+  onBack,
+  backLabel,
+  onCompleteSuccess,
+}: {
+  episodeId: string;
+  onBack: () => void;
+  backLabel: string;
+  onCompleteSuccess: () => void;
+}) {
   const { data: playback, isLoading } = useEpisodePlayback(episodeId);
   const postProgress = usePostEpisodeProgress();
   const { uiStrings } = useSiteConfig();
   const [speed, setSpeed] = useState<string>("");
   const [quality, setQuality] = useState<string>("");
+  const startRef = useRef<number>(Date.now());
+  const completedRef = useRef(false);
 
-  // Initialise speed/quality once playback data arrives
   useEffect(() => {
     if (playback && !speed) setSpeed(playback.defaultSpeed);
     if (playback && !quality) setQuality(playback.defaultQuality);
   }, [playback?.id]);
+
+  // Post partial progress every 30 s so resumeAtSeconds stays fresh server-side
+  useEffect(() => {
+    if (!playback) return;
+    startRef.current = Date.now();
+    completedRef.current = false;
+
+    const id = setInterval(() => {
+      if (completedRef.current) return;
+      const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
+      const watchedSeconds = playback.resumeAtSeconds + elapsed;
+      postProgress.mutate({ episodeId, watchedSeconds, isCompleted: false });
+    }, 30_000);
+
+    return () => clearInterval(id);
+  }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {
     return <div className="aspect-video bg-black rounded-xl animate-pulse" />;
@@ -171,59 +241,60 @@ function EpisodePlayer({ episodeId }: { episodeId: string }) {
   }
 
   const hasQualityChoice = playback.qualityOptions.length > 1;
+  const videoSrc = withResumeTime(playback.videoUrl, playback.resumeAtSeconds);
 
   return (
     <div className="space-y-3">
-      {/* Player */}
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ChevronLeft size={13} />
+        {backLabel}
+      </button>
+
       <iframe
-        src={playback.videoUrl}
+        src={videoSrc}
         className="w-full aspect-video rounded-xl border-0"
         allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
         allowFullScreen
         title={playback.title}
       />
 
-      {/* Controls: title + speed/quality selectors + complete button */}
       <div className="flex items-center gap-2 flex-wrap">
         <h3 className="flex-1 font-semibold text-foreground text-sm line-clamp-1 min-w-0">
           {playback.title}
         </h3>
-
-        {/* Speed selector — options from API */}
         <select
           value={speed}
           onChange={(e) => setSpeed(e.target.value)}
           className="bg-card border border-border text-foreground text-xs rounded-lg px-2 py-1.5 outline-none flex-shrink-0"
         >
-          {playback.speedOptions.map((s) => (
+          {playback.speedOptions.map((s: string) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-
-        {/* Quality selector — only when multiple options exist (HLS mode) */}
         {hasQualityChoice && (
           <select
             value={quality}
             onChange={(e) => setQuality(e.target.value)}
             className="bg-card border border-border text-foreground text-xs rounded-lg px-2 py-1.5 outline-none flex-shrink-0"
           >
-            {playback.qualityOptions.map((q) => (
+            {playback.qualityOptions.map((q: string) => (
               <option key={q} value={q}>
                 {q === "auto" ? playback.playerLabels.autoLabel : q}
               </option>
             ))}
           </select>
         )}
-
-        {/* Complete button — label from API */}
         <button
-          onClick={() =>
-            postProgress.mutate({
-              episodeId,
-              watchedSeconds: playback.durationSeconds ?? undefined,
-              isCompleted: true,
-            })
-          }
+          onClick={() => {
+            completedRef.current = true;
+            postProgress.mutate(
+              { episodeId, watchedSeconds: playback.durationSeconds ?? undefined, isCompleted: true },
+              { onSuccess: onCompleteSuccess }
+            );
+          }}
           disabled={postProgress.isPending}
           className="text-xs px-3 py-1.5 rounded-lg text-white font-medium flex-shrink-0 disabled:opacity-60"
           style={{ background: "var(--color-success)" }}
@@ -233,7 +304,6 @@ function EpisodePlayer({ episodeId }: { episodeId: string }) {
         </button>
       </div>
 
-      {/* Description — from API, shown if present */}
       {playback.description && (
         <p className="text-xs text-muted-foreground leading-relaxed">
           {playback.description}
@@ -243,33 +313,262 @@ function EpisodePlayer({ episodeId }: { episodeId: string }) {
   );
 }
 
+// ─── Main Area: Assignment (form + submitted review) ─────────────────────────
+
+function renderAnswerText(text: string) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const isNumbered = lines.length > 1 && lines.every((l) => /^\d+[.)]\s/.test(l));
+  if (isNumbered) {
+    return (
+      <ol className="list-decimal list-inside space-y-2">
+        {lines.map((l, i) => (
+          <li key={i} className="text-sm text-foreground leading-relaxed">
+            {l.replace(/^\d+[.)]\s*/, "")}
+          </li>
+        ))}
+      </ol>
+    );
+  }
+  return (
+    <p className="text-sm text-foreground whitespace-pre-line leading-relaxed">{text}</p>
+  );
+}
+
+function AssignmentMainView({
+  assignmentId,
+  slug,
+  onBack,
+}: {
+  assignmentId: string;
+  slug: string;
+  onBack: () => void;
+}) {
+  const qc = useQueryClient();
+  const { data } = useWorkshopAssignments(slug);
+  const submit = useSubmitAssignment();
+  const [answer, setAnswer] = useState("");
+
+  const assignment = data?.groups
+    .flatMap((g) => g.assignments)
+    .find((a) => a.id === assignmentId);
+
+  if (!assignment) return null;
+
+  const sub = assignment.submission;
+  const isSubmitted = !!sub?.isSubmitted;
+
+  // ── Submitted: show answer review ──
+  if (isSubmitted) {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronLeft size={13} />
+          {sub.backLabel ?? "Back"}
+        </button>
+
+        <div className="flex items-center gap-2">
+          <CheckCircle2 size={18} style={{ color: "var(--color-success)" }} />
+          <h3 className="font-bold text-sm text-amber-500">{assignment.title}</h3>
+        </div>
+
+        {sub.yourAnswerLabel && (
+          <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            {sub.yourAnswerLabel}
+          </p>
+        )}
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          {sub.answerText ? renderAnswerText(sub.answerText) : null}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Not yet submitted: show question + answer form ──
+  return (
+    <div className="space-y-4">
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ChevronLeft size={13} />
+        {assignment.cancelLabel}
+      </button>
+
+      <div className="flex items-center gap-1.5">
+        <FileText size={14} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />
+        <span
+          className="text-[10px] font-bold uppercase tracking-widest"
+          style={{ color: "var(--color-accent)" }}
+        >
+          {assignment.typeLabel}
+        </span>
+      </div>
+
+      <h3 className="font-semibold text-foreground text-base leading-snug">{assignment.title}</h3>
+
+      <textarea
+        value={answer}
+        onChange={(e) => setAnswer(e.target.value)}
+        rows={6}
+        className="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground outline-none focus:border-ring resize-none transition-colors"
+      />
+
+      <div className="flex gap-2">
+        <button
+          onClick={async () => {
+            if (!answer.trim()) return;
+            try {
+              await submit.mutateAsync({ id: assignment.id, answerText: answer });
+              setAnswer("");
+              // Refetch assignments (sidebar + this view both update) and flow (progress bar)
+              qc.invalidateQueries({ queryKey: ["workshop-assignments", slug] });
+              qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+            } catch {
+              // mutation failed — user can retry
+            }
+          }}
+          disabled={submit.isPending || !answer.trim()}
+          className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {assignment.submitLabel}
+        </button>
+        <button
+          onClick={onBack}
+          className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-accent/10 transition-colors"
+        >
+          {assignment.cancelLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Episode icon resolvers ───────────────────────────────────────────────────
 
 function resolveEpisodeCompletedIcon(iconType?: string) {
   switch (iconType) {
+    case "checkmark_pink":
+      return <CheckCircle2 size={14} style={{ color: "var(--color-alert)" }} />;
     case "checkmark":
     case "checkmark_green":
     default:
-      return <CheckCircle2 size={16} style={{ color: "var(--color-success)" }} />;
+      return <CheckCircle2 size={14} style={{ color: "var(--color-success)" }} />;
   }
+}
+
+function CircularProgress({ pct }: { pct: number }) {
+  const r = 7;
+  const circ = 2 * Math.PI * r;
+  const dash = Math.min(pct / 100, 1) * circ;
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" className="flex-shrink-0 -rotate-90">
+      <circle cx="9" cy="9" r={r} fill="none" strokeWidth="2" className="stroke-muted" />
+      <circle
+        cx="9" cy="9" r={r}
+        fill="none"
+        strokeWidth="2"
+        strokeDasharray={`${dash} ${circ - dash}`}
+        strokeLinecap="round"
+        style={{ stroke: "var(--color-accent)", transition: "stroke-dasharray 0.4s ease" }}
+      />
+    </svg>
+  );
 }
 
 function resolveEpisodeLockIcon(iconType?: string) {
   switch (iconType) {
     case "padlock":
     default:
-      return <Lock size={13} className="text-muted-foreground" />;
+      return <Lock size={13} style={{ color: "var(--color-locked)" }} />;
   }
 }
 
-// ─── Flow Item Row ────────────────────────────────────────────────────────────
+// ─── Sidebar: Learning Progress Widget (collapsible) ─────────────────────────
+
+function LearningProgressWidget({ progress }: { progress: LearningProgress | null }) {
+  const [open, setOpen] = useState(true);
+
+  if (!progress) return null;
+
+  const pct: number = progress.percentage ?? 0;
+  const milestones: boolean[] = progress.milestones?.map((m) => !!m.achieved) ?? [
+    pct >= 33,
+    pct >= 66,
+    pct >= 100,
+  ];
+
+  return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-accent/5 transition-colors"
+      >
+        <span className="text-sm font-medium text-foreground">
+          {progress.label}{" "}
+          <span
+            className="font-bold tabular-nums"
+            style={{ color: "var(--color-accent)" }}
+          >
+            {pct}%
+          </span>
+        </span>
+        {open ? (
+          <ChevronUp size={14} className="text-muted-foreground" />
+        ) : (
+          <ChevronDown size={14} className="text-muted-foreground" />
+        )}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3">
+          {/* Star milestone markers */}
+          <div className="flex gap-1.5">
+            {milestones.map((filled, i) => (
+              <Star
+                key={i}
+                size={14}
+                className={filled ? "" : "text-muted-foreground"}
+                style={filled ? { color: "var(--color-accent)", fill: "var(--color-accent)" } : {}}
+              />
+            ))}
+          </div>
+
+          {/* Progress bar */}
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${pct}%`, background: "var(--color-accent)" }}
+            />
+          </div>
+
+          {/* Count */}
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {progress.completedCount} / {progress.totalCount}{" "}
+            {progress.completedLabel ?? "Completed"}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sidebar: Flow Item Row ───────────────────────────────────────────────────
 
 function FlowItemRow({
   item,
   onEpisodeClick,
+  onLiveCallClick,
+  onAssignmentTabClick,
 }: {
   item: WorkshopFlowItem;
   onEpisodeClick: (id: string) => void;
+  onLiveCallClick: (item: WorkshopFlowItem) => void;
+  onAssignmentTabClick: () => void;
 }) {
   const [open, setOpen] = useState(item.isExpanded ?? false);
   const { uiStrings } = useSiteConfig();
@@ -277,19 +576,31 @@ function FlowItemRow({
   if (item.type === "live_call") {
     const isPast = item.status === "past";
     return (
-      <div className="rounded-xl border border-border p-4 space-y-2">
-        {/* Header: label + completed indicator */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <div
+        className={cn(
+          "rounded-xl border border-border p-3 space-y-1.5 text-sm",
+          !isPast && item.scheduledAt ? "cursor-pointer hover:bg-accent/5 transition-colors" : ""
+        )}
+        onClick={() => !isPast && item.scheduledAt && onLiveCallClick(item)}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
             <span
-              className="text-[11px] font-bold uppercase tracking-wider"
+              className="text-[10px] font-bold uppercase tracking-wider flex-shrink-0"
               style={{ color: item.labelColor ?? "var(--color-alert)" }}
             >
               {item.label}
             </span>
+            {isPast && (
+              <Video
+                size={12}
+                className="flex-shrink-0"
+                style={{ color: item.labelColor ?? "var(--color-alert)" }}
+              />
+            )}
             {isPast && item.recordingAvailable && (
               <span
-                className="text-[10px] px-2 py-0.5 rounded font-bold text-white"
+                className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white flex-shrink-0"
                 style={{ background: "var(--color-success)" }}
               >
                 REC
@@ -297,57 +608,23 @@ function FlowItemRow({
             )}
           </div>
           {item.isCompleted && (
-            <CheckCircle2 size={14} style={{ color: "var(--color-success)" }} />
+            <CheckCircle2 size={13} style={{ color: "var(--color-success)" }} className="flex-shrink-0" />
           )}
         </div>
-
-        {/* Title */}
-        <p className="font-semibold text-sm text-foreground">{item.title}</p>
-
-        {/* Facilitator */}
+        <p className="font-semibold text-xs text-foreground leading-snug line-clamp-2">{item.title}</p>
         {item.facilitatorName && (
-          <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground">
-              {item.facilitatorName}
-              {item.facilitatorTitle ? ` · ${item.facilitatorTitle}` : ""}
-            </p>
-            {item.facilitatorDescription && (
-              <p className="text-xs text-muted-foreground/70 leading-snug">
-                {item.facilitatorDescription}
-              </p>
-            )}
-          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {item.facilitatorName}
+            {item.facilitatorTitle ? ` · ${item.facilitatorTitle}` : ""}
+          </p>
         )}
-
-        {/* Prerequisite note — label color from alert */}
         {item.prerequisiteNote && (
-          <p className="text-xs" style={{ color: "var(--color-alert)" }}>
+          <p className="text-[11px]" style={{ color: "var(--color-alert)" }}>
             {item.prerequisiteNote}
           </p>
         )}
-
-        {/* Upcoming: join button (if liveUrl set) or countdown */}
-        {!isPast && item.scheduledAt && (
-          item.liveUrl ? (
-            <a
-              href={item.liveUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold text-white"
-              style={{ background: "var(--color-accent)" }}
-            >
-              {uiStrings?.liveCallJoinLabel}
-            </a>
-          ) : (
-            item.countdownConfig && (
-              <Countdown scheduledAt={item.scheduledAt} config={item.countdownConfig} />
-            )
-          )
-        )}
-
-        {/* Past: recording label */}
         {isPast && item.recordingLabel && (
-          <p className="text-xs" style={{ color: "var(--color-accent)" }}>
+          <p className="text-[11px]" style={{ color: "var(--color-accent)" }}>
             {item.recordingLabel}
           </p>
         )}
@@ -359,48 +636,46 @@ function FlowItemRow({
     return (
       <div className="rounded-xl border border-border overflow-hidden">
         <button
-          className="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/5 transition-colors"
+          className="w-full flex items-center gap-2 p-3 text-left hover:bg-accent/5 transition-colors"
           onClick={() => setOpen((o) => !o)}
         >
+          {item.progressPercent !== undefined && (
+            <CircularProgress pct={item.progressPercent} />
+          )}
           <span
-            className="text-xs font-bold flex-shrink-0"
+            className="text-[10px] font-bold flex-shrink-0"
             style={{ color: item.numberColor ?? "var(--color-accent)" }}
           >
             {item.numberLabel}
           </span>
-          <span className="flex-1 font-semibold text-sm text-foreground line-clamp-1">
+          <span className="flex-1 font-semibold text-xs text-foreground line-clamp-1">
             {item.title}
           </span>
           {item.progressPercent !== undefined && (
-            <span className="text-xs text-muted-foreground flex-shrink-0">
+            <span className="text-[10px] text-muted-foreground flex-shrink-0">
               {item.progressPercent}%
             </span>
           )}
           {open ? (
-            <ChevronUp size={14} className="text-muted-foreground flex-shrink-0" />
+            <ChevronUp size={12} className="text-muted-foreground flex-shrink-0" />
           ) : (
-            <ChevronDown size={14} className="text-muted-foreground flex-shrink-0" />
+            <ChevronDown size={12} className="text-muted-foreground flex-shrink-0" />
           )}
         </button>
 
-        {/* Progress bar */}
         {item.progressPercent !== undefined && (
-          <div className="h-0.5 bg-muted mx-4">
+          <div className="h-1 bg-muted rounded-full overflow-hidden">
             <div
-              className="h-full transition-all duration-300"
-              style={{
-                width: `${item.progressPercent}%`,
-                background: "var(--color-accent)",
-              }}
+              className="h-full rounded-full transition-all duration-300"
+              style={{ width: `${item.progressPercent}%`, background: "var(--color-accent)" }}
             />
           </div>
         )}
 
         {open && (
           <div className="divide-y divide-border">
-            {/* Challenge description */}
             {item.description && (
-              <p className="text-xs text-muted-foreground px-4 py-3 leading-relaxed">
+              <p className="text-[11px] text-muted-foreground px-3 py-2.5 leading-relaxed">
                 {item.description}
               </p>
             )}
@@ -409,31 +684,40 @@ function FlowItemRow({
                 key={ep.id}
                 disabled={ep.isLocked}
                 className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors",
-                  ep.isLocked
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:bg-accent/5 cursor-pointer"
+                  "w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors",
+                  ep.isLocked ? "opacity-50 cursor-not-allowed" : "hover:bg-accent/5 cursor-pointer"
                 )}
-                onClick={() => !ep.isLocked && onEpisodeClick(ep.id)}
+                onClick={() => {
+                  if (ep.isLocked) return;
+                  if (ep.type === "assignment") {
+                    onAssignmentTabClick();
+                  } else if (ep.type === "video") {
+                    onEpisodeClick(ep.id);
+                  }
+                }}
               >
-                <div className="flex-shrink-0">
-                  {ep.isLocked
-                    ? resolveEpisodeLockIcon(ep.lockIconType)
-                    : ep.isCompleted
-                    ? resolveEpisodeCompletedIcon(ep.completedIconType)
-                    : (
-                      <span className="w-5 h-5 flex items-center justify-center rounded-full border border-border text-[10px] text-muted-foreground">
-                        {ep.order}
-                      </span>
-                    )}
-                </div>
+                {/* Left: order number or completed check — only for unlocked */}
+                {!ep.isLocked && (
+                  <div className="flex-shrink-0">
+                    {ep.isCompleted
+                      ? resolveEpisodeCompletedIcon(ep.completedIconType)
+                      : (
+                        <span className="w-4 h-4 flex items-center justify-center rounded-full border border-border text-[9px] text-muted-foreground">
+                          {ep.order}
+                        </span>
+                      )}
+                  </div>
+                )}
+                {/* Middle: title + type · duration */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground truncate">{ep.title}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-foreground truncate">{ep.title}</p>
+                  <p className="text-[10px] text-muted-foreground">
                     {ep.typeLabel}
                     {ep.durationLabel ? ` · ${ep.durationLabel}` : ""}
                   </p>
                 </div>
+                {/* Right: lock icon — only for locked rows */}
+                {ep.isLocked && resolveEpisodeLockIcon(ep.lockIconType)}
               </button>
             ))}
           </div>
@@ -442,27 +726,47 @@ function FlowItemRow({
     );
   }
 
-  // Default: pre-requisite and any other custom type
+  // Default: pre-requisite and custom types — collapsible, labelColor from API
   return (
-    <div className="rounded-xl border border-border p-4 space-y-1">
-      <div className="flex items-center justify-between">
-        {item.label && (
-          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            {item.label}
-          </p>
-        )}
-        {item.isCompleted && (
-          <CheckCircle2 size={14} style={{ color: "var(--color-success)" }} />
-        )}
-      </div>
-      {item.description && (
-        <p className="text-sm text-foreground">{item.description}</p>
+    <div className="rounded-xl border border-border overflow-hidden">
+      <button
+        className="w-full flex items-center gap-2 p-3 text-left hover:bg-accent/5 transition-colors"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <div className="flex-1 flex items-center gap-2 min-w-0">
+          {item.label && (
+            <span
+              className="text-[10px] font-bold uppercase tracking-wider flex-shrink-0"
+              style={{ color: item.labelColor ?? "var(--color-accent)" }}
+            >
+              {item.label}
+            </span>
+          )}
+          {item.title && (
+            <span className="text-xs text-foreground truncate">{item.title}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {item.isCompleted && (
+            <CheckCircle2 size={13} style={{ color: "var(--color-success)" }} />
+          )}
+          {open ? (
+            <ChevronUp size={12} className="text-muted-foreground" />
+          ) : (
+            <ChevronDown size={12} className="text-muted-foreground" />
+          )}
+        </div>
+      </button>
+      {open && item.description && (
+        <p className="text-xs text-muted-foreground px-3 pb-3 leading-relaxed">
+          {item.description}
+        </p>
       )}
     </div>
   );
 }
 
-// ─── Q&A Tab ──────────────────────────────────────────────────────────────────
+// ─── Sidebar: Q&A Tab ─────────────────────────────────────────────────────────
 
 function QaAvatar({ avatarUrl, name, size = 7 }: { avatarUrl?: string | null; name?: string; size?: number }) {
   const cls = `w-${size} h-${size} rounded-full flex-shrink-0`;
@@ -490,22 +794,31 @@ function QaTab({ slug }: { slug: string }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
-    await postQa.mutateAsync({ slug, questionText: text.trim() });
-    setText("");
-    qc.invalidateQueries({ queryKey: ["workshop-qa", slug] });
+    try {
+      await postQa.mutateAsync({ slug, questionText: text.trim() });
+      setText("");
+      setPage(1); // jump to page 1 so the new question is visible at the top
+      qc.invalidateQueries({ queryKey: ["workshop-qa", slug] });
+    } catch {
+      // mutation failed — isPending resets automatically, text preserved for retry
+    }
   };
 
   const handleReply = async (postId: string) => {
     const rt = replyTexts[postId]?.trim();
     if (!rt) return;
-    await postReply.mutateAsync({ postId, replyText: rt });
-    setReplyTexts((prev) => ({ ...prev, [postId]: "" }));
-    setReplyOpen((prev) => ({ ...prev, [postId]: false }));
-    qc.invalidateQueries({ queryKey: ["workshop-qa", slug] });
+    try {
+      await postReply.mutateAsync({ postId, replyText: rt });
+      setReplyTexts((prev) => ({ ...prev, [postId]: "" }));
+      setReplyOpen((prev) => ({ ...prev, [postId]: false }));
+      qc.invalidateQueries({ queryKey: ["workshop-qa", slug] });
+    } catch {
+      // mutation failed — isPending resets automatically, reply text preserved
+    }
   };
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">{uiStrings?.qaLoadingLabel}</p>;
+    return <p className="text-xs text-muted-foreground">{uiStrings?.qaLoadingLabel}</p>;
   }
 
   const pagination = d?.pagination;
@@ -514,22 +827,30 @@ function QaTab({ slug }: { slug: string }) {
   const hasNext = (pagination?.page ?? 1) < totalPages;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Ask form */}
       <div>
-        <h3 className="font-bold text-foreground mb-1">{d?.heading}</h3>
-        <p className="text-sm text-muted-foreground mb-4">{d?.promptText}</p>
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
+        <h3 className="font-bold text-sm text-foreground mb-1">
+          {d?.headingHighlight
+            ? d.heading?.replace(d.headingHighlight, "")
+            : d?.heading}
+          {d?.headingHighlight && (
+            <span style={{ color: "var(--color-accent)" }}>{d.headingHighlight}</span>
+          )}
+        </h3>
+        <p className="text-xs text-muted-foreground mb-3">{d?.promptText}</p>
+        <form onSubmit={handleSubmit} className="space-y-2">
+          <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={d?.inputPlaceholder}
-            className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-ring transition-colors"
+            placeholder={d?.inputPlaceholder ?? undefined}
+            rows={3}
+            className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:border-ring resize-none transition-colors"
           />
           <button
             type="submit"
             disabled={postQa.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60 flex-shrink-0"
+            className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-60"
             style={{ background: "var(--color-accent)" }}
           >
             {d?.submitLabel}
@@ -538,9 +859,9 @@ function QaTab({ slug }: { slug: string }) {
       </div>
 
       {/* Posts list */}
-      {d?.posts?.length > 0 && (
-        <div className="space-y-4">
-          <h4 className="font-semibold text-sm text-foreground">
+      {d && d.posts.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="font-semibold text-xs text-foreground">
             {d.communityHeadingHighlight
               ? d.communityHeading?.replace(d.communityHeadingHighlight, "")
               : d.communityHeading}
@@ -550,68 +871,56 @@ function QaTab({ slug }: { slug: string }) {
               </span>
             )}
           </h4>
-          {d.posts.map((post: any) => (
-            <div key={post.id} className="rounded-xl border border-border p-4 space-y-3">
-              {/* Author row */}
-              <div className="flex items-center gap-2">
-                <QaAvatar avatarUrl={post.author?.avatarUrl} name={post.author?.name} />
-                <span className="text-sm font-medium text-foreground">{post.author?.name}</span>
-                <span className="text-xs text-muted-foreground ml-auto">{post.timeAgo}</span>
+          {d.posts.map((post: QAPost) => (
+            <div key={post.id} className="rounded-xl border border-border p-3 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <QaAvatar avatarUrl={post.author?.avatarUrl} name={post.author?.name} size={6} />
+                <span className="text-xs font-medium text-foreground">{post.author?.name}</span>
+                <span className="text-[10px] text-muted-foreground ml-auto">{post.timeAgo}</span>
               </div>
-
-              {/* Question */}
-              <p className="text-sm text-foreground">{post.questionText}</p>
-
-              {/* Replies */}
+              <p className="text-xs text-foreground">{post.questionText}</p>
               {post.replies?.length > 0 && (
-                <div className="pl-4 border-l-2 border-border space-y-3">
-                  {post.replies.map((r: any) => (
-                    <div key={r.id} className="flex gap-2">
-                      <QaAvatar avatarUrl={r.author?.avatarUrl} name={r.author?.name} size={6} />
-                      <div className="space-y-0.5 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-medium text-muted-foreground">{r.author?.name}</p>
-                          {r.timeAgo && (
-                            <span className="text-xs text-muted-foreground/60">{r.timeAgo}</span>
-                          )}
-                        </div>
-                        <p className="text-sm text-foreground">{r.replyText}</p>
+                <div className="pl-3 border-l-2 border-border space-y-2">
+                  {post.replies.map((r: QAReply) => (
+                    <div key={r.id} className="flex gap-1.5">
+                      <QaAvatar avatarUrl={r.author?.avatarUrl} name={r.author?.name} size={5} />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium text-muted-foreground">{r.author?.name}</p>
+                        <p className="text-xs text-foreground">{r.replyText}</p>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-
-              {/* Reply toggle */}
               {!replyOpen[post.id] ? (
                 <button
                   onClick={() => setReplyOpen((prev) => ({ ...prev, [post.id]: true }))}
-                  className="text-xs font-medium"
+                  className="text-[11px] font-medium"
                   style={{ color: "var(--color-accent)" }}
                 >
                   {post.replyLabel}
                 </button>
               ) : (
-                <div className="flex gap-2 pt-1">
+                <div className="flex gap-1.5 pt-1">
                   <input
                     value={replyTexts[post.id] ?? ""}
                     onChange={(e) =>
                       setReplyTexts((prev) => ({ ...prev, [post.id]: e.target.value }))
                     }
-                    placeholder={d?.inputPlaceholder}
-                    className="flex-1 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring transition-colors"
+                    placeholder={d?.inputPlaceholder ?? undefined}
+                    className="flex-1 bg-card border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-ring transition-colors"
                   />
                   <button
                     onClick={() => handleReply(post.id)}
                     disabled={postReply.isPending}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-60 flex-shrink-0"
+                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-white disabled:opacity-60 flex-shrink-0"
                     style={{ background: "var(--color-accent)" }}
                   >
                     {d?.submitLabel}
                   </button>
                   <button
                     onClick={() => setReplyOpen((prev) => ({ ...prev, [post.id]: false }))}
-                    className="text-xs text-muted-foreground px-2 hover:text-foreground"
+                    className="text-[11px] text-muted-foreground px-1.5 hover:text-foreground"
                   >
                     {uiStrings?.assignmentCancelLabel}
                   </button>
@@ -622,24 +931,23 @@ function QaTab({ slug }: { slug: string }) {
         </div>
       )}
 
-      {/* Pagination */}
       {(hasPrev || hasNext) && (
-        <div className="flex items-center justify-between pt-2">
+        <div className="flex items-center justify-between pt-1">
           <button
             onClick={() => setPage((p) => p - 1)}
             disabled={!hasPrev}
-            className="text-sm font-medium disabled:opacity-40"
+            className="text-xs font-medium disabled:opacity-40"
             style={{ color: hasPrev ? "var(--color-accent)" : undefined }}
           >
             {uiStrings?.paginationPrevLabel}
           </button>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             {pagination?.page} / {totalPages}
           </span>
           <button
             onClick={() => setPage((p) => p + 1)}
             disabled={!hasNext}
-            className="text-sm font-medium disabled:opacity-40"
+            className="text-xs font-medium disabled:opacity-40"
             style={{ color: hasNext ? "var(--color-accent)" : undefined }}
           >
             {uiStrings?.paginationNextLabel}
@@ -650,125 +958,62 @@ function QaTab({ slug }: { slug: string }) {
   );
 }
 
-// ─── Assignments Tab ──────────────────────────────────────────────────────────
+// ─── Sidebar: Assignments Tab ─────────────────────────────────────────────────
 
-function AssignmentsTab({ slug }: { slug: string }) {
-  const qc = useQueryClient();
+function AssignmentsTab({
+  slug,
+  onSubmissionView,
+}: {
+  slug: string;
+  onSubmissionView: (assignmentId: string) => void;
+}) {
   const { data, isLoading } = useWorkshopAssignments(slug);
-  const submit = useSubmitAssignment();
   const { uiStrings } = useSiteConfig();
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [active, setActive] = useState<string | null>(null);
-  // tracks which submitted assignments the user dismissed (to allow re-submission)
-  const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">{uiStrings?.loading}</p>;
+    return <p className="text-xs text-muted-foreground">{uiStrings?.loading}</p>;
   }
 
   const groups = data?.groups ?? [];
 
   return (
-    <div className="space-y-8">
-      {groups.map((group: any) => (
-        <div key={group.challengeLabel} className="space-y-3">
-          <div>
-            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
-              {group.challengeLabel}
-            </p>
-            <h3 className="font-semibold text-foreground">{group.challengeTitle}</h3>
-          </div>
-          {group.assignments.map((a: any) => {
-            const showSubmitted = a.submission?.isSubmitted && !dismissed[a.id];
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <div key={group.challengeLabel} className="space-y-2">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            {group.challengeLabel}
+          </p>
+          {group.assignments.map((a) => {
+            const isSubmitted = !!a.submission?.isSubmitted;
             return (
-              <div key={a.id} className="rounded-xl border border-border p-4 space-y-2">
-                <p
-                  className="text-[10px] font-bold uppercase tracking-widest"
-                  style={{ color: "var(--color-accent)" }}
-                >
-                  {a.typeLabel}
-                </p>
-                <p className="font-medium text-sm text-foreground">{a.title}</p>
-
-                {showSubmitted ? (
-                  // Submitted answer view
-                  <div className="space-y-1.5 pt-1">
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                      {a.submission.yourAnswerLabel}
-                    </p>
-                    <p className="text-sm text-foreground whitespace-pre-line">
-                      {a.submission.answerText}
-                    </p>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="inline-flex items-center gap-1.5">
-                        {resolveEpisodeCompletedIcon(a.submission.completedIcon)}
-                      </span>
-                      {a.submission.backLabel && (
-                        <button
-                          onClick={() =>
-                            setDismissed((prev) => ({ ...prev, [a.id]: true }))
-                          }
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          {a.submission.backLabel}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : active === a.id ? (
-                  // Answer form
-                  <div className="space-y-2 pt-1">
-                    <textarea
-                      value={answers[a.id] ?? ""}
-                      onChange={(e) =>
-                        setAnswers((prev) => ({ ...prev, [a.id]: e.target.value }))
-                      }
-                      rows={4}
-                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-ring resize-none transition-colors"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={async () => {
-                          if (!answers[a.id]?.trim()) return;
-                          await submit.mutateAsync({ id: a.id, answerText: answers[a.id] });
-                          qc.invalidateQueries({ queryKey: ["workshop-assignments", slug] });
-                          setActive(null);
-                          setDismissed((prev) => ({ ...prev, [a.id]: false }));
-                        }}
-                        disabled={submit.isPending}
-                        className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60"
-                        style={{ background: "var(--color-accent)" }}
-                      >
-                        {a.submitLabel}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActive(null);
-                          setDismissed((prev) => ({ ...prev, [a.id]: false }));
-                        }}
-                        className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-accent/10 transition-colors"
-                      >
-                        {a.cancelLabel}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  // CTA button (also shown after dismiss, allowing re-submission)
-                  <button
-                    onClick={() => {
-                      if (dismissed[a.id] && !answers[a.id]) {
-                        setAnswers((prev) => ({
-                          ...prev,
-                          [a.id]: a.submission?.answerText ?? "",
-                        }));
-                      }
-                      setActive(a.id);
-                    }}
-                    className="text-sm font-medium"
+              <div
+                key={a.id}
+                className="rounded-xl border p-3 space-y-1.5 cursor-pointer hover:bg-accent/5 transition-colors"
+                style={!isSubmitted ? { borderColor: "var(--color-accent)" } : undefined}
+                onClick={() => onSubmissionView(a.id)}
+              >
+                {/* Document icon + type label */}
+                <div className="flex items-center gap-1.5">
+                  <FileText size={12} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />
+                  <p
+                    className="text-[9px] font-bold uppercase tracking-widest"
                     style={{ color: "var(--color-accent)" }}
                   >
+                    {a.typeLabel}
+                  </p>
+                </div>
+
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium text-xs text-foreground leading-snug">{a.title}</p>
+                  {isSubmitted && (
+                    <CheckCircle2 size={13} style={{ color: "var(--color-success)" }} className="flex-shrink-0 mt-0.5" />
+                  )}
+                </div>
+
+                {!isSubmitted && (
+                  <p className="text-xs font-medium" style={{ color: "var(--color-accent)" }}>
                     {a.ctaLabel}
-                  </button>
+                  </p>
                 )}
               </div>
             );
@@ -779,31 +1024,59 @@ function AssignmentsTab({ slug }: { slug: string }) {
   );
 }
 
+// ─── Live Call URL Unlock Watcher ─────────────────────────────────────────────
+// Renders nothing. Sets a setTimeout for each locked live call URL so the flow
+// query is refetched exactly when `scheduledAt - liveUrlUnlocksMinutesBefore` arrives.
+
+function LiveCallUnlockWatcher({
+  flowItems,
+  onUnlock,
+}: {
+  flowItems: WorkshopFlowItem[];
+  onUnlock: () => void;
+}) {
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    for (const item of flowItems) {
+      if (
+        item.type === "live_call" &&
+        !item.liveUrl &&
+        item.scheduledAt &&
+        item.liveUrlUnlocksMinutesBefore
+      ) {
+        const unlockMs =
+          new Date(item.scheduledAt).getTime() -
+          item.liveUrlUnlocksMinutesBefore * 60 * 1000;
+        const msUntilUnlock = unlockMs - Date.now();
+        if (msUntilUnlock > 0) {
+          timers.push(setTimeout(onUnlock, msUntilUnlock));
+        }
+      }
+    }
+
+    return () => timers.forEach(clearTimeout);
+  }, [flowItems, onUnlock]);
+
+  return null;
+}
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function DetailSkeleton() {
   return (
-    <div className="space-y-5 animate-pulse">
+    <div className="space-y-4 animate-pulse">
       <div className="h-4 w-20 rounded" style={{ background: "var(--color-bg-surface)" }} />
       <div className="h-7 w-3/4 rounded" style={{ background: "var(--color-bg-surface)" }} />
-      <div className="h-20 rounded-xl" style={{ background: "var(--color-bg-surface)" }} />
-      <div className="flex gap-4">
-        {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-9 w-24 rounded"
-            style={{ background: "var(--color-bg-surface)" }}
-          />
-        ))}
-      </div>
-      <div className="space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-16 rounded-xl"
-            style={{ background: "var(--color-bg-surface)" }}
-          />
-        ))}
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1 space-y-3">
+          <div className="h-48 rounded-xl" style={{ background: "var(--color-bg-surface)" }} />
+        </div>
+        <div className="lg:w-80 space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-14 rounded-xl" style={{ background: "var(--color-bg-surface)" }} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -811,18 +1084,26 @@ function DetailSkeleton() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+type MainView =
+  | { kind: "default" }
+  | { kind: "episode"; episodeId: string }
+  | { kind: "assignment"; assignmentId: string };
+
 export default function WorkshopDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const qc = useQueryClient();
   const { data: detail, isLoading: detailLoading } = useWorkshopDetail(slug);
   const { data: flowData, isLoading: flowLoading } = useWorkshopFlow(slug);
   const { uiStrings } = useSiteConfig();
 
-  // Initial tab comes from the first tab in the API response — not hardcoded
   const tabs = detail?.sidebar?.tabs ?? [];
   const [activeTab, setActiveTab] = useState<string>("");
-  const [activeEpisode, setActiveEpisode] = useState<string | null>(null);
+  const [mainView, setMainView] = useState<MainView>({ kind: "default" });
 
-  // Set initial tab once detail loads
+  const handleLiveUrlUnlock = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+  }, [qc, slug]);
+
   useEffect(() => {
     if (tabs.length > 0 && !activeTab) {
       setActiveTab(tabs[0].id);
@@ -840,19 +1121,27 @@ export default function WorkshopDetailPage() {
 
   const progress = detail.learningProgress;
 
-  // Find the first upcoming live call from flow (used when defaultMainAreaType === 'countdown')
-  const upcomingLiveCall = detail.defaultMainAreaType === "countdown"
-    ? (flowData?.flowItems ?? []).find(
-        (item: WorkshopFlowItem) =>
-          item.type === "live_call" && item.status !== "past" && item.scheduledAt
-      )
-    : null;
+  const upcomingLiveCall =
+    detail.defaultMainAreaType === "countdown"
+      ? (flowData?.flowItems ?? []).find(
+          (item: WorkshopFlowItem) =>
+            item.type === "live_call" && item.status !== "past" && item.scheduledAt
+        )
+      : null;
 
   const currentTabId = activeTab || tabs[0]?.id;
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      {/* Back link — label and URL from API */}
+    <div className="space-y-4">
+      {/* Live URL auto-refetch when unlock window opens */}
+      {flowData?.flowItems && (
+        <LiveCallUnlockWatcher
+          flowItems={flowData.flowItems}
+          onUnlock={handleLiveUrlUnlock}
+        />
+      )}
+
+      {/* Header — back link + title */}
       <Link
         href={detail.backUrl}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -860,115 +1149,131 @@ export default function WorkshopDetailPage() {
         <ChevronLeft size={15} />
         {detail.backLabel}
       </Link>
+      <h1 className="text-xl font-bold text-foreground leading-tight">{detail.title}</h1>
 
-      {/* Workshop title */}
-      <h1 className="text-2xl font-bold text-foreground leading-tight">{detail.title}</h1>
+      {/* Two-column body */}
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
 
-      {/* Learning progress — label from API, no hardcoded strings */}
-      <div className="rounded-xl border border-border p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-foreground">{progress.label}</p>
-          <p className="text-sm font-bold tabular-nums" style={{ color: "var(--color-accent)" }}>
-            {progress.percentage}%
-          </p>
+        {/* ── Left: Main Area ── */}
+        <div className="flex-1 min-w-0">
+          {mainView.kind === "episode" ? (
+            <EpisodePlayer
+              episodeId={mainView.episodeId}
+              onBack={() => setMainView({ kind: "default" })}
+              backLabel={detail.backLabel}
+              onCompleteSuccess={() => {
+                qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+                qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+              }}
+            />
+          ) : mainView.kind === "assignment" ? (
+            <AssignmentMainView
+              assignmentId={mainView.assignmentId}
+              slug={slug}
+              onBack={() => setMainView({ kind: "default" })}
+            />
+          ) : upcomingLiveCall ? (
+            <MainAreaCountdown item={upcomingLiveCall} />
+          ) : (
+            <div
+              className="rounded-xl border border-border border-dashed flex items-center justify-center"
+              style={{ minHeight: 180 }}
+            >
+              <p className="text-sm text-muted-foreground text-center px-4">
+                Select an episode from the sidebar to begin
+              </p>
+            </div>
+          )}
         </div>
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${progress.percentage}%`,
-              background: "var(--color-accent)",
-            }}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground tabular-nums">
-          {progress.completedCount}/{progress.totalCount}
-        </p>
-      </div>
 
-      {/* Main area: episode player if watching, else countdown if upcoming call */}
-      {activeEpisode ? (
-        <div className="rounded-xl border border-border p-4 space-y-3">
-          <button
-            onClick={() => setActiveEpisode(null)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronLeft size={13} />
-            {detail.backLabel}
-          </button>
-          <EpisodePlayer episodeId={activeEpisode} />
-        </div>
-      ) : upcomingLiveCall ? (
-        <MainAreaCountdown item={upcomingLiveCall} />
-      ) : null}
-
-      {/* Tabs — ids, labels, and order all from API */}
-      {tabs.length > 0 && (
-        <div className="border-b border-border">
-          <div className="flex gap-0">
-            {tabs
-              .slice()
-              .sort((a: any, b: any) => a.order - b.order)
-              .map((tab: any) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "px-5 py-3 text-sm font-medium border-b-2 transition-colors",
-                    currentTabId === tab.id
-                      ? "border-current"
-                      : "text-muted-foreground border-transparent hover:text-foreground"
-                  )}
-                  style={
-                    currentTabId === tab.id
-                      ? { borderColor: "var(--color-accent)", color: "var(--color-accent)" }
-                      : {}
-                  }
-                >
-                  {tab.label}
-                </button>
-              ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab content */}
-      <div>
-        {/* Challenges — workshop flow label as section heading */}
-        {currentTabId === "challenges" && (
-          <div className="space-y-3">
-            {detail.workshopFlowLabel && (
-              <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
-                {detail.workshopFlowLabel}
-              </h2>
-            )}
-            {flowLoading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-16 rounded-xl animate-pulse"
-                    style={{ background: "var(--color-bg-surface)" }}
-                  />
+        {/* ── Right: Sidebar ── */}
+        <div className="w-full lg:w-[280px] flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
+          {/* Tab buttons */}
+          {tabs.length > 0 && (
+            <div className="flex border-b border-border">
+              {tabs
+                .slice()
+                .sort((a: WorkshopTab, b: WorkshopTab) => a.order - b.order)
+                .map((tab: WorkshopTab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      "flex-1 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors",
+                      currentTabId === tab.id
+                        ? "border-current"
+                        : "text-muted-foreground border-transparent hover:text-foreground"
+                    )}
+                    style={
+                      currentTabId === tab.id
+                        ? { borderColor: "var(--color-accent)", color: "var(--color-accent)" }
+                        : {}
+                    }
+                  >
+                    {tab.label}
+                  </button>
                 ))}
-              </div>
-            ) : (
-              (flowData?.flowItems ?? []).map((item: WorkshopFlowItem) => (
-                <FlowItemRow
-                  key={item.id}
-                  item={item}
-                  onEpisodeClick={(id) => {
-                    setActiveEpisode(id);
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
-                />
-              ))
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {currentTabId === "qa" && <QaTab slug={slug} />}
-        {currentTabId === "assignment" && <AssignmentsTab slug={slug} />}
+          {/* Challenges tab */}
+          {currentTabId === "challenges" && (
+            <div className="space-y-3">
+              {/* Collapsible progress widget */}
+              <LearningProgressWidget progress={progress} />
+
+              {/* Workshop flow label */}
+              {detail.workshopFlowLabel && (
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1">
+                  {detail.workshopFlowLabel}
+                </p>
+              )}
+
+              {/* Flow items */}
+              {flowLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="h-14 rounded-xl animate-pulse"
+                      style={{ background: "var(--color-bg-surface)" }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                (flowData?.flowItems ?? []).map((item: WorkshopFlowItem) => (
+                  <FlowItemRow
+                    key={item.id}
+                    item={item}
+                    onEpisodeClick={(id) => {
+                      setMainView({ kind: "episode", episodeId: id });
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    onAssignmentTabClick={() => {
+                      setActiveTab("assignment");
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    onLiveCallClick={(liveItem) => {
+                      setMainView({ kind: "default" });
+                    }}
+                  />
+                ))
+              )}
+            </div>
+          )}
+
+          {currentTabId === "qa" && <QaTab slug={slug} />}
+
+          {currentTabId === "assignment" && (
+            <AssignmentsTab
+              slug={slug}
+              onSubmissionView={(id) => {
+                setMainView({ kind: "assignment", assignmentId: id });
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -32,7 +32,6 @@ export function useSiteConfig() {
   return useContext(SiteConfigContext);
 }
 
-/** Apply theme CSS variables to :root from the nested theme object. */
 function applyTheme(theme: SiteConfig["theme"]) {
   const root = document.documentElement;
   root.style.setProperty("--color-accent", theme.accentColor);
@@ -87,12 +86,10 @@ export function SiteConfigProvider({ children }: { children: React.ReactNode }) 
         applyTheme(cfg.theme);
         if (cfg.faviconUrl) setFavicon(cfg.faviconUrl);
 
-        // Honour splashDurationMs: keep splash until the full duration has elapsed
         const elapsed = Date.now() - bootStart.current;
         const remaining = Math.max(0, cfg.splashDurationMs - elapsed);
         setTimeout(() => setSplashDone(true), remaining);
       } else {
-        // No config available — dismiss splash immediately so the app isn't blocked
         setSplashDone(true);
       }
 
@@ -108,41 +105,78 @@ export function SiteConfigProvider({ children }: { children: React.ReactNode }) 
 
   return (
     <SiteConfigContext.Provider value={{ config, nav, rightIcons, uiStrings, isLoading }}>
-      {!splashDone
-        ? // Splash is shown by the provider so it blocks ALL child rendering —
-          // this is the "before any page renders" requirement from §2
-          children  // We render children behind it; the actual overlay is in SplashOverlay
-        : children}
-      {!splashDone && <SplashOverlay config={config} />}
+      {children}
+      <SplashOverlay config={config} splashDone={splashDone} />
     </SiteConfigContext.Provider>
   );
 }
 
-/** Full-screen overlay rendered above everything until splash is dismissed. */
-function SplashOverlay({ config }: { config: SiteConfig | null }) {
+/** Full-screen overlay with fade/slide-in entrance and fade-out exit. */
+function SplashOverlay({
+  config,
+  splashDone,
+}: {
+  config: SiteConfig | null;
+  splashDone: boolean;
+}) {
+  // `entered` drives the slide-in: false → true on first paint tick
+  const [entered, setEntered] = useState(false);
+  // `dismissed` removes the node after the exit fade completes
+  const [dismissed, setDismissed] = useState(false);
+
+  // Trigger entrance animation on next paint
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  // When splash timer fires, wait for exit transition then unmount
+  useEffect(() => {
+    if (!splashDone) return;
+    const t = setTimeout(() => setDismissed(true), 500);
+    return () => clearTimeout(t);
+  }, [splashDone]);
+
+  if (dismissed) return null;
+
   const logoUrl = config?.splashLogoUrl ?? config?.logoUrl ?? null;
-  const siteName = config?.siteName ?? null;
+  const siteName = config?.siteName ?? "TBT";
+  const exiting = splashDone && !dismissed;
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500"
-      style={{ background: "var(--color-bg-primary, #000)" }}
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
+      style={{
+        background: "var(--color-bg-primary, #000)",
+        opacity: exiting ? 0 : entered ? 1 : 0,
+        transition: "opacity 500ms ease",
+        pointerEvents: splashDone ? "none" : "auto",
+      }}
     >
-      {logoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logoUrl}
-          alt={siteName ?? ""}
-          className="w-40 h-40 object-contain"
-        />
-      ) : (
-        <div
-          className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-3xl font-black"
-          style={{ background: "var(--color-accent, #00c4cc)" }}
-        >
-          {siteName ? siteName[0].toUpperCase() : "E"}
-        </div>
-      )}
+      {/* Logo / wordmark — slides up while fading in */}
+      <div
+        style={{
+          transform: entered && !exiting ? "translateY(0)" : "translateY(24px)",
+          opacity: entered && !exiting ? 1 : 0,
+          transition: "transform 700ms cubic-bezier(0.16,1,0.3,1), opacity 600ms ease",
+        }}
+      >
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt={siteName}
+            className="w-40 h-40 object-contain"
+          />
+        ) : (
+          <p
+            className="text-white font-black tracking-widest uppercase"
+            style={{ fontSize: "clamp(2.5rem, 8vw, 5rem)" }}
+          >
+            {siteName}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

@@ -37,8 +37,8 @@ export function Providers({ children }: ProvidersProps) {
     <ClerkProvider
       signInUrl="/login"
       signUpUrl="/sign-up"
-      afterSignInUrl="/eiflix"
-      afterSignUpUrl="/eiflix"
+      afterSignInUrl="/tbt"
+      afterSignUpUrl="/tbt"
     >
       <QueryClientProvider client={queryClient}>
         <AuthInterceptor />

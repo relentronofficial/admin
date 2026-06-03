@@ -19,7 +19,8 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
+        /* bg-background uses API-injected --color-bg-primary when available */
+        background: "var(--color-bg-primary, hsl(var(--background)))",
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
@@ -41,8 +42,9 @@ const config: Config = {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
         },
+        /* bg-card uses API-injected --color-bg-surface when available */
         card: {
-          DEFAULT: "hsl(var(--card))",
+          DEFAULT: "var(--color-bg-surface, hsl(var(--card)))",
           foreground: "hsl(var(--card-foreground))",
         },
         brand: {
@@ -61,7 +63,7 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["var(--font-geist-mono)", "monospace"],
       },
       keyframes: {

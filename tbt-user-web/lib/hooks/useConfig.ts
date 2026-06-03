@@ -1,6 +1,16 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
-import type { HeroSlide, ContentSection, WorkshopSection, Product, Resource, EpisodePlayback } from "@/types";
+import type {
+  HeroSlide,
+  ContentSection,
+  WorkshopSection,
+  Product,
+  Resource,
+  EpisodePlayback,
+  WorkshopDetail,
+  QAResponse,
+  AssignmentsResponse,
+} from "@/types";
 
 export const useHomeHero = () =>
   useQuery({
@@ -36,7 +46,7 @@ export const useWorkshopDetail = (slug: string) =>
     queryKey: ["workshop-detail", slug],
     queryFn: async () => {
       const res: any = await apiClient.get(`/api/user/workshops/${slug}/detail`);
-      return res?.data;
+      return res?.data as WorkshopDetail;
     },
     enabled: !!slug,
   });
@@ -58,9 +68,10 @@ export const useWorkshopQa = (slug: string, page = 1) =>
       const res: any = await apiClient.get(
         `/api/user/workshops/${slug}/qa?page=${page}&limit=20`
       );
-      return res?.data;
+      return res?.data as QAResponse;
     },
     enabled: !!slug,
+    refetchInterval: 15 * 1000,
   });
 
 export const usePostQa = () =>
@@ -84,7 +95,7 @@ export const useWorkshopAssignments = (slug: string) =>
     queryKey: ["workshop-assignments", slug],
     queryFn: async () => {
       const res: any = await apiClient.get(`/api/user/workshops/${slug}/assignments`);
-      return res?.data;
+      return res?.data as AssignmentsResponse;
     },
     enabled: !!slug,
   });

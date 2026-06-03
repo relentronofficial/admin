@@ -4,18 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TBT Admin Platform — a monorepo for the Tamil Business Tribe LMS admin panel and API. The repo root (`F:\admin`) contains a `tbt-admin/` subdirectory which is the actual workspace root.
+Tamil Business Tribe (TBT) — monorepo with three workspaces:
 
 ```
 tbt-admin/
-  admin-panel/   # Next.js 14 (App Router) frontend (port 3000)
+  admin-panel/   # Next.js 14 (App Router) admin frontend (port 3000)
   backend/       # Fastify API server (port 8000)
-  package.json   # npm workspaces root (run all commands from here)
+  package.json   # npm workspaces root
+
+tbt-user-web/    # Next.js 15 (App Router) member-facing frontend (port 3001)
 ```
+
+**NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.**
 
 ## Commands
 
-All commands run from `tbt-admin/`:
+### Admin + Backend (from `tbt-admin/`)
 
 ```bash
 # Development
@@ -42,6 +46,16 @@ npm run prisma:studio -w backend
 npx prisma db seed                   # Run from backend/ — creates super admin
 ```
 
+### User Web (from `tbt-user-web/`)
+
+```bash
+npm run dev         # Next.js dev (Turbopack, port 3001 if 3000 taken)
+npm run build
+npm run typecheck   # tsc --noEmit
+npm run lint
+npm run format      # prettier --write .
+```
+
 ## Architecture
 
 ### Authentication Flow
@@ -60,12 +74,103 @@ Clerk is the auth provider for both frontend and backend.
 
 ### Frontend Structure
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). The response interceptor unwraps `response.data`, so hooks receive the server payload directly (`{ success, data, meta, error }`). Access lists as `data?.data || []` and total as `data?.meta?.total`.
-- **EiFlix hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~600+ lines). Add new EiFlix hooks to the bottom of this file.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~600+ lines). Add new hooks to the bottom of this file.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, members, `useGetPresignedUrl` (R2 uploads)
 - **State:** TanStack Query for server state; Zustand for client state
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
 - **Validation:** Zod in `lib/validators/`; React Hook Form + `@hookform/resolvers/zod`
 - **Notifications:** `react-hot-toast`, configured in `Providers.tsx`
+
+---
+
+## tbt-user-web Architecture
+
+### Route Groups
+```
+app/
+  (auth)/           # Clerk sign-in/sign-up pages — login screen is OFF-LIMITS, do not modify
+  (marketing)/      # Public landing page (unauthenticated)
+  (platform)/       # All member pages — wrapped by Navbar + SubscriptionGate
+  (player)/         # Full-screen video player — bare layout (no Navbar/Footer)
+  loading/          # Standalone loading page
+```
+`(platform)/layout.tsx` renders `<Navbar>`, `<SubscriptionGate>`, and `<Footer>`. All platform pages sit inside `max-w-7xl mx-auto`.
+
+### API Client (`lib/api/client.ts`)
+- Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)
+- Response interceptor **unwraps** `response.data` — hooks receive `{ success, data, meta, error }` directly, not doubly-nested
+- Response interceptor **also** captures the HTTP `Date` header to sync `_serverTimeOffset` (never set this directly)
+- `initApiClient(getToken)` must be called once inside a client component (done in `Providers`) to attach Clerk bearer tokens. Hooks must NOT call `getToken` themselves
+- `getServerNow()` — exported helper; use instead of `Date.now()` for any countdown or time-sensitive display to avoid client clock skew
+
+### Authentication (`Providers.tsx`)
+`ClerkProvider` wraps root; inside it, a component calls `initApiClient(useAuth().getToken)` once. Clerk's `<UserButton>` is rendered directly in `Navbar`.
+
+### `SiteConfigProvider` (`lib/context/SiteConfigContext.tsx`)
+**Bootstrap-phase context** — fetches 3 endpoints on app load (parallel, unauthenticated):
+- `GET /api/pub/config/site` → `SiteConfig` (theme, logos, splash)
+- `GET /api/pub/config/nav` → `NavItem[]` + `RightIcons` flags
+- `GET /api/pub/config/ui-strings` → `UiStrings`
+
+Injects theme as CSS custom properties on `document.documentElement`. Manages the splash screen timer.
+
+**CRITICAL**: Every user-visible string must come from `uiStrings` (or `config`). Zero hardcoded label strings in `(platform)` pages.
+
+### CSS Custom Properties (theme tokens)
+These are injected at runtime by `SiteConfigProvider`. **Never use hardcoded color values for these; always use the CSS var:**
+```
+--color-accent       # primary CTA / brand color
+--color-alert        # warning/alert
+--color-success      # success state
+--color-bg-primary   # page background
+--color-bg-surface   # card / surface background
+```
+Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(--color-accent) 30%, transparent)` for tints.
+
+`--color-locked: #4a4a4a` is the only static design token (gating indicator, not from API).
+
+### Hook Files
+- `lib/hooks/useConfig.ts` — content hooks: `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
+- `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
+- `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
+- `lib/hooks/useCourses.ts`, `lib/hooks/useEvents.ts` — supplementary hooks
+- All hooks are `"use client"` and use TanStack Query v5
+
+### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
+Reads `useMe()` and redirects to `/Products` if `me.subscription` is missing or expired. Paths `["/Products", "/profile"]` are exempt. Runs client-side only.
+
+### Video Player Progress Pattern (30s periodic POST)
+Used in any component that embeds video playback:
+```typescript
+const startRef = useRef<number>(Date.now());
+const completedRef = useRef(false);
+
+useEffect(() => {
+  if (!playback) return;
+  startRef.current = Date.now();
+  completedRef.current = false;
+  const id = setInterval(() => {
+    if (completedRef.current) return;
+    const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
+    postProgress.mutate({ episodeId, watchedSeconds: playback.resumeAtSeconds + elapsed, isCompleted: false });
+  }, 30_000);
+  return () => clearInterval(id);
+}, [playback?.id]);
+// When "Complete" is clicked: set completedRef.current = true before mutation
+```
+The full-screen player (`(player)/watch/[episodeId]`) AND the embedded `EpisodePlayer` inside the workshop page both implement this.
+
+### User-Web Pitfalls
+1. **No hardcoded strings** — every user-facing label must come from `uiStrings` or `config`
+2. **No hardcoded colors for theme tokens** — use `var(--color-accent)` etc.
+3. **`getServerNow()`** instead of `Date.now()` for countdowns — avoids client clock skew
+4. **`initApiClient`** is called once in `Providers`; hooks must not attach tokens themselves
+5. **`SubscriptionGate`** is already in the platform layout — don't duplicate the subscription check in individual pages
+6. **Login page is permanently off-limits** — never modify `app/login/page.tsx` or `app/(auth)/`
+
+---
+
+## Admin Panel Architecture
 
 ### File Upload Pattern (R2 via presigned URL — used everywhere)
 ```typescript
@@ -183,20 +288,11 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 - **Frontend → Vercel** — auto-deploy on push to `main` via GitHub Actions (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; root dir: `admin-panel`)
 - CI runs typecheck + lint + build for both workspaces before deploying
 
-## EiFlix PRD Status
+## PRD Implementation Status
 
-PRD source: `F:\admin\EiFlix_Admin_PRD.md`
+### Admin PRD (`TBT_Admin_PRD.md`) — All 18 sections ✅ Complete
+See `tbt-admin/PROJECT_STATUS.md` for section-by-section detail.
+See `tbt-admin/ARCHITECTURE.md` for full directory/route/hook/DB map.
 
-| Section | Route | Status |
-|---------|-------|--------|
-| 3.1–3.14 | various | ✅ Complete |
-| 3.15 Resources | `/app-resources` | ⚠️ Needs file upload + DnD |
-| 3.16 Products | `/products` | ⚠️ Needs thumbnail upload + CTA management |
-| 3.17 Notifications | `/app-notifications` | ⚠️ Needs recipient targeting |
-| 3.18 Member Progress | `/members/:id` | ❌ Page not yet created |
-
-Detailed continuity docs:
-- `tbt-admin/CLAUDE.md` — extended patterns, design constants
-- `tbt-admin/PROJECT_STATUS.md` — section-by-section completion tracker
-- `tbt-admin/ARCHITECTURE.md` — full directory map, route map, hook map, DB models, env vars
-- `tbt-admin/PENDING_TASKS.md` — step-by-step guide for sections 3.15–3.18
+### User Web PRD (`TBT_PRD.md` / `TBT_PRD_Dynamic.md`) — All sections ✅ Complete
+Sections 1–12 implemented in `tbt-user-web/`. Includes: marketing landing, platform dashboard, TBT (content catalog), workshops (detail + flow + Q&A + assignments + live calls), products, resources, notifications, messages, profile, full-screen + embedded video player.

@@ -19,19 +19,30 @@ function Avatar({
   avatarGradient: string | null;
   firstName: string;
 }) {
+  const ring = avatarGradient ?? "var(--color-accent)";
   if (avatarUrl) {
     return (
-      <div className="relative w-20 h-20 rounded-full overflow-hidden ring-4 ring-border flex-shrink-0">
-        <Image src={avatarUrl} alt={firstName} fill className="object-cover" />
+      <div
+        className="rounded-full p-[3px] flex-shrink-0"
+        style={{ background: ring }}
+      >
+        <div className="relative w-20 h-20 rounded-full overflow-hidden">
+          <Image src={avatarUrl} alt={firstName} fill className="object-cover" />
+        </div>
       </div>
     );
   }
   return (
     <div
-      className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold ring-4 ring-border flex-shrink-0"
-      style={{ background: avatarGradient ?? "var(--color-accent)" }}
+      className="rounded-full p-[3px] flex-shrink-0"
+      style={{ background: ring }}
     >
-      {firstName[0]?.toUpperCase() ?? "?"}
+      <div
+        className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold"
+        style={{ background: "var(--color-bg-surface, #111)" }}
+      >
+        {firstName[0]?.toUpperCase() ?? "?"}
+      </div>
     </div>
   );
 }
@@ -60,19 +71,27 @@ function TierRow({ tier }: { tier: ProfileTier }) {
         unlocked ? "border-border" : "border-border/40 opacity-60"
       )}
     >
-      <div className="mt-0.5 flex-shrink-0">
-        {unlocked ? (
-          <CheckCircle2 size={16} style={{ color: "var(--color-success)" }} />
-        ) : (
-          <Lock size={16} className="text-muted-foreground" />
-        )}
-      </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground">{tier.label}</p>
         {!unlocked && tier.unlockConditionText && (
           <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
             {tier.unlockConditionText}
           </p>
+        )}
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+        {unlocked ? (
+          <>
+            <CheckCircle2 size={13} style={{ color: "var(--color-success)" }} />
+            <span className="text-[11px] font-bold" style={{ color: "var(--color-success)" }}>
+              UNLOCKED
+            </span>
+          </>
+        ) : (
+          <>
+            <Lock size={13} style={{ color: "var(--color-locked)" }} />
+            <span className="text-[11px] font-bold" style={{ color: "var(--color-locked)" }}>LOCKED</span>
+          </>
         )}
       </div>
     </div>
@@ -322,11 +341,22 @@ export default function ProfilePage() {
         </div>
       ))}
 
-      {/* Sign out — label from API */}
+      {/* Sign out — label from API, danger-styled */}
       <div className="pb-4">
         <button
           onClick={() => signOut({ redirectUrl: "/login" })}
-          className="w-full py-3 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-accent transition-colors"
+          className="w-full py-3 rounded-xl border text-sm font-semibold transition-colors"
+          style={{
+            borderColor: "var(--color-alert)",
+            color: "var(--color-alert)",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background =
+              "color-mix(in srgb, var(--color-alert) 10%, transparent)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "";
+          }}
         >
           {profile.signOutLabel}
         </button>

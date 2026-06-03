@@ -40,30 +40,41 @@ function WorkshopCard({ item }: { item: WorkshopListItem }) {
           <div className="w-full h-full" style={{ background: "var(--color-bg-surface)" }} />
         )}
 
-        {/* Enrolled badge — label + color from API */}
+        {/* Enrolled badge — top-right, label + color from API */}
         {item.enrolledBadge && (
           <span
-            className="absolute top-2 left-2 text-[11px] font-bold px-2 py-0.5 rounded text-white"
+            className="absolute top-2 right-2 text-[11px] font-bold px-2 py-0.5 rounded-full text-white"
             style={{ background: item.enrolledBadge.color }}
           >
             {item.enrolledBadge.label}
           </span>
         )}
 
-        {/* Completed badge — icon type from API, no hardcoded text */}
+        {/* Completed badge — top-right, icon type from API */}
         {item.completedBadgeIconType && (
           <span
-            className="absolute top-2 left-2 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded text-white"
+            className="absolute top-2 right-2 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full text-white"
             style={{ background: "var(--color-success)" }}
           >
             {resolveCompletedIcon(item.completedBadgeIconType)}
           </span>
         )}
 
-        {/* Delivery mode pill — bottom-right, label from API */}
-        <span className="absolute bottom-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full text-white/90 bg-black/50 backdrop-blur-sm">
-          {item.deliveryModeLabel}
-        </span>
+        {/* Delivery mode chip — green for online, dark for others */}
+        {item.deliveryModeLabel && (
+          <span
+            className="absolute bottom-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full text-white"
+            style={{
+              background:
+                item.deliveryMode === "online"
+                  ? "var(--color-success)"
+                  : "rgba(0,0,0,0.55)",
+              backdropFilter: item.deliveryMode !== "online" ? "blur(4px)" : undefined,
+            }}
+          >
+            {item.deliveryModeLabel}
+          </span>
+        )}
       </div>
 
       {/* Body */}

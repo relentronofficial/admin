@@ -13,7 +13,7 @@ export function Sidebar() {
   const { sidebarOpen, setSidebarOpen } = useUIStore();
   const { config, nav } = useSiteConfig();
 
-  const siteName = config?.siteName ?? "EiFlix";
+  const siteName = config?.siteName ?? "TBT";
   const logoUrl = config?.logoUrl ?? null;
   const footerText = config?.footerText ?? "";
 
@@ -36,7 +36,7 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <Link href={nav[0]?.href ?? "/eiflix"} className="flex items-center gap-2.5">
+          <Link href={nav[0]?.href ?? "/tbt"} className="flex items-center gap-2.5">
             {logoUrl ? (
               <Image
                 src={logoUrl}

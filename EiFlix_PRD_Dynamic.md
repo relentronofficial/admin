@@ -1,4 +1,4 @@
-# EiFlix User Web — Dynamic PRD Spec Kit
+# TBT User Web — Dynamic PRD Spec Kit
 
 > Every piece of content, configuration, label, color, and structure is served from the admin API.  
 > Zero hardcoded strings, images, routes, or copy on the frontend.
@@ -30,10 +30,10 @@ Response drives the entire shell:
 
 ```json
 {
-  "siteName": "EiFlix",
+  "siteName": "TBT",
   "logoUrl": "https://cdn.../logo.svg",
   "faviconUrl": "https://cdn.../favicon.ico",
-  "footerText": "EiFlix — a Product of Antano & Harini — All Right Reserved",
+  "footerText": "TBT — a Product of Antano & Harini — All Right Reserved",
   "theme": {
     "accentColor": "#00c4cc",
     "alertColor": "#ff3d8b",
@@ -61,7 +61,7 @@ Response:
 ```json
 {
   "items": [
-    { "id": "uuid", "label": "Home", "href": "/eiflix", "order": 1, "isVisible": true },
+    { "id": "uuid", "label": "Home", "href": "/tbt", "order": 1, "isVisible": true },
     { "id": "uuid", "label": "Workshop", "href": "/workshops", "order": 2, "isVisible": true },
     { "id": "uuid", "label": "Products", "href": "/Products", "order": 3, "isVisible": true },
     { "id": "uuid", "label": "Resources", "href": "/Resources", "order": 4, "isVisible": true }
@@ -79,7 +79,7 @@ The active item is determined by matching `href` to the current URL — no hardc
 
 ---
 
-## 4. Home Page (`/eiflix`)
+## 4. Home Page (`/tbt`)
 
 ### 4.1 Hero Carousel
 

@@ -10,7 +10,7 @@ const features = [
 ];
 
 export default function LandingPage() {
-  redirect("/login");
+  redirect("/loading");
   return (
     <>
       {/* Hero */}

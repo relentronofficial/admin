@@ -149,6 +149,18 @@ export interface Notification {
   data?: Record<string, unknown>;
 }
 
+// ─── Message ──────────────────────────────────────────────────────────────────
+
+export interface Message {
+  id: string;
+  subject: string;
+  body: string;
+  senderName: string;
+  senderAvatarUrl: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
 // ─── Site Config ─────────────────────────────────────────────────────────────
 
 export interface SiteTheme {
@@ -159,7 +171,7 @@ export interface SiteTheme {
   bgSurface: string;
 }
 
-/** Shape returned by GET /api/pub/config/site — matches EiFlix_PRD_Dynamic.md §2 */
+/** Shape returned by GET /api/pub/config/site — matches TBT_PRD_Dynamic.md §2 */
 export interface SiteConfig {
   siteName: string;
   logoUrl?: string | null;
@@ -213,6 +225,11 @@ export interface UiStrings {
   notificationsMarkAllLabel: string;
   notificationsEmptyTitle: string;
   notificationsEmptyDesc: string;
+  messagesPageTitle: string;
+  messagesUnreadSuffix: string;
+  messagesMarkAllLabel: string;
+  messagesEmptyTitle: string;
+  messagesEmptyDesc: string;
   resourcesDownloadLabel: string;
   paginationPrevLabel: string;
   paginationNextLabel: string;
@@ -376,6 +393,95 @@ export interface WorkshopFlowItem {
   facilitatorTitle?: string | null;
   facilitatorDescription?: string | null;
   countdownConfig?: { stayTunedMessage: string; stayTunedColor: string } | null;
+}
+
+// ─── Workshop Detail ──────────────────────────────────────────────────────────
+
+export interface WorkshopTab {
+  id: string;
+  label: string;
+  order: number;
+}
+
+export interface LearningProgress {
+  label: string;
+  percentage: number;
+  completedCount: number;
+  totalCount: number;
+  completedLabel?: string | null;
+  milestones?: { achieved: boolean }[];
+}
+
+export interface WorkshopDetail {
+  backUrl: string;
+  backLabel: string;
+  title: string;
+  sidebar: {
+    tabs: WorkshopTab[];
+  };
+  learningProgress: LearningProgress | null;
+  workshopFlowLabel?: string | null;
+  defaultMainAreaType?: string | null;
+}
+
+// ─── Q&A ──────────────────────────────────────────────────────────────────────
+
+export interface QAReply {
+  id: string;
+  author: { name: string; avatarUrl?: string | null };
+  replyText: string;
+  timeAgo: string;
+}
+
+export interface QAPost {
+  id: string;
+  author: { name: string; avatarUrl?: string | null };
+  questionText: string;
+  timeAgo: string;
+  replyLabel?: string | null;
+  replies: QAReply[];
+}
+
+export interface QAResponse {
+  heading?: string | null;
+  headingHighlight?: string | null;
+  communityHeading?: string | null;
+  communityHeadingHighlight?: string | null;
+  promptText?: string | null;
+  inputPlaceholder?: string | null;
+  submitLabel: string;
+  posts: QAPost[];
+  pagination: { total: number; page: number; limit: number };
+}
+
+// ─── Assignments ──────────────────────────────────────────────────────────────
+
+export interface AssignmentSubmissionData {
+  isSubmitted: boolean;
+  answerText: string;
+  yourAnswerLabel?: string | null;
+  backLabel?: string | null;
+  completedIcon?: string | null;
+}
+
+export interface WorkshopAssignment {
+  id: string;
+  title: string;
+  typeLabel: string;
+  ctaLabel: string;
+  submitLabel: string;
+  cancelLabel: string;
+  submission?: AssignmentSubmissionData | null;
+}
+
+export interface AssignmentGroup {
+  challengeLabel: string;
+  challengeTitle?: string | null;
+  assignments: WorkshopAssignment[];
+}
+
+export interface AssignmentsResponse {
+  groups: AssignmentGroup[];
 }
 
 // ─── Products & Resources ─────────────────────────────────────────────────────

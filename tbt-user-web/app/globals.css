@@ -8,8 +8,13 @@
      * --color-accent, --color-alert, --color-success, --color-bg-primary,
      * --color-bg-surface are intentionally NOT set here.
      * They are injected at runtime by SiteConfigProvider from GET /api/pub/config/site.
-     * EiFlix_PRD_Dynamic.md §2: "No fallback defaults in code."
+     * TBT_PRD_Dynamic.md §2: "No fallback defaults in code."
+     *
+     * --color-locked is a static design token (PRD §8, not from API).
      */
+    --color-locked: #4a4a4a;
+
+    /* Light-mode fallback vars (app is always dark; these exist for Tailwind internals only) */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
@@ -32,24 +37,25 @@
     --radius: 0.5rem;
   }
 
+  /* PRD §8 Color tokens — dark mode always active (html.dark set in layout.tsx) */
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 7%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 7%;
-    --popover-foreground: 0 0% 98%;
+    --background: 0 0% 0%;          /* #000000 — page background */
+    --foreground: 0 0% 100%;        /* #ffffff — primary text */
+    --card: 0 0% 6.7%;              /* #111111 — surface (midpoint of #0f0f0f–#1a1a1a) */
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 6.7%;
+    --popover-foreground: 0 0% 100%;
     --primary: 0 72.2% 50.6%;
     --primary-foreground: 0 85.7% 97.3%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
+    --secondary: 0 0% 10.2%;        /* #1a1a1a — upper surface range */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 10.2%;            /* #1a1a1a — surface muted bg */
+    --muted-foreground: 0 0% 62.7%; /* #a0a0a0 — secondary text */
+    --accent: 0 0% 10.2%;           /* #1a1a1a — hover overlay bg */
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 14.9%;           /* #262626 — subtle border */
     --input: 0 0% 14.9%;
     --ring: 0 72.2% 50.6%;
   }
@@ -60,7 +66,9 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    /* Use API-injected --color-bg-primary when available; fall back to Tailwind dark bg */
+    background: var(--color-bg-primary, hsl(var(--background)));
+    @apply text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
   html {

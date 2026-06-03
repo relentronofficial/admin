@@ -1,27 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Check } from "lucide-react";
+import { MessageSquare, Check } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageLoader } from "@/components/common/LoadingSpinner";
-import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from "@/lib/hooks/useDashboard";
+import { useMessages, useMarkMessageRead, useMarkAllMessagesRead } from "@/lib/hooks/useDashboard";
 import { timeAgo } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
-const LIMIT = 30;
+const LIMIT = 20;
 
-export default function NotificationsPage() {
+export default function MessagesPage() {
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useNotifications({ page, limit: LIMIT });
-  // Separate query for total unread count — accurate across all pages
-  const { data: unreadData } = useNotifications({ unread: true, limit: 1 });
+  const { data, isLoading } = useMessages({ page, limit: LIMIT });
+  const { data: unreadData } = useMessages({ unread: true, limit: 1 });
 
-  const markRead = useMarkNotificationRead();
-  const markAll = useMarkAllNotificationsRead();
+  const markRead = useMarkMessageRead();
+  const markAll = useMarkAllMessagesRead();
   const { uiStrings } = useSiteConfig();
 
-  const notifications = data?.data ?? [];
+  const messages = data?.data ?? [];
   const total: number = data?.meta?.total ?? 0;
   const totalPages = Math.ceil(total / LIMIT);
   const totalUnread: number = unreadData?.meta?.total ?? 0;
@@ -31,10 +30,10 @@ export default function NotificationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">{uiStrings?.notificationsPageTitle}</h2>
+          <h2 className="text-2xl font-bold text-foreground">{uiStrings?.messagesPageTitle}</h2>
           {totalUnread > 0 && (
             <p className="text-sm text-muted-foreground mt-0.5">
-              {totalUnread} {uiStrings?.notificationsUnreadSuffix}
+              {totalUnread} {uiStrings?.messagesUnreadSuffix}
             </p>
           )}
         </div>
@@ -46,7 +45,7 @@ export default function NotificationsPage() {
             style={{ color: "var(--color-accent)" }}
           >
             <Check size={14} />
-            {uiStrings?.notificationsMarkAllLabel}
+            {uiStrings?.messagesMarkAllLabel}
           </button>
         )}
       </div>
@@ -54,18 +53,18 @@ export default function NotificationsPage() {
       {/* List */}
       {isLoading ? (
         <PageLoader />
-      ) : notifications.length > 0 ? (
+      ) : messages.length > 0 ? (
         <div className="space-y-2">
-          {notifications.map((n) => (
+          {messages.map((m) => (
             <button
-              key={n.id}
-              onClick={() => !n.isRead && markRead.mutate(n.id)}
+              key={m.id}
+              onClick={() => !m.isRead && markRead.mutate(m.id)}
               className={cn(
                 "w-full text-left rounded-xl border p-4 transition-colors",
-                n.isRead && "bg-card"
+                m.isRead && "bg-card"
               )}
               style={
-                !n.isRead
+                !m.isRead
                   ? {
                       borderColor: "color-mix(in srgb, var(--color-accent) 30%, transparent)",
                       background: "color-mix(in srgb, var(--color-accent) 5%, transparent)",
@@ -74,14 +73,36 @@ export default function NotificationsPage() {
               }
             >
               <div className="flex items-start gap-3">
-                <div
-                  className="w-2 h-2 rounded-full mt-2 shrink-0"
-                  style={n.isRead ? {} : { background: "var(--color-accent)" }}
-                />
+                {/* Sender avatar or fallback initial */}
+                {m.senderAvatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={m.senderAvatarUrl}
+                    alt={m.senderName}
+                    className="w-8 h-8 rounded-full object-cover flex-shrink-0 mt-0.5"
+                  />
+                ) : (
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-white text-xs font-bold"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    {m.senderName?.[0]?.toUpperCase() ?? "?"}
+                  </div>
+                )}
+
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground">{n.title}</p>
-                  <p className="text-sm text-muted-foreground mt-0.5">{n.body}</p>
-                  <p className="text-xs text-muted-foreground mt-1.5">{timeAgo(n.createdAt)}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-muted-foreground truncate">{m.senderName}</p>
+                    {!m.isRead && (
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ background: "var(--color-accent)" }}
+                      />
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-foreground mt-0.5">{m.subject}</p>
+                  <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{m.body}</p>
+                  <p className="text-xs text-muted-foreground mt-1.5">{timeAgo(m.createdAt)}</p>
                 </div>
               </div>
             </button>
@@ -89,9 +110,9 @@ export default function NotificationsPage() {
         </div>
       ) : (
         <EmptyState
-          icon={Bell}
-          title={uiStrings?.notificationsEmptyTitle ?? ""}
-          description={uiStrings?.notificationsEmptyDesc ?? ""}
+          icon={MessageSquare}
+          title={uiStrings?.messagesEmptyTitle ?? ""}
+          description={uiStrings?.messagesEmptyDesc ?? ""}
         />
       )}
 

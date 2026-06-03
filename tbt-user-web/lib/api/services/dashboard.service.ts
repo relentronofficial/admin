@@ -1,5 +1,5 @@
 import apiClient from "../client";
-import type { ApiResponse, DashboardStats, ContinueLearningItem, Notification } from "@/types";
+import type { ApiResponse, DashboardStats, ContinueLearningItem, Notification, Message } from "@/types";
 
 export const dashboardService = {
   getStats: () =>
@@ -16,4 +16,13 @@ export const dashboardService = {
 
   markAllNotificationsRead: () =>
     apiClient.post<never, ApiResponse<{ updated: number }>>("/api/user/notifications/read-all"),
+
+  getMessages: (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
+    apiClient.get<never, ApiResponse<Message[]>>("/api/user/messages", { params }),
+
+  markMessageRead: (id: string) =>
+    apiClient.patch<never, ApiResponse<Message>>(`/api/user/messages/${id}/read`),
+
+  markAllMessagesRead: () =>
+    apiClient.post<never, ApiResponse<{ updated: number }>>("/api/user/messages/read-all"),
 };

@@ -1,6 +1,6 @@
-# EiFlix Admin — PRD + Database Schema
+# TBT Admin — PRD + Database Schema
 
-> Admin panel extensions for the TBT Admin Platform (`tbt-admin/`) that power all dynamic content served to the EiFlix user web.  
+> Admin panel extensions for the TBT Admin Platform (`tbt-admin/`) that power all dynamic content served to the TBT user web.  
 > Every field the user web displays is managed through these admin interfaces.
 
 ---
@@ -915,7 +915,7 @@ GET    /api/admin/assignments/:id/submissions
 
 - Paginated list of questions: Member name | Question | Time | Replies count
 - Expand to see replies inline
-- Admin can post a reply (attributed to admin name or "EiFlix Team")
+- Admin can post a reply (attributed to admin name or "TBT Team")
 - Delete question or reply
 - No approval workflow — all questions visible immediately
 
@@ -1135,7 +1135,7 @@ Admin enrolls Members into Workshop
 Admin sets Member tier on Member detail page
   └─ Controls which ContentSections are locked on home page
 
-Member logs into EiFlix
+Member logs into TBT
   └─ App bootstraps: GET /api/config/site (theme, branding)
   └─ GET /api/config/nav (navbar items)
   └─ Home: GET /api/home/hero + GET /api/home/sections?memberTier=8
@@ -1153,7 +1153,7 @@ Member logs into EiFlix
 New modules to add under `backend/src/modules/`:
 
 ```
-eiflix/
+tbt/
   config/         routes.ts + controller.ts (site, nav, ui-strings, auth-labels)
   hero/           routes.ts + controller.ts
   content/        routes.ts + controller.ts (sections + items)

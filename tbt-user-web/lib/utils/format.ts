@@ -19,6 +19,13 @@ export const formatDuration = (minutes: number): string => {
 export const formatPoints = (n: number): string =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
+// Appends ?start=N (or &start=N) to an iframe embed URL for resume-from-position.
+export const withResumeTime = (url: string, seconds: number): string => {
+  if (!seconds || seconds <= 0) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}start=${Math.floor(seconds)}`;
+};
+
 export const planLabel: Record<string, string> = {
   free: "Free",
   starter: "Starter",

@@ -1,14 +1,14 @@
-# EiFlix — Product Requirements Document (PRD Spec Kit)
+# TBT — Product Requirements Document (PRD Spec Kit)
 
-> Derived from screen recording analysis of eiflix.com  
+> Derived from screen recording analysis of tbt.com  
 > Platform: Video-on-Demand + Live Workshop LMS  
-> Brand: "EiFlix — a Product of Antano & Harini (Evolution Scientists)"
+> Brand: "TBT — a Product of Antano & Harini (Evolution Scientists)"
 
 ---
-replace the the word EiFlix with TBT
+replace the the word TBT with TBT
 ## 1. Product Overview
 
-EiFlix is a gated, subscription-based learning platform that combines on-demand video content with live cohort-based workshops. It serves students enrolled in Antano & Harini's (A&H) personal excellence and business development programs.
+TBT is a gated, subscription-based learning platform that combines on-demand video content with live cohort-based workshops. It serves students enrolled in Antano & Harini's (A&H) personal excellence and business development programs.
 
 **Core value proposition:** Structured learning journeys that blend self-paced video courses, live calls with facilitators, Q&A community, assignments, and tier-locked premium content.
 
@@ -33,11 +33,11 @@ EiFlix is a gated, subscription-based learning platform that combines on-demand 
 
 ### 3.1 Top-Level Navigation (Navbar)
 ```
-EiFlix [logo]    Home    Workshop    Products    Resources    [Bell] [Message] [Avatar]
+TBT [logo]    Home    Workshop    Products    Resources    [Bell] [Message] [Avatar]
 ```
 
-- **EiFlix logo** — links to `/eiflix` (Home)
-- **Home** → `/eiflix`
+- **TBT logo** — links to `/tbt` (Home)
+- **Home** → `/tbt`
 - **Workshop** → `/workshops`
 - **Products** → `/Products`
 - **Resources** → `/Resources`
@@ -53,7 +53,7 @@ Active nav item is visually emphasized (bold + underline or highlight).
 |---|---|
 | `/` or `/loading` | Splash / loading animation |
 | `/login` | Authentication screen |
-| `/eiflix` | Home — hero carousel + content rows |
+| `/tbt` | Home — hero carousel + content rows |
 | `/profile` | User profile + subscription + tier access |
 | `/workshops` | Workshop listing (active + completed) |
 | `/workshop/[id]` | Workshop detail — challenges, Q&A, assignment |
@@ -67,12 +67,12 @@ Active nav item is visually emphasized (bold + underline or highlight).
 
 ### 4.1 Splash Screen (`/loading`)
 - Full-screen dark background
-- "EiFlix" logo animation (fade/slide in)
-- Redirects to `/login` or `/eiflix` after animation completes
+- "TBT" logo animation (fade/slide in)
+- Redirects to `/login` or `/tbt` after animation completes
 
 ---
 
-### 4.2 Home Page (`/eiflix`)
+### 4.2 Home Page (`/tbt`)
 
 #### Hero Carousel
 - Full-width cinematic banner occupying ~50vh
@@ -125,7 +125,7 @@ Each section is a labeled row with horizontally scrollable content cards.
 
 #### Footer
 ```
-EiFlix — a Product of Antano & Harini — All Right Reserved
+TBT — a Product of Antano & Harini — All Right Reserved
 ```
 
 ---
@@ -466,7 +466,7 @@ Notification
 ## 7. Key User Workflows
 
 ### 7.1 Continue Watching (Home → Video)
-1. Land on `/eiflix`
+1. Land on `/tbt`
 2. Hero carousel shows "CONTINUE" on in-progress content
 3. Click CTA → navigate to `/watch/[episodeId]` or `/workshop/[id]` with correct challenge expanded
 4. Full-screen player loads, resumes from last position (resume point stored server-side)
@@ -525,7 +525,7 @@ Notification
 - Labels/chips: uppercase, small, letter-spaced
 - Countdown digits: monospace, extra-large
 
-### Component Patterns
+  ### Component Patterns
 - **Cards:** Rounded corners (~8–12px), dark surface, subtle border or no border
 - **Badges:** Pill/chip shape, colored background, uppercase text (Enrolled, Online, UNLOCK)
 - **Progress bars:** Full-width within container, teal or magenta fill, rounded ends
@@ -606,5 +606,5 @@ The following admin capabilities are required to power the learner-facing featur
 
 ---
 
-*End of PRD Spec Kit — EiFlix Clone*  
+*End of PRD Spec Kit — TBT Clone*  
 *Analyzed from 61 frames extracted from clone.mp4 at 5-second intervals*

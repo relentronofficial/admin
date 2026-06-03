@@ -52,3 +52,33 @@ export const useMarkAllNotificationsRead = () => {
     },
   });
 };
+
+export const useMessages = (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
+  useQuery({
+    queryKey: ["user", "messages", params],
+    queryFn: async () => {
+      const res = await dashboardService.getMessages(params);
+      return res;
+    },
+    staleTime: 30 * 1000,
+  });
+
+export const useMarkMessageRead = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => dashboardService.markMessageRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "messages"] });
+    },
+  });
+};
+
+export const useMarkAllMessagesRead = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => dashboardService.markAllMessagesRead(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "messages"] });
+    },
+  });
+};
