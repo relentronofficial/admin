@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -21,14 +21,11 @@ import {
   usePostQaReply,
   useWorkshopAssignments,
   useSubmitAssignment,
-  useEpisodePlayback,
-  usePostEpisodeProgress,
 } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
-import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { getServerNow } from "@/lib/api/client";
 import type {
   WorkshopFlowItem,
@@ -183,132 +180,6 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
         >
           {uiStrings?.liveCallJoinLabel}
         </a>
-      )}
-    </div>
-  );
-}
-
-// ─── Main Area: Episode Player ────────────────────────────────────────────────
-
-function EpisodePlayer({
-  episodeId,
-  onBack,
-  backLabel,
-  onCompleteSuccess,
-}: {
-  episodeId: string;
-  onBack: () => void;
-  backLabel: string;
-  onCompleteSuccess: () => void;
-}) {
-  const { data: playback, isLoading } = useEpisodePlayback(episodeId);
-  const postProgress = usePostEpisodeProgress();
-  const { uiStrings } = useSiteConfig();
-  const [speed, setSpeed] = useState<string>("");
-  const [quality, setQuality] = useState<string>("");
-  const startRef = useRef<number>(Date.now());
-  const completedRef = useRef(false);
-
-  useEffect(() => {
-    if (playback && !speed) setSpeed(playback.defaultSpeed);
-    if (playback && !quality) setQuality(playback.defaultQuality);
-  }, [playback?.id]);
-
-  // Post partial progress every 30 s so resumeAtSeconds stays fresh server-side
-  useEffect(() => {
-    if (!playback) return;
-    startRef.current = Date.now();
-    completedRef.current = false;
-
-    const id = setInterval(() => {
-      if (completedRef.current) return;
-      const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
-      const watchedSeconds = playback.resumeAtSeconds + elapsed;
-      postProgress.mutate({ episodeId, watchedSeconds, isCompleted: false });
-    }, 30_000);
-
-    return () => clearInterval(id);
-  }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (isLoading) {
-    return <div className="aspect-video bg-black rounded-xl animate-pulse" />;
-  }
-  if (!playback?.videoUrl) {
-    return (
-      <div className="aspect-video bg-black rounded-xl flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">{uiStrings?.errorGeneric}</p>
-      </div>
-    );
-  }
-
-  const hasQualityChoice = playback.qualityOptions.length > 1;
-  const videoSrc = withResumeTime(normalizeBunnyUrl(playback.videoUrl), playback.resumeAtSeconds);
-
-  return (
-    <div className="space-y-3">
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ChevronLeft size={13} />
-        {backLabel}
-      </button>
-
-      <iframe
-        src={videoSrc}
-        className="w-full aspect-video rounded-xl border-0"
-        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-        allowFullScreen
-        title={playback.title}
-      />
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <h3 className="flex-1 font-semibold text-foreground text-sm line-clamp-1 min-w-0">
-          {playback.title}
-        </h3>
-        <select
-          value={speed}
-          onChange={(e) => setSpeed(e.target.value)}
-          className="bg-card border border-border text-foreground text-xs rounded-lg px-2 py-1.5 outline-none flex-shrink-0"
-        >
-          {playback.speedOptions.map((s: string) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        {hasQualityChoice && (
-          <select
-            value={quality}
-            onChange={(e) => setQuality(e.target.value)}
-            className="bg-card border border-border text-foreground text-xs rounded-lg px-2 py-1.5 outline-none flex-shrink-0"
-          >
-            {playback.qualityOptions.map((q: string) => (
-              <option key={q} value={q}>
-                {q === "auto" ? playback.playerLabels.autoLabel : q}
-              </option>
-            ))}
-          </select>
-        )}
-        <button
-          onClick={() => {
-            completedRef.current = true;
-            postProgress.mutate(
-              { episodeId, watchedSeconds: playback.durationSeconds ?? undefined, isCompleted: true },
-              { onSuccess: onCompleteSuccess }
-            );
-          }}
-          disabled={postProgress.isPending}
-          className="text-xs px-3 py-1.5 rounded-lg text-white font-medium flex-shrink-0 disabled:opacity-60"
-          style={{ background: "var(--color-success)" }}
-        >
-          <CheckCircle2 size={13} className="inline mr-1" />
-          {playback.playerLabels.completeLabel}
-        </button>
-      </div>
-
-      {playback.description && (
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          {playback.description}
-        </p>
       )}
     </div>
   );
@@ -1087,11 +958,11 @@ function DetailSkeleton() {
 
 type MainView =
   | { kind: "default" }
-  | { kind: "episode"; episodeId: string }
   | { kind: "assignment"; assignmentId: string };
 
 export default function WorkshopDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const router = useRouter();
   const qc = useQueryClient();
   const { data: detail, isLoading: detailLoading } = useWorkshopDetail(slug);
   const { data: flowData, isLoading: flowLoading } = useWorkshopFlow(slug);
@@ -1182,17 +1053,7 @@ export default function WorkshopDetailPage() {
 
         {/* ── Left: Main Area ── */}
         <div className="flex-1 min-w-0">
-          {mainView.kind === "episode" ? (
-            <EpisodePlayer
-              episodeId={mainView.episodeId}
-              onBack={() => setMainView({ kind: "default" })}
-              backLabel={detail.backLabel}
-              onCompleteSuccess={() => {
-                qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
-                qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
-              }}
-            />
-          ) : mainView.kind === "assignment" ? (
+          {mainView.kind === "assignment" ? (
             <AssignmentMainView
               assignmentId={mainView.assignmentId}
               slug={slug}
@@ -1272,8 +1133,7 @@ export default function WorkshopDetailPage() {
                     key={item.id}
                     item={item}
                     onEpisodeClick={(id) => {
-                      setMainView({ kind: "episode", episodeId: id });
-                      window.scrollTo({ top: 0, behavior: "smooth" });
+                      router.push(`/episode/${slug}/${id}`);
                     }}
                     onAssignmentTabClick={() => {
                       setActiveTab("assignment");

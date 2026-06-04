@@ -217,10 +217,10 @@ function HeroCarousel({
 
 // ─── Episode list in hover panel ──────────────────────────────────────────────
 
-function EpisodeRow({ ep, index }: { ep: ContentEpisode; index: number }) {
+function EpisodeRow({ ep, index, workshopHref }: { ep: ContentEpisode; index: number; workshopHref: string }) {
   return (
     <Link
-      href={`/watch/${ep.id}`}
+      href={workshopHref}
       className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors group/ep"
     >
       <span className="text-[11px] text-white/40 w-4 flex-shrink-0 text-center">
@@ -423,7 +423,7 @@ function ContentItemCard({ item }: { item: ContentItem }) {
           {/* Episode list */}
           <div className="max-h-52 overflow-y-auto py-1 scrollbar-hide">
             {episodes.map((ep, i) => (
-              <EpisodeRow key={ep.id} ep={ep} index={i} />
+              <EpisodeRow key={ep.id} ep={ep} index={i} workshopHref={item.playUrl ?? "#"} />
             ))}
           </div>
         </div>
