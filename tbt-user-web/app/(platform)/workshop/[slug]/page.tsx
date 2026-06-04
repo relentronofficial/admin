@@ -946,6 +946,7 @@ const CHALLENGE_TYPE_META: Record<string, { label: string; color: string }> = {
   written:   { label: "WRITTEN",   color: "#8b5cf6" },
   matching:  { label: "MATCH",     color: "#ec4899" },
   flashcard: { label: "FLASHCARD", color: "#06b6d4" },
+  live_call: { label: "LIVE",      color: "#ff3d8b" },
 };
 
 function statusStyle(status: string) {
@@ -953,6 +954,8 @@ function statusStyle(status: string) {
     case "completed":  return { bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.5)",  text: "#22c55e" };
     case "in_progress":return { bg: "rgba(236,72,153,0.08)", border: "rgba(236,72,153,0.5)", text: "#ec4899" };
     case "locked":     return { bg: "rgba(60,60,60,0.05)",   border: "rgba(80,80,80,0.2)",   text: "#606060" };
+    case "past":       return { bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.5)",  text: "#22c55e" };
+    case "upcoming":   return { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.5)", text: "#f59e0b" };
     default:           return { bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.5)",  text: "#ef4444" };
   }
 }
@@ -984,9 +987,45 @@ function ChallengeList({
   return (
     <div className="space-y-2">
       {challenges.map((ch: any) => {
+        const isSelected = selectedId === ch.id;
+
+        if (ch.type === "live_call") {
+          const lColor = ch.labelColor ?? "#ff3d8b";
+          const ss = statusStyle(ch.status);
+          return (
+            <button
+              key={ch.id}
+              onClick={() => onSelect(ch)}
+              className="w-full text-left rounded-xl border p-3 transition-all"
+              style={{
+                background: isSelected ? `color-mix(in srgb, var(--color-accent) 12%, transparent)` : ss.bg,
+                borderColor: isSelected ? "var(--color-accent)" : ss.border,
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Video size={10} className="flex-shrink-0" style={{ color: lColor }} />
+                <span className="flex-1 text-xs font-semibold text-foreground line-clamp-1">{ch.title}</span>
+                {ch.status === "past" && (
+                  <CheckCircle2 size={12} className="flex-shrink-0" style={{ color: "#22c55e" }} />
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                  style={{ background: `${lColor}22`, color: lColor }}
+                >
+                  {ch.label ?? "LIVE CALL"}
+                </span>
+                <span className="text-[9px] font-bold ml-auto" style={{ color: ss.text }}>
+                  {ch.status === "past" ? "Ended" : "Upcoming"}
+                </span>
+              </div>
+            </button>
+          );
+        }
+
         const ss = statusStyle(ch.status);
         const typeMeta = CHALLENGE_TYPE_META[ch.type] ?? CHALLENGE_TYPE_META.watch;
-        const isSelected = selectedId === ch.id;
 
         return (
           <button
@@ -1097,18 +1136,27 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       </div>
 
       {/* Episode list */}
-      <div className="space-y-1 rounded-xl border border-border overflow-hidden">
+      <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
         {episodes.map((e: any, i: number) => (
           <button
             key={e.id}
             onClick={() => setActiveEpIdx(i)}
-            className={cn(
-              "w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs transition-colors",
-              i === activeEpIdx ? "bg-accent/10" : "hover:bg-accent/5"
-            )}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs transition-all"
+            style={{
+              borderLeft: e.isCompleted ? "3px solid #22c55e" : "3px solid #ef4444",
+              background: i === activeEpIdx
+                ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
+                : e.isCompleted
+                  ? "rgba(34,197,94,0.06)"
+                  : "rgba(239,68,68,0.06)",
+            }}
           >
-            <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full text-[9px] font-bold"
-              style={e.isCompleted ? { background: "#22c55e22", color: "#22c55e" } : { background: "var(--color-bg-surface)", color: "var(--color-muted)" }}>
+            <span
+              className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full text-[9px] font-bold"
+              style={e.isCompleted
+                ? { background: "#22c55e22", color: "#22c55e" }
+                : { background: "#ef44440f", color: "#ef4444" }}
+            >
               {e.isCompleted ? "✓" : i + 1}
             </span>
             <span className="flex-1 truncate text-foreground">{e.title}</span>
@@ -1128,7 +1176,7 @@ function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: 
   const questions: any[] = challenge.quizData?.questions ?? [];
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(challenge.status === "completed");
-  const [score, setScore] = useState(0);
+  const [score, setScore] = useState(challenge.status === "completed" ? questions.length : 0);
 
   const allAnswered = questions.length > 0 && questions.every((q) => answers[q.id]);
 
@@ -1139,9 +1187,17 @@ function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: 
     }).length;
     setScore(correct);
     setSubmitted(true);
-    await completeChallenge.mutateAsync({ challengeId: challenge.id, answersData: { answers, score: correct, total: questions.length } });
-    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
-    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    if (correct === questions.length) {
+      await completeChallenge.mutateAsync({ challengeId: challenge.id, answersData: { answers, score: correct, total: questions.length } });
+      qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+      qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    }
+  };
+
+  const handleRetry = () => {
+    setSubmitted(false);
+    setAnswers({});
+    setScore(0);
   };
 
   return (
@@ -1149,12 +1205,32 @@ function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: 
       <ChallengeHeader challenge={challenge} />
 
       {submitted && (
-        <div className="rounded-xl border p-4 text-center space-y-1" style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}>
-          <Trophy size={24} className="mx-auto" style={{ color: "#22c55e" }} />
-          <p className="font-bold text-foreground">Quiz Complete!</p>
-          <p className="text-sm text-muted-foreground">You got <span className="font-bold text-foreground">{score}/{questions.length}</span> correct</p>
-          <button onClick={onDone} className="mt-2 text-xs font-bold" style={{ color: "var(--color-accent)" }}>Back to challenges →</button>
-        </div>
+        score === questions.length ? (
+          <div className="rounded-xl border p-4 text-center space-y-2" style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}>
+            <Trophy size={24} className="mx-auto" style={{ color: "#22c55e" }} />
+            <p className="font-bold text-foreground">Perfect Score!</p>
+            <p className="text-sm text-muted-foreground">
+              You scored <span className="font-bold text-foreground">{score}/{questions.length}</span>
+            </p>
+            <button onClick={onDone} className="mt-2 text-xs font-bold" style={{ color: "var(--color-accent)" }}>
+              Continue →
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-xl border p-4 text-center space-y-2" style={{ borderColor: "#ef444444", background: "#ef44440a" }}>
+            <p className="font-bold text-foreground">You scored {score}/{questions.length}</p>
+            <p className="text-xs text-muted-foreground">
+              Need {questions.length}/{questions.length} to complete this challenge.
+            </p>
+            <button
+              onClick={handleRetry}
+              className="mt-1 px-4 py-2 rounded-lg text-xs font-bold text-white"
+              style={{ background: "var(--color-accent)" }}
+            >
+              Retry Quiz
+            </button>
+          </div>
+        )
       )}
 
       {questions.map((q: any, qi: number) => {
@@ -1167,29 +1243,31 @@ function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: 
             <div className="space-y-1.5">
               {(q.options ?? []).map((opt: any) => {
                 const isSelected = selected === opt.id;
-                const showResult = submitted;
-                const isCorrect = opt.correct;
-                let borderColor = "var(--color-border, rgba(255,255,255,0.1))";
-                let bg = "transparent";
-                if (showResult && isSelected && isCorrect)  { borderColor = "#22c55e"; bg = "#22c55e0f"; }
-                if (showResult && isSelected && !isCorrect) { borderColor = "#ef4444"; bg = "#ef44440f"; }
-                if (showResult && !isSelected && isCorrect) { borderColor = "#22c55e88"; }
-                if (!showResult && isSelected)              { borderColor = "var(--color-accent)"; bg = "color-mix(in srgb, var(--color-accent) 8%, transparent)"; }
+                const borderColor = isSelected
+                  ? "var(--color-accent)"
+                  : "var(--color-border, rgba(255,255,255,0.1))";
+                const bg = isSelected
+                  ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
+                  : "transparent";
 
                 return (
                   <button
                     key={opt.id}
                     disabled={submitted}
                     onClick={() => !submitted && setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left text-xs transition-all"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left text-xs transition-all disabled:opacity-70"
                     style={{ borderColor, background: bg }}
                   >
-                    <span className="w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] font-bold"
-                      style={{ borderColor: isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.15))", color: isSelected ? "var(--color-accent)" : "var(--color-muted)" }}>
+                    <span
+                      className="w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] font-bold"
+                      style={{
+                        borderColor: isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.15))",
+                        color: isSelected ? "var(--color-accent)" : "var(--color-muted)",
+                      }}
+                    >
                       {opt.id.toUpperCase()}
                     </span>
                     <span className="flex-1 text-foreground">{opt.text}</span>
-                    {showResult && isCorrect && <CheckCircle2 size={13} style={{ color: "#22c55e" }} />}
                   </button>
                 );
               })}
@@ -1520,6 +1598,135 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
   );
 }
 
+// ─── Main: Live Call Challenge ────────────────────────────────────────────────
+
+function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => void }) {
+  const { uiStrings } = useSiteConfig();
+  const isPast = challenge.status === "past";
+  const lColor = challenge.labelColor ?? "#ff3d8b";
+  const teal = challenge.stayTunedColor ?? "#2dd4bf";
+  const [diff, setDiff] = useState(0);
+
+  useEffect(() => {
+    if (!challenge.scheduledAt || isPast) return;
+    const target = new Date(challenge.scheduledAt).getTime();
+    const tick = () => setDiff(Math.max(0, target - getServerNow()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [challenge.scheduledAt, isPast]);
+
+  const units = [
+    [Math.floor(diff / 86400000), uiStrings?.countdownDays ?? "DAYS"],
+    [Math.floor((diff % 86400000) / 3600000), uiStrings?.countdownHours ?? "HOURS"],
+    [Math.floor((diff % 3600000) / 60000), uiStrings?.countdownMins ?? "MINS"],
+    [Math.floor((diff % 60000) / 1000), uiStrings?.countdownSecs ?? "SECS"],
+  ] as [number, string][];
+
+  const dateLabel = challenge.scheduledAt
+    ? new Date(challenge.scheduledAt)
+        .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+        .toUpperCase()
+    : null;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: lColor }}>
+            {challenge.label ?? "LIVE CALL:"}
+          </span>
+          <span
+            className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+            style={{ background: `${lColor}22`, color: lColor }}
+          >
+            LIVE SESSION
+          </span>
+          <span
+            className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+            style={
+              isPast
+                ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" }
+                : { background: "rgba(245,158,11,0.1)", color: "#f59e0b" }
+            }
+          >
+            {isPast ? "Ended" : "Upcoming"}
+          </span>
+        </div>
+        <h3 className="font-bold text-foreground text-base">{challenge.title}</h3>
+        {challenge.facilitatorName && (
+          <p className="text-xs text-muted-foreground">
+            {challenge.facilitatorName}
+            {challenge.facilitatorTitle ? ` · ${challenge.facilitatorTitle}` : ""}
+          </p>
+        )}
+      </div>
+
+      {isPast ? (
+        <div
+          className="rounded-xl border p-6 text-center space-y-2"
+          style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}
+        >
+          <CheckCircle2 size={24} className="mx-auto" style={{ color: "#22c55e" }} />
+          <p className="font-bold text-foreground">Session Completed</p>
+          <p className="text-xs text-muted-foreground">This live session has ended.</p>
+        </div>
+      ) : (
+        <div
+          className="rounded-xl border p-8 text-center space-y-5"
+          style={{ background: "#000", borderColor: `${lColor}44` }}
+        >
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: lColor }}>
+            {challenge.label ?? "LIVE CALL:"}
+          </p>
+          <h3 className="text-lg font-bold text-white leading-snug -mt-2">{challenge.title}</h3>
+
+          <div className="flex gap-5 md:gap-8 justify-center">
+            {units.map(([val, label], i) => (
+              <div key={i} className="flex flex-col items-center">
+                <span className="text-4xl font-bold tabular-nums text-white font-mono leading-none">
+                  {String(val).padStart(2, "0")}
+                </span>
+                <span
+                  className="text-[10px] font-bold tracking-[0.2em] mt-2 uppercase"
+                  style={{ color: teal }}
+                >
+                  {label}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {dateLabel && (
+            <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: teal }}>
+              {dateLabel}
+            </p>
+          )}
+
+          {challenge.stayTunedMessage && (
+            <p className="text-sm italic max-w-sm mx-auto" style={{ color: teal }}>
+              {challenge.stayTunedMessage}
+            </p>
+          )}
+
+          {challenge.liveUrl && (
+            <a
+              href={challenge.liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-bold text-white"
+              style={{ background: "var(--color-accent)" }}
+            >
+              {uiStrings?.liveCallJoinLabel ?? "Join Call"}
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Challenge Header (shared) ────────────────────────────────────────────────
 
 function ChallengeHeader({ challenge }: { challenge: any }) {
@@ -1544,11 +1751,12 @@ function ChallengeHeader({ challenge }: { challenge: any }) {
 
 function ChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
   switch (challenge.type) {
-    case "quiz":      return <QuizChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
-    case "written":   return <WrittenChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
-    case "matching":  return <MatchingChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
-    case "flashcard": return <FlashcardChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
-    default:          return <WatchChallengeView challenge={challenge} slug={slug} />;
+    case "live_call":  return <LiveCallChallengeView challenge={challenge} onDone={onDone} />;
+    case "quiz":       return <QuizChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "written":    return <WrittenChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "matching":   return <MatchingChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "flashcard":  return <FlashcardChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    default:           return <WatchChallengeView challenge={challenge} slug={slug} />;
   }
 }
 
