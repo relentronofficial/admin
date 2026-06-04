@@ -3,21 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock, LayoutGrid, List } from "lucide-react";
+import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock } from "lucide-react";
 import { useHomeHero, useHomeSections } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useMe } from "@/lib/hooks/useUser";
 import { cn } from "@/lib/utils/cn";
-import type { HeroSlide, ContentSection, ContentItem, ContentEpisode } from "@/types";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtDuration(seconds: number): string {
-  if (!seconds) return "";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
+import type { HeroSlide, ContentSection, ContentItem } from "@/types";
 
 // ─── Hero Carousel ────────────────────────────────────────────────────────────
 
@@ -215,218 +206,99 @@ function HeroCarousel({
   );
 }
 
-// ─── Episode list in hover panel ──────────────────────────────────────────────
-
-function EpisodeRow({ ep, index, workshopHref }: { ep: ContentEpisode; index: number; workshopHref: string }) {
-  return (
-    <Link
-      href={workshopHref}
-      className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors group/ep"
-    >
-      <span className="text-[11px] text-white/40 w-4 flex-shrink-0 text-center">
-        {ep.order || index + 1}
-      </span>
-      {ep.thumbnailUrl ? (
-        <div className="relative w-10 h-6 rounded overflow-hidden flex-shrink-0">
-          <Image src={ep.thumbnailUrl} alt={ep.title} fill className="object-cover" />
-        </div>
-      ) : (
-        <div
-          className="w-10 h-6 rounded flex-shrink-0 flex items-center justify-center"
-          style={{ background: "var(--color-bg-primary)" }}
-        >
-          <Play size={8} className="text-white/50 fill-current" />
-        </div>
-      )}
-      <span className="flex-1 text-[11px] text-white/80 line-clamp-1 group-hover/ep:text-white transition-colors">
-        {ep.title}
-      </span>
-      {ep.durationSeconds > 0 && (
-        <span className="text-[10px] text-white/40 flex-shrink-0">
-          {fmtDuration(ep.durationSeconds)}
-        </span>
-      )}
-    </Link>
-  );
-}
-
 // ─── Content Item Card ────────────────────────────────────────────────────────
 
 function ContentItemCard({ item }: { item: ContentItem }) {
   const { uiStrings } = useSiteConfig();
   const [hovered, setHovered] = useState(false);
-  const [viewMode, setViewMode] = useState<"thumbnail" | "list">("thumbnail");
-  const cardRef = useRef<HTMLDivElement>(null);
 
-  const episodes = item.episodes ?? [];
-  const hasEpisodes = episodes.length > 0;
+  const inner = (
+    <div
+      className={cn(
+        "rounded-xl overflow-hidden bg-card border border-border transition-all duration-300",
+        hovered && !item.isLocked
+          ? "scale-[1.04] shadow-[0_8px_32px_rgba(0,0,0,0.7),0_0_24px_color-mix(in_srgb,var(--color-accent)_14%,transparent)]"
+          : ""
+      )}
+    >
+      <div className="aspect-[2/3] md:aspect-video relative overflow-hidden">
+        {item.thumbnailUrl ? (
+          <Image
+            src={item.thumbnailUrl}
+            alt={item.title}
+            fill
+            className={cn(
+              "object-cover transition-transform duration-500",
+              hovered && !item.isLocked ? "scale-110" : "scale-100"
+            )}
+          />
+        ) : (
+          <div className="w-full h-full" style={{ background: "var(--color-bg-surface)" }} />
+        )}
+
+        {item.isLocked ? (
+          <div className="absolute inset-0 bg-black/65 flex flex-col items-center justify-center gap-1.5">
+            <Lock size={18} className="text-white/60" />
+            {(item.lockBadgeText ?? uiStrings?.lockedContentMessage) && (
+              <span
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                style={{ background: "var(--color-alert)" }}
+              >
+                {item.lockBadgeText ?? uiStrings?.lockedContentMessage}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div
+            className={cn(
+              "absolute inset-0 flex items-center justify-center transition-colors",
+              hovered ? "bg-black/40" : "bg-black/0"
+            )}
+          >
+            <div
+              className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200",
+                hovered ? "opacity-100 scale-100" : "opacity-0 scale-75"
+              )}
+              style={{ background: "var(--color-accent)" }}
+            >
+              <Play size={16} className="text-white fill-current ml-0.5" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-2 md:p-3">
+        <p className="text-xs md:text-sm font-medium text-foreground line-clamp-2 leading-snug">{item.title}</p>
+        <div className="flex items-center gap-1 mt-1">
+          {item.categoryTag && (
+            <span className="text-[10px] font-medium" style={{ color: "var(--color-accent)" }}>
+              {item.categoryTag}
+            </span>
+          )}
+          {item.episodeCount != null && (
+            <span className="text-[10px] text-muted-foreground ml-auto">
+              {item.episodeCount} ep
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div
-      ref={cardRef}
-      className={cn("relative flex-shrink-0 w-44 md:w-[calc(33.333%-8px)] lg:w-[calc(25%-9px)]", item.isLocked ? "cursor-not-allowed" : "cursor-pointer")}
+      className={cn(
+        "flex-shrink-0 w-44 md:w-[calc(33.333%-8px)] lg:w-[calc(25%-9px)]",
+        item.isLocked ? "cursor-not-allowed" : "cursor-pointer"
+      )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Base card */}
-      <div
-        className={cn(
-          "rounded-xl overflow-hidden bg-card border border-border transition-all duration-300",
-          hovered && !item.isLocked
-            ? "scale-[1.04] shadow-[0_8px_32px_rgba(0,0,0,0.7),0_0_24px_color-mix(in_srgb,var(--color-accent)_14%,transparent)]"
-            : ""
-        )}
-      >
-        <div className="aspect-[2/3] md:aspect-video relative overflow-hidden">
-          {item.thumbnailUrl ? (
-            <Image
-              src={item.thumbnailUrl}
-              alt={item.title}
-              fill
-              className={cn(
-                "object-cover transition-transform duration-500",
-                hovered && !item.isLocked ? "scale-110" : "scale-100"
-              )}
-            />
-          ) : (
-            <div className="w-full h-full" style={{ background: "var(--color-bg-surface)" }} />
-          )}
-
-          {/* Locked overlay */}
-          {item.isLocked && (
-            <div className="absolute inset-0 bg-black/65 flex flex-col items-center justify-center gap-1.5">
-              <Lock size={18} className="text-white/60" />
-              {item.lockBadgeText ?? uiStrings?.lockedContentMessage ? (
-                <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-                  style={{ background: "var(--color-alert)" }}
-                >
-                  {item.lockBadgeText ?? uiStrings?.lockedContentMessage}
-                </span>
-              ) : null}
-            </div>
-          )}
-
-          {/* Unlocked — quick play on hover (no episodes) */}
-          {!item.isLocked && !hasEpisodes && item.playUrl && (
-            <Link
-              href={item.playUrl}
-              className={cn(
-                "absolute inset-0 flex items-center justify-center transition-colors",
-                hovered ? "bg-black/50" : "bg-black/0"
-              )}
-              tabIndex={hovered ? 0 : -1}
-            >
-              <div
-                className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200",
-                  hovered ? "opacity-100 scale-100" : "opacity-0 scale-75"
-                )}
-                style={{ background: "var(--color-accent)" }}
-              >
-                <Play size={16} className="text-white fill-current ml-0.5" />
-              </div>
-            </Link>
-          )}
-        </div>
-
-        <div className="p-2 md:p-3">
-          <p className="text-xs md:text-sm font-medium text-foreground line-clamp-2 leading-snug">{item.title}</p>
-          <div className="flex items-center gap-1 mt-1">
-            {item.categoryTag && (
-              <span className="text-[10px] font-medium" style={{ color: "var(--color-accent)" }}>
-                {item.categoryTag}
-              </span>
-            )}
-            {item.episodeCount != null && (
-              <span className="text-[10px] text-muted-foreground ml-auto">
-                {item.episodeCount} ep
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Hover episode panel — only for unlocked items with episodes */}
-      {!item.isLocked && hasEpisodes && hovered && (
-        <div
-          className="absolute left-0 right-0 top-0 z-50 rounded-xl overflow-hidden shadow-2xl border border-white/10"
-          style={{ background: "var(--color-bg-surface, #111)" }}
-        >
-          {/* Thumbnail + play — hidden in list mode */}
-          {viewMode === "thumbnail" && (
-            <div className="relative aspect-video">
-              {item.thumbnailUrl ? (
-                <Image src={item.thumbnailUrl} alt={item.title} fill className="object-cover" />
-              ) : (
-                <div className="w-full h-full" style={{ background: "var(--color-bg-primary)" }} />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-              {item.playUrl && (
-                <Link
-                  href={item.playUrl}
-                  className="absolute inset-0 flex items-center justify-center"
-                >
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center"
-                    style={{ background: "var(--color-accent)" }}
-                  >
-                    <Play size={16} className="text-white fill-current ml-0.5" />
-                  </div>
-                </Link>
-              )}
-            </div>
-          )}
-
-          {/* Meta + view toggle */}
-          <div className="px-3 pt-2.5 pb-1 flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-white line-clamp-1">{item.title}</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                {item.categoryTag && (
-                  <span
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                    style={{ color: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 15%, transparent)" }}
-                  >
-                    {item.categoryTag}
-                  </span>
-                )}
-                {item.episodeCount != null && (
-                  <span className="text-[10px] text-white/50">{item.episodeCount} episodes</span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
-              <button
-                onClick={(e) => { e.stopPropagation(); setViewMode("thumbnail"); }}
-                className={cn(
-                  "p-1 rounded transition-colors",
-                  viewMode === "thumbnail" ? "text-white" : "text-white/30 hover:text-white/60"
-                )}
-                aria-label="Thumbnail view"
-              >
-                <LayoutGrid size={12} />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setViewMode("list"); }}
-                className={cn(
-                  "p-1 rounded transition-colors",
-                  viewMode === "list" ? "text-white" : "text-white/30 hover:text-white/60"
-                )}
-                aria-label="List view"
-              >
-                <List size={12} />
-              </button>
-            </div>
-          </div>
-
-          {/* Episode list */}
-          <div className="max-h-52 overflow-y-auto py-1 scrollbar-hide">
-            {episodes.map((ep, i) => (
-              <EpisodeRow key={ep.id} ep={ep} index={i} workshopHref={item.playUrl ?? "#"} />
-            ))}
-          </div>
-        </div>
+      {!item.isLocked && item.playUrl ? (
+        <Link href={item.playUrl}>{inner}</Link>
+      ) : (
+        inner
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import type {
   HeroSlide,
   ContentSection,
   WorkshopSection,
+  WorkshopListItem,
   Product,
   Resource,
   EpisodePlayback,
@@ -29,6 +30,15 @@ export const useHomeSections = (memberTier?: number) =>
         `/api/user/home/sections${memberTier ? `?memberTier=${memberTier}` : ""}`
       );
       return res?.data as { sections: ContentSection[] };
+    },
+  });
+
+export const useAllWorkshops = () =>
+  useQuery({
+    queryKey: ["all-workshops"],
+    queryFn: async () => {
+      const res: any = await apiClient.get("/api/user/workshops");
+      return res?.data as WorkshopListItem[];
     },
   });
 
@@ -152,6 +162,32 @@ export const useUserResources = (search = "", view = "list", page = 1) =>
       const res: any = await apiClient.get(
         `/api/user/resources?search=${encodeURIComponent(search)}&view=${view}&page=${page}&limit=20`
       );
+      return res?.data;
+    },
+  });
+
+export const useWorkshopChallenges = (slug: string) =>
+  useQuery({
+    queryKey: ["workshop-challenges", slug],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshops/${slug}/challenges`);
+      return res?.data as { challenges: any[] };
+    },
+    enabled: !!slug,
+  });
+
+export const useCompleteChallenge = () =>
+  useMutation({
+    mutationFn: async ({ challengeId, answersData }: { challengeId: string; answersData?: any }) => {
+      const res: any = await apiClient.post(`/api/user/challenges/${challengeId}/complete`, { answersData });
+      return res?.data;
+    },
+  });
+
+export const useCompleteWorkshopEpisode = () =>
+  useMutation({
+    mutationFn: async (episodeId: string) => {
+      const res: any = await apiClient.post(`/api/user/workshop-episodes/${episodeId}/complete`, {});
       return res?.data;
     },
   });

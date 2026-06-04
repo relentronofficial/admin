@@ -12,6 +12,8 @@ import {
   Star,
   Video,
   FileText,
+  Trophy,
+  RotateCcw,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -21,6 +23,9 @@ import {
   usePostQaReply,
   useWorkshopAssignments,
   useSubmitAssignment,
+  useWorkshopChallenges,
+  useCompleteChallenge,
+  useCompleteWorkshopEpisode,
 } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
@@ -933,6 +938,620 @@ function LiveCallUnlockWatcher({
   return null;
 }
 
+// ─── Challenge type metadata ──────────────────────────────────────────────────
+
+const CHALLENGE_TYPE_META: Record<string, { label: string; color: string }> = {
+  watch:     { label: "WATCH",     color: "#3b82f6" },
+  quiz:      { label: "QUIZ",      color: "#f59e0b" },
+  written:   { label: "WRITTEN",   color: "#8b5cf6" },
+  matching:  { label: "MATCH",     color: "#ec4899" },
+  flashcard: { label: "FLASHCARD", color: "#06b6d4" },
+};
+
+function statusStyle(status: string) {
+  switch (status) {
+    case "completed":  return { bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.5)",  text: "#22c55e" };
+    case "in_progress":return { bg: "rgba(236,72,153,0.08)", border: "rgba(236,72,153,0.5)", text: "#ec4899" };
+    case "locked":     return { bg: "rgba(60,60,60,0.05)",   border: "rgba(80,80,80,0.2)",   text: "#606060" };
+    default:           return { bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.5)",  text: "#ef4444" };
+  }
+}
+
+// ─── Sidebar: Challenge List ──────────────────────────────────────────────────
+
+function ChallengeList({
+  slug,
+  selectedId,
+  onSelect,
+}: {
+  slug: string;
+  selectedId: string | null;
+  onSelect: (ch: any) => void;
+}) {
+  const { data, isLoading } = useWorkshopChallenges(slug);
+  const challenges = data?.challenges ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {challenges.map((ch: any) => {
+        const ss = statusStyle(ch.status);
+        const typeMeta = CHALLENGE_TYPE_META[ch.type] ?? CHALLENGE_TYPE_META.watch;
+        const isSelected = selectedId === ch.id;
+
+        return (
+          <button
+            key={ch.id}
+            disabled={ch.isLocked}
+            onClick={() => !ch.isLocked && onSelect(ch)}
+            className="w-full text-left rounded-xl border p-3 transition-all"
+            style={{
+              background: isSelected ? `rgba(var(--accent-rgb, 220 38 38) / 0.12)` : ss.bg,
+              borderColor: isSelected ? "var(--color-accent)" : ss.border,
+              opacity: ch.isLocked ? 0.55 : 1,
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black flex-shrink-0" style={{ color: ch.numberColor }}>
+                {ch.numberLabel}
+              </span>
+              <span className="flex-1 text-xs font-semibold text-foreground line-clamp-1">{ch.title}</span>
+              {ch.isLocked ? (
+                <Lock size={11} className="flex-shrink-0 text-muted-foreground" />
+              ) : ch.status === "completed" ? (
+                <CheckCircle2 size={12} className="flex-shrink-0" style={{ color: "#22c55e" }} />
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 mt-1.5">
+              <span
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                style={{ background: `${typeMeta.color}22`, color: typeMeta.color }}
+              >
+                {typeMeta.label}
+              </span>
+              {ch.progressPercent > 0 && ch.progressPercent < 100 && (
+                <div className="flex-1 h-0.5 rounded-full overflow-hidden" style={{ background: "var(--color-bg-surface)" }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${ch.progressPercent}%`, background: ss.text }} />
+                </div>
+              )}
+              {!ch.isLocked && ch.status !== "completed" && (
+                <span className="text-[9px] font-bold ml-auto" style={{ color: ss.text }}>
+                  {ch.status === "in_progress" ? "In Progress" : "Not Started"}
+                </span>
+              )}
+              {ch.status === "completed" && (
+                <span className="text-[9px] font-bold ml-auto" style={{ color: "#22c55e" }}>Done</span>
+              )}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main: Watch Challenge ────────────────────────────────────────────────────
+
+function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string }) {
+  const qc = useQueryClient();
+  const completeEp = useCompleteWorkshopEpisode();
+  const [activeEpIdx, setActiveEpIdx] = useState(0);
+  const episodes: any[] = challenge.episodes ?? [];
+  const ep = episodes[activeEpIdx];
+
+  const handleMarkEpDone = async () => {
+    if (!ep) return;
+    await completeEp.mutateAsync(ep.id);
+    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    if (activeEpIdx < episodes.length - 1) setActiveEpIdx((i) => i + 1);
+  };
+
+  if (!ep) return <p className="text-sm text-muted-foreground text-center py-8">No episodes yet.</p>;
+
+  return (
+    <div className="space-y-4">
+      <ChallengeHeader challenge={challenge} />
+
+      {/* Player */}
+      <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
+        {ep.videoUrl ? (
+          <iframe src={ep.videoUrl} className="w-full h-full" allowFullScreen allow="autoplay; fullscreen" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
+        )}
+      </div>
+
+      {/* Episode title + mark done */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-sm text-foreground">{ep.title}</p>
+          {ep.durationLabel && <p className="text-xs text-muted-foreground mt-0.5">{ep.typeLabel} · {ep.durationLabel}</p>}
+        </div>
+        {!ep.isCompleted && (
+          <button
+            onClick={handleMarkEpDone}
+            disabled={completeEp.isPending}
+            className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-60 transition-opacity"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {completeEp.isPending ? "..." : "Mark Done"}
+          </button>
+        )}
+        {ep.isCompleted && (
+          <span className="flex items-center gap-1 text-xs font-bold flex-shrink-0" style={{ color: "#22c55e" }}>
+            <CheckCircle2 size={13} /> Done
+          </span>
+        )}
+      </div>
+
+      {/* Episode list */}
+      <div className="space-y-1 rounded-xl border border-border overflow-hidden">
+        {episodes.map((e: any, i: number) => (
+          <button
+            key={e.id}
+            onClick={() => setActiveEpIdx(i)}
+            className={cn(
+              "w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs transition-colors",
+              i === activeEpIdx ? "bg-accent/10" : "hover:bg-accent/5"
+            )}
+          >
+            <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full text-[9px] font-bold"
+              style={e.isCompleted ? { background: "#22c55e22", color: "#22c55e" } : { background: "var(--color-bg-surface)", color: "var(--color-muted)" }}>
+              {e.isCompleted ? "✓" : i + 1}
+            </span>
+            <span className="flex-1 truncate text-foreground">{e.title}</span>
+            {e.durationLabel && <span className="text-muted-foreground flex-shrink-0">{e.durationLabel}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main: Quiz Challenge ─────────────────────────────────────────────────────
+
+function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
+  const qc = useQueryClient();
+  const completeChallenge = useCompleteChallenge();
+  const questions: any[] = challenge.quizData?.questions ?? [];
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(challenge.status === "completed");
+  const [score, setScore] = useState(0);
+
+  const allAnswered = questions.length > 0 && questions.every((q) => answers[q.id]);
+
+  const handleSubmit = async () => {
+    const correct = questions.filter((q) => {
+      const sel = answers[q.id];
+      return q.options?.find((o: any) => o.id === sel)?.correct;
+    }).length;
+    setScore(correct);
+    setSubmitted(true);
+    await completeChallenge.mutateAsync({ challengeId: challenge.id, answersData: { answers, score: correct, total: questions.length } });
+    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+  };
+
+  return (
+    <div className="space-y-5">
+      <ChallengeHeader challenge={challenge} />
+
+      {submitted && (
+        <div className="rounded-xl border p-4 text-center space-y-1" style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}>
+          <Trophy size={24} className="mx-auto" style={{ color: "#22c55e" }} />
+          <p className="font-bold text-foreground">Quiz Complete!</p>
+          <p className="text-sm text-muted-foreground">You got <span className="font-bold text-foreground">{score}/{questions.length}</span> correct</p>
+          <button onClick={onDone} className="mt-2 text-xs font-bold" style={{ color: "var(--color-accent)" }}>Back to challenges →</button>
+        </div>
+      )}
+
+      {questions.map((q: any, qi: number) => {
+        const selected = answers[q.id];
+        return (
+          <div key={q.id} className="space-y-2.5">
+            <p className="text-sm font-semibold text-foreground">
+              <span className="text-muted-foreground mr-1">Q{qi + 1}.</span>{q.question}
+            </p>
+            <div className="space-y-1.5">
+              {(q.options ?? []).map((opt: any) => {
+                const isSelected = selected === opt.id;
+                const showResult = submitted;
+                const isCorrect = opt.correct;
+                let borderColor = "var(--color-border, rgba(255,255,255,0.1))";
+                let bg = "transparent";
+                if (showResult && isSelected && isCorrect)  { borderColor = "#22c55e"; bg = "#22c55e0f"; }
+                if (showResult && isSelected && !isCorrect) { borderColor = "#ef4444"; bg = "#ef44440f"; }
+                if (showResult && !isSelected && isCorrect) { borderColor = "#22c55e88"; }
+                if (!showResult && isSelected)              { borderColor = "var(--color-accent)"; bg = "color-mix(in srgb, var(--color-accent) 8%, transparent)"; }
+
+                return (
+                  <button
+                    key={opt.id}
+                    disabled={submitted}
+                    onClick={() => !submitted && setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left text-xs transition-all"
+                    style={{ borderColor, background: bg }}
+                  >
+                    <span className="w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] font-bold"
+                      style={{ borderColor: isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.15))", color: isSelected ? "var(--color-accent)" : "var(--color-muted)" }}>
+                      {opt.id.toUpperCase()}
+                    </span>
+                    <span className="flex-1 text-foreground">{opt.text}</span>
+                    {showResult && isCorrect && <CheckCircle2 size={13} style={{ color: "#22c55e" }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {!submitted && (
+        <button
+          onClick={handleSubmit}
+          disabled={!allAnswered || completeChallenge.isPending}
+          className="w-full py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-50 transition-opacity"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {completeChallenge.isPending ? "Submitting..." : "Submit Quiz"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Main: Written Challenge ──────────────────────────────────────────────────
+
+function WrittenChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
+  const qc = useQueryClient();
+  const completeChallenge = useCompleteChallenge();
+  const prompt = challenge.quizData?.prompt ?? challenge.description ?? "";
+  const placeholder = challenge.quizData?.placeholder ?? "Write your answer here...";
+  const isCompleted = challenge.status === "completed";
+  const existingAnswer = challenge.submission?.answersData?.answer ?? "";
+  const [answer, setAnswer] = useState(existingAnswer);
+
+  const handleSubmit = async () => {
+    if (!answer.trim()) return;
+    await completeChallenge.mutateAsync({ challengeId: challenge.id, answersData: { answer } });
+    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    onDone();
+  };
+
+  return (
+    <div className="space-y-4">
+      <ChallengeHeader challenge={challenge} />
+      <div className="rounded-xl border border-border p-4 space-y-1">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Your Challenge</p>
+        <p className="text-sm text-foreground leading-relaxed">{prompt}</p>
+      </div>
+
+      {isCompleted ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={14} style={{ color: "#22c55e" }} />
+            <p className="text-xs font-bold text-foreground">Answer Submitted</p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <p className="text-sm text-foreground whitespace-pre-line leading-relaxed">{existingAnswer}</p>
+          </div>
+          <button onClick={onDone} className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>Back to challenges →</button>
+        </div>
+      ) : (
+        <>
+          <textarea
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            placeholder={placeholder}
+            rows={6}
+            className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm text-foreground outline-none focus:border-ring resize-none transition-colors"
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={!answer.trim() || completeChallenge.isPending}
+            className="w-full py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-50"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {completeChallenge.isPending ? "Submitting..." : "Submit Answer"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Main: Matching Challenge ─────────────────────────────────────────────────
+
+function MatchingChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
+  const qc = useQueryClient();
+  const completeChallenge = useCompleteChallenge();
+  const pairs: any[] = challenge.quizData?.pairs ?? [];
+  const isCompleted = challenge.status === "completed";
+
+  // Shuffle right column on mount
+  const [rightOrder] = useState<string[]>(() => {
+    const ids = pairs.map((p) => p.id);
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+    }
+    return ids;
+  });
+
+  const [leftSelected, setLeftSelected] = useState<string | null>(null);
+  const [rightSelected, setRightSelected] = useState<string | null>(null);
+  const [matched, setMatched] = useState<Record<string, string>>({}); // leftId -> rightId
+  const [wrongPair, setWrongPair] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!leftSelected || !rightSelected) return;
+    const pair = pairs.find((p) => p.id === leftSelected);
+    if (pair && rightSelected === pair.id) {
+      setMatched((m) => ({ ...m, [leftSelected]: rightSelected }));
+    } else {
+      setWrongPair(leftSelected);
+      setTimeout(() => setWrongPair(null), 800);
+    }
+    setLeftSelected(null);
+    setRightSelected(null);
+  }, [leftSelected, rightSelected]);
+
+  const allMatched = pairs.length > 0 && Object.keys(matched).length === pairs.length;
+
+  const handleComplete = async () => {
+    await completeChallenge.mutateAsync({ challengeId: challenge.id, answersData: { matched } });
+    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    onDone();
+  };
+
+  return (
+    <div className="space-y-4">
+      <ChallengeHeader challenge={challenge} />
+      <p className="text-xs text-muted-foreground">Match each term on the left with its correct pair on the right.</p>
+
+      {isCompleted ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={14} style={{ color: "#22c55e" }} />
+            <p className="text-xs font-bold text-foreground">Challenge Completed!</p>
+          </div>
+          <div className="space-y-1.5">
+            {pairs.map((p) => (
+              <div key={p.id} className="flex gap-2 items-center text-xs rounded-lg border border-border px-3 py-2" style={{ borderColor: "#22c55e44" }}>
+                <span className="flex-1 font-medium text-foreground">{p.left}</span>
+                <span className="text-muted-foreground">→</span>
+                <span className="flex-1 text-muted-foreground">{p.right}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={onDone} className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>Back to challenges →</button>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Left column */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-center">Terms</p>
+              {pairs.map((p) => {
+                const isMatchedLeft = !!matched[p.id];
+                const isWrong = wrongPair === p.id;
+                const isSel = leftSelected === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    disabled={isMatchedLeft}
+                    onClick={() => !isMatchedLeft && setLeftSelected(isSel ? null : p.id)}
+                    className="w-full px-3 py-2 rounded-lg border text-left text-xs font-medium transition-all"
+                    style={{
+                      borderColor: isMatchedLeft ? "#22c55e88" : isWrong ? "#ef4444" : isSel ? "var(--color-accent)" : "rgba(255,255,255,0.1)",
+                      background: isMatchedLeft ? "#22c55e0a" : isWrong ? "#ef44440a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
+                      color: isMatchedLeft ? "#22c55e" : "inherit",
+                    }}
+                  >
+                    {p.left}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right column */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-center">Definitions</p>
+              {rightOrder.map((rid) => {
+                const p = pairs.find((x) => x.id === rid)!;
+                const isMatchedRight = Object.values(matched).includes(p.id);
+                const isSel = rightSelected === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    disabled={isMatchedRight || !leftSelected}
+                    onClick={() => leftSelected && !isMatchedRight && setRightSelected(isSel ? null : p.id)}
+                    className="w-full px-3 py-2 rounded-lg border text-left text-xs transition-all"
+                    style={{
+                      borderColor: isMatchedRight ? "#22c55e88" : isSel ? "var(--color-accent)" : "rgba(255,255,255,0.1)",
+                      background: isMatchedRight ? "#22c55e0a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
+                      color: isMatchedRight ? "#22c55e" : !leftSelected ? "var(--color-muted-foreground, #888)" : "inherit",
+                      opacity: !leftSelected && !isMatchedRight ? 0.6 : 1,
+                    }}
+                  >
+                    {p.right}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground text-center">
+            {Object.keys(matched).length}/{pairs.length} matched
+          </p>
+
+          {allMatched && (
+            <button
+              onClick={handleComplete}
+              disabled={completeChallenge.isPending}
+              className="w-full py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-50"
+              style={{ background: "var(--color-accent)" }}
+            >
+              {completeChallenge.isPending ? "Saving..." : "Complete Challenge ✓"}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Main: Flashcard Challenge ────────────────────────────────────────────────
+
+function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
+  const qc = useQueryClient();
+  const completeChallenge = useCompleteChallenge();
+  const cards: any[] = challenge.quizData?.cards ?? [];
+  const isCompleted = challenge.status === "completed";
+
+  const [idx, setIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [known, setKnown] = useState<Set<string>>(new Set());
+  const [done, setDone] = useState(isCompleted);
+
+  const card = cards[idx];
+  const allKnown = known.size >= cards.length;
+
+  const handleGotIt = () => {
+    setKnown((k) => new Set([...k, card.id]));
+    setFlipped(false);
+    if (idx < cards.length - 1) setIdx((i) => i + 1);
+  };
+
+  const handleReview = () => {
+    setFlipped(false);
+    if (idx < cards.length - 1) setIdx((i) => i + 1);
+    else setIdx(0);
+  };
+
+  const handleComplete = async () => {
+    await completeChallenge.mutateAsync({ challengeId: challenge.id, answersData: { reviewed: cards.length } });
+    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    setDone(true);
+  };
+
+  if (done) {
+    return (
+      <div className="space-y-4">
+        <ChallengeHeader challenge={challenge} />
+        <div className="rounded-xl border p-6 text-center space-y-3" style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}>
+          <Trophy size={32} className="mx-auto" style={{ color: "#22c55e" }} />
+          <p className="font-bold text-foreground">All cards reviewed!</p>
+          <p className="text-sm text-muted-foreground">{known.size}/{cards.length} marked as known</p>
+          <button onClick={onDone} className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>Back to challenges →</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ChallengeHeader challenge={challenge} />
+
+      {/* Progress */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>Card {idx + 1} of {cards.length}</span>
+        <span style={{ color: "#22c55e" }}>{known.size} known</span>
+      </div>
+
+      {/* Flashcard — click to flip */}
+      <button
+        onClick={() => setFlipped((f) => !f)}
+        className="w-full rounded-2xl border p-8 text-center transition-all min-h-[180px] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-accent/50"
+        style={{ borderColor: "rgba(255,255,255,0.12)", background: flipped ? "color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-surface))" : "var(--color-bg-surface)" }}
+      >
+        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          {flipped ? "Answer" : "Question — tap to flip"}
+        </p>
+        <p className="text-base font-semibold text-foreground leading-relaxed">
+          {flipped ? card?.back : card?.front}
+        </p>
+        <RotateCcw size={13} className="text-muted-foreground mt-1" />
+      </button>
+
+      {/* Navigation */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleReview}
+          className="flex-1 py-2.5 rounded-lg text-xs font-bold border border-border text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Review Again
+        </button>
+        <button
+          onClick={handleGotIt}
+          className="flex-1 py-2.5 rounded-lg text-xs font-bold text-white"
+          style={{ background: "#22c55e" }}
+        >
+          Got It ✓
+        </button>
+      </div>
+
+      {allKnown && !done && (
+        <button
+          onClick={handleComplete}
+          disabled={completeChallenge.isPending}
+          className="w-full py-2.5 rounded-lg text-sm font-bold text-white"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {completeChallenge.isPending ? "Saving..." : "Complete Challenge"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Challenge Header (shared) ────────────────────────────────────────────────
+
+function ChallengeHeader({ challenge }: { challenge: any }) {
+  const typeMeta = CHALLENGE_TYPE_META[challenge.type] ?? CHALLENGE_TYPE_META.watch;
+  const ss = statusStyle(challenge.status);
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] font-black" style={{ color: challenge.numberColor }}>{challenge.numberLabel}</span>
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${typeMeta.color}22`, color: typeMeta.color }}>{typeMeta.label}</span>
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: ss.bg, color: ss.text }}>
+          {challenge.status === "completed" ? "Completed" : challenge.status === "in_progress" ? "In Progress" : "Not Started"}
+        </span>
+      </div>
+      <h3 className="font-bold text-foreground text-base">{challenge.title}</h3>
+      {challenge.description && <p className="text-xs text-muted-foreground leading-relaxed">{challenge.description}</p>}
+    </div>
+  );
+}
+
+// ─── Main: Challenge Dispatcher ───────────────────────────────────────────────
+
+function ChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
+  switch (challenge.type) {
+    case "quiz":      return <QuizChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "written":   return <WrittenChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "matching":  return <MatchingChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "flashcard": return <FlashcardChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    default:          return <WatchChallengeView challenge={challenge} slug={slug} />;
+  }
+}
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function DetailSkeleton() {
@@ -958,6 +1577,7 @@ function DetailSkeleton() {
 
 type MainView =
   | { kind: "default" }
+  | { kind: "challenge"; challenge: any }
   | { kind: "assignment"; assignmentId: string };
 
 export default function WorkshopDetailPage() {
@@ -965,7 +1585,7 @@ export default function WorkshopDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data: detail, isLoading: detailLoading } = useWorkshopDetail(slug);
-  const { data: flowData, isLoading: flowLoading } = useWorkshopFlow(slug);
+  const { data: flowData } = useWorkshopFlow(slug);
   const { uiStrings } = useSiteConfig();
 
   const tabs = detail?.sidebar?.tabs ?? [];
@@ -1059,6 +1679,12 @@ export default function WorkshopDetailPage() {
               slug={slug}
               onBack={() => setMainView({ kind: "default" })}
             />
+          ) : mainView.kind === "challenge" ? (
+            <ChallengeView
+              challenge={mainView.challenge}
+              slug={slug}
+              onDone={() => setMainView({ kind: "default" })}
+            />
           ) : upcomingLiveCall ? (
             <MainAreaCountdown item={upcomingLiveCall} />
           ) : (
@@ -1067,7 +1693,7 @@ export default function WorkshopDetailPage() {
               style={{ minHeight: 180 }}
             >
               <p className="text-sm text-muted-foreground text-center px-4">
-                Select an episode from the sidebar to begin
+                Select a challenge from the sidebar to begin
               </p>
             </div>
           )}
@@ -1106,45 +1732,15 @@ export default function WorkshopDetailPage() {
           {/* Challenges tab */}
           {currentTabId === "challenges" && (
             <div className="space-y-3">
-              {/* Collapsible progress widget */}
               <LearningProgressWidget progress={progress} />
-
-              {/* Workshop flow label */}
-              {detail.workshopFlowLabel && (
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1">
-                  {detail.workshopFlowLabel}
-                </p>
-              )}
-
-              {/* Flow items */}
-              {flowLoading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className="h-14 rounded-xl animate-pulse"
-                      style={{ background: "var(--color-bg-surface)" }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                (flowData?.flowItems ?? []).map((item: WorkshopFlowItem) => (
-                  <FlowItemRow
-                    key={item.id}
-                    item={item}
-                    onEpisodeClick={(id) => {
-                      router.push(`/episode/${slug}/${id}`);
-                    }}
-                    onAssignmentTabClick={() => {
-                      setActiveTab("assignment");
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }}
-                    onLiveCallClick={(liveItem) => {
-                      setMainView({ kind: "default" });
-                    }}
-                  />
-                ))
-              )}
+              <ChallengeList
+                slug={slug}
+                selectedId={mainView.kind === "challenge" ? mainView.challenge?.id : null}
+                onSelect={(ch) => {
+                  setMainView({ kind: "challenge", challenge: ch });
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
             </div>
           )}
 

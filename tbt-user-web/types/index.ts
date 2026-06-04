@@ -80,6 +80,7 @@ export interface Lesson {
   description?: string | null;
   videoUrl?: string | null;
   duration?: number | null;
+  durationSeconds?: number | null;
   order: number;
   isFree: boolean;
 }
