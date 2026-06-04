@@ -1,20 +1,65 @@
 "use client";
 
-import { use } from "react";
+import { use, useState, useEffect } from "react";
 import { Video, Users } from "lucide-react";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import { useWebinar } from "@/lib/hooks/useEvents";
+import { getSocket } from "@/lib/socket/client";
 import { formatDateTime } from "@/lib/utils/format";
 
 export default function LiveSessionPage({ params }: { params: Promise<{ webinarId: string }> }) {
   const { webinarId } = use(params);
   const { data: webinar, isLoading } = useWebinar(webinarId);
 
+  const [socketStatus, setSocketStatus] = useState<string | null>(null);
+  const [socketStreamUrl, setSocketStreamUrl] = useState<string | null>(null);
+  const [socketRecordingUrl, setSocketRecordingUrl] = useState<string | null>(null);
+  const [attendeeCount, setAttendeeCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!webinarId) return;
+    let mounted = true;
+
+    getSocket().then((socket) => {
+      if (!mounted) return;
+
+      socket.emit('join:live', webinarId);
+
+      socket.on('live:started', ({ streamUrl }: { streamUrl: string }) => {
+        setSocketStreamUrl(streamUrl);
+        setSocketStatus('live');
+      });
+
+      socket.on('live:ended', ({ recordingUrl }: { recordingUrl: string | null }) => {
+        setSocketStatus('ended');
+        setSocketRecordingUrl(recordingUrl);
+      });
+
+      socket.on('live:attendee_count', ({ count }: { count: number }) => {
+        setAttendeeCount(count);
+      });
+    });
+
+    return () => {
+      mounted = false;
+      getSocket().then((socket) => {
+        socket.emit('leave:live', webinarId);
+        socket.off('live:started');
+        socket.off('live:ended');
+        socket.off('live:attendee_count');
+      });
+    };
+  }, [webinarId]);
+
   if (isLoading) return <PageLoader />;
   if (!webinar) return <p className="text-center py-16 text-muted-foreground">Session not found.</p>;
 
-  const isLive = webinar.status === "live";
-  const hasRecording = !!webinar.recordingUrl;
+  // Socket state takes precedence over REST snapshot
+  const effectiveStatus = socketStatus ?? webinar.status;
+  const effectiveStreamUrl = socketStreamUrl ?? webinar.streamUrl;
+  const effectiveRecordingUrl = socketRecordingUrl ?? webinar.recordingUrl;
+  const isLive = effectiveStatus === "live";
+  const hasRecording = !!effectiveRecordingUrl;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -23,6 +68,12 @@ export default function LiveSessionPage({ params }: { params: Promise<{ webinarI
           {isLive && (
             <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-rose-600 bg-rose-100 dark:bg-rose-900/30 px-2 py-0.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" /> Live
+            </span>
+          )}
+          {attendeeCount !== null && isLive && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Users size={12} />
+              {attendeeCount}
             </span>
           )}
           <span className="text-xs text-muted-foreground">{formatDateTime(webinar.scheduledAt)}</span>
@@ -35,15 +86,15 @@ export default function LiveSessionPage({ params }: { params: Promise<{ webinarI
 
       {/* Stream / Recording */}
       <div className="rounded-xl overflow-hidden border border-border bg-black aspect-video flex items-center justify-center">
-        {isLive && webinar.streamUrl ? (
-          <video src={webinar.streamUrl} autoPlay controls className="w-full h-full object-contain" />
+        {isLive && effectiveStreamUrl ? (
+          <video src={effectiveStreamUrl} autoPlay controls className="w-full h-full object-contain" />
         ) : hasRecording ? (
-          <video src={webinar.recordingUrl!} controls className="w-full h-full object-contain" />
+          <video src={effectiveRecordingUrl!} controls className="w-full h-full object-contain" />
         ) : (
           <div className="text-center text-white/50 space-y-3">
             <Video size={48} className="mx-auto opacity-40" />
             <p className="text-sm">
-              {webinar.status === "scheduled"
+              {effectiveStatus === "scheduled"
                 ? `Stream starts at ${formatDateTime(webinar.scheduledAt)}`
                 : "Recording not available yet"}
             </p>

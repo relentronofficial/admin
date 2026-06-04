@@ -26,8 +26,9 @@ import {
 } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
+import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
-import { withResumeTime } from "@/lib/utils/format";
+import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { getServerNow } from "@/lib/api/client";
 import type {
   WorkshopFlowItem,
@@ -241,7 +242,7 @@ function EpisodePlayer({
   }
 
   const hasQualityChoice = playback.qualityOptions.length > 1;
-  const videoSrc = withResumeTime(playback.videoUrl, playback.resumeAtSeconds);
+  const videoSrc = withResumeTime(normalizeBunnyUrl(playback.videoUrl), playback.resumeAtSeconds);
 
   return (
     <div className="space-y-3">
@@ -1109,6 +1110,31 @@ export default function WorkshopDetailPage() {
       setActiveTab(tabs[0].id);
     }
   }, [tabs.length]);
+
+  useEffect(() => {
+    if (!slug) return;
+    let mounted = true;
+
+    getSocket().then((socket) => {
+      if (!mounted) return;
+      socket.emit('join:workshop', slug);
+      socket.on('qa:new_question', () => {
+        qc.invalidateQueries({ queryKey: ['workshop-qa', slug] });
+      });
+      socket.on('qa:new_reply', () => {
+        qc.invalidateQueries({ queryKey: ['workshop-qa', slug] });
+      });
+    });
+
+    return () => {
+      mounted = false;
+      getSocket().then((socket) => {
+        socket.emit('leave:workshop', slug);
+        socket.off('qa:new_question');
+        socket.off('qa:new_reply');
+      });
+    };
+  }, [slug, qc]);
 
   if (detailLoading) return <DetailSkeleton />;
   if (!detail) {

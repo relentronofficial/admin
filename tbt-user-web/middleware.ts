@@ -9,6 +9,7 @@ const isProtectedRoute = createRouteMatcher([
   "/Resources(.*)",
   "/profile(.*)",
   "/notifications(.*)",
+  "/messages(.*)",
   // legacy routes kept for backward compat
   "/dashboard(.*)",
   "/learning(.*)",

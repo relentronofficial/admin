@@ -8,21 +8,22 @@ import { useMe } from "@/lib/hooks/useUser";
 const EXEMPT_PATHS = ["/Products", "/profile"];
 
 export function SubscriptionGate({ children }: { children: React.ReactNode }) {
-  const { data: me, isLoading } = useMe();
+  const { data: me, isLoading, isError, isFetching } = useMe();
   const router = useRouter();
   const pathname = usePathname();
 
   const isExempt = EXEMPT_PATHS.some((p) => pathname.startsWith(p));
 
   useEffect(() => {
-    if (isLoading || isExempt || !me) return;
+    // Never redirect while data is in-flight, on error, or on exempt pages
+    if (isLoading || isFetching || isError || isExempt || !me) return;
 
     const sub = me.subscription;
     const isExpired = !sub || new Date(sub.endDate) < new Date();
     if (isExpired) {
       router.replace("/Products");
     }
-  }, [me, isLoading, isExempt, router]);
+  }, [me, isLoading, isFetching, isError, isExempt, router]);
 
   return <>{children}</>;
 }

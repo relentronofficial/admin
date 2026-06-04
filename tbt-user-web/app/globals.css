@@ -70,6 +70,7 @@
     background: var(--color-bg-primary, hsl(var(--background)));
     @apply text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    overflow-x: clip;
   }
   html {
     scroll-behavior: smooth;

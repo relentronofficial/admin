@@ -43,15 +43,40 @@ apiClient.interceptors.response.use(
 // Call initApiClient() once inside a client component after Clerk loads.
 let _getToken: (() => Promise<string | null>) | null = null;
 
+// Cache the JWT so we don't call getToken() on every request.
+// Clerk tokens are valid for 60s; we refresh 10s early to avoid edge expiry.
+let _tokenCache: { token: string; expiresAt: number } | null = null;
+
 export function initApiClient(getToken: () => Promise<string | null>) {
   _getToken = getToken;
+  _tokenCache = null; // clear stale token on re-init (sign-in / sign-out)
+}
+
+async function getCachedToken(): Promise<string> {
+  const now = Date.now();
+  if (_tokenCache && now < _tokenCache.expiresAt) {
+    return _tokenCache.token;
+  }
+
+  // On page load, TanStack Query fires before AuthInterceptor's useEffect runs.
+  // Poll up to 600ms so the interceptor has time to call initApiClient().
+  if (!_getToken) {
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (_getToken) break;
+    }
+  }
+
+  if (!_getToken) throw new Error('Auth not initialised');
+  const token = await _getToken();
+  if (!token) throw new Error('No auth token');
+  _tokenCache = { token, expiresAt: now + 50_000 }; // cache 50s
+  return token;
 }
 
 apiClient.interceptors.request.use(async (config) => {
-  if (_getToken) {
-    const token = await _getToken();
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
+  const token = await getCachedToken();
+  config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 

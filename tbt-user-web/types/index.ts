@@ -230,6 +230,14 @@ export interface UiStrings {
   messagesMarkAllLabel: string;
   messagesEmptyTitle: string;
   messagesEmptyDesc: string;
+  chatPageTitle: string;
+  chatNewLabel: string;
+  chatSubjectLabel: string;
+  chatTypingText: string;
+  chatClosedLabel: string;
+  chatEmptyTitle: string;
+  chatEmptyDesc: string;
+  chatSelectPrompt: string;
   resourcesDownloadLabel: string;
   paginationPrevLabel: string;
   paginationNextLabel: string;
@@ -315,6 +323,8 @@ export interface ContentItem {
   contentType: string;
   categoryTag?: string | null;
   playUrl?: string | null;
+  courseId?: string | null;
+  workshopId?: string | null;
   episodeCount?: number | null;
   episodes?: ContentEpisode[];
 }

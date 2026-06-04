@@ -25,4 +25,16 @@ export const dashboardService = {
 
   markAllMessagesRead: () =>
     apiClient.post<never, ApiResponse<{ updated: number }>>("/api/user/messages/read-all"),
+
+  getConversations: () =>
+    apiClient.get("/api/user/conversations"),
+
+  getConversationMessages: (id: string) =>
+    apiClient.get(`/api/user/conversations/${id}/messages`),
+
+  startConversation: (data: { subject: string; body: string }) =>
+    apiClient.post("/api/user/conversations", data),
+
+  sendChatMessage: (id: string, body: string) =>
+    apiClient.post(`/api/user/conversations/${id}/messages`, { body }),
 };

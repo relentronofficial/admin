@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ChevronLeft, Loader2, CheckCircle2 } from "lucide-react";
 import { useEpisodePlayback, usePostEpisodeProgress } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
-import { withResumeTime } from "@/lib/utils/format";
+import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 
 export default function WatchPage() {
   const { episodeId } = useParams<{ episodeId: string }>();
@@ -65,7 +65,7 @@ export default function WatchPage() {
   }
 
   const hasQualityChoice = playback.qualityOptions.length > 1;
-  const videoSrc = withResumeTime(playback.videoUrl, playback.resumeAtSeconds);
+  const videoSrc = withResumeTime(normalizeBunnyUrl(playback.videoUrl), playback.resumeAtSeconds);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "#000" }}>

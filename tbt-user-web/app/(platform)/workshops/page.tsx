@@ -1,10 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CheckCircle2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMyWorkshops } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
+import { getSocket } from "@/lib/socket/client";
 import type { WorkshopListItem } from "@/types";
 
 // ─── Icon resolver ────────────────────────────────────────────────────────────
@@ -124,6 +127,27 @@ function WorkshopsSkeleton() {
 export default function WorkshopsPage() {
   const { data, isLoading } = useMyWorkshops();
   const { uiStrings } = useSiteConfig();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let mounted = true;
+    getSocket().then((socket) => {
+      if (!mounted) return;
+      socket.on('workshop:enrolled', () => {
+        queryClient.invalidateQueries({ queryKey: ['my-workshops'] });
+      });
+      socket.on('workshop:removed', () => {
+        queryClient.invalidateQueries({ queryKey: ['my-workshops'] });
+      });
+    });
+    return () => {
+      mounted = false;
+      getSocket().then((s) => {
+        s.off('workshop:enrolled');
+        s.off('workshop:removed');
+      });
+    };
+  }, [queryClient]);
 
   if (isLoading) return <WorkshopsSkeleton />;
 

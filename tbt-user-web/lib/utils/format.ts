@@ -19,11 +19,21 @@ export const formatDuration = (minutes: number): string => {
 export const formatPoints = (n: number): string =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
-// Appends ?start=N (or &start=N) to an iframe embed URL for resume-from-position.
+// Converts Bunny Stream standalone player URLs to embeddable iframe URLs.
+// player.mediadelivery.net/play/{lib}/{id} → iframe.mediadelivery.net/embed/{lib}/{id}
+export const normalizeBunnyUrl = (url: string): string => {
+  if (!url) return url;
+  return url.replace(
+    /https?:\/\/player\.mediadelivery\.net\/play\/(\d+)\/([\w-]+)/,
+    "https://iframe.mediadelivery.net/embed/$1/$2"
+  );
+};
+
+// Appends ?t=N (or &t=N) to a Bunny Stream iframe embed URL for resume-from-position.
 export const withResumeTime = (url: string, seconds: number): string => {
   if (!seconds || seconds <= 0) return url;
   const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}start=${Math.floor(seconds)}`;
+  return `${url}${sep}t=${Math.floor(seconds)}`;
 };
 
 export const planLabel: Record<string, string> = {

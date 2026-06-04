@@ -71,7 +71,6 @@ export const useWorkshopQa = (slug: string, page = 1) =>
       return res?.data as QAResponse;
     },
     enabled: !!slug,
-    refetchInterval: 15 * 1000,
   });
 
 export const usePostQa = () =>
