@@ -397,11 +397,11 @@ export default function CreateAdminPage() {
                   <span className="bg-[#1a1a1a] border border-[#333] border-r-0 rounded-l-md px-3 flex items-center text-[#666] text-[12px]">+91</span>
                   <input 
                     {...register("phone")}
-                    className={cn("w-full bg-[#1f1f1f] border border-[#333] rounded-r-md py-2.5 px-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0]", errors.contactNumber && "border-red-500/50")} 
-                    placeholder="Enter mobile number" 
+                    className={cn("w-full bg-[#1f1f1f] border border-[#333] rounded-r-md py-2.5 px-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0]", errors.phone && "border-red-500/50")}
+                    placeholder="Enter mobile number"
                   />
                 </div>
-                {errors.contactNumber && <p className="text-[10px] text-red-500 mt-1 font-medium">{errors.contactNumber.message}</p>}
+                {errors.phone && <p className="text-[10px] text-red-500 mt-1 font-medium">{errors.phone.message}</p>}
               </div>
 
               <div className="field">
@@ -414,9 +414,9 @@ export default function CreateAdminPage() {
                 <input 
                   {...register("dob")}
                   type="date"
-                  className={cn("w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 px-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0] color-scheme-dark", errors.dateOfBirth && "border-red-500/50")} 
+                  className={cn("w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 px-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0] color-scheme-dark", errors.dob && "border-red-500/50")}
                 />
-                {errors.dateOfBirth && <p className="text-[10px] text-red-500 mt-1 font-medium">{errors.dateOfBirth.message}</p>}
+                {errors.dob && <p className="text-[10px] text-red-500 mt-1 font-medium">{errors.dob.message}</p>}
               </div>
 
               <div className="field">

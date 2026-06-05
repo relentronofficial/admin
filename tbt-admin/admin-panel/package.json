@@ -22,7 +22,7 @@
     "crypto-js": "^4.2.0",
     "date-fns": "^4.2.1",
     "lucide-react": "^0.378.0",
-    "next": "14.2.3",
+    "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.51.5",
@@ -45,10 +45,10 @@
     "cssesc": "^3.0.0",
     "dot-case": "^3.0.4",
     "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.3",
+    "eslint-config-next": "14.2.35",
     "is-number": "^7.0.0",
     "lines-and-columns": "^2.0.4",
-    "postcss": "^8.4.38",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.4.5"
   }
