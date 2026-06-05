@@ -66,10 +66,19 @@ export function LoginScreen() {
     setError("");
 
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: "email_code",
-        code,
-      });
+      let result;
+      // Handle either first or second factor verification flows
+      if (signIn.status === "needs_second_factor") {
+        result = await signIn.attemptSecondFactor({
+          strategy: "email_code",
+          code,
+        });
+      } else {
+        result = await signIn.attemptFirstFactor({
+          strategy: "email_code",
+          code,
+        });
+      }
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
@@ -96,9 +105,6 @@ export function LoginScreen() {
     console.log("Starting login for:", identifier);
     const result = await signIn.create({ identifier, password });
     console.log("Clerk status:", result.status);
-    console.log("Full result:", result);
-    console.log("Supported First Factors:", result.supportedFirstFactors);
-    console.log("Supported Second Factors:", result.supportedSecondFactors);
 
     if (result.status === "complete") {
       console.log("Branch: complete");
@@ -112,7 +118,7 @@ export function LoginScreen() {
       // Start email code verification
       const factor = result.supportedFirstFactors?.find(f => f.strategy === "email_code") as { emailAddressId: string } | undefined;
       if (factor) {
-        console.log("Preparing email_code factor");
+        console.log("Preparing email_code first factor");
         await signIn.prepareFirstFactor({
           strategy: "email_code",
           emailAddressId: factor.emailAddressId,
@@ -121,6 +127,20 @@ export function LoginScreen() {
       } else {
         console.log("Error: email_code factor not found");
         setError("Email verification not available for this account.");
+      }
+    } else if (result.status === "needs_second_factor") {
+      console.log("Branch: needs_second_factor");
+      // Start second factor email code verification
+      const factor = result.supportedSecondFactors?.find(f => f.strategy === "email_code");
+      if (factor) {
+        console.log("Preparing email_code second factor");
+        await signIn.prepareSecondFactor({
+          strategy: "email_code",
+        });
+        setVerifying(true);
+      } else {
+        console.log("Error: email_code second factor strategy not found");
+        setError("Email MFA verification not available for this account.");
       }
     } else {
       console.log("Branch: error (unknown status)", result.status);
