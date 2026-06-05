@@ -50,7 +50,7 @@ export function LoginScreen() {
     const result = await signIn!.create({ identifier, password });
     if (result.status === "complete") {
       await setActive!({ session: result.createdSessionId });
-      router.push("/dashboard");
+      router.replace("/tbt");
     }
   }, [signIn, setActive, identifier, password, router]);
 
