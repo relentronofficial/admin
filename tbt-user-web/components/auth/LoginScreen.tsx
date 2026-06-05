@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSignIn, useClerk } from "@clerk/nextjs";
+import { useSignIn, useClerk, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Eye,
@@ -27,6 +27,7 @@ type FocusedField = "identifier" | "password" | null;
 
 export function LoginScreen() {
   const { isLoaded, signIn, setActive } = useSignIn();
+  const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const clerk = useClerk();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -40,6 +41,13 @@ export function LoginScreen() {
   const [error, setError] = useState("");
   const [focused, setFocused] = useState<FocusedField>(null);
 
+  // If already signed in, push to redirectUrl immediately
+  useEffect(() => {
+    if (authLoaded && isSignedIn && !submitting) {
+      router.replace(redirectUrl);
+    }
+  }, [authLoaded, isSignedIn, router, redirectUrl, submitting]);
+
   // Cinematic background rotation
   useEffect(() => {
     const t = setInterval(() => {
@@ -49,10 +57,19 @@ export function LoginScreen() {
   }, []);
 
   const attemptSignIn = useCallback(async () => {
-    const result = await signIn!.create({ identifier, password });
+    if (!signIn) return;
+    const result = await signIn.create({ identifier, password });
+    
     if (result.status === "complete") {
-      await setActive!({ session: result.createdSessionId });
-      router.replace(redirectUrl);
+      if (setActive) {
+        await setActive({ session: result.createdSessionId });
+        // Use a short delay or window.location if router.replace feels "stuck"
+        // but router.replace is standard.
+        router.replace(redirectUrl);
+      }
+    } else {
+      // Handle cases where more steps are needed (MFA, etc)
+      setError("Additional verification required. Please use the standard sign-in flow.");
     }
   }, [signIn, setActive, identifier, password, router, redirectUrl]);
 
@@ -74,7 +91,10 @@ export function LoginScreen() {
         // Sign it out silently and retry with the member credentials.
         if (code === "session_exists" || code === "identifier_already_signed_in") {
           try {
-            await clerk.signOut();
+            // Sign out without redirecting away from this page
+            await clerk.signOut({ redirectUrl: window.location.href });
+            // Small delay to let Clerk internal state settle
+            await new Promise(r => setTimeout(r, 500));
             await attemptSignIn();
             return;
           } catch (retryErr: unknown) {
@@ -93,7 +113,9 @@ export function LoginScreen() {
           );
         }
       } finally {
-        setSubmitting(false);
+        // Only set submitting to false if we didn't redirect
+        // to avoid flicker if navigation is slow
+        setTimeout(() => setSubmitting(false), 1000);
       }
     },
     [isLoaded, submitting, attemptSignIn, clerk]
