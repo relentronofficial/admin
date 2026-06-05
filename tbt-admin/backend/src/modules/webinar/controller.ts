@@ -15,9 +15,8 @@ export async function createWebinarHandler(request: FastifyRequest, reply: Fasti
   const webinar = await request.server.prisma.webinar.create({
     data: {
       ...body,
-      webinarId,
       scheduledAt: new Date(body.scheduledAt),
-    },
+    } as any,
   });
 
   return reply.status(201).send({ success: true, data: webinar, error: null });

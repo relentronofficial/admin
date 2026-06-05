@@ -5,6 +5,11 @@ import { nodeProfilingIntegration } from '@sentry/profiling-node';
 import { env } from '../config/env.js';
 
 async function sentryPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions) {
+  if (!env.SENTRY_DSN) {
+    fastify.log.info('Sentry DSN not set, skipping Sentry plugin');
+    return;
+  }
+
   Sentry.init({
     dsn: env.SENTRY_DSN,
     integrations: [

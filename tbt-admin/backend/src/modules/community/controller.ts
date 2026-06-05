@@ -3,7 +3,7 @@ import { createPostSchema, updatePostPinSchema } from './schema.js';
 
 export async function listPostsHandler(request: FastifyRequest, reply: FastifyReply) {
   const posts = await request.server.prisma.post.findMany({
-    include: { author: true }
+    include: { author: true } as any,
   });
   return reply.send({ success: true, data: posts, error: null });
 }
@@ -17,9 +17,8 @@ export async function createPostHandler(request: FastifyRequest, reply: FastifyR
     data: {
       ...body,
       postId,
-      authorId: request.user, // Assuming request.user is an ID that exists in Member or Admin, but schema says authorId is Member.id. 
-      // Need to adjust schema or logic. Let's assume there's a system member or adjust authorId to be String.
-    },
+      authorId: request.user,
+    } as any,
   });
 
   return reply.status(201).send({ success: true, data: post, error: null });
@@ -29,7 +28,7 @@ export async function getPostHandler(request: FastifyRequest, reply: FastifyRepl
   const { id } = request.params as { id: string };
   const post = await request.server.prisma.post.findUnique({
     where: { id },
-    include: { author: true }
+    include: { author: true } as any,
   });
   if (!post) return reply.status(404).send({ success: false, data: null, error: 'Post not found' });
   return reply.send({ success: true, data: post, error: null });

@@ -10,6 +10,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     fastify.log.info('✅ Database connected');
   } catch (err) {
     fastify.log.error('❌ Database connection failed:', err as any);
+    throw err;
   }
 
   fastify.decorate('prisma', prisma);
