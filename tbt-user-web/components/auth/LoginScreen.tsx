@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSignIn, useClerk } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -29,6 +29,8 @@ export function LoginScreen() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const clerk = useClerk();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams.get("redirect_url") || "/tbt";
 
   const [currentBg, setCurrentBg] = useState(0);
   const [identifier, setIdentifier] = useState("");
@@ -50,9 +52,9 @@ export function LoginScreen() {
     const result = await signIn!.create({ identifier, password });
     if (result.status === "complete") {
       await setActive!({ session: result.createdSessionId });
-      router.replace("/tbt");
+      router.replace(redirectUrl);
     }
-  }, [signIn, setActive, identifier, password, router]);
+  }, [signIn, setActive, identifier, password, router, redirectUrl]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
