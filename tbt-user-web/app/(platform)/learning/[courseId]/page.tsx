@@ -44,7 +44,7 @@ export default function CourseDetailPage({
   // Refs so closure callbacks always see current values
   const markCalledRef = useRef(false);
   const elapsedRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const iframeFocusedRef = useRef(false);
   const selectedLessonRef = useRef<SelectedLesson | null>(null);
   selectedLessonRef.current = selectedLesson;
