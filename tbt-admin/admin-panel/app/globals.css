@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 13, 4, 4;
+  --background-end-rgb: 13, 4, 4;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: #0f0f0f;
+  min-height: 100vh;
+}
+
+@layer components {
+  .field {
+    @apply space-y-2 mb-6;
+  }
+  
+  .field label {
+    @apply block text-[10px] font-bold text-[#606060] tracking-[1.5px] uppercase font-rajdhani mb-2;
+  }
+}
+
+@layer utilities {
+  .bg-login-glow {
+    background: 
+      radial-gradient(ellipse 60% 50% at 50% 60%, rgba(160,10,10,0.18) 0%, transparent 70%),
+      radial-gradient(ellipse 80% 60% at 50% 100%, rgba(100,5,5,0.25) 0%, transparent 65%);
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "tbt-admin",
+  "private": true,
+  "workspaces": [
+    "admin-panel",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:admin\" \"npm run dev:backend\"",
+    "dev:admin": "npm run dev -w admin-panel",
+    "dev:backend": "npm run dev -w backend",
+    "build:admin": "npm run build -w admin-panel",
+    "build:backend": "npm run build -w backend",
+    "lint": "npm run lint -w admin-panel && npm run lint -w backend",
+    "format": "prettier --write .",
+    "typecheck": "npm run typecheck -w admin-panel && npm run typecheck -w backend",
+    "prepare": "npm run prisma:generate -w backend"
+  },
+  "devDependencies": {
+    "@prisma/client": "^7.8.0",
+    "client-only": "^0.0.1",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.2.5",
+    "prisma": "^7.8.0",
+    "typescript": "^5.4.5"
+  }
+}

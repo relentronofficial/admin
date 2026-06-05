@@ -1,0 +1,13 @@
+import { z } from 'zod';
+
+export const startConversationSchema = z.object({
+  subject: z.string().min(1).max(200),
+  body:    z.string().min(1).max(5000),
+});
+
+export const sendChatMessageSchema = z.object({
+  body: z.string().min(1).max(5000),
+});
+
+export type StartConversationBody = z.infer<typeof startConversationSchema>;
+export type SendChatMessageBody   = z.infer<typeof sendChatMessageSchema>;
