@@ -23,7 +23,7 @@ const BG_IMAGES = [
 
 const SLIDE_MS = 6000;
 
-type FocusedField = "identifier" | "password" | null;
+type FocusedField = "identifier" | "password" | "code" | null;
 
 export function LoginScreen() {
   const { isLoaded, signIn, setActive } = useSignIn();
@@ -36,6 +36,8 @@ export function LoginScreen() {
   const [currentBg, setCurrentBg] = useState(0);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -43,10 +45,10 @@ export function LoginScreen() {
 
   // If already signed in, push to redirectUrl immediately
   useEffect(() => {
-    if (authLoaded && isSignedIn && !submitting) {
+    if (authLoaded && isSignedIn && !submitting && !verifying) {
       router.replace(redirectUrl);
     }
-  }, [authLoaded, isSignedIn, router, redirectUrl, submitting]);
+  }, [authLoaded, isSignedIn, router, redirectUrl, submitting, verifying]);
 
   // Cinematic background rotation
   useEffect(() => {
@@ -56,6 +58,38 @@ export function LoginScreen() {
     return () => clearInterval(t);
   }, []);
 
+  const handleVerification = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded || !signIn || submitting) return;
+
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const result = await signIn.attemptFirstFactor({
+        strategy: "email_code",
+        code,
+      });
+
+      if (result.status === "complete") {
+        await setActive({ session: result.createdSessionId });
+        router.replace(redirectUrl);
+      } else {
+        console.error("Incomplete sign in status:", result.status);
+        setError("Verification failed. Please try again.");
+      }
+    } catch (err: unknown) {
+      const clerkErr = err as { errors?: { longMessage?: string; message?: string }[] };
+      setError(
+        clerkErr.errors?.[0]?.longMessage ||
+        clerkErr.errors?.[0]?.message ||
+        "Verification failed. Please check the code."
+      );
+    } finally {
+      setTimeout(() => setSubmitting(false), 1000);
+    }
+  }, [isLoaded, signIn, code, setActive, router, redirectUrl, submitting]);
+
   const attemptSignIn = useCallback(async () => {
     if (!signIn) return;
     const result = await signIn.create({ identifier, password });
@@ -63,12 +97,21 @@ export function LoginScreen() {
     if (result.status === "complete") {
       if (setActive) {
         await setActive({ session: result.createdSessionId });
-        // Use a short delay or window.location if router.replace feels "stuck"
-        // but router.replace is standard.
         router.replace(redirectUrl);
       }
+    } else if (result.status === "needs_first_factor") {
+      // Start email code verification
+      const factor = result.supportedFirstFactors?.find(f => f.strategy === "email_code") as { emailAddressId: string } | undefined;
+      if (factor) {
+        await signIn.prepareFirstFactor({
+          strategy: "email_code",
+          emailAddressId: factor.emailAddressId,
+        });
+        setVerifying(true);
+      } else {
+        setError("Email verification not available for this account.");
+      }
     } else {
-      // Handle cases where more steps are needed (MFA, etc)
       setError("Additional verification required. Please use the standard sign-in flow.");
     }
   }, [signIn, setActive, identifier, password, router, redirectUrl]);
@@ -87,13 +130,9 @@ export function LoginScreen() {
         const clerkErr = err as { errors?: { code?: string; longMessage?: string; message?: string }[] };
         const code = clerkErr.errors?.[0]?.code;
 
-        // Another Clerk session is active (e.g. admin logged in on same browser).
-        // Sign it out silently and retry with the member credentials.
         if (code === "session_exists" || code === "identifier_already_signed_in") {
           try {
-            // Sign out without redirecting away from this page
             await clerk.signOut({ redirectUrl: window.location.href });
-            // Small delay to let Clerk internal state settle
             await new Promise(r => setTimeout(r, 500));
             await attemptSignIn();
             return;
@@ -113,8 +152,6 @@ export function LoginScreen() {
           );
         }
       } finally {
-        // Only set submitting to false if we didn't redirect
-        // to avoid flicker if navigation is slow
         setTimeout(() => setSubmitting(false), 1000);
       }
     },
@@ -220,10 +257,10 @@ export function LoginScreen() {
                 </div>
 
                 <h1 className="text-[26px] font-bold text-white tracking-tight leading-tight">
-                  Welcome Back
+                  {verifying ? "Verify Identity" : "Welcome Back"}
                 </h1>
                 <p className="text-white/35 text-[13px] mt-1 tracking-wide">
-                  Sign in to continue your journey
+                  {verifying ? "Enter the code sent to your email" : "Sign in to continue your journey"}
                 </p>
               </motion.div>
 
@@ -251,118 +288,186 @@ export function LoginScreen() {
               </AnimatePresence>
 
               {/* ── Form ── */}
-              <form onSubmit={handleSubmit} className="space-y-3.5">
-                {/* User ID */}
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.45, duration: 0.55 }}
-                >
-                  <InputField
-                    type="text"
-                    value={identifier}
-                    onChange={setIdentifier}
-                    placeholder="User ID or Email"
-                    icon={<User className="w-[15px] h-[15px]" />}
-                    focused={focused === "identifier"}
-                    onFocus={() => setFocused("identifier")}
-                    onBlur={() => setFocused(null)}
-                    autoComplete="username"
-                    required
-                  />
-                </motion.div>
+              {!verifying ? (
+                <form onSubmit={handleSubmit} className="space-y-3.5">
+                  {/* User ID */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.45, duration: 0.55 }}
+                  >
+                    <InputField
+                      type="text"
+                      value={identifier}
+                      onChange={setIdentifier}
+                      placeholder="User ID or Email"
+                      icon={<User className="w-[15px] h-[15px]" />}
+                      focused={focused === "identifier"}
+                      onFocus={() => setFocused("identifier")}
+                      onBlur={() => setFocused(null)}
+                      autoComplete="username"
+                      required
+                    />
+                  </motion.div>
 
-                {/* Password */}
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.52, duration: 0.55 }}
-                >
-                  <InputField
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={setPassword}
-                    placeholder="Password"
-                    icon={<Lock className="w-[15px] h-[15px]" />}
-                    focused={focused === "password"}
-                    onFocus={() => setFocused("password")}
-                    onBlur={() => setFocused(null)}
-                    autoComplete="current-password"
-                    required
-                    suffix={
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="text-white/30 hover:text-white/60 transition-colors duration-200 flex-shrink-0"
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="w-[15px] h-[15px]" />
+                  {/* Password */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.52, duration: 0.55 }}
+                  >
+                    <InputField
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={setPassword}
+                      placeholder="Password"
+                      icon={<Lock className="w-[15px] h-[15px]" />}
+                      focused={focused === "password"}
+                      onFocus={() => setFocused("password")}
+                      onBlur={() => setFocused(null)}
+                      autoComplete="current-password"
+                      required
+                      suffix={
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="text-white/30 hover:text-white/60 transition-colors duration-200 flex-shrink-0"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="w-[15px] h-[15px]" />
+                          ) : (
+                            <Eye className="w-[15px] h-[15px]" />
+                          )}
+                        </button>
+                      }
+                    />
+                  </motion.div>
+
+                  {/* Forgot password */}
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.6, duration: 0.5 }}
+                    className="flex justify-end pt-0.5"
+                  >
+                    <Link
+                      href="/sign-in"
+                      className="text-[12px] text-white/35 hover:text-red-400 transition-colors duration-200"
+                    >
+                      Forgot Password?
+                    </Link>
+                  </motion.div>
+
+                  {/* Login Button */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.65, duration: 0.55 }}
+                    className="pt-1"
+                  >
+                    <motion.button
+                      type="submit"
+                      disabled={submitting || !isLoaded}
+                      whileHover={
+                        !submitting ? { scale: 1.015, y: -1 } : undefined
+                      }
+                      whileTap={!submitting ? { scale: 0.975 } : undefined}
+                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                      className="relative w-full py-[14px] rounded-xl font-semibold text-white text-[14px] tracking-wide overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%)",
+                        boxShadow:
+                          "0 4px 24px rgba(220,38,38,0.5), 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
+                      }}
+                    >
+                      {/* Shine overlay on hover */}
+                      <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/8 to-white/0 opacity-0 hover:opacity-100 transition-opacity duration-300" />
+
+                      <span className="relative flex items-center justify-center gap-2">
+                        {submitting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Signing in...
+                          </>
                         ) : (
-                          <Eye className="w-[15px] h-[15px]" />
+                          <>
+                            Sign In
+                            <ArrowRight className="w-4 h-4" />
+                          </>
                         )}
-                      </button>
-                    }
-                  />
-                </motion.div>
-
-                {/* Forgot password */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6, duration: 0.5 }}
-                  className="flex justify-end pt-0.5"
-                >
-                  <Link
-                    href="/sign-in"
-                    className="text-[12px] text-white/35 hover:text-red-400 transition-colors duration-200"
+                      </span>
+                    </motion.button>
+                  </motion.div>
+                </form>
+              ) : (
+                <form onSubmit={handleVerification} className="space-y-4">
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.1, duration: 0.55 }}
                   >
-                    Forgot Password?
-                  </Link>
-                </motion.div>
+                    <InputField
+                      type="text"
+                      value={code}
+                      onChange={setCode}
+                      placeholder="Enter 6-digit code"
+                      icon={<Lock className="w-[15px] h-[15px]" />}
+                      focused={focused === "code"}
+                      onFocus={() => setFocused("code")}
+                      onBlur={() => setFocused(null)}
+                      autoComplete="one-time-code"
+                      required
+                    />
+                  </motion.div>
 
-                {/* Login Button */}
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.65, duration: 0.55 }}
-                  className="pt-1"
-                >
-                  <motion.button
-                    type="submit"
-                    disabled={submitting || !isLoaded}
-                    whileHover={
-                      !submitting ? { scale: 1.015, y: -1 } : undefined
-                    }
-                    whileTap={!submitting ? { scale: 0.975 } : undefined}
-                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                    className="relative w-full py-[14px] rounded-xl font-semibold text-white text-[14px] tracking-wide overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%)",
-                      boxShadow:
-                        "0 4px 24px rgba(220,38,38,0.5), 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2, duration: 0.55 }}
+                  >
+                    <motion.button
+                      type="submit"
+                      disabled={submitting || !isLoaded}
+                      whileHover={!submitting ? { scale: 1.015, y: -1 } : undefined}
+                      whileTap={!submitting ? { scale: 0.975 } : undefined}
+                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                      className="relative w-full py-[14px] rounded-xl font-semibold text-white text-[14px] tracking-wide overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        background: "linear-gradient(135deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%)",
+                        boxShadow: "0 4px 24px rgba(220,38,38,0.5), 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
+                      }}
+                    >
+                      <span className="relative flex items-center justify-center gap-2">
+                        {submitting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Verifying...
+                          </>
+                        ) : (
+                          <>
+                            Verify Code
+                            <ArrowRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </span>
+                    </motion.button>
+                  </motion.div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerifying(false);
+                      setCode("");
+                      setError("");
                     }}
+                    className="w-full text-center text-[12px] text-white/35 hover:text-white/60 transition-colors"
                   >
-                    {/* Shine overlay on hover */}
-                    <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/8 to-white/0 opacity-0 hover:opacity-100 transition-opacity duration-300" />
-
-                    <span className="relative flex items-center justify-center gap-2">
-                      {submitting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Signing in...
-                        </>
-                      ) : (
-                        <>
-                          Sign In
-                          <ArrowRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </span>
-                  </motion.button>
-                </motion.div>
-              </form>
+                    Back to login
+                  </button>
+                </form>
+              )}
 
               {/* ── Divider ── */}
               <motion.div
