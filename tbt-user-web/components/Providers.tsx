@@ -32,7 +32,7 @@ function AuthInterceptor() {
       initApiClient(() => getToken());
       initSocket(() => getToken());
       // Retry any queries that errored before this effect ran (auth race on page load).
-      queryClient.refetchQueries({ status: 'error' });
+      queryClient.refetchQueries({ predicate: (q) => q.state.status === 'error' });
       // Ensure a Member record exists for this Clerk user (idempotent)
       getToken().then((token) => {
         if (token) {
