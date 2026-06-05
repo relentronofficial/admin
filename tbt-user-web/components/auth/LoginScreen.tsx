@@ -93,28 +93,38 @@ export function LoginScreen() {
 
   const attemptSignIn = useCallback(async () => {
     if (!signIn) return;
+    console.log("Starting login for:", identifier);
     const result = await signIn.create({ identifier, password });
-    
+    console.log("Clerk status:", result.status);
+    console.log("Full result:", result);
+    console.log("Supported First Factors:", result.supportedFirstFactors);
+    console.log("Supported Second Factors:", result.supportedSecondFactors);
+
     if (result.status === "complete") {
+      console.log("Branch: complete");
       if (setActive) {
         await setActive({ session: result.createdSessionId });
         // Give cookies a moment to settle for middleware
         setTimeout(() => router.replace(redirectUrl), 100);
       }
     } else if (result.status === "needs_first_factor") {
+      console.log("Branch: needs_first_factor");
       // Start email code verification
       const factor = result.supportedFirstFactors?.find(f => f.strategy === "email_code") as { emailAddressId: string } | undefined;
       if (factor) {
+        console.log("Preparing email_code factor");
         await signIn.prepareFirstFactor({
           strategy: "email_code",
           emailAddressId: factor.emailAddressId,
         });
         setVerifying(true);
       } else {
+        console.log("Error: email_code factor not found");
         setError("Email verification not available for this account.");
       }
     } else {
-      setError("Additional verification required. Please use the standard sign-in flow.");
+      console.log("Branch: error (unknown status)", result.status);
+      setError(`Additional verification required (${result.status}). Please use the standard sign-in flow.`);
     }
   }, [signIn, setActive, identifier, password, router, redirectUrl]);
 
