@@ -73,7 +73,8 @@ export function LoginScreen() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.replace(redirectUrl);
+        // Give cookies a moment to settle for middleware
+        setTimeout(() => router.replace(redirectUrl), 100);
       } else {
         console.error("Incomplete sign in status:", result.status);
         setError("Verification failed. Please try again.");
@@ -97,7 +98,8 @@ export function LoginScreen() {
     if (result.status === "complete") {
       if (setActive) {
         await setActive({ session: result.createdSessionId });
-        router.replace(redirectUrl);
+        // Give cookies a moment to settle for middleware
+        setTimeout(() => router.replace(redirectUrl), 100);
       }
     } else if (result.status === "needs_first_factor") {
       // Start email code verification

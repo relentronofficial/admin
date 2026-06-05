@@ -22,32 +22,43 @@ const queryClient = new QueryClient({
   },
 });
 
-function AuthInterceptor() {
+function AuthInterceptor({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
+  const [synced, setSynced] = React.useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) {
       initApiClient(() => getToken());
       initSocket(() => getToken());
-      // Retry any queries that errored before this effect ran (auth race on page load).
-      queryClient.refetchQueries({ predicate: (q) => q.state.status === 'error' });
+      
       // Ensure a Member record exists for this Clerk user (idempotent)
       getToken().then((token) => {
         if (token) {
           apiClient.post('/api/pub/auth/sync', {}, {
             headers: { Authorization: `Bearer ${token}` },
-          }).catch(() => {/* non-fatal */});
+          })
+          .then(() => {
+            setSynced(true);
+            // Retry any queries that errored before this effect ran (auth race on page load).
+            queryClient.refetchQueries({ predicate: (q) => q.state.status === 'error' });
+          })
+          .catch(() => {
+            // Even if sync fails, we allow the app to try loading
+            setSynced(true);
+          });
         }
       });
     } else {
       initApiClient(() => Promise.resolve(null));
       disconnectSocket();
+      setSynced(true);
     }
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [isLoaded, isSignedIn, getToken, queryClient]);
 
-  return null;
+  if (!synced && isSignedIn) return null;
+  return <>{children}</>;
 }
 
 interface ProvidersProps {
@@ -63,10 +74,11 @@ export function Providers({ children }: ProvidersProps) {
       signUpFallbackRedirectUrl="/tbt"
     >
       <QueryClientProvider client={queryClient}>
-        <AuthInterceptor />
-        <SiteConfigProvider>
-        {children}
-        </SiteConfigProvider>
+        <AuthInterceptor>
+          <SiteConfigProvider>
+            {children}
+          </SiteConfigProvider>
+        </AuthInterceptor>
         <Toaster
           position="top-right"
           toastOptions={{
