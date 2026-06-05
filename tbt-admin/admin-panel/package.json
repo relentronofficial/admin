@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "prepare": "npm run prisma:generate -w backend"
+    "typecheck": "tsc --noEmit"
+  
   },
   "dependencies": {
     "@clerk/backend": "^3.4.11",
