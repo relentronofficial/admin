@@ -4,6 +4,7 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { usePlayerStore } from "@/lib/stores/usePlayerStore";
+import { VideoWatermark } from "./VideoWatermark";
 
 interface VideoPlayerProps {
   src: string;
@@ -80,100 +81,105 @@ export function VideoPlayer({ src, poster, lessonId, onProgress, onEnded, autoPl
   };
 
   return (
-    <div
-      ref={containerRef}
+    <VideoWatermark
       className="video-player group cursor-pointer select-none"
-      onMouseMove={resetHideTimer}
-      onClick={togglePlay}
+      containerId="video-player-root"
     >
-      <video
-        ref={videoRef}
-        src={src}
-        poster={poster}
-        autoPlay={autoPlay}
-        className="w-full h-full object-contain"
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
-        onEnded={() => {
-          setPlaying(false);
-          setIsPlaying(false);
-          onEnded?.();
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
-
-      {/* Controls overlay */}
       <div
-        className={cn(
-          "absolute inset-0 flex flex-col justify-end transition-opacity duration-300 pointer-events-none",
-          showControls ? "opacity-100" : "opacity-0",
-          "bg-gradient-to-t from-black/80 via-transparent to-transparent"
-        )}
-        onClick={(e) => e.stopPropagation()}
+        ref={containerRef}
+        className="w-full h-full relative"
+        onMouseMove={resetHideTimer}
+        onClick={togglePlay}
       >
-        {/* Progress bar */}
+        <video
+          ref={videoRef}
+          src={src}
+          poster={poster}
+          autoPlay={autoPlay}
+          className="w-full h-full object-contain"
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+          onEnded={() => {
+            setPlaying(false);
+            setIsPlaying(false);
+            onEnded?.();
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+
+        {/* Controls overlay */}
         <div
-          className="mx-4 mb-2 h-1 bg-white/30 rounded-full cursor-pointer pointer-events-auto relative"
-          onClick={seek}
+          className={cn(
+            "absolute inset-0 flex flex-col justify-end transition-opacity duration-300 pointer-events-none",
+            showControls ? "opacity-100" : "opacity-0",
+            "bg-gradient-to-t from-black/80 via-transparent to-transparent"
+          )}
+          onClick={(e) => e.stopPropagation()}
         >
+          {/* Progress bar */}
           <div
-            className="h-full bg-brand-600 rounded-full"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-
-        {/* Bottom controls */}
-        <div className="flex items-center gap-3 px-4 pb-4 pointer-events-auto">
-          <button
-            onClick={togglePlay}
-            className="text-white hover:text-brand-400 transition-colors"
+            className="mx-4 mb-2 h-1 bg-white/30 rounded-full cursor-pointer pointer-events-auto relative"
+            onClick={seek}
           >
-            {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-          </button>
+            <div
+              className="h-full bg-brand-600 rounded-full"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
 
-          <button
-            onClick={() => {
-              setMuted((m) => !m);
-              if (videoRef.current) videoRef.current.muted = !muted;
-            }}
-            className="text-white hover:text-brand-400 transition-colors"
-          >
-            {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </button>
+          {/* Bottom controls */}
+          <div className="flex items-center gap-3 px-4 pb-4 pointer-events-auto">
+            <button
+              onClick={togglePlay}
+              className="text-white hover:text-brand-400 transition-colors"
+            >
+              {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+            </button>
 
-          <span className="text-white text-xs font-mono ml-1">
-            {formatTime(videoRef.current?.currentTime || 0)} / {formatTime(duration)}
-          </span>
+            <button
+              onClick={() => {
+                setMuted((m) => !m);
+                if (videoRef.current) videoRef.current.muted = !muted;
+              }}
+              className="text-white hover:text-brand-400 transition-colors"
+            >
+              {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
 
-          <div className="flex-1" />
+            <span className="text-white text-xs font-mono ml-1">
+              {formatTime(videoRef.current?.currentTime || 0)} / {formatTime(duration)}
+            </span>
 
-          <button
-            onClick={() => {
-              const v = videoRef.current;
-              if (v) v.currentTime = 0;
-            }}
-            className="text-white hover:text-brand-400 transition-colors"
-          >
-            <RotateCcw size={16} />
-          </button>
+            <div className="flex-1" />
 
-          <button
-            onClick={() => containerRef.current?.requestFullscreen()}
-            className="text-white hover:text-brand-400 transition-colors"
-          >
-            <Maximize size={16} />
-          </button>
-        </div>
-      </div>
+            <button
+              onClick={() => {
+                const v = videoRef.current;
+                if (v) v.currentTime = 0;
+              }}
+              className="text-white hover:text-brand-400 transition-colors"
+            >
+              <RotateCcw size={16} />
+            </button>
 
-      {/* Play indicator */}
-      {!playing && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-16 h-16 rounded-full bg-black/50 flex items-center justify-center">
-            <Play size={28} className="text-white ml-1" fill="white" />
+            <button
+              onClick={() => containerRef.current?.parentElement?.requestFullscreen()}
+              className="text-white hover:text-brand-400 transition-colors"
+            >
+              <Maximize size={16} />
+            </button>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Play indicator */}
+        {!playing && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-16 h-16 rounded-full bg-black/50 flex items-center justify-center">
+              <Play size={28} className="text-white ml-1" fill="white" />
+            </div>
+          </div>
+        )}
+      </div>
+    </VideoWatermark>
   );
 }

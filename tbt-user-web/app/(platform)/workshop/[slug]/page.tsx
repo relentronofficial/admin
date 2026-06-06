@@ -32,6 +32,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
 import { getServerNow } from "@/lib/api/client";
+import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type {
   WorkshopFlowItem,
   WorkshopTab,
@@ -1104,13 +1105,16 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       <ChallengeHeader challenge={challenge} />
 
       {/* Player */}
-      <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
+      <VideoWatermark
+        className="rounded-xl overflow-hidden bg-black aspect-video relative"
+        containerId="workshop-video-root"
+      >
         {ep.videoUrl ? (
           <iframe src={ep.videoUrl} className="w-full h-full" allowFullScreen allow="autoplay; fullscreen" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
         )}
-      </div>
+      </VideoWatermark>
 
       {/* Episode title + mark done */}
       <div className="flex items-center justify-between gap-3">

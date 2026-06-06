@@ -9,6 +9,7 @@ import { useCourse, useLessonProgress, useMarkLessonComplete } from "@/lib/hooks
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
+import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type { Lesson } from "@/types";
 
 type WatchState = "not_started" | "watching" | "completed";
@@ -238,9 +239,9 @@ export default function CourseDetailPage({
       <div ref={topRef}>
         {selectedLesson ? (
           <div className="space-y-4">
-            <div
-              className="w-full aspect-video rounded-xl overflow-hidden relative"
-              style={{ background: "#000" }}
+            <VideoWatermark
+              className="w-full aspect-video rounded-xl overflow-hidden relative bg-black"
+              containerId="course-video-root"
             >
               {isBunnyEmbed(selectedLesson.videoUrl) ? (
                 <iframe
@@ -259,7 +260,7 @@ export default function CourseDetailPage({
                   onEnded={handleNativeEnded}
                 />
               )}
-            </div>
+            </VideoWatermark>
 
             <div className="flex items-start justify-between gap-4">
               <h2 className="text-lg font-semibold text-white leading-snug">

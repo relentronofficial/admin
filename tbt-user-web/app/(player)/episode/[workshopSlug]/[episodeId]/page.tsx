@@ -6,6 +6,7 @@ import { ChevronLeft, Loader2, CheckCircle2 } from "lucide-react";
 import { useEpisodePlayback, usePostEpisodeProgress } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
+import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 
 export default function LearningPlayerPage() {
   const { workshopSlug, episodeId } = useParams<{ workshopSlug: string; episodeId: string }>();
@@ -82,13 +83,18 @@ export default function LearningPlayerPage() {
       </header>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 pb-4 gap-4">
-        <iframe
-          src={videoSrc}
-          className="w-full max-w-5xl aspect-video border-0"
-          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-          allowFullScreen
-          title={playback.title}
-        />
+        <VideoWatermark
+          className="w-full max-w-5xl aspect-video relative"
+          containerId="workshop-episode-root"
+        >
+          <iframe
+            src={videoSrc}
+            className="w-full h-full border-0"
+            allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+            title={playback.title}
+          />
+        </VideoWatermark>
 
         <div className="w-full max-w-5xl flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-shrink-0">
