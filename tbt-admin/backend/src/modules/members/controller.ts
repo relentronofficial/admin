@@ -496,3 +496,147 @@ export async function removeMemberEnrollmentHandler(req: FastifyRequest, reply: 
   }
   return reply.send({ success: true, data: null, error: null });
 }
+
+// ── MEMBER WATCH ANALYTICS ────────────────────────────────────────────
+
+function parseUASimple(ua: string | null | undefined): { browser: string; os: string } {
+  if (!ua) return { browser: 'Unknown', os: 'Unknown' };
+  let os = 'Unknown';
+  if (/windows/i.test(ua)) os = 'Windows';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS';
+  else if (/android/i.test(ua)) os = 'Android';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+  let browser = 'Unknown';
+  if (/edg\//i.test(ua)) browser = 'Edge';
+  else if (/opr\/|opera/i.test(ua)) browser = 'Opera';
+  else if (/samsungbrowser/i.test(ua)) browser = 'Samsung';
+  else if (/firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/chrome\//i.test(ua)) browser = 'Chrome';
+  else if (/safari\//i.test(ua)) browser = 'Safari';
+  return { browser, os };
+}
+
+export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const { page = 1, limit = 25 } = req.query as { page?: number; limit?: number };
+
+  const member = await req.server.prisma.member.findUnique({ where: { id }, select: { id: true } });
+  if (!member) {
+    return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+  }
+
+  const [historyPage, historyTotal, allSummary, devices, securityEvents] = await Promise.all([
+    // Paginated episode-level history
+    req.server.prisma.memberEpisodeProgress.findMany({
+      where: { memberId: id },
+      orderBy: { updatedAt: 'desc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+      select: {
+        episodeId: true,
+        lastWatchedSecs: true,
+        actualWatchedSecs: true,
+        isCompleted: true,
+        completedAt: true,
+        updatedAt: true,
+        episode: {
+          select: {
+            title: true,
+            durationSeconds: true,
+            challenge: {
+              select: {
+                workshop: { select: { id: true, title: true, slug: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
+
+    // Total count for pagination
+    req.server.prisma.memberEpisodeProgress.count({ where: { memberId: id } }),
+
+    // Aggregate stats (all rows, minimal fields)
+    req.server.prisma.memberEpisodeProgress.findMany({
+      where: { memberId: id },
+      select: { actualWatchedSecs: true, isCompleted: true },
+    }),
+
+    // Active devices (last 30 days)
+    req.server.prisma.memberSession.findMany({
+      where: { memberId: id, lastActiveAt: { gt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+      orderBy: { lastActiveAt: 'desc' },
+      select: { id: true, deviceId: true, ipAddress: true, userAgent: true, lastActiveAt: true, startedAt: true },
+    }),
+
+    // Security events for this member
+    req.server.prisma.securityLog.findMany({
+      where: { memberId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { id: true, eventType: true, metadata: true, createdAt: true },
+    }),
+  ]);
+
+  // Aggregate stats
+  const totalWatchSeconds = allSummary.reduce((s, p) => s + (p.actualWatchedSecs ?? 0), 0);
+  const completedCount    = allSummary.filter(p => p.isCompleted).length;
+  const inProgressCount   = allSummary.filter(p => !p.isCompleted && (p.actualWatchedSecs ?? 0) > 0).length;
+  const completionRate    = allSummary.length > 0 ? Math.round((completedCount / allSummary.length) * 100) : 0;
+
+  const historyItems = historyPage.map(p => {
+    const dur = p.episode.durationSeconds ?? 0;
+    const pct = dur > 0 ? Math.min(100, Math.round((p.actualWatchedSecs / dur) * 100)) : 0;
+    return {
+      episodeId:        p.episodeId,
+      episodeTitle:     p.episode.title,
+      workshopTitle:    p.episode.challenge.workshop.title,
+      workshopSlug:     p.episode.challenge.workshop.slug,
+      durationSeconds:  dur,
+      watchedSeconds:   p.actualWatchedSecs,
+      lastPositionSecs: p.lastWatchedSecs,
+      progressPct:      pct,
+      isCompleted:      p.isCompleted,
+      completedAt:      p.completedAt?.toISOString() ?? null,
+      lastWatchedAt:    p.updatedAt.toISOString(),
+    };
+  });
+
+  const deviceItems = devices.map(d => {
+    const { browser, os } = parseUASimple(d.userAgent);
+    return {
+      id:           d.id,
+      deviceId:     d.deviceId ?? null,
+      browser,
+      os,
+      ipAddress:    d.ipAddress ?? null,
+      lastActiveAt: d.lastActiveAt.toISOString(),
+      startedAt:    d.startedAt.toISOString(),
+    };
+  });
+
+  return reply.send({
+    success: true,
+    data: {
+      stats: {
+        totalWatchSeconds,
+        totalEpisodes:    allSummary.length,
+        completedEpisodes: completedCount,
+        inProgressEpisodes: inProgressCount,
+        completionRate,
+        securityFlagCount: securityEvents.length,
+      },
+      history:       historyItems,
+      historyTotal,
+      devices:       deviceItems,
+      securityEvents: securityEvents.map(e => ({
+        id:        e.id,
+        eventType: e.eventType,
+        metadata:  e.metadata ?? {},
+        createdAt: e.createdAt.toISOString(),
+      })),
+    },
+    error: null,
+  });
+}

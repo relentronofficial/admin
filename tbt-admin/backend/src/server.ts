@@ -38,6 +38,7 @@ import { batchRoutes } from './modules/batches/routes.js';
 import { pubRoutes } from './modules/pub/routes.js';
 import { messagesRoutes } from './modules/messages/routes.js';
 import { conversationsRoutes } from './modules/conversations/routes.js';
+import { securityRoutes } from './modules/security/routes.js';
 
 async function bootstrap() {
   const fastify = Fastify({
@@ -90,6 +91,7 @@ async function bootstrap() {
     await fastify.register(pubRoutes, { prefix: '/api/pub' });
     await fastify.register(messagesRoutes, { prefix: '/api/messages' });
     await fastify.register(conversationsRoutes, { prefix: '/api/conversations' });
+    await fastify.register(securityRoutes, { prefix: '/api/security-logs' });
 
     // Root + Health Check
     fastify.get('/', async () => ({ name: 'TBT Admin API', status: 'ok' }));

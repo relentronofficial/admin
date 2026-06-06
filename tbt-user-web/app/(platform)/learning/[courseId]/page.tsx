@@ -306,8 +306,7 @@ export default function CourseDetailPage({
                   key={selectedLesson.id}
                   src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl), selectedLesson.resumeAtSeconds ?? 0)}
                   className="w-full h-full border-0"
-                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-                  allowFullScreen
+                  allow="accelerometer; gyroscope; autoplay; encrypted-media"
                   title={selectedLesson.title}
                 />
               ) : (

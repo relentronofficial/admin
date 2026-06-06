@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useClerk } from "@clerk/nextjs";
-import { CheckCircle2, Lock, Pencil, X, Save } from "lucide-react";
+import { CheckCircle2, Lock, Pencil, X, Save, Monitor, Smartphone, Tablet, Wifi } from "lucide-react";
 import { useMe, useUpdateProfile } from "@/lib/hooks/useUser";
+import { useMyDevices } from "@/lib/hooks/useDashboard";
 import { cn } from "@/lib/utils/cn";
-import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge } from "@/types";
+import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge, DeviceSession } from "@/types";
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
@@ -264,6 +265,102 @@ function SubscriptionSection({
   );
 }
 
+// ─── Active Devices section ───────────────────────────────────────────────────
+
+function relativeTimeDevice(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function DeviceIcon({ deviceType }: { deviceType: DeviceSession["deviceType"] }) {
+  if (deviceType === "mobile") return <Smartphone size={18} className="flex-shrink-0" />;
+  if (deviceType === "tablet") return <Tablet size={18} className="flex-shrink-0" />;
+  return <Monitor size={18} className="flex-shrink-0" />;
+}
+
+function DeviceCard({ device }: { device: DeviceSession }) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 p-4 rounded-xl border transition-colors",
+        device.isCurrent ? "border-border" : "border-border/40"
+      )}
+      style={device.isCurrent ? { borderColor: "color-mix(in srgb, var(--color-accent) 50%, transparent)" } : {}}
+    >
+      <div
+        className="p-2 rounded-lg flex-shrink-0 mt-0.5"
+        style={{
+          background: device.isCurrent
+            ? "color-mix(in srgb, var(--color-accent) 15%, transparent)"
+            : "var(--color-bg-surface)",
+          color: device.isCurrent ? "var(--color-accent)" : "var(--color-locked, #4a4a4a)",
+        }}
+      >
+        <DeviceIcon deviceType={device.deviceType} />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-foreground">
+            {device.os} · {device.browser}
+          </span>
+          {device.isCurrent && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
+                color: "var(--color-accent)",
+              }}
+            >
+              <Wifi size={9} />
+              THIS DEVICE
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {device.ipAddress ?? "IP hidden"} · Last active {relativeTimeDevice(device.lastActiveAt)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ActiveDevicesSection() {
+  const { data: devices, isLoading } = useMyDevices();
+
+  return (
+    <div className="space-y-3">
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-16 rounded-xl animate-pulse"
+              style={{ background: "var(--color-bg-surface)" }}
+            />
+          ))}
+        </div>
+      ) : !devices || devices.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No active devices found.</p>
+      ) : (
+        <div className="space-y-2">
+          {devices.map((d) => (
+            <DeviceCard key={d.id} device={d} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function ProfileSkeleton() {
@@ -340,6 +437,12 @@ export default function ProfilePage() {
           )}
         </div>
       ))}
+
+      {/* Active Devices */}
+      <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
+        <h3 className="text-sm font-bold text-foreground">Active Devices</h3>
+        <ActiveDevicesSection />
+      </div>
 
       {/* Sign out — label from API, danger-styled */}
       <div className="pb-4">

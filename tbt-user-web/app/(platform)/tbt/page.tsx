@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock } from "lucide-react";
+import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock, PlayCircle, CheckCircle2, Clock } from "lucide-react";
 import { useHomeHero, useHomeSections } from "@/lib/hooks/useConfig";
+import { useContinueLearning, useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useMe } from "@/lib/hooks/useUser";
 import { cn } from "@/lib/utils/cn";
-import type { HeroSlide, ContentSection, ContentItem } from "@/types";
+import type { HeroSlide, ContentSection, ContentItem, ContinueLearningItem, WatchHistoryItem } from "@/types";
 
 // ─── Hero Carousel ────────────────────────────────────────────────────────────
 
@@ -410,6 +411,272 @@ function SectionRow({ section }: { section: ContentSection }) {
   );
 }
 
+// ─── Continue Watching ────────────────────────────────────────────────────────
+
+function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
+  const href = item.type === "workshop" ? `/workshop/${item.id}` : `/learning/${item.id}`;
+
+  return (
+    <Link
+      href={href}
+      className="group flex-shrink-0 w-72 rounded-xl border border-border overflow-hidden transition-all duration-200 hover:border-[var(--color-accent)] hover:shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
+      style={{ background: "var(--color-bg-surface)" }}
+    >
+      <div className="flex gap-3 p-3">
+        {/* Thumbnail */}
+        <div className="relative w-20 h-14 flex-shrink-0 rounded-lg overflow-hidden">
+          {item.thumbnailUrl ? (
+            <Image src={item.thumbnailUrl} alt={item.title} fill className="object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
+              <PlayCircle size={20} className="text-muted-foreground" />
+            </div>
+          )}
+          {/* Play overlay on hover */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "var(--color-accent)" }}>
+              <Play size={10} className="text-white fill-current ml-0.5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+          <div className="min-w-0">
+            <p className="text-[11px] text-muted-foreground font-medium truncate">{item.title}</p>
+            <p className="text-xs font-semibold text-foreground truncate mt-0.5 leading-tight">{item.lastLessonTitle}</p>
+          </div>
+
+          {/* Progress bar + % */}
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${item.progressPercent}%`, background: "var(--color-accent)" }}
+              />
+            </div>
+            <span className="text-[10px] font-bold flex-shrink-0 tabular-nums" style={{ color: "var(--color-accent)" }}>
+              {item.progressPercent}%
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Continue button */}
+      <div
+        className="px-3 py-2 border-t border-border flex items-center justify-between"
+        style={{ background: "rgba(255,255,255,0.02)" }}
+      >
+        <span className="text-[11px] text-muted-foreground">
+          {item.progressPercent}% completed
+        </span>
+        <span
+          className="flex items-center gap-1.5 text-[11px] font-bold transition-all group-hover:gap-2.5"
+          style={{ color: "var(--color-accent)" }}
+        >
+          <Play size={9} fill="currentColor" /> Continue
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function ContinueWatchingSection() {
+  const { uiStrings } = useSiteConfig();
+  const { data, isLoading } = useContinueLearning();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    checkScroll();
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, [checkScroll, data]);
+
+  const scrollPage = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === "right" ? 320 : -320, behavior: "smooth" });
+  };
+
+  if (isLoading) {
+    return (
+      <section className="space-y-3">
+        <div className="h-5 w-44 rounded animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+        <div className="flex gap-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex-shrink-0 w-72 h-24 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  const items: ContinueLearningItem[] = Array.isArray(data) ? data : [];
+  if (!items.length) return null;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-bold text-foreground">
+          {uiStrings?.continueWatchingLabel ?? "Continue Watching"}
+        </h3>
+        {items.length > 3 && (
+          <div className="hidden md:flex items-center gap-1.5">
+            <button
+              onClick={() => scrollPage("left")}
+              disabled={!canScrollLeft}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
+              style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+              aria-label="Scroll left"
+            >
+              <ChevronLeft size={15} className="text-white" />
+            </button>
+            <button
+              onClick={() => scrollPage("right")}
+              disabled={!canScrollRight}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
+              style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+              aria-label="Scroll right"
+            >
+              <ChevronRight size={15} className="text-white" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2 -mb-2 scrollbar-hide">
+        {items.map((item) => (
+          <ContinueWatchingCard key={`${item.type}-${item.id}-${item.lessonId}`} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Watch History ────────────────────────────────────────────────────────────
+
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  const hours = Math.floor(diffMs / 3_600_000);
+  const days = Math.floor(diffMs / 86_400_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+function WatchHistoryCard({ item }: { item: WatchHistoryItem }) {
+  const href = `/workshop/${item.workshopSlug}`;
+
+  return (
+    <Link
+      href={href}
+      className="group flex items-start gap-3 px-3 py-3 rounded-xl border border-border transition-all duration-200 hover:border-[rgba(255,255,255,0.15)] hover:bg-white/[0.03]"
+    >
+      {/* Thumbnail */}
+      <div className="relative w-14 h-10 flex-shrink-0 rounded-lg overflow-hidden mt-0.5">
+        {item.thumbnailUrl ? (
+          <Image src={item.thumbnailUrl} alt={item.workshopTitle} fill className="object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <Clock size={14} className="text-muted-foreground" />
+          </div>
+        )}
+        {item.isCompleted && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <CheckCircle2 size={14} style={{ color: "#22c55e" }} />
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-foreground truncate leading-tight">{item.workshopTitle}</p>
+            <p className="text-[11px] text-muted-foreground truncate mt-0.5">{item.episodeTitle}</p>
+          </div>
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0 mt-0.5">
+            {relativeTime(item.updatedAt)}
+          </span>
+        </div>
+
+        {/* Progress + status */}
+        <div className="flex items-center gap-2 mt-2">
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${item.isCompleted ? 100 : item.progressPercent}%`,
+                background: item.isCompleted ? "#22c55e" : "var(--color-accent)",
+              }}
+            />
+          </div>
+          {item.isCompleted ? (
+            <span className="text-[10px] font-bold whitespace-nowrap" style={{ color: "#22c55e" }}>
+              Completed
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold whitespace-nowrap tabular-nums" style={{ color: "var(--color-accent)" }}>
+              {item.progressPercent}%
+            </span>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function RecentlyWatchedSection() {
+  const { data, isLoading } = useWatchHistory({ limit: 6 });
+
+  if (isLoading) {
+    return (
+      <section className="space-y-3">
+        <div className="h-5 w-40 rounded animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  const items: WatchHistoryItem[] = Array.isArray(data) ? data : [];
+  if (!items.length) return null;
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-base font-bold text-foreground">Recently Watched</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {items.map((item) => (
+          <WatchHistoryCard key={`${item.workshopSlug}-${item.episodeId}`} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ─── Skeletons ────────────────────────────────────────────────────────────────
 
 function HeroSkeleton() {
@@ -469,6 +736,16 @@ export default function TBTHomePage() {
         ) : heroData?.slides?.length ? (
           <HeroCarousel slides={heroData.slides} autoPlayIntervalMs={heroData.autoPlayIntervalMs} />
         ) : null}
+      </div>
+
+      {/* Continue Watching — shown when user has in-progress episodes */}
+      <div className="mb-10">
+        <ContinueWatchingSection />
+      </div>
+
+      {/* Recently Watched — full history sorted by last watched */}
+      <div className="mb-10">
+        <RecentlyWatchedSection />
       </div>
 
       {/* Content Sections */}

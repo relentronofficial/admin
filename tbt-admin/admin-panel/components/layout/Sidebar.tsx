@@ -19,6 +19,7 @@ import {
   Settings,
   Navigation,
   Type,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -64,6 +65,12 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     label: "Support",
     items: [
       { name: "Support", href: "/support", icon: MessageSquare },
+    ],
+  },
+  {
+    label: "Security",
+    items: [
+      { name: "Security Logs", href: "/security-logs", icon: ShieldAlert },
     ],
   },
 ];

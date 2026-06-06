@@ -45,6 +45,9 @@ import {
   getWorkshopChallengesHandler,
   completeChallengeHandler,
   completeWorkshopEpisodeHandler,
+  getWatchHistoryHandler,
+  getMyDevicesHandler,
+  getWorkshopCertificateHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -69,6 +72,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Dashboard ──────────────────────────────────────────────────────────────
   fastify.get('/dashboard/stats', getDashboardStatsHandler);
   fastify.get('/dashboard/continue-learning', getContinueLearningHandler);
+  fastify.get('/dashboard/watch-history', getWatchHistoryHandler);
 
   // ── Events ────────────────────────────────────────────────────────────────
   fastify.get('/events', listUserEventsHandler);
@@ -107,6 +111,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Challenges ────────────────────────────────────────────────────────────
   fastify.get('/workshops/:slug/challenges', getWorkshopChallengesHandler);
+  fastify.get('/workshops/:slug/certificate', getWorkshopCertificateHandler);
   fastify.post('/challenges/:id/complete', completeChallengeHandler);
   fastify.post('/workshop-episodes/:id/complete', completeWorkshopEpisodeHandler);
 
@@ -123,4 +128,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/conversations',                       listMemberConversationsHandler);
   fastify.get('/conversations/:id/messages',          getMemberConversationMessagesHandler);
   fastify.post('/conversations/:id/messages',         sendMemberChatMessageHandler);
+
+  // ── Device Tracking ───────────────────────────────────────────────────────
+  fastify.get('/my-devices', getMyDevicesHandler);
 }

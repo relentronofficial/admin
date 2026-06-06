@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { env } from '../../config/env.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -8,6 +9,35 @@ function ok(reply: FastifyReply, data: unknown, meta?: object) {
 
 function fail(reply: FastifyReply, status: number, message: string) {
   return reply.status(status).send({ success: false, data: null, error: { code: 'ERROR', message } });
+}
+
+function parseUserAgent(ua: string | undefined | null): {
+  browser: string;
+  os: string;
+  deviceType: 'desktop' | 'mobile' | 'tablet';
+} {
+  if (!ua) return { browser: 'Unknown', os: 'Unknown', deviceType: 'desktop' };
+
+  let deviceType: 'desktop' | 'mobile' | 'tablet' = 'desktop';
+  if (/ipad|tablet|android(?!.*mobile)/i.test(ua)) deviceType = 'tablet';
+  else if (/mobile|iphone|ipod|android|blackberry|windows phone/i.test(ua)) deviceType = 'mobile';
+
+  let os = 'Unknown';
+  if (/windows/i.test(ua)) os = 'Windows';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS';
+  else if (/android/i.test(ua)) os = 'Android';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+
+  let browser = 'Unknown';
+  if (/edg\//i.test(ua)) browser = 'Edge';
+  else if (/opr\/|opera/i.test(ua)) browser = 'Opera';
+  else if (/samsungbrowser/i.test(ua)) browser = 'Samsung';
+  else if (/firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/chrome\//i.test(ua)) browser = 'Chrome';
+  else if (/safari\//i.test(ua)) browser = 'Safari';
+
+  return { browser, os, deviceType };
 }
 
 // ─── Profile ─────────────────────────────────────────────────────────────────
@@ -88,6 +118,35 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     },
     { id: 'tiers', label: tiersLabel, fields: [] as string[], fieldLabels: {} },
   ];
+
+  // Fire-and-forget: update device session + detect multiple concurrent devices
+  const sessionDeviceId = request.headers['x-device-id'] as string | undefined;
+  if (sessionDeviceId) {
+    const prisma = request.server.prisma;
+    const mId = request.memberId!;
+    const ip = request.ip;
+    const ua = request.headers['user-agent'] as string | undefined;
+    void (async () => {
+      const existing = await prisma.memberSession.findFirst({ where: { memberId: mId, deviceId: sessionDeviceId }, select: { id: true } }).catch(() => null);
+      if (existing) {
+        await prisma.memberSession.update({ where: { id: existing.id }, data: { lastActiveAt: new Date(), ipAddress: ip, userAgent: ua } }).catch(() => {});
+      } else {
+        await (prisma.memberSession.create as any)({ data: { memberId: mId, deviceId: sessionDeviceId, ipAddress: ip, userAgent: ua } }).catch(() => {});
+      }
+      // Check for >2 concurrent devices in the last hour; log once per hour to avoid flooding
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const [recentSessions, recentLog] = await Promise.all([
+        prisma.memberSession.findMany({ where: { memberId: mId, lastActiveAt: { gt: oneHourAgo } }, select: { deviceId: true } }),
+        prisma.securityLog.findFirst({ where: { memberId: mId, eventType: 'MULTIPLE_DEVICES', createdAt: { gt: oneHourAgo } }, select: { id: true } }),
+      ]).catch(() => [[], null] as any);
+      const uniqueDevices = new Set((recentSessions as any[]).map((s: any) => s.deviceId).filter(Boolean));
+      if (!recentLog && uniqueDevices.size > 2) {
+        await (prisma.securityLog.create as any)({
+          data: { memberId: mId, eventType: 'MULTIPLE_DEVICES', metadata: { deviceCount: uniqueDevices.size, devices: Array.from(uniqueDevices), ipAddress: ip } },
+        }).catch(() => {});
+      }
+    })().catch(() => {});
+  }
 
   return ok(reply, {
     id: member.id,
@@ -602,13 +661,15 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     select: {
       episodeId: true,
       lastWatchedSecs: true,
+      actualWatchedSecs: true,
       updatedAt: true,
-      episode: { 
-        select: { 
-          title: true, 
+      episode: {
+        select: {
+          title: true,
           courseId: true,
+          durationSeconds: true,
           course: { select: { title: true, thumbnailUrl: true } }
-        } 
+        }
       },
     },
   });
@@ -621,10 +682,12 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     select: {
       episodeId: true,
       lastWatchedSecs: true,
+      actualWatchedSecs: true,
       updatedAt: true,
       episode: {
         select: {
           title: true,
+          durationSeconds: true,
           challenge: {
             select: { workshop: { select: { title: true, slug: true, thumbnailUrl: true } } }
           }
@@ -633,26 +696,32 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     }
   });
 
+  // Compute progress percent from actual watch time vs duration
+  const pct = (actualWatched: number, duration: number | null | undefined) =>
+    duration && duration > 0 ? Math.min(100, Math.round((actualWatched / duration) * 100)) : 0;
+
   // Unify and sort by most recent
   const combined = [
     ...courseProgress.map(p => ({
-      type: 'course',
-      id: p.episode.courseId, // Used for routing
+      type: 'course' as const,
+      id: p.episode.courseId,
       lessonId: p.episodeId,
       title: p.episode.course.title,
       thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
       lastLessonTitle: p.episode.title,
       lastWatchedSecs: p.lastWatchedSecs,
+      progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
       updatedAt: p.updatedAt.getTime(),
     })),
     ...workshopProgress.map(p => ({
-      type: 'workshop',
-      id: p.episode.challenge.workshop.slug, // Used for routing
+      type: 'workshop' as const,
+      id: p.episode.challenge.workshop.slug,
       lessonId: p.episodeId,
       title: p.episode.challenge.workshop.title,
       thumbnailUrl: p.episode.challenge.workshop.thumbnailUrl ?? null,
       lastLessonTitle: p.episode.title,
       lastWatchedSecs: p.lastWatchedSecs,
+      progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
       updatedAt: p.updatedAt.getTime(),
     }))
   ].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
@@ -1203,7 +1272,7 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
         select: { status: true },
       },
       challenges: {
-        select: { id: true, episodes: { select: { id: true } } },
+        select: { id: true, type: true, episodes: { select: { id: true } } },
         orderBy: { order: 'asc' },
       },
       liveCalls: {
@@ -1218,15 +1287,53 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   if (!workshop) return fail(reply, 404, 'Workshop not found');
 
   const enrollment = (workshop as any).enrollments?.[0];
-  const allEpisodes = (workshop as any).challenges?.flatMap((c: any) => c.episodes ?? []) ?? [];
+  const allChallenges: any[] = (workshop as any).challenges ?? [];
+  const allEpisodes = allChallenges.flatMap((c: any) => c.episodes ?? []);
 
-  const progress = await request.server.prisma.memberEpisodeProgress.findMany({
-    where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e: any) => e.id) } },
-    select: { episodeId: true, isCompleted: true },
-  });
+  const [episodeProgress, challengeProgressRows] = await Promise.all([
+    request.server.prisma.memberEpisodeProgress.findMany({
+      where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e: any) => e.id) } },
+      select: { episodeId: true, isCompleted: true },
+    }),
+    (request.server.prisma as any).memberChallengeProgress.findMany({
+      where: { memberId: request.memberId, challengeId: { in: allChallenges.map((c: any) => c.id) } },
+      select: { challengeId: true, status: true },
+    }),
+  ]);
 
-  const completedCount = progress.filter((p) => p.isCompleted).length;
+  const completedCount = episodeProgress.filter((p: any) => p.isCompleted).length;
   const totalCount = allEpisodes.length;
+
+  // Certificate eligibility:
+  // - Videos: all episodes must be completed
+  // - Challenges: every non-watch, non-live_call challenge must have status 'completed'
+  //   (watch-type challenges are implicitly done when all their episodes are done)
+  const completableChallenges = allChallenges.filter((c: any) => c.type !== 'live_call');
+  const challengeProgressMap = new Map(
+    (challengeProgressRows as any[]).map((r: any) => [r.challengeId, r.status])
+  );
+
+  let completedChallengeCount = 0;
+  for (const ch of completableChallenges) {
+    if (ch.type === 'watch' || !ch.type) {
+      // Watch challenge: done when all its episodes are completed
+      const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
+      const done = epIds.length > 0 && epIds.every(
+        (id: string) => episodeProgress.find((p: any) => p.episodeId === id && p.isCompleted)
+      );
+      if (done) completedChallengeCount++;
+    } else {
+      if (challengeProgressMap.get(ch.id) === 'completed') completedChallengeCount++;
+    }
+  }
+
+  const totalChallenges = completableChallenges.length;
+  const videosCompletedPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const challengesCompletedPct = totalChallenges > 0
+    ? Math.round((completedChallengeCount / totalChallenges) * 100)
+    : 100; // no challenges → challenges requirement trivially met
+
+  const certEligible = videosCompletedPct === 100 && challengesCompletedPct === 100 && totalCount > 0;
 
   // Determine what the main area should show by default
   const hasUpcomingCall = ((workshop as any).liveCalls ?? []).length > 0;
@@ -1246,14 +1353,94 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
     },
     learningProgress: {
       label: workshop.progressWidgetLabel,
-      percentage: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
-      completedCount,
-      totalCount,
+      percentage: challengesCompletedPct,
+      completedCount: completedChallengeCount,
+      totalCount: totalChallenges,
       milestoneCount: workshop.progressMilestoneCount,
+    },
+    certificate: {
+      eligible: certEligible,
+      videosCompletedPct,
+      challengesCompletedPct,
+      remainingVideos: totalCount - completedCount,
+      remainingChallenges: totalChallenges - completedChallengeCount,
     },
     workshopFlowLabel: workshop.workshopFlowLabel,
     defaultMainAreaType,
     enrollmentStatus: enrollment?.status ?? null,
+  });
+}
+
+export async function getWorkshopCertificateHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { slug } = request.params as { slug: string };
+
+  const workshop = await request.server.prisma.workshop.findFirst({
+    where: { slug },
+    include: {
+      challenges: {
+        select: { id: true, type: true, episodes: { select: { id: true } } },
+      },
+    },
+  });
+  if (!workshop) return fail(reply, 404, 'Workshop not found');
+
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: request.memberId },
+    select: { id: true, firstName: true, lastName: true, email: true },
+  });
+  if (!member) return fail(reply, 404, 'Member not found');
+
+  const allChallenges: any[] = (workshop as any).challenges ?? [];
+  const allEpisodes = allChallenges.flatMap((c: any) => c.episodes ?? []);
+
+  const [episodeProgress, challengeProgressRows] = await Promise.all([
+    request.server.prisma.memberEpisodeProgress.findMany({
+      where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e: any) => e.id) } },
+      select: { episodeId: true, isCompleted: true, updatedAt: true },
+    }),
+    (request.server.prisma as any).memberChallengeProgress.findMany({
+      where: { memberId: request.memberId, challengeId: { in: allChallenges.map((c: any) => c.id) } },
+      select: { challengeId: true, status: true, completedAt: true },
+    }),
+  ]);
+
+  const completableChallenges = allChallenges.filter((c: any) => c.type !== 'live_call');
+  const challengeProgressMap = new Map(
+    (challengeProgressRows as any[]).map((r: any) => [r.challengeId, r])
+  );
+
+  let allEpisodesDone = allEpisodes.length > 0 &&
+    allEpisodes.every((e: any) => episodeProgress.find((p: any) => p.episodeId === e.id && p.isCompleted));
+
+  let allChallengesDone = completableChallenges.every((ch: any) => {
+    if (ch.type === 'watch' || !ch.type) {
+      const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
+      return epIds.length > 0 && epIds.every(
+        (id: string) => episodeProgress.find((p: any) => p.episodeId === id && p.isCompleted)
+      );
+    }
+    return challengeProgressMap.get(ch.id)?.status === 'completed';
+  });
+
+  if (!allEpisodesDone || !allChallengesDone) {
+    return fail(reply, 403, 'Certificate not yet earned — complete all videos and challenges first');
+  }
+
+  // Completion date = latest completion timestamp across episodes and challenges
+  const episodeDates = episodeProgress.map((p: any) => p.updatedAt?.getTime?.() ?? 0);
+  const challengeDates = (challengeProgressRows as any[]).map((r: any) => r.completedAt?.getTime?.() ?? 0);
+  const latestMs = Math.max(0, ...episodeDates, ...challengeDates);
+  const completedAt = latestMs > 0 ? new Date(latestMs).toISOString() : new Date().toISOString();
+
+  // Deterministic certificate ID — stable for the same member+workshop pair
+  const certId = Buffer.from(`${member.id}:${workshop.id}`).toString('base64url').slice(0, 16).toUpperCase();
+
+  return ok(reply, {
+    certificateId: certId,
+    memberName: `${member.firstName}${member.lastName ? ' ' + member.lastName : ''}`,
+    workshopTitle: workshop.title,
+    completedAt,
+    issuedAt: new Date().toISOString(),
   });
 }
 
@@ -1680,15 +1867,27 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
 
   const existingProgress = await request.server.prisma.memberEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    select: { lastWatchedSecs: true, actualWatchedSecs: true, isCompleted: true }
+    select: { lastWatchedSecs: true, actualWatchedSecs: true, isCompleted: true, updatedAt: true }
   });
 
+  // Wall-clock-based delta validation: cap credit to actual time elapsed since last heartbeat.
+  // This prevents rapid-fire API spam from accumulating watch time faster than real-time.
+  // +1s tolerance handles normal network/timer jitter; first-ever heartbeat trusts the claimed delta.
+  const now = new Date();
+  const wallClockElapsed = existingProgress?.updatedAt
+    ? Math.floor((now.getTime() - existingProgress.updatedAt.getTime()) / 1000)
+    : null;
+  const trueDelta = wallClockElapsed !== null
+    ? Math.min(safeDelta, Math.max(0, wallClockElapsed + 1))
+    : safeDelta;
+
   // Log excessive skipping if the playhead jumped forward significantly without actual watch time
-  if (
-    watchedSeconds !== undefined && 
-    existingProgress?.lastWatchedSecs !== undefined && 
-    watchedSeconds - existingProgress.lastWatchedSecs > (safeDelta + 300)
-  ) {
+  const isLargeSkip =
+    watchedSeconds !== undefined &&
+    existingProgress?.lastWatchedSecs !== undefined &&
+    watchedSeconds - existingProgress.lastWatchedSecs > (trueDelta + 300);
+
+  if (isLargeSkip) {
     await request.server.prisma.securityLog.create({
       data: {
         memberId: request.memberId,
@@ -1696,9 +1895,11 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
         metadata: {
           episodeId,
           type: 'workshop',
-          fromSecs: existingProgress.lastWatchedSecs,
+          fromSecs: existingProgress!.lastWatchedSecs,
           toSecs: watchedSeconds,
-          reportedDelta: deltaSeconds
+          reportedDelta: deltaSeconds,
+          trueDelta,
+          wallClockElapsed,
         }
       } as any
     }).catch(() => {});
@@ -1733,10 +1934,10 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     } catch {}
   }
 
-  // Task 3: Backend decides completion based on 85% rule.
-  const newActualWatched = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
+  // Task 3: Backend decides completion based on 85% rule using wall-clock-validated delta.
+  const newActualWatched = (existingProgress?.actualWatchedSecs ?? 0) + trueDelta;
   let isCompleted = existingProgress?.isCompleted ?? false;
-  
+
   if (!isCompleted && duration && duration > 0) {
     if (newActualWatched >= duration * 0.85) {
       isCompleted = true;
@@ -1749,19 +1950,51 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
       memberId: request.memberId,
       episodeId,
       lastWatchedSecs: watchedSeconds ?? 0,
-      actualWatchedSecs: safeDelta,
+      actualWatchedSecs: trueDelta,
       isCompleted: isCompleted,
       completedAt: isCompleted ? new Date() : null,
     },
     update: {
       lastWatchedSecs: watchedSeconds ?? undefined,
-      actualWatchedSecs: { increment: safeDelta },
+      actualWatchedSecs: { increment: trueDelta },
       isCompleted: isCompleted,
       completedAt: isCompleted && !existingProgress?.isCompleted ? new Date() : undefined,
     },
   });
 
-  return ok(reply, { updated: true, isCompleted });
+  // Fire-and-forget anomaly detection (never blocks the response)
+  void (async () => {
+    const prisma = request.server.prisma;
+    const mId = request.memberId!;
+
+    // Detection: rapid episode switching — ≥5 distinct episodes updated in the last 5 minutes
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const recentCount = await prisma.memberEpisodeProgress.count({
+      where: { memberId: mId, updatedAt: { gt: fiveMinAgo } },
+    }).catch(() => 0);
+    if (recentCount >= 5) {
+      await (prisma.securityLog.create as any)({
+        data: {
+          memberId: mId,
+          eventType: 'RAPID_EPISODE_SWITCHING',
+          metadata: { episodeCount: recentCount, windowMinutes: 5, episodeId, deviceId: deviceId ?? null },
+        },
+      }).catch(() => {});
+    }
+
+    // Detection: abnormal progress speed — claimed 15s credit but wall clock says <5s elapsed
+    if (wallClockElapsed !== null && wallClockElapsed < 5 && safeDelta >= 15) {
+      await (prisma.securityLog.create as any)({
+        data: {
+          memberId: mId,
+          eventType: 'ABNORMAL_PROGRESS_SPEED',
+          metadata: { episodeId, reportedDelta: deltaSeconds, safeDelta, trueDelta, wallClockElapsed, deviceId: deviceId ?? null },
+        },
+      }).catch(() => {});
+    }
+  })().catch(() => {});
+
+  return ok(reply, { updated: true, isCompleted, actualWatchedSecs: newActualWatched });
 }
 
 // ─── Products & Resources ─────────────────────────────────────────────────────
@@ -2228,4 +2461,87 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
   });
 
   return ok(reply, { episodeId: id, isCompleted: true });
+}
+
+// ─── Watch History ────────────────────────────────────────────────────────────
+
+export async function getWatchHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { page = 1, limit = 20 } = request.query as { page?: number; limit?: number };
+
+  const history = await request.server.prisma.memberEpisodeProgress.findMany({
+    where: { memberId: request.memberId, actualWatchedSecs: { gt: 0 } },
+    orderBy: { updatedAt: 'desc' },
+    take: Number(limit),
+    skip: (Number(page) - 1) * Number(limit),
+    select: {
+      episodeId: true,
+      lastWatchedSecs: true,
+      actualWatchedSecs: true,
+      isCompleted: true,
+      completedAt: true,
+      updatedAt: true,
+      episode: {
+        select: {
+          title: true,
+          durationSeconds: true,
+          challenge: {
+            select: {
+              workshop: { select: { title: true, slug: true, thumbnailUrl: true } }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const pct = (actual: number, duration: number | null | undefined) =>
+    duration && duration > 0 ? Math.min(100, Math.round((actual / duration) * 100)) : 0;
+
+  const items = history.map(p => ({
+    type: 'workshop' as const,
+    episodeId: p.episodeId,
+    workshopSlug: p.episode.challenge.workshop.slug,
+    workshopTitle: p.episode.challenge.workshop.title,
+    episodeTitle: p.episode.title,
+    thumbnailUrl: p.episode.challenge.workshop.thumbnailUrl ?? null,
+    lastWatchedSecs: p.lastWatchedSecs,
+    actualWatchedSecs: p.actualWatchedSecs,
+    durationSeconds: p.episode.durationSeconds ?? 0,
+    isCompleted: p.isCompleted,
+    completedAt: p.completedAt?.toISOString() ?? null,
+    updatedAt: p.updatedAt.toISOString(),
+    progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
+  }));
+
+  return ok(reply, items);
+}
+
+// ─── Device Tracking ──────────────────────────────────────────────────────────
+
+export async function getMyDevicesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const currentDeviceId = request.headers['x-device-id'] as string | undefined;
+
+  const sessions = await request.server.prisma.memberSession.findMany({
+    where: { memberId: request.memberId, lastActiveAt: { gt: thirtyDaysAgo } },
+    orderBy: { lastActiveAt: 'desc' },
+    select: { id: true, deviceId: true, ipAddress: true, userAgent: true, lastActiveAt: true, startedAt: true },
+  });
+
+  const devices = sessions.map((s) => {
+    const { browser, os, deviceType } = parseUserAgent(s.userAgent);
+    return {
+      id: s.id,
+      deviceId: s.deviceId ?? null,
+      browser,
+      os,
+      deviceType,
+      ipAddress: s.ipAddress ?? null,
+      lastActiveAt: s.lastActiveAt.toISOString(),
+      startedAt: s.startedAt.toISOString(),
+      isCurrent: !!currentDeviceId && s.deviceId === currentDeviceId,
+    };
+  });
+
+  return ok(reply, devices);
 }

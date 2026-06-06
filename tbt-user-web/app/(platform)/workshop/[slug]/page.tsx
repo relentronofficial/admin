@@ -17,6 +17,9 @@ import {
   Play,
   Pause,
   Loader2,
+  GraduationCap,
+  Download,
+  X,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -30,6 +33,7 @@ import {
   useCompleteChallenge,
   useCompleteWorkshopEpisode,
   usePostEpisodeProgress,
+  useWorkshopCertificate,
 } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
@@ -42,6 +46,7 @@ import type {
   WorkshopFlowItem,
   WorkshopTab,
   LearningProgress,
+  WorkshopCertificate,
   WorkshopAssignment,
   QAPost,
   QAReply,
@@ -436,6 +441,272 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Sidebar: Certificate Card ───────────────────────────────────────────────
+
+function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: string }) {
+  const [showModal, setShowModal] = useState(false);
+  const { refetch, data: certDetails, isFetching } = useWorkshopCertificate(slug);
+
+  const handleDownload = async () => {
+    const result = await refetch();
+    if (result.data) setShowModal(true);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (!cert.eligible) {
+    // Not yet eligible — show progress toward certificate
+    const allDone = cert.videosCompletedPct === 100 && cert.challengesCompletedPct === 100;
+    if (allDone) return null; // eligible === true would show, so this shouldn't fire
+
+    return (
+      <div className="rounded-xl border border-border overflow-hidden">
+        <div className="px-4 py-3 flex items-center gap-2.5">
+          <GraduationCap size={15} className="text-muted-foreground flex-shrink-0" />
+          <span className="text-xs font-semibold text-muted-foreground">Certificate Progress</span>
+        </div>
+        <div className="px-4 pb-4 space-y-2.5">
+          {/* Videos bar */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground">Videos</span>
+              <span
+                className="text-[10px] font-bold tabular-nums"
+                style={{ color: cert.videosCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)" }}
+              >
+                {cert.videosCompletedPct}%
+              </span>
+            </div>
+            <div className="h-1 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${cert.videosCompletedPct}%`,
+                  background: cert.videosCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)",
+                }}
+              />
+            </div>
+          </div>
+          {/* Challenges bar */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground">Challenges</span>
+              <span
+                className="text-[10px] font-bold tabular-nums"
+                style={{ color: cert.challengesCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)" }}
+              >
+                {cert.challengesCompletedPct}%
+              </span>
+            </div>
+            <div className="h-1 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${cert.challengesCompletedPct}%`,
+                  background: cert.challengesCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)",
+                }}
+              />
+            </div>
+          </div>
+          {/* What's left */}
+          {(cert.remainingVideos > 0 || cert.remainingChallenges > 0) && (
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              {cert.remainingVideos > 0 && `${cert.remainingVideos} video${cert.remainingVideos > 1 ? "s" : ""} remaining`}
+              {cert.remainingVideos > 0 && cert.remainingChallenges > 0 && " · "}
+              {cert.remainingChallenges > 0 && `${cert.remainingChallenges} challenge${cert.remainingChallenges > 1 ? "s" : ""} remaining`}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Eligible — certificate unlocked
+  return (
+    <>
+      <div
+        className="rounded-xl border overflow-hidden"
+        style={{
+          background: "color-mix(in srgb, var(--color-success) 6%, var(--color-bg-surface))",
+          borderColor: "color-mix(in srgb, var(--color-success) 35%, transparent)",
+        }}
+      >
+        <div className="px-4 pt-4 pb-3 flex items-start gap-3">
+          <div
+            className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center"
+            style={{ background: "color-mix(in srgb, var(--color-success) 18%, transparent)" }}
+          >
+            <GraduationCap size={18} style={{ color: "var(--color-success)" }} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-bold leading-tight" style={{ color: "var(--color-success)" }}>
+              🎓 Certificate Ready
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              You've completed all videos and challenges
+            </p>
+          </div>
+        </div>
+
+        {/* Two ticks */}
+        <div className="px-4 pb-3 space-y-1.5">
+          {[
+            { label: "Videos", pct: cert.videosCompletedPct },
+            { label: "Challenges", pct: cert.challengesCompletedPct },
+          ].map(({ label, pct }) => (
+            <div key={label} className="flex items-center gap-2">
+              <CheckCircle2 size={11} style={{ color: "var(--color-success)" }} className="flex-shrink-0" />
+              <span className="text-[10px] text-muted-foreground flex-1">{label}</span>
+              <span className="text-[10px] font-bold tabular-nums" style={{ color: "var(--color-success)" }}>
+                {pct}%
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="px-4 pb-4">
+          <button
+            onClick={handleDownload}
+            disabled={isFetching}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold text-white transition-opacity disabled:opacity-60"
+            style={{ background: "var(--color-success)" }}
+          >
+            {isFetching ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Download size={12} />
+            )}
+            {isFetching ? "Loading…" : "Download Certificate"}
+          </button>
+        </div>
+      </div>
+
+      {/* Certificate Modal */}
+      {showModal && certDetails && (
+        <CertificateModal details={certDetails} onClose={() => setShowModal(false)} onPrint={handlePrint} />
+      )}
+    </>
+  );
+}
+
+// ─── Certificate Modal (print-ready) ─────────────────────────────────────────
+
+function CertificateModal({
+  details,
+  onClose,
+  onPrint,
+}: {
+  details: import("@/types").CertificateDetails;
+  onClose: () => void;
+  onPrint: () => void;
+}) {
+  const completedDate = new Date(details.completedAt).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 print:p-0"
+      style={{ background: "rgba(0,0,0,0.75)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl print:rounded-none print:shadow-none print:max-w-none"
+        style={{ background: "var(--color-bg-surface)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button (hidden on print) */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 z-10 p-1.5 rounded-full text-muted-foreground hover:text-foreground transition-colors print:hidden"
+          style={{ background: "rgba(255,255,255,0.06)" }}
+        >
+          <X size={16} />
+        </button>
+
+        {/* Certificate content */}
+        <div
+          className="relative p-10 text-center space-y-5"
+          style={{
+            background: "linear-gradient(135deg, rgba(34,197,94,0.06) 0%, rgba(0,0,0,0) 60%)",
+            borderTop: "4px solid var(--color-success)",
+          }}
+        >
+          {/* Seal */}
+          <div className="flex justify-center">
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center"
+              style={{
+                background: "color-mix(in srgb, var(--color-success) 15%, transparent)",
+                border: "2px solid var(--color-success)",
+              }}
+            >
+              <GraduationCap size={30} style={{ color: "var(--color-success)" }} />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground">
+              Certificate of Completion
+            </p>
+            <p className="text-[10px] text-muted-foreground">Tamil Business Tribe</p>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">This certifies that</p>
+            <p className="text-2xl font-bold text-foreground">{details.memberName}</p>
+            <p className="text-xs text-muted-foreground">has successfully completed</p>
+          </div>
+
+          <p
+            className="text-lg font-bold leading-snug max-w-md mx-auto"
+            style={{ color: "var(--color-accent)" }}
+          >
+            {details.workshopTitle}
+          </p>
+
+          <p className="text-xs text-muted-foreground">
+            Completed on <span className="font-semibold text-foreground">{completedDate}</span>
+          </p>
+
+          {/* Certificate ID */}
+          <p className="text-[9px] font-mono text-muted-foreground tracking-wider">
+            Certificate ID: {details.certificateId}
+          </p>
+
+          {/* Divider */}
+          <div
+            className="h-px w-24 mx-auto"
+            style={{ background: "color-mix(in srgb, var(--color-success) 40%, transparent)" }}
+          />
+        </div>
+
+        {/* Actions (hidden on print) */}
+        <div className="px-8 pb-6 flex items-center justify-center gap-3 print:hidden">
+          <button
+            onClick={onPrint}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold text-white"
+            style={{ background: "var(--color-success)" }}
+          >
+            <Download size={14} />
+            Save / Print
+          </button>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1095,23 +1366,25 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
   const episodes: any[] = challenge.episodes ?? [];
   const ep = episodes[activeEpIdx];
 
-  const [watchState, setWatchState] = useState<"not_started" | "watching" | "paused" | "completed">("not_started");
-  const [localElapsed, setLocalElapsed] = useState(0);
+  const [watchState, setWatchState] = useState<"not_started" | "resume" | "watching" | "paused" | "completed">("not_started");
   const [currentPlayhead, setCurrentPlayhead] = useState(0);
 
   const iframeFocusedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const markCalledRef = useRef(false);
+  const lastPlayheadRef = useRef<number>(0);
 
   useEffect(() => {
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
-    setLocalElapsed(0);
-    
+
     if (!ep) return;
     const alreadyDone = !!ep.isCompleted;
-    setWatchState(alreadyDone ? "completed" : "not_started");
-    setCurrentPlayhead(ep.lastWatchedSecs ?? 0);
+    const resumeSecs = ep.lastWatchedSecs ?? 0;
+    const hasProgress = !alreadyDone && resumeSecs > 3;
+    setWatchState(alreadyDone ? "completed" : hasProgress ? "resume" : "not_started");
+    setCurrentPlayhead(resumeSecs);
+    lastPlayheadRef.current = resumeSecs;
     markCalledRef.current = alreadyDone;
   }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1119,7 +1392,6 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
     if (!ep || !ep.videoUrl) return;
 
     let lastPlayhead = ep.lastWatchedSecs ?? 0;
-    let localSeconds = 0;
 
     const doMarkComplete = () => {
       if (markCalledRef.current) return;
@@ -1131,19 +1403,23 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
           qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
           qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
-        }
+        },
+        onError: () => {
+          // Backend rejected (not enough actual watch time — likely seeking)
+          // Revert so the heartbeat can continue accumulating and retry
+          markCalledRef.current = false;
+          setWatchState("paused");
+        },
       });
     };
 
     const handler = (e: MessageEvent) => {
-      // Security: Only process events from trusted CDNs if possible
       let data = e.data;
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch { return; }
       }
       if (!data || typeof data !== "object") return;
 
-      // Handle standard player.js format (used natively by Bunny)
       let evt = "";
       let payloadValue: any = undefined;
 
@@ -1151,7 +1427,6 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         evt = (data.event || "").toLowerCase();
         payloadValue = data.value;
       } else {
-        // Fallback for custom unwraps
         const inner = data.data ?? data;
         evt = (inner.event || inner.type || inner.action || "").toLowerCase();
         payloadValue = inner.value ?? inner;
@@ -1159,11 +1434,9 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
 
       if (!evt) return;
 
-      // Initialize Bunny Stream player.js bindings when ready
       if (evt === "ready" && e.source) {
         const win = e.source as Window;
-        const eventsToSubscribe = ["play", "pause", "timeupdate", "ended"];
-        eventsToSubscribe.forEach((eventName) => {
+        ["play", "pause", "timeupdate", "ended"].forEach((eventName) => {
           win.postMessage(
             JSON.stringify({ context: "player.js", method: "addEventListener", value: eventName }),
             "*"
@@ -1178,10 +1451,12 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
 
+      // Real-time playhead update — drives progress bar without waiting for heartbeat
       if (isTimeUpdate && payloadValue !== undefined) {
         const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue.seconds;
         if (currentTime !== undefined) {
           lastPlayhead = currentTime;
+          lastPlayheadRef.current = currentTime;
           setCurrentPlayhead(currentTime);
         }
       }
@@ -1191,37 +1466,16 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         if (!iframeFocusedRef.current) {
           iframeFocusedRef.current = true;
           clearInterval(timerRef.current);
+          // 15s heartbeat — backend accumulates actualWatchedSecs; decides completion at 85%
           timerRef.current = setInterval(() => {
-            // Avoid overlapping requests
-            if (postProgress.isPending) return;
-
-            localSeconds += 15;
-            setLocalElapsed(localSeconds);
-            
-            const threshold = ep.durationSeconds > 0 ? ep.durationSeconds * 0.85 : 90;
-            const currentTotal = (ep.actualWatchedSecs ?? 0) + localSeconds;
-            const isCompleted = currentTotal >= threshold;
-
-            if (isCompleted) {
-              doMarkComplete();
-            } else {
-              postProgress.mutate({
-                episodeId: ep.id,
-                watchedSeconds: Math.floor(lastPlayhead),
-                deltaSeconds: 15,
-                isCompleted: false,
-              }, {
-                onSuccess: async (data: any) => {
-                  if (data?.isCompleted) {
-                    doMarkComplete();
-                  }
-                  // Wait for the query to actually refresh before resetting local state to avoid UI jumps
-                  await qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
-                  localSeconds = 0;
-                  setLocalElapsed(0);
-                }
-              });
-            }
+            postProgress.mutate(
+              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
+              {
+                onSuccess: (data: any) => {
+                  if (data?.isCompleted) doMarkComplete();
+                },
+              }
+            );
           }, 15000);
         }
       } else if (isPause && !isEnd) {
@@ -1230,13 +1484,32 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         clearInterval(timerRef.current);
       }
 
-      if (isEnd) doMarkComplete();
+      // Video ended naturally — post final 15s delta, then attempt completion
+      if (isEnd) {
+        clearInterval(timerRef.current);
+        postProgress.mutate(
+          { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
+          {
+            onSuccess: (data: any) => {
+              // If backend confirmed 85% via this final heartbeat, complete
+              if (data?.isCompleted) { doMarkComplete(); return; }
+              // Otherwise attempt explicit completion (backend will verify actualWatchedSecs)
+              doMarkComplete();
+            },
+          }
+        );
+      }
     };
 
     window.addEventListener("message", handler);
     return () => {
       window.removeEventListener("message", handler);
       clearInterval(timerRef.current);
+      // Flush the last known position immediately when switching episodes
+      const saved = lastPlayheadRef.current;
+      if (saved > 3 && !markCalledRef.current) {
+        postProgress.mutate({ episodeId: ep.id, watchedSeconds: Math.floor(saved), deltaSeconds: 0, isCompleted: false });
+      }
     };
   }, [ep?.id, ep?.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1248,8 +1521,9 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  const activeProgressPct = ep.durationSeconds > 0 
-    ? Math.min(100, Math.round((((ep.actualWatchedSecs ?? 0) + localElapsed) / ep.durationSeconds) * 100))
+  // Use the further of server-confirmed progress or current playhead for smooth real-time display
+  const activeProgressPct = ep.durationSeconds > 0
+    ? Math.min(100, Math.round((Math.max(ep.actualWatchedSecs ?? 0, currentPlayhead) / ep.durationSeconds) * 100))
     : 0;
 
   return (
@@ -1263,21 +1537,21 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         showFullscreenButton={!!ep.videoUrl}
       >
         {ep.videoUrl ? (
-          <iframe 
-            src={withResumeTime(normalizeBunnyUrl(ep.videoUrl), ep.lastWatchedSecs ?? 0)} 
-            className="w-full h-full" 
-            allowFullScreen 
-            allow="autoplay; fullscreen" 
+          <iframe
+            key={ep.id}
+            src={withResumeTime(normalizeBunnyUrl(ep.videoUrl), ep.lastWatchedSecs ?? 0)}
+            className="w-full h-full"
+            allow="autoplay"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
         )}
       </VideoWatermark>
 
-      {/* Episode title + status indicator (Replaces manual mark done button) */}
+      {/* Episode title + live status badge */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-foreground">{ep.title}</p>
+          <p className="font-semibold text-sm text-foreground truncate">{ep.title}</p>
         </div>
         {ep.isCompleted || watchState === "completed" ? (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
@@ -1291,6 +1565,10 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
             <Pause size={13} /> Paused at {formatTime(currentPlayhead)}
           </span>
+        ) : watchState === "resume" ? (
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
+            <Play size={11} fill="currentColor" className="ml-0.5" /> Resume from {formatTime(ep.lastWatchedSecs ?? 0)}
+          </span>
         ) : (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
             Progress saved automatically
@@ -1298,75 +1576,175 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         )}
       </div>
 
+      {/* Resume card — Hotstar/Udemy style, only when there's saved progress */}
+      {(watchState === "resume" || watchState === "paused") && (ep.lastWatchedSecs ?? 0) > 3 && (
+        <div
+          className="rounded-xl border px-4 py-3 space-y-2"
+          style={{
+            background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+            borderColor: "color-mix(in srgb, var(--color-accent) 22%, transparent)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+                style={{ background: "color-mix(in srgb, var(--color-accent) 18%, transparent)" }}
+              >
+                <Play size={11} fill="currentColor" style={{ color: "var(--color-accent)" }} className="ml-0.5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold leading-tight" style={{ color: "var(--color-accent)" }}>
+                  Resume from {formatTime(ep.lastWatchedSecs ?? 0)}
+                </p>
+                <p className="text-[11px] text-muted-foreground truncate">{ep.title}</p>
+              </div>
+            </div>
+            <span className="text-sm font-bold flex-shrink-0" style={{ color: "var(--color-accent)" }}>
+              {activeProgressPct}%
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${activeProgressPct}%`, background: "var(--color-accent)" }}
+              />
+            </div>
+            {ep.durationSeconds > 0 && (
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                {formatTime(ep.lastWatchedSecs ?? 0)} / {formatTime(ep.durationSeconds)}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Dynamic Episode list */}
       <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
-          const progressPct = e.durationSeconds > 0 
-            ? Math.min(100, Math.round((((e.actualWatchedSecs ?? 0) + (isActive ? localElapsed : 0)) / e.durationSeconds) * 100))
+          const progressPct = e.durationSeconds > 0
+            ? Math.min(100, Math.round((Math.max(e.actualWatchedSecs ?? 0, isActive ? currentPlayhead : (e.lastWatchedSecs ?? 0)) / e.durationSeconds) * 100))
             : 0;
+
+          const isWatching = isActive && watchState === "watching";
+          const isPausedState = isActive && watchState === "paused";
+          const isResumeState = isActive && watchState === "resume";
+          const hasPartialProgress = !isDone && !isActive && (e.lastWatchedSecs > 0 || e.actualWatchedSecs > 0);
+          const showBar = !isDone && (isWatching || isPausedState || isResumeState || hasPartialProgress);
+
+          const borderColor = isDone
+            ? "#22c55e"
+            : isWatching
+              ? "var(--color-accent)"
+              : isPausedState
+                ? "rgba(255,255,255,0.15)"
+                : "transparent";
+
+          const bgColor = isDone
+            ? "rgba(34,197,94,0.06)"
+            : isWatching
+              ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
+              : isPausedState || isResumeState
+                ? "rgba(255,255,255,0.03)"
+                : "transparent";
 
           return (
             <button
               key={e.id}
               onClick={() => setActiveEpIdx(i)}
-              className="w-full flex flex-col gap-2.5 px-3 py-3 text-left transition-all"
-              style={{
-                borderLeft: isDone ? "3px solid #22c55e" : "3px solid transparent",
-                background: isActive
-                  ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
-                  : isDone
-                    ? "rgba(34,197,94,0.08)"
-                    : "transparent",
-              }}
+              className="w-full flex flex-col px-3 py-3.5 text-left transition-all"
+              style={{ borderLeft: `3px solid ${borderColor}`, background: bgColor }}
             >
-              <div className="w-full flex items-center justify-between gap-2.5">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span
-                    className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold transition-colors"
-                    style={isDone
+              {/* Row 1: icon + title + right label */}
+              <div className="flex items-center gap-3">
+                {/* State icon */}
+                <span
+                  className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full text-[11px] font-bold transition-colors"
+                  style={
+                    isDone
                       ? { background: "#22c55e22", color: "#22c55e" }
-                      : isActive 
+                      : isWatching
                         ? { background: "var(--color-accent)", color: "#fff" }
-                        : (!isDone && (e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0)))
-                          ? { background: "rgba(255,255,255,0.05)", color: "var(--color-accent)" }
-                          : { background: "rgba(255,255,255,0.05)", color: "var(--color-muted-foreground)" }}
-                  >
-                    {isDone ? <CheckCircle2 size={13} /> : isActive && watchState === "watching" ? <Play size={10} fill="currentColor" className="ml-0.5 animate-pulse" /> : isActive && watchState === "paused" ? <Pause size={10} fill="currentColor" /> : (!isDone && (e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0))) ? <Play size={10} fill="currentColor" className="ml-0.5" /> : i + 1}
-                  </span>
-                  <span className="truncate text-sm font-medium transition-colors" style={{ color: isDone ? "#22c55e" : isActive ? "#fff" : "var(--color-muted-foreground)" }}>
-                    {e.title}
-                  </span>
-                </div>
-                
-                {isDone ? (
-                  <span className="text-[10px] font-bold" style={{ color: "#22c55e" }}>Completed</span>
-                ) : isActive && watchState === "watching" ? (
-                  <span className="text-[10px] font-bold flex items-center gap-1.5" style={{ color: "var(--color-accent)" }}>
-                    Watching {progressPct}%
-                  </span>
-                ) : isActive && watchState === "paused" ? (
-                  <span className="text-[10px] font-bold text-muted-foreground">
-                    Paused at {formatTime(currentPlayhead)}
-                  </span>
-                ) : (e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0)) ? (
-                  <span className="text-[10px] font-bold" style={{ color: "var(--color-accent)" }}>Resume ({progressPct}%)</span>
-                ) : e.durationLabel ? (
-                  <span className="text-[10px] text-muted-foreground">{e.durationLabel}</span>
-                ) : null}
+                        : isPausedState
+                          ? { background: "rgba(255,255,255,0.08)", color: "#fff" }
+                          : isResumeState || hasPartialProgress
+                            ? { background: "color-mix(in srgb, var(--color-accent) 18%, transparent)", color: "var(--color-accent)" }
+                            : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.3)" }
+                  }
+                >
+                  {isDone ? (
+                    <CheckCircle2 size={14} />
+                  ) : isWatching ? (
+                    <Play size={10} fill="currentColor" className="ml-0.5 animate-pulse" />
+                  ) : isPausedState ? (
+                    <Pause size={10} fill="currentColor" />
+                  ) : isResumeState || hasPartialProgress ? (
+                    <Play size={10} fill="currentColor" className="ml-0.5" />
+                  ) : (
+                    i + 1
+                  )}
+                </span>
+
+                {/* Title */}
+                <span
+                  className="flex-1 min-w-0 text-sm font-medium truncate transition-colors"
+                  style={{
+                    color: isDone
+                      ? "#22c55e"
+                      : isWatching || isPausedState || isResumeState
+                        ? "#fff"
+                        : hasPartialProgress
+                          ? "rgba(255,255,255,0.7)"
+                          : "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  {e.title}
+                </span>
+
+                {/* Right label */}
+                <span className="flex-shrink-0 min-w-0">
+                  {isDone ? (
+                    <span className="text-[11px] font-bold" style={{ color: "#22c55e" }}>Completed</span>
+                  ) : isWatching ? (
+                    <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>Watching...</span>
+                  ) : isPausedState ? (
+                    <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+                      Paused at {formatTime(currentPlayhead)}
+                    </span>
+                  ) : isResumeState ? (
+                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--color-accent)" }}>
+                      Resume {progressPct}%
+                    </span>
+                  ) : hasPartialProgress ? (
+                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--color-accent)" }}>
+                      Resume {progressPct}%
+                    </span>
+                  ) : e.durationLabel ? (
+                    <span className="text-[11px] text-muted-foreground">{e.durationLabel}</span>
+                  ) : null}
+                </span>
               </div>
 
-              {/* Progress bar line for active or partially watched */}
-              {!isDone && (isActive || e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0)) && (
-                <div className="w-full pl-8 flex items-center gap-3 mt-0.5">
-                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full rounded-full transition-all duration-500" 
-                      style={{ width: `${progressPct}%`, background: isActive && watchState === "watching" ? "var(--color-accent)" : "rgba(255,255,255,0.3)" }} 
+              {/* Row 2: progress bar — only for in-progress states, never for completed */}
+              {showBar && (
+                <div className="mt-2.5 pl-10 flex items-center gap-2.5">
+                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{
+                        width: `${progressPct}%`,
+                        background: isWatching || isResumeState || hasPartialProgress
+                          ? "var(--color-accent)"
+                          : "rgba(255,255,255,0.3)",
+                      }}
                     />
                   </div>
-                  <span className="text-[9px] font-bold text-muted-foreground whitespace-nowrap">{progressPct}%</span>
+                  <span className="text-[10px] font-bold text-muted-foreground w-7 text-right whitespace-nowrap">
+                    {progressPct}%
+                  </span>
                 </div>
               )}
             </button>
@@ -2118,6 +2496,12 @@ export default function WorkshopDetailPage() {
 
         {/* ── Right: Sidebar ── */}
         <div className="w-full lg:w-[280px] flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
+          {/* Challenge progress + certificate — always visible above tabs */}
+          <LearningProgressWidget progress={progress} />
+          {detail.certificate && (
+            <CertificateCard cert={detail.certificate} slug={slug} />
+          )}
+
           {/* Tab buttons */}
           {tabs.length > 0 && (
             <div className="flex border-b border-border">
@@ -2148,17 +2532,14 @@ export default function WorkshopDetailPage() {
 
           {/* Challenges tab */}
           {currentTabId === "challenges" && (
-            <div className="space-y-3">
-              <LearningProgressWidget progress={progress} />
-              <ChallengeList
-                slug={slug}
-                selectedId={mainView.kind === "challenge" ? mainView.challenge?.id : null}
-                onSelect={(ch) => {
-                  setMainView({ kind: "challenge", challenge: ch });
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              />
-            </div>
+            <ChallengeList
+              slug={slug}
+              selectedId={mainView.kind === "challenge" ? mainView.challenge?.id : null}
+              onSelect={(ch) => {
+                setMainView({ kind: "challenge", challenge: ch });
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
           )}
 
           {currentTabId === "qa" && <QaTab slug={slug} />}

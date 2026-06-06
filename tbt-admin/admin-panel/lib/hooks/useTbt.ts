@@ -626,3 +626,25 @@ export const useRemoveMemberEnrollment = (memberId: string) => {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['member-enrollments', memberId] }); qc.invalidateQueries({ queryKey: ['member-progress', memberId] }); },
   });
 };
+
+// ── SECURITY LOGS ─────────────────────────────────────────────────────
+
+export const useSecurityLogs = (params: { page?: number; limit?: number; eventType?: string; memberId?: string; search?: string } = {}) =>
+  useQuery({
+    queryKey: ['security-logs', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/security-logs', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useSecurityLogStats = () =>
+  useQuery({
+    queryKey: ['security-logs-stats'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/security-logs/stats');
+      return res;
+    },
+    staleTime: 60_000,
+  });

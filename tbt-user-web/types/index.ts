@@ -242,6 +242,7 @@ export interface UiStrings {
   resourcesDownloadLabel: string;
   paginationPrevLabel: string;
   paginationNextLabel: string;
+  continueWatchingLabel?: string;
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
@@ -423,6 +424,22 @@ export interface LearningProgress {
   milestones?: { achieved: boolean }[];
 }
 
+export interface WorkshopCertificate {
+  eligible: boolean;
+  videosCompletedPct: number;
+  challengesCompletedPct: number;
+  remainingVideos: number;
+  remainingChallenges: number;
+}
+
+export interface CertificateDetails {
+  certificateId: string;
+  memberName: string;
+  workshopTitle: string;
+  completedAt: string;
+  issuedAt: string;
+}
+
 export interface WorkshopDetail {
   backUrl: string;
   backLabel: string;
@@ -431,6 +448,7 @@ export interface WorkshopDetail {
     tabs: WorkshopTab[];
   };
   learningProgress: LearningProgress | null;
+  certificate: WorkshopCertificate | null;
   workshopFlowLabel?: string | null;
   defaultMainAreaType?: string | null;
 }
@@ -550,6 +568,20 @@ export interface EpisodePlayback {
   };
 }
 
+// ─── Device Tracking ──────────────────────────────────────────────────────────
+
+export interface DeviceSession {
+  id: string;
+  deviceId: string | null;
+  browser: string;
+  os: string;
+  deviceType: 'desktop' | 'mobile' | 'tablet';
+  ipAddress: string | null;
+  lastActiveAt: string;
+  startedAt: string;
+  isCurrent: boolean;
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export interface DashboardStats {
@@ -562,11 +594,30 @@ export interface DashboardStats {
   unreadNotifications: number;
 }
 
+export interface WatchHistoryItem {
+  type: "workshop" | "course";
+  episodeId: string;
+  workshopSlug: string;
+  workshopTitle: string;
+  episodeTitle: string;
+  thumbnailUrl: string | null;
+  lastWatchedSecs: number;
+  actualWatchedSecs: number;
+  durationSeconds: number;
+  isCompleted: boolean;
+  completedAt: string | null;
+  updatedAt: string;
+  progressPercent: number;
+}
+
 export interface ContinueLearningItem {
-  courseId: string;
+  type: "course" | "workshop";
+  id: string;
+  lessonId: string;
   title: string;
   thumbnailUrl?: string | null;
-  progressPercent: number;
-  lastLessonId?: string | null;
   lastLessonTitle?: string | null;
+  lastWatchedSecs: number;
+  progressPercent: number;
+  updatedAt: number;
 }

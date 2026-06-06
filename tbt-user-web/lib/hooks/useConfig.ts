@@ -9,6 +9,7 @@ import type {
   Resource,
   EpisodePlayback,
   WorkshopDetail,
+  CertificateDetails,
   QAResponse,
   AssignmentsResponse,
 } from "@/types";
@@ -193,4 +194,15 @@ export const useCompleteWorkshopEpisode = () =>
       const res: any = await apiClient.post(`/api/user/workshop-episodes/${episodeId}/complete`, {});
       return res?.data;
     },
+  });
+
+export const useWorkshopCertificate = (slug: string) =>
+  useQuery({
+    queryKey: ["workshop-certificate", slug],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshops/${slug}/certificate`);
+      return res?.data as CertificateDetails;
+    },
+    enabled: false, // only fetched on demand (when user clicks Download)
+    retry: false,
   });

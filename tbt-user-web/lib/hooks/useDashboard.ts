@@ -23,6 +23,16 @@ export const useContinueLearning = () =>
     staleTime: 30 * 1000,
   });
 
+export const useWatchHistory = (params: { page?: number; limit?: number } = {}) =>
+  useQuery({
+    queryKey: ["user", "dashboard", "watch-history", params],
+    queryFn: async () => {
+      const res = await dashboardService.getWatchHistory(params);
+      return res.data;
+    },
+    staleTime: 60 * 1000,
+  });
+
 export const useNotifications = (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
   useQuery({
     queryKey: ["user", "notifications", params],
@@ -112,4 +122,14 @@ export const useSendChatMessage = () =>
   useMutation({
     mutationFn: ({ conversationId, body }: { conversationId: string; body: string }) =>
       dashboardService.sendChatMessage(conversationId, body),
+  });
+
+export const useMyDevices = () =>
+  useQuery({
+    queryKey: ["user", "my-devices"],
+    queryFn: async () => {
+      const res = await dashboardService.getMyDevices();
+      return res.data;
+    },
+    staleTime: 60 * 1000,
   });

@@ -96,8 +96,7 @@ export default function WatchPage() {
           <iframe
             src={videoSrc}
             className="w-full h-full border-0"
-            allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-            allowFullScreen
+            allow="accelerometer; gyroscope; autoplay; encrypted-media"
             title={playback.title}
           />
         </VideoWatermark>

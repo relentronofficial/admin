@@ -88,20 +88,25 @@ Clerk is the auth provider for both frontend and backend.
 ### Route Groups
 ```
 app/
-  (auth)/           # Clerk sign-in/sign-up pages — login screen is OFF-LIMITS, do not modify
+  (auth)/           # Clerk-hosted sign-in/sign-up pages — DO NOT MODIFY
   (marketing)/      # Public landing page (unauthenticated)
   (platform)/       # All member pages — wrapped by Navbar + SubscriptionGate
   (player)/         # Full-screen video player — bare layout (no Navbar/Footer)
+  login/            # Custom LoginScreen — DO NOT MODIFY
   loading/          # Standalone loading page
 ```
 `(platform)/layout.tsx` renders `<Navbar>`, `<SubscriptionGate>`, and `<Footer>`. All platform pages sit inside `max-w-7xl mx-auto`.
+
+`/eiflix` and `/eiflix/:path*` permanently redirect to `/tbt` and `/tbt/:path*` (see `next.config.ts`).
 
 ### API Client (`lib/api/client.ts`)
 - Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)
 - Response interceptor **unwraps** `response.data` — hooks receive `{ success, data, meta, error }` directly, not doubly-nested
 - Response interceptor **also** captures the HTTP `Date` header to sync `_serverTimeOffset` (never set this directly)
 - `initApiClient(getToken)` must be called once inside a client component (done in `Providers`) to attach Clerk bearer tokens. Hooks must NOT call `getToken` themselves
+- `getCachedToken()` polls up to 600 ms for `initApiClient` to be called — handles the race between `SubscriptionGate`'s first query and `AuthInterceptor`'s `useEffect`
 - `getServerNow()` — exported helper; use instead of `Date.now()` for any countdown or time-sensitive display to avoid client clock skew
+- A stable `tbt_device_id` is generated in `localStorage` on first load (used for multi-device detection in security logs)
 
 ### Authentication (`Providers.tsx`)
 `ClerkProvider` wraps root; inside it, a component calls `initApiClient(useAuth().getToken)` once. Clerk's `<UserButton>` is rendered directly in `Navbar`.
@@ -131,7 +136,7 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 
 ### Hook Files
 - `lib/hooks/useConfig.ts` — content hooks: `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
-- `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
+- `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
 - `lib/hooks/useCourses.ts`, `lib/hooks/useEvents.ts` — supplementary hooks
 - All hooks are `"use client"` and use TanStack Query v5
@@ -167,6 +172,8 @@ The full-screen player (`(player)/watch/[episodeId]`) AND the embedded `EpisodeP
 4. **`initApiClient`** is called once in `Providers`; hooks must not attach tokens themselves
 5. **`SubscriptionGate`** is already in the platform layout — don't duplicate the subscription check in individual pages
 6. **Login page is permanently off-limits** — never modify `app/login/page.tsx` or `app/(auth)/`
+7. **`useRef` requires an initial value** (React 19) — use `useRef<T | undefined>(undefined)`, never `useRef<T>()`
+8. **`refetchQueries` predicate in TanStack Query v5** — use `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
 
 ---
 
@@ -242,6 +249,18 @@ Label style: text-[11px] font-bold uppercase tracking-widest text-[#606060] font
 Input:       bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626]
 ```
 
+### Security Logs (`/api/security-logs`)
+Read-only module — logs suspicious viewing behaviour, no automatic blocking. Event types stored in `SecurityLog.eventType`:
+- `EXCESSIVE_SKIPPING` — user jumped forward more than expected
+- `RAPID_EPISODE_SWITCHING` — many episodes opened in a short window
+- `ABNORMAL_PROGRESS_SPEED` — reported delta far exceeds wall-clock elapsed
+- `MULTIPLE_DEVICES` — same session active on multiple devices simultaneously
+
+Admin hooks: `useSecurityLogs(params)` and `useSecurityLogStats()` in `useTbt.ts`.
+Backend endpoints: `GET /api/security-logs` and `GET /api/security-logs/stats`.
+
+---
+
 ## Common Pitfalls
 
 1. **Delivery modes** — `["online", "offline", "hybrid"]` only; never add `"recorded"`
@@ -290,7 +309,7 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## PRD Implementation Status
 
-### Admin PRD (`TBT_Admin_PRD.md`) — All 18 sections ✅ Complete
+### Admin PRD (`TBT_Admin_PRD.md`) — All 18 sections ✅ Complete + Security Logs
 See `tbt-admin/PROJECT_STATUS.md` for section-by-section detail.
 See `tbt-admin/ARCHITECTURE.md` for full directory/route/hook/DB map.
 

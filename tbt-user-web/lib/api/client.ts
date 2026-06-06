@@ -1,5 +1,16 @@
 import axios from "axios";
 
+// Generate and persist a stable device ID in localStorage on first load.
+if (typeof window !== "undefined") {
+  if (!localStorage.getItem("tbt_device_id")) {
+    const id =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+    localStorage.setItem("tbt_device_id", id);
+  }
+}
+
 const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
   timeout: 15000,
