@@ -1954,7 +1954,7 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
           episodes: {
             orderBy: { order: 'asc' },
             include: {
-              progress: { where: { memberId: request.memberId }, select: { isCompleted: true, lastWatchedSecs: true } },
+              progress: { where: { memberId: request.memberId }, select: { isCompleted: true, lastWatchedSecs: true, actualWatchedSecs: true } },
             },
           },
           memberProgress: {
@@ -2059,6 +2059,7 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
         durationSeconds: ep.durationSeconds ?? null,
         isCompleted: ep.progress?.[0]?.isCompleted ?? false,
         lastWatchedSecs: ep.progress?.[0]?.lastWatchedSecs ?? 0,
+        actualWatchedSecs: ep.progress?.[0]?.actualWatchedSecs ?? 0,
       })) : [],
       submission: ch.memberProgress?.[0] ?? null,
     };

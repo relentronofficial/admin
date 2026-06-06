@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,6 +14,9 @@ import {
   FileText,
   Trophy,
   RotateCcw,
+  Play,
+  Pause,
+  Loader2,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -26,13 +29,14 @@ import {
   useWorkshopChallenges,
   useCompleteChallenge,
   useCompleteWorkshopEpisode,
+  usePostEpisodeProgress,
 } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
 import { getServerNow } from "@/lib/api/client";
-import { normalizeBunnyUrl } from "@/lib/utils/format";
+import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type {
   WorkshopFlowItem,
@@ -1086,20 +1090,123 @@ function ChallengeList({
 function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string }) {
   const qc = useQueryClient();
   const completeEp = useCompleteWorkshopEpisode();
+  const postProgress = usePostEpisodeProgress();
   const [activeEpIdx, setActiveEpIdx] = useState(0);
   const episodes: any[] = challenge.episodes ?? [];
   const ep = episodes[activeEpIdx];
 
-  const handleMarkEpDone = async () => {
+  const [watchState, setWatchState] = useState<"not_started" | "watching" | "paused" | "completed">("not_started");
+  const [localElapsed, setLocalElapsed] = useState(0);
+  const [currentPlayhead, setCurrentPlayhead] = useState(0);
+
+  const iframeFocusedRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const markCalledRef = useRef(false);
+
+  useEffect(() => {
+    clearInterval(timerRef.current);
+    iframeFocusedRef.current = false;
+    setLocalElapsed(0);
+    
     if (!ep) return;
-    await completeEp.mutateAsync(ep.id);
-    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
-    qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
-    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
-    if (activeEpIdx < episodes.length - 1) setActiveEpIdx((i) => i + 1);
-  };
+    const alreadyDone = !!ep.isCompleted;
+    setWatchState(alreadyDone ? "completed" : "not_started");
+    setCurrentPlayhead(ep.lastWatchedSecs ?? 0);
+    markCalledRef.current = alreadyDone;
+  }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!ep || !ep.videoUrl) return;
+
+    let lastPlayhead = ep.lastWatchedSecs ?? 0;
+    let localSeconds = 0;
+
+    const doMarkComplete = () => {
+      if (markCalledRef.current) return;
+      markCalledRef.current = true;
+      clearInterval(timerRef.current);
+      setWatchState("completed");
+      completeEp.mutate(ep.id, {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+          qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+          qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+        }
+      });
+    };
+
+    const handler = (e: MessageEvent) => {
+      let data = e.data;
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } catch { return; }
+      }
+      if (!data || typeof data !== "object") return;
+
+      const inner = data.data ?? data;
+      const evt = (inner.event || inner.type || inner.action || "").toLowerCase() as string;
+      if (!evt) return;
+
+      const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
+      const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
+                    evt === "onfinish" || evt === "complete" || evt === "onended";
+      const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
+      const isTimeUpdate = evt === "timeupdate";
+
+      if (isTimeUpdate && inner.currentTime) {
+        lastPlayhead = inner.currentTime;
+        setCurrentPlayhead(inner.currentTime);
+      }
+
+      if (isPlay && !isEnd) {
+        setWatchState("watching");
+        if (!iframeFocusedRef.current) {
+          iframeFocusedRef.current = true;
+          clearInterval(timerRef.current);
+          timerRef.current = setInterval(() => {
+            localSeconds += 15;
+            setLocalElapsed(localSeconds);
+            const threshold = ep.durationSeconds > 0 ? ep.durationSeconds * 0.85 : 90;
+            const isCompleted = (ep.actualWatchedSecs ?? 0) + localSeconds >= threshold;
+
+            if (isCompleted) {
+              doMarkComplete();
+            } else {
+              postProgress.mutate({
+                episodeId: ep.id,
+                watchedSeconds: Math.floor(lastPlayhead),
+                deltaSeconds: 15,
+                isCompleted: false,
+              }, {
+                onSuccess: () => {
+                  qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+                }
+              });
+            }
+          }, 15000);
+        }
+      } else if (isPause && !isEnd) {
+        setWatchState("paused");
+        iframeFocusedRef.current = false;
+        clearInterval(timerRef.current);
+      }
+
+      if (isEnd) doMarkComplete();
+    };
+
+    window.addEventListener("message", handler);
+    return () => {
+      window.removeEventListener("message", handler);
+      clearInterval(timerRef.current);
+    };
+  }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ep) return <p className="text-sm text-muted-foreground text-center py-8">No episodes yet.</p>;
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
 
   return (
     <div className="space-y-4">
@@ -1112,63 +1219,109 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         showFullscreenButton={!!ep.videoUrl}
       >
         {ep.videoUrl ? (
-          <iframe src={normalizeBunnyUrl(ep.videoUrl)} className="w-full h-full" allowFullScreen allow="autoplay; fullscreen" />
+          <iframe 
+            src={withResumeTime(normalizeBunnyUrl(ep.videoUrl), ep.lastWatchedSecs ?? 0)} 
+            className="w-full h-full" 
+            allowFullScreen 
+            allow="autoplay; fullscreen" 
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
         )}
       </VideoWatermark>
 
-      {/* Episode title + mark done */}
+      {/* Episode title + status indicator (Replaces manual mark done button) */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-sm text-foreground">{ep.title}</p>
-          {ep.durationLabel && <p className="text-xs text-muted-foreground mt-0.5">{ep.typeLabel} · {ep.durationLabel}</p>}
         </div>
-        {!ep.isCompleted && (
-          <button
-            onClick={handleMarkEpDone}
-            disabled={completeEp.isPending}
-            className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-60 transition-opacity"
-            style={{ background: "var(--color-accent)" }}
-          >
-            {completeEp.isPending ? "..." : "Mark Done"}
-          </button>
-        )}
-        {ep.isCompleted && (
-          <span className="flex items-center gap-1 text-xs font-bold flex-shrink-0" style={{ color: "#22c55e" }}>
-            <CheckCircle2 size={13} /> Done
+        {ep.isCompleted || watchState === "completed" ? (
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
+            <CheckCircle2 size={13} /> Completed
+          </span>
+        ) : watchState === "watching" ? (
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
+            <Loader2 size={13} className="animate-spin" /> Watching...
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <Play size={11} fill="currentColor" /> Not Completed
           </span>
         )}
       </div>
 
-      {/* Episode list */}
+      {/* Dynamic Episode list */}
       <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-        {episodes.map((e: any, i: number) => (
-          <button
-            key={e.id}
-            onClick={() => setActiveEpIdx(i)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs transition-all"
-            style={{
-              borderLeft: e.isCompleted ? "3px solid #22c55e" : "3px solid #ef4444",
-              background: i === activeEpIdx
-                ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
-                : e.isCompleted
-                  ? "rgba(34,197,94,0.06)"
-                  : "rgba(239,68,68,0.06)",
-            }}
-          >
-            <span
-              className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full text-[9px] font-bold"
-              style={e.isCompleted
-                ? { background: "#22c55e22", color: "#22c55e" }
-                : { background: "#ef44440f", color: "#ef4444" }}
+        {episodes.map((e: any, i: number) => {
+          const isActive = i === activeEpIdx;
+          const isDone = e.isCompleted || (isActive && watchState === "completed");
+          const progressPct = e.durationSeconds > 0 
+            ? Math.min(100, Math.round((((e.actualWatchedSecs ?? 0) + (isActive ? localElapsed : 0)) / e.durationSeconds) * 100))
+            : 0;
+
+          return (
+            <button
+              key={e.id}
+              onClick={() => setActiveEpIdx(i)}
+              className="w-full flex flex-col gap-2.5 px-3 py-3 text-left transition-all"
+              style={{
+                borderLeft: isDone ? "3px solid #22c55e" : "3px solid transparent",
+                background: isActive
+                  ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
+                  : isDone
+                    ? "rgba(34,197,94,0.04)"
+                    : "transparent",
+              }}
             >
-              {e.isCompleted ? "✓" : i + 1}
-            </span>
-            <span className="flex-1 truncate text-foreground">{e.title}</span>
-            {e.durationLabel && <span className="text-muted-foreground flex-shrink-0">{e.durationLabel}</span>}
-          </button>
-        ))}
+              <div className="w-full flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span
+                    className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold"
+                    style={isDone
+                      ? { background: "#22c55e22", color: "#22c55e" }
+                      : isActive 
+                        ? { background: "var(--color-accent)", color: "#fff" }
+                        : { background: "rgba(255,255,255,0.05)", color: "var(--color-muted-foreground)" }}
+                  >
+                    {isDone ? <CheckCircle2 size={13} /> : isActive && watchState === "watching" ? <Play size={10} fill="currentColor" className="ml-0.5" /> : isActive && watchState === "paused" ? <Pause size={10} fill="currentColor" /> : i + 1}
+                  </span>
+                  <span className="truncate text-sm font-medium" style={{ color: isDone || isActive ? "#fff" : "var(--color-muted-foreground)" }}>
+                    {e.title}
+                  </span>
+                </div>
+                
+                {isDone ? (
+                  <span className="text-[10px] font-bold" style={{ color: "#22c55e" }}>Completed</span>
+                ) : isActive && watchState === "watching" ? (
+                  <span className="text-[10px] font-bold flex items-center gap-1.5" style={{ color: "var(--color-accent)" }}>
+                    <Loader2 size={10} className="animate-spin" /> Watching...
+                  </span>
+                ) : isActive && watchState === "paused" ? (
+                  <span className="text-[10px] font-bold text-muted-foreground">
+                    Paused at {formatTime(currentPlayhead)}
+                  </span>
+                ) : e.lastWatchedSecs > 0 ? (
+                  <span className="text-[10px] font-bold" style={{ color: "var(--color-accent)" }}>Resume</span>
+                ) : e.durationLabel ? (
+                  <span className="text-[10px] text-muted-foreground">{e.durationLabel}</span>
+                ) : null}
+              </div>
+
+              {/* Progress bar line for active or partially watched */}
+              {!isDone && (isActive || e.lastWatchedSecs > 0) && (
+                <div className="w-full pl-8 flex items-center gap-3">
+                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full rounded-full transition-all duration-500" 
+                      style={{ width: `${progressPct}%`, background: isActive && watchState === "watching" ? "var(--color-accent)" : "rgba(255,255,255,0.3)" }} 
+                    />
+                  </div>
+                  <span className="text-[9px] font-bold text-muted-foreground whitespace-nowrap">{progressPct}%</span>
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
