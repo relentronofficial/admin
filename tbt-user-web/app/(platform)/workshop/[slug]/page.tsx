@@ -1208,6 +1208,10 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  const activeProgressPct = ep.durationSeconds > 0 
+    ? Math.min(100, Math.round((((ep.actualWatchedSecs ?? 0) + localElapsed) / ep.durationSeconds) * 100))
+    : 0;
+
   return (
     <div className="space-y-4">
       <ChallengeHeader challenge={challenge} />
@@ -1241,11 +1245,11 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           </span>
         ) : watchState === "watching" ? (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
-            <Loader2 size={13} className="animate-spin" /> Watching...
+            <Loader2 size={13} className="animate-spin" /> Watching {activeProgressPct}%
           </span>
         ) : (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
-            <Play size={11} fill="currentColor" /> Not Completed
+            Progress saved automatically
           </span>
         )}
       </div>
@@ -1276,16 +1280,18 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
               <div className="w-full flex items-center justify-between gap-2.5">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span
-                    className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold"
+                    className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold transition-colors"
                     style={isDone
                       ? { background: "#22c55e22", color: "#22c55e" }
                       : isActive 
                         ? { background: "var(--color-accent)", color: "#fff" }
-                        : { background: "rgba(255,255,255,0.05)", color: "var(--color-muted-foreground)" }}
+                        : (!isDone && e.lastWatchedSecs > 0)
+                          ? { background: "rgba(255,255,255,0.05)", color: "var(--color-accent)" }
+                          : { background: "rgba(255,255,255,0.05)", color: "var(--color-muted-foreground)" }}
                   >
-                    {isDone ? <CheckCircle2 size={13} /> : isActive && watchState === "watching" ? <Play size={10} fill="currentColor" className="ml-0.5" /> : isActive && watchState === "paused" ? <Pause size={10} fill="currentColor" /> : i + 1}
+                    {isDone ? <CheckCircle2 size={13} /> : isActive && watchState === "watching" ? <Play size={10} fill="currentColor" className="ml-0.5" /> : isActive && watchState === "paused" ? <Pause size={10} fill="currentColor" /> : (!isDone && e.lastWatchedSecs > 0) ? <Play size={10} fill="currentColor" className="ml-0.5" /> : i + 1}
                   </span>
-                  <span className="truncate text-sm font-medium" style={{ color: isDone || isActive ? "#fff" : "var(--color-muted-foreground)" }}>
+                  <span className="truncate text-sm font-medium transition-colors" style={{ color: isDone || isActive ? "#fff" : "var(--color-muted-foreground)" }}>
                     {e.title}
                   </span>
                 </div>
@@ -1294,14 +1300,14 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
                   <span className="text-[10px] font-bold" style={{ color: "#22c55e" }}>Completed</span>
                 ) : isActive && watchState === "watching" ? (
                   <span className="text-[10px] font-bold flex items-center gap-1.5" style={{ color: "var(--color-accent)" }}>
-                    <Loader2 size={10} className="animate-spin" /> Watching...
+                    Watching
                   </span>
                 ) : isActive && watchState === "paused" ? (
                   <span className="text-[10px] font-bold text-muted-foreground">
                     Paused at {formatTime(currentPlayhead)}
                   </span>
                 ) : e.lastWatchedSecs > 0 ? (
-                  <span className="text-[10px] font-bold" style={{ color: "var(--color-accent)" }}>Resume</span>
+                  <span className="text-[10px] font-bold" style={{ color: "var(--color-accent)" }}>Resume from {formatTime(e.lastWatchedSecs)}</span>
                 ) : e.durationLabel ? (
                   <span className="text-[10px] text-muted-foreground">{e.durationLabel}</span>
                 ) : null}
@@ -1309,7 +1315,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
 
               {/* Progress bar line for active or partially watched */}
               {!isDone && (isActive || e.lastWatchedSecs > 0) && (
-                <div className="w-full pl-8 flex items-center gap-3">
+                <div className="w-full pl-8 flex items-center gap-3 mt-0.5">
                   <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
                     <div 
                       className="h-full rounded-full transition-all duration-500" 
