@@ -16,14 +16,15 @@ import { cn } from "@/lib/utils/cn";
 // ── Reusable glass button background spans ────────────────────────────────────
 
 function GlowBg({ active }: { active: boolean }) {
+  const accentRed = "#dc2626";
   if (active) {
     return (
       <span
         className="absolute inset-0 rounded-xl pointer-events-none"
         style={{
-          background: "color-mix(in srgb, var(--color-accent) 18%, rgba(0,0,0,0.25))",
-          border: "1px solid color-mix(in srgb, var(--color-accent) 32%, transparent)",
-          boxShadow: "0 0 16px color-mix(in srgb, var(--color-accent) 24%, transparent)",
+          background: `color-mix(in srgb, ${accentRed} 18%, rgba(0,0,0,0.25))`,
+          border: `1px solid color-mix(in srgb, ${accentRed} 32%, transparent)`,
+          boxShadow: `0 0 16px color-mix(in srgb, ${accentRed} 24%, transparent)`,
         }}
       />
     );
@@ -32,7 +33,7 @@ function GlowBg({ active }: { active: boolean }) {
     <span
       className="absolute inset-0 rounded-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
       style={{
-        background: "color-mix(in srgb, var(--color-accent) 9%, rgba(255,255,255,0.03))",
+        background: `color-mix(in srgb, ${accentRed} 9%, rgba(255,255,255,0.03))`,
       }}
     />
   );
@@ -135,7 +136,7 @@ export function Navbar() {
             ) : (
               <div
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-black text-xs"
-                style={{ background: "var(--color-accent)" }}
+                style={{ background: "#dc2626" }}
               >
                 {siteName[0]}
               </div>
@@ -192,7 +193,7 @@ export function Navbar() {
           boxShadow: [
             "0 4px 24px rgba(0,0,0,0.55)",
             "0 1px 0 rgba(255,255,255,0.04) inset",
-            "0 0 60px color-mix(in srgb, var(--color-accent) 5%, transparent)",
+            "0 0 60px color-mix(in srgb, #dc2626 5%, transparent)",
           ].join(", "),
         }}
       >
@@ -219,7 +220,7 @@ export function Navbar() {
           ) : (
             <div
               className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-black text-xs flex-shrink-0"
-              style={{ background: "var(--color-accent)" }}
+              style={{ background: "#dc2626" }}
             >
               {siteName[0]}
             </div>
@@ -260,7 +261,7 @@ export function Navbar() {
             <Link
               href="/notifications"
               className={cn(
-                "relative p-2 rounded-xl transition-colors duration-200 group overflow-hidden flex-shrink-0",
+                "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
                 pathname === "/notifications" ? "text-white" : "text-[#888] hover:text-white"
               )}
               aria-label="Notifications"
@@ -269,8 +270,8 @@ export function Navbar() {
               <Bell size={17} className="relative z-10" />
               {unreadCount > 0 && (
                 <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5 z-20"
-                  style={{ background: "var(--color-accent)" }}
+                  className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5 z-20"
+                  style={{ background: "#dc2626" }}
                 >
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
@@ -283,7 +284,7 @@ export function Navbar() {
             <Link
               href="/messages"
               className={cn(
-                "relative p-2 rounded-xl transition-colors duration-200 group overflow-hidden flex-shrink-0",
+                "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
                 pathname === "/messages" ? "text-white" : "text-[#888] hover:text-white"
               )}
               aria-label="Messages"
@@ -292,8 +293,8 @@ export function Navbar() {
               <MessageSquare size={17} className="relative z-10" />
               {unreadMsgCount > 0 && (
                 <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5 z-20"
-                  style={{ background: "var(--color-accent)" }}
+                  className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5 z-20"
+                  style={{ background: "#dc2626" }}
                 >
                   {unreadMsgCount > 99 ? "99+" : unreadMsgCount}
                 </span>
