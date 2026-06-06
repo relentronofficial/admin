@@ -303,7 +303,7 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## Deployment
 
-- **Backend → Railway** — auto-deploy on push to `main` via GitHub Actions (`RAILWAY_TOKEN` secret)
+- **Backend → Google Cloud Run** — deploy via Google Cloud Run (previously Railway)
 - **Frontend → Vercel** — auto-deploy on push to `main` via GitHub Actions (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; root dir: `admin-panel`)
 - CI runs typecheck + lint + build for both workspaces before deploying
 

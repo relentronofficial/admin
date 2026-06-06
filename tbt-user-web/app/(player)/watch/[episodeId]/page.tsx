@@ -3,19 +3,22 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronLeft, Loader2, CheckCircle2 } from "lucide-react";
-import { useEpisodePlayback, usePostEpisodeProgress } from "@/lib/hooks/useConfig";
+import { useEpisodePlayback, usePostEpisodeProgress, useCompleteWorkshopEpisode } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
+import toast from "react-hot-toast";
 
 export default function WatchPage() {
   const { episodeId } = useParams<{ episodeId: string }>();
   const router = useRouter();
   const { data: playback, isLoading } = useEpisodePlayback(episodeId);
   const postProgress = usePostEpisodeProgress();
+  const completeEp = useCompleteWorkshopEpisode();
   const { uiStrings } = useSiteConfig();
   const [speed, setSpeed] = useState<string>("");
   const [quality, setQuality] = useState<string>("");
+  const [isMarkedComplete, setIsMarkedComplete] = useState(false);
 
   // Track when playback started so we can compute watched seconds for periodic posts
   const startRef = useRef<number>(Date.now());
@@ -140,22 +143,41 @@ export default function WatchPage() {
           </div>
 
           {/* Complete button */}
-          <button
-            onClick={() => {
-              completedRef.current = true;
-              postProgress.mutate({
-                episodeId,
-                watchedSeconds: playback.durationSeconds ?? undefined,
-                isCompleted: true,
-              });
-            }}
-            disabled={postProgress.isPending}
-            className="ml-auto inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg text-white font-medium disabled:opacity-50 transition-opacity"
-            style={{ background: "var(--color-success)" }}
-          >
-            <CheckCircle2 size={13} />
-            {playback.playerLabels.completeLabel}
-          </button>
+          {isMarkedComplete ? (
+            <span
+              className="ml-auto inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg text-white font-medium"
+              style={{ background: "var(--color-success)" }}
+            >
+              <CheckCircle2 size={13} />
+              {playback.playerLabels.completeLabel}
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                completedRef.current = true;
+                completeEp.mutate(episodeId, {
+                  onSuccess: () => setIsMarkedComplete(true),
+                  onError: (err) => {
+                    completedRef.current = false;
+                    toast.error(
+                      (err as Error).message ||
+                      uiStrings?.errorGeneric ||
+                      "Watch more of the video first."
+                    );
+                  },
+                });
+              }}
+              disabled={completeEp.isPending}
+              className="ml-auto inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg text-white font-medium disabled:opacity-50 transition-opacity"
+              style={{ background: "var(--color-success)" }}
+            >
+              {completeEp.isPending
+                ? <Loader2 size={13} className="animate-spin" />
+                : <CheckCircle2 size={13} />
+              }
+              {playback.playerLabels.completeLabel}
+            </button>
+          )}
         </div>
 
         {playback.description && (

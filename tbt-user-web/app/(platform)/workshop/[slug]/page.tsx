@@ -336,45 +336,7 @@ function AssignmentMainView({
   );
 }
 
-// ─── Episode icon resolvers ───────────────────────────────────────────────────
 
-function resolveEpisodeCompletedIcon(iconType?: string) {
-  switch (iconType) {
-    case "checkmark_pink":
-      return <CheckCircle2 size={14} style={{ color: "var(--color-alert)" }} />;
-    case "checkmark":
-    case "checkmark_green":
-    default:
-      return <CheckCircle2 size={14} style={{ color: "var(--color-success)" }} />;
-  }
-}
-
-function CircularProgress({ pct }: { pct: number }) {
-  const r = 7;
-  const circ = 2 * Math.PI * r;
-  const dash = Math.min(pct / 100, 1) * circ;
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" className="flex-shrink-0 -rotate-90">
-      <circle cx="9" cy="9" r={r} fill="none" strokeWidth="2" className="stroke-muted" />
-      <circle
-        cx="9" cy="9" r={r}
-        fill="none"
-        strokeWidth="2"
-        strokeDasharray={`${dash} ${circ - dash}`}
-        strokeLinecap="round"
-        style={{ stroke: "var(--color-accent)", transition: "stroke-dasharray 0.4s ease" }}
-      />
-    </svg>
-  );
-}
-
-function resolveEpisodeLockIcon(iconType?: string) {
-  switch (iconType) {
-    case "padlock":
-    default:
-      return <Lock size={13} style={{ color: "var(--color-locked)" }} />;
-  }
-}
 
 // ─── Sidebar: Learning Progress Widget (collapsible) ─────────────────────────
 
@@ -711,214 +673,6 @@ function CertificateModal({
   );
 }
 
-// ─── Sidebar: Flow Item Row ───────────────────────────────────────────────────
-
-function FlowItemRow({
-  item,
-  onEpisodeClick,
-  onLiveCallClick,
-  onAssignmentTabClick,
-}: {
-  item: WorkshopFlowItem;
-  onEpisodeClick: (id: string) => void;
-  onLiveCallClick: (item: WorkshopFlowItem) => void;
-  onAssignmentTabClick: () => void;
-}) {
-  const [open, setOpen] = useState(item.isExpanded ?? false);
-  const { uiStrings } = useSiteConfig();
-
-  if (item.type === "live_call") {
-    const isPast = item.status === "past";
-    return (
-      <div
-        className={cn(
-          "rounded-xl border border-border p-3 space-y-1.5 text-sm",
-          !isPast && item.scheduledAt ? "cursor-pointer hover:bg-accent/5 transition-colors" : ""
-        )}
-        onClick={() => !isPast && item.scheduledAt && onLiveCallClick(item)}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span
-              className="text-[10px] font-bold uppercase tracking-wider flex-shrink-0"
-              style={{ color: item.labelColor ?? "var(--color-alert)" }}
-            >
-              {item.label}
-            </span>
-            {isPast && (
-              <Video
-                size={12}
-                className="flex-shrink-0"
-                style={{ color: item.labelColor ?? "var(--color-alert)" }}
-              />
-            )}
-            {isPast && item.recordingAvailable && (
-              <span
-                className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white flex-shrink-0"
-                style={{ background: "var(--color-success)" }}
-              >
-                REC
-              </span>
-            )}
-          </div>
-          {item.isCompleted && (
-            <CheckCircle2 size={13} style={{ color: "var(--color-success)" }} className="flex-shrink-0" />
-          )}
-        </div>
-        <p className="font-semibold text-xs text-foreground leading-snug line-clamp-2">{item.title}</p>
-        {item.facilitatorName && (
-          <p className="text-[11px] text-muted-foreground">
-            {item.facilitatorName}
-            {item.facilitatorTitle ? ` · ${item.facilitatorTitle}` : ""}
-          </p>
-        )}
-        {item.prerequisiteNote && (
-          <p className="text-[11px]" style={{ color: "var(--color-alert)" }}>
-            {item.prerequisiteNote}
-          </p>
-        )}
-        {isPast && item.recordingLabel && (
-          <p className="text-[11px]" style={{ color: "var(--color-accent)" }}>
-            {item.recordingLabel}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (item.type === "challenge") {
-    return (
-      <div className="rounded-xl border border-border overflow-hidden">
-        <button
-          className="w-full flex items-center gap-2 p-3 text-left hover:bg-accent/5 transition-colors"
-          onClick={() => setOpen((o) => !o)}
-        >
-          {item.progressPercent !== undefined && (
-            <CircularProgress pct={item.progressPercent} />
-          )}
-          <span
-            className="text-[10px] font-bold flex-shrink-0"
-            style={{ color: item.numberColor ?? "var(--color-accent)" }}
-          >
-            {item.numberLabel}
-          </span>
-          <span className="flex-1 font-semibold text-xs text-foreground line-clamp-1">
-            {item.title}
-          </span>
-          {item.progressPercent !== undefined && (
-            <span className="text-[10px] text-muted-foreground flex-shrink-0">
-              {item.progressPercent}%
-            </span>
-          )}
-          {open ? (
-            <ChevronUp size={12} className="text-muted-foreground flex-shrink-0" />
-          ) : (
-            <ChevronDown size={12} className="text-muted-foreground flex-shrink-0" />
-          )}
-        </button>
-
-        {item.progressPercent !== undefined && (
-          <div className="h-1 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{ width: `${item.progressPercent}%`, background: "var(--color-accent)" }}
-            />
-          </div>
-        )}
-
-        {open && (
-          <div className="divide-y divide-border">
-            {item.description && (
-              <p className="text-[11px] text-muted-foreground px-3 py-2.5 leading-relaxed">
-                {item.description}
-              </p>
-            )}
-            {(item.episodes ?? []).map((ep) => (
-              <button
-                key={ep.id}
-                disabled={ep.isLocked}
-                className={cn(
-                  "w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors",
-                  ep.isLocked ? "opacity-50 cursor-not-allowed" : "hover:bg-accent/5 cursor-pointer"
-                )}
-                onClick={() => {
-                  if (ep.isLocked) return;
-                  if (ep.type === "assignment") {
-                    onAssignmentTabClick();
-                  } else if (ep.type === "video") {
-                    onEpisodeClick(ep.id);
-                  }
-                }}
-              >
-                {/* Left: order number or completed check — only for unlocked */}
-                {!ep.isLocked && (
-                  <div className="flex-shrink-0">
-                    {ep.isCompleted
-                      ? resolveEpisodeCompletedIcon(ep.completedIconType)
-                      : (
-                        <span className="w-4 h-4 flex items-center justify-center rounded-full border border-border text-[9px] text-muted-foreground">
-                          {ep.order}
-                        </span>
-                      )}
-                  </div>
-                )}
-                {/* Middle: title + type · duration */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-foreground truncate">{ep.title}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {ep.typeLabel}
-                    {ep.durationLabel ? ` · ${ep.durationLabel}` : ""}
-                  </p>
-                </div>
-                {/* Right: lock icon — only for locked rows */}
-                {ep.isLocked && resolveEpisodeLockIcon(ep.lockIconType)}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Default: pre-requisite and custom types — collapsible, labelColor from API
-  return (
-    <div className="rounded-xl border border-border overflow-hidden">
-      <button
-        className="w-full flex items-center gap-2 p-3 text-left hover:bg-accent/5 transition-colors"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          {item.label && (
-            <span
-              className="text-[10px] font-bold uppercase tracking-wider flex-shrink-0"
-              style={{ color: item.labelColor ?? "var(--color-accent)" }}
-            >
-              {item.label}
-            </span>
-          )}
-          {item.title && (
-            <span className="text-xs text-foreground truncate">{item.title}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {item.isCompleted && (
-            <CheckCircle2 size={13} style={{ color: "var(--color-success)" }} />
-          )}
-          {open ? (
-            <ChevronUp size={12} className="text-muted-foreground" />
-          ) : (
-            <ChevronDown size={12} className="text-muted-foreground" />
-          )}
-        </div>
-      </button>
-      {open && item.description && (
-        <p className="text-xs text-muted-foreground px-3 pb-3 leading-relaxed">
-          {item.description}
-        </p>
-      )}
-    </div>
-  );
-}
 
 // ─── Sidebar: Q&A Tab ─────────────────────────────────────────────────────────
 
@@ -1202,7 +956,7 @@ function LiveCallUnlockWatcher({
         const unlockMs =
           new Date(item.scheduledAt).getTime() -
           item.liveUrlUnlocksMinutesBefore * 60 * 1000;
-        const msUntilUnlock = unlockMs - Date.now();
+        const msUntilUnlock = unlockMs - getServerNow();
         if (msUntilUnlock > 0) {
           timers.push(setTimeout(onUnlock, msUntilUnlock));
         }
@@ -1487,6 +1241,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       // Video ended naturally — post final 15s delta, then attempt completion
       if (isEnd) {
         clearInterval(timerRef.current);
+        iframeFocusedRef.current = false;
         postProgress.mutate(
           { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
           {
@@ -1559,7 +1314,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           </span>
         ) : watchState === "watching" ? (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
-            <Loader2 size={13} className="animate-spin" /> Watching {activeProgressPct}%
+            <Play size={13} fill="currentColor" /> Watching {activeProgressPct}%
           </span>
         ) : watchState === "paused" ? (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
@@ -1567,7 +1322,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           </span>
         ) : watchState === "resume" ? (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
-            <Play size={11} fill="currentColor" className="ml-0.5" /> Resume from {formatTime(ep.lastWatchedSecs ?? 0)}
+            <Play size={11} fill="currentColor" className="ml-0.5" /> Resume from {formatTime(Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead))}
           </span>
         ) : (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
@@ -1577,7 +1332,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       </div>
 
       {/* Resume card — Hotstar/Udemy style, only when there's saved progress */}
-      {(watchState === "resume" || watchState === "paused") && (ep.lastWatchedSecs ?? 0) > 3 && (
+      {(watchState === "resume" || watchState === "paused") && Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead) > 3 && (
         <div
           className="rounded-xl border px-4 py-3 space-y-2"
           style={{
@@ -1595,7 +1350,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold leading-tight" style={{ color: "var(--color-accent)" }}>
-                  Resume from {formatTime(ep.lastWatchedSecs ?? 0)}
+                  Resume from {formatTime(Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead))}
                 </p>
                 <p className="text-[11px] text-muted-foreground truncate">{ep.title}</p>
               </div>
@@ -1613,7 +1368,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
             </div>
             {ep.durationSeconds > 0 && (
               <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
-                {formatTime(ep.lastWatchedSecs ?? 0)} / {formatTime(ep.durationSeconds)}
+                {formatTime(Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead))} / {formatTime(ep.durationSeconds)}
               </span>
             )}
           </div>

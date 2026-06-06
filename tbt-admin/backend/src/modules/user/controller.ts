@@ -1356,7 +1356,9 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
       percentage: challengesCompletedPct,
       completedCount: completedChallengeCount,
       totalCount: totalChallenges,
-      milestoneCount: workshop.progressMilestoneCount,
+      milestones: Array.from({ length: workshop.progressMilestoneCount ?? 3 }, (_, i) => ({
+        achieved: challengesCompletedPct >= Math.round(((i + 1) / (workshop.progressMilestoneCount ?? 3)) * 100),
+      })),
     },
     certificate: {
       eligible: certEligible,
@@ -2371,27 +2373,52 @@ export async function completeChallengeHandler(request: FastifyRequest, reply: F
 
   const challenge = await request.server.prisma.challenge.findUnique({
     where: { id },
-    select: { id: true, workshopId: true, order: true },
+    select: { id: true, workshopId: true },
   });
   if (!challenge) return fail(reply, 404, 'Challenge not found');
 
-  // Sequential lock check
-  const prevChallenges = await request.server.prisma.challenge.findMany({
-    where: { workshopId: challenge.workshopId, order: { lt: challenge.order } },
-    select: { id: true, type: true, order: true },
-    orderBy: { order: 'asc' },
+  // Sequential lock check — use WorkshopFlowItem.order (the user-visible sequence)
+  // rather than Challenge.order, which can diverge when the flow is manually reordered
+  // or when live-call items sit between challenges.
+  const currentFlowItem = await request.server.prisma.workshopFlowItem.findFirst({
+    where: { challengeId: id },
+    select: { order: true, workshopId: true },
   });
 
-  for (const prev of prevChallenges) {
-    if (!prev.type || prev.type === 'watch') {
-      const epIds = await request.server.prisma.workshopEpisode.findMany({ where: { challengeId: prev.id }, select: { id: true } });
-      const doneCount = await request.server.prisma.memberEpisodeProgress.count({ where: { memberId: request.memberId, episodeId: { in: epIds.map(e => e.id) }, isCompleted: true } });
-      if (doneCount < epIds.length) return fail(reply, 403, 'Complete previous challenges first');
-    } else {
-      const prevProgress = await (request.server.prisma as any).memberChallengeProgress.findFirst({
-        where: { memberId: request.memberId, challengeId: prev.id, status: 'completed' },
+  if (currentFlowItem) {
+    const prevFlowItems = await request.server.prisma.workshopFlowItem.findMany({
+      where: {
+        workshopId: currentFlowItem.workshopId,
+        order: { lt: currentFlowItem.order },
+        challengeId: { not: null },
+      },
+      select: { challengeId: true },
+      orderBy: { order: 'asc' },
+    });
+
+    if (prevFlowItems.length > 0) {
+      const prevChallengeIds = prevFlowItems.map(fi => fi.challengeId as string);
+      const prevChallenges = await request.server.prisma.challenge.findMany({
+        where: { id: { in: prevChallengeIds } },
+        select: { id: true, type: true },
       });
-      if (!prevProgress) return fail(reply, 403, 'Complete previous challenges first');
+      // Restore flow order (findMany result order is not guaranteed)
+      const orderedPrev = prevFlowItems
+        .map(fi => prevChallenges.find(c => c.id === fi.challengeId))
+        .filter(Boolean) as { id: string; type: string }[];
+
+      for (const prev of orderedPrev) {
+        if (!prev.type || prev.type === 'watch') {
+          const epIds = await request.server.prisma.workshopEpisode.findMany({ where: { challengeId: prev.id }, select: { id: true } });
+          const doneCount = await request.server.prisma.memberEpisodeProgress.count({ where: { memberId: request.memberId, episodeId: { in: epIds.map(e => e.id) }, isCompleted: true } });
+          if (doneCount < epIds.length) return fail(reply, 403, 'Complete previous challenges first');
+        } else {
+          const prevProgress = await (request.server.prisma as any).memberChallengeProgress.findFirst({
+            where: { memberId: request.memberId, challengeId: prev.id, status: 'completed' },
+          });
+          if (!prevProgress) return fail(reply, 403, 'Complete previous challenges first');
+        }
+      }
     }
   }
 
