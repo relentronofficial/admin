@@ -1108,6 +1108,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       <VideoWatermark
         className="rounded-xl overflow-hidden bg-black aspect-video relative"
         containerId="workshop-video-root"
+        showFullscreenButton={!!ep.videoUrl}
       >
         {ep.videoUrl ? (
           <iframe src={ep.videoUrl} className="w-full h-full" allowFullScreen allow="autoplay; fullscreen" />

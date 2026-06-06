@@ -29,12 +29,14 @@ interface VideoWatermarkProps {
   children: React.ReactNode;
   className?: string;
   containerId?: string;
+  showFullscreenButton?: boolean;
 }
 
-export function VideoWatermark({ children, className, containerId }: VideoWatermarkProps) {
+export function VideoWatermark({ children, className, containerId, showFullscreenButton = false }: VideoWatermarkProps) {
   const { data: user, isLoading } = useMe();
   const [position, setPosition] = useState({ x: 10, y: 10 });
   const [timestamp, setTimestamp] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Update timestamp occasionally
@@ -66,6 +68,26 @@ export function VideoWatermark({ children, className, containerId }: VideoWaterm
     return () => clearInterval(id);
   }, []);
 
+  // Sync fullscreen state
+  useEffect(() => {
+    const handler = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch((err: any) => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
   if (isLoading || !user) {
     return <div className={className}>{children}</div>;
   }
@@ -80,11 +102,15 @@ export function VideoWatermark({ children, className, containerId }: VideoWaterm
     <div
       ref={containerRef}
       id={containerId}
-      className={`relative overflow-hidden group/watermark ${className}`}
+      className={`relative overflow-hidden group/watermark ${className} ${
+        isFullscreen ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center w-screen h-screen" : ""
+      }`}
       style={{ isolation: "isolate" }}
     >
       {/* ── Main Video Content ── */}
-      {children}
+      <div className={`w-full h-full relative ${isFullscreen ? "max-w-full max-h-full overflow-hidden" : ""}`}>
+        {children}
+      </div>
 
       {/* ── Layer 1: Moving Dynamic Watermark ── */}
       <div className="absolute inset-0 pointer-events-none z-50 select-none overflow-hidden">
@@ -121,8 +147,48 @@ export function VideoWatermark({ children, className, containerId }: VideoWaterm
         ))}
       </div>
 
+      {/* ── Fullscreen Trigger (Optional for iframes) ── */}
+      {showFullscreenButton && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFullscreen();
+          }}
+          className="absolute bottom-4 right-4 z-[70] p-2 bg-black/40 hover:bg-black/60 rounded-lg text-white opacity-0 group-hover/watermark:opacity-100 transition-opacity"
+          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {isFullscreen ? (
+              <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+            ) : (
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            )}
+          </svg>
+        </button>
+      )}
+
       {/* ── Overlay to prevent direct interaction with watermark ── */}
       <div className="absolute inset-0 pointer-events-none z-[60]" />
+
+      <style jsx>{`
+        div:fullscreen :global(iframe),
+        div:fullscreen :global(video) {
+          width: 100vw !important;
+          height: 100vh !important;
+          object-fit: contain !important;
+        }
+      `}</style>
     </div>
   );
 }
+

@@ -91,6 +91,7 @@ export default function WatchPage() {
         <VideoWatermark
           className="w-full max-w-5xl aspect-video relative"
           containerId="watch-video-root"
+          showFullscreenButton={true}
         >
           <iframe
             src={videoSrc}

@@ -86,6 +86,7 @@ export default function LearningPlayerPage() {
         <VideoWatermark
           className="w-full max-w-5xl aspect-video relative"
           containerId="workshop-episode-root"
+          showFullscreenButton={true}
         >
           <iframe
             src={videoSrc}

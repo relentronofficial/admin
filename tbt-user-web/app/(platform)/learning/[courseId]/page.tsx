@@ -242,6 +242,7 @@ export default function CourseDetailPage({
             <VideoWatermark
               className="w-full aspect-video rounded-xl overflow-hidden relative bg-black"
               containerId="course-video-root"
+              showFullscreenButton={isBunnyEmbed(selectedLesson.videoUrl)}
             >
               {isBunnyEmbed(selectedLesson.videoUrl) ? (
                 <iframe
