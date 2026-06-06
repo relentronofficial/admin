@@ -32,6 +32,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
 import { getServerNow } from "@/lib/api/client";
+import { normalizeBunnyUrl } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type {
   WorkshopFlowItem,
@@ -1111,7 +1112,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         showFullscreenButton={!!ep.videoUrl}
       >
         {ep.videoUrl ? (
-          <iframe src={ep.videoUrl} className="w-full h-full" allowFullScreen allow="autoplay; fullscreen" />
+          <iframe src={normalizeBunnyUrl(ep.videoUrl)} className="w-full h-full" allowFullScreen allow="autoplay; fullscreen" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
         )}

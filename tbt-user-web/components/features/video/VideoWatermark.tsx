@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useMe } from "@/lib/hooks/useUser";
 import { motion, AnimatePresence } from "framer-motion";
+import { Maximize, Minimize } from "lucide-react";
 
 /**
  * Watermark Configuration
@@ -12,9 +13,10 @@ const CONFIG = {
   movingOpacity: 0.12,
   staticPatternOpacity: 0.035,
   
-  // Movement
-  moveIntervalMs: 12000, // Move every 12 seconds
-  moveTransitionSeconds: 4, // Smooth transition duration
+  // Movement & Visibility Timing
+  displayDurationMs: 8000,   // How long it stays visible at one spot
+  fadeDurationSeconds: 1.5,  // Duration of fade in/out
+  pauseDurationMs: 4000,     // How long it stays hidden before reappearing elsewhere
   
   // Content
   showEmail: true,
@@ -37,6 +39,7 @@ export function VideoWatermark({ children, className, containerId, showFullscree
   const [position, setPosition] = useState({ x: 10, y: 10 });
   const [timestamp, setTimestamp] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Update timestamp occasionally
@@ -50,22 +53,37 @@ export function VideoWatermark({ children, className, containerId, showFullscree
     return () => clearInterval(id);
   }, []);
 
-  // Handle random movement
+  // Handle "Forensic" Jump & Fade movement
   useEffect(() => {
-    const move = () => {
-      if (!containerRef.current) return;
-      const { width, height } = containerRef.current.getBoundingClientRect();
-      
-      // Keep watermark within bounds (rough estimate of text size)
-      const x = Math.random() * (width - 250);
-      const y = Math.random() * (height - 60);
-      
-      setPosition({ x: Math.max(10, x), y: Math.max(10, y) });
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const cycle = () => {
+      // 1. Fade out
+      setIsVisible(false);
+
+      // 2. Wait for fade out + pause
+      timeoutId = setTimeout(() => {
+        if (!containerRef.current) return;
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        
+        // Pick new random position
+        const x = Math.max(10, Math.random() * (width - 280));
+        const y = Math.max(10, Math.random() * (height - 80));
+        setPosition({ x, y });
+
+        // 3. Fade back in
+        setIsVisible(true);
+
+        // 4. Stay visible for displayDurationMs
+        timeoutId = setTimeout(cycle, CONFIG.displayDurationMs);
+      }, (CONFIG.fadeDurationSeconds * 1000) + CONFIG.pauseDurationMs);
     };
 
-    move(); // initial position
-    const id = setInterval(move, CONFIG.moveIntervalMs);
-    return () => clearInterval(id);
+    const initialId = setTimeout(cycle, CONFIG.displayDurationMs);
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(initialId);
+    };
   }, []);
 
   // Sync fullscreen state
@@ -112,26 +130,34 @@ export function VideoWatermark({ children, className, containerId, showFullscree
         {children}
       </div>
 
-      {/* ── Layer 1: Moving Dynamic Watermark ── */}
+      {/* ── Layer 1: Forensic Jumping Watermark ── */}
       <div className="absolute inset-0 pointer-events-none z-50 select-none overflow-hidden">
-        <motion.div
-          animate={{ x: position.x, y: position.y }}
-          transition={{ duration: CONFIG.moveTransitionSeconds, ease: "easeInOut" }}
-          className="absolute whitespace-nowrap pointer-events-none select-none"
-          style={{
-            opacity: CONFIG.movingOpacity,
-            color: "#fff",
-            fontSize: "10px",
-            fontWeight: "bold",
-            textShadow: "1px 1px 1px rgba(0,0,0,0.5)",
-            mixBlendMode: "difference",
-          }}
-        >
-          {watermarkText}
-        </motion.div>
+        <AnimatePresence>
+          {isVisible && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: CONFIG.movingOpacity }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: CONFIG.fadeDurationSeconds, ease: "easeInOut" }}
+              style={{
+                position: "absolute",
+                left: position.x,
+                top: position.y,
+                whiteSpace: "nowrap",
+                color: "#fff",
+                fontSize: "10px",
+                fontWeight: "bold",
+                textShadow: "1px 1px 1px rgba(0,0,0,0.5)",
+                mixBlendMode: "difference",
+              }}
+            >
+              {watermarkText}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* ── Layer 2: Repeated Static/Forensic Pattern ── */}
+      {/* ── Layer 2: Repeated Forensic Pattern (Static/Faint) ── */}
       <div 
         className="absolute inset-0 pointer-events-none z-40 select-none overflow-hidden grid grid-cols-3 grid-rows-3 opacity-[0.03]"
         style={{ mixBlendMode: "screen" }}
@@ -147,33 +173,18 @@ export function VideoWatermark({ children, className, containerId, showFullscree
         ))}
       </div>
 
-      {/* ── Fullscreen Trigger (Optional for iframes) ── */}
+      {/* ── Fullscreen Trigger (Replaces Bunny's internal button) ── */}
       {showFullscreenButton && (
         <button
           onClick={(e) => {
             e.stopPropagation();
             toggleFullscreen();
           }}
-          className="absolute bottom-4 right-4 z-[70] p-2 bg-black/40 hover:bg-black/60 rounded-lg text-white opacity-0 group-hover/watermark:opacity-100 transition-opacity"
+          className="absolute bottom-6 right-6 z-[70] p-2.5 bg-black/40 hover:bg-black/60 rounded-xl text-white opacity-0 group-hover/watermark:opacity-100 transition-all hover:scale-110 active:scale-95"
           title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          style={{ backdropFilter: "blur(8px)" }}
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            {isFullscreen ? (
-              <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
-            ) : (
-              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-            )}
-          </svg>
+          {isFullscreen ? <Minimize size={22} /> : <Maximize size={22} />}
         </button>
       )}
 

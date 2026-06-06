@@ -21,12 +21,15 @@ export const formatPoints = (n: number): string =>
 
 // Converts Bunny Stream standalone player URLs to embeddable iframe URLs.
 // player.mediadelivery.net/play/{lib}/{id} → iframe.mediadelivery.net/embed/{lib}/{id}
+// Adds fullscreen=false to hide Bunny's native FS button in favor of our watermark wrapper.
 export const normalizeBunnyUrl = (url: string): string => {
   if (!url) return url;
-  return url.replace(
+  const normalized = url.replace(
     /https?:\/\/player\.mediadelivery\.net\/play\/(\d+)\/([\w-]+)/,
     "https://iframe.mediadelivery.net/embed/$1/$2"
   );
+  const sep = normalized.includes("?") ? "&" : "?";
+  return `${normalized}${sep}fullscreen=false`;
 };
 
 // Appends ?t=N (or &t=N) to a Bunny Stream iframe embed URL for resume-from-position.
