@@ -343,7 +343,7 @@ function AssignmentMainView({
 function LearningProgressWidget({ progress }: { progress: LearningProgress | null }) {
   const [open, setOpen] = useState(true);
 
-  if (!progress) return null;
+  if (!progress || progress.totalCount === 0) return null;
 
   const pct: number = progress.percentage ?? 0;
   const milestones: boolean[] = progress.milestones?.map((m) => !!m.achieved) ?? [
