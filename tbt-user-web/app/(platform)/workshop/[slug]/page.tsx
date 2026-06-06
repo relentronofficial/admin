@@ -1375,6 +1375,31 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         </div>
       )}
 
+      {/* Video completion summary */}
+      {(() => {
+        const total = episodes.length;
+        const done = episodes.filter((e: any, i: number) =>
+          !!e.isCompleted || (i === activeEpIdx && watchState === "completed")
+        ).length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        return total > 0 ? (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Videos</span>
+              <span className="text-[11px] font-bold tabular-nums" style={{ color: done === total ? "#22c55e" : "var(--color-accent)" }}>
+                {done} / {total} completed
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${pct}%`, background: done === total ? "#22c55e" : "var(--color-accent)" }}
+              />
+            </div>
+          </div>
+        ) : null;
+      })()}
+
       {/* Dynamic Episode list */}
       <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
         {episodes.map((e: any, i: number) => {
