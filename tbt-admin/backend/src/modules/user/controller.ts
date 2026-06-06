@@ -1601,6 +1601,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
         title: true,
         description: true,
         videoUrl: true,
+        bunnyVideoId: true,
         durationSeconds: true,
         progress: {
           where: { memberId: request.memberId },
@@ -1613,6 +1614,31 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
   if (!episode) return fail(reply, 404, 'Episode not found');
 
+  let duration = episode.durationSeconds;
+
+  // Task 1: Verify video duration. Fetch from Bunny if missing.
+  if ((!duration || duration <= 0) && episode.bunnyVideoId && env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
+    try {
+      const bunnyRes = await fetch(
+        `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${episode.bunnyVideoId}`,
+        { headers: { AccessKey: env.BUNNY_STREAM_API_KEY } }
+      );
+      if (bunnyRes.ok) {
+        const bunnyData = (await bunnyRes.json()) as { length: number };
+        if (bunnyData.length > 0) {
+          duration = bunnyData.length;
+          // Update DB for future requests
+          await request.server.prisma.workshopEpisode.update({
+            where: { id: episode.id },
+            data: { durationSeconds: duration },
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      request.server.log.error(`Bunny duration fetch failed for ${episode.bunnyVideoId}: ${err}`);
+    }
+  }
+
   const prog = (episode as any).progress?.[0];
 
   return ok(reply, {
@@ -1621,7 +1647,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
     description: episode.description ?? null,
     videoUrl: episode.videoUrl ?? null,
     videoType: 'iframe',
-    durationSeconds: episode.durationSeconds ?? null,
+    durationSeconds: duration ?? null,
     resumeAtSeconds: prog?.lastWatchedSecs ?? 0,
     qualityOptions: ['auto'],
     defaultQuality: 'auto',
@@ -1638,18 +1664,23 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
 export async function postEpisodeProgressHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: episodeId } = request.params as { id: string };
-  const { watchedSeconds, deltaSeconds, isCompleted } = request.body as {
+  const { watchedSeconds, deltaSeconds } = request.body as {
     watchedSeconds?: number;
     deltaSeconds?: number;
-    isCompleted?: boolean;
   };
 
   const safeDelta = Math.min(deltaSeconds ?? 0, 30);
   const deviceId = request.headers['x-device-id'] as string | undefined;
 
+  const episode = await request.server.prisma.workshopEpisode.findUnique({
+    where: { id: episodeId },
+    select: { durationSeconds: true, bunnyVideoId: true }
+  });
+  if (!episode) return fail(reply, 404, 'Episode not found');
+
   const existingProgress = await request.server.prisma.memberEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    select: { lastWatchedSecs: true }
+    select: { lastWatchedSecs: true, actualWatchedSecs: true, isCompleted: true }
   });
 
   // Log excessive skipping if the playhead jumped forward significantly without actual watch time
@@ -1681,6 +1712,37 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     }).catch(() => {});
   }
 
+  // Task 1: Verify video duration. Fetch from Bunny if missing in DB.
+  let duration = episode.durationSeconds;
+  if ((!duration || duration <= 0) && episode.bunnyVideoId && env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
+    try {
+      const bunnyRes = await fetch(
+        `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${episode.bunnyVideoId}`,
+        { headers: { AccessKey: env.BUNNY_STREAM_API_KEY } }
+      );
+      if (bunnyRes.ok) {
+        const bunnyData = (await bunnyRes.json()) as { length: number };
+        if (bunnyData.length > 0) {
+          duration = bunnyData.length;
+          await request.server.prisma.workshopEpisode.update({
+            where: { id: episodeId },
+            data: { durationSeconds: duration }
+          }).catch(() => {});
+        }
+      }
+    } catch {}
+  }
+
+  // Task 3: Backend decides completion based on 85% rule.
+  const newActualWatched = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
+  let isCompleted = existingProgress?.isCompleted ?? false;
+  
+  if (!isCompleted && duration && duration > 0) {
+    if (newActualWatched >= duration * 0.85) {
+      isCompleted = true;
+    }
+  }
+
   await request.server.prisma.memberEpisodeProgress.upsert({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
     create: {
@@ -1688,16 +1750,18 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
       episodeId,
       lastWatchedSecs: watchedSeconds ?? 0,
       actualWatchedSecs: safeDelta,
-      isCompleted: isCompleted ?? false,
+      isCompleted: isCompleted,
+      completedAt: isCompleted ? new Date() : null,
     },
     update: {
       lastWatchedSecs: watchedSeconds ?? undefined,
       actualWatchedSecs: { increment: safeDelta },
-      isCompleted: isCompleted ?? undefined,
+      isCompleted: isCompleted,
+      completedAt: isCompleted && !existingProgress?.isCompleted ? new Date() : undefined,
     },
   });
 
-  return ok(reply, { updated: true });
+  return ok(reply, { updated: true, isCompleted });
 }
 
 // ─── Products & Resources ─────────────────────────────────────────────────────
@@ -2113,9 +2177,48 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
 
   const episode = await request.server.prisma.workshopEpisode.findUnique({
     where: { id },
-    select: { id: true, challengeId: true },
+    select: { id: true, durationSeconds: true, bunnyVideoId: true },
   });
   if (!episode) return fail(reply, 404, 'Episode not found');
+
+  const progress = await request.server.prisma.memberEpisodeProgress.findUnique({
+    where: { memberId_episodeId: { memberId: request.memberId, episodeId: id } },
+    select: { actualWatchedSecs: true, isCompleted: true }
+  });
+
+  if (progress?.isCompleted) {
+    return ok(reply, { episodeId: id, isCompleted: true });
+  }
+
+  let duration = episode.durationSeconds;
+
+  // Task 1: Fetch duration if missing for validation
+  if ((!duration || duration <= 0) && episode.bunnyVideoId && env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
+    try {
+      const bunnyRes = await fetch(
+        `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${episode.bunnyVideoId}`,
+        { headers: { AccessKey: env.BUNNY_STREAM_API_KEY } }
+      );
+      if (bunnyRes.ok) {
+        const bunnyData = (await bunnyRes.json()) as { length: number };
+        if (bunnyData.length > 0) {
+          duration = bunnyData.length;
+          await request.server.prisma.workshopEpisode.update({
+            where: { id: episode.id },
+            data: { durationSeconds: duration },
+          }).catch(() => {});
+        }
+      }
+    } catch {}
+  }
+
+  // Task 3: Backend decides completion based on 85% rule.
+  if (duration && duration > 0) {
+    const actual = progress?.actualWatchedSecs ?? 0;
+    if (actual < duration * 0.85) {
+      return fail(reply, 403, 'Watch at least 85% of the video to complete this lesson.');
+    }
+  }
 
   const now = new Date();
   await request.server.prisma.memberEpisodeProgress.upsert({

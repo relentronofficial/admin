@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils/cn";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type { Lesson } from "@/types";
 
-type WatchState = "not_started" | "watching" | "completed";
+type WatchState = "not_started" | "watching" | "paused" | "completed";
 
 function isBunnyEmbed(url: string) {
   return url.includes("mediadelivery.net");
@@ -148,17 +148,43 @@ export default function CourseDetailPage({
       }
       if (!data || typeof data !== "object") return;
 
-      const inner = data.data ?? data;
-      const evt = (inner.event || inner.type || inner.action || "").toLowerCase() as string;
+      let evt = "";
+      let payloadValue: any = undefined;
+
+      if (data.context === "player.js") {
+        evt = (data.event || "").toLowerCase();
+        payloadValue = data.value;
+      } else {
+        const inner = data.data ?? data;
+        evt = (inner.event || inner.type || inner.action || "").toLowerCase();
+        payloadValue = inner.value ?? inner;
+      }
+
       if (!evt) return;
+
+      if (evt === "ready" && e.source) {
+        const win = e.source as Window;
+        const eventsToSubscribe = ["play", "pause", "timeupdate", "ended"];
+        eventsToSubscribe.forEach((eventName) => {
+          win.postMessage(
+            JSON.stringify({ context: "player.js", method: "addEventListener", value: eventName }),
+            "*"
+          );
+        });
+        return;
+      }
 
       const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
       const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
                     evt === "onfinish" || evt === "complete" || evt === "onended";
+      const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
 
-      if (isTimeUpdate && inner.currentTime) {
-        lastPlayhead = inner.currentTime;
+      if (isTimeUpdate && payloadValue !== undefined) {
+        const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue.seconds;
+        if (currentTime !== undefined) {
+          lastPlayhead = currentTime;
+        }
       }
 
       if (isPlay && !isEnd) {
@@ -186,7 +212,8 @@ export default function CourseDetailPage({
             }
           }, 15000);
         }
-      } else if (evt === "pause" || evt === "paused" || evt === "onpause") {
+      } else if (isPause && !isEnd) {
+        setWatchState((s) => (s === "completed" ? "completed" : "paused"));
         iframeFocusedRef.current = false;
         clearInterval(timerRef.current);
       }

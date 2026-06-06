@@ -1136,15 +1136,41 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
     };
 
     const handler = (e: MessageEvent) => {
+      // Security: Only process events from trusted CDNs if possible
       let data = e.data;
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch { return; }
       }
       if (!data || typeof data !== "object") return;
 
-      const inner = data.data ?? data;
-      const evt = (inner.event || inner.type || inner.action || "").toLowerCase() as string;
+      // Handle standard player.js format (used natively by Bunny)
+      let evt = "";
+      let payloadValue: any = undefined;
+
+      if (data.context === "player.js") {
+        evt = (data.event || "").toLowerCase();
+        payloadValue = data.value;
+      } else {
+        // Fallback for custom unwraps
+        const inner = data.data ?? data;
+        evt = (inner.event || inner.type || inner.action || "").toLowerCase();
+        payloadValue = inner.value ?? inner;
+      }
+
       if (!evt) return;
+
+      // Initialize Bunny Stream player.js bindings when ready
+      if (evt === "ready" && e.source) {
+        const win = e.source as Window;
+        const eventsToSubscribe = ["play", "pause", "timeupdate", "ended"];
+        eventsToSubscribe.forEach((eventName) => {
+          win.postMessage(
+            JSON.stringify({ context: "player.js", method: "addEventListener", value: eventName }),
+            "*"
+          );
+        });
+        return;
+      }
 
       const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
       const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
@@ -1152,9 +1178,12 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
 
-      if (isTimeUpdate && inner.currentTime) {
-        lastPlayhead = inner.currentTime;
-        setCurrentPlayhead(inner.currentTime);
+      if (isTimeUpdate && payloadValue !== undefined) {
+        const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue.seconds;
+        if (currentTime !== undefined) {
+          lastPlayhead = currentTime;
+          setCurrentPlayhead(currentTime);
+        }
       }
 
       if (isPlay && !isEnd) {
@@ -1163,10 +1192,15 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           iframeFocusedRef.current = true;
           clearInterval(timerRef.current);
           timerRef.current = setInterval(() => {
+            // Avoid overlapping requests
+            if (postProgress.isPending) return;
+
             localSeconds += 15;
             setLocalElapsed(localSeconds);
+            
             const threshold = ep.durationSeconds > 0 ? ep.durationSeconds * 0.85 : 90;
-            const isCompleted = (ep.actualWatchedSecs ?? 0) + localSeconds >= threshold;
+            const currentTotal = (ep.actualWatchedSecs ?? 0) + localSeconds;
+            const isCompleted = currentTotal >= threshold;
 
             if (isCompleted) {
               doMarkComplete();
@@ -1177,8 +1211,14 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
                 deltaSeconds: 15,
                 isCompleted: false,
               }, {
-                onSuccess: () => {
-                  qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+                onSuccess: async (data: any) => {
+                  if (data?.isCompleted) {
+                    doMarkComplete();
+                  }
+                  // Wait for the query to actually refresh before resetting local state to avoid UI jumps
+                  await qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+                  localSeconds = 0;
+                  setLocalElapsed(0);
                 }
               });
             }
@@ -1198,7 +1238,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       window.removeEventListener("message", handler);
       clearInterval(timerRef.current);
     };
-  }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ep?.id, ep?.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ep) return <p className="text-sm text-muted-foreground text-center py-8">No episodes yet.</p>;
 
@@ -1247,6 +1287,10 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
             <Loader2 size={13} className="animate-spin" /> Watching {activeProgressPct}%
           </span>
+        ) : watchState === "paused" ? (
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <Pause size={13} /> Paused at {formatTime(currentPlayhead)}
+          </span>
         ) : (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
             Progress saved automatically
@@ -1258,7 +1302,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
-          const isDone = e.isCompleted || (isActive && watchState === "completed");
+          const isDone = !!e.isCompleted || (isActive && watchState === "completed");
           const progressPct = e.durationSeconds > 0 
             ? Math.min(100, Math.round((((e.actualWatchedSecs ?? 0) + (isActive ? localElapsed : 0)) / e.durationSeconds) * 100))
             : 0;
@@ -1273,7 +1317,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
                 background: isActive
                   ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
                   : isDone
-                    ? "rgba(34,197,94,0.04)"
+                    ? "rgba(34,197,94,0.08)"
                     : "transparent",
               }}
             >
@@ -1285,13 +1329,13 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
                       ? { background: "#22c55e22", color: "#22c55e" }
                       : isActive 
                         ? { background: "var(--color-accent)", color: "#fff" }
-                        : (!isDone && e.lastWatchedSecs > 0)
+                        : (!isDone && (e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0)))
                           ? { background: "rgba(255,255,255,0.05)", color: "var(--color-accent)" }
                           : { background: "rgba(255,255,255,0.05)", color: "var(--color-muted-foreground)" }}
                   >
-                    {isDone ? <CheckCircle2 size={13} /> : isActive && watchState === "watching" ? <Play size={10} fill="currentColor" className="ml-0.5" /> : isActive && watchState === "paused" ? <Pause size={10} fill="currentColor" /> : (!isDone && e.lastWatchedSecs > 0) ? <Play size={10} fill="currentColor" className="ml-0.5" /> : i + 1}
+                    {isDone ? <CheckCircle2 size={13} /> : isActive && watchState === "watching" ? <Play size={10} fill="currentColor" className="ml-0.5 animate-pulse" /> : isActive && watchState === "paused" ? <Pause size={10} fill="currentColor" /> : (!isDone && (e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0))) ? <Play size={10} fill="currentColor" className="ml-0.5" /> : i + 1}
                   </span>
-                  <span className="truncate text-sm font-medium transition-colors" style={{ color: isDone || isActive ? "#fff" : "var(--color-muted-foreground)" }}>
+                  <span className="truncate text-sm font-medium transition-colors" style={{ color: isDone ? "#22c55e" : isActive ? "#fff" : "var(--color-muted-foreground)" }}>
                     {e.title}
                   </span>
                 </div>
@@ -1300,21 +1344,21 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
                   <span className="text-[10px] font-bold" style={{ color: "#22c55e" }}>Completed</span>
                 ) : isActive && watchState === "watching" ? (
                   <span className="text-[10px] font-bold flex items-center gap-1.5" style={{ color: "var(--color-accent)" }}>
-                    Watching
+                    Watching {progressPct}%
                   </span>
                 ) : isActive && watchState === "paused" ? (
                   <span className="text-[10px] font-bold text-muted-foreground">
                     Paused at {formatTime(currentPlayhead)}
                   </span>
-                ) : e.lastWatchedSecs > 0 ? (
-                  <span className="text-[10px] font-bold" style={{ color: "var(--color-accent)" }}>Resume from {formatTime(e.lastWatchedSecs)}</span>
+                ) : (e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0)) ? (
+                  <span className="text-[10px] font-bold" style={{ color: "var(--color-accent)" }}>Resume ({progressPct}%)</span>
                 ) : e.durationLabel ? (
                   <span className="text-[10px] text-muted-foreground">{e.durationLabel}</span>
                 ) : null}
               </div>
 
               {/* Progress bar line for active or partially watched */}
-              {!isDone && (isActive || e.lastWatchedSecs > 0) && (
+              {!isDone && (isActive || e.lastWatchedSecs > 0 || (e.actualWatchedSecs > 0)) && (
                 <div className="w-full pl-8 flex items-center gap-3 mt-0.5">
                   <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
                     <div 
