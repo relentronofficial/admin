@@ -27,7 +27,7 @@ export default function WatchPage() {
     if (playback && !quality) setQuality(playback.defaultQuality);
   }, [playback?.id]);
 
-  // Post partial progress every 30 s so resumeAtSeconds stays fresh server-side
+  // Post partial progress every 15 s so resumeAtSeconds stays fresh server-side
   useEffect(() => {
     if (!playback) return;
     startRef.current = Date.now();
@@ -37,8 +37,8 @@ export default function WatchPage() {
       if (completedRef.current) return;
       const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
       const watchedSeconds = playback.resumeAtSeconds + elapsed;
-      postProgress.mutate({ episodeId, watchedSeconds, isCompleted: false });
-    }, 30_000);
+      postProgress.mutate({ episodeId, watchedSeconds, deltaSeconds: 15, isCompleted: false });
+    }, 15_000);
 
     return () => clearInterval(id);
   }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps

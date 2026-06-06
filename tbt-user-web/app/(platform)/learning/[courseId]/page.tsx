@@ -1,13 +1,13 @@
 "use client";
 
 import { use, useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, CheckCircle2, Play, Loader2 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import { useCourse, useLessonProgress, useMarkLessonComplete } from "@/lib/hooks/useCourses";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
-import { normalizeBunnyUrl } from "@/lib/utils/format";
+import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type { Lesson } from "@/types";
@@ -23,6 +23,9 @@ interface SelectedLesson {
   title: string;
   videoUrl: string;
   durationSeconds: number;
+  resumeAtSeconds?: number;
+  actualWatchedSecs?: number;
+  isCompleted?: boolean;
 }
 
 export default function CourseDetailPage({
@@ -32,6 +35,8 @@ export default function CourseDetailPage({
 }) {
   const { courseId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const targetLessonId = searchParams.get("lesson");
   const { uiStrings } = useSiteConfig();
   const { data: course, isLoading } = useCourse(courseId);
   const { data: progressList } = useLessonProgress(courseId);
@@ -42,9 +47,27 @@ export default function CourseDetailPage({
   const [watchedSeconds, setWatchedSeconds] = useState(0);
   const topRef = useRef<HTMLDivElement>(null);
 
+  // Auto-select lesson from URL parameter once course data loads
+  useEffect(() => {
+    if (course?.lessons && targetLessonId && !selectedLesson) {
+      const target = course.lessons.find((l: any) => l.id === targetLessonId);
+      if (target && target.videoUrl) {
+        setSelectedLesson({
+          id: target.id,
+          title: target.title,
+          videoUrl: target.videoUrl,
+          durationSeconds: target.durationSeconds ?? 0,
+          resumeAtSeconds: (target as any).resumeAtSeconds ?? 0,
+          actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
+          isCompleted: (target as any).isCompleted ?? false,
+        });
+      }
+    }
+  }, [course, targetLessonId, selectedLesson]);
+
   // Refs so closure callbacks always see current values
   const markCalledRef = useRef(false);
-  const elapsedRef = useRef(0);
+  const elapsedRef = useRef(0); // Time spent watching in this session
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const iframeFocusedRef = useRef(false);
   const selectedLessonRef = useRef<SelectedLesson | null>(null);
@@ -61,110 +84,10 @@ export default function CourseDetailPage({
     elapsedRef.current = 0;
 
     if (!selectedLesson) return;
-    const alreadyDone = completedIds.has(selectedLesson.id);
+    const alreadyDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted;
     setWatchState(alreadyDone ? "completed" : "not_started");
-    setWatchedSeconds(0);
+    setWatchedSeconds(selectedLesson.resumeAtSeconds ?? 0);
     markCalledRef.current = alreadyDone;
-  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Blur / focus timer — works regardless of Bunny postMessage support ──
-  useEffect(() => {
-    if (!selectedLesson) return;
-
-    const doMarkComplete = () => {
-      const lesson = selectedLessonRef.current;
-      if (!lesson || markCalledRef.current) return;
-      markCalledRef.current = true;
-      clearInterval(timerRef.current);
-      setWatchState("completed");
-      markComplete.mutate({ lessonId: lesson.id });
-    };
-
-    const onBlur = () => {
-      if (iframeFocusedRef.current || markCalledRef.current) return;
-      iframeFocusedRef.current = true;
-      setWatchState((s) => (s === "completed" ? "completed" : "watching"));
-
-      clearInterval(timerRef.current);
-      timerRef.current = setInterval(() => {
-        elapsedRef.current += 1;
-        const lesson = selectedLessonRef.current;
-        if (!lesson) return;
-        // Complete at 85 % of duration; fall back to 90 s if duration unknown
-        const threshold = lesson.durationSeconds > 0
-          ? lesson.durationSeconds * 0.85
-          : 90;
-        if (elapsedRef.current >= threshold) doMarkComplete();
-      }, 1000);
-    };
-
-    const onFocus = () => {
-      iframeFocusedRef.current = false;
-      clearInterval(timerRef.current);
-    };
-
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("focus", onFocus);
-      clearInterval(timerRef.current);
-      iframeFocusedRef.current = false;
-    };
-  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── postMessage listener (primary for Bunny, fires if API is available) ─
-  useEffect(() => {
-    if (!selectedLesson || !isBunnyEmbed(selectedLesson.videoUrl)) return;
-
-    const doMarkComplete = () => {
-      const lesson = selectedLessonRef.current;
-      if (!lesson || markCalledRef.current) return;
-      markCalledRef.current = true;
-      clearInterval(timerRef.current);
-      setWatchState("completed");
-      markComplete.mutate({ lessonId: lesson.id });
-    };
-
-    const handler = (e: MessageEvent) => {
-      let data = e.data;
-      // Bunny may send JSON-encoded strings
-      if (typeof data === "string") {
-        try { data = JSON.parse(data); } catch { return; }
-      }
-      if (!data || typeof data !== "object") return;
-
-      // Unwrap nested { data: { event } } format some players use
-      const inner = data.data ?? data;
-      const evt = (inner.event || inner.type || inner.action || "").toLowerCase() as string;
-      if (!evt) return;
-
-      const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
-      const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
-                    evt === "onfinish" || evt === "complete" || evt === "onended";
-
-      if (isPlay && !isEnd) {
-        setWatchState((s) => (s === "completed" ? "completed" : "watching"));
-        // Restart the timer so blur+postMessage stay in sync
-        if (!iframeFocusedRef.current) {
-          iframeFocusedRef.current = true;
-          clearInterval(timerRef.current);
-          timerRef.current = setInterval(() => {
-            elapsedRef.current += 1;
-            const lesson = selectedLessonRef.current;
-            if (!lesson) return;
-            const threshold = lesson.durationSeconds > 0
-              ? lesson.durationSeconds * 0.85
-              : 90;
-            if (elapsedRef.current >= threshold) doMarkComplete();
-          }, 1000);
-        }
-      }
-      if (isEnd) doMarkComplete();
-    };
-
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Native VideoPlayer callbacks ─────────────────────────────────────────
@@ -173,13 +96,110 @@ export default function CourseDetailPage({
     setWatchState((prev) => (prev === "completed" ? "completed" : "watching"));
   };
 
+  const handleNativeHeartbeat = (currentTime: number) => {
+    const lesson = selectedLessonRef.current;
+    if (!lesson || markCalledRef.current) return;
+    
+    elapsedRef.current += 15;
+    const threshold = lesson.durationSeconds > 0 ? lesson.durationSeconds * 0.85 : 90;
+    const isCompleted = (lesson.actualWatchedSecs ?? 0) + elapsedRef.current >= threshold;
+    
+    markComplete.mutate({
+      lessonId: lesson.id,
+      watchedSeconds: Math.floor(currentTime),
+      deltaSeconds: 15,
+      isCompleted: isCompleted ? true : undefined,
+    });
+
+    if (isCompleted) {
+      markCalledRef.current = true;
+      setWatchState("completed");
+    }
+  };
+
   const handleNativeEnded = () => {
     const lesson = selectedLessonRef.current;
     if (!lesson || markCalledRef.current) return;
     markCalledRef.current = true;
     setWatchState("completed");
-    markComplete.mutate({ lessonId: lesson.id, watchedSeconds });
+    markComplete.mutate({ lessonId: lesson.id, watchedSeconds, isCompleted: true });
   };
+
+  // ── Heartbeat & Complete logic for Bunny Iframe ──────────────────────────
+  useEffect(() => {
+    if (!selectedLesson || !isBunnyEmbed(selectedLesson.videoUrl)) return;
+
+    let localElapsed = 0;
+    let lastPlayhead = selectedLesson.resumeAtSeconds ?? 0;
+
+    const doMarkComplete = () => {
+      const lesson = selectedLessonRef.current;
+      if (!lesson || markCalledRef.current) return;
+      markCalledRef.current = true;
+      clearInterval(timerRef.current);
+      setWatchState("completed");
+      markComplete.mutate({ lessonId: lesson.id, isCompleted: true });
+    };
+
+    const handler = (e: MessageEvent) => {
+      let data = e.data;
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } catch { return; }
+      }
+      if (!data || typeof data !== "object") return;
+
+      const inner = data.data ?? data;
+      const evt = (inner.event || inner.type || inner.action || "").toLowerCase() as string;
+      if (!evt) return;
+
+      const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
+      const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
+                    evt === "onfinish" || evt === "complete" || evt === "onended";
+      const isTimeUpdate = evt === "timeupdate";
+
+      if (isTimeUpdate && inner.currentTime) {
+        lastPlayhead = inner.currentTime;
+      }
+
+      if (isPlay && !isEnd) {
+        setWatchState((s) => (s === "completed" ? "completed" : "watching"));
+        if (!iframeFocusedRef.current) {
+          iframeFocusedRef.current = true;
+          clearInterval(timerRef.current);
+          timerRef.current = setInterval(() => {
+            localElapsed += 15;
+            const lesson = selectedLessonRef.current;
+            if (!lesson) return;
+            
+            const threshold = lesson.durationSeconds > 0 ? lesson.durationSeconds * 0.85 : 90;
+            const isCompleted = (lesson.actualWatchedSecs ?? 0) + localElapsed >= threshold;
+
+            if (isCompleted) {
+              doMarkComplete();
+            } else {
+              markComplete.mutate({
+                lessonId: lesson.id,
+                watchedSeconds: Math.floor(lastPlayhead),
+                deltaSeconds: 15,
+                isCompleted: false,
+              });
+            }
+          }, 15000);
+        }
+      } else if (evt === "pause" || evt === "paused" || evt === "onpause") {
+        iframeFocusedRef.current = false;
+        clearInterval(timerRef.current);
+      }
+
+      if (isEnd) doMarkComplete();
+    };
+
+    window.addEventListener("message", handler);
+    return () => {
+      window.removeEventListener("message", handler);
+      clearInterval(timerRef.current);
+    };
+  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) return <PageLoader />;
   if (!course) {
@@ -192,13 +212,16 @@ export default function CourseDetailPage({
 
   const lessons: Lesson[] = course.lessons ?? [];
 
-  const handleSelectLesson = (lesson: Lesson) => {
+  const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
     setSelectedLesson({
       id: lesson.id,
       title: lesson.title,
       videoUrl: lesson.videoUrl,
       durationSeconds: lesson.durationSeconds ?? 0,
+      resumeAtSeconds: lesson.resumeAtSeconds ?? 0,
+      actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
+      isCompleted: lesson.isCompleted ?? false,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -206,20 +229,27 @@ export default function CourseDetailPage({
   // Status badge
   const statusBadge = (() => {
     if (!selectedLesson) return null;
-    if (watchState === "completed") return {
+    const progressPct = selectedLesson.durationSeconds > 0 
+      ? Math.min(100, Math.round(((selectedLesson.actualWatchedSecs ?? 0) / selectedLesson.durationSeconds) * 100))
+      : 0;
+
+    if (watchState === "completed" || selectedLesson.isCompleted) return {
       label: uiStrings?.episodeCompleteLabel ?? "Completed",
       icon: <CheckCircle2 size={15} />,
       bg: "var(--color-success)",
+      pct: 100
     };
     if (watchState === "watching") return {
       label: "Watching...",
       icon: <Loader2 size={15} className="animate-spin" />,
       bg: "var(--color-alert)",
+      pct: progressPct
     };
     return {
       label: "Not Started",
       icon: <Play size={15} fill="currentColor" />,
       bg: "rgba(255,255,255,0.10)",
+      pct: progressPct
     };
   })();
 
@@ -247,7 +277,7 @@ export default function CourseDetailPage({
               {isBunnyEmbed(selectedLesson.videoUrl) ? (
                 <iframe
                   key={selectedLesson.id}
-                  src={normalizeBunnyUrl(selectedLesson.videoUrl)}
+                  src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl), selectedLesson.resumeAtSeconds ?? 0)}
                   className="w-full h-full border-0"
                   allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
                   allowFullScreen
@@ -257,7 +287,9 @@ export default function CourseDetailPage({
                 <VideoPlayer
                   src={selectedLesson.videoUrl}
                   lessonId={selectedLesson.id}
+                  resumeAtSeconds={selectedLesson.resumeAtSeconds ?? 0}
                   onProgress={handleNativeProgress}
+                  onHeartbeat={handleNativeHeartbeat}
                   onEnded={handleNativeEnded}
                 />
               )}
@@ -274,6 +306,7 @@ export default function CourseDetailPage({
                 >
                   {statusBadge.icon}
                   {statusBadge.label}
+                  {statusBadge.pct < 100 && statusBadge.pct > 0 && ` (${statusBadge.pct}%)`}
                 </div>
               )}
             </div>

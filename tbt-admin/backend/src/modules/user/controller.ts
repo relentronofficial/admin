@@ -228,6 +228,12 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       courseEpisodes: {
         where: { isVisible: true },
         orderBy: { order: 'asc' },
+        include: {
+          progress: {
+            where: { memberId: request.memberId },
+            select: { lastWatchedSecs: true, actualWatchedSecs: true, completed: true }
+          }
+        }
       },
       _count: { select: { enrollments: true } },
     },
@@ -235,16 +241,22 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   if (!course) return fail(reply, 404, 'Course not found');
 
-  const lessons = course.courseEpisodes.map((ep) => ({
-    id: ep.id,
-    title: ep.title,
-    description: null as string | null,
-    videoUrl: ep.videoUrl,
-    duration: ep.durationSeconds ? Math.round(ep.durationSeconds / 60) : null,
-    durationSeconds: ep.durationSeconds ?? null,
-    order: ep.order,
-    isFree: false,
-  }));
+  const lessons = course.courseEpisodes.map((ep) => {
+    const prog = ep.progress?.[0];
+    return {
+      id: ep.id,
+      title: ep.title,
+      description: null as string | null,
+      videoUrl: ep.videoUrl,
+      duration: ep.durationSeconds ? Math.round(ep.durationSeconds / 60) : null,
+      durationSeconds: ep.durationSeconds ?? null,
+      order: ep.order,
+      isFree: false,
+      resumeAtSeconds: prog?.lastWatchedSecs ?? 0,
+      actualWatchedSecs: prog?.actualWatchedSecs ?? 0,
+      isCompleted: prog?.completed ?? false,
+    };
+  });
 
   return ok(reply, {
     id: course.id,
@@ -298,6 +310,63 @@ export async function enrollCourseHandler(request: FastifyRequest, reply: Fastif
       course: enrollment.course,
     },
     error: null,
+  });
+}
+
+export async function getCertificateEligibilityHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { courseId } = request.params as { courseId: string };
+
+  const course = await request.server.prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true },
+  });
+
+  if (!course) return fail(reply, 404, 'Course not found');
+
+  const episodes = await request.server.prisma.courseEpisode.findMany({
+    where: { courseId, isVisible: true },
+    select: { id: true, durationSeconds: true },
+  });
+
+  const progress = await request.server.prisma.courseEpisodeProgress.findMany({
+    where: { memberId: request.memberId, episode: { courseId, isVisible: true } },
+    select: { episodeId: true, completed: true, actualWatchedSecs: true },
+  });
+
+  let validCompletions = 0;
+  let totalRequiredSeconds = 0;
+  let totalWatchedSeconds = 0;
+
+  for (const ep of episodes) {
+    const prog = progress.find((p) => p.episodeId === ep.id);
+    const duration = ep.durationSeconds ?? 0;
+    const threshold = duration ? duration * 0.85 : 90;
+    
+    totalRequiredSeconds += duration;
+    totalWatchedSeconds += prog?.actualWatchedSecs ?? 0;
+
+    if (prog?.completed && (prog.actualWatchedSecs ?? 0) >= threshold) {
+      validCompletions++;
+    }
+  }
+
+  const completionPercentage = totalRequiredSeconds > 0 
+    ? Math.min(100, Math.round((totalWatchedSeconds / totalRequiredSeconds) * 100))
+    : 0;
+
+  const eligible = validCompletions === episodes.length && episodes.length > 0;
+  const remainingLessons = episodes.length - validCompletions;
+
+  // Check for security anomalies
+  const securityLogs = await request.server.prisma.securityLog.findFirst({
+    where: { memberId: request.memberId },
+  });
+
+  return ok(reply, {
+    eligible,
+    completionPercentage,
+    remainingLessons,
+    securityStatus: securityLogs ? 'flagged' : 'clear',
   });
 }
 
@@ -371,28 +440,101 @@ export async function getLessonProgressHandler(request: FastifyRequest, reply: F
 
 export async function markLessonCompleteHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId, lessonId: episodeId } = request.params as { courseId: string; lessonId: string };
-  const { watchedSeconds } = request.body as { watchedSeconds?: number };
+  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion } = request.body as {
+    watchedSeconds?: number;
+    deltaSeconds?: number;
+    isCompleted?: boolean;
+  };
 
   const episode = await request.server.prisma.courseEpisode.findFirst({
     where: { id: episodeId, courseId },
-    select: { id: true },
+    select: { id: true, durationSeconds: true },
   });
   if (!episode) return fail(reply, 404, 'Episode not found in this course');
 
   const now = new Date();
-  await (request.server.prisma as any).courseEpisodeProgress.upsert({
+  
+  // Safe increment of actualWatchedSecs (max 30s per heartbeat to prevent extreme skips)
+  const safeDelta = Math.min(deltaSeconds ?? 0, 30);
+
+  // Determine if the user is truly eligible for completion
+  let finalIsCompleted = false;
+
+  const deviceId = request.headers['x-device-id'] as string | undefined;
+
+  const existingProgress = await (request.server.prisma as any).courseEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    create: { memberId: request.memberId, episodeId, completed: true, completedAt: now },
-    update: { completed: true, completedAt: now },
+    select: { completed: true, actualWatchedSecs: true, lastWatchedSecs: true }
   });
 
-  await recalculateCourseProgress(request, courseId);
+  // Log excessive skipping if the playhead jumped forward significantly without actual watch time
+  if (
+    watchedSeconds !== undefined && 
+    existingProgress?.lastWatchedSecs !== undefined && 
+    watchedSeconds - existingProgress.lastWatchedSecs > (safeDelta + 300)
+  ) {
+    await request.server.prisma.securityLog.create({
+      data: {
+        memberId: request.memberId,
+        eventType: 'EXCESSIVE_SKIPPING',
+        metadata: {
+          episodeId,
+          courseId,
+          fromSecs: existingProgress.lastWatchedSecs,
+          toSecs: watchedSeconds,
+          reportedDelta: deltaSeconds
+        }
+      } as any
+    }).catch(() => {});
+  }
+
+  // Update session last active time
+  if (deviceId) {
+    await request.server.prisma.memberSession.updateMany({
+      where: { memberId: request.memberId, deviceId },
+      data: { lastActiveAt: new Date() }
+    }).catch(() => {});
+  }
+
+  const cumulativeActualSecs = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
+  const threshold = episode.durationSeconds ? episode.durationSeconds * 0.85 : 90;
+
+  if (existingProgress?.completed) {
+    // Already completed previously
+    finalIsCompleted = true;
+  } else if (requestedCompletion && cumulativeActualSecs >= threshold) {
+    // Reached threshold legitimately
+    finalIsCompleted = true;
+  }
+
+  const progress = await (request.server.prisma as any).courseEpisodeProgress.upsert({
+    where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
+    create: { 
+      memberId: request.memberId, 
+      episodeId, 
+      completed: finalIsCompleted, 
+      completedAt: finalIsCompleted ? now : null,
+      lastWatchedSecs: watchedSeconds ?? 0,
+      actualWatchedSecs: safeDelta
+    },
+    update: { 
+      completed: finalIsCompleted ? true : undefined, 
+      completedAt: (finalIsCompleted && !existingProgress?.completed) ? now : undefined,
+      lastWatchedSecs: watchedSeconds ?? undefined,
+      actualWatchedSecs: { increment: safeDelta }
+    },
+  });
+
+  if (finalIsCompleted && !existingProgress?.completed) {
+    await recalculateCourseProgress(request, courseId);
+  }
 
   return ok(reply, {
     lessonId: episodeId,
-    completed: true,
-    watchedSeconds: watchedSeconds ?? 0,
-    completedAt: now.toISOString(),
+    completed: progress.completed,
+    watchedSeconds: progress.lastWatchedSecs,
+    actualWatchedSecs: progress.actualWatchedSecs,
+    completedAt: progress.completedAt?.toISOString() ?? null,
   });
 }
 
@@ -452,53 +594,70 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
 }
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {
-  // Enrollments that are not yet completed
-  const enrollments = await request.server.prisma.courseEnrollment.findMany({
-    where: { memberId: request.memberId, completedAt: null, progressPercentage: { lt: 100 } },
-    orderBy: { enrolledAt: 'desc' },
+  // Fetch uncompleted courses based on CourseEpisodeProgress
+  const courseProgress = await request.server.prisma.courseEpisodeProgress.findMany({
+    where: { memberId: request.memberId, completed: false },
+    orderBy: { updatedAt: 'desc' },
     take: 6,
     select: {
-      courseId: true,
-      progressPercentage: true,
-      course: { select: { title: true, thumbnailUrl: true } },
+      episodeId: true,
+      lastWatchedSecs: true,
+      updatedAt: true,
+      episode: { 
+        select: { 
+          title: true, 
+          courseId: true,
+          course: { select: { title: true, thumbnailUrl: true } }
+        } 
+      },
     },
   });
 
-  // For each enrollment, find the most recently accessed lesson
-  const items = await Promise.all(
-    enrollments.map(async (e) => {
-      const lastProgress = await request.server.prisma.lessonProgress.findFirst({
-        where: {
-          memberId: request.memberId,
-          lesson: { module: { courseId: e.courseId } },
-        },
-        orderBy: { updatedAt: 'desc' },
-        select: { lessonId: true, lesson: { select: { title: true } } },
-      });
+  // Fetch uncompleted workshop episodes based on MemberEpisodeProgress
+  const workshopProgress = await request.server.prisma.memberEpisodeProgress.findMany({
+    where: { memberId: request.memberId, isCompleted: false },
+    orderBy: { updatedAt: 'desc' },
+    take: 6,
+    select: {
+      episodeId: true,
+      lastWatchedSecs: true,
+      updatedAt: true,
+      episode: {
+        select: {
+          title: true,
+          challenge: {
+            select: { workshop: { select: { title: true, slug: true, thumbnailUrl: true } } }
+          }
+        }
+      }
+    }
+  });
 
-      // Find the next uncompleted lesson
-      const nextLesson = await request.server.prisma.lesson.findFirst({
-        where: {
-          module: { courseId: e.courseId },
-          isPublished: true,
-          progress: { none: { memberId: request.memberId, completed: true } },
-        },
-        orderBy: [{ module: { sortOrder: 'asc' } }, { sortOrder: 'asc' }],
-        select: { id: true, title: true },
-      });
+  // Unify and sort by most recent
+  const combined = [
+    ...courseProgress.map(p => ({
+      type: 'course',
+      id: p.episode.courseId, // Used for routing
+      lessonId: p.episodeId,
+      title: p.episode.course.title,
+      thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
+      lastLessonTitle: p.episode.title,
+      lastWatchedSecs: p.lastWatchedSecs,
+      updatedAt: p.updatedAt.getTime(),
+    })),
+    ...workshopProgress.map(p => ({
+      type: 'workshop',
+      id: p.episode.challenge.workshop.slug, // Used for routing
+      lessonId: p.episodeId,
+      title: p.episode.challenge.workshop.title,
+      thumbnailUrl: p.episode.challenge.workshop.thumbnailUrl ?? null,
+      lastLessonTitle: p.episode.title,
+      lastWatchedSecs: p.lastWatchedSecs,
+      updatedAt: p.updatedAt.getTime(),
+    }))
+  ].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
 
-      return {
-        courseId: e.courseId,
-        title: e.course.title,
-        thumbnailUrl: e.course.thumbnailUrl ?? null,
-        progressPercent: e.progressPercentage,
-        lastLessonId: nextLesson?.id ?? lastProgress?.lessonId ?? null,
-        lastLessonTitle: nextLesson?.title ?? lastProgress?.lesson?.title ?? null,
-      };
-    })
-  );
-
-  return ok(reply, items);
+  return ok(reply, combined);
 }
 
 // ─── Events ──────────────────────────────────────────────────────────────────
@@ -1479,10 +1638,48 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
 export async function postEpisodeProgressHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: episodeId } = request.params as { id: string };
-  const { watchedSeconds, isCompleted } = request.body as {
+  const { watchedSeconds, deltaSeconds, isCompleted } = request.body as {
     watchedSeconds?: number;
+    deltaSeconds?: number;
     isCompleted?: boolean;
   };
+
+  const safeDelta = Math.min(deltaSeconds ?? 0, 30);
+  const deviceId = request.headers['x-device-id'] as string | undefined;
+
+  const existingProgress = await request.server.prisma.memberEpisodeProgress.findUnique({
+    where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
+    select: { lastWatchedSecs: true }
+  });
+
+  // Log excessive skipping if the playhead jumped forward significantly without actual watch time
+  if (
+    watchedSeconds !== undefined && 
+    existingProgress?.lastWatchedSecs !== undefined && 
+    watchedSeconds - existingProgress.lastWatchedSecs > (safeDelta + 300)
+  ) {
+    await request.server.prisma.securityLog.create({
+      data: {
+        memberId: request.memberId,
+        eventType: 'EXCESSIVE_SKIPPING',
+        metadata: {
+          episodeId,
+          type: 'workshop',
+          fromSecs: existingProgress.lastWatchedSecs,
+          toSecs: watchedSeconds,
+          reportedDelta: deltaSeconds
+        }
+      } as any
+    }).catch(() => {});
+  }
+
+  // Update session last active time
+  if (deviceId) {
+    await request.server.prisma.memberSession.updateMany({
+      where: { memberId: request.memberId, deviceId },
+      data: { lastActiveAt: new Date() }
+    }).catch(() => {});
+  }
 
   await request.server.prisma.memberEpisodeProgress.upsert({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
@@ -1490,11 +1687,13 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
       memberId: request.memberId,
       episodeId,
       lastWatchedSecs: watchedSeconds ?? 0,
+      actualWatchedSecs: safeDelta,
       isCompleted: isCompleted ?? false,
     },
     update: {
-      lastWatchedSecs: watchedSeconds ?? 0,
-      isCompleted: isCompleted ?? false,
+      lastWatchedSecs: watchedSeconds ?? undefined,
+      actualWatchedSecs: { increment: safeDelta },
+      isCompleted: isCompleted ?? undefined,
     },
   });
 

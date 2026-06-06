@@ -10,12 +10,14 @@ interface VideoPlayerProps {
   src: string;
   poster?: string;
   lessonId: string;
+  resumeAtSeconds?: number;
   onProgress?: (seconds: number) => void;
+  onHeartbeat?: (currentTime: number) => void;
   onEnded?: () => void;
   autoPlay?: boolean;
 }
 
-export function VideoPlayer({ src, poster, lessonId, onProgress, onEnded, autoPlay = false }: VideoPlayerProps) {
+export function VideoPlayer({ src, poster, lessonId, resumeAtSeconds = 0, onProgress, onHeartbeat, onEnded, autoPlay = false }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -24,15 +26,45 @@ export function VideoPlayer({ src, poster, lessonId, onProgress, onEnded, autoPl
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const heartbeatTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const hasResumed = useRef(false);
 
   const { setCurrentLesson, setIsPlaying, setWatchedSeconds } = usePlayerStore();
 
   useEffect(() => {
     setCurrentLesson(lessonId);
-    const cleanup = () => setCurrentLesson(null);
+    hasResumed.current = false; // Reset resume flag for new lesson
+    const cleanup = () => {
+      setCurrentLesson(null);
+      clearInterval(heartbeatTimer.current);
+    };
     return cleanup;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonId]);
+
+  const handleLoadedMetadata = () => {
+    const v = videoRef.current;
+    if (v) {
+      setDuration(v.duration);
+      if (!hasResumed.current && resumeAtSeconds > 0 && resumeAtSeconds < v.duration) {
+        v.currentTime = resumeAtSeconds;
+        hasResumed.current = true;
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (playing && onHeartbeat) {
+      heartbeatTimer.current = setInterval(() => {
+        if (videoRef.current) {
+          onHeartbeat(videoRef.current.currentTime);
+        }
+      }, 15000);
+    } else {
+      clearInterval(heartbeatTimer.current);
+    }
+    return () => clearInterval(heartbeatTimer.current);
+  }, [playing, onHeartbeat]);
 
   const resetHideTimer = useCallback(() => {
     clearTimeout(hideTimer.current);
@@ -98,7 +130,7 @@ export function VideoPlayer({ src, poster, lessonId, onProgress, onEnded, autoPl
           autoPlay={autoPlay}
           className="w-full h-full object-contain"
           onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+          onLoadedMetadata={handleLoadedMetadata}
           onEnded={() => {
             setPlaying(false);
             setIsPlaying(false);

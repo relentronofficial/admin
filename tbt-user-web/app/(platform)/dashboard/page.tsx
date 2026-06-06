@@ -1,6 +1,7 @@
 "use client";
 
-import { BookOpen, Flame, Trophy, Calendar } from "lucide-react";
+import Link from "next/link";
+import { BookOpen, Flame, Trophy, Calendar, Play } from "lucide-react";
 import { StatsCard } from "@/components/features/dashboard/StatsCard";
 import { ProgramCard } from "@/components/features/programs/ProgramCard";
 import { PageLoader, CardSkeleton } from "@/components/common/LoadingSpinner";
@@ -66,21 +67,48 @@ export default function DashboardPage() {
           </div>
         ) : continueItems && continueItems.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {continueItems.map((item) => (
-              <div key={item.courseId} className="rounded-xl border border-border bg-card p-4">
-                <p className="font-medium text-sm line-clamp-2">{item.title}</p>
-                <div className="mt-3 h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-brand-600 rounded-full transition-all"
-                    style={{ width: `${item.progressPercent}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground mt-1.5">{item.progressPercent}% complete</p>
-                {item.lastLessonTitle && (
-                  <p className="text-xs text-brand-600 mt-0.5 truncate">Next: {item.lastLessonTitle}</p>
-                )}
-              </div>
-            ))}
+            {continueItems.map((item: any) => {
+              const href = item.type === "course" 
+                ? `/learning/${item.id}?lesson=${item.lessonId}` 
+                : `/episode/${item.id}/${item.lessonId}`;
+
+              return (
+                <Link
+                  key={item.lessonId}
+                  href={href}
+                  className="group relative flex flex-col rounded-xl border border-border bg-card overflow-hidden hover:border-brand-600/50 transition-colors"
+                >
+                  <div className="aspect-video w-full relative bg-black/50 overflow-hidden">
+                    {item.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img 
+                        src={item.thumbnailUrl} 
+                        alt={item.title} 
+                        className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" 
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground/30">
+                        <BookOpen size={32} />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="bg-brand-600 text-white rounded-full p-3 transform scale-90 group-hover:scale-100 transition-transform shadow-lg">
+                        <Play fill="currentColor" size={20} className="ml-1" />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 flex-1 flex flex-col">
+                    <p className="font-medium text-sm line-clamp-1 mb-1">{item.title}</p>
+                    {item.lastLessonTitle && (
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        Resume: <span className="text-white/80">{item.lastLessonTitle}</span>
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         ) : (
           <EmptyState

@@ -5,6 +5,7 @@ import {
   listUserCoursesHandler,
   getUserCourseHandler,
   enrollCourseHandler,
+  getCertificateEligibilityHandler,
   getEnrollmentsHandler,
   getLessonProgressHandler,
   markLessonCompleteHandler,
@@ -58,6 +59,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/courses', listUserCoursesHandler);
   fastify.get('/courses/:id', getUserCourseHandler);
   fastify.post('/courses/:id/enroll', enrollCourseHandler);
+  fastify.get('/courses/:courseId/certificate-eligibility', getCertificateEligibilityHandler);
 
   // ── Enrollments & lesson progress ─────────────────────────────────────────
   fastify.get('/enrollments', getEnrollmentsHandler);

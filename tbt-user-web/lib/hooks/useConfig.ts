@@ -132,14 +132,17 @@ export const usePostEpisodeProgress = () =>
     mutationFn: async ({
       episodeId,
       watchedSeconds,
+      deltaSeconds,
       isCompleted,
     }: {
       episodeId: string;
       watchedSeconds?: number;
+      deltaSeconds?: number;
       isCompleted?: boolean;
     }) => {
       const res: any = await apiClient.post(`/api/user/episodes/${episodeId}/progress`, {
         watchedSeconds,
+        deltaSeconds,
         isCompleted,
       });
       return res?.data;

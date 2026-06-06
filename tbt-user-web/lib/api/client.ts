@@ -77,6 +77,15 @@ async function getCachedToken(): Promise<string> {
 apiClient.interceptors.request.use(async (config) => {
   const token = await getCachedToken();
   config.headers.Authorization = `Bearer ${token}`;
+
+  // Attach device ID if available (used for security telemetry)
+  if (typeof window !== "undefined") {
+    const deviceId = localStorage.getItem("tbt_device_id");
+    if (deviceId) {
+      config.headers["x-device-id"] = deviceId;
+    }
+  }
+
   return config;
 });
 

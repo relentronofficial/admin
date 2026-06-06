@@ -33,19 +33,26 @@ function AuthInterceptor({ children }: { children: React.ReactNode }) {
       initApiClient(() => getToken());
       initSocket(() => getToken());
       
-      // Ensure a Member record exists for this Clerk user (idempotent)
+      // Ensure a Member record exists and update device telemetry
       getToken().then((token) => {
         if (token) {
+          let deviceId = localStorage.getItem("tbt_device_id");
+          if (!deviceId) {
+            deviceId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
+            localStorage.setItem("tbt_device_id", deviceId);
+          }
+
           apiClient.post('/api/pub/auth/sync', {}, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { 
+              Authorization: `Bearer ${token}`,
+              'x-device-id': deviceId
+            },
           })
           .then(() => {
             setSynced(true);
-            // Retry any queries that errored before this effect ran (auth race on page load).
             queryClient.refetchQueries({ predicate: (q) => q.state.status === 'error' });
           })
           .catch(() => {
-            // Even if sync fails, we allow the app to try loading
             setSynced(true);
           });
         }

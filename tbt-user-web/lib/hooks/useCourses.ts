@@ -57,8 +57,8 @@ export const useLessonProgress = (courseId: string) =>
 export const useMarkLessonComplete = (courseId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ lessonId, watchedSeconds }: { lessonId: string; watchedSeconds?: number }) =>
-      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds),
+    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean }) =>
+      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "progress", courseId] });
       queryClient.invalidateQueries({ queryKey: ["user", "dashboard"] });

@@ -270,45 +270,46 @@ model Member {
   creator        Admin? @relation("MemberCreator", fields: [createdBy], references: [id])
   batch          Batch? @relation(fields: [batchId], references: [id])
 
-  courseEnrollments    CourseEnrollment[]
-  quizAttempts         QuizAttempt[]
-  lessonProgress       LessonProgress[]
-  programEnrollments   ProgramEnrollment[]
-  taskSubmissions      TaskSubmission[]
-  podcastProgress      PodcastProgress[]
-  webinarRegistrations WebinarRegistration[]
-  eventRegistrations   EventRegistration[]
-  posts                Post[]
-  comments             Comment[]
-  likes                Like[]
-  supportTickets       SupportTicket[]
-  rewardRedemptions    RewardRedemption[]
-  badges               MemberBadge[]
-  milestones           MemberMilestone[]
-  streaks              Streak[]
-  pointsLedger         PointsLedger[]
-  subscriptions        Subscription[]
-  payments             Payment[]
-  kycDocuments         KycDocument[]
-  activityLogs         ActivityLog[]
-  sessions             MemberSession[]
-  whatsappMessages     WhatsappMessage[]
-  assessments          Assessment[]
-  checklistCompletions ChecklistCompletion[]
-  pollVotes            PollVote[]
-  leaderboardEntries   Leaderboard[]
-  Notification              Notification[]
-  displayBadges             MemberDisplayBadge[]
-  workshopEnrollments       WorkshopEnrollment[]
-  episodeProgress           MemberEpisodeProgress[]
-  assignmentSubmissions     AssignmentSubmission[]
-  qaPosts                   QAPost[]
-  qaReplies                 QAReply[]
-  appNotifications          AppNotificationRecipient[]
-  directMessages            DirectMessage[]
-  conversations             Conversation[]
-  courseEpisodeProgress     CourseEpisodeProgress[]
-  challengeProgress         MemberChallengeProgress[]
+  courseEnrollments     CourseEnrollment[]
+  quizAttempts          QuizAttempt[]
+  lessonProgress        LessonProgress[]
+  programEnrollments    ProgramEnrollment[]
+  taskSubmissions       TaskSubmission[]
+  podcastProgress       PodcastProgress[]
+  webinarRegistrations  WebinarRegistration[]
+  eventRegistrations    EventRegistration[]
+  posts                 Post[]
+  comments              Comment[]
+  likes                 Like[]
+  supportTickets        SupportTicket[]
+  rewardRedemptions     RewardRedemption[]
+  badges                MemberBadge[]
+  milestones            MemberMilestone[]
+  streaks               Streak[]
+  pointsLedger          PointsLedger[]
+  subscriptions         Subscription[]
+  payments              Payment[]
+  kycDocuments          KycDocument[]
+  activityLogs          ActivityLog[]
+  sessions              MemberSession[]
+  whatsappMessages      WhatsappMessage[]
+  assessments           Assessment[]
+  checklistCompletions  ChecklistCompletion[]
+  pollVotes             PollVote[]
+  leaderboardEntries    Leaderboard[]
+  Notification          Notification[]
+  displayBadges         MemberDisplayBadge[]
+  workshopEnrollments   WorkshopEnrollment[]
+  episodeProgress       MemberEpisodeProgress[]
+  assignmentSubmissions AssignmentSubmission[]
+  qaPosts               QAPost[]
+  qaReplies             QAReply[]
+  appNotifications      AppNotificationRecipient[]
+  directMessages        DirectMessage[]
+  conversations         Conversation[]
+  courseEpisodeProgress CourseEpisodeProgress[]
+  challengeProgress     MemberChallengeProgress[]
+  SecurityLog           SecurityLog[]
 
   @@map("members")
 }
@@ -340,11 +341,11 @@ model Course {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   // Relations
-  category      Category?          @relation(fields: [categoryId], references: [id])
-  creator       Admin?             @relation("CourseCreator", fields: [createdBy], references: [id])
-  modules       Module[]
-  enrollments   CourseEnrollment[]
-  contentItems  ContentItem[]
+  category       Category?          @relation(fields: [categoryId], references: [id])
+  creator        Admin?             @relation("CourseCreator", fields: [createdBy], references: [id])
+  modules        Module[]
+  enrollments    CourseEnrollment[]
+  contentItems   ContentItem[]
   courseEpisodes CourseEpisode[]
 
   @@map("courses")
@@ -860,19 +861,19 @@ model Notification {
 }
 
 model DirectMessage {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  conversationId String?        @map("conversation_id") @db.Uuid
-  memberId       String         @map("member_id") @db.Uuid
-  senderId       String         @map("sender_id") @db.Uuid
-  senderType     SenderType     @map("sender_type")
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String?    @map("conversation_id") @db.Uuid
+  memberId       String     @map("member_id") @db.Uuid
+  senderId       String     @map("sender_id") @db.Uuid
+  senderType     SenderType @map("sender_type")
   subject        String?
   body           String
-  isRead         Boolean        @default(false) @map("is_read")
-  readAt         DateTime?      @map("read_at") @db.Timestamptz(6)
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  isRead         Boolean    @default(false) @map("is_read")
+  readAt         DateTime?  @map("read_at") @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  conversation   Conversation?  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  member         Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  member       Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@map("direct_messages")
 }
@@ -887,8 +888,8 @@ model Conversation {
   lastMessageAt     DateTime           @default(now()) @map("last_message_at") @db.Timestamptz(6)
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  member            Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  messages          DirectMessage[]
+  member   Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  messages DirectMessage[]
 
   @@map("conversations")
 }
@@ -1155,14 +1156,32 @@ model ActivityLog {
 model MemberSession {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   memberId        String    @map("member_id") @db.Uuid
+  deviceId        String?   @map("device_id")
+  ipAddress       String?   @map("ip_address")
+  userAgent       String?   @map("user_agent")
   startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
   endedAt         DateTime? @map("ended_at") @db.Timestamptz(6)
+  lastActiveAt    DateTime  @default(now()) @map("last_active_at") @db.Timestamptz(6)
   durationMinutes Int?      @map("duration_minutes")
 
   // Relations
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@map("member_sessions")
+}
+
+model SecurityLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  sessionId String?  @map("session_id") @db.Uuid
+  eventType String   @map("event_type")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("security_logs")
 }
 
 model AutomationRule {
@@ -1393,14 +1412,14 @@ model ContentItem {
 }
 
 model Workshop {
-  id           String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title        String
-  slug         String               @unique
-  description  String?
-  thumbnailUrl String?              @map("thumbnail_url")
-  isActive     Boolean              @default(true) @map("is_active")
-  deliveryMode String               @default("online") @map("delivery_mode")
-  requiredTier Int                  @default(1) @map("required_tier")
+  id                     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title                  String
+  slug                   String               @unique
+  description            String?
+  thumbnailUrl           String?              @map("thumbnail_url")
+  isActive               Boolean              @default(true) @map("is_active")
+  deliveryMode           String               @default("online") @map("delivery_mode")
+  requiredTier           Int                  @default(1) @map("required_tier")
   batchId                String?              @map("batch_id") @db.Uuid
   tabChallengesLabel     String               @default("Challenges") @map("tab_challenges_label")
   tabQaLabel             String               @default("Q & A") @map("tab_qa_label")
@@ -1410,15 +1429,15 @@ model Workshop {
   workshopFlowLabel      String               @default("Workshop Flow") @map("workshop_flow_label")
   backLabel              String               @default("Back") @map("back_label")
   backUrl                String               @default("/workshops") @map("back_url")
-  batch        Batch?               @relation(fields: [batchId], references: [id])
-  enrollments  WorkshopEnrollment[]
-  challenges   Challenge[]
-  liveCalls    LiveCall[]
-  flowItems    WorkshopFlowItem[]
-  qaPosts      QAPost[]
-  contentItems ContentItem[]
-  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  batch                  Batch?               @relation(fields: [batchId], references: [id])
+  enrollments            WorkshopEnrollment[]
+  challenges             Challenge[]
+  liveCalls              LiveCall[]
+  flowItems              WorkshopFlowItem[]
+  qaPosts                QAPost[]
+  contentItems           ContentItem[]
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("workshops")
 }
@@ -1457,59 +1476,60 @@ model WorkshopFlowItem {
 }
 
 model Challenge {
-  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workshopId      String             @map("workshop_id") @db.Uuid
-  order           Int                @default(0)
-  challengeNumber Int                @map("challenge_number")
-  numberLabel     String             @map("number_label")
-  numberColor     String             @default("#00c4cc") @map("number_color")
+  id              String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workshopId      String                    @map("workshop_id") @db.Uuid
+  order           Int                       @default(0)
+  challengeNumber Int                       @map("challenge_number")
+  numberLabel     String                    @map("number_label")
+  numberColor     String                    @default("#00c4cc") @map("number_color")
   title           String
   description     String?
-  type            String             @default("watch")
-  quizData        Json?              @map("quiz_data")
+  type            String                    @default("watch")
+  quizData        Json?                     @map("quiz_data")
   memberProgress  MemberChallengeProgress[]
-  workshop        Workshop           @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  workshop        Workshop                  @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   episodes        WorkshopEpisode[]
   assignments     Assignment[]
   flowItems       WorkshopFlowItem[]
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("challenges")
 }
 
 model WorkshopEpisode {
-  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  challengeId     String                  @map("challenge_id") @db.Uuid
-  order           Int                     @default(0)
-  title           String
-  description     String?
-  type            String                  @default("video")
-  typeLabel       String                  @default("Video") @map("type_label")
-  videoUrl        String?                 @map("video_url")
-  bunnyVideoId    String?                 @map("bunny_video_id")
-  durationSeconds Int?                    @map("duration_seconds")
-  durationLabel   String?                 @map("duration_label")
-  lockIconType    String                  @default("padlock") @map("lock_icon_type")
-  completedIconType String                @default("checkmark") @map("completed_icon_type")
-  challenge       Challenge               @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  progress        MemberEpisodeProgress[]
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  challengeId       String                  @map("challenge_id") @db.Uuid
+  order             Int                     @default(0)
+  title             String
+  description       String?
+  type              String                  @default("video")
+  typeLabel         String                  @default("Video") @map("type_label")
+  videoUrl          String?                 @map("video_url")
+  bunnyVideoId      String?                 @map("bunny_video_id")
+  durationSeconds   Int?                    @map("duration_seconds")
+  durationLabel     String?                 @map("duration_label")
+  lockIconType      String                  @default("padlock") @map("lock_icon_type")
+  completedIconType String                  @default("checkmark") @map("completed_icon_type")
+  challenge         Challenge               @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  progress          MemberEpisodeProgress[]
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("workshop_episodes")
 }
 
 model MemberEpisodeProgress {
-  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId        String          @map("member_id") @db.Uuid
-  episodeId       String          @map("episode_id") @db.Uuid
-  isCompleted     Boolean         @default(false) @map("is_completed")
-  completedAt     DateTime?       @map("completed_at") @db.Timestamptz(6)
-  lastWatchedSecs Int             @default(0) @map("last_watched_secs")
-  member          Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  episode         WorkshopEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId          String          @map("member_id") @db.Uuid
+  episodeId         String          @map("episode_id") @db.Uuid
+  isCompleted       Boolean         @default(false) @map("is_completed")
+  completedAt       DateTime?       @map("completed_at") @db.Timestamptz(6)
+  lastWatchedSecs   Int             @default(0) @map("last_watched_secs")
+  actualWatchedSecs Int             @default(0) @map("actual_watched_secs")
+  member            Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  episode           WorkshopEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([memberId, episodeId])
   @@map("member_episode_progress")
@@ -1575,9 +1595,9 @@ model Assignment {
 }
 
 model AssignmentSubmission {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  assignmentId String     @map("assignment_id") @db.Uuid
-  memberId     String     @map("member_id") @db.Uuid
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assignmentId      String     @map("assignment_id") @db.Uuid
+  memberId          String     @map("member_id") @db.Uuid
   answerText        String     @map("answer_text")
   completedIconType String     @default("checkmark_green") @map("completed_icon_type")
   yourAnswerLabel   String     @default("Your Answer:") @map("your_answer_label")
@@ -1585,7 +1605,7 @@ model AssignmentSubmission {
   submittedAt       DateTime   @default(now()) @map("submitted_at") @db.Timestamptz(6)
   updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignment        Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  member       Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member            Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@unique([assignmentId, memberId])
   @@map("assignment_submissions")
@@ -1634,25 +1654,25 @@ model Product {
 }
 
 model ProductCta {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId    String   @map("product_id") @db.Uuid
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId    String  @map("product_id") @db.Uuid
   label        String
   url          String
-  type         String   @default("primary")
-  openInNewTab Boolean  @default(true) @map("open_in_new_tab")
-  order        Int      @default(0)
-  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type         String  @default("primary")
+  openInNewTab Boolean @default(true) @map("open_in_new_tab")
+  order        Int     @default(0)
+  product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_ctas")
 }
 
 model AppResource {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title      String
-  author     String?
-  date       DateTime? @db.Date
-  fileUrl    String    @map("file_url")
-  previewUrl String?   @map("preview_url")
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title           String
+  author          String?
+  date            DateTime? @db.Date
+  fileUrl         String    @map("file_url")
+  previewUrl      String?   @map("preview_url")
   fileType        String    @default("pdf") @map("file_type")
   fileTypeIconUrl String?   @map("file_type_icon_url")
   fileCount       Int       @default(1) @map("file_count")
@@ -1660,8 +1680,8 @@ model AppResource {
   isVisible       Boolean   @default(true) @map("is_visible")
   previewLabel    String    @default("Preview") @map("preview_label")
   downloadLabel   String    @default("Download") @map("download_label")
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("app_resources")
 }
@@ -1678,13 +1698,13 @@ model AppNotification {
 }
 
 model AppNotificationRecipient {
-  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  notificationId String           @map("notification_id") @db.Uuid
-  memberId       String?          @map("member_id") @db.Uuid
-  readAt         DateTime?        @map("read_at") @db.Timestamptz(6)
-  notification   AppNotification  @relation(fields: [notificationId], references: [id], onDelete: Cascade)
-  member         Member?          @relation(fields: [memberId], references: [id])
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId String          @map("notification_id") @db.Uuid
+  memberId       String?         @map("member_id") @db.Uuid
+  readAt         DateTime?       @map("read_at") @db.Timestamptz(6)
+  notification   AppNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  member         Member?         @relation(fields: [memberId], references: [id])
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("app_notification_recipients")
 }
@@ -1692,17 +1712,17 @@ model AppNotificationRecipient {
 // ─── SITE CONFIG & UI STRINGS ─────────────────────────────────────────────────
 
 model SiteConfig {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  siteName         String
-  logoUrl          String?  @map("logo_url")
-  faviconUrl       String?  @map("favicon_url")
-  footerText       String   @map("footer_text")
-  splashLogoUrl    String?  @map("splash_logo_url")
-  splashDurationMs Int      @default(2000) @map("splash_duration_ms")
-  accentColor      String   @default("#00c4cc") @map("accent_color")
-  alertColor       String   @default("#ff3d8b") @map("alert_color")
-  successColor     String   @default("#22c55e") @map("success_color")
-  bgPrimary        String   @default("#000000") @map("bg_primary")
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siteName               String
+  logoUrl                String?  @map("logo_url")
+  faviconUrl             String?  @map("favicon_url")
+  footerText             String   @map("footer_text")
+  splashLogoUrl          String?  @map("splash_logo_url")
+  splashDurationMs       Int      @default(2000) @map("splash_duration_ms")
+  accentColor            String   @default("#00c4cc") @map("accent_color")
+  alertColor             String   @default("#ff3d8b") @map("alert_color")
+  successColor           String   @default("#22c55e") @map("success_color")
+  bgPrimary              String   @default("#000000") @map("bg_primary")
   bgSurface              String   @default("#111111") @map("bg_surface")
   navShowNotifications   Boolean  @default(true) @map("nav_show_notifications")
   navShowMessages        Boolean  @default(true) @map("nav_show_messages")
@@ -1715,66 +1735,66 @@ model SiteConfig {
 }
 
 model UiStrings {
-  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  loading              String   @default("Loading...")
-  noWorkshops          String   @default("No workshops enrolled yet.") @map("no_workshops")
-  noResources          String   @default("No resources found.") @map("no_resources")
-  qaLoadingLabel       String   @default("Loading questions...") @map("qa_loading_label")
-  errorGeneric         String   @default("Something went wrong. Please try again.") @map("error_generic")
-  lockedContentMessage String   @default("Upgrade your tier to unlock this content.") @map("locked_content_message")
-  countdownDays        String   @default("DAYS") @map("countdown_days")
-  countdownHours       String   @default("HOURS") @map("countdown_hours")
-  countdownMins        String   @default("MINS") @map("countdown_mins")
-  countdownSecs        String   @default("SECS") @map("countdown_secs")
-  loginHeading         String   @default("Welcome Back") @map("login_heading")
-  loginSubheading      String   @default("Sign in to continue your journey") @map("login_subheading")
-  emailLabel           String   @default("Email") @map("email_label")
-  emailPlaceholder     String   @default("Enter your email") @map("email_placeholder")
-  passwordLabel        String   @default("Password") @map("password_label")
-  passwordPlaceholder  String   @default("Enter your password") @map("password_placeholder")
-  submitLabel                    String   @default("Sign In") @map("submit_label")
-  profilePersonalLabel           String   @default("Personal Details") @map("profile_personal_label")
-  profileSubscriptionLabel       String   @default("Subscription") @map("profile_subscription_label")
-  profileTiersLabel              String   @default("Tier Access") @map("profile_tiers_label")
-  profileSignOutLabel            String   @default("Sign Out") @map("profile_sign_out_label")
-  profileSaveLabel               String   @default("Save Changes") @map("profile_save_label")
-  profileFirstNameLabel          String   @default("First Name") @map("profile_first_name_label")
-  profileLastNameLabel           String   @default("Last Name") @map("profile_last_name_label")
-  profileEmailLabel              String   @default("Email") @map("profile_email_label")
-  profilePhoneLabel              String   @default("Phone") @map("profile_phone_label")
-  profileDobLabel                String   @default("Date of Birth") @map("profile_dob_label")
-  profileSubStartLabel           String   @default("Start Date") @map("profile_sub_start_label")
-  profileSubEndLabel             String   @default("End Date") @map("profile_sub_end_label")
-  episodeCompleteLabel           String   @default("Mark Complete") @map("episode_complete_label")
-  playerAutoLabel                String   @default("Auto") @map("player_auto_label")
-  liveCallJoinLabel              String   @default("Join Call") @map("live_call_join_label")
-  watchBackLabel                 String   @default("Back") @map("watch_back_label")
-  assignmentCtaLabel             String   @default("Answer") @map("assignment_cta_label")
-  assignmentSubmitLabel          String   @default("Submit") @map("assignment_submit_label")
-  assignmentCancelLabel          String   @default("Cancel") @map("assignment_cancel_label")
-  notificationsPageTitle         String   @default("Notifications") @map("notifications_page_title")
-  notificationsUnreadSuffix      String   @default("unread") @map("notifications_unread_suffix")
-  notificationsMarkAllLabel      String   @default("Mark all read") @map("notifications_mark_all_label")
-  notificationsEmptyTitle        String   @default("No notifications yet") @map("notifications_empty_title")
-  notificationsEmptyDesc         String   @default("You'll be notified about events and updates.") @map("notifications_empty_desc")
-  resourcesDownloadLabel         String   @default("Download") @map("resources_download_label")
-  paginationPrevLabel            String   @default("Previous") @map("pagination_prev_label")
-  paginationNextLabel            String   @default("Next") @map("pagination_next_label")
-  messagesPageTitle              String   @default("Messages") @map("messages_page_title")
-  messagesUnreadSuffix           String   @default("unread") @map("messages_unread_suffix")
-  messagesMarkAllLabel           String   @default("Mark all read") @map("messages_mark_all_label")
-  messagesEmptyTitle             String   @default("No messages yet") @map("messages_empty_title")
-  messagesEmptyDesc              String   @default("Messages from your team will appear here.") @map("messages_empty_desc")
-  chatPageTitle                  String   @default("Chat")                                       @map("chat_page_title")
-  chatNewLabel                   String   @default("New Conversation")                           @map("chat_new_label")
-  chatSubjectLabel               String   @default("Subject")                                    @map("chat_subject_label")
-  chatTypingText                 String   @default("is typing...")                               @map("chat_typing_text")
-  chatClosedLabel                String   @default("This conversation has been closed.")         @map("chat_closed_label")
-  chatEmptyTitle                 String   @default("No conversations yet")                       @map("chat_empty_title")
-  chatEmptyDesc                  String   @default("Start a conversation with the TBT team.")    @map("chat_empty_desc")
-  chatSelectPrompt               String   @default("Select a conversation or start a new one.")  @map("chat_select_prompt")
-  createdAt                      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  loading                   String   @default("Loading...")
+  noWorkshops               String   @default("No workshops enrolled yet.") @map("no_workshops")
+  noResources               String   @default("No resources found.") @map("no_resources")
+  qaLoadingLabel            String   @default("Loading questions...") @map("qa_loading_label")
+  errorGeneric              String   @default("Something went wrong. Please try again.") @map("error_generic")
+  lockedContentMessage      String   @default("Upgrade your tier to unlock this content.") @map("locked_content_message")
+  countdownDays             String   @default("DAYS") @map("countdown_days")
+  countdownHours            String   @default("HOURS") @map("countdown_hours")
+  countdownMins             String   @default("MINS") @map("countdown_mins")
+  countdownSecs             String   @default("SECS") @map("countdown_secs")
+  loginHeading              String   @default("Welcome Back") @map("login_heading")
+  loginSubheading           String   @default("Sign in to continue your journey") @map("login_subheading")
+  emailLabel                String   @default("Email") @map("email_label")
+  emailPlaceholder          String   @default("Enter your email") @map("email_placeholder")
+  passwordLabel             String   @default("Password") @map("password_label")
+  passwordPlaceholder       String   @default("Enter your password") @map("password_placeholder")
+  submitLabel               String   @default("Sign In") @map("submit_label")
+  profilePersonalLabel      String   @default("Personal Details") @map("profile_personal_label")
+  profileSubscriptionLabel  String   @default("Subscription") @map("profile_subscription_label")
+  profileTiersLabel         String   @default("Tier Access") @map("profile_tiers_label")
+  profileSignOutLabel       String   @default("Sign Out") @map("profile_sign_out_label")
+  profileSaveLabel          String   @default("Save Changes") @map("profile_save_label")
+  profileFirstNameLabel     String   @default("First Name") @map("profile_first_name_label")
+  profileLastNameLabel      String   @default("Last Name") @map("profile_last_name_label")
+  profileEmailLabel         String   @default("Email") @map("profile_email_label")
+  profilePhoneLabel         String   @default("Phone") @map("profile_phone_label")
+  profileDobLabel           String   @default("Date of Birth") @map("profile_dob_label")
+  profileSubStartLabel      String   @default("Start Date") @map("profile_sub_start_label")
+  profileSubEndLabel        String   @default("End Date") @map("profile_sub_end_label")
+  episodeCompleteLabel      String   @default("Mark Complete") @map("episode_complete_label")
+  playerAutoLabel           String   @default("Auto") @map("player_auto_label")
+  liveCallJoinLabel         String   @default("Join Call") @map("live_call_join_label")
+  watchBackLabel            String   @default("Back") @map("watch_back_label")
+  assignmentCtaLabel        String   @default("Answer") @map("assignment_cta_label")
+  assignmentSubmitLabel     String   @default("Submit") @map("assignment_submit_label")
+  assignmentCancelLabel     String   @default("Cancel") @map("assignment_cancel_label")
+  notificationsPageTitle    String   @default("Notifications") @map("notifications_page_title")
+  notificationsUnreadSuffix String   @default("unread") @map("notifications_unread_suffix")
+  notificationsMarkAllLabel String   @default("Mark all read") @map("notifications_mark_all_label")
+  notificationsEmptyTitle   String   @default("No notifications yet") @map("notifications_empty_title")
+  notificationsEmptyDesc    String   @default("You'll be notified about events and updates.") @map("notifications_empty_desc")
+  resourcesDownloadLabel    String   @default("Download") @map("resources_download_label")
+  paginationPrevLabel       String   @default("Previous") @map("pagination_prev_label")
+  paginationNextLabel       String   @default("Next") @map("pagination_next_label")
+  messagesPageTitle         String   @default("Messages") @map("messages_page_title")
+  messagesUnreadSuffix      String   @default("unread") @map("messages_unread_suffix")
+  messagesMarkAllLabel      String   @default("Mark all read") @map("messages_mark_all_label")
+  messagesEmptyTitle        String   @default("No messages yet") @map("messages_empty_title")
+  messagesEmptyDesc         String   @default("Messages from your team will appear here.") @map("messages_empty_desc")
+  chatPageTitle             String   @default("Chat") @map("chat_page_title")
+  chatNewLabel              String   @default("New Conversation") @map("chat_new_label")
+  chatSubjectLabel          String   @default("Subject") @map("chat_subject_label")
+  chatTypingText            String   @default("is typing...") @map("chat_typing_text")
+  chatClosedLabel           String   @default("This conversation has been closed.") @map("chat_closed_label")
+  chatEmptyTitle            String   @default("No conversations yet") @map("chat_empty_title")
+  chatEmptyDesc             String   @default("Start a conversation with the TBT team.") @map("chat_empty_desc")
+  chatSelectPrompt          String   @default("Select a conversation or start a new one.") @map("chat_select_prompt")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("ui_strings")
 }
@@ -1792,15 +1812,15 @@ model NavItem {
 }
 
 model CourseEpisode {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  courseId        String   @map("course_id") @db.Uuid
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  courseId        String                  @map("course_id") @db.Uuid
   title           String
-  thumbnailUrl    String?  @map("thumbnail_url")
-  videoUrl        String   @map("video_url")
-  bunnyVideoId    String?  @map("bunny_video_id")
-  durationSeconds Int      @default(0) @map("duration_seconds")
-  order           Int      @default(0)
-  isVisible       Boolean  @default(true) @map("is_visible")
+  thumbnailUrl    String?                 @map("thumbnail_url")
+  videoUrl        String                  @map("video_url")
+  bunnyVideoId    String?                 @map("bunny_video_id")
+  durationSeconds Int                     @default(0) @map("duration_seconds")
+  order           Int                     @default(0)
+  isVisible       Boolean                 @default(true) @map("is_visible")
   course          Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   progress        CourseEpisodeProgress[]
   createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1810,13 +1830,15 @@ model CourseEpisode {
 }
 
 model CourseEpisodeProgress {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId    String    @map("member_id") @db.Uuid
-  episodeId   String    @map("episode_id") @db.Uuid
-  completed   Boolean   @default(false)
-  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId          String    @map("member_id") @db.Uuid
+  episodeId         String    @map("episode_id") @db.Uuid
+  completed         Boolean   @default(false)
+  completedAt       DateTime? @map("completed_at") @db.Timestamptz(6)
+  lastWatchedSecs   Int       @default(0) @map("last_watched_secs")
+  actualWatchedSecs Int       @default(0) @map("actual_watched_secs")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   member  Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
   episode CourseEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
