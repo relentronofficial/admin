@@ -20,6 +20,9 @@ import {
   getUserNotificationsHandler,
   markNotificationReadHandler,
   markAllNotificationsReadHandler,
+  getNotificationUnreadCountHandler,
+  dismissNotificationHandler,
+  clearReadNotificationsHandler,
   getUserMessagesHandler,
   markMessageReadHandler,
   markAllMessagesReadHandler,
@@ -87,9 +90,12 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/webinars/:id/token', getWebinarTokenHandler);
 
   // ── Notifications ─────────────────────────────────────────────────────────
+  fastify.get('/notifications/unread-count', getNotificationUnreadCountHandler);
   fastify.get('/notifications', getUserNotificationsHandler);
   fastify.patch('/notifications/:id/read', markNotificationReadHandler);
   fastify.post('/notifications/read-all', markAllNotificationsReadHandler);
+  fastify.delete('/notifications/:id', dismissNotificationHandler);
+  fastify.delete('/notifications', clearReadNotificationsHandler);
 
   // ── Messages ──────────────────────────────────────────────────────────────
   fastify.get('/messages', getUserMessagesHandler);

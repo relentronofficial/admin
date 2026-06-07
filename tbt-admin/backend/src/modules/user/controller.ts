@@ -915,6 +915,25 @@ export async function getWebinarTokenHandler(request: FastifyRequest, reply: Fas
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
+function notifIconType(type: string): string {
+  const map: Record<string, string> = {
+    video: 'video', course: 'video',
+    assignment: 'assignment',
+    live_call: 'live_call', webinar: 'live_call',
+    achievement: 'achievement', badge: 'achievement',
+    announcement: 'announcement',
+    system: 'system',
+  };
+  return map[type] ?? 'system';
+}
+
+export async function getNotificationUnreadCountHandler(request: FastifyRequest, reply: FastifyReply) {
+  const count = await request.server.prisma.appNotificationRecipient.count({
+    where: { memberId: request.memberId, readAt: null },
+  });
+  return ok(reply, { count });
+}
+
 export async function getUserNotificationsHandler(request: FastifyRequest, reply: FastifyReply) {
   const { page = 1, limit = 50, unread } = request.query as {
     page?: number;
@@ -933,7 +952,7 @@ export async function getUserNotificationsHandler(request: FastifyRequest, reply
       skip: (Number(page) - 1) * Number(limit),
       include: {
         notification: {
-          select: { title: true, message: true, type: true, createdAt: true },
+          select: { title: true, message: true, type: true, actionUrl: true, createdAt: true },
         },
       },
     }),
@@ -945,6 +964,8 @@ export async function getUserNotificationsHandler(request: FastifyRequest, reply
     title: r.notification.title,
     body: r.notification.message,
     type: r.notification.type,
+    iconType: notifIconType(r.notification.type),
+    actionUrl: r.notification.actionUrl ?? null,
     data: null as null,
     isRead: r.readAt !== null,
     createdAt: r.notification.createdAt,
@@ -964,7 +985,7 @@ export async function markNotificationReadHandler(request: FastifyRequest, reply
   const updated = await request.server.prisma.appNotificationRecipient.update({
     where: { id },
     data: { readAt: new Date() },
-    include: { notification: { select: { title: true, message: true, type: true, createdAt: true } } },
+    include: { notification: { select: { title: true, message: true, type: true, actionUrl: true, createdAt: true } } },
   });
 
   return ok(reply, {
@@ -972,6 +993,8 @@ export async function markNotificationReadHandler(request: FastifyRequest, reply
     title: updated.notification.title,
     body: updated.notification.message,
     type: updated.notification.type,
+    iconType: notifIconType(updated.notification.type),
+    actionUrl: updated.notification.actionUrl ?? null,
     isRead: true,
     createdAt: updated.notification.createdAt,
   });
@@ -982,8 +1005,22 @@ export async function markAllNotificationsReadHandler(request: FastifyRequest, r
     where: { memberId: request.memberId, readAt: null },
     data: { readAt: new Date() },
   });
-
   return ok(reply, { updated: result.count });
+}
+
+export async function dismissNotificationHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  await request.server.prisma.appNotificationRecipient.deleteMany({
+    where: { id, memberId: request.memberId },
+  });
+  return ok(reply, { dismissed: true });
+}
+
+export async function clearReadNotificationsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const result = await request.server.prisma.appNotificationRecipient.deleteMany({
+    where: { memberId: request.memberId, readAt: { not: null } },
+  });
+  return ok(reply, { cleared: result.count });
 }
 
 // ─── Messages ────────────────────────────────────────────────────────────────

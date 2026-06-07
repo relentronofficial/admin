@@ -43,6 +43,16 @@ export const useRemoveFromHistory = () => {
   });
 };
 
+export const useNotificationUnreadCount = () =>
+  useQuery({
+    queryKey: ["user", "notifications", "unread-count"],
+    queryFn: async () => {
+      const res = await dashboardService.getNotificationUnreadCount();
+      return res.data?.count ?? 0;
+    },
+    staleTime: 30 * 1000,
+  });
+
 export const useNotifications = (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
   useQuery({
     queryKey: ["user", "notifications", params],
@@ -67,6 +77,26 @@ export const useMarkAllNotificationsRead = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dashboardService.markAllNotificationsRead(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "notifications"] });
+    },
+  });
+};
+
+export const useDismissNotification = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => dashboardService.dismissNotification(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "notifications"] });
+    },
+  });
+};
+
+export const useClearReadNotifications = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => dashboardService.clearReadNotifications(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "notifications"] });
     },

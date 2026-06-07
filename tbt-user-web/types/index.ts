@@ -145,9 +145,11 @@ export interface Notification {
   title: string;
   body: string;
   type: string;
+  iconType?: string;
+  actionUrl?: string | null;
   isRead: boolean;
   createdAt: string;
-  data?: Record<string, unknown>;
+  data?: Record<string, unknown> | null;
 }
 
 // ─── Message ──────────────────────────────────────────────────────────────────

@@ -14,6 +14,9 @@ export const dashboardService = {
   removeFromHistory: (episodeId: string) =>
     apiClient.delete<never, ApiResponse<{ removed: boolean }>>(`/api/user/dashboard/watch-history/${episodeId}`),
 
+  getNotificationUnreadCount: () =>
+    apiClient.get<never, ApiResponse<{ count: number }>>("/api/user/notifications/unread-count"),
+
   getNotifications: (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
     apiClient.get<never, ApiResponse<Notification[]>>("/api/user/notifications", { params }),
 
@@ -22,6 +25,12 @@ export const dashboardService = {
 
   markAllNotificationsRead: () =>
     apiClient.post<never, ApiResponse<{ updated: number }>>("/api/user/notifications/read-all"),
+
+  dismissNotification: (id: string) =>
+    apiClient.delete<never, ApiResponse<{ dismissed: boolean }>>(`/api/user/notifications/${id}`),
+
+  clearReadNotifications: () =>
+    apiClient.delete<never, ApiResponse<{ cleared: number }>>("/api/user/notifications"),
 
   getMessages: (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
     apiClient.get<never, ApiResponse<Message[]>>("/api/user/messages", { params }),
