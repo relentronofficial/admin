@@ -1157,6 +1157,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
           qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
           qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+          qc.invalidateQueries({ queryKey: ["user", "dashboard", "continue-learning"] });
         },
         onError: () => {
           // Backend rejected (not enough actual watch time — likely seeking)

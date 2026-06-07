@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Loader2, CheckCircle2 } from "lucide-react";
 import { useEpisodePlayback, usePostEpisodeProgress, useCompleteWorkshopEpisode } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -12,6 +13,7 @@ import toast from "react-hot-toast";
 export default function WatchPage() {
   const { episodeId } = useParams<{ episodeId: string }>();
   const router = useRouter();
+  const qc = useQueryClient();
   const { data: playback, isLoading } = useEpisodePlayback(episodeId);
   const postProgress = usePostEpisodeProgress();
   const completeEp = useCompleteWorkshopEpisode();
@@ -156,7 +158,10 @@ export default function WatchPage() {
               onClick={() => {
                 completedRef.current = true;
                 completeEp.mutate(episodeId, {
-                  onSuccess: () => setIsMarkedComplete(true),
+                  onSuccess: () => {
+                    setIsMarkedComplete(true);
+                    qc.invalidateQueries({ queryKey: ["user", "dashboard", "continue-learning"] });
+                  },
                   onError: (err) => {
                     completedRef.current = false;
                     toast.error(

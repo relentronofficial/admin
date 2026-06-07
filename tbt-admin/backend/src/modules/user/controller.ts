@@ -653,56 +653,71 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
 }
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {
-  // Fetch uncompleted courses based on CourseEpisodeProgress
-  const courseProgress = await request.server.prisma.courseEpisodeProgress.findMany({
-    where: { memberId: request.memberId, completed: false },
-    orderBy: { updatedAt: 'desc' },
-    take: 6,
-    select: {
-      episodeId: true,
-      lastWatchedSecs: true,
-      actualWatchedSecs: true,
-      updatedAt: true,
-      episode: {
-        select: {
-          title: true,
-          courseId: true,
-          durationSeconds: true,
-          course: { select: { title: true, thumbnailUrl: true } }
-        }
+  // Fetch more than needed so deduplication still yields up to 6 unique items
+  const [courseProgress, workshopProgress] = await Promise.all([
+    request.server.prisma.courseEpisodeProgress.findMany({
+      where: { memberId: request.memberId, completed: false },
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+      select: {
+        episodeId: true,
+        lastWatchedSecs: true,
+        updatedAt: true,
+        episode: {
+          select: {
+            title: true,
+            courseId: true,
+            durationSeconds: true,
+            course: { select: { title: true, thumbnailUrl: true } },
+          },
+        },
       },
-    },
+    }),
+    request.server.prisma.memberEpisodeProgress.findMany({
+      where: { memberId: request.memberId, isCompleted: false },
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+      select: {
+        episodeId: true,
+        lastWatchedSecs: true,
+        updatedAt: true,
+        episode: {
+          select: {
+            title: true,
+            durationSeconds: true,
+            challenge: {
+              select: { workshop: { select: { title: true, slug: true, thumbnailUrl: true } } },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  // Progress % based on playhead position (lastWatchedSecs) — shows where the user is in the video
+  const pct = (lastWatched: number, duration: number | null | undefined) =>
+    duration && duration > 0 ? Math.min(99, Math.round((lastWatched / duration) * 100)) : 0;
+
+  // Deduplicate courses — keep only the most-recently-watched episode per course
+  const seenCourseIds = new Set<string>();
+  const dedupedCourses = courseProgress.filter(p => {
+    const key = p.episode.courseId;
+    if (seenCourseIds.has(key)) return false;
+    seenCourseIds.add(key);
+    return true;
   });
 
-  // Fetch uncompleted workshop episodes based on MemberEpisodeProgress
-  const workshopProgress = await request.server.prisma.memberEpisodeProgress.findMany({
-    where: { memberId: request.memberId, isCompleted: false },
-    orderBy: { updatedAt: 'desc' },
-    take: 6,
-    select: {
-      episodeId: true,
-      lastWatchedSecs: true,
-      actualWatchedSecs: true,
-      updatedAt: true,
-      episode: {
-        select: {
-          title: true,
-          durationSeconds: true,
-          challenge: {
-            select: { workshop: { select: { title: true, slug: true, thumbnailUrl: true } } }
-          }
-        }
-      }
-    }
+  // Deduplicate workshops — keep only the most-recently-watched episode per workshop
+  const seenWorkshopSlugs = new Set<string>();
+  const dedupedWorkshops = workshopProgress.filter(p => {
+    const key = p.episode.challenge.workshop.slug;
+    if (seenWorkshopSlugs.has(key)) return false;
+    seenWorkshopSlugs.add(key);
+    return true;
   });
 
-  // Compute progress percent from actual watch time vs duration
-  const pct = (actualWatched: number, duration: number | null | undefined) =>
-    duration && duration > 0 ? Math.min(100, Math.round((actualWatched / duration) * 100)) : 0;
-
-  // Unify and sort by most recent
   const combined = [
-    ...courseProgress.map(p => ({
+    ...dedupedCourses.map(p => ({
       type: 'course' as const,
       id: p.episode.courseId,
       lessonId: p.episodeId,
@@ -710,10 +725,10 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
       lastLessonTitle: p.episode.title,
       lastWatchedSecs: p.lastWatchedSecs,
-      progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
+      progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
       updatedAt: p.updatedAt.getTime(),
     })),
-    ...workshopProgress.map(p => ({
+    ...dedupedWorkshops.map(p => ({
       type: 'workshop' as const,
       id: p.episode.challenge.workshop.slug,
       lessonId: p.episodeId,
@@ -721,9 +736,9 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       thumbnailUrl: p.episode.challenge.workshop.thumbnailUrl ?? null,
       lastLessonTitle: p.episode.title,
       lastWatchedSecs: p.lastWatchedSecs,
-      progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
+      progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
       updatedAt: p.updatedAt.getTime(),
-    }))
+    })),
   ].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
 
   return ok(reply, combined);
@@ -1262,7 +1277,6 @@ export async function getMyWorkshopsHandler(request: FastifyRequest, reply: Fast
 }
 
 export async function getWorkshopDetailHandler(request: FastifyRequest, reply: FastifyReply) {
-  request.server.log.info({ tag: 'ROUTE-HIT-DEBUG', handler: 'getWorkshopDetailHandler', slug: (request.params as any).slug, ts: new Date().toISOString() }, '[ROUTE-HIT-DEBUG] getWorkshopDetailHandler');
   const { slug } = request.params as { slug: string };
 
   const workshop = await request.server.prisma.workshop.findFirst({
@@ -1326,39 +1340,6 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
       completedChallengeCount++;
     }
   }
-
-  // ── DEBUG: getWorkshopDetailHandler — learningProgress calculation ──────────
-  request.server.log.info({
-    tag: 'CHALLENGE-PROGRESS-DEBUG',
-    handler: 'getWorkshopDetailHandler',
-    slug,
-    memberId: request.memberId,
-    dbChallengeCount: allChallenges.length,
-    completableChallengeCount: completableChallenges.length,
-    totalEpisodes: totalCount,
-    completedEpisodes: completedCount,
-    challengeProgressRows: (challengeProgressRows as any[]).map((r: any) => ({ id: r.challengeId, status: r.status })),
-    challenges: completableChallenges.map((ch: any) => {
-      const progressStatus = challengeProgressMap.get(ch.id);
-      const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
-      const allEpsDone = epIds.length > 0 && epIds.every((id: string) => completedEpIds.has(id));
-      const isWatch = !ch.type || ch.type === 'watch';
-      return {
-        id: ch.id,
-        type: ch.type ?? null,
-        episodeCount: epIds.length,
-        memberProgressStatus: progressStatus ?? 'none',
-        allEpsDone,
-        isWatch,
-        countedAsComplete: progressStatus === 'completed' || (isWatch && allEpsDone),
-      };
-    }),
-    result: {
-      completedChallengeCount,
-      totalChallenges: completableChallenges.length,
-      pct: completableChallenges.length > 0 ? Math.round((completedChallengeCount / completableChallenges.length) * 100) : 100,
-    },
-  }, '[CHALLENGE-PROGRESS-DEBUG] getWorkshopDetailHandler');
 
   const totalChallenges = completableChallenges.length;
   const videosCompletedPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -1480,7 +1461,6 @@ export async function getWorkshopCertificateHandler(request: FastifyRequest, rep
 }
 
 export async function getWorkshopFlowHandler(request: FastifyRequest, reply: FastifyReply) {
-  request.server.log.info({ tag: 'ROUTE-HIT-DEBUG', handler: 'getWorkshopFlowHandler', slug: (request.params as any).slug, ts: new Date().toISOString() }, '[ROUTE-HIT-DEBUG] getWorkshopFlowHandler');
   const { slug } = request.params as { slug: string };
 
   const workshop = await request.server.prisma.workshop.findFirst({

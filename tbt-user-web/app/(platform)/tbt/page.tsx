@@ -414,7 +414,9 @@ function SectionRow({ section }: { section: ContentSection }) {
 // ─── Continue Watching ────────────────────────────────────────────────────────
 
 function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
-  const href = item.type === "workshop" ? `/workshop/${item.id}` : `/learning/${item.id}`;
+  // Workshop: go directly to the episode player so video resumes from lastWatchedSecs immediately.
+  // Course: go to the course page (course episodes use a different player route).
+  const href = item.type === "workshop" ? `/watch/${item.lessonId}` : `/learning/${item.id}`;
 
   return (
     <Link
@@ -468,7 +470,7 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
         style={{ background: "rgba(255,255,255,0.02)" }}
       >
         <span className="text-[11px] text-muted-foreground">
-          {item.progressPercent}% completed
+          {item.progressPercent}% watched
         </span>
         <span
           className="flex items-center gap-1.5 text-[11px] font-bold transition-all group-hover:gap-2.5"
