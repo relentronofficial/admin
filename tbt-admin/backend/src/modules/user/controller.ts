@@ -1290,6 +1290,12 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   const allChallenges: any[] = (workshop as any).challenges ?? [];
   const allEpisodes = allChallenges.flatMap((c: any) => c.episodes ?? []);
 
+  // ── DEBUG ──────────────────────────────────────────────────────────────────
+  console.log(`[LP-DEBUG] slug=${slug} memberId=${request.memberId}`);
+  console.log(`[LP-DEBUG] allChallenges (${allChallenges.length}):`, JSON.stringify(
+    allChallenges.map((c: any) => ({ id: c.id, type: c.type, episodeIds: (c.episodes ?? []).map((e: any) => e.id) }))
+  ));
+
   const [episodeProgress, challengeProgressRows] = await Promise.all([
     request.server.prisma.memberEpisodeProgress.findMany({
       where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e: any) => e.id) } },
@@ -1301,6 +1307,9 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
     }),
   ]);
 
+  console.log(`[LP-DEBUG] episodeProgress (${episodeProgress.length}):`, JSON.stringify(episodeProgress));
+  console.log(`[LP-DEBUG] challengeProgressRows (${(challengeProgressRows as any[]).length}):`, JSON.stringify(challengeProgressRows));
+
   const completedCount = episodeProgress.filter((p: any) => p.isCompleted).length;
   const totalCount = allEpisodes.length;
 
@@ -1308,20 +1317,32 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   // Watch challenges (the default) complete when all their episodes are done.
   // Interactive challenges (quiz/written/etc) complete via memberChallengeProgress.
   const completableChallenges = allChallenges.filter((c: any) => c.type !== 'live_call');
+  console.log(`[LP-DEBUG] completableChallenges (${completableChallenges.length}):`, completableChallenges.map((c: any) => ({ id: c.id, type: c.type })));
+
   const challengeProgressMap = new Map(
     (challengeProgressRows as any[]).map((r: any) => [r.challengeId, r.status])
   );
   const completedEpIds = new Set(episodeProgress.filter((p: any) => p.isCompleted).map((p: any) => p.episodeId));
+  console.log(`[LP-DEBUG] completedEpIds:`, Array.from(completedEpIds));
 
   let completedChallengeCount = 0;
   for (const ch of completableChallenges) {
-    if (challengeProgressMap.get(ch.id) === 'completed') {
+    const progressStatus = challengeProgressMap.get(ch.id);
+    const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
+    const allEpsDone = epIds.length > 0 && epIds.every((id: string) => completedEpIds.has(id));
+    const isWatch = !ch.type || ch.type === 'watch';
+    if (progressStatus === 'completed') {
+      console.log(`[LP-DEBUG] challenge ${ch.id} type=${ch.type}: counted via challengeProgress.status=completed`);
       completedChallengeCount++;
-    } else if (!ch.type || ch.type === 'watch') {
-      const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
-      if (epIds.length > 0 && epIds.every((id: string) => completedEpIds.has(id))) completedChallengeCount++;
+    } else if (isWatch && allEpsDone) {
+      console.log(`[LP-DEBUG] challenge ${ch.id} type=${ch.type}: counted via all ${epIds.length} episodes done`);
+      completedChallengeCount++;
+    } else {
+      console.log(`[LP-DEBUG] challenge ${ch.id} type=${ch.type}: NOT counted — progressStatus=${progressStatus ?? 'none'} isWatch=${isWatch} epCount=${epIds.length} allEpsDone=${allEpsDone}`);
     }
   }
+
+  console.log(`[LP-DEBUG] FINAL: completedChallengeCount=${completedChallengeCount} totalChallenges=${completableChallenges.length}`);
 
   const totalChallenges = completableChallenges.length;
   const videosCompletedPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
