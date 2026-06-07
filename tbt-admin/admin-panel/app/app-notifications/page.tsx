@@ -1,17 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { Trash2, Bell, X, Loader2, AlertCircle, Users, Send, BarChart2, Search, CheckCircle2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Trash2, Bell, X, Loader2, AlertCircle, Users, Send, BarChart2, Search, CheckCircle2, Image as ImageIcon, Film, Upload } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListAppNotifications, useSendAppNotification, useDeleteAppNotification,
   useGetNotificationStats, useListWorkshops, useListBatches,
 } from "@/lib/hooks/useTbt";
+import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 
-const NOTIF_TYPES = ["info", "success", "warning", "alert"];
+const NOTIF_TYPES = ["info", "success", "warning", "alert", "achievement", "announcement", "video", "assignment", "live_call"];
 const RECIPIENT_TYPES = [
   { value: "all",      label: "All Members"          },
   { value: "specific", label: "Specific Members"      },
@@ -24,18 +25,36 @@ const inputCls  = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 p
 const selectCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none";
 
 const typeColor = (t: string) => {
-  if (t === "success") return "text-green-400 bg-green-400/10 border-green-400/20";
+  if (t === "success" || t === "achievement") return "text-green-400 bg-green-400/10 border-green-400/20";
   if (t === "warning") return "text-yellow-400 bg-yellow-400/10 border-yellow-400/20";
   if (t === "alert")   return "text-red-400 bg-red-400/10 border-red-400/20";
+  if (t === "announcement") return "text-purple-400 bg-purple-400/10 border-purple-400/20";
+  if (t === "video" || t === "live_call") return "text-blue-400 bg-blue-400/10 border-blue-400/20";
   return "text-blue-400 bg-blue-400/10 border-blue-400/20";
 };
 
-const EMPTY_FORM = { title: "", message: "", type: "info", recipientType: "all", workshopId: "", batchId: "" };
+function detectVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    const url = URL.createObjectURL(file);
+    video.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(Math.round(video.duration)); };
+    video.onerror = () => { URL.revokeObjectURL(url); resolve(0); };
+    video.src = url;
+  });
+}
+
+const EMPTY_FORM = {
+  title: "", message: "", type: "info",
+  actionUrl: "",
+  recipientType: "all", workshopId: "", batchId: "",
+};
 
 export default function AppNotificationsPage() {
   const { data, isLoading, refetch } = useListAppNotifications();
-  const sendNotif  = useSendAppNotification();
+  const sendNotif   = useSendAppNotification();
   const deleteNotif = useDeleteAppNotification();
+  const getPresignedUrl = useGetPresignedUrl();
 
   const { data: workshopsData } = useListWorkshops();
   const workshops = (workshopsData as any)?.data || [];
@@ -46,12 +65,19 @@ export default function AppNotificationsPage() {
   const notifications = (data as any)?.data || [];
   const total = (data as any)?.meta?.total || 0;
 
-  // ── Compose form state ────────────────────────────────────────────────
+  // ── Compose form ──────────────────────────────────────────────────────
   const [showForm, setShowForm]   = useState(false);
   const [form, setForm]           = useState<any>(EMPTY_FORM);
   const [selectedMembers, setSelectedMembers] = useState<{ id: string; name: string }[]>([]);
   const [memberSearch, setMemberSearch]       = useState("");
   const [memberDropOpen, setMemberDropOpen]   = useState(false);
+
+  // ── Media upload state ────────────────────────────────────────────────
+  const [mediaType, setMediaType]   = useState<"" | "image" | "video">("");
+  const [mediaUrl, setMediaUrl]     = useState("");
+  const [mediaPreview, setMediaPreview] = useState("");
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: memberSearchData } = useListMembers({ search: memberSearch, limit: 8 });
   const memberResults = (memberSearchData as any)?.data || [];
@@ -67,6 +93,53 @@ export default function AppNotificationsPage() {
     setSelectedMembers([]);
     setMemberSearch("");
     setMemberDropOpen(false);
+    setMediaType("");
+    setMediaUrl("");
+    setMediaPreview("");
+  };
+
+  const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate type
+    if (mediaType === "image" && !file.type.startsWith("image/")) {
+      toast.error("Please select an image file (PNG, JPG, WEBP)"); return;
+    }
+    if (mediaType === "video" && !file.type.startsWith("video/")) {
+      toast.error("Please select a video file (MP4, MOV)"); return;
+    }
+
+    // Validate video duration
+    if (mediaType === "video") {
+      const duration = await detectVideoDuration(file);
+      if (duration > 40) {
+        toast.error(`Video is ${duration}s — must be 40 seconds or less`); return;
+      }
+    }
+
+    // Show local preview immediately
+    const localUrl = URL.createObjectURL(file);
+    setMediaPreview(localUrl);
+    setMediaUploading(true);
+
+    try {
+      const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
+        filename: file.name,
+        contentType: file.type,
+        bucket: "notifications",
+        pathPrefix: "media",
+      });
+      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      setMediaUrl(publicUrl);
+      toast.success("Media uploaded");
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+      setMediaPreview("");
+      setMediaUrl("");
+    } finally {
+      setMediaUploading(false);
+    }
   };
 
   const handleSend = async () => {
@@ -74,11 +147,20 @@ export default function AppNotificationsPage() {
     if (form.recipientType === "specific" && selectedMembers.length === 0) return toast.error("Select at least one member");
     if (form.recipientType === "workshop" && !form.workshopId) return toast.error("Select a workshop");
     if (form.recipientType === "batch" && !form.batchId) return toast.error("Select a batch");
+    if (mediaType && !mediaUrl) return toast.error("Please wait for media upload to finish");
+
     try {
-      const payload: any = { title: form.title, message: form.message, type: form.type, recipientType: form.recipientType };
-      if (form.recipientType === "specific")  payload.memberIds  = selectedMembers.map(m => m.id);
-      if (form.recipientType === "workshop")  payload.workshopId = form.workshopId;
-      if (form.recipientType === "batch")     payload.batchId    = form.batchId;
+      const payload: any = {
+        title: form.title,
+        message: form.message,
+        type: form.type,
+        recipientType: form.recipientType,
+        ...(form.actionUrl ? { actionUrl: form.actionUrl } : {}),
+        ...(mediaType && mediaUrl ? { mediaType, mediaUrl } : {}),
+      };
+      if (form.recipientType === "specific") payload.memberIds  = selectedMembers.map(m => m.id);
+      if (form.recipientType === "workshop") payload.workshopId = form.workshopId;
+      if (form.recipientType === "batch")    payload.batchId    = form.batchId;
       await sendNotif.mutateAsync(payload);
       toast.success("Notification sent");
       setShowForm(false);
@@ -146,6 +228,7 @@ export default function AppNotificationsPage() {
                 <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
                   <th className="px-5 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Title</th>
                   <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Type</th>
+                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Media</th>
                   <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Sent At</th>
                   <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Recipients</th>
                   <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Read</th>
@@ -164,6 +247,19 @@ export default function AppNotificationsPage() {
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${typeColor(notif.type)}`}>
                           {notif.type}
                         </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        {notif.mediaType === "image" && (
+                          <span className="flex items-center gap-1 text-[11px] text-purple-400">
+                            <ImageIcon size={12} /> Image
+                          </span>
+                        )}
+                        {notif.mediaType === "video" && (
+                          <span className="flex items-center gap-1 text-[11px] text-blue-400">
+                            <Film size={12} /> Video
+                          </span>
+                        )}
+                        {!notif.mediaType && <span className="text-[#333]">—</span>}
                       </td>
                       <td className="px-4 py-4 text-[12px] text-[#606060] whitespace-nowrap">
                         {notif.createdAt ? format(new Date(notif.createdAt), "dd MMM yyyy HH:mm") : "—"}
@@ -191,7 +287,7 @@ export default function AppNotificationsPage() {
                     </tr>
                     {viewingStatsId === notif.id && (
                       <tr key={`${notif.id}-stats`} className="bg-[#111]">
-                        <td colSpan={6} className="px-5 py-0">
+                        <td colSpan={7} className="px-5 py-0">
                           <NotifStats notifId={notif.id} />
                         </td>
                       </tr>
@@ -224,11 +320,94 @@ export default function AppNotificationsPage() {
                 <textarea value={form.message} onChange={e => setForm((f: any) => ({ ...f, message: e.target.value }))} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
               </div>
 
+              {/* ── Media Attachment ─────────────────────────────────────── */}
+              <div>
+                <label className={labelCls}>Attach Media (Optional)</label>
+                {/* Type selector */}
+                <div className="flex gap-2 mb-3">
+                  {(["", "image", "video"] as const).map((t) => (
+                    <button
+                      key={t || "none"}
+                      type="button"
+                      onClick={() => { setMediaType(t); setMediaUrl(""); setMediaPreview(""); }}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani border transition-all"
+                      style={{
+                        background: mediaType === t ? "#dc2626" : "#1a1a1a",
+                        borderColor: mediaType === t ? "#dc2626" : "#2a2a2a",
+                        color: mediaType === t ? "#fff" : "#606060",
+                      }}
+                    >
+                      {t === "" ? "None" : t === "image" ? "Image" : "Video ≤40s"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Upload zone */}
+                {mediaType !== "" && (
+                  <div>
+                    {mediaPreview ? (
+                      <div className="relative rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#0f0f0f]">
+                        {mediaType === "image" ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={mediaPreview} alt="preview" className="w-full max-h-52 object-contain" />
+                        ) : (
+                          <video src={mediaPreview} controls muted className="w-full max-h-52" />
+                        )}
+                        {mediaUploading && (
+                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center gap-2">
+                            <Loader2 size={20} className="animate-spin text-white" />
+                            <span className="text-white text-sm font-bold">Uploading…</span>
+                          </div>
+                        )}
+                        {!mediaUploading && mediaUrl && (
+                          <button
+                            type="button"
+                            onClick={() => { setMediaUrl(""); setMediaPreview(""); }}
+                            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 flex items-center justify-center text-white hover:bg-black"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full border border-dashed border-[#333] rounded-xl py-8 flex flex-col items-center gap-2 hover:border-[#dc2626] hover:bg-[#dc2626]/5 transition-all group"
+                      >
+                        <Upload size={22} className="text-[#444] group-hover:text-[#dc2626] transition-colors" />
+                        <p className="text-[12px] text-[#606060] font-rajdhani font-bold uppercase tracking-widest">
+                          {mediaType === "image" ? "Upload Image (PNG, JPG, WEBP)" : "Upload Video (MP4 · max 40 sec)"}
+                        </p>
+                      </button>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={mediaType === "image" ? "image/*" : "video/*"}
+                      className="hidden"
+                      onChange={handleMediaSelect}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Action URL */}
+              <div>
+                <label className={labelCls}>Action URL (Optional)</label>
+                <input
+                  value={form.actionUrl}
+                  onChange={e => setForm((f: any) => ({ ...f, actionUrl: e.target.value }))}
+                  placeholder="/workshop/slug or https://..."
+                  className={inputCls}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Type</label>
                   <select value={form.type} onChange={e => setForm((f: any) => ({ ...f, type: e.target.value }))} className={selectCls}>
-                    {NOTIF_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                    {NOTIF_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1).replace("_", " ")}</option>)}
                   </select>
                 </div>
                 <div>
@@ -239,7 +418,7 @@ export default function AppNotificationsPage() {
                 </div>
               </div>
 
-              {/* Specific members — search + chips */}
+              {/* Specific members */}
               {form.recipientType === "specific" && (
                 <div>
                   <label className={labelCls}>Members *</label>
@@ -270,9 +449,7 @@ export default function AppNotificationsPage() {
                           const fullName = `${m.firstName || ""} ${m.lastName || ""}`.trim() || m.email;
                           const isSelected = selectedMembers.some(x => x.id === m.id);
                           return (
-                            <button
-                              key={m.id}
-                              type="button"
+                            <button key={m.id} type="button"
                               onClick={() => { toggleMember({ id: m.id, name: fullName }); setMemberSearch(""); setMemberDropOpen(false); }}
                               className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/[0.05] transition-colors text-left"
                             >
@@ -299,9 +476,7 @@ export default function AppNotificationsPage() {
                   <label className={labelCls}>Workshop *</label>
                   <select value={form.workshopId} onChange={e => setForm((f: any) => ({ ...f, workshopId: e.target.value }))} className={selectCls}>
                     <option value="">Select a workshop...</option>
-                    {workshops.map((w: any) => (
-                      <option key={w.id} value={w.id}>{w.title}</option>
-                    ))}
+                    {workshops.map((w: any) => <option key={w.id} value={w.id}>{w.title}</option>)}
                   </select>
                 </div>
               )}
@@ -312,9 +487,7 @@ export default function AppNotificationsPage() {
                   <label className={labelCls}>Batch *</label>
                   <select value={form.batchId} onChange={e => setForm((f: any) => ({ ...f, batchId: e.target.value }))} className={selectCls}>
                     <option value="">Select a batch...</option>
-                    {batches.map((b: any) => (
-                      <option key={b.id} value={b.id}>{b.name || b.label || b.id}</option>
-                    ))}
+                    {batches.map((b: any) => <option key={b.id} value={b.id}>{b.name || b.label || b.id}</option>)}
                   </select>
                 </div>
               )}
@@ -322,7 +495,7 @@ export default function AppNotificationsPage() {
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
               <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
-              <button onClick={handleSend} disabled={sendNotif.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">
+              <button onClick={handleSend} disabled={sendNotif.isPending || mediaUploading} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-60">
                 {sendNotif.isPending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send Now
               </button>
             </div>
@@ -371,18 +544,9 @@ function NotifStats({ notifId }: { notifId: string }) {
   const readRate = total > 0 ? Math.round((read / total) * 100) : 0;
   return (
     <div className="flex items-center gap-8 py-3">
-      <div>
-        <p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Recipients</p>
-        <p className="text-lg font-bold text-[#f0f0f0] font-rajdhani">{total}</p>
-      </div>
-      <div>
-        <p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Read</p>
-        <p className="text-lg font-bold text-green-400 font-rajdhani">{read}</p>
-      </div>
-      <div>
-        <p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Unread</p>
-        <p className="text-lg font-bold text-[#606060] font-rajdhani">{total - read}</p>
-      </div>
+      <div><p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Recipients</p><p className="text-lg font-bold text-[#f0f0f0] font-rajdhani">{total}</p></div>
+      <div><p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Read</p><p className="text-lg font-bold text-green-400 font-rajdhani">{read}</p></div>
+      <div><p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Unread</p><p className="text-lg font-bold text-[#606060] font-rajdhani">{total - read}</p></div>
       <div className="flex-1 max-w-[200px]">
         <p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani mb-1">Read Rate {readRate}%</p>
         <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">

@@ -15,7 +15,7 @@ export async function listNotificationsHandler(req: FastifyRequest, reply: Fasti
 }
 
 export async function createNotificationHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { title, message, type, actionUrl, recipientType, memberIds, workshopId, batchId } = req.body as any;
+  const { title, message, type, actionUrl, mediaType, mediaUrl, recipientType, memberIds, workshopId, batchId } = req.body as any;
   let targetMemberIds: string[] = [];
 
   if (recipientType === 'all') {
@@ -43,6 +43,8 @@ export async function createNotificationHandler(req: FastifyRequest, reply: Fast
       message,
       type: type || 'info',
       actionUrl: actionUrl ?? null,
+      mediaType: mediaType ?? null,
+      mediaUrl: mediaUrl ?? null,
       recipients: {
         create: targetMemberIds.length > 0
           ? targetMemberIds.map(id => ({ memberId: id }))
@@ -53,7 +55,7 @@ export async function createNotificationHandler(req: FastifyRequest, reply: Fast
   });
 
   // Emit real-time socket events
-  const payload = { title, body: message, type: type || 'info', actionUrl: actionUrl ?? undefined };
+  const payload = { title, body: message, type: type || 'info', actionUrl: actionUrl ?? undefined, mediaType: mediaType ?? undefined, mediaUrl: mediaUrl ?? undefined };
   if (recipientType === 'all' || targetMemberIds.length === 0) {
     req.server.io.emit('notification:broadcast', payload);
   } else {

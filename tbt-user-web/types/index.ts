@@ -147,6 +147,8 @@ export interface Notification {
   type: string;
   iconType?: string;
   actionUrl?: string | null;
+  mediaType?: "image" | "video" | null;
+  mediaUrl?: string | null;
   isRead: boolean;
   createdAt: string;
   data?: Record<string, unknown> | null;

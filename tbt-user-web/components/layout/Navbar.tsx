@@ -6,7 +6,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bell, MessageSquare, Menu, X,
-  PlayCircle, ClipboardList, Video, Trophy, Megaphone, Settings2,
+  PlayCircle, ClipboardList, Video, Trophy, Megaphone, Settings2, Film,
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
@@ -125,6 +125,22 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
                     <p className="text-xs font-semibold text-white leading-snug truncate">{n.title}</p>
                     <p className="text-[11px] text-[#888] mt-0.5 line-clamp-2 leading-snug">{n.body}</p>
                   </div>
+
+                  {/* Media thumbnail */}
+                  {n.mediaType === "image" && n.mediaUrl && (
+                    <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={n.mediaUrl} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  {n.mediaType === "video" && n.mediaUrl && (
+                    <div
+                      className="w-11 h-11 rounded-lg flex-shrink-0 flex items-center justify-center"
+                      style={{ background: "rgba(255,255,255,0.06)" }}
+                    >
+                      <Film size={14} className="text-[#888]" />
+                    </div>
+                  )}
 
                   {/* Unread dot */}
                   {!n.isRead && (

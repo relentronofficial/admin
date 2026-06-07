@@ -952,7 +952,7 @@ export async function getUserNotificationsHandler(request: FastifyRequest, reply
       skip: (Number(page) - 1) * Number(limit),
       include: {
         notification: {
-          select: { title: true, message: true, type: true, actionUrl: true, createdAt: true },
+          select: { title: true, message: true, type: true, actionUrl: true, mediaType: true, mediaUrl: true, createdAt: true },
         },
       },
     }),
@@ -966,6 +966,8 @@ export async function getUserNotificationsHandler(request: FastifyRequest, reply
     type: r.notification.type,
     iconType: notifIconType(r.notification.type),
     actionUrl: r.notification.actionUrl ?? null,
+    mediaType: r.notification.mediaType ?? null,
+    mediaUrl: r.notification.mediaUrl ?? null,
     data: null as null,
     isRead: r.readAt !== null,
     createdAt: r.notification.createdAt,
@@ -985,7 +987,7 @@ export async function markNotificationReadHandler(request: FastifyRequest, reply
   const updated = await request.server.prisma.appNotificationRecipient.update({
     where: { id },
     data: { readAt: new Date() },
-    include: { notification: { select: { title: true, message: true, type: true, actionUrl: true, createdAt: true } } },
+    include: { notification: { select: { title: true, message: true, type: true, actionUrl: true, mediaType: true, mediaUrl: true, createdAt: true } } },
   });
 
   return ok(reply, {
@@ -995,6 +997,8 @@ export async function markNotificationReadHandler(request: FastifyRequest, reply
     type: updated.notification.type,
     iconType: notifIconType(updated.notification.type),
     actionUrl: updated.notification.actionUrl ?? null,
+    mediaType: updated.notification.mediaType ?? null,
+    mediaUrl: updated.notification.mediaUrl ?? null,
     isRead: true,
     createdAt: updated.notification.createdAt,
   });

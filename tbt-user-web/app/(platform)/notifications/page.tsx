@@ -191,6 +191,32 @@ export default function NotificationsPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground leading-snug">{n.title}</p>
                       <p className="text-sm text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
+
+                      {/* Media attachment */}
+                      {n.mediaType === "image" && n.mediaUrl && (
+                        <div className="mt-2.5 rounded-xl overflow-hidden">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={n.mediaUrl}
+                            alt=""
+                            className="w-full max-h-52 object-cover rounded-xl"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      )}
+                      {n.mediaType === "video" && n.mediaUrl && (
+                        <div className="mt-2.5 rounded-xl overflow-hidden">
+                          <video
+                            src={n.mediaUrl}
+                            controls
+                            playsInline
+                            className="w-full max-h-52 rounded-xl"
+                            style={{ background: "#000" }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-2 mt-1.5">
                         {!n.isRead && (
                           <span

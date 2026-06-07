@@ -1692,6 +1692,8 @@ model AppNotification {
   message    String
   type       String                     @default("info")
   actionUrl  String?                    @map("action_url")
+  mediaType  String?                    @map("media_type")
+  mediaUrl   String?                    @map("media_url")
   recipients AppNotificationRecipient[]
   createdAt  DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
 
