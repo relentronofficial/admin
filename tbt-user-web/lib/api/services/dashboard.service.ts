@@ -8,8 +8,11 @@ export const dashboardService = {
   getContinueLearning: () =>
     apiClient.get<never, ApiResponse<ContinueLearningItem[]>>("/api/user/dashboard/continue-learning"),
 
-  getWatchHistory: (params: { page?: number; limit?: number } = {}) =>
+  getWatchHistory: (params: { page?: number; limit?: number; filter?: 'all' | 'in_progress' | 'completed' } = {}) =>
     apiClient.get<never, ApiResponse<WatchHistoryItem[]>>("/api/user/dashboard/watch-history", { params }),
+
+  removeFromHistory: (episodeId: string) =>
+    apiClient.delete<never, ApiResponse<{ removed: boolean }>>(`/api/user/dashboard/watch-history/${episodeId}`),
 
   getNotifications: (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
     apiClient.get<never, ApiResponse<Notification[]>>("/api/user/notifications", { params }),

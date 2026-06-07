@@ -2529,33 +2529,48 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
 // ─── Watch History ────────────────────────────────────────────────────────────
 
 export async function getWatchHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 20 } = request.query as { page?: number; limit?: number };
+  const { page = 1, limit = 20, filter = 'all' } = request.query as {
+    page?: number; limit?: number; filter?: 'all' | 'in_progress' | 'completed';
+  };
 
-  const history = await request.server.prisma.memberEpisodeProgress.findMany({
-    where: { memberId: request.memberId, actualWatchedSecs: { gt: 0 } },
-    orderBy: { updatedAt: 'desc' },
-    take: Number(limit),
-    skip: (Number(page) - 1) * Number(limit),
-    select: {
-      episodeId: true,
-      lastWatchedSecs: true,
-      actualWatchedSecs: true,
-      isCompleted: true,
-      completedAt: true,
-      updatedAt: true,
-      episode: {
-        select: {
-          title: true,
-          durationSeconds: true,
-          challenge: {
-            select: {
-              workshop: { select: { title: true, slug: true, thumbnailUrl: true } }
-            }
-          }
-        }
-      }
-    }
-  });
+  const where = {
+    memberId: request.memberId,
+    actualWatchedSecs: { gt: 0 },
+    ...(filter === 'in_progress' ? { isCompleted: false } : {}),
+    ...(filter === 'completed' ? { isCompleted: true } : {}),
+  };
+
+  const [history, total] = await Promise.all([
+    request.server.prisma.memberEpisodeProgress.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+      select: {
+        episodeId: true,
+        lastWatchedSecs: true,
+        actualWatchedSecs: true,
+        isCompleted: true,
+        completedAt: true,
+        updatedAt: true,
+        episode: {
+          select: {
+            title: true,
+            order: true,
+            durationSeconds: true,
+            challenge: {
+              select: {
+                title: true,
+                _count: { select: { episodes: true } },
+                workshop: { select: { title: true, slug: true, thumbnailUrl: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
+    request.server.prisma.memberEpisodeProgress.count({ where }),
+  ]);
 
   const pct = (actual: number, duration: number | null | undefined) =>
     duration && duration > 0 ? Math.min(100, Math.round((actual / duration) * 100)) : 0;
@@ -2565,6 +2580,7 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
     episodeId: p.episodeId,
     workshopSlug: p.episode.challenge.workshop.slug,
     workshopTitle: p.episode.challenge.workshop.title,
+    challengeTitle: p.episode.challenge.title,
     episodeTitle: p.episode.title,
     thumbnailUrl: p.episode.challenge.workshop.thumbnailUrl ?? null,
     lastWatchedSecs: p.lastWatchedSecs,
@@ -2574,9 +2590,19 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
     completedAt: p.completedAt?.toISOString() ?? null,
     updatedAt: p.updatedAt.toISOString(),
     progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
+    episodeOrder: p.episode.order,
+    episodeCount: p.episode.challenge._count.episodes,
   }));
 
-  return ok(reply, items);
+  return ok(reply, items, { total: Number(total), page: Number(page), limit: Number(limit) });
+}
+
+export async function removeFromHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { episodeId } = request.params as { episodeId: string };
+  await request.server.prisma.memberEpisodeProgress.deleteMany({
+    where: { memberId: request.memberId, episodeId },
+  });
+  return ok(reply, { removed: true });
 }
 
 // ─── Device Tracking ──────────────────────────────────────────────────────────

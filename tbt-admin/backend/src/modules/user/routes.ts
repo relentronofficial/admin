@@ -46,6 +46,7 @@ import {
   completeChallengeHandler,
   completeWorkshopEpisodeHandler,
   getWatchHistoryHandler,
+  removeFromHistoryHandler,
   getMyDevicesHandler,
   getWorkshopCertificateHandler,
 } from './controller.js';
@@ -73,6 +74,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/dashboard/stats', getDashboardStatsHandler);
   fastify.get('/dashboard/continue-learning', getContinueLearningHandler);
   fastify.get('/dashboard/watch-history', getWatchHistoryHandler);
+  fastify.delete('/dashboard/watch-history/:episodeId', removeFromHistoryHandler);
 
   // ── Events ────────────────────────────────────────────────────────────────
   fastify.get('/events', listUserEventsHandler);

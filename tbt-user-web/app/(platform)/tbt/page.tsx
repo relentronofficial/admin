@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock, PlayCircle, CheckCircle2, Clock } from "lucide-react";
+import { Volume2, VolumeX, ChevronLeft, ChevronRight, Play, Lock, PlayCircle, CheckCircle2, Clock, X, ArrowRight } from "lucide-react";
 import { useHomeHero, useHomeSections } from "@/lib/hooks/useConfig";
-import { useContinueLearning, useWatchHistory } from "@/lib/hooks/useDashboard";
+import { useContinueLearning, useWatchHistory, useRemoveFromHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useMe } from "@/lib/hooks/useUser";
 import { cn } from "@/lib/utils/cn";
@@ -626,16 +626,34 @@ function relativeTime(iso: string): string {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
-function WatchHistoryCard({ item }: { item: WatchHistoryItem }) {
-  const href = `/workshop/${item.workshopSlug}`;
+function fmtSecs(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function WatchHistoryCard({
+  item,
+  onRemove,
+}: {
+  item: WatchHistoryItem;
+  onRemove: (id: string) => void;
+}) {
+  const href = `/workshop/${item.workshopSlug}?ep=${item.episodeId}`;
+  const isCompleted = item.isCompleted;
 
   return (
-    <Link
-      href={href}
-      className="group flex items-start gap-3 px-3 py-3 rounded-xl border border-border transition-all duration-200 hover:border-[rgba(255,255,255,0.15)] hover:bg-white/[0.03]"
+    <div
+      className={cn(
+        "group relative flex items-start gap-3 px-3 py-3 rounded-xl border transition-all duration-200",
+        isCompleted
+          ? "border-border opacity-70 hover:opacity-90"
+          : "border-border hover:border-[rgba(255,255,255,0.15)] hover:bg-white/[0.03]"
+      )}
+      style={isCompleted ? { borderLeftColor: "#22c55e", borderLeftWidth: 2 } : {}}
     >
       {/* Thumbnail */}
-      <div className="relative w-14 h-10 flex-shrink-0 rounded-lg overflow-hidden mt-0.5">
+      <Link href={href} className="relative w-16 h-11 flex-shrink-0 rounded-lg overflow-hidden mt-0.5 block">
         {item.thumbnailUrl ? (
           <Image src={item.thumbnailUrl} alt={item.workshopTitle} fill className="object-cover" />
         ) : (
@@ -643,39 +661,54 @@ function WatchHistoryCard({ item }: { item: WatchHistoryItem }) {
             <Clock size={14} className="text-muted-foreground" />
           </div>
         )}
-        {item.isCompleted && (
+        {/* Play-state overlay */}
+        {isCompleted ? (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <CheckCircle2 size={14} style={{ color: "#22c55e" }} />
+            <CheckCircle2 size={16} style={{ color: "#22c55e" }} />
+          </div>
+        ) : (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Play size={16} className="text-white" fill="white" />
           </div>
         )}
-      </div>
+      </Link>
 
       {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
+      <Link href={href} className="flex-1 min-w-0 block">
+        <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-foreground truncate leading-tight">{item.workshopTitle}</p>
-            <p className="text-[11px] text-muted-foreground truncate mt-0.5">{item.episodeTitle}</p>
+            {item.challengeTitle && (
+              <p className="text-[10px] font-bold uppercase tracking-widest truncate font-rajdhani" style={{ color: "var(--color-accent)" }}>
+                {item.challengeTitle}
+              </p>
+            )}
+            <p className="text-xs font-semibold text-foreground truncate leading-tight mt-0.5">{item.episodeTitle}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Ep {item.episodeOrder} of {item.episodeCount}
+              {item.durationSeconds > 0 && !isCompleted && (
+                <span className="ml-1">· {fmtSecs(item.lastWatchedSecs)} / {fmtSecs(item.durationSeconds)}</span>
+              )}
+            </p>
           </div>
           <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0 mt-0.5">
             {relativeTime(item.updatedAt)}
           </span>
         </div>
 
-        {/* Progress + status */}
+        {/* Progress bar */}
         <div className="flex items-center gap-2 mt-2">
           <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
             <div
-              className="h-full rounded-full"
+              className="h-full rounded-full transition-all"
               style={{
-                width: `${item.isCompleted ? 100 : item.progressPercent}%`,
-                background: item.isCompleted ? "#22c55e" : "var(--color-accent)",
+                width: `${isCompleted ? 100 : item.progressPercent}%`,
+                background: isCompleted ? "#22c55e" : "var(--color-accent)",
               }}
             />
           </div>
-          {item.isCompleted ? (
+          {isCompleted ? (
             <span className="text-[10px] font-bold whitespace-nowrap" style={{ color: "#22c55e" }}>
-              Completed
+              Done
             </span>
           ) : (
             <span className="text-[10px] font-bold whitespace-nowrap tabular-nums" style={{ color: "var(--color-accent)" }}>
@@ -683,19 +716,77 @@ function WatchHistoryCard({ item }: { item: WatchHistoryItem }) {
             </span>
           )}
         </div>
+      </Link>
+
+      {/* CTA label */}
+      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+        <button
+          onClick={(e) => { e.preventDefault(); onRemove(item.episodeId); }}
+          className="p-0.5 rounded text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
+          title="Remove from history"
+        >
+          <X size={12} />
+        </button>
+        <Link
+          href={href}
+          className="text-[10px] font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+          style={{
+            background: isCompleted ? "rgba(255,255,255,0.07)" : "color-mix(in srgb, var(--color-accent) 15%, transparent)",
+            color: isCompleted ? "#a0a0a0" : "var(--color-accent)",
+          }}
+        >
+          {isCompleted ? "Rewatch" : "Continue"}
+        </Link>
       </div>
-    </Link>
+    </div>
   );
 }
 
+type HistoryFilter = "all" | "in_progress" | "completed";
+
+interface WorkshopGroup {
+  slug: string;
+  title: string;
+  thumbnailUrl: string | null;
+  items: WatchHistoryItem[];
+  allCompleted: boolean;
+  progressPercent: number;
+}
+
+function groupByWorkshop(items: WatchHistoryItem[]): WorkshopGroup[] {
+  const map = new Map<string, WorkshopGroup>();
+  for (const item of items) {
+    if (!map.has(item.workshopSlug)) {
+      map.set(item.workshopSlug, {
+        slug: item.workshopSlug,
+        title: item.workshopTitle,
+        thumbnailUrl: item.thumbnailUrl,
+        items: [],
+        allCompleted: true,
+        progressPercent: 0,
+      });
+    }
+    const g = map.get(item.workshopSlug)!;
+    g.items.push(item);
+    if (!item.isCompleted) g.allCompleted = false;
+  }
+  for (const g of map.values()) {
+    const sum = g.items.reduce((a, i) => a + i.progressPercent, 0);
+    g.progressPercent = Math.round(sum / g.items.length);
+  }
+  return Array.from(map.values());
+}
+
 function RecentlyWatchedSection() {
-  const { data, isLoading } = useWatchHistory({ limit: 6 });
+  const [filter, setFilter] = useState<HistoryFilter>("all");
+  const { data: resp, isLoading } = useWatchHistory({ limit: 20 });
+  const removeFromHistory = useRemoveFromHistory();
 
   if (isLoading) {
     return (
       <section className="space-y-3">
         <div className="h-5 w-40 rounded animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        <div className="space-y-2">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
           ))}
@@ -704,17 +795,131 @@ function RecentlyWatchedSection() {
     );
   }
 
-  const items: WatchHistoryItem[] = Array.isArray(data) ? data : [];
-  if (!items.length) return null;
+  const allItems: WatchHistoryItem[] = Array.isArray(resp?.data) ? resp.data : [];
+
+  if (!allItems.length) {
+    return (
+      <section className="space-y-3">
+        <h3 className="text-base font-bold text-foreground">Recently Watched</h3>
+        <div className="flex flex-col items-center py-8 gap-3 rounded-xl border border-dashed border-border">
+          <Clock size={28} className="text-muted-foreground opacity-40" />
+          <p className="text-sm text-muted-foreground">No watch history yet</p>
+          <Link
+            href="/tbt"
+            className="text-xs font-bold px-4 py-1.5 rounded-lg transition-colors"
+            style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+          >
+            Browse Content
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  const filtered =
+    filter === "in_progress"
+      ? allItems.filter((i) => !i.isCompleted)
+      : filter === "completed"
+      ? allItems.filter((i) => i.isCompleted)
+      : allItems;
+
+  const groups = groupByWorkshop(filtered);
+
+  const FILTER_TABS: { key: HistoryFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "in_progress", label: "In Progress" },
+    { key: "completed", label: "Completed" },
+  ];
 
   return (
-    <section className="space-y-3">
-      <h3 className="text-base font-bold text-foreground">Recently Watched</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        {items.map((item) => (
-          <WatchHistoryCard key={`${item.workshopSlug}-${item.episodeId}`} item={item} />
-        ))}
+    <section className="space-y-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-base font-bold text-foreground">Recently Watched</h3>
+        <div className="flex items-center gap-2">
+          {/* Filter tabs */}
+          <div className="flex rounded-lg overflow-hidden border border-border">
+            {FILTER_TABS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                className="text-[11px] font-bold px-3 py-1 transition-colors"
+                style={{
+                  background: filter === key ? "var(--color-accent)" : "transparent",
+                  color: filter === key ? "#fff" : "#a0a0a0",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Link
+            href="/history"
+            className="flex items-center gap-1 text-[11px] font-bold transition-colors"
+            style={{ color: "var(--color-accent)" }}
+          >
+            View All <ArrowRight size={12} />
+          </Link>
+        </div>
       </div>
+
+      {/* Groups */}
+      {groups.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4 text-center">No items match this filter.</p>
+      ) : (
+        <div className="space-y-5">
+          {groups.map((group) => (
+            <div key={group.slug} className="space-y-2">
+              {/* Workshop header */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  {group.thumbnailUrl && (
+                    <div className="relative w-8 h-8 rounded-md overflow-hidden flex-shrink-0">
+                      <Image src={group.thumbnailUrl} alt={group.title} fill className="object-cover" />
+                    </div>
+                  )}
+                  <p className="text-xs font-bold text-foreground truncate">{group.title}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Progress pill */}
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{
+                      background: group.allCompleted
+                        ? "rgba(34,197,94,0.15)"
+                        : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                      color: group.allCompleted ? "#22c55e" : "var(--color-accent)",
+                    }}
+                  >
+                    {group.allCompleted ? "✓ Done" : `${group.progressPercent}%`}
+                  </span>
+                  {/* Watch Next CTA */}
+                  {group.allCompleted && (
+                    <Link
+                      href={`/workshop/${group.slug}`}
+                      className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                      style={{ background: "var(--color-accent)", color: "#fff" }}
+                    >
+                      Watch Next <ArrowRight size={10} />
+                    </Link>
+                  )}
+                </div>
+              </div>
+
+              {/* Episode cards */}
+              <div className="space-y-1.5">
+                {group.items.map((item) => (
+                  <WatchHistoryCard
+                    key={item.episodeId}
+                    item={item}
+                    onRemove={(id) => removeFromHistory.mutate(id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

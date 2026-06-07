@@ -600,6 +600,9 @@ export interface WatchHistoryItem {
   workshopSlug: string;
   workshopTitle: string;
   episodeTitle: string;
+  challengeTitle: string | null;
+  episodeOrder: number;
+  episodeCount: number;
   thumbnailUrl: string | null;
   lastWatchedSecs: number;
   actualWatchedSecs: number;

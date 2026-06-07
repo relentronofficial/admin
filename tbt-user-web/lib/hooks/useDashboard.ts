@@ -23,15 +23,25 @@ export const useContinueLearning = () =>
     staleTime: 10 * 1000,
   });
 
-export const useWatchHistory = (params: { page?: number; limit?: number } = {}) =>
+export const useWatchHistory = (params: { page?: number; limit?: number; filter?: 'all' | 'in_progress' | 'completed' } = {}) =>
   useQuery({
     queryKey: ["user", "dashboard", "watch-history", params],
     queryFn: async () => {
       const res = await dashboardService.getWatchHistory(params);
-      return res.data;
+      return res;
     },
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
   });
+
+export const useRemoveFromHistory = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (episodeId: string) => dashboardService.removeFromHistory(episodeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "dashboard", "watch-history"] });
+    },
+  });
+};
 
 export const useNotifications = (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
   useQuery({
