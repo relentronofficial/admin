@@ -673,7 +673,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
               select: {
                 title: true,
                 thumbnailUrl: true,
-                _count: { select: { episodes: true } },
+                _count: { select: { courseEpisodes: true } },
               },
             },
           },
@@ -741,7 +741,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       durationSeconds: p.episode.durationSeconds ?? null,
       remainingSecs: Math.max(0, (p.episode.durationSeconds ?? 0) - p.lastWatchedSecs),
       episodeOrder: p.episode.order,
-      episodeCount: p.episode.course._count.episodes,
+      episodeCount: p.episode.course._count.courseEpisodes,
       progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
       updatedAt: p.updatedAt.getTime(),
     })),
