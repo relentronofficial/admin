@@ -885,6 +885,7 @@ model Conversation {
   status            ConversationStatus @default(open)
   memberUnreadCount Int                @default(0) @map("member_unread_count")
   adminUnreadCount  Int                @default(0) @map("admin_unread_count")
+  memberHidden      Boolean            @default(false) @map("member_hidden")
   lastMessageAt     DateTime           @default(now()) @map("last_message_at") @db.Timestamptz(6)
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 

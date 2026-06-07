@@ -17,7 +17,7 @@ import {
   useNotifications,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
-  useMessages,
+  useConversationUnreadCount,
 } from "@/lib/hooks/useDashboard";
 import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
@@ -215,8 +215,7 @@ export function Navbar() {
   const [notifOpen, setNotifOpen] = useState(false);
 
   const { data: unreadCount = 0 } = useNotificationUnreadCount();
-  const { data: unreadMsgData } = useMessages({ unread: true, limit: 1 });
-  const unreadMsgCount = unreadMsgData?.meta?.total ?? 0;
+  const { data: unreadMsgCount = 0 } = useConversationUnreadCount();
 
   // ── Socket: invalidate + toast on new notification ────────────────────────
   useEffect(() => {
@@ -289,7 +288,7 @@ export function Navbar() {
     getSocket().then((socket) => {
       if (!mounted) return;
       socket.on("message:new", () => {
-        queryClient.invalidateQueries({ queryKey: ["user", "messages"] });
+        queryClient.invalidateQueries({ queryKey: ["user", "conversations"] });
       });
     });
     return () => {

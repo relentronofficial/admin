@@ -2197,11 +2197,19 @@ export async function startConversationHandler(request: FastifyRequest, reply: F
   return reply.status(201).send({ success: true, data: { id: conversation.id }, error: null });
 }
 
+export async function getConversationUnreadCountHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const count = await request.server.prisma.conversation.count({
+    where: { memberId, memberUnreadCount: { gt: 0 }, memberHidden: false },
+  });
+  return ok(reply, { count });
+}
+
 export async function listMemberConversationsHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
 
   const conversations = await request.server.prisma.conversation.findMany({
-    where: { memberId },
+    where: { memberId, memberHidden: false },
     orderBy: { lastMessageAt: 'desc' },
     include: {
       messages: {
@@ -2222,19 +2230,35 @@ export async function listMemberConversationsHandler(request: FastifyRequest, re
   })));
 }
 
+export async function archiveConversationHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id } = request.params as { id: string };
+  const { hidden } = request.body as { hidden: boolean };
+  const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
+  if (!convo) return fail(reply, 404, 'Conversation not found');
+  await request.server.prisma.conversation.update({ where: { id }, data: { memberHidden: hidden } });
+  return ok(reply, { id, hidden });
+}
+
 export async function getMemberConversationMessagesHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { id } = request.params as { id: string };
+  const { page = 1, limit = 50 } = request.query as { page?: number; limit?: number };
 
   const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
   if (!convo) return fail(reply, 404, 'Conversation not found');
 
   await request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
 
-  const messages = await request.server.prisma.directMessage.findMany({
-    where: { conversationId: id },
-    orderBy: { createdAt: 'asc' },
-  });
+  const [total, messages] = await Promise.all([
+    request.server.prisma.directMessage.count({ where: { conversationId: id } }),
+    request.server.prisma.directMessage.findMany({
+      where: { conversationId: id },
+      orderBy: { createdAt: 'asc' },
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+    }),
+  ]);
 
   const adminIds = [...new Set(messages.filter((m) => m.senderType === 'admin').map((m) => m.senderId))];
   const [admins, memberProfile] = await Promise.all([
@@ -2267,7 +2291,7 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
     };
   });
 
-  return ok(reply, data, { conversationId: id, status: convo.status, subject: convo.subject });
+  return ok(reply, data, { conversationId: id, status: convo.status, subject: convo.subject, total: Number(total), page: Number(page), limit: Number(limit) });
 }
 
 export async function sendMemberChatMessageHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -2275,10 +2299,10 @@ export async function sendMemberChatMessageHandler(request: FastifyRequest, repl
   const { id } = request.params as { id: string };
   const { body } = request.body as { body: string };
 
-  const convo = await request.server.prisma.conversation.findFirst({
-    where: { id, memberId, status: 'open' },
-  });
-  if (!convo) return fail(reply, 404, 'Conversation not found or closed');
+  const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
+  if (!convo) return fail(reply, 404, 'Conversation not found');
+
+  const wasReopened = convo.status === 'closed';
 
   const message = await request.server.prisma.$transaction(async (tx) => {
     const msg = await tx.directMessage.create({
@@ -2286,10 +2310,20 @@ export async function sendMemberChatMessageHandler(request: FastifyRequest, repl
     });
     await tx.conversation.update({
       where: { id },
-      data: { lastMessageAt: new Date(), adminUnreadCount: { increment: 1 } },
+      data: {
+        lastMessageAt: new Date(),
+        adminUnreadCount: { increment: 1 },
+        ...(wasReopened && { status: 'open' }),
+      },
     });
     return msg;
   });
+
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { firstName: true, lastName: true },
+  });
+  const memberName = `${member?.firstName ?? ''} ${member?.lastName ?? ''}`.trim() || 'Member';
 
   request.server.io.to(`conversation:${id}`).emit('chat:message', {
     conversationId: id,
@@ -2297,11 +2331,16 @@ export async function sendMemberChatMessageHandler(request: FastifyRequest, repl
       id:         message.id,
       senderId:   memberId,
       senderType: 'member',
-      senderName: 'Member',
+      senderName: memberName,
       body,
       createdAt:  message.createdAt,
     },
   });
+
+  if (wasReopened) {
+    request.server.io.to(`conversation:${id}`).emit('chat:conversation_reopened', { conversationId: id });
+    request.server.io.to('admin').emit('chat:conversation_new', { conversationId: id, memberName, subject: convo.subject, reopened: true });
+  }
 
   request.server.io.to('admin').emit('chat:unread_ping', { conversationId: id });
 

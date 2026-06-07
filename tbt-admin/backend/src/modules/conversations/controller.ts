@@ -136,8 +136,26 @@ export async function sendAdminChatMessageHandler(request: FastifyRequest, reply
 
   // Deliver to anyone viewing this conversation
   request.server.io.to(`conversation:${id}`).emit('chat:message', payload);
-  // Also ping member's room for Navbar badge update
+  // Ping member's room for Navbar badge + conversation list update
   request.server.io.to(`user:${convo.memberId}`).emit('message:new', { messageId: message.id });
+
+  // Create in-app notification so member sees it even when offline
+  const preview = body.length > 120 ? body.substring(0, 120) + '…' : body;
+  await request.server.prisma.appNotification.create({
+    data: {
+      title: `New message from TBT Team`,
+      message: preview,
+      type: 'message',
+      actionUrl: '/messages',
+      recipients: { create: [{ memberId: convo.memberId }] },
+    },
+  });
+  request.server.io.to(`user:${convo.memberId}`).emit('notification', {
+    title: 'New message from TBT Team',
+    body: preview,
+    type: 'message',
+    actionUrl: '/messages',
+  });
 
   return reply.status(201).send({ success: true, data: { id: message.id }, error: null });
 }

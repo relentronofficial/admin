@@ -133,6 +133,16 @@ export const useMarkAllMessagesRead = () => {
   });
 };
 
+export const useConversationUnreadCount = () =>
+  useQuery({
+    queryKey: ["user", "conversations", "unread-count"],
+    queryFn: async () => {
+      const res = await dashboardService.getConversationUnreadCount();
+      return (res as any).data?.count ?? 0;
+    },
+    staleTime: 30_000,
+  });
+
 export const useConversations = () =>
   useQuery({
     queryKey: ["user", "conversations"],
@@ -163,6 +173,16 @@ export const useSendChatMessage = () =>
     mutationFn: ({ conversationId, body }: { conversationId: string; body: string }) =>
       dashboardService.sendChatMessage(conversationId, body),
   });
+
+export const useArchiveConversation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, hidden }: { id: string; hidden: boolean }) =>
+      dashboardService.archiveConversation(id, hidden),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["user", "conversations"] }),
+  });
+};
 
 export const useMyDevices = () =>
   useQuery({

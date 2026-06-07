@@ -41,17 +41,23 @@ export const dashboardService = {
   markAllMessagesRead: () =>
     apiClient.post<never, ApiResponse<{ updated: number }>>("/api/user/messages/read-all"),
 
+  getConversationUnreadCount: () =>
+    apiClient.get<never, { data: { count: number } }>("/api/user/conversations/unread-count"),
+
   getConversations: () =>
     apiClient.get("/api/user/conversations"),
 
-  getConversationMessages: (id: string) =>
-    apiClient.get(`/api/user/conversations/${id}/messages`),
+  getConversationMessages: (id: string, params: { page?: number; limit?: number } = {}) =>
+    apiClient.get(`/api/user/conversations/${id}/messages`, { params }),
 
   startConversation: (data: { subject: string; body: string }) =>
     apiClient.post("/api/user/conversations", data),
 
   sendChatMessage: (id: string, body: string) =>
     apiClient.post(`/api/user/conversations/${id}/messages`, { body }),
+
+  archiveConversation: (id: string, hidden: boolean) =>
+    apiClient.patch(`/api/user/conversations/${id}/archive`, { hidden }),
 
   getMyDevices: () =>
     apiClient.get<never, ApiResponse<DeviceSession[]>>("/api/user/my-devices"),

@@ -45,6 +45,8 @@ import {
   listMemberConversationsHandler,
   getMemberConversationMessagesHandler,
   sendMemberChatMessageHandler,
+  getConversationUnreadCountHandler,
+  archiveConversationHandler,
   getWorkshopChallengesHandler,
   completeChallengeHandler,
   completeWorkshopEpisodeHandler,
@@ -133,9 +135,11 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Conversations (live chat) ─────────────────────────────────────────────
   fastify.post('/conversations',                      startConversationHandler);
+  fastify.get('/conversations/unread-count',          getConversationUnreadCountHandler);
   fastify.get('/conversations',                       listMemberConversationsHandler);
   fastify.get('/conversations/:id/messages',          getMemberConversationMessagesHandler);
   fastify.post('/conversations/:id/messages',         sendMemberChatMessageHandler);
+  fastify.patch('/conversations/:id/archive',         archiveConversationHandler);
 
   // ── Device Tracking ───────────────────────────────────────────────────────
   fastify.get('/my-devices', getMyDevicesHandler);
