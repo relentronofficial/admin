@@ -63,6 +63,10 @@ export function initApiClient(getToken: () => Promise<string | null>) {
   _tokenCache = null; // clear stale token on re-init (sign-in / sign-out)
 }
 
+export function getCachedTokenSync(): string | null {
+  return _tokenCache && Date.now() < _tokenCache.expiresAt ? _tokenCache.token : null;
+}
+
 async function getCachedToken(): Promise<string> {
   const now = Date.now();
   if (_tokenCache && now < _tokenCache.expiresAt) {

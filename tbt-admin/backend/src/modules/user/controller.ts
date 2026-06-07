@@ -666,9 +666,16 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         episode: {
           select: {
             title: true,
+            order: true,
             courseId: true,
             durationSeconds: true,
-            course: { select: { title: true, thumbnailUrl: true } },
+            course: {
+              select: {
+                title: true,
+                thumbnailUrl: true,
+                _count: { select: { episodes: true } },
+              },
+            },
           },
         },
       },
@@ -684,9 +691,14 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         episode: {
           select: {
             title: true,
+            order: true,
             durationSeconds: true,
             challenge: {
-              select: { workshop: { select: { title: true, slug: true, thumbnailUrl: true } } },
+              select: {
+                title: true,
+                workshop: { select: { title: true, slug: true, thumbnailUrl: true } },
+                _count: { select: { episodes: true } },
+              },
             },
           },
         },
@@ -724,7 +736,12 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       title: p.episode.course.title,
       thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
       lastLessonTitle: p.episode.title,
+      challengeTitle: null as string | null,
       lastWatchedSecs: p.lastWatchedSecs,
+      durationSeconds: p.episode.durationSeconds ?? null,
+      remainingSecs: Math.max(0, (p.episode.durationSeconds ?? 0) - p.lastWatchedSecs),
+      episodeOrder: p.episode.order,
+      episodeCount: p.episode.course._count.episodes,
       progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
       updatedAt: p.updatedAt.getTime(),
     })),
@@ -735,7 +752,12 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       title: p.episode.challenge.workshop.title,
       thumbnailUrl: p.episode.challenge.workshop.thumbnailUrl ?? null,
       lastLessonTitle: p.episode.title,
+      challengeTitle: p.episode.challenge.title,
       lastWatchedSecs: p.lastWatchedSecs,
+      durationSeconds: p.episode.durationSeconds ?? null,
+      remainingSecs: Math.max(0, (p.episode.durationSeconds ?? 0) - p.lastWatchedSecs),
+      episodeOrder: p.episode.order,
+      episodeCount: p.episode.challenge._count.episodes,
       progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
       updatedAt: p.updatedAt.getTime(),
     })),

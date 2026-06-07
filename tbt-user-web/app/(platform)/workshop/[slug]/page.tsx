@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -39,7 +39,7 @@ import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
-import { getServerNow } from "@/lib/api/client";
+import { getServerNow, getCachedTokenSync } from "@/lib/api/client";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type {
@@ -1057,6 +1057,10 @@ function ChallengeList({
 
         const ss = statusStyle(ch.status);
         const typeMeta = CHALLENGE_TYPE_META[ch.type] ?? CHALLENGE_TYPE_META.watch;
+        const totalSecs = (ch.episodes ?? []).reduce((a: number, ep: any) => a + (ep.durationSeconds ?? 0), 0);
+        const totalMins = totalSecs > 0 ? Math.ceil(totalSecs / 60) : null;
+        const isCompleted = ch.status === "completed";
+        const isInProgress = ch.status === "in_progress" && !ch.isLocked;
 
         return (
           <button
@@ -1065,9 +1069,18 @@ function ChallengeList({
             onClick={() => !ch.isLocked && onSelect(ch)}
             className="w-full text-left rounded-xl border p-3 transition-all"
             style={{
-              background: isSelected ? `rgba(var(--accent-rgb, 220 38 38) / 0.12)` : ss.bg,
-              borderColor: isSelected ? "var(--color-accent)" : ss.border,
-              opacity: ch.isLocked ? 0.55 : 1,
+              background: isSelected
+                ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                : isCompleted
+                  ? "rgba(34,197,94,0.04)"
+                  : ss.bg,
+              borderColor: isSelected
+                ? "var(--color-accent)"
+                : isCompleted
+                  ? "rgba(34,197,94,0.3)"
+                  : ss.border,
+              opacity: ch.isLocked ? 0.55 : isCompleted && !isSelected ? 0.7 : 1,
+              borderLeft: isCompleted && !isSelected ? "3px solid rgba(34,197,94,0.5)" : undefined,
             }}
           >
             <div className="flex items-center gap-2">
@@ -1077,7 +1090,7 @@ function ChallengeList({
               <span className="flex-1 text-xs font-semibold text-foreground line-clamp-1">{ch.title}</span>
               {ch.isLocked ? (
                 <Lock size={11} className="flex-shrink-0 text-muted-foreground" />
-              ) : ch.status === "completed" ? (
+              ) : isCompleted ? (
                 <CheckCircle2 size={12} className="flex-shrink-0" style={{ color: "#22c55e" }} />
               ) : null}
             </div>
@@ -1089,19 +1102,30 @@ function ChallengeList({
               >
                 {typeMeta.label}
               </span>
+              {isInProgress && !isSelected && (
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                  style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+                >
+                  Resume
+                </span>
+              )}
               {ch.progressPercent > 0 && ch.progressPercent < 100 && (
                 <div className="flex-1 h-0.5 rounded-full overflow-hidden" style={{ background: "var(--color-bg-surface)" }}>
                   <div className="h-full rounded-full transition-all" style={{ width: `${ch.progressPercent}%`, background: ss.text }} />
                 </div>
               )}
-              {!ch.isLocked && ch.status !== "completed" && (
-                <span className="text-[9px] font-bold ml-auto" style={{ color: ss.text }}>
-                  {ch.status === "in_progress" ? "In Progress" : "Not Started"}
-                </span>
-              )}
-              {ch.status === "completed" && (
-                <span className="text-[9px] font-bold ml-auto" style={{ color: "#22c55e" }}>Done</span>
-              )}
+              <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                {totalMins && (
+                  <span className="text-[9px] text-muted-foreground">~{totalMins}m</span>
+                )}
+                {!ch.isLocked && !isCompleted && !isInProgress && (
+                  <span className="text-[9px] font-bold" style={{ color: ss.text }}>Not Started</span>
+                )}
+                {isCompleted && (
+                  <span className="text-[9px] font-bold" style={{ color: "#22c55e" }}>Done</span>
+                )}
+              </div>
             </div>
           </button>
         );
@@ -1112,25 +1136,57 @@ function ChallengeList({
 
 // ─── Main: Watch Challenge ────────────────────────────────────────────────────
 
-function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string }) {
+function WatchChallengeView({
+  challenge,
+  slug,
+  initialEpisodeId,
+  onChallengeComplete,
+}: {
+  challenge: any;
+  slug: string;
+  initialEpisodeId?: string;
+  onChallengeComplete?: () => void;
+}) {
   const qc = useQueryClient();
   const completeEp = useCompleteWorkshopEpisode();
   const postProgress = usePostEpisodeProgress();
-  const [activeEpIdx, setActiveEpIdx] = useState(0);
+
   const episodes: any[] = challenge.episodes ?? [];
+
+  const [activeEpIdx, setActiveEpIdx] = useState(() => {
+    if (initialEpisodeId) {
+      const idx = episodes.findIndex((e: any) => e.id === initialEpisodeId);
+      if (idx >= 0) return idx;
+    }
+    const firstIncomplete = episodes.findIndex((e: any) => !e.isCompleted);
+    return firstIncomplete >= 0 ? firstIncomplete : 0;
+  });
+
   const ep = episodes[activeEpIdx];
 
   const [watchState, setWatchState] = useState<"not_started" | "resume" | "watching" | "paused" | "completed">("not_started");
   const [currentPlayhead, setCurrentPlayhead] = useState(0);
+  const [forceStartFrom, setForceStartFrom] = useState<number | null>(null);
+  const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
 
   const iframeFocusedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const markCalledRef = useRef(false);
   const lastPlayheadRef = useRef<number>(0);
+  const activeEpIdxRef = useRef(activeEpIdx);
+  const onChallengeCompleteRef = useRef(onChallengeComplete);
+  const currentEpRef = useRef<any>(undefined);
 
+  useEffect(() => { activeEpIdxRef.current = activeEpIdx; }, [activeEpIdx]);
+  useEffect(() => { onChallengeCompleteRef.current = onChallengeComplete; }, [onChallengeComplete]);
+  useEffect(() => { currentEpRef.current = ep; }, [ep]);
+
+  // Episode switch: reset local state
   useEffect(() => {
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
+    setForceStartFrom(null);
+    setUpNextCountdown(null);
 
     if (!ep) return;
     const alreadyDone = !!ep.isCompleted;
@@ -1141,6 +1197,42 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
     lastPlayheadRef.current = resumeSecs;
     markCalledRef.current = alreadyDone;
   }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Up Next countdown: auto-advance
+  useEffect(() => {
+    if (upNextCountdown === null) return;
+    if (upNextCountdown <= 0) {
+      setUpNextCountdown(null);
+      setActiveEpIdx((prev) => {
+        const next = prev + 1;
+        return next < episodes.length ? next : prev;
+      });
+      return;
+    }
+    const id = setTimeout(() => setUpNextCountdown((n) => (n !== null ? n - 1 : null)), 1000);
+    return () => clearTimeout(id);
+  }, [upNextCountdown, episodes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Flush progress on tab close
+  useEffect(() => {
+    const handleUnload = () => {
+      const curEp = currentEpRef.current;
+      if (!curEp || markCalledRef.current) return;
+      const saved = lastPlayheadRef.current;
+      if (saved <= 3) return;
+      const token = getCachedTokenSync();
+      if (!token) return;
+      const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      fetch(`${base}/api/user/workshop/episodes/${curEp.id}/progress`, {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ watchedSeconds: Math.floor(saved), deltaSeconds: 0, isCompleted: false }),
+      });
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!ep || !ep.videoUrl) return;
@@ -1158,10 +1250,14 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
           qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
           qc.invalidateQueries({ queryKey: ["user", "dashboard", "continue-learning"] });
+          const curIdx = activeEpIdxRef.current;
+          if (curIdx + 1 < episodes.length) {
+            setUpNextCountdown(5);
+          } else {
+            onChallengeCompleteRef.current?.();
+          }
         },
         onError: () => {
-          // Backend rejected (not enough actual watch time — likely seeking)
-          // Revert so the heartbeat can continue accumulating and retry
           markCalledRef.current = false;
           setWatchState("paused");
         },
@@ -1206,7 +1302,6 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
       const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
 
-      // Real-time playhead update — drives progress bar without waiting for heartbeat
       if (isTimeUpdate && payloadValue !== undefined) {
         const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue.seconds;
         if (currentTime !== undefined) {
@@ -1221,7 +1316,6 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         if (!iframeFocusedRef.current) {
           iframeFocusedRef.current = true;
           clearInterval(timerRef.current);
-          // 15s heartbeat — backend accumulates actualWatchedSecs; decides completion at 85%
           timerRef.current = setInterval(() => {
             postProgress.mutate(
               { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
@@ -1239,7 +1333,6 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         clearInterval(timerRef.current);
       }
 
-      // Video ended naturally — post final 15s delta, then attempt completion
       if (isEnd) {
         clearInterval(timerRef.current);
         iframeFocusedRef.current = false;
@@ -1247,9 +1340,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
           { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
           {
             onSuccess: (data: any) => {
-              // If backend confirmed 85% via this final heartbeat, complete
               if (data?.isCompleted) { doMarkComplete(); return; }
-              // Otherwise attempt explicit completion (backend will verify actualWatchedSecs)
               doMarkComplete();
             },
           }
@@ -1261,7 +1352,6 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
     return () => {
       window.removeEventListener("message", handler);
       clearInterval(timerRef.current);
-      // Flush the last known position immediately when switching episodes
       const saved = lastPlayheadRef.current;
       if (saved > 3 && !markCalledRef.current) {
         postProgress.mutate({ episodeId: ep.id, watchedSeconds: Math.floor(saved), deltaSeconds: 0, isCompleted: false });
@@ -1277,32 +1367,37 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  // Use the further of server-confirmed progress or current playhead for smooth real-time display
   const activeProgressPct = ep.durationSeconds > 0
     ? Math.min(100, Math.round((Math.max(ep.actualWatchedSecs ?? 0, currentPlayhead) / ep.durationSeconds) * 100))
     : 0;
+
+  const iframeSrc = ep.videoUrl
+    ? withResumeTime(normalizeBunnyUrl(ep.videoUrl), forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0))
+    : null;
 
   return (
     <div className="space-y-4">
       <ChallengeHeader challenge={challenge} />
 
-      {/* Player */}
-      <VideoWatermark
-        className="rounded-xl overflow-hidden bg-black aspect-video relative"
-        containerId="workshop-video-root"
-        showFullscreenButton={!!ep.videoUrl}
-      >
-        {ep.videoUrl ? (
-          <iframe
-            key={ep.id}
-            src={withResumeTime(normalizeBunnyUrl(ep.videoUrl), ep.lastWatchedSecs ?? 0)}
-            className="w-full h-full"
-            allow="autoplay"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
-        )}
-      </VideoWatermark>
+      {/* Player — sticky on mobile so controls stay visible while scrolling the episode list */}
+      <div className="sticky top-0 z-10 lg:static lg:z-auto -mx-4 px-4 lg:mx-0 lg:px-0 pt-2 pb-1 lg:pt-0 lg:pb-0" style={{ background: "var(--color-bg-primary)" }}>
+        <VideoWatermark
+          className="rounded-xl overflow-hidden bg-black aspect-video relative"
+          containerId="workshop-video-root"
+          showFullscreenButton={!!ep.videoUrl}
+        >
+          {iframeSrc ? (
+            <iframe
+              key={`${ep.id}-${forceStartFrom}`}
+              src={iframeSrc}
+              className="w-full h-full"
+              allow="autoplay"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
+          )}
+        </VideoWatermark>
+      </div>
 
       {/* Episode title + live status badge */}
       <div className="flex items-center justify-between gap-3">
@@ -1332,7 +1427,7 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
         )}
       </div>
 
-      {/* Resume card — Hotstar/Udemy style, only when there's saved progress */}
+      {/* Resume card — only when there's saved progress */}
       {(watchState === "resume" || watchState === "paused") && Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead) > 3 && (
         <div
           className="rounded-xl border px-4 py-3 space-y-2"
@@ -1356,9 +1451,17 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
                 <p className="text-[11px] text-muted-foreground truncate">{ep.title}</p>
               </div>
             </div>
-            <span className="text-sm font-bold flex-shrink-0" style={{ color: "var(--color-accent)" }}>
-              {activeProgressPct}%
-            </span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-sm font-bold" style={{ color: "var(--color-accent)" }}>
+                {activeProgressPct}%
+              </span>
+              <button
+                onClick={() => { setForceStartFrom(0); setWatchState("not_started"); }}
+                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border"
+              >
+                Start over
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-2.5">
             <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -1372,6 +1475,39 @@ function WatchChallengeView({ challenge, slug }: { challenge: any; slug: string 
                 {formatTime(Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead))} / {formatTime(ep.durationSeconds)}
               </span>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Up Next countdown card */}
+      {upNextCountdown !== null && activeEpIdx + 1 < episodes.length && (
+        <div
+          className="rounded-xl border px-4 py-3 flex items-center justify-between gap-3"
+          style={{
+            background: "color-mix(in srgb, var(--color-accent) 6%, transparent)",
+            borderColor: "color-mix(in srgb, var(--color-accent) 22%, transparent)",
+          }}
+        >
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Up Next</p>
+            <p className="text-sm font-semibold text-foreground truncate">
+              {episodes[activeEpIdx + 1]?.title ?? "Next Episode"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => { setUpNextCountdown(null); setActiveEpIdx((prev) => prev + 1); }}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-white"
+              style={{ background: "var(--color-accent)" }}
+            >
+              Play Now
+            </button>
+            <button
+              onClick={() => setUpNextCountdown(null)}
+              className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground border border-border hover:text-foreground transition-colors whitespace-nowrap"
+            >
+              Cancel ({upNextCountdown}s)
+            </button>
           </div>
         </div>
       )}
@@ -2117,14 +2253,33 @@ function ChallengeHeader({ challenge }: { challenge: any }) {
 
 // ─── Main: Challenge Dispatcher ───────────────────────────────────────────────
 
-function ChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
+function ChallengeView({
+  challenge,
+  slug,
+  onDone,
+  initialEpisodeId,
+  onChallengeComplete,
+}: {
+  challenge: any;
+  slug: string;
+  onDone: () => void;
+  initialEpisodeId?: string;
+  onChallengeComplete?: () => void;
+}) {
   switch (challenge.type) {
     case "live_call":  return <LiveCallChallengeView challenge={challenge} onDone={onDone} />;
     case "quiz":       return <QuizChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
     case "written":    return <WrittenChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
     case "matching":   return <MatchingChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
     case "flashcard":  return <FlashcardChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
-    default:           return <WatchChallengeView challenge={challenge} slug={slug} />;
+    default:           return (
+      <WatchChallengeView
+        challenge={challenge}
+        slug={slug}
+        initialEpisodeId={initialEpisodeId}
+        onChallengeComplete={onChallengeComplete}
+      />
+    );
   }
 }
 
@@ -2153,24 +2308,69 @@ function DetailSkeleton() {
 
 type MainView =
   | { kind: "default" }
-  | { kind: "challenge"; challenge: any }
+  | { kind: "challenge"; challenge: any; initialEpisodeId?: string }
   | { kind: "assignment"; assignmentId: string };
 
 export default function WorkshopDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const epParam = searchParams.get("ep");
   const qc = useQueryClient();
   const { data: detail, isLoading: detailLoading } = useWorkshopDetail(slug);
   const { data: flowData } = useWorkshopFlow(slug);
+  const { data: challengesData } = useWorkshopChallenges(slug);
   const { uiStrings } = useSiteConfig();
 
   const tabs = detail?.sidebar?.tabs ?? [];
   const [activeTab, setActiveTab] = useState<string>("");
   const [mainView, setMainView] = useState<MainView>({ kind: "default" });
+  const hasAutoOpenedRef = useRef(false);
 
   const handleLiveUrlUnlock = useCallback(() => {
     qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
   }, [qc, slug]);
+
+  // Auto-open challenge from ?ep param (Continue Watching → workshop page)
+  useEffect(() => {
+    if (hasAutoOpenedRef.current || !challengesData?.challenges) return;
+    const challenges: any[] = challengesData.challenges;
+
+    if (epParam) {
+      for (const ch of challenges) {
+        if (ch.isLocked || !ch.episodes) continue;
+        if (ch.episodes.some((e: any) => e.id === epParam)) {
+          hasAutoOpenedRef.current = true;
+          setMainView({ kind: "challenge", challenge: ch, initialEpisodeId: epParam });
+          setActiveTab("challenges");
+          return;
+        }
+      }
+    }
+
+    // Fallback: auto-open first in-progress challenge
+    const inProgress = challenges.find((ch: any) => ch.status === "in_progress" && !ch.isLocked);
+    if (inProgress) {
+      hasAutoOpenedRef.current = true;
+      setMainView({ kind: "challenge", challenge: inProgress });
+      setActiveTab("challenges");
+    }
+  }, [epParam, challengesData?.challenges]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Advance to next unlocked challenge after current one completes
+  const handleChallengeComplete = useCallback(() => {
+    const challenges: any[] = challengesData?.challenges ?? [];
+    const currentId = mainView.kind === "challenge" ? mainView.challenge?.id : null;
+    if (!currentId) { setMainView({ kind: "default" }); return; }
+    const currentIdx = challenges.findIndex((ch: any) => ch.id === currentId);
+    const next = challenges.slice(currentIdx + 1).find((ch: any) => !ch.isLocked);
+    if (next) {
+      setMainView({ kind: "challenge", challenge: next });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      setMainView({ kind: "default" });
+    }
+  }, [mainView, challengesData?.challenges]);
 
   useEffect(() => {
     if (tabs.length > 0 && !activeTab) {
@@ -2260,6 +2460,8 @@ export default function WorkshopDetailPage() {
               challenge={mainView.challenge}
               slug={slug}
               onDone={() => setMainView({ kind: "default" })}
+              initialEpisodeId={mainView.initialEpisodeId}
+              onChallengeComplete={handleChallengeComplete}
             />
           ) : upcomingLiveCall ? (
             <MainAreaCountdown item={upcomingLiveCall} />

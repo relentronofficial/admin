@@ -617,7 +617,12 @@ export interface ContinueLearningItem {
   title: string;
   thumbnailUrl?: string | null;
   lastLessonTitle?: string | null;
+  challengeTitle?: string | null;
   lastWatchedSecs: number;
+  durationSeconds: number | null;
+  remainingSecs: number;
+  episodeOrder: number;
+  episodeCount: number;
   progressPercent: number;
   updatedAt: number;
 }

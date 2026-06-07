@@ -413,10 +413,36 @@ function SectionRow({ section }: { section: ContentSection }) {
 
 // ─── Continue Watching ────────────────────────────────────────────────────────
 
+function formatWatchTime(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function relativeTimeFromEpoch(ms: number): string {
+  const diffMs = Date.now() - ms;
+  const mins = Math.floor(diffMs / 60_000);
+  const hours = Math.floor(diffMs / 3_600_000);
+  const days = Math.floor(diffMs / 86_400_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
 function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
-  // Workshop: go directly to the episode player so video resumes from lastWatchedSecs immediately.
-  // Course: go to the course page (course episodes use a different player route).
-  const href = item.type === "workshop" ? `/watch/${item.lessonId}` : `/learning/${item.id}`;
+  // Workshop: open the workshop page with the specific episode pre-selected.
+  // Course: open the course page (course episodes use a different player route).
+  const href = item.type === "workshop"
+    ? `/workshop/${item.id}?ep=${item.lessonId}`
+    : `/learning/${item.id}`;
+
+  const remainingMins = item.remainingSecs != null && item.remainingSecs > 0
+    ? Math.ceil(item.remainingSecs / 60)
+    : null;
 
   return (
     <Link
@@ -434,7 +460,6 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
               <PlayCircle size={20} className="text-muted-foreground" />
             </div>
           )}
-          {/* Play overlay on hover */}
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "var(--color-accent)" }}>
               <Play size={10} className="text-white fill-current ml-0.5" />
@@ -443,34 +468,49 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
         </div>
 
         {/* Info */}
-        <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-          <div className="min-w-0">
-            <p className="text-[11px] text-muted-foreground font-medium truncate">{item.title}</p>
-            <p className="text-xs font-semibold text-foreground truncate mt-0.5 leading-tight">{item.lastLessonTitle}</p>
-          </div>
-
-          {/* Progress bar + % */}
-          <div className="flex items-center gap-2 mt-2">
-            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${item.progressPercent}%`, background: "var(--color-accent)" }}
-              />
-            </div>
-            <span className="text-[10px] font-bold flex-shrink-0 tabular-nums" style={{ color: "var(--color-accent)" }}>
-              {item.progressPercent}%
+        <div className="flex-1 min-w-0 flex flex-col gap-0.5 py-0.5">
+          <p className="text-[10px] text-muted-foreground truncate leading-tight">{item.title}</p>
+          {item.challengeTitle && (
+            <p className="text-[10px] font-semibold truncate" style={{ color: "var(--color-accent)" }}>
+              {item.challengeTitle}
+            </p>
+          )}
+          <p className="text-xs font-semibold text-foreground truncate leading-tight">{item.lastLessonTitle}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              Ep {item.episodeOrder} of {item.episodeCount}
+            </span>
+            <span className="text-muted-foreground/40 text-[10px]">·</span>
+            <span className="text-[10px] text-muted-foreground">
+              {relativeTimeFromEpoch(item.updatedAt)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Continue button */}
+      {/* Progress bar + resume timestamp */}
+      <div className="px-3 pb-2">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${item.progressPercent}%`, background: "var(--color-accent)" }}
+            />
+          </div>
+          <span className="text-[10px] text-muted-foreground flex-shrink-0 tabular-nums">
+            {formatWatchTime(item.lastWatchedSecs)}
+          </span>
+        </div>
+      </div>
+
+      {/* Footer */}
       <div
         className="px-3 py-2 border-t border-border flex items-center justify-between"
         style={{ background: "rgba(255,255,255,0.02)" }}
       >
-        <span className="text-[11px] text-muted-foreground">
-          {item.progressPercent}% watched
+        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+          <Clock size={10} />
+          {remainingMins != null ? `~${remainingMins} min left` : `${item.progressPercent}% watched`}
         </span>
         <span
           className="flex items-center gap-1.5 text-[11px] font-bold transition-all group-hover:gap-2.5"
