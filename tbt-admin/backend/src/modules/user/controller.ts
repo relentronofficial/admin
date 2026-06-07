@@ -1262,6 +1262,7 @@ export async function getMyWorkshopsHandler(request: FastifyRequest, reply: Fast
 }
 
 export async function getWorkshopDetailHandler(request: FastifyRequest, reply: FastifyReply) {
+  request.server.log.info({ tag: 'ROUTE-HIT-DEBUG', handler: 'getWorkshopDetailHandler', slug: (request.params as any).slug, ts: new Date().toISOString() }, '[ROUTE-HIT-DEBUG] getWorkshopDetailHandler');
   const { slug } = request.params as { slug: string };
 
   const workshop = await request.server.prisma.workshop.findFirst({
@@ -1479,6 +1480,7 @@ export async function getWorkshopCertificateHandler(request: FastifyRequest, rep
 }
 
 export async function getWorkshopFlowHandler(request: FastifyRequest, reply: FastifyReply) {
+  request.server.log.info({ tag: 'ROUTE-HIT-DEBUG', handler: 'getWorkshopFlowHandler', slug: (request.params as any).slug, ts: new Date().toISOString() }, '[ROUTE-HIT-DEBUG] getWorkshopFlowHandler');
   const { slug } = request.params as { slug: string };
 
   const workshop = await request.server.prisma.workshop.findFirst({
@@ -2395,32 +2397,6 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
       submission: ch.memberProgress?.[0] ?? null,
     };
   }).filter(Boolean);
-
-  // ── DEBUG: getWorkshopChallengesHandler — per-challenge completion state ────
-  const dbChallengeCount = await request.server.prisma.challenge.count({ where: { workshopId: workshop.id } });
-  const challengeOnlyResults = (result as any[]).filter((r: any) => r.type !== 'live_call');
-  request.server.log.info({
-    tag: 'CHALLENGE-PROGRESS-DEBUG',
-    handler: 'getWorkshopChallengesHandler',
-    slug,
-    memberId: request.memberId,
-    totalFlowItemsCount: (flowItems as any[]).length,
-    challengeStartItemsCount: challengeFlowItems.length,
-    dbChallengeCount,
-    challengeStatuses,
-    challenges: challengeOnlyResults.map((r: any, idx: number) => ({
-      id: r.id,
-      title: r.title,
-      type: r.type,
-      hasEpisodes: (r.episodes ?? []).length > 0,
-      episodeCount: (r.episodes ?? []).length,
-      memberProgressStatus: r.submission?.status ?? 'none',
-      computedRawStatus: challengeStatuses[idx] ?? 'unknown',
-      displayStatus: r.status,
-      isLocked: r.isLocked,
-      countedAsComplete: r.status === 'completed',
-    })),
-  }, '[CHALLENGE-PROGRESS-DEBUG] getWorkshopChallengesHandler');
 
   return ok(reply, { challenges: result });
 }
