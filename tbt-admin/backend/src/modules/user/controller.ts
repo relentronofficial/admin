@@ -1304,18 +1304,23 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   const completedCount = episodeProgress.filter((p: any) => p.isCompleted).length;
   const totalCount = allEpisodes.length;
 
-  // Certificate eligibility:
-  // - Videos: all episodes must be completed (tracked via videosCompletedPct)
-  // - Challenges: every interactive (non-watch, non-live_call) challenge must have status 'completed'
-  //   Watch challenges are video-based — they are covered by videosCompletedPct, not counted here
-  const completableChallenges = allChallenges.filter((c: any) => c.type && c.type !== 'watch' && c.type !== 'live_call');
+  // Count every non-live_call challenge toward learning progress.
+  // Watch challenges (the default) complete when all their episodes are done.
+  // Interactive challenges (quiz/written/etc) complete via memberChallengeProgress.
+  const completableChallenges = allChallenges.filter((c: any) => c.type !== 'live_call');
   const challengeProgressMap = new Map(
     (challengeProgressRows as any[]).map((r: any) => [r.challengeId, r.status])
   );
+  const completedEpIds = new Set(episodeProgress.filter((p: any) => p.isCompleted).map((p: any) => p.episodeId));
 
   let completedChallengeCount = 0;
   for (const ch of completableChallenges) {
-    if (challengeProgressMap.get(ch.id) === 'completed') completedChallengeCount++;
+    if (challengeProgressMap.get(ch.id) === 'completed') {
+      completedChallengeCount++;
+    } else if (!ch.type || ch.type === 'watch') {
+      const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
+      if (epIds.length > 0 && epIds.every((id: string) => completedEpIds.has(id))) completedChallengeCount++;
+    }
   }
 
   const totalChallenges = completableChallenges.length;
@@ -1397,17 +1402,23 @@ export async function getWorkshopCertificateHandler(request: FastifyRequest, rep
     }),
   ]);
 
-  const completableChallenges = allChallenges.filter((c: any) => c.type && c.type !== 'watch' && c.type !== 'live_call');
+  const completableChallenges = allChallenges.filter((c: any) => c.type !== 'live_call');
   const challengeProgressMap = new Map(
     (challengeProgressRows as any[]).map((r: any) => [r.challengeId, r])
   );
+  const completedEpIdSet = new Set(episodeProgress.filter((p: any) => p.isCompleted).map((p: any) => p.episodeId));
 
   let allEpisodesDone = allEpisodes.length > 0 &&
-    allEpisodes.every((e: any) => episodeProgress.find((p: any) => p.episodeId === e.id && p.isCompleted));
+    allEpisodes.every((e: any) => completedEpIdSet.has(e.id));
 
-  let allChallengesDone = completableChallenges.every((ch: any) =>
-    challengeProgressMap.get(ch.id)?.status === 'completed'
-  );
+  let allChallengesDone = completableChallenges.every((ch: any) => {
+    if (challengeProgressMap.get(ch.id)?.status === 'completed') return true;
+    if (!ch.type || ch.type === 'watch') {
+      const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
+      return epIds.length > 0 && epIds.every((id: string) => completedEpIdSet.has(id));
+    }
+    return false;
+  });
 
   if (!allEpisodesDone || !allChallengesDone) {
     return fail(reply, 403, 'Certificate not yet earned — complete all videos and challenges first');
