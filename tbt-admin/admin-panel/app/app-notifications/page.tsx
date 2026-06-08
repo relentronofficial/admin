@@ -7,7 +7,7 @@ import {
   useListAppNotifications, useSendAppNotification, useDeleteAppNotification,
   useGetNotificationStats, useListWorkshops, useListBatches,
 } from "@/lib/hooks/useTbt";
-import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -54,7 +54,7 @@ export default function AppNotificationsPage() {
   const { data, isLoading, refetch } = useListAppNotifications();
   const sendNotif   = useSendAppNotification();
   const deleteNotif = useDeleteAppNotification();
-  const getPresignedUrl = useGetPresignedUrl();
+  const uploadMedia = useUploadImage();
 
   const { data: workshopsData } = useListWorkshops();
   const workshops = (workshopsData as any)?.data || [];
@@ -124,13 +124,10 @@ export default function AppNotificationsPage() {
     setMediaUploading(true);
 
     try {
-      const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
-        filename: file.name,
-        contentType: file.type,
-        bucket: "notifications",
-        pathPrefix: "media",
+      const { publicUrl } = await uploadMedia.mutateAsync({
+        file,
+        pathPrefix: "notifications/media",
       });
-      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       setMediaUrl(publicUrl);
       toast.success("Media uploaded");
     } catch (err: any) {

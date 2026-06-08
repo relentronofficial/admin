@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**TBT Admin Platform** — monorepo for the Tamil Business Tribe LMS. The workspace root is `tbt-admin/`. The TBT Admin PRD (`F:\admin\TBT_Admin_PRD.md`) defines an 18-section implementation roadmap that is being built incrementally. Sessions 1–8 are complete; sessions 9–18 are pending.
+**TBT Admin Platform** — monorepo for the Tamil Business Tribe LMS. The workspace root is `tbt-admin/`. All 18 PRD sections are complete. See `F:\admin\tbt-admin\PROJECT_STATUS.md` for detail.
 
 ```
 tbt-admin/
@@ -58,7 +58,9 @@ Clerk is the auth provider for both frontend and backend.
 ### Frontend Structure
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). Response interceptor unwraps `response.data`.
 - **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks for workshops, hero, content sections, courses, config, nav, tiers, badges, notifications, products, resources, batches
-- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, members, file uploads (`useGetPresignedUrl`)
+- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload)
+- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers`, `useCreateMember`, and related mutations
+- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related mutations
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
 
 ### File Upload Pattern
@@ -159,8 +161,8 @@ Pages access: `data?.data || []` and `data?.meta?.total`
 Required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys (frontend + backend), `CLOUDFLARE_R2_*` keys.
 
 ## Deployment
-- **Backend → Railway** — auto-deploy on push to `main`
-- **Frontend → Vercel** — auto-deploy on push to `main`
+- **Backend → Google Cloud Run** — deploy via Google Cloud Run
+- **Frontend → Vercel** — auto-deploy on push to `main` via GitHub Actions
 
 ## PRD Reference
 Full PRD: `F:\admin\TBT_Admin_PRD.md`

@@ -2,21 +2,28 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import apiClient from "../lib/api/apiClient";
 import { initAdminSocket } from "@/lib/socket/client";
 
 function AuthInterceptor() {
   const { getToken, isLoaded } = useAuth();
-  initAdminSocket(() => getToken());
+  const getTokenRef = useRef(getToken);
+  initAdminSocket(() => getTokenRef.current());
 
+  // Keep the ref current without triggering interceptor re-registration
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  // Register once when Clerk loads — ref ensures the latest getToken is always used
   useEffect(() => {
     if (!isLoaded) return;
 
     const interceptor = apiClient.interceptors.request.use(async (config) => {
       try {
-        const token = await getToken();
+        const token = await getTokenRef.current();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -29,7 +36,7 @@ function AuthInterceptor() {
     return () => {
       apiClient.interceptors.request.eject(interceptor);
     };
-  }, [getToken, isLoaded]);
+  }, [isLoaded]);
 
   return null;
 }

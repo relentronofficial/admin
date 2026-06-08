@@ -75,7 +75,9 @@ Clerk is the auth provider for both frontend and backend.
 ### Frontend Structure
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). The response interceptor unwraps `response.data`, so hooks receive the server payload directly (`{ success, data, meta, error }`). Access lists as `data?.data || []` and total as `data?.meta?.total`.
 - **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~600+ lines). Add new hooks to the bottom of this file.
-- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, members, `useGetPresignedUrl` (R2 uploads)
+- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload for images/videos ≤100 MB)
+- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers`, `useCreateMember`, and related member mutations
+- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related task/initiative mutations
 - **State:** TanStack Query for server state; Zustand for client state
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
 - **Validation:** Zod in `lib/validators/`; React Hook Form + `@hookform/resolvers/zod`
