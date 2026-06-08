@@ -9,27 +9,31 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tbt-admin
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          
+          cache-dependency-path: tbt-admin/package-lock.json
+
       - name: Install Dependencies
         run: npm install
-        
+
       - name: Typecheck
         run: npm run typecheck
-        
+
       - name: Lint
         run: npm run lint
-        
+
       - name: Build Backend
         run: npm run build:backend
-        
+
       - name: Build Admin Panel
         run: npm run build:admin
 
@@ -69,3 +73,4 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
+          working-directory: tbt-admin/admin-panel
