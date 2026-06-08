@@ -23,3 +23,38 @@ export const useUpdateProfile = () => {
     },
   });
 };
+
+export const useGetAvatarPresignUrl = () =>
+  useMutation({
+    mutationFn: userService.getAvatarPresignUrl,
+  });
+
+export const useUpdateAvatar = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: userService.updateAvatar,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+    },
+  });
+};
+
+export const useNotificationPrefs = () =>
+  useQuery({
+    queryKey: ["user", "notification-prefs"],
+    queryFn: async () => {
+      const res = await userService.getNotificationPrefs();
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useUpdateNotificationPrefs = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: userService.updateNotificationPrefs,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "notification-prefs"] });
+    },
+  });
+};

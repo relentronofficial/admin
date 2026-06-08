@@ -1,5 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -57,6 +59,13 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
         avatarGradient: true,
         currentTier: true,
         membershipPlan: true,
+        city: true,
+        state: true,
+        businessName: true,
+        totalPoints: true,
+        currentStreak: true,
+        healthScore: true,
+        notificationPrefs: true,
         displayBadges: {
           select: {
             badge: { select: { id: true, label: true, color: true, bgColor: true } },
@@ -98,13 +107,16 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     {
       id: 'personal',
       label: personalLabel,
-      fields: ['firstName', 'lastName', 'email', 'phone', 'dob'],
+      fields: ['firstName', 'lastName', 'email', 'phone', 'dob', 'city', 'state', 'businessName'],
       fieldLabels: {
         firstName: uiStrings?.profileFirstNameLabel ?? 'First Name',
         lastName: uiStrings?.profileLastNameLabel ?? 'Last Name',
         email: uiStrings?.profileEmailLabel ?? 'Email',
         phone: uiStrings?.profilePhoneLabel ?? 'Phone',
         dob: uiStrings?.profileDobLabel ?? 'Date of Birth',
+        city: 'City',
+        state: 'State',
+        businessName: 'Business Name',
       },
     },
     {
@@ -158,6 +170,14 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     avatarUrl: member.profilePhotoUrl ?? null,
     avatarGradient: member.avatarGradient ?? null,
     currentTier: memberTier,
+    membershipPlan: member.membershipPlan,
+    city: member.city ?? null,
+    state: member.state ?? null,
+    businessName: member.businessName ?? null,
+    totalPoints: member.totalPoints,
+    currentStreak: member.currentStreak,
+    healthScore: member.healthScore,
+    notificationPrefs: (member.notificationPrefs as any) ?? { email: true, push: true, sms: true },
     badges: member.displayBadges.map((db) => db.badge),
     subscription: activeSub
       ? {
@@ -174,11 +194,14 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 }
 
 export async function updateMeHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { firstName, lastName, phone, dob } = request.body as {
+  const { firstName, lastName, phone, dob, city, state, businessName } = request.body as {
     firstName?: string;
     lastName?: string;
     phone?: string;
     dob?: string | null;
+    city?: string | null;
+    state?: string | null;
+    businessName?: string | null;
   };
 
   const data: Record<string, unknown> = {};
@@ -186,6 +209,9 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
   if (lastName !== undefined) data.lastName = lastName?.trim() || null;
   if (phone?.trim()) data.phone = phone.trim();
   if (dob !== undefined) data.dob = dob ? new Date(dob) : null;
+  if (city !== undefined) data.city = city?.trim() || null;
+  if (state !== undefined) data.state = state?.trim() || null;
+  if (businessName !== undefined) data.businessName = businessName?.trim() || null;
 
   if (Object.keys(data).length === 0) return fail(reply, 400, 'No fields to update');
 
@@ -2345,6 +2371,78 @@ export async function sendMemberChatMessageHandler(request: FastifyRequest, repl
   request.server.io.to('admin').emit('chat:unread_ping', { conversationId: id });
 
   return reply.status(201).send({ success: true, data: { id: message.id }, error: null });
+}
+
+// ─── Profile — Avatar + Device Revoke + Notification Prefs ───────────────────
+
+export async function updateAvatarHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { avatarUrl } = request.body as { avatarUrl: string };
+  if (!avatarUrl) return fail(reply, 400, 'avatarUrl is required');
+  await request.server.prisma.member.update({
+    where: { id: request.memberId },
+    data: { profilePhotoUrl: avatarUrl },
+  });
+  return ok(reply, { avatarUrl });
+}
+
+export async function avatarPresignHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { filename, contentType } = request.body as { filename: string; contentType: string };
+  if (!filename || !contentType) return fail(reply, 400, 'filename and contentType are required');
+  if (!contentType.startsWith('image/')) return fail(reply, 400, 'Only image uploads allowed');
+
+  const key = `members/photos/${Date.now()}-${filename}`;
+
+  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
+    try {
+      const { data, error } = await (request.server as any).supabase.storage.from('avatars').createSignedUploadUrl(key);
+      if (error) throw error;
+      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/avatars/${key}`;
+      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
+    } catch (err: any) {
+      return fail(reply, 500, err.message || 'Failed to generate upload URL');
+    }
+  }
+
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID!, secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY! },
+  });
+  const command = new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, ContentType: contentType });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+  const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+  return ok(reply, { uploadUrl, publicUrl });
+}
+
+export async function revokeDeviceHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const currentDeviceId = request.headers['x-device-id'] as string | undefined;
+  const session = await request.server.prisma.memberSession.findFirst({ where: { id, memberId: request.memberId } });
+  if (!session) return fail(reply, 404, 'Device session not found');
+  if (currentDeviceId && session.deviceId === currentDeviceId) return fail(reply, 400, 'Cannot revoke current device');
+  await request.server.prisma.memberSession.delete({ where: { id } });
+  return ok(reply, { revoked: true });
+}
+
+export async function getNotificationPrefsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: request.memberId },
+    select: { notificationPrefs: true },
+  });
+  const prefs = (member?.notificationPrefs as any) ?? { email: true, push: true, sms: true };
+  return ok(reply, prefs);
+}
+
+export async function updateNotificationPrefsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { email, push, sms } = request.body as { email?: boolean; push?: boolean; sms?: boolean };
+  const current = await request.server.prisma.member.findUnique({
+    where: { id: request.memberId },
+    select: { notificationPrefs: true },
+  });
+  const existing = (current?.notificationPrefs as any) ?? { email: true, push: true, sms: true };
+  const prefs = { email: email ?? existing.email, push: push ?? existing.push, sms: sms ?? existing.sms };
+  await request.server.prisma.member.update({ where: { id: request.memberId }, data: { notificationPrefs: prefs } });
+  return ok(reply, prefs);
 }
 
 // ─── Workshop Challenges ──────────────────────────────────────────────────────

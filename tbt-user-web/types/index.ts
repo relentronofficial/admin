@@ -282,6 +282,14 @@ export interface MemberProfile {
   avatarUrl: string | null;
   avatarGradient: string | null;
   currentTier: number;
+  membershipPlan: string;
+  city: string | null;
+  state: string | null;
+  businessName: string | null;
+  totalPoints: number;
+  currentStreak: number;
+  healthScore: number;
+  notificationPrefs: { email: boolean; push: boolean; sms: boolean } | null;
   badges: ProfileBadge[];
   subscription: {
     startDate: string;

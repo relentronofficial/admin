@@ -2,6 +2,11 @@ import { FastifyInstance } from 'fastify';
 import {
   getMeHandler,
   updateMeHandler,
+  updateAvatarHandler,
+  avatarPresignHandler,
+  revokeDeviceHandler,
+  getNotificationPrefsHandler,
+  updateNotificationPrefsHandler,
   listUserCoursesHandler,
   getUserCourseHandler,
   enrollCourseHandler,
@@ -63,6 +68,8 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Profile ────────────────────────────────────────────────────────────────
   fastify.get('/me', getMeHandler);
   fastify.patch('/me', updateMeHandler);
+  fastify.patch('/me/avatar', updateAvatarHandler);
+  fastify.post('/me/avatar-presign', avatarPresignHandler);
 
   // ── Courses ────────────────────────────────────────────────────────────────
   fastify.get('/courses', listUserCoursesHandler);
@@ -93,6 +100,8 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Notifications ─────────────────────────────────────────────────────────
   fastify.get('/notifications/unread-count', getNotificationUnreadCountHandler);
+  fastify.get('/notifications/preferences', getNotificationPrefsHandler);
+  fastify.patch('/notifications/preferences', updateNotificationPrefsHandler);
   fastify.get('/notifications', getUserNotificationsHandler);
   fastify.patch('/notifications/:id/read', markNotificationReadHandler);
   fastify.post('/notifications/read-all', markAllNotificationsReadHandler);
@@ -143,4 +152,5 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Device Tracking ───────────────────────────────────────────────────────
   fastify.get('/my-devices', getMyDevicesHandler);
+  fastify.delete('/my-devices/:id', revokeDeviceHandler);
 }

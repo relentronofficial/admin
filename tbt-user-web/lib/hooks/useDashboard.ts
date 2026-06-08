@@ -193,3 +193,11 @@ export const useMyDevices = () =>
     },
     staleTime: 60 * 1000,
   });
+
+export const useRevokeDevice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => dashboardService.revokeDevice(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "my-devices"] }),
+  });
+};

@@ -257,6 +257,7 @@ model Member {
   totalPoints           Int                @default(0) @map("total_points")
   currentStreak         Int                @default(0) @map("current_streak")
   longestStreak         Int                @default(0) @map("longest_streak")
+  notificationPrefs     Json?              @map("notification_prefs")
   lastActiveAt          DateTime?          @map("last_active_at") @db.Timestamptz(6)
   onboardingCompleted   Boolean            @default(false) @map("onboarding_completed")
 

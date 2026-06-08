@@ -61,4 +61,7 @@ export const dashboardService = {
 
   getMyDevices: () =>
     apiClient.get<never, ApiResponse<DeviceSession[]>>("/api/user/my-devices"),
+
+  revokeDevice: (id: string) =>
+    apiClient.delete<never, ApiResponse<{ revoked: boolean }>>(`/api/user/my-devices/${id}`),
 };
