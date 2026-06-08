@@ -2439,12 +2439,18 @@ export default function WorkshopDetailPage() {
     const currentId = mainView.kind === "challenge" ? mainView.challenge?.id : null;
     if (!currentId) return;
     const currentIdx = challenges.findIndex((ch: any) => ch.id === currentId);
-    const prev = challenges.slice(0, currentIdx).reverse().find((ch: any) => ch.type !== "quiz");
+    const nonWatchTypes = ["quiz", "written", "matching", "flashcard", "live_call"];
+    const prev = challenges.slice(0, currentIdx).reverse().find(
+      (ch: any) => !nonWatchTypes.includes(ch.type)
+    );
     if (prev) {
       setMainView({ kind: "challenge", challenge: prev });
       window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      // No preceding video — just complete and advance
+      handleChallengeComplete();
     }
-  }, [mainView, challengesData?.challenges]);
+  }, [mainView, challengesData?.challenges, handleChallengeComplete]);
 
   useEffect(() => {
     if (tabs.length > 0 && !activeTab) {
