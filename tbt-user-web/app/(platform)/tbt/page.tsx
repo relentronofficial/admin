@@ -643,152 +643,144 @@ function WatchHistoryCard({
   const isCompleted = item.isCompleted;
 
   return (
-    <div
-      className={cn(
-        "group relative flex items-start gap-3 px-3 py-3 rounded-xl border transition-all duration-200",
-        isCompleted
-          ? "border-border opacity-70 hover:opacity-90"
-          : "border-border hover:border-[rgba(255,255,255,0.15)] hover:bg-white/[0.03]"
-      )}
-      style={isCompleted ? { borderLeftColor: "#22c55e", borderLeftWidth: 2 } : {}}
+    <Link
+      href={href}
+      className="group flex-shrink-0 w-72 rounded-xl border border-border overflow-hidden transition-all duration-200 hover:border-[var(--color-accent)] hover:shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_12%,transparent)]"
+      style={{ background: "var(--color-bg-surface)" }}
     >
-      {/* Thumbnail */}
-      <Link href={href} className="relative w-16 h-11 flex-shrink-0 rounded-lg overflow-hidden mt-0.5 block">
-        {item.thumbnailUrl ? (
-          <Image src={item.thumbnailUrl} alt={item.workshopTitle} fill className="object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
-            <Clock size={14} className="text-muted-foreground" />
+      <div className="flex gap-3 p-3">
+        {/* Thumbnail */}
+        <div className="relative w-20 h-14 flex-shrink-0 rounded-lg overflow-hidden">
+          {item.thumbnailUrl ? (
+            <Image src={item.thumbnailUrl} alt={item.workshopTitle} fill className="object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
+              <PlayCircle size={20} className="text-muted-foreground" />
+            </div>
+          )}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "var(--color-accent)" }}>
+              {isCompleted
+                ? <CheckCircle2 size={12} className="text-white" />
+                : <Play size={10} className="text-white fill-current ml-0.5" />}
+            </div>
           </div>
-        )}
-        {/* Play-state overlay */}
-        {isCompleted ? (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <CheckCircle2 size={16} style={{ color: "#22c55e" }} />
-          </div>
-        ) : (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <Play size={16} className="text-white" fill="white" />
-          </div>
-        )}
-      </Link>
-
-      {/* Info */}
-      <Link href={href} className="flex-1 min-w-0 block">
-        <div className="flex items-start justify-between gap-1">
-          <div className="min-w-0">
-            {item.challengeTitle && (
-              <p className="text-[10px] font-bold uppercase tracking-widest truncate font-rajdhani" style={{ color: "var(--color-accent)" }}>
-                {item.challengeTitle}
-              </p>
-            )}
-            <p className="text-xs font-semibold text-foreground truncate leading-tight mt-0.5">{item.episodeTitle}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              Ep {item.episodeOrder} of {item.episodeCount}
-              {item.durationSeconds > 0 && !isCompleted && (
-                <span className="ml-1">· {fmtSecs(item.lastWatchedSecs)} / {fmtSecs(item.durationSeconds)}</span>
-              )}
-            </p>
-          </div>
-          <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0 mt-0.5">
-            {relativeTime(item.updatedAt)}
-          </span>
+          {isCompleted && (
+            <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.9)" }}>
+              <CheckCircle2 size={10} className="text-white" />
+            </div>
+          )}
         </div>
 
-        {/* Progress bar */}
-        <div className="flex items-center gap-2 mt-2">
+        {/* Info */}
+        <div className="flex-1 min-w-0 flex flex-col gap-0.5 py-0.5">
+          <p className="text-[10px] text-muted-foreground truncate leading-tight">{item.workshopTitle}</p>
+          {item.challengeTitle && (
+            <p className="text-[10px] font-semibold truncate" style={{ color: "var(--color-accent)" }}>
+              {item.challengeTitle}
+            </p>
+          )}
+          <p className="text-xs font-semibold text-foreground truncate leading-tight">{item.episodeTitle}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              Ep {item.episodeOrder} of {item.episodeCount}
+            </span>
+            <span className="text-muted-foreground/40 text-[10px]">·</span>
+            <span className="text-[10px] text-muted-foreground">{relativeTime(item.updatedAt)}</span>
+          </div>
+        </div>
+
+        {/* Remove button */}
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(item.episodeId); }}
+          className="self-start p-0.5 rounded text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground flex-shrink-0"
+          title="Remove from history"
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      {/* Progress bar */}
+      <div className="px-3 pb-2">
+        <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
             <div
-              className="h-full rounded-full transition-all"
+              className="h-full rounded-full transition-all duration-500"
               style={{
                 width: `${isCompleted ? 100 : item.progressPercent}%`,
                 background: isCompleted ? "#22c55e" : "var(--color-accent)",
               }}
             />
           </div>
-          {isCompleted ? (
-            <span className="text-[10px] font-bold whitespace-nowrap" style={{ color: "#22c55e" }}>
-              Done
-            </span>
-          ) : (
-            <span className="text-[10px] font-bold whitespace-nowrap tabular-nums" style={{ color: "var(--color-accent)" }}>
-              {item.progressPercent}%
-            </span>
-          )}
+          <span className="text-[10px] text-muted-foreground flex-shrink-0 tabular-nums">
+            {fmtSecs(item.lastWatchedSecs)}
+          </span>
         </div>
-      </Link>
-
-      {/* CTA label */}
-      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-        <button
-          onClick={(e) => { e.preventDefault(); onRemove(item.episodeId); }}
-          className="p-0.5 rounded text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
-          title="Remove from history"
-        >
-          <X size={12} />
-        </button>
-        <Link
-          href={href}
-          className="text-[10px] font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-          style={{
-            background: isCompleted ? "rgba(255,255,255,0.07)" : "color-mix(in srgb, var(--color-accent) 15%, transparent)",
-            color: isCompleted ? "#a0a0a0" : "var(--color-accent)",
-          }}
-        >
-          {isCompleted ? "Rewatch" : "Continue"}
-        </Link>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div
+        className="px-3 py-2 border-t border-border flex items-center justify-between"
+        style={{ background: "rgba(255,255,255,0.02)" }}
+      >
+        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+          <Clock size={10} />
+          {isCompleted ? "Completed" : `${item.progressPercent}% watched`}
+        </span>
+        <span
+          className="flex items-center gap-1.5 text-[11px] font-bold transition-all group-hover:gap-2.5"
+          style={{ color: isCompleted ? "#22c55e" : "var(--color-accent)" }}
+        >
+          <Play size={9} fill="currentColor" />
+          {isCompleted ? "Rewatch" : "Continue"}
+        </span>
+      </div>
+    </Link>
   );
 }
 
 type HistoryFilter = "all" | "in_progress" | "completed";
 
-interface WorkshopGroup {
-  slug: string;
-  title: string;
-  thumbnailUrl: string | null;
-  items: WatchHistoryItem[];
-  allCompleted: boolean;
-  progressPercent: number;
-}
-
-function groupByWorkshop(items: WatchHistoryItem[]): WorkshopGroup[] {
-  const map = new Map<string, WorkshopGroup>();
-  for (const item of items) {
-    if (!map.has(item.workshopSlug)) {
-      map.set(item.workshopSlug, {
-        slug: item.workshopSlug,
-        title: item.workshopTitle,
-        thumbnailUrl: item.thumbnailUrl,
-        items: [],
-        allCompleted: true,
-        progressPercent: 0,
-      });
-    }
-    const g = map.get(item.workshopSlug)!;
-    g.items.push(item);
-    if (!item.isCompleted) g.allCompleted = false;
-  }
-  for (const g of map.values()) {
-    const sum = g.items.reduce((a, i) => a + i.progressPercent, 0);
-    g.progressPercent = Math.round(sum / g.items.length);
-  }
-  return Array.from(map.values());
-}
-
 function RecentlyWatchedSection() {
   const [filter, setFilter] = useState<HistoryFilter>("all");
-  const { data: resp, isLoading } = useWatchHistory({ limit: 20 });
+  const { data: resp, isLoading } = useWatchHistory({ limit: 30 });
   const removeFromHistory = useRemoveFromHistory();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    checkScroll();
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, [checkScroll, resp]);
+
+  const scrollPage = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === "right" ? 320 : -320, behavior: "smooth" });
+  };
 
   if (isLoading) {
     return (
       <section className="space-y-3">
         <div className="h-5 w-40 rounded animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
-        <div className="space-y-2">
+        <div className="flex gap-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+            <div key={i} className="flex-shrink-0 w-72 h-[136px] rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
           ))}
         </div>
       </section>
@@ -823,8 +815,6 @@ function RecentlyWatchedSection() {
       ? allItems.filter((i) => i.isCompleted)
       : allItems;
 
-  const groups = groupByWorkshop(filtered);
-
   const FILTER_TABS: { key: HistoryFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "in_progress", label: "In Progress" },
@@ -832,12 +822,35 @@ function RecentlyWatchedSection() {
   ];
 
   return (
-    <section className="space-y-4">
-      {/* Header row */}
+    <section className="space-y-3">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-base font-bold text-foreground">Recently Watched</h3>
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-bold text-foreground">Recently Watched</h3>
+          {filtered.length > 3 && (
+            <div className="hidden md:flex items-center gap-1.5">
+              <button
+                onClick={() => scrollPage("left")}
+                disabled={!canScrollLeft}
+                className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
+                style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+                aria-label="Scroll left"
+              >
+                <ChevronLeft size={15} className="text-white" />
+              </button>
+              <button
+                onClick={() => scrollPage("right")}
+                disabled={!canScrollRight}
+                className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
+                style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+                aria-label="Scroll right"
+              >
+                <ChevronRight size={15} className="text-white" />
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2">
-          {/* Filter tabs */}
           <div className="flex rounded-lg overflow-hidden border border-border">
             {FILTER_TABS.map(({ key, label }) => (
               <button
@@ -863,60 +876,17 @@ function RecentlyWatchedSection() {
         </div>
       </div>
 
-      {/* Groups */}
-      {groups.length === 0 ? (
+      {/* Cards row */}
+      {filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4 text-center">No items match this filter.</p>
       ) : (
-        <div className="space-y-5">
-          {groups.map((group) => (
-            <div key={group.slug} className="space-y-2">
-              {/* Workshop header */}
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  {group.thumbnailUrl && (
-                    <div className="relative w-8 h-8 rounded-md overflow-hidden flex-shrink-0">
-                      <Image src={group.thumbnailUrl} alt={group.title} fill className="object-cover" />
-                    </div>
-                  )}
-                  <p className="text-xs font-bold text-foreground truncate">{group.title}</p>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {/* Progress pill */}
-                  <span
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                    style={{
-                      background: group.allCompleted
-                        ? "rgba(34,197,94,0.15)"
-                        : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                      color: group.allCompleted ? "#22c55e" : "var(--color-accent)",
-                    }}
-                  >
-                    {group.allCompleted ? "✓ Done" : `${group.progressPercent}%`}
-                  </span>
-                  {/* Watch Next CTA */}
-                  {group.allCompleted && (
-                    <Link
-                      href={`/workshop/${group.slug}`}
-                      className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
-                      style={{ background: "var(--color-accent)", color: "#fff" }}
-                    >
-                      Watch Next <ArrowRight size={10} />
-                    </Link>
-                  )}
-                </div>
-              </div>
-
-              {/* Episode cards */}
-              <div className="space-y-1.5">
-                {group.items.map((item) => (
-                  <WatchHistoryCard
-                    key={item.episodeId}
-                    item={item}
-                    onRemove={(id) => removeFromHistory.mutate(id)}
-                  />
-                ))}
-              </div>
-            </div>
+        <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2 -mb-2 scrollbar-hide">
+          {filtered.map((item) => (
+            <WatchHistoryCard
+              key={item.episodeId}
+              item={item}
+              onRemove={(id) => removeFromHistory.mutate(id)}
+            />
           ))}
         </div>
       )}
