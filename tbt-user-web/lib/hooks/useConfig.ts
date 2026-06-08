@@ -180,6 +180,23 @@ export const useWorkshopChallenges = (slug: string) =>
     enabled: !!slug,
   });
 
+// Aggregated endpoint — replaces useWorkshopDetail + useWorkshopFlow + useWorkshopChallenges
+// with a single round-trip, cutting the workshop page from 3 parallel requests to 1.
+export const useWorkshopOverview = (slug: string) =>
+  useQuery({
+    queryKey: ["workshop-overview", slug],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshops/${slug}/overview`);
+      return res?.data as {
+        detail: any;
+        flow: { flowItems: any[] };
+        challenges: { challenges: any[] };
+      };
+    },
+    enabled: !!slug,
+    staleTime: 30 * 1000,
+  });
+
 export const useCompleteChallenge = () =>
   useMutation({
     mutationFn: async ({ challengeId, answersData }: { challengeId: string; answersData?: any }) => {

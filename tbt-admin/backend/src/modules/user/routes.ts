@@ -53,6 +53,7 @@ import {
   getConversationUnreadCountHandler,
   archiveConversationHandler,
   getWorkshopChallengesHandler,
+  getWorkshopOverviewHandler,
   completeChallengeHandler,
   completeWorkshopEpisodeHandler,
   getWatchHistoryHandler,
@@ -120,6 +121,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Workshops (user-facing) ───────────────────────────────────────────────
   fastify.get('/workshops', listWorkshopsHandler);
   fastify.get('/workshops/my', getMyWorkshopsHandler);
+  fastify.get('/workshops/:slug/overview', getWorkshopOverviewHandler);
   fastify.get('/workshops/:slug/detail', getWorkshopDetailHandler);
   fastify.get('/workshops/:slug/flow', getWorkshopFlowHandler);
   fastify.get('/workshops/:slug/qa', getWorkshopQaHandler);

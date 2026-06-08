@@ -25,46 +25,37 @@ const queryClient = new QueryClient({
 function AuthInterceptor({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
-  const [synced, setSynced] = React.useState(false);
 
   useEffect(() => {
     if (!isLoaded) return;
     if (isSignedIn) {
+      // Register token getter immediately so queries can start without waiting for sync.
       initApiClient(() => getToken());
       initSocket(() => getToken());
-      
-      // Ensure a Member record exists and update device telemetry
-      getToken().then((token) => {
-        if (token) {
-          let deviceId = localStorage.getItem("tbt_device_id");
-          if (!deviceId) {
-            deviceId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
-            localStorage.setItem("tbt_device_id", deviceId);
-          }
 
-          apiClient.post('/api/pub/auth/sync', {}, {
-            headers: { 
-              Authorization: `Bearer ${token}`,
-              'x-device-id': deviceId
-            },
-          })
-          .then(() => {
-            setSynced(true);
-            queryClient.refetchQueries({ predicate: (q) => q.state.status === 'error' });
-          })
-          .catch(() => {
-            setSynced(true);
-          });
+      // Sync member record + device telemetry in the background — does NOT block render.
+      getToken().then((token) => {
+        if (!token) return;
+        let deviceId = localStorage.getItem("tbt_device_id");
+        if (!deviceId) {
+          deviceId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
+          localStorage.setItem("tbt_device_id", deviceId);
         }
+        apiClient.post('/api/pub/auth/sync', {}, {
+          headers: { Authorization: `Bearer ${token}`, 'x-device-id': deviceId },
+        })
+        .then(() => {
+          // Retry any queries that failed before sync completed (e.g. member not yet created).
+          queryClient.refetchQueries({ predicate: (q) => q.state.status === 'error' });
+        })
+        .catch(() => {});
       });
     } else {
       initApiClient(() => Promise.resolve(null));
       disconnectSocket();
-      setSynced(true);
     }
   }, [isLoaded, isSignedIn, getToken, queryClient]);
 
-  if (!synced && isSignedIn) return null;
   return <>{children}</>;
 }
 
@@ -81,11 +72,11 @@ export function Providers({ children }: ProvidersProps) {
       signUpFallbackRedirectUrl="/tbt"
     >
       <QueryClientProvider client={queryClient}>
-        <AuthInterceptor>
-          <SiteConfigProvider>
+        <SiteConfigProvider>
+          <AuthInterceptor>
             {children}
-          </SiteConfigProvider>
-        </AuthInterceptor>
+          </AuthInterceptor>
+        </SiteConfigProvider>
         <Toaster
           position="top-right"
           toastOptions={{

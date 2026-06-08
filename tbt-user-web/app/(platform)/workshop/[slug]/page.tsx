@@ -22,14 +22,12 @@ import {
   X,
 } from "lucide-react";
 import {
-  useWorkshopDetail,
-  useWorkshopFlow,
+  useWorkshopOverview,
   useWorkshopQa,
   usePostQa,
   usePostQaReply,
   useWorkshopAssignments,
   useSubmitAssignment,
-  useWorkshopChallenges,
   useCompleteChallenge,
   useCompleteWorkshopEpisode,
   usePostEpisodeProgress,
@@ -997,15 +995,16 @@ function ChallengeList({
   slug,
   selectedId,
   onSelect,
+  preloadedData,
 }: {
   slug: string;
   selectedId: string | null;
   onSelect: (ch: any) => void;
+  preloadedData?: { challenges: any[] } | null;
 }) {
-  const { data, isLoading } = useWorkshopChallenges(slug);
-  const challenges = data?.challenges ?? [];
+  const challenges = preloadedData?.challenges ?? [];
 
-  if (isLoading) {
+  if (!preloadedData) {
     return (
       <div className="space-y-2">
         {[1, 2, 3, 4, 5].map((i) => (
@@ -2317,9 +2316,10 @@ export default function WorkshopDetailPage() {
   const searchParams = useSearchParams();
   const epParam = searchParams.get("ep");
   const qc = useQueryClient();
-  const { data: detail, isLoading: detailLoading } = useWorkshopDetail(slug);
-  const { data: flowData } = useWorkshopFlow(slug);
-  const { data: challengesData } = useWorkshopChallenges(slug);
+  const { data: overview, isLoading: detailLoading } = useWorkshopOverview(slug);
+  const detail = overview?.detail ?? null;
+  const flowData = overview?.flow ?? null;
+  const challengesData = overview?.challenges ?? null;
   const { uiStrings } = useSiteConfig();
 
   const tabs = detail?.sidebar?.tabs ?? [];
@@ -2328,7 +2328,7 @@ export default function WorkshopDetailPage() {
   const hasAutoOpenedRef = useRef(false);
 
   const handleLiveUrlUnlock = useCallback(() => {
-    qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-overview", slug] });
   }, [qc, slug]);
 
   // Auto-open challenge from ?ep param (Continue Watching → workshop page)
@@ -2522,6 +2522,7 @@ export default function WorkshopDetailPage() {
                 setMainView({ kind: "challenge", challenge: ch });
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
+              preloadedData={challengesData}
             />
           )}
 

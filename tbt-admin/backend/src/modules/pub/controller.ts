@@ -3,6 +3,7 @@ import { verifyToken } from '@clerk/backend';
 import { env } from '../../config/env.js';
 
 export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
     config = await req.server.prisma.siteConfig.create({
@@ -33,6 +34,7 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
 }
 
 export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
   const [items, config] = await Promise.all([
     req.server.prisma.navItem.findMany({
       where: { isVisible: true },
@@ -56,6 +58,7 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
 }
 
 export async function pubUiStringsHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
   let strings = await req.server.prisma.uiStrings.findFirst();
   if (!strings) {
     strings = await req.server.prisma.uiStrings.create({ data: {} });

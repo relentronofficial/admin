@@ -73,10 +73,10 @@ async function getCachedToken(): Promise<string> {
     return _tokenCache.token;
   }
 
-  // On page load, TanStack Query fires before AuthInterceptor's useEffect runs.
-  // Poll up to 2000ms so the interceptor has time to call initApiClient().
+  // On page load, TanStack Query may fire before AuthInterceptor's useEffect runs.
+  // Poll up to 600ms so the interceptor has time to call initApiClient().
   if (!_getToken) {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 6; i++) {
       await new Promise(r => setTimeout(r, 100));
       if (_getToken) break;
     }

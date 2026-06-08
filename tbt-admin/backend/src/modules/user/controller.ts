@@ -2637,6 +2637,245 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
   return ok(reply, { challenges: result });
 }
 
+// Aggregated endpoint: returns detail + flow + challenges in a single round-trip.
+// The workshop page previously made 3 separate requests; this replaces all of them.
+export async function getWorkshopOverviewHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { slug } = request.params as { slug: string };
+
+  // Run all three queries in parallel — same logic as the individual handlers.
+  const [detailResult, flowResult, challengesResult] = await Promise.all([
+    getWorkshopDetailData(request, slug),
+    getWorkshopFlowData(request, slug),
+    getWorkshopChallengesData(request, slug),
+  ]);
+
+  if (!detailResult) return fail(reply, 404, 'Workshop not found');
+
+  return ok(reply, {
+    detail: detailResult,
+    flow: { flowItems: flowResult },
+    challenges: { challenges: challengesResult },
+  });
+}
+
+// ── Shared helpers for overview (extracted from individual handlers) ─────────
+
+async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
+  const workshop = await request.server.prisma.workshop.findFirst({
+    where: { slug },
+    include: {
+      enrollments: { where: { memberId: request.memberId }, select: { status: true } },
+      challenges: { select: { id: true, type: true, episodes: { select: { id: true } } }, orderBy: { order: 'asc' } },
+      liveCalls: { where: { scheduledAt: { gt: new Date() } }, orderBy: { scheduledAt: 'asc' }, take: 1, select: { id: true, scheduledAt: true } },
+    },
+  });
+  if (!workshop) return null;
+
+  const enrollment = (workshop as any).enrollments?.[0];
+  const allChallenges: any[] = (workshop as any).challenges ?? [];
+  const allEpisodes = allChallenges.flatMap((c: any) => c.episodes ?? []);
+
+  const [episodeProgress, challengeProgressRows] = await Promise.all([
+    request.server.prisma.memberEpisodeProgress.findMany({
+      where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e: any) => e.id) } },
+      select: { episodeId: true, isCompleted: true },
+    }),
+    (request.server.prisma as any).memberChallengeProgress.findMany({
+      where: { memberId: request.memberId, challengeId: { in: allChallenges.map((c: any) => c.id) } },
+      select: { challengeId: true, status: true },
+    }),
+  ]);
+
+  const completedCount = episodeProgress.filter((p: any) => p.isCompleted).length;
+  const totalCount = allEpisodes.length;
+  const completableChallenges = allChallenges.filter((c: any) => c.type !== 'live_call');
+  const challengeProgressMap = new Map((challengeProgressRows as any[]).map((r: any) => [r.challengeId, r.status]));
+  const completedEpIds = new Set(episodeProgress.filter((p: any) => p.isCompleted).map((p: any) => p.episodeId));
+
+  let completedChallengeCount = 0;
+  for (const ch of completableChallenges) {
+    const progressStatus = challengeProgressMap.get(ch.id);
+    const epIds: string[] = (ch.episodes ?? []).map((e: any) => e.id);
+    const allEpsDone = epIds.length > 0 && epIds.every((id: string) => completedEpIds.has(id));
+    const isWatch = !ch.type || ch.type === 'watch';
+    if (progressStatus === 'completed' || (isWatch && allEpsDone)) completedChallengeCount++;
+  }
+
+  const totalChallenges = completableChallenges.length;
+  const videosCompletedPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const challengesCompletedPct = totalChallenges > 0 ? Math.round((completedChallengeCount / totalChallenges) * 100) : 100;
+  const certEligible = videosCompletedPct === 100 && challengesCompletedPct === 100 && totalCount > 0;
+  const hasUpcomingCall = ((workshop as any).liveCalls ?? []).length > 0;
+
+  return {
+    id: workshop.id,
+    title: workshop.title,
+    backLabel: workshop.backLabel,
+    backUrl: workshop.backUrl,
+    sidebar: { tabs: [
+      { id: 'challenges', label: workshop.tabChallengesLabel, order: 1 },
+      { id: 'qa', label: workshop.tabQaLabel, order: 2 },
+      { id: 'assignment', label: workshop.tabAssignmentLabel, order: 3 },
+    ]},
+    learningProgress: {
+      label: workshop.progressWidgetLabel,
+      percentage: challengesCompletedPct,
+      completedCount: completedChallengeCount,
+      totalCount: totalChallenges,
+      milestones: Array.from({ length: workshop.progressMilestoneCount ?? 3 }, (_, i) => ({
+        achieved: challengesCompletedPct >= Math.round(((i + 1) / (workshop.progressMilestoneCount ?? 3)) * 100),
+      })),
+    },
+    certificate: { eligible: certEligible, videosCompletedPct, challengesCompletedPct, remainingVideos: totalCount - completedCount, remainingChallenges: totalChallenges - completedChallengeCount },
+    workshopFlowLabel: workshop.workshopFlowLabel,
+    defaultMainAreaType: hasUpcomingCall ? 'countdown' : null,
+    enrollmentStatus: enrollment?.status ?? null,
+  };
+}
+
+async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promise<any[]> {
+  const workshop = await request.server.prisma.workshop.findFirst({
+    where: { slug },
+    include: {
+      flowItems: {
+        orderBy: { order: 'asc' },
+        include: {
+          challenge: { include: { episodes: { orderBy: { order: 'asc' }, include: { progress: { where: { memberId: request.memberId }, select: { isCompleted: true } } } } } },
+          liveCall: true,
+        },
+      },
+    },
+  });
+  if (!workshop) return [];
+
+  return Promise.all(
+    (workshop as any).flowItems.map(async (item: any) => {
+      if (item.type === 'challenge' && item.challenge) {
+        const ch = item.challenge;
+        const totalEps = ch.episodes.length;
+        const completedEps = ch.episodes.filter((e: any) => e.progress?.[0]?.isCompleted).length;
+        return {
+          id: item.id, order: item.order, type: item.type,
+          challengeNumber: ch.challengeNumber ?? null,
+          numberLabel: ch.numberLabel ?? `Challenge ${String(ch.challengeNumber ?? '').padStart(2, '0')}:`,
+          numberColor: ch.numberColor ?? '#00c4cc', title: ch.title, description: ch.description ?? null,
+          progressPercent: totalEps > 0 ? Math.round((completedEps / totalEps) * 100) : 0,
+          isExpanded: false,
+          episodes: ch.episodes.map((ep: any) => ({
+            id: ep.id, order: ep.order, title: ep.title, type: ep.type, typeLabel: ep.typeLabel,
+            durationSeconds: ep.durationSeconds ?? null, durationLabel: ep.durationLabel ?? null,
+            isCompleted: ep.progress?.[0]?.isCompleted ?? false, isLocked: false,
+            lockIconType: ep.lockIconType, completedIconType: ep.completedIconType,
+          })),
+        };
+      }
+      if ((item.type === 'live_call' || item.type === 'custom') && item.liveCall) {
+        const lc = item.liveCall;
+        const now = new Date();
+        const scheduledAt = new Date(lc.scheduledAt);
+        const status = scheduledAt < now ? 'past' : 'upcoming';
+        return {
+          id: item.id, order: item.order, type: 'live_call',
+          label: lc.label, labelColor: lc.labelColor, title: lc.title, scheduledAt: lc.scheduledAt, status,
+          recordingAvailable: status === 'past' && !!lc.recordingUrl,
+          recordingLabel: lc.recordingUrl ? (lc.recordingLabel ?? 'Missed it? View the recording.') : null,
+          prerequisiteNote: lc.prerequisiteNote ?? null,
+          liveUrl: status === 'upcoming' ? (lc.liveUrl ?? null) : null,
+          liveUrlUnlocksMinutesBefore: lc.liveUrlUnlocksMinutesBefore ?? 30,
+          facilitatorName: lc.facilitatorName ?? null, facilitatorTitle: lc.facilitatorTitle ?? null,
+          facilitatorDescription: lc.facilitatorDescription ?? null,
+          countdownConfig: status === 'upcoming' ? { stayTunedMessage: lc.stayTunedMessage, stayTunedColor: lc.stayTunedColor } : null,
+          isCompleted: status === 'past',
+        };
+      }
+      return { id: item.id, order: item.order, type: item.type, label: item.label ?? null, description: item.description ?? null, isCompleted: item.isCompleted, isExpanded: false };
+    })
+  );
+}
+
+async function getWorkshopChallengesData(request: FastifyRequest, slug: string): Promise<any[]> {
+  const workshop = await request.server.prisma.workshop.findFirst({ where: { slug }, select: { id: true } });
+  if (!workshop) return [];
+
+  const flowItems = await request.server.prisma.workshopFlowItem.findMany({
+    where: { workshopId: workshop.id, type: { in: ['challenge_start', 'live_call'] } },
+    orderBy: { order: 'asc' },
+    include: {
+      challenge: {
+        include: {
+          episodes: { orderBy: { order: 'asc' }, include: { progress: { where: { memberId: request.memberId }, select: { isCompleted: true, lastWatchedSecs: true, actualWatchedSecs: true } } } },
+          memberProgress: { where: { memberId: request.memberId }, select: { status: true, completedAt: true, answersData: true } },
+        },
+      },
+      liveCall: true,
+    },
+  });
+
+  const challengeFlowItems = (flowItems as any[]).filter(fi => fi.type === 'challenge_start');
+  const challengeStatuses: string[] = challengeFlowItems.map(fi => {
+    const ch = fi.challenge;
+    if (!ch) return 'not_started';
+    if (!ch.type || ch.type === 'watch') {
+      const total = ch.episodes.length;
+      const done = ch.episodes.filter((e: any) => e.progress?.[0]?.isCompleted).length;
+      if (total === 0) return 'not_started';
+      if (done >= total) return 'completed';
+      if (done > 0) return 'in_progress';
+      return 'not_started';
+    }
+    return ch.memberProgress?.[0]?.status ?? 'not_started';
+  });
+
+  const now = new Date();
+  let challengeIdx = 0;
+
+  return (flowItems as any[]).map(fi => {
+    if (fi.type === 'live_call') {
+      const lc = fi.liveCall;
+      if (!lc) return null;
+      const scheduled = lc.scheduledAt ? new Date(lc.scheduledAt) : null;
+      const isPast = scheduled ? scheduled < now : false;
+      const unlockAt = scheduled && lc.liveUrlUnlocksMinutesBefore ? new Date(scheduled.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000) : null;
+      const isUnlocked = unlockAt ? now >= unlockAt : !!lc.liveUrl;
+      return {
+        id: fi.id, type: 'live_call', liveCallId: lc.id,
+        label: lc.label ?? 'LIVE CALL:', labelColor: lc.labelColor ?? '#ff3d8b', title: lc.title,
+        scheduledAt: lc.scheduledAt?.toISOString() ?? null, liveUrl: isUnlocked ? lc.liveUrl : null,
+        liveUrlUnlocksMinutesBefore: lc.liveUrlUnlocksMinutesBefore ?? 30,
+        facilitatorName: lc.facilitatorName ?? null, facilitatorTitle: lc.facilitatorTitle ?? null,
+        stayTunedMessage: lc.stayTunedMessage ?? null, stayTunedColor: lc.stayTunedColor ?? '#2dd4bf',
+        status: isPast ? 'past' : 'upcoming', isLocked: false,
+        progressPercent: isPast ? 100 : 0, numberLabel: null,
+      };
+    }
+    const ch = fi.challenge;
+    if (!ch) return null;
+    const idx = challengeIdx++;
+    const allPrevCompleted = challengeStatuses.slice(0, idx).every(s => s === 'completed');
+    const isLocked = idx > 0 && !allPrevCompleted;
+    const rawStatus = challengeStatuses[idx];
+    const status = isLocked ? 'locked' : rawStatus;
+    const totalEps = ch.episodes.length;
+    const doneEps = ch.episodes.filter((e: any) => e.progress?.[0]?.isCompleted).length;
+    return {
+      id: ch.id, order: ch.order, challengeNumber: ch.challengeNumber,
+      numberLabel: ch.numberLabel, numberColor: ch.numberColor,
+      title: ch.title, description: ch.description ?? null,
+      type: ch.type ?? 'watch', quizData: ch.quizData ?? null,
+      status, isLocked,
+      progressPercent: (!ch.type || ch.type === 'watch') ? (totalEps > 0 ? Math.round((doneEps / totalEps) * 100) : 0) : rawStatus === 'completed' ? 100 : rawStatus === 'in_progress' ? 30 : 0,
+      episodes: (!ch.type || ch.type === 'watch') ? ch.episodes.map((ep: any) => ({
+        id: ep.id, order: ep.order, title: ep.title, type: ep.type, typeLabel: ep.typeLabel ?? null,
+        durationSeconds: ep.durationSeconds ?? null, durationLabel: ep.durationLabel ?? null,
+        isCompleted: ep.progress?.[0]?.isCompleted ?? false,
+        lastWatchedSecs: ep.progress?.[0]?.lastWatchedSecs ?? 0,
+        actualWatchedSecs: ep.progress?.[0]?.actualWatchedSecs ?? 0,
+      })) : [],
+      submission: ch.memberProgress?.[0] ?? null,
+    };
+  }).filter(Boolean);
+}
+
 export async function completeChallengeHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
   const { answersData } = (request.body as any) ?? {};
