@@ -681,10 +681,10 @@ export const useAtRiskMembers = (params: { inactiveDays?: number; completionThre
     staleTime: 60_000,
   });
 
-export const useCompletionMatrix = (workshopId: string) =>
+export const useCompletionMatrix = (workshopId: string, page = 1) =>
   useQuery({
-    queryKey: ['completion-matrix', workshopId],
-    queryFn: async () => { const res: any = await apiClient.get(`/api/members/analytics/workshop/${workshopId}/matrix`); return res; },
+    queryKey: ['completion-matrix', workshopId, page],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/members/analytics/workshop/${workshopId}/matrix`, { params: { page, limit: 50 } }); return res; },
     enabled: !!workshopId,
     staleTime: 30_000,
   });
@@ -699,8 +699,8 @@ export const useAllAssignmentSubmissions = (params: { page?: number; limit?: num
 export const useReviewAssignment = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ submissionId, reviewNote, reviewedBy }: { submissionId: string; reviewNote?: string; reviewedBy?: string }) => {
-      const res: any = await apiClient.patch(`/api/members/assignments/${submissionId}/review`, { reviewNote, reviewedBy });
+    mutationFn: async ({ submissionId, reviewNote }: { submissionId: string; reviewNote?: string }) => {
+      const res: any = await apiClient.patch(`/api/members/assignments/${submissionId}/review`, { reviewNote });
       return res.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment-submissions'] }),

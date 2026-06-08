@@ -42,7 +42,7 @@ export default function DashboardPage() {
   }, [queryClient]);
 
   const stats = overview ? [
-    { label: "Total Members", value: overview.totalMembers?.toLocaleString() ?? "—", sub: `+${overview.newMembersThisMonth ?? 0} this week`, icon: Users, color: "text-[#e02020]" },
+    { label: "Total Members", value: overview.totalMembers?.toLocaleString() ?? "—", sub: `+${overview.newMembersLast7d ?? 0} this week`, icon: Users, color: "text-[#e02020]" },
     { label: "Active (30d)", value: overview.activeMembers30d?.toLocaleString() ?? "—", sub: "Last 30 days", icon: Activity, color: "text-blue-500" },
     { label: "Avg Health Score", value: overview.avgHealthScore != null ? `${overview.avgHealthScore}%` : "—", sub: "Engagement score", icon: TrendingUp, color: "text-purple-500" },
     { label: "Completed Episodes", value: overview.completedEpisodes?.toLocaleString() ?? "—", sub: `${overview.completedChallenges ?? 0} challenges`, icon: CheckCircle2, color: "text-green-500" },
@@ -138,7 +138,7 @@ export default function DashboardPage() {
                 { label: "Enrollments", value: overview.totalEnrollments?.toLocaleString() ?? "—", icon: BookOpen },
                 { label: "Completed Challenges", value: overview.completedChallenges?.toLocaleString() ?? "—", icon: CheckCircle2 },
                 { label: "Assignment Submissions", value: overview.submittedAssignments?.toLocaleString() ?? "—", icon: CheckCircle2 },
-                { label: "New Members (7d)", value: overview.newMembersThisMonth?.toLocaleString() ?? "—", icon: Users },
+                { label: "New Members (7d)", value: overview.newMembersLast7d?.toLocaleString() ?? "—", icon: Users },
               ].map(({ label, value, icon: Icon }) => (
                 <div key={label} className="flex items-center justify-between bg-[#1f1f1f] border border-[#2a2a2a] p-4 rounded-lg">
                   <div className="flex items-center gap-3">

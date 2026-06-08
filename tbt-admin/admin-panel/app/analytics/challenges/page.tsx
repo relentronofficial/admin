@@ -6,12 +6,14 @@ import { CheckCircle2, Loader2, Target } from "lucide-react";
 import { useCompletionMatrix, useListWorkshops } from "@/lib/hooks/useTbt";
 
 export default function ChallengesAnalyticsPage() {
-  const { data: workshopsData } = useListWorkshops();
+  const { data: workshopsData } = useListWorkshops({ limit: 100 });
   const workshops = (workshopsData as any)?.data || [];
   const [selectedWorkshopId, setSelectedWorkshopId] = useState("");
+  const [matrixPage, setMatrixPage] = useState(1);
 
-  const { data: matrixData, isLoading: matrixLoading } = useCompletionMatrix(selectedWorkshopId);
+  const { data: matrixData, isLoading: matrixLoading } = useCompletionMatrix(selectedWorkshopId, matrixPage);
   const matrix = (matrixData as any)?.data;
+  const enrollmentTotal = (matrixData as any)?.meta?.total ?? 0;
 
   return (
     <DashboardLayout>
@@ -28,7 +30,7 @@ export default function ChallengesAnalyticsPage() {
         <div className="flex items-center gap-3">
           <select
             value={selectedWorkshopId}
-            onChange={e => setSelectedWorkshopId(e.target.value)}
+            onChange={e => { setSelectedWorkshopId(e.target.value); setMatrixPage(1); }}
             className="w-full max-w-sm bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white text-sm outline-none focus:border-[#dc2626] transition-all appearance-none"
           >
             <option value="">Select a workshop...</option>
@@ -106,6 +108,13 @@ export default function ChallengesAnalyticsPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {enrollmentTotal > 50 && (
+                <div className="px-6 py-3 border-t border-[#1f1f1f] flex items-center justify-between">
+                  <button onClick={() => setMatrixPage(p => Math.max(1, p - 1))} disabled={matrixPage === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
+                  <span className="text-[10px] text-[#444]">Page {matrixPage} · {enrollmentTotal} enrolled</span>
+                  <button onClick={() => setMatrixPage(p => p + 1)} disabled={(matrix?.rows ?? []).length < 50} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
                 </div>
               )}
             </div>

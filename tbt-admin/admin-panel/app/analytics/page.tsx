@@ -11,12 +11,12 @@ import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
 
 export default function AnalyticsPage() {
-  const { data: overviewData, isLoading: overviewLoading } = useAnalyticsOverview();
+  const { data: overviewData, isLoading: overviewLoading, isError: overviewError } = useAnalyticsOverview();
   const overview = (overviewData as any)?.data;
 
   const [inactiveDays, setInactiveDays] = useState(7);
   const [atRiskPage, setAtRiskPage] = useState(1);
-  const { data: atRiskData, isLoading: atRiskLoading } = useAtRiskMembers({
+  const { data: atRiskData, isLoading: atRiskLoading, isError: atRiskError } = useAtRiskMembers({
     inactiveDays,
     completionThreshold: 50,
     page: atRiskPage,
@@ -41,14 +41,16 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
             {[...Array(8)].map((_, i) => <div key={i} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5 h-[100px] animate-pulse" />)}
           </div>
-        ) : overview && (
+        ) : overviewError ? (
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 text-center text-[#606060] text-sm font-rajdhani uppercase tracking-widest">Failed to load overview stats.</div>
+        ) : overview ? (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
               {[
                 { label: "Total Members", value: overview.totalMembers?.toLocaleString(), icon: Users, color: "text-[#e02020]" },
                 { label: "Active (30d)", value: overview.activeMembers30d?.toLocaleString(), icon: Activity, color: "text-blue-400" },
                 { label: "Avg Health Score", value: `${overview.avgHealthScore ?? 0}%`, icon: TrendingUp, color: "text-purple-400" },
-                { label: "New Members (7d)", value: overview.newMembersThisMonth?.toLocaleString(), icon: Users, color: "text-green-400" },
+                { label: "New Members (7d)", value: overview.newMembersLast7d?.toLocaleString(), icon: Users, color: "text-green-400" },
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5">
                   <div className={`mb-3 ${color}`}><Icon size={18} /></div>
@@ -72,7 +74,7 @@ export default function AnalyticsPage() {
               ))}
             </div>
           </>
-        )}
+        ) : null}
 
         {/* At-Risk Members */}
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
@@ -102,6 +104,8 @@ export default function AnalyticsPage() {
 
           {atRiskLoading ? (
             <div className="flex items-center justify-center py-20"><Loader2 size={22} className="animate-spin text-[#444]" /></div>
+          ) : atRiskError ? (
+            <div className="text-center py-16 text-[#606060] text-sm font-rajdhani uppercase tracking-widest">Failed to load at-risk members.</div>
           ) : atRisk.length === 0 ? (
             <div className="text-center py-16">
               <CheckCircle2 size={32} className="mx-auto text-green-500 mb-3" />

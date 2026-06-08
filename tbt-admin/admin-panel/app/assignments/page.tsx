@@ -35,7 +35,7 @@ export default function AssignmentsPage() {
 
   const handleReview = async (submissionId: string) => {
     try {
-      await reviewMutation.mutateAsync({ submissionId, reviewNote, reviewedBy: "admin" });
+      await reviewMutation.mutateAsync({ submissionId, reviewNote });
       toast.success("Submission reviewed");
       setReviewingId(null);
       setReviewNote("");
@@ -162,7 +162,7 @@ export default function AssignmentsPage() {
                                   {reviewMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Mark Reviewed
                                 </button>
                                 <button
-                                  onClick={() => setReviewingId(null)}
+                                  onClick={() => { setReviewingId(null); setReviewNote(""); }}
                                   className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] text-[#606060] hover:text-white rounded-lg font-rajdhani font-bold text-[11px] uppercase tracking-widest transition-all"
                                 >
                                   Cancel

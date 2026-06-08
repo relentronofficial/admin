@@ -664,6 +664,7 @@ export async function getMemberActivityTimelineHandler(req: FastifyRequest, repl
 export async function getAnalyticsOverviewHandler(req: FastifyRequest, reply: FastifyReply) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo  = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000);
+  const activeFilter  = { deletedAt: null } as any;
 
   const [
     totalMembers,
@@ -673,16 +674,16 @@ export async function getAnalyticsOverviewHandler(req: FastifyRequest, reply: Fa
     completedChallenges,
     submittedAssignments,
     avgHealthScore,
-    newMembersThisMonth,
+    newMembersLast7d,
   ] = await Promise.all([
-    req.server.prisma.member.count(),
-    req.server.prisma.member.count({ where: { lastActiveAt: { gte: thirtyDaysAgo } } }),
+    req.server.prisma.member.count({ where: activeFilter }),
+    req.server.prisma.member.count({ where: { ...activeFilter, lastActiveAt: { gte: thirtyDaysAgo } } }),
     req.server.prisma.workshopEnrollment.count(),
     req.server.prisma.memberEpisodeProgress.count({ where: { isCompleted: true } }),
     (req.server.prisma as any).memberChallengeProgress.count({ where: { status: 'completed' } }),
     req.server.prisma.assignmentSubmission.count(),
-    req.server.prisma.member.aggregate({ _avg: { healthScore: true } }),
-    req.server.prisma.member.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+    req.server.prisma.member.aggregate({ where: activeFilter, _avg: { healthScore: true } }),
+    req.server.prisma.member.count({ where: { ...activeFilter, createdAt: { gte: sevenDaysAgo } } }),
   ]);
 
   return reply.send({
@@ -695,7 +696,7 @@ export async function getAnalyticsOverviewHandler(req: FastifyRequest, reply: Fa
       completedChallenges,
       submittedAssignments,
       avgHealthScore: Math.round((avgHealthScore._avg.healthScore ?? 0) * 10) / 10,
-      newMembersThisMonth,
+      newMembersLast7d,
     },
     error: null,
   });
@@ -706,17 +707,21 @@ export async function getAtRiskMembersHandler(req: FastifyRequest, reply: Fastif
     inactiveDays?: number; completionThreshold?: number; page?: number; limit?: number;
   };
 
+  const safeThreshold = Math.max(0, Math.min(100, Number(completionThreshold) || 50));
   const cutoff = new Date(Date.now() - Number(inactiveDays) * 24 * 60 * 60 * 1000);
+
+  const where = {
+    deletedAt: null,
+    OR: [
+      { lastActiveAt: { lt: cutoff } },
+      { lastActiveAt: null },
+    ],
+    healthScore: { lt: safeThreshold },
+  } as any;
 
   const [members, total] = await Promise.all([
     req.server.prisma.member.findMany({
-      where: {
-        OR: [
-          { lastActiveAt: { lt: cutoff } },
-          { lastActiveAt: null },
-        ],
-        healthScore: { lt: Number(completionThreshold) },
-      },
+      where,
       select: {
         id: true,
         firstName: true,
@@ -728,19 +733,11 @@ export async function getAtRiskMembersHandler(req: FastifyRequest, reply: Fastif
         lastActiveAt: true,
         _count: { select: { workshopEnrollments: true } },
       },
-      orderBy: { healthScore: 'asc' },
+      orderBy: [{ healthScore: 'asc' }, { createdAt: 'asc' }],
       take: Number(limit),
       skip: (Number(page) - 1) * Number(limit),
     }),
-    req.server.prisma.member.count({
-      where: {
-        OR: [
-          { lastActiveAt: { lt: cutoff } },
-          { lastActiveAt: null },
-        ],
-        healthScore: { lt: Number(completionThreshold) },
-      },
-    }),
+    req.server.prisma.member.count({ where }),
   ]);
 
   return reply.send({ success: true, data: members, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
@@ -748,50 +745,118 @@ export async function getAtRiskMembersHandler(req: FastifyRequest, reply: Fastif
 
 export async function getCompletionMatrixHandler(req: FastifyRequest, reply: FastifyReply) {
   const { workshopId } = req.params as { workshopId: string };
+  const { page = 1, limit = 50 } = req.query as { page?: number; limit?: number };
 
   const workshop = await req.server.prisma.workshop.findUnique({
     where: { id: workshopId },
-    include: {
-      challenges: {
-        orderBy: { order: 'asc' },
-        select: { id: true, title: true, numberLabel: true },
-      },
-    },
+    select: { id: true, title: true },
   });
   if (!workshop) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Workshop not found' } });
 
-  const enrollments = await req.server.prisma.workshopEnrollment.findMany({
-    where: { workshopId },
-    include: {
-      member: { select: { id: true, firstName: true, lastName: true, email: true } },
-    },
-    orderBy: { enrolledAt: 'desc' },
-  });
+  // 1. Get challenges ordered by WorkshopFlowItem.order (user-visible sequence)
+  const [flowItems, allChallenges] = await Promise.all([
+    req.server.prisma.workshopFlowItem.findMany({
+      where: { workshopId, challengeId: { not: null } },
+      select: { challengeId: true, order: true },
+      orderBy: { order: 'asc' },
+    }),
+    req.server.prisma.challenge.findMany({
+      where: { workshopId },
+      select: { id: true, title: true, numberLabel: true, type: true },
+    }),
+  ]);
 
-  const challengeIds = workshop.challenges.map(c => c.id);
+  const flowOrderMap = new Map<string, number>();
+  for (const fi of flowItems) {
+    if (fi.challengeId) flowOrderMap.set(fi.challengeId, fi.order);
+  }
+  const challenges = allChallenges.sort((a, b) =>
+    (flowOrderMap.get(a.id) ?? 9999) - (flowOrderMap.get(b.id) ?? 9999)
+  );
+
+  // 2. Paginated enrollments
+  const [enrollments, enrollmentTotal] = await Promise.all([
+    req.server.prisma.workshopEnrollment.findMany({
+      where: { workshopId },
+      include: { member: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      orderBy: { enrolledAt: 'desc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+    }),
+    req.server.prisma.workshopEnrollment.count({ where: { workshopId } }),
+  ]);
+
   const memberIds = enrollments.map(e => e.memberId);
+  const watchChallengeIds   = challenges.filter(c => c.type === 'watch').map(c => c.id);
+  const nonWatchChallengeIds = challenges.filter(c => c.type !== 'watch').map(c => c.id);
 
-  const completedProgress = await (req.server.prisma as any).memberChallengeProgress.findMany({
-    where: { memberId: { in: memberIds }, challengeId: { in: challengeIds }, status: 'completed' },
-    select: { memberId: true, challengeId: true, completedAt: true },
-  });
+  // 3. Non-watch: MemberChallengeProgress
+  // 4. Watch: check all episodes completed via MemberEpisodeProgress
+  const [challengeProgressRows, watchEpisodes] = await Promise.all([
+    nonWatchChallengeIds.length > 0
+      ? (req.server.prisma as any).memberChallengeProgress.findMany({
+          where: { memberId: { in: memberIds }, challengeId: { in: nonWatchChallengeIds }, status: 'completed' },
+          select: { memberId: true, challengeId: true },
+        })
+      : Promise.resolve([]),
+    watchChallengeIds.length > 0
+      ? req.server.prisma.workshopEpisode.findMany({
+          where: { challengeId: { in: watchChallengeIds } },
+          select: { id: true, challengeId: true },
+        })
+      : Promise.resolve([]),
+  ]);
 
-  const progressMap = new Map<string, Set<string>>();
-  for (const p of completedProgress) {
-    if (!progressMap.has(p.memberId)) progressMap.set(p.memberId, new Set());
-    progressMap.get(p.memberId)!.add(p.challengeId);
+  // memberId → Set<challengeId> for non-watch challenges
+  const challengeProgressMap = new Map<string, Set<string>>();
+  for (const p of challengeProgressRows) {
+    if (!challengeProgressMap.has(p.memberId)) challengeProgressMap.set(p.memberId, new Set());
+    challengeProgressMap.get(p.memberId)!.add(p.challengeId);
+  }
+
+  // challengeId → episodeId[] for watch challenges
+  const episodesByChallengeId = new Map<string, string[]>();
+  for (const ep of watchEpisodes) {
+    if (!episodesByChallengeId.has(ep.challengeId)) episodesByChallengeId.set(ep.challengeId, []);
+    episodesByChallengeId.get(ep.challengeId)!.push(ep.id);
+  }
+
+  const allEpisodeIds = watchEpisodes.map(e => e.id);
+  const completedEpisodeRows = allEpisodeIds.length > 0 && memberIds.length > 0
+    ? await req.server.prisma.memberEpisodeProgress.findMany({
+        where: { memberId: { in: memberIds }, episodeId: { in: allEpisodeIds }, isCompleted: true },
+        select: { memberId: true, episodeId: true },
+      })
+    : [];
+
+  // memberId → Set<episodeId> for completed watch episodes
+  const completedEpisodeMap = new Map<string, Set<string>>();
+  for (const ep of completedEpisodeRows) {
+    if (!completedEpisodeMap.has(ep.memberId)) completedEpisodeMap.set(ep.memberId, new Set());
+    completedEpisodeMap.get(ep.memberId)!.add(ep.episodeId);
+  }
+
+  function isChallengeCompleted(memberId: string, challenge: { id: string; type: string }): boolean {
+    if (challenge.type !== 'watch') {
+      return challengeProgressMap.get(memberId)?.has(challenge.id) ?? false;
+    }
+    const epIds = episodesByChallengeId.get(challenge.id) ?? [];
+    if (epIds.length === 0) return false;
+    const memberEps = completedEpisodeMap.get(memberId) ?? new Set<string>();
+    return epIds.every(eid => memberEps.has(eid));
   }
 
   const rows = enrollments.map(e => ({
     member: e.member,
     enrolledAt: e.enrolledAt,
     status: e.status,
-    challenges: workshop.challenges.map(c => ({
+    challenges: challenges.map(c => ({
       challengeId: c.id,
-      completed: progressMap.get(e.memberId)?.has(c.id) ?? false,
+      type: c.type,
+      completed: isChallengeCompleted(e.memberId, c),
     })),
-    completedCount: progressMap.get(e.memberId)?.size ?? 0,
-    totalCount: challengeIds.length,
+    completedCount: challenges.filter(c => isChallengeCompleted(e.memberId, c)).length,
+    totalCount: challenges.length,
   }));
 
   return reply.send({
@@ -799,27 +864,32 @@ export async function getCompletionMatrixHandler(req: FastifyRequest, reply: Fas
     data: {
       workshopId,
       workshopTitle: workshop.title,
-      challenges: workshop.challenges,
+      challenges: challenges.map(c => ({ id: c.id, title: c.title, numberLabel: c.numberLabel, type: c.type })),
       rows,
+      enrollmentTotal,
     },
     error: null,
+    meta: { total: enrollmentTotal, page: Number(page), limit: Number(limit) },
   });
 }
 
 export async function reviewAssignmentHandler(req: FastifyRequest, reply: FastifyReply) {
   const { submissionId } = req.params as { submissionId: string };
-  const { reviewNote, reviewedBy } = req.body as { reviewNote?: string; reviewedBy?: string };
+  const { reviewNote } = req.body as { reviewNote?: string };
 
   const submission = await req.server.prisma.assignmentSubmission.findUnique({ where: { id: submissionId } });
   if (!submission) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Submission not found' } });
+  if (submission.reviewedAt) return reply.status(409).send({ success: false, error: { code: 'ALREADY_REVIEWED', message: 'This submission has already been reviewed' } });
+
+  const admin = await req.server.prisma.admin.findFirst({
+    where: { clerkId: req.user as string },
+    select: { fullName: true },
+  });
+  const reviewedBy = admin?.fullName ?? (req.user as string);
 
   const updated = await req.server.prisma.assignmentSubmission.update({
     where: { id: submissionId },
-    data: {
-      reviewNote: reviewNote ?? null,
-      reviewedBy: reviewedBy ?? null,
-      reviewedAt: new Date(),
-    },
+    data: { reviewNote: reviewNote ?? null, reviewedBy, reviewedAt: new Date() },
     select: { id: true, reviewNote: true, reviewedBy: true, reviewedAt: true, submittedAt: true, answerText: true },
   });
 
