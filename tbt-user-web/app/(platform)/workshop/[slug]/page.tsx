@@ -2320,25 +2320,26 @@ function ChallengeView({
   onChallengeComplete?: () => void;
   onRewatch?: () => void;
 }) {
+  const advance = onChallengeComplete ?? onDone;
   switch (challenge.type) {
-    case "live_call":  return <LiveCallChallengeView challenge={challenge} onDone={onDone} />;
+    case "live_call":  return <LiveCallChallengeView challenge={challenge} onDone={advance} />;
     case "quiz":       return (
       <QuizChallengeView
         challenge={challenge}
         slug={slug}
-        onDone={onChallengeComplete ?? onDone}
-        onRewatch={onRewatch ?? onDone}
+        onDone={advance}
+        onRewatch={onRewatch ?? advance}
       />
     );
-    case "written":    return <WrittenChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
-    case "matching":   return <MatchingChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
-    case "flashcard":  return <FlashcardChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "written":    return <WrittenChallengeView challenge={challenge} slug={slug} onDone={advance} />;
+    case "matching":   return <MatchingChallengeView challenge={challenge} slug={slug} onDone={advance} />;
+    case "flashcard":  return <FlashcardChallengeView challenge={challenge} slug={slug} onDone={advance} />;
     default:           return (
       <WatchChallengeView
         challenge={challenge}
         slug={slug}
         initialEpisodeId={initialEpisodeId}
-        onChallengeComplete={onChallengeComplete}
+        onChallengeComplete={advance}
       />
     );
   }
@@ -2418,13 +2419,15 @@ export default function WorkshopDetailPage() {
     }
   }, [epParam, challengesData?.challenges]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Advance to next unlocked challenge after current one completes
+  // Advance to the next challenge after current one completes.
+  // Use index rather than isLocked — the lock status in cached data is stale
+  // at the moment this runs (invalidateQueries hasn't refetched yet).
   const handleChallengeComplete = useCallback(() => {
     const challenges: any[] = challengesData?.challenges ?? [];
     const currentId = mainView.kind === "challenge" ? mainView.challenge?.id : null;
     if (!currentId) { setMainView({ kind: "default" }); return; }
     const currentIdx = challenges.findIndex((ch: any) => ch.id === currentId);
-    const next = challenges.slice(currentIdx + 1).find((ch: any) => !ch.isLocked);
+    const next = challenges[currentIdx + 1];
     if (next) {
       setMainView({ kind: "challenge", challenge: next });
       window.scrollTo({ top: 0, behavior: "smooth" });
