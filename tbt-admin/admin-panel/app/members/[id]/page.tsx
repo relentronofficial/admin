@@ -433,7 +433,7 @@ export default function MemberDetailPage() {
                   <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
                     <Activity size={14} className="text-[#606060]" />
                     <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Watch History</h3>
-                    <span className="ml-auto text-[10px] text-[#444]">Total: {(analyticsData as any)?.historyTotal ?? analytics.history?.length ?? 0}</span>
+                    <span className="ml-auto text-[10px] text-[#444]">Total: {analytics?.historyTotal ?? analytics?.history?.length ?? 0}</span>
                   </div>
                   {(analytics.history ?? []).length === 0 ? (
                     <div className="text-center py-10 text-[#444] text-sm italic">No watch history.</div>
@@ -469,7 +469,7 @@ export default function MemberDetailPage() {
                     </table>
                   )}
                   {/* Pagination */}
-                  {(analyticsData as any)?.historyTotal > 25 && (
+                  {(analytics?.historyTotal ?? 0) > 25 && (
                     <div className="px-6 py-3 border-t border-[#1f1f1f] flex items-center justify-between">
                       <button onClick={() => setAnalyticsPage(p => Math.max(1, p - 1))} disabled={analyticsPage === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
                       <span className="text-[10px] text-[#444]">Page {analyticsPage}</span>

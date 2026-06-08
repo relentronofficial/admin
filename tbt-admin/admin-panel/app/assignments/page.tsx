@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { CheckCircle2, Clock, Loader2, ClipboardCheck, Check } from "lucide-react";
 import { useAllAssignmentSubmissions, useReviewAssignment, useListWorkshops } from "@/lib/hooks/useTbt";
@@ -103,8 +103,8 @@ export default function AssignmentsPage() {
                 </thead>
                 <tbody className="divide-y divide-[#1f1f1f]">
                   {submissions.map((s: any) => (
-                    <>
-                      <tr key={s.id} className="hover:bg-white/[0.02] transition-colors">
+                    <Fragment key={s.id}>
+                      <tr className="hover:bg-white/[0.02] transition-colors">
                         <td className="px-5 py-3.5">
                           <p className="text-[12px] font-bold text-[#f0f0f0]">{s.member?.firstName} {s.member?.lastName}</p>
                           <p className="text-[10px] text-[#444]">{s.member?.email}</p>
@@ -143,7 +143,7 @@ export default function AssignmentsPage() {
                       </tr>
                       {/* Review panel */}
                       {reviewingId === s.id && (
-                        <tr key={`${s.id}-review`}>
+                        <tr>
                           <td colSpan={6} className="px-5 py-4 bg-[#141414] border-t border-[#222]">
                             <div className="flex gap-3">
                               <textarea
@@ -172,7 +172,7 @@ export default function AssignmentsPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
