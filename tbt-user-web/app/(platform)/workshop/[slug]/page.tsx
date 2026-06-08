@@ -1674,13 +1674,82 @@ function WatchChallengeView({
 
 // ─── Main: Quiz Challenge ─────────────────────────────────────────────────────
 
-function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: string; onDone: () => void }) {
+function QuizScoreModal({
+  score,
+  total,
+  onRewatch,
+  onNext,
+  isPending,
+}: {
+  score: number;
+  total: number;
+  onRewatch: () => void;
+  onNext: () => void;
+  isPending: boolean;
+}) {
+  const isPerfect = score === total;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}>
+      <div className="w-full max-w-sm rounded-2xl p-6 space-y-5 text-center shadow-2xl" style={{ background: "var(--color-bg-surface, #1a1a1a)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="flex flex-col items-center gap-2">
+          <div
+            className="w-14 h-14 rounded-full flex items-center justify-center"
+            style={{ background: isPerfect ? "#22c55e18" : "rgba(255,255,255,0.06)" }}
+          >
+            <Trophy size={26} style={{ color: isPerfect ? "#22c55e" : "var(--color-accent)" }} />
+          </div>
+          <p className="text-base font-bold text-foreground">Quiz Completed</p>
+          <p className="text-muted-foreground text-sm">
+            Your score is{" "}
+            <span className="font-black text-foreground text-lg">{score}</span>
+            {" "}out of{" "}
+            <span className="font-black text-foreground text-lg">{total}</span>
+          </p>
+          {!isPerfect && (
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Rewatch the video to strengthen your understanding, or continue to the next challenge.
+            </p>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={onRewatch}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all"
+            style={{ background: "rgba(255,255,255,0.06)", color: "var(--color-fg, #f0f0f0)", border: "1px solid rgba(255,255,255,0.1)" }}
+          >
+            Rewatch
+          </button>
+          <button
+            onClick={onNext}
+            disabled={isPending}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60 transition-all"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {isPending ? "Saving..." : "Next Challenge"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuizChallengeView({
+  challenge,
+  slug,
+  onDone,
+  onRewatch,
+}: {
+  challenge: any;
+  slug: string;
+  onDone: () => void;
+  onRewatch: () => void;
+}) {
   const qc = useQueryClient();
   const completeChallenge = useCompleteChallenge();
   const questions: any[] = challenge.quizData?.questions ?? [];
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [submitted, setSubmitted] = useState(challenge.status === "completed");
-  const [score, setScore] = useState(challenge.status === "completed" ? questions.length : 0);
+  const [showModal, setShowModal] = useState(false);
+  const [score, setScore] = useState(0);
 
   const allAnswered = questions.length > 0 && questions.every((q) => answers[q.id]);
 
@@ -1690,52 +1759,38 @@ function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: 
       return q.options?.find((o: any) => o.id === sel)?.correct;
     }).length;
     setScore(correct);
-    setSubmitted(true);
-    if (correct === questions.length) {
-      await completeChallenge.mutateAsync({ challengeId: challenge.id, answersData: { answers, score: correct, total: questions.length } });
-      qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
-      qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
-    }
+    setShowModal(true);
   };
 
-  const handleRetry = () => {
-    setSubmitted(false);
-    setAnswers({});
-    setScore(0);
+  const handleNext = async () => {
+    await completeChallenge.mutateAsync({
+      challengeId: challenge.id,
+      answersData: { answers, score, total: questions.length },
+    });
+    qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+    qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    setShowModal(false);
+    onDone();
+  };
+
+  const handleRewatch = () => {
+    setShowModal(false);
+    onRewatch();
   };
 
   return (
     <div className="space-y-5">
-      <ChallengeHeader challenge={challenge} />
-
-      {submitted && (
-        score === questions.length ? (
-          <div className="rounded-xl border p-4 text-center space-y-2" style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}>
-            <Trophy size={24} className="mx-auto" style={{ color: "#22c55e" }} />
-            <p className="font-bold text-foreground">Perfect Score!</p>
-            <p className="text-sm text-muted-foreground">
-              You scored <span className="font-bold text-foreground">{score}/{questions.length}</span>
-            </p>
-            <button onClick={onDone} className="mt-2 text-xs font-bold" style={{ color: "var(--color-accent)" }}>
-              Continue →
-            </button>
-          </div>
-        ) : (
-          <div className="rounded-xl border p-4 text-center space-y-2" style={{ borderColor: "#ef444444", background: "#ef44440a" }}>
-            <p className="font-bold text-foreground">You scored {score}/{questions.length}</p>
-            <p className="text-xs text-muted-foreground">
-              Need {questions.length}/{questions.length} to complete this challenge.
-            </p>
-            <button
-              onClick={handleRetry}
-              className="mt-1 px-4 py-2 rounded-lg text-xs font-bold text-white"
-              style={{ background: "var(--color-accent)" }}
-            >
-              Retry Quiz
-            </button>
-          </div>
-        )
+      {showModal && (
+        <QuizScoreModal
+          score={score}
+          total={questions.length}
+          onRewatch={handleRewatch}
+          onNext={handleNext}
+          isPending={completeChallenge.isPending}
+        />
       )}
+
+      <ChallengeHeader challenge={challenge} />
 
       {questions.map((q: any, qi: number) => {
         const selected = answers[q.id];
@@ -1757,9 +1812,8 @@ function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: 
                 return (
                   <button
                     key={opt.id}
-                    disabled={submitted}
-                    onClick={() => !submitted && setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left text-xs transition-all disabled:opacity-70"
+                    onClick={() => setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left text-xs transition-all"
                     style={{ borderColor, background: bg }}
                   >
                     <span
@@ -1780,16 +1834,14 @@ function QuizChallengeView({ challenge, slug, onDone }: { challenge: any; slug: 
         );
       })}
 
-      {!submitted && (
-        <button
-          onClick={handleSubmit}
-          disabled={!allAnswered || completeChallenge.isPending}
-          className="w-full py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-50 transition-opacity"
-          style={{ background: "var(--color-accent)" }}
-        >
-          {completeChallenge.isPending ? "Submitting..." : "Submit Quiz"}
-        </button>
-      )}
+      <button
+        onClick={handleSubmit}
+        disabled={!allAnswered}
+        className="w-full py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-50 transition-opacity"
+        style={{ background: "var(--color-accent)" }}
+      >
+        Submit Quiz
+      </button>
     </div>
   );
 }
@@ -2259,16 +2311,25 @@ function ChallengeView({
   onDone,
   initialEpisodeId,
   onChallengeComplete,
+  onRewatch,
 }: {
   challenge: any;
   slug: string;
   onDone: () => void;
   initialEpisodeId?: string;
   onChallengeComplete?: () => void;
+  onRewatch?: () => void;
 }) {
   switch (challenge.type) {
     case "live_call":  return <LiveCallChallengeView challenge={challenge} onDone={onDone} />;
-    case "quiz":       return <QuizChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
+    case "quiz":       return (
+      <QuizChallengeView
+        challenge={challenge}
+        slug={slug}
+        onDone={onChallengeComplete ?? onDone}
+        onRewatch={onRewatch ?? onDone}
+      />
+    );
     case "written":    return <WrittenChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
     case "matching":   return <MatchingChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
     case "flashcard":  return <FlashcardChallengeView challenge={challenge} slug={slug} onDone={onDone} />;
@@ -2372,6 +2433,19 @@ export default function WorkshopDetailPage() {
     }
   }, [mainView, challengesData?.challenges]);
 
+  // Navigate to the nearest preceding watch challenge (for quiz "Rewatch" button)
+  const handleRewatch = useCallback(() => {
+    const challenges: any[] = challengesData?.challenges ?? [];
+    const currentId = mainView.kind === "challenge" ? mainView.challenge?.id : null;
+    if (!currentId) return;
+    const currentIdx = challenges.findIndex((ch: any) => ch.id === currentId);
+    const prev = challenges.slice(0, currentIdx).reverse().find((ch: any) => ch.type !== "quiz");
+    if (prev) {
+      setMainView({ kind: "challenge", challenge: prev });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [mainView, challengesData?.challenges]);
+
   useEffect(() => {
     if (tabs.length > 0 && !activeTab) {
       setActiveTab(tabs[0].id);
@@ -2462,6 +2536,7 @@ export default function WorkshopDetailPage() {
               onDone={() => setMainView({ kind: "default" })}
               initialEpisodeId={mainView.initialEpisodeId}
               onChallengeComplete={handleChallengeComplete}
+              onRewatch={handleRewatch}
             />
           ) : upcomingLiveCall ? (
             <MainAreaCountdown item={upcomingLiveCall} />
