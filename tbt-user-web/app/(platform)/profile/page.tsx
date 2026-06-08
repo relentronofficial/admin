@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Image from "next/image";
 import { useClerk } from "@clerk/nextjs";
 import {
   CheckCircle2, Lock, Pencil, X, Save, Monitor, Smartphone, Tablet, Wifi,
@@ -39,7 +38,8 @@ function Avatar({
       <div className="rounded-full p-[3px]" style={{ background: ring }}>
         {avatarUrl ? (
           <div className="relative w-20 h-20 rounded-full overflow-hidden">
-            <Image src={avatarUrl} alt={firstName} fill className="object-cover" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={avatarUrl} alt={firstName} className="w-full h-full object-cover" />
           </div>
         ) : (
           <div
@@ -99,9 +99,9 @@ function BadgeChip({ badge }: { badge: ProfileBadge }) {
 
 function StatsStrip({ profile }: { profile: MemberProfile }) {
   const stats = [
-    { label: "Points", value: profile.totalPoints.toLocaleString(), Icon: Trophy, color: "#eab308" },
-    { label: "Streak", value: `${profile.currentStreak}d`, Icon: Flame, color: "#f97316" },
-    { label: "Health", value: `${profile.healthScore}%`, Icon: Heart, color: "#ef4444" },
+    { label: "Points", value: (profile.totalPoints ?? 0).toLocaleString(), Icon: Trophy, color: "#eab308" },
+    { label: "Streak", value: `${profile.currentStreak ?? 0}d`, Icon: Flame, color: "#f97316" },
+    { label: "Health", value: `${profile.healthScore ?? 0}%`, Icon: Heart, color: "#ef4444" },
   ];
   return (
     <div className="grid grid-cols-3 gap-3">
@@ -511,24 +511,24 @@ export default function ProfilePage() {
           </h2>
           <p className="text-sm text-muted-foreground truncate">{profile.email}</p>
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            <PlanBadge plan={profile.membershipPlan} />
-            {profile.badges.map((b) => <BadgeChip key={b.id} badge={b} />)}
+            {profile.membershipPlan && <PlanBadge plan={profile.membershipPlan} />}
+            {(profile.badges ?? []).map((b) => <BadgeChip key={b.id} badge={b} />)}
           </div>
         </div>
       </div>
 
-      {/* Stats strip */}
-      <StatsStrip profile={profile} />
+      {/* Stats strip — only rendered when new fields are present (guards old cached backend response) */}
+      {profile.totalPoints != null && <StatsStrip profile={profile} />}
 
       {/* Dynamic sections */}
-      {profile.sections.map((section) => (
+      {(profile.sections ?? []).map((section) => (
         <div key={section.id} className="p-6 rounded-2xl border border-border bg-card space-y-4">
           <h3 className="text-sm font-bold text-foreground">{section.label}</h3>
           {section.id === "personal" && <PersonalSection section={section} profile={profile} />}
           {section.id === "subscription" && <SubscriptionSection section={section} profile={profile} />}
           {section.id === "tiers" && (
             <div className="space-y-2">
-              {profile.tiers.length > 0 ? profile.tiers.map((tier) => <TierRow key={tier.tierNumber} tier={tier} />) : <p className="text-sm text-muted-foreground">—</p>}
+              {(profile.tiers ?? []).length > 0 ? (profile.tiers ?? []).map((tier) => <TierRow key={tier.tierNumber} tier={tier} />) : <p className="text-sm text-muted-foreground">—</p>}
             </div>
           )}
         </div>
