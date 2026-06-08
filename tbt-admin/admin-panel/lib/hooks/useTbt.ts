@@ -648,3 +648,61 @@ export const useSecurityLogStats = () =>
     },
     staleTime: 60_000,
   });
+
+// ── ANALYTICS ─────────────────────────────────────────────────────────
+
+export const useMemberWatchAnalytics = (memberId: string, page = 1) =>
+  useQuery({
+    queryKey: ['member-watch-analytics', memberId, page],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/members/${memberId}/watch-analytics`, { params: { page, limit: 25 } }); return res; },
+    enabled: !!memberId,
+    staleTime: 30_000,
+  });
+
+export const useMemberActivityTimeline = (memberId: string, page = 1) =>
+  useQuery({
+    queryKey: ['member-activity-timeline', memberId, page],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/members/${memberId}/activity-timeline`, { params: { page, limit: 30 } }); return res; },
+    enabled: !!memberId,
+    staleTime: 30_000,
+  });
+
+export const useAnalyticsOverview = () =>
+  useQuery({
+    queryKey: ['analytics-overview'],
+    queryFn: async () => { const res: any = await apiClient.get('/api/members/analytics/overview'); return res; },
+    staleTime: 60_000,
+  });
+
+export const useAtRiskMembers = (params: { inactiveDays?: number; completionThreshold?: number; page?: number; limit?: number } = {}) =>
+  useQuery({
+    queryKey: ['at-risk-members', params],
+    queryFn: async () => { const res: any = await apiClient.get('/api/members/analytics/at-risk', { params }); return res; },
+    staleTime: 60_000,
+  });
+
+export const useCompletionMatrix = (workshopId: string) =>
+  useQuery({
+    queryKey: ['completion-matrix', workshopId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/members/analytics/workshop/${workshopId}/matrix`); return res; },
+    enabled: !!workshopId,
+    staleTime: 30_000,
+  });
+
+export const useAllAssignmentSubmissions = (params: { page?: number; limit?: number; reviewed?: string; workshopId?: string } = {}) =>
+  useQuery({
+    queryKey: ['assignment-submissions', params],
+    queryFn: async () => { const res: any = await apiClient.get('/api/members/assignments', { params }); return res; },
+    staleTime: 30_000,
+  });
+
+export const useReviewAssignment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ submissionId, reviewNote, reviewedBy }: { submissionId: string; reviewNote?: string; reviewedBy?: string }) => {
+      const res: any = await apiClient.patch(`/api/members/assignments/${submissionId}/review`, { reviewNote, reviewedBy });
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment-submissions'] }),
+  });
+};

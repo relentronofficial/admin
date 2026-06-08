@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ChevronLeft, User, Mail, Phone, Calendar, MapPin, Briefcase,
   Trophy, Target, Loader2, Plus, X, Trash2, CheckCircle2,
+  Monitor, Activity, Clock, Shield,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useGetMember } from "@/lib/hooks/useMembers";
@@ -12,7 +13,7 @@ import {
   useMemberProgress, useListMemberBadges, useListAllBadges,
   useAssignBadge, useRemoveBadge,
   useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment,
-  useListWorkshops,
+  useListWorkshops, useMemberWatchAnalytics, useMemberActivityTimeline,
 } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import { format, isValid } from "date-fns";
@@ -32,7 +33,7 @@ const statusCls = (s: string) => {
   return m[s] || "bg-[#222] text-[#606060] border-[#333]";
 };
 
-const TABS = ["Info", "Enrollments", "Progress"] as const;
+const TABS = ["Info", "Enrollments", "Progress", "Analytics"] as const;
 type Tab = typeof TABS[number];
 
 export default function MemberDetailPage() {
@@ -64,6 +65,11 @@ export default function MemberDetailPage() {
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   const [expandedWorkshop, setExpandedWorkshop] = useState<string | null>(null);
+  const [analyticsPage, setAnalyticsPage] = useState(1);
+  const { data: analyticsData, isLoading: analyticsLoading } = useMemberWatchAnalytics(id, analyticsPage);
+  const analytics = (analyticsData as any)?.data;
+  const { data: timelineData } = useMemberActivityTimeline(id);
+  const timeline = (timelineData as any)?.data || [];
 
   const enrolledWorkshopIds = new Set(enrollments.map((e: any) => e.workshopId));
   const unenrolled = allWorkshops.filter((w: any) => !enrolledWorkshopIds.has(w.id));
@@ -392,6 +398,151 @@ export default function MemberDetailPage() {
                   </div>
                 );
               })
+            )}
+          </div>
+        )}
+        {/* ── ANALYTICS TAB ── */}
+        {activeTab === "Analytics" && (
+          <div className="space-y-6">
+            {analyticsLoading ? (
+              <div className="flex items-center gap-2 text-[#606060] py-16 justify-center"><Loader2 size={22} className="animate-spin" /> Loading analytics...</div>
+            ) : analytics ? (
+              <>
+                {/* Stats strip */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                  {[
+                    { label: "Total Watch", value: `${Math.round((analytics.stats.totalWatchSeconds ?? 0) / 60)}m`, icon: Clock },
+                    { label: "Episodes", value: analytics.stats.totalEpisodes ?? 0, icon: Activity },
+                    { label: "Completed", value: analytics.stats.completedEpisodes ?? 0, icon: CheckCircle2 },
+                    { label: "In Progress", value: analytics.stats.inProgressEpisodes ?? 0, icon: Target },
+                    { label: "Completion", value: `${analytics.stats.completionRate ?? 0}%`, icon: Trophy },
+                    { label: "Security Flags", value: analytics.stats.securityFlagCount ?? 0, icon: Shield },
+                  ].map(({ label, value, icon: Icon }) => (
+                    <div key={label} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Icon size={12} className="text-[#606060]" />
+                        <p className="text-[9px] uppercase tracking-widest text-[#606060] font-bold font-rajdhani">{label}</p>
+                      </div>
+                      <p className="font-rajdhani text-xl font-bold text-[#f0f0f0]">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Watch history */}
+                <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+                  <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
+                    <Activity size={14} className="text-[#606060]" />
+                    <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Watch History</h3>
+                    <span className="ml-auto text-[10px] text-[#444]">Total: {(analyticsData as any)?.historyTotal ?? analytics.history?.length ?? 0}</span>
+                  </div>
+                  {(analytics.history ?? []).length === 0 ? (
+                    <div className="text-center py-10 text-[#444] text-sm italic">No watch history.</div>
+                  ) : (
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
+                          <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Episode</th>
+                          <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Workshop</th>
+                          <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Progress</th>
+                          <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Last Watched</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1f1f1f]">
+                        {(analytics.history ?? []).map((h: any) => (
+                          <tr key={h.episodeId} className="hover:bg-white/[0.02]">
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                {h.isCompleted && <CheckCircle2 size={11} className="text-green-400 shrink-0" />}
+                                <span className="text-[12px] text-[#a0a0a0] truncate max-w-[180px]">{h.episodeTitle}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-[11px] text-[#606060] truncate max-w-[160px]">{h.workshopTitle}</td>
+                            <td className="px-4 py-3 text-right">
+                              <span className="text-[12px] font-bold font-rajdhani" style={{ color: h.progressPct >= 100 ? "#22c55e" : h.progressPct > 50 ? "#eab308" : "#dc2626" }}>
+                                {h.progressPct}%
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right text-[10px] text-[#444]">{safeDate(h.lastWatchedAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {/* Pagination */}
+                  {(analyticsData as any)?.historyTotal > 25 && (
+                    <div className="px-6 py-3 border-t border-[#1f1f1f] flex items-center justify-between">
+                      <button onClick={() => setAnalyticsPage(p => Math.max(1, p - 1))} disabled={analyticsPage === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
+                      <span className="text-[10px] text-[#444]">Page {analyticsPage}</span>
+                      <button onClick={() => setAnalyticsPage(p => p + 1)} disabled={(analytics.history ?? []).length < 25} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Devices */}
+                {(analytics.devices ?? []).length > 0 && (
+                  <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+                    <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
+                      <Monitor size={14} className="text-[#606060]" />
+                      <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Active Devices (30 days)</h3>
+                    </div>
+                    <div className="divide-y divide-[#1f1f1f]">
+                      {(analytics.devices ?? []).map((d: any) => (
+                        <div key={d.id} className="px-6 py-3 flex items-center gap-4">
+                          <Monitor size={14} className="text-[#444] shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-bold text-[#a0a0a0]">{d.browser} on {d.os}</p>
+                            <p className="text-[10px] text-[#444]">{d.ipAddress || "—"} · Last active {safeDate(d.lastActiveAt)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Security events */}
+                {(analytics.securityEvents ?? []).length > 0 && (
+                  <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+                    <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
+                      <Shield size={14} className="text-orange-400" />
+                      <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-orange-400">Security Events</h3>
+                    </div>
+                    <div className="divide-y divide-[#1f1f1f]">
+                      {(analytics.securityEvents ?? []).map((ev: any) => (
+                        <div key={ev.id} className="px-6 py-3 flex items-start gap-3">
+                          <Shield size={12} className="text-orange-400 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-[12px] font-bold text-orange-400 font-rajdhani uppercase tracking-wide">{ev.eventType.replace(/_/g, " ")}</p>
+                            <p className="text-[10px] text-[#444] mt-0.5">{safeDate(ev.createdAt)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Activity timeline */}
+                {timeline.length > 0 && (
+                  <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+                    <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
+                      <Activity size={14} className="text-[#606060]" />
+                      <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Activity Timeline</h3>
+                    </div>
+                    <div className="divide-y divide-[#1f1f1f] max-h-[320px] overflow-y-auto">
+                      {timeline.map((entry: any) => (
+                        <div key={entry.id} className="px-6 py-3 flex items-start gap-3">
+                          <div className="w-1.5 h-1.5 rounded-full bg-[#dc2626] mt-1.5 shrink-0" />
+                          <div>
+                            <p className="text-[12px] font-bold text-[#a0a0a0] font-rajdhani uppercase tracking-wide">{entry.action.replace(/_/g, " ")}</p>
+                            <p className="text-[10px] text-[#444] mt-0.5">{safeDate(entry.createdAt)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-16 text-[#444] text-sm italic">No analytics data.</div>
             )}
           </div>
         )}

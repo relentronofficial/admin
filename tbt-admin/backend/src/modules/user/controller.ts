@@ -13,6 +13,52 @@ function fail(reply: FastifyReply, status: number, message: string) {
   return reply.status(status).send({ success: false, data: null, error: { code: 'ERROR', message } });
 }
 
+async function logActivity(prisma: any, memberId: string, action: string, metadata?: Record<string, unknown>): Promise<void> {
+  await prisma.activityLog.create({
+    data: { userId: memberId, userType: 'member', action, metadata: metadata ?? null },
+  }).catch(() => {});
+}
+
+async function recalculateMemberStats(prisma: any, memberId: string): Promise<void> {
+  try {
+    const [completedEpisodes, completedChallenges, submittedAssignments, totalEpisodes, member] = await Promise.all([
+      prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
+      prisma.memberChallengeProgress.count({ where: { memberId, status: 'completed' } }),
+      prisma.assignmentSubmission.count({ where: { memberId } }),
+      prisma.memberEpisodeProgress.count({ where: { memberId } }),
+      prisma.member.findUnique({ where: { id: memberId }, select: { currentStreak: true, lastActiveAt: true } }),
+    ]);
+
+    const totalPoints = completedEpisodes * 10 + completedChallenges * 25 + submittedAssignments * 15;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const lastActive = member?.lastActiveAt ? new Date((member.lastActiveAt as Date).getTime()) : null;
+    const lastActiveDay = lastActive ? new Date(lastActive.getFullYear(), lastActive.getMonth(), lastActive.getDate()) : null;
+
+    let currentStreak = member?.currentStreak ?? 0;
+    if (!lastActiveDay) {
+      currentStreak = 1;
+    } else {
+      const daysDiff = Math.floor((today.getTime() - lastActiveDay.getTime()) / 86_400_000);
+      if (daysDiff === 0) { /* same day — no change */ }
+      else if (daysDiff === 1) { currentStreak = currentStreak + 1; }
+      else { currentStreak = 1; }
+    }
+
+    const daysSinceActive = lastActiveDay ? Math.floor((today.getTime() - lastActiveDay.getTime()) / 86_400_000) : 999;
+    const recencyScore = daysSinceActive === 0 ? 40 : daysSinceActive <= 1 ? 35 : daysSinceActive <= 3 ? 25 : daysSinceActive <= 7 ? 15 : daysSinceActive <= 30 ? 5 : 0;
+    const completionScore = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 40) : 0;
+    const streakScore = Math.min(20, currentStreak);
+    const healthScore = recencyScore + completionScore + streakScore;
+
+    await prisma.member.update({
+      where: { id: memberId },
+      data: { totalPoints, currentStreak, healthScore, lastActiveAt: now },
+    });
+  } catch { /* fire-and-forget */ }
+}
+
 function parseUserAgent(ua: string | undefined | null): {
   browser: string;
   os: string;
@@ -1877,6 +1923,11 @@ export async function submitAssignmentHandler(request: FastifyRequest, reply: Fa
     select: { id: true, answerText: true, submittedAt: true },
   });
 
+  void Promise.all([
+    recalculateMemberStats(request.server.prisma, request.memberId!),
+    logActivity(request.server.prisma, request.memberId!, 'assignment_submitted', { assignmentId }),
+  ]).catch(() => {});
+
   return ok(reply, submission);
 }
 
@@ -2098,6 +2149,11 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
       }).catch(() => {});
     }
   })().catch(() => {});
+
+  void Promise.all([
+    recalculateMemberStats(request.server.prisma, request.memberId!),
+    logActivity(request.server.prisma, request.memberId!, isCompleted && !existingProgress?.isCompleted ? 'episode_completed' : 'episode_watched', { episodeId }),
+  ]).catch(() => {});
 
   return ok(reply, { updated: true, isCompleted, actualWatchedSecs: newActualWatched });
 }
@@ -2643,6 +2699,11 @@ export async function completeChallengeHandler(request: FastifyRequest, reply: F
     update: { status: 'completed', completedAt: now, answersData: answersData ?? null },
   });
 
+  void Promise.all([
+    recalculateMemberStats(request.server.prisma, request.memberId!),
+    logActivity(request.server.prisma, request.memberId!, 'challenge_completed', { challengeId: id }),
+  ]).catch(() => {});
+
   return ok(reply, { status: 'completed', completedAt: now.toISOString() });
 }
 
@@ -2700,6 +2761,11 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
     create: { memberId: request.memberId, episodeId: id, isCompleted: true, completedAt: now, lastWatchedSecs: 0 },
     update: { isCompleted: true, completedAt: now },
   });
+
+  void Promise.all([
+    recalculateMemberStats(request.server.prisma, request.memberId!),
+    logActivity(request.server.prisma, request.memberId!, 'episode_completed', { episodeId: id }),
+  ]).catch(() => {});
 
   return ok(reply, { episodeId: id, isCompleted: true });
 }

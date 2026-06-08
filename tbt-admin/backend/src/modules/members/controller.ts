@@ -640,3 +640,229 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
     error: null,
   });
 }
+
+export async function getMemberActivityTimelineHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const { page = 1, limit = 30 } = req.query as { page?: number; limit?: number };
+
+  const member = await req.server.prisma.member.findUnique({ where: { id }, select: { id: true } });
+  if (!member) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+
+  const [activities, total] = await Promise.all([
+    (req.server.prisma as any).activityLog.findMany({
+      where: { userId: id, userType: 'member' },
+      orderBy: { createdAt: 'desc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+    }),
+    (req.server.prisma as any).activityLog.count({ where: { userId: id, userType: 'member' } }),
+  ]);
+
+  return reply.send({ success: true, data: activities, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+}
+
+export async function getAnalyticsOverviewHandler(req: FastifyRequest, reply: FastifyReply) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgo  = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000);
+
+  const [
+    totalMembers,
+    activeMembers30d,
+    totalEnrollments,
+    completedEpisodes,
+    completedChallenges,
+    submittedAssignments,
+    avgHealthScore,
+    newMembersThisMonth,
+  ] = await Promise.all([
+    req.server.prisma.member.count(),
+    req.server.prisma.member.count({ where: { lastActiveAt: { gte: thirtyDaysAgo } } }),
+    req.server.prisma.workshopEnrollment.count(),
+    req.server.prisma.memberEpisodeProgress.count({ where: { isCompleted: true } }),
+    (req.server.prisma as any).memberChallengeProgress.count({ where: { status: 'completed' } }),
+    req.server.prisma.assignmentSubmission.count(),
+    req.server.prisma.member.aggregate({ _avg: { healthScore: true } }),
+    req.server.prisma.member.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+  ]);
+
+  return reply.send({
+    success: true,
+    data: {
+      totalMembers,
+      activeMembers30d,
+      totalEnrollments,
+      completedEpisodes,
+      completedChallenges,
+      submittedAssignments,
+      avgHealthScore: Math.round((avgHealthScore._avg.healthScore ?? 0) * 10) / 10,
+      newMembersThisMonth,
+    },
+    error: null,
+  });
+}
+
+export async function getAtRiskMembersHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { inactiveDays = 7, completionThreshold = 50, page = 1, limit = 20 } = req.query as {
+    inactiveDays?: number; completionThreshold?: number; page?: number; limit?: number;
+  };
+
+  const cutoff = new Date(Date.now() - Number(inactiveDays) * 24 * 60 * 60 * 1000);
+
+  const [members, total] = await Promise.all([
+    req.server.prisma.member.findMany({
+      where: {
+        OR: [
+          { lastActiveAt: { lt: cutoff } },
+          { lastActiveAt: null },
+        ],
+        healthScore: { lt: Number(completionThreshold) },
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        healthScore: true,
+        totalPoints: true,
+        currentStreak: true,
+        lastActiveAt: true,
+        _count: { select: { workshopEnrollments: true } },
+      },
+      orderBy: { healthScore: 'asc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+    }),
+    req.server.prisma.member.count({
+      where: {
+        OR: [
+          { lastActiveAt: { lt: cutoff } },
+          { lastActiveAt: null },
+        ],
+        healthScore: { lt: Number(completionThreshold) },
+      },
+    }),
+  ]);
+
+  return reply.send({ success: true, data: members, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+}
+
+export async function getCompletionMatrixHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { workshopId } = req.params as { workshopId: string };
+
+  const workshop = await req.server.prisma.workshop.findUnique({
+    where: { id: workshopId },
+    include: {
+      challenges: {
+        orderBy: { order: 'asc' },
+        select: { id: true, title: true, numberLabel: true },
+      },
+    },
+  });
+  if (!workshop) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Workshop not found' } });
+
+  const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+    where: { workshopId },
+    include: {
+      member: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+    orderBy: { enrolledAt: 'desc' },
+  });
+
+  const challengeIds = workshop.challenges.map(c => c.id);
+  const memberIds = enrollments.map(e => e.memberId);
+
+  const completedProgress = await (req.server.prisma as any).memberChallengeProgress.findMany({
+    where: { memberId: { in: memberIds }, challengeId: { in: challengeIds }, status: 'completed' },
+    select: { memberId: true, challengeId: true, completedAt: true },
+  });
+
+  const progressMap = new Map<string, Set<string>>();
+  for (const p of completedProgress) {
+    if (!progressMap.has(p.memberId)) progressMap.set(p.memberId, new Set());
+    progressMap.get(p.memberId)!.add(p.challengeId);
+  }
+
+  const rows = enrollments.map(e => ({
+    member: e.member,
+    enrolledAt: e.enrolledAt,
+    status: e.status,
+    challenges: workshop.challenges.map(c => ({
+      challengeId: c.id,
+      completed: progressMap.get(e.memberId)?.has(c.id) ?? false,
+    })),
+    completedCount: progressMap.get(e.memberId)?.size ?? 0,
+    totalCount: challengeIds.length,
+  }));
+
+  return reply.send({
+    success: true,
+    data: {
+      workshopId,
+      workshopTitle: workshop.title,
+      challenges: workshop.challenges,
+      rows,
+    },
+    error: null,
+  });
+}
+
+export async function reviewAssignmentHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { submissionId } = req.params as { submissionId: string };
+  const { reviewNote, reviewedBy } = req.body as { reviewNote?: string; reviewedBy?: string };
+
+  const submission = await req.server.prisma.assignmentSubmission.findUnique({ where: { id: submissionId } });
+  if (!submission) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Submission not found' } });
+
+  const updated = await req.server.prisma.assignmentSubmission.update({
+    where: { id: submissionId },
+    data: {
+      reviewNote: reviewNote ?? null,
+      reviewedBy: reviewedBy ?? null,
+      reviewedAt: new Date(),
+    },
+    select: { id: true, reviewNote: true, reviewedBy: true, reviewedAt: true, submittedAt: true, answerText: true },
+  });
+
+  return reply.send({ success: true, data: updated, error: null });
+}
+
+export async function listAllAssignmentSubmissionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { page = 1, limit = 20, reviewed, workshopId } = req.query as {
+    page?: number; limit?: number; reviewed?: string; workshopId?: string;
+  };
+
+  const where: any = {};
+  if (reviewed === 'true')  where.reviewedAt = { not: null };
+  if (reviewed === 'false') where.reviewedAt = null;
+  if (workshopId) {
+    where.assignment = { challenge: { workshopId } };
+  }
+
+  const [submissions, total] = await Promise.all([
+    req.server.prisma.assignmentSubmission.findMany({
+      where,
+      orderBy: { submittedAt: 'desc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+      include: {
+        member: { select: { id: true, firstName: true, lastName: true, email: true } },
+        assignment: {
+          select: {
+            id: true,
+            title: true,
+            challenge: {
+              select: {
+                id: true,
+                title: true,
+                workshop: { select: { id: true, title: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
+    req.server.prisma.assignmentSubmission.count({ where }),
+  ]);
+
+  return reply.send({ success: true, data: submissions, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+}

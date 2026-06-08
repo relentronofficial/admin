@@ -20,6 +20,9 @@ import {
   Navigation,
   Type,
   ShieldAlert,
+  BarChart2,
+  Target,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -65,6 +68,14 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     label: "Support",
     items: [
       { name: "Support", href: "/support", icon: MessageSquare },
+    ],
+  },
+  {
+    label: "Analytics",
+    items: [
+      { name: "Analytics", href: "/analytics", icon: BarChart2 },
+      { name: "Challenges", href: "/analytics/challenges", icon: Target },
+      { name: "Assignments", href: "/assignments", icon: ClipboardCheck },
     ],
   },
   {
