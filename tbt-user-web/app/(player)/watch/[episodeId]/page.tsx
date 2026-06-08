@@ -21,6 +21,7 @@ export default function WatchPage() {
   const [speed, setSpeed] = useState<string>("");
   const [quality, setQuality] = useState<string>("");
   const [isMarkedComplete, setIsMarkedComplete] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Track when playback started so we can compute watched seconds for periodic posts
   const startRef = useRef<number>(Date.now());
@@ -30,7 +31,17 @@ export default function WatchPage() {
   useEffect(() => {
     if (playback && !speed) setSpeed(playback.defaultSpeed);
     if (playback && !quality) setQuality(playback.defaultQuality);
-  }, [playback?.id]);
+  }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!speed) return;
+    const numericSpeed = parseFloat(speed.replace("x", ""));
+    if (isNaN(numericSpeed)) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: numericSpeed }),
+      "*"
+    );
+  }, [speed]);
 
   // Post partial progress every 15 s so resumeAtSeconds stays fresh server-side
   useEffect(() => {
@@ -99,6 +110,7 @@ export default function WatchPage() {
           showFullscreenButton={true}
         >
           <iframe
+            ref={iframeRef}
             src={videoSrc}
             className="w-full h-full border-0"
             allow="accelerometer; gyroscope; autoplay; encrypted-media"

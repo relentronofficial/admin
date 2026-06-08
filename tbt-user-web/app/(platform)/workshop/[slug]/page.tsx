@@ -1176,10 +1176,23 @@ function WatchChallengeView({
   const activeEpIdxRef = useRef(activeEpIdx);
   const onChallengeCompleteRef = useRef(onChallengeComplete);
   const currentEpRef = useRef<any>(undefined);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [speed, setSpeed] = useState(1);
+  const speedRef = useRef(1);
 
   useEffect(() => { activeEpIdxRef.current = activeEpIdx; }, [activeEpIdx]);
   useEffect(() => { onChallengeCompleteRef.current = onChallengeComplete; }, [onChallengeComplete]);
   useEffect(() => { currentEpRef.current = ep; }, [ep]);
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+
+  const handleSpeedChange = (s: number) => {
+    setSpeed(s);
+    speedRef.current = s;
+    iframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: s }),
+      "*"
+    );
+  };
 
   // Episode switch: reset local state
   useEffect(() => {
@@ -1293,6 +1306,12 @@ function WatchChallengeView({
             "*"
           );
         });
+        if (speedRef.current !== 1) {
+          win.postMessage(
+            JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: speedRef.current }),
+            "*"
+          );
+        }
         return;
       }
 
@@ -1388,6 +1407,7 @@ function WatchChallengeView({
         >
           {iframeSrc ? (
             <iframe
+              ref={iframeRef}
               key={`${ep.id}-${forceStartFrom}`}
               src={iframeSrc}
               className="w-full h-full"
@@ -1398,6 +1418,29 @@ function WatchChallengeView({
           )}
         </VideoWatermark>
       </div>
+
+      {/* Speed control */}
+      {iframeSrc && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider mr-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Speed</span>
+          {[1, 1.25, 1.5, 2].map((s) => (
+            <button
+              key={s}
+              onClick={() => handleSpeedChange(s)}
+              className="text-xs px-2.5 py-1 rounded-md font-medium transition-colors"
+              style={speed === s ? {
+                background: "color-mix(in srgb, var(--color-accent) 20%, transparent)",
+                color: "var(--color-accent)",
+              } : {
+                background: "rgba(255,255,255,0.07)",
+                color: "rgba(255,255,255,0.45)",
+              }}
+            >
+              {s}×
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Episode title + live status badge */}
       <div className="flex items-center justify-between gap-3">

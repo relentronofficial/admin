@@ -25,6 +25,8 @@ export function VideoPlayer({ src, poster, lessonId, resumeAtSeconds = 0, onProg
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
+  const [speed, setSpeed] = useState(1);
+  const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const hasResumed = useRef(false);
@@ -185,13 +187,28 @@ export function VideoPlayer({ src, poster, lessonId, resumeAtSeconds = 0, onProg
             <div className="flex-1" />
 
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 const v = videoRef.current;
                 if (v) v.currentTime = 0;
+                resetHideTimer();
               }}
               className="text-white hover:text-brand-400 transition-colors"
             >
               <RotateCcw size={16} />
+            </button>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+                setSpeed(next);
+                if (videoRef.current) videoRef.current.playbackRate = next;
+                resetHideTimer();
+              }}
+              className="text-white hover:text-brand-400 transition-colors text-xs font-bold w-8 text-center leading-none"
+            >
+              {speed}×
             </button>
 
             <button
