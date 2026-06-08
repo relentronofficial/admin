@@ -60,6 +60,7 @@ import {
   removeFromHistoryHandler,
   getMyDevicesHandler,
   getWorkshopCertificateHandler,
+  joinLiveCallHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -135,6 +136,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/workshops/:slug/certificate', getWorkshopCertificateHandler);
   fastify.post('/challenges/:id/complete', completeChallengeHandler);
   fastify.post('/workshop-episodes/:id/complete', completeWorkshopEpisodeHandler);
+  fastify.post('/workshop/live-calls/:id/token', joinLiveCallHandler);
 
   // ── Episodes ──────────────────────────────────────────────────────────────
   fastify.get('/episodes/:id/playback', getEpisodePlaybackHandler);

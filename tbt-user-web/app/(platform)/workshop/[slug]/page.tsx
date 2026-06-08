@@ -34,7 +34,9 @@ import {
   useCompleteWorkshopEpisode,
   usePostEpisodeProgress,
   useWorkshopCertificate,
+  useJoinLiveCall,
 } from "@/lib/hooks/useConfig";
+import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket/client";
@@ -2201,10 +2203,13 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
 
 function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => void }) {
   const { uiStrings } = useSiteConfig();
+  const joinLiveCall = useJoinLiveCall();
   const isPast = challenge.status === "past";
   const lColor = challenge.labelColor ?? "#ff3d8b";
   const teal = challenge.stayTunedColor ?? "#2dd4bf";
   const [diff, setDiff] = useState(0);
+  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string } | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!challenge.scheduledAt || isPast) return;
@@ -2228,48 +2233,90 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
         .toUpperCase()
     : null;
 
+  const handleJoin = async () => {
+    if (!challenge.liveCallId) return;
+    setJoinError(null);
+    try {
+      const creds = await joinLiveCall.mutateAsync(challenge.liveCallId);
+      setCallCreds(creds);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message ?? err?.message ?? "Could not join call";
+      setJoinError(msg);
+      // Fallback: open external URL if available
+      if (challenge.liveUrl) window.open(challenge.liveUrl, "_blank");
+    }
+  };
+
+  // Header shared across all states
+  const Header = () => (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: lColor }}>
+          {challenge.label ?? "LIVE CALL:"}
+        </span>
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${lColor}22`, color: lColor }}>
+          LIVE SESSION
+        </span>
+        <span
+          className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+          style={isPast ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" } : { background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}
+        >
+          {isPast ? "Ended" : "Upcoming"}
+        </span>
+      </div>
+      <h3 className="font-bold text-foreground text-base">{challenge.title}</h3>
+      {challenge.facilitatorName && (
+        <p className="text-xs text-muted-foreground">
+          {challenge.facilitatorName}
+          {challenge.facilitatorTitle ? ` · ${challenge.facilitatorTitle}` : ""}
+        </p>
+      )}
+    </div>
+  );
+
+  // Active call view
+  if (callCreds) {
+    return (
+      <div className="space-y-4">
+        <Header />
+        <WorkshopLiveCall
+          token={callCreds.token}
+          wsUrl={callCreds.wsUrl}
+          roomName={callCreds.roomName}
+          onLeave={() => setCallCreds(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: lColor }}>
-            {challenge.label ?? "LIVE CALL:"}
-          </span>
-          <span
-            className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={{ background: `${lColor}22`, color: lColor }}
-          >
-            LIVE SESSION
-          </span>
-          <span
-            className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={
-              isPast
-                ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" }
-                : { background: "rgba(245,158,11,0.1)", color: "#f59e0b" }
-            }
-          >
-            {isPast ? "Ended" : "Upcoming"}
-          </span>
-        </div>
-        <h3 className="font-bold text-foreground text-base">{challenge.title}</h3>
-        {challenge.facilitatorName && (
-          <p className="text-xs text-muted-foreground">
-            {challenge.facilitatorName}
-            {challenge.facilitatorTitle ? ` · ${challenge.facilitatorTitle}` : ""}
-          </p>
-        )}
-      </div>
+      <Header />
 
       {isPast ? (
-        <div
-          className="rounded-xl border p-6 text-center space-y-2"
-          style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}
-        >
-          <CheckCircle2 size={24} className="mx-auto" style={{ color: "#22c55e" }} />
-          <p className="font-bold text-foreground">Session Completed</p>
-          <p className="text-xs text-muted-foreground">This live session has ended.</p>
+        <div className="space-y-3">
+          <div
+            className="rounded-xl border p-6 text-center space-y-2"
+            style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}
+          >
+            <CheckCircle2 size={24} className="mx-auto" style={{ color: "#22c55e" }} />
+            <p className="font-bold text-foreground">Session Completed</p>
+            {challenge.facilitatorDescription && (
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">{challenge.facilitatorDescription}</p>
+            )}
+          </div>
+          {challenge.recordingUrl && (
+            <a
+              href={challenge.recordingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-bold border transition-colors"
+              style={{ borderColor: `${lColor}44`, color: lColor, background: `${lColor}0d` }}
+            >
+              <Play size={14} fill="currentColor" />
+              {challenge.recordingLabel ?? "Missed it? View the recording."}
+            </a>
+          )}
         </div>
       ) : (
         <div
@@ -2281,44 +2328,55 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
           </p>
           <h3 className="text-lg font-bold text-white leading-snug -mt-2">{challenge.title}</h3>
 
-          <div className="flex gap-5 md:gap-8 justify-center">
-            {units.map(([val, label], i) => (
-              <div key={i} className="flex flex-col items-center">
-                <span className="text-4xl font-bold tabular-nums text-white font-mono leading-none">
-                  {String(val).padStart(2, "0")}
-                </span>
-                <span
-                  className="text-[10px] font-bold tracking-[0.2em] mt-2 uppercase"
-                  style={{ color: teal }}
-                >
-                  {label}
-                </span>
+          {diff > 0 ? (
+            <>
+              <div className="flex gap-5 md:gap-8 justify-center">
+                {units.map(([val, label], i) => (
+                  <div key={i} className="flex flex-col items-center">
+                    <span className="text-4xl font-bold tabular-nums text-white font-mono leading-none">
+                      {String(val).padStart(2, "0")}
+                    </span>
+                    <span className="text-[10px] font-bold tracking-[0.2em] mt-2 uppercase" style={{ color: teal }}>
+                      {label}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+              {dateLabel && (
+                <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: teal }}>
+                  {dateLabel}
+                </p>
+              )}
+              {challenge.stayTunedMessage && (
+                <p className="text-sm italic max-w-sm mx-auto" style={{ color: teal }}>
+                  {challenge.stayTunedMessage}
+                </p>
+              )}
+            </>
+          ) : null}
 
-          {dateLabel && (
-            <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: teal }}>
-              {dateLabel}
-            </p>
-          )}
-
-          {challenge.stayTunedMessage && (
-            <p className="text-sm italic max-w-sm mx-auto" style={{ color: teal }}>
-              {challenge.stayTunedMessage}
-            </p>
-          )}
-
-          {challenge.liveUrl && (
-            <a
-              href={challenge.liveUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-bold text-white"
-              style={{ background: "var(--color-accent)" }}
-            >
-              {uiStrings?.liveCallJoinLabel ?? "Join Call"}
-            </a>
+          {challenge.isUnlocked && (
+            <div className="space-y-2">
+              <button
+                onClick={handleJoin}
+                disabled={joinLiveCall.isPending}
+                className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
+                style={{ background: "var(--color-accent)" }}
+              >
+                {joinLiveCall.isPending ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" /> Connecting…
+                  </>
+                ) : (
+                  <>
+                    <Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}
+                  </>
+                )}
+              </button>
+              {joinError && (
+                <p className="text-xs text-red-400">{joinError}</p>
+              )}
+            </div>
           )}
         </div>
       )}

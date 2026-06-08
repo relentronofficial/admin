@@ -223,3 +223,13 @@ export const useWorkshopCertificate = (slug: string) =>
     enabled: false, // only fetched on demand (when user clicks Download)
     retry: false,
   });
+
+export const useJoinLiveCall = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      const res: any = await apiClient.post(
+        `/api/user/workshop/live-calls/${liveCallId}/token`
+      );
+      return res?.data as { token: string; wsUrl: string; roomName: string };
+    },
+  });

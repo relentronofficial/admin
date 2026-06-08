@@ -968,21 +968,60 @@ export async function getWebinarTokenHandler(request: FastifyRequest, reply: Fas
 
   const webinar = await request.server.prisma.webinar.findUnique({
     where: { id: webinarId },
-    select: { id: true, title: true, meetingUrl: true, status: true },
+    select: { id: true, meetingUrl: true },
   });
   if (!webinar) return fail(reply, 404, 'Webinar not found');
 
-  // Ensure member is registered (upsert so joining auto-registers)
   await request.server.prisma.webinarRegistration.upsert({
     where: { memberId_webinarId: { memberId: request.memberId, webinarId } },
     create: { memberId: request.memberId, webinarId, attended: true, joinTime: new Date() },
     update: { attended: true, joinTime: new Date() },
   });
 
-  return ok(reply, {
-    token: webinar.meetingUrl ?? '',
-    channel: webinarId,
+  return ok(reply, { meetingUrl: webinar.meetingUrl ?? '' });
+}
+
+// ─── Workshop Live Calls (LiveKit) ────────────────────────────────────────────
+
+export async function joinLiveCallHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_WS_URL) {
+    return fail(reply, 503, 'Live call service not configured');
+  }
+
+  const liveCall = await request.server.prisma.liveCall.findUnique({
+    where: { id: liveCallId },
+    select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true },
   });
+  if (!liveCall) return fail(reply, 404, 'Live call not found');
+
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: request.memberId },
+    select: { firstName: true, lastName: true },
+  });
+
+  const { AccessToken } = await import('livekit-server-sdk');
+
+  const roomName = `workshop-live-${liveCallId}`;
+  const displayName = [member?.firstName, member?.lastName].filter(Boolean).join(' ') || 'Participant';
+
+  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+    identity: request.memberId,
+    name: displayName,
+    ttl: '4h',
+  });
+
+  at.addGrant({
+    room: roomName,
+    roomJoin: true,
+    canPublish: true,
+    canSubscribe: true,
+    canPublishData: true,
+  });
+
+  const token = await at.toJwt();
+  return ok(reply, { token, wsUrl: env.LIVEKIT_WS_URL, roomName });
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -2841,8 +2880,12 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
         id: fi.id, type: 'live_call', liveCallId: lc.id,
         label: lc.label ?? 'LIVE CALL:', labelColor: lc.labelColor ?? '#ff3d8b', title: lc.title,
         scheduledAt: lc.scheduledAt?.toISOString() ?? null, liveUrl: isUnlocked ? lc.liveUrl : null,
+        isUnlocked,
         liveUrlUnlocksMinutesBefore: lc.liveUrlUnlocksMinutesBefore ?? 30,
         facilitatorName: lc.facilitatorName ?? null, facilitatorTitle: lc.facilitatorTitle ?? null,
+        facilitatorDescription: lc.facilitatorDescription ?? null,
+        recordingUrl: isPast ? (lc.recordingUrl ?? null) : null,
+        recordingLabel: isPast && lc.recordingUrl ? (lc.recordingLabel ?? 'Missed it? View the recording.') : null,
         stayTunedMessage: lc.stayTunedMessage ?? null, stayTunedColor: lc.stayTunedColor ?? '#2dd4bf',
         status: isPast ? 'past' : 'upcoming', isLocked: false,
         progressPercent: isPast ? 100 : 0, numberLabel: null,

@@ -389,6 +389,39 @@ export async function deleteLiveCallHandler(req: FastifyRequest, reply: FastifyR
   return reply.send({ success: true, data: null, error: null });
 }
 
+export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { env } = await import('../../config/env.js');
+
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_WS_URL) {
+    return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Live call service not configured' } });
+  }
+
+  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true } });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+
+  const { AccessToken } = await import('livekit-server-sdk');
+
+  const roomName = `workshop-live-${lcid}`;
+  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+    identity: `host-${lcid}`,
+    name: 'Host',
+    ttl: '8h',
+  });
+
+  at.addGrant({
+    room: roomName,
+    roomJoin: true,
+    roomAdmin: true,
+    canPublish: true,
+    canSubscribe: true,
+    canPublishData: true,
+  });
+
+  const token = await at.toJwt();
+  return reply.send({ success: true, data: { token, wsUrl: env.LIVEKIT_WS_URL, roomName }, error: null });
+}
+
 // ── ASSIGNMENTS ───────────────────────────────────────────────────────
 
 export async function listAssignmentsHandler(req: FastifyRequest, reply: FastifyReply) {
