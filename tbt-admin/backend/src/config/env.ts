@@ -30,6 +30,7 @@ const envSchema = z.object({
   LIVEKIT_API_KEY: z.string().optional().or(z.literal('')),
   LIVEKIT_API_SECRET: z.string().optional().or(z.literal('')),
   LIVEKIT_WS_URL: z.string().optional().or(z.literal('')),
+  LIVEKIT_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
   FIREBASE_PROJECT_ID: z.string().optional().or(z.literal('')),
   FIREBASE_PRIVATE_KEY: z.string().optional().or(z.literal('')),
   FIREBASE_CLIENT_EMAIL: z.string().email().optional().or(z.literal('')),

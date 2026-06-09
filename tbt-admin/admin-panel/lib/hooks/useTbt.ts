@@ -721,3 +721,15 @@ export const useEndLiveCall = () =>
       await apiClient.post(`/api/workshops/live-calls/${liveCallId}/end`);
     },
   });
+
+export const useLiveCallAdminStatus = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['live-call-status', liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${liveCallId}/status`);
+      return res.data as { isLive: boolean; participantCount: number; startedAt: string | null; endedAt: string | null };
+    },
+    enabled: !!liveCallId && enabled,
+    refetchInterval: 10_000,
+    staleTime: 8_000,
+  });

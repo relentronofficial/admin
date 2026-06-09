@@ -35,7 +35,9 @@ import {
   usePostEpisodeProgress,
   useWorkshopCertificate,
   useJoinLiveCall,
+  useLiveCallStatus,
 } from "@/lib/hooks/useConfig";
+import { useMe } from "@/lib/hooks/useUser";
 import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
@@ -111,13 +113,19 @@ function Countdown({
 function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const { uiStrings } = useSiteConfig();
   const joinLiveCall = useJoinLiveCall();
+  const { data: meData } = useMe();
+  const me = (meData as any)?.data;
+  const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
   const [diff, setDiff] = useState(0);
-  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string } | null>(null);
+  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null } | null>(null);
+  const [leftByChoice, setLeftByChoice] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const { data: liveStatus } = useLiveCallStatus(item.liveCallId ?? "", !!item.liveCallId && item.status !== "past");
 
   const handleJoinFromFlow = async () => {
     if (!item.liveCallId) return;
     setJoinError(null);
+    setLeftByChoice(false);
     try {
       const creds = await joinLiveCall.mutateAsync(item.liveCallId);
       setCallCreds(creds);
@@ -201,21 +209,40 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
         </p>
       )}
 
+      {/* LIVE NOW indicator */}
+      {liveStatus?.isLive && (
+        <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full animate-pulse" style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626" }}>
+          <span className="w-2 h-2 rounded-full bg-[#dc2626]" />
+          LIVE NOW
+        </span>
+      )}
+
       {/* Join button — unlocked when within unlock window */}
       {item.isUnlocked && item.status !== 'past' && (
         <div className="space-y-2">
-          <button
-            onClick={handleJoinFromFlow}
-            disabled={joinLiveCall.isPending}
-            className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
-            style={{ background: "var(--color-accent)" }}
-          >
-            {joinLiveCall.isPending ? (
-              <><Loader2 size={15} className="animate-spin" /> Connecting…</>
-            ) : (
-              <><Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}</>
-            )}
-          </button>
+          {leftByChoice ? (
+            <button
+              onClick={handleJoinFromFlow}
+              disabled={joinLiveCall.isPending}
+              className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity border"
+              style={{ background: "rgba(220,38,38,0.15)", borderColor: "rgba(220,38,38,0.3)", color: "#dc2626" }}
+            >
+              {joinLiveCall.isPending ? <><Loader2 size={15} className="animate-spin" /> Rejoining…</> : <><Video size={15} /> Rejoin Session</>}
+            </button>
+          ) : (
+            <button
+              onClick={handleJoinFromFlow}
+              disabled={joinLiveCall.isPending}
+              className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
+              style={{ background: "var(--color-accent)" }}
+            >
+              {joinLiveCall.isPending ? (
+                <><Loader2 size={15} className="animate-spin" /> Connecting…</>
+              ) : (
+                <><Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}</>
+              )}
+            </button>
+          )}
           {joinError && <p className="text-xs text-red-400">{joinError}</p>}
         </div>
       )}
@@ -229,7 +256,10 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
           token={callCreds.token}
           wsUrl={callCreds.wsUrl}
           roomName={callCreds.roomName}
+          defaultName={memberName}
+          startedAt={callCreds.startedAt ?? liveStatus?.startedAt}
           onLeave={() => setCallCreds(null)}
+          onLeaveByChoice={() => setLeftByChoice(true)}
         />
       </div>
     );
@@ -2239,12 +2269,18 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
 function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => void }) {
   const { uiStrings } = useSiteConfig();
   const joinLiveCall = useJoinLiveCall();
+  const { data: meData } = useMe();
+  const me = (meData as any)?.data;
+  const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
   const isPast = challenge.status === "past";
   const lColor = challenge.labelColor ?? "#ff3d8b";
   const teal = challenge.stayTunedColor ?? "#2dd4bf";
   const [diff, setDiff] = useState(0);
-  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string } | null>(null);
+  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null } | null>(null);
+  const [leftByChoice, setLeftByChoice] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+
+  const { data: liveStatus } = useLiveCallStatus(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
 
   useEffect(() => {
     if (!challenge.scheduledAt || isPast) return;
@@ -2271,6 +2307,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   const handleJoin = async () => {
     if (!challenge.liveCallId) return;
     setJoinError(null);
+    setLeftByChoice(false);
     try {
       const creds = await joinLiveCall.mutateAsync(challenge.liveCallId);
       setCallCreds(creds);
@@ -2290,6 +2327,12 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${lColor}22`, color: lColor }}>
           LIVE SESSION
         </span>
+        {liveStatus?.isLive && (
+          <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded animate-pulse" style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#dc2626]" />
+            LIVE NOW
+          </span>
+        )}
         <span
           className="text-[9px] font-bold px-1.5 py-0.5 rounded"
           style={isPast ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" } : { background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}
@@ -2316,7 +2359,10 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
           token={callCreds.token}
           wsUrl={callCreds.wsUrl}
           roomName={callCreds.roomName}
+          defaultName={memberName}
+          startedAt={callCreds.startedAt ?? liveStatus?.startedAt}
           onLeave={() => setCallCreds(null)}
+          onLeaveByChoice={() => setLeftByChoice(true)}
         />
       </div>
     );
@@ -2390,22 +2436,33 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
 
           {challenge.isUnlocked && (
             <div className="space-y-2">
-              <button
-                onClick={handleJoin}
-                disabled={joinLiveCall.isPending}
-                className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
-                style={{ background: "var(--color-accent)" }}
-              >
-                {joinLiveCall.isPending ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" /> Connecting…
-                  </>
-                ) : (
-                  <>
-                    <Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}
-                  </>
-                )}
-              </button>
+              {leftByChoice ? (
+                <button
+                  onClick={handleJoin}
+                  disabled={joinLiveCall.isPending}
+                  className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity border"
+                  style={{ background: `${lColor}15`, borderColor: `${lColor}44`, color: lColor }}
+                >
+                  {joinLiveCall.isPending ? (
+                    <><Loader2 size={15} className="animate-spin" /> Rejoining…</>
+                  ) : (
+                    <><Video size={15} /> Rejoin Session</>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleJoin}
+                  disabled={joinLiveCall.isPending}
+                  className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
+                  style={{ background: "var(--color-accent)" }}
+                >
+                  {joinLiveCall.isPending ? (
+                    <><Loader2 size={15} className="animate-spin" /> Connecting…</>
+                  ) : (
+                    <><Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}</>
+                  )}
+                </button>
+              )}
               {joinError && (
                 <p className="text-xs text-red-400">{joinError}</p>
               )}

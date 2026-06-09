@@ -230,6 +230,30 @@ export const useJoinLiveCall = () =>
       const res: any = await apiClient.post(
         `/api/user/workshop/live-calls/${liveCallId}/token`
       );
-      return res?.data as { token: string; wsUrl: string; roomName: string };
+      return res?.data as { token: string; wsUrl: string; roomName: string; startedAt: string | null; isWebinar: boolean };
     },
+  });
+
+export const useRefreshLiveCallToken = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      const res: any = await apiClient.post(
+        `/api/user/workshop/live-calls/${liveCallId}/token/refresh`
+      );
+      return res?.data as { token: string; wsUrl: string; roomName: string; startedAt: string | null; isWebinar: boolean };
+    },
+  });
+
+export const useLiveCallStatus = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["live-call-status", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(
+        `/api/user/workshop/live-calls/${liveCallId}/status`
+      );
+      return res?.data as { isLive: boolean; participantCount: number; startedAt: string | null; endedAt: string | null };
+    },
+    enabled: !!liveCallId && enabled,
+    refetchInterval: 15_000,
+    staleTime: 12_000,
   });

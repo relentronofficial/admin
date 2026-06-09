@@ -26,6 +26,8 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
+import { useLiveCallAdminStatus } from "@/lib/hooks/useTbt";
+import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 
@@ -54,10 +56,24 @@ const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px
 const labelCls = "block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani";
 const selectCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none";
 
+function LiveCallStatusPill({ lcId }: { lcId: string }) {
+  const { data } = useLiveCallAdminStatus(lcId);
+  if (!data?.isLive) return null;
+  return (
+    <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded animate-pulse" style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626" }}>
+      <span className="w-1.5 h-1.5 rounded-full bg-[#dc2626]" />
+      LIVE · {data.participantCount}
+    </span>
+  );
+}
+
 export default function WorkshopDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("info");
+
+  const { user: clerkUser } = useUser();
+  const adminName = clerkUser?.fullName || clerkUser?.firstName || "Host";
 
   const { data: workshopData, isLoading: workshopLoading, refetch: refetchWorkshop } = useGetWorkshop(id);
   const workshop = workshopData?.data;
@@ -427,15 +443,16 @@ export default function WorkshopDetailPage() {
     facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "",
     stayTunedMessage: "Stay tuned — the link will unlock before the session begins",
     stayTunedColor: "#00c4cc",
+    isWebinar: false,
   });
   const [deletingLiveCall, setDeletingLiveCall] = useState<string | null>(null);
 
   const openCreateLiveCall = () => {
-    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc" });
+    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false });
     setEditingLiveCall(null); setShowLiveCallForm(true);
   };
   const openEditLiveCall = (lc: any) => {
-    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc" });
+    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc", isWebinar: lc.isWebinar || false });
     setEditingLiveCall(lc); setShowLiveCallForm(true);
   };
 
@@ -443,7 +460,7 @@ export default function WorkshopDetailPage() {
     if (!liveCallForm.title) return toast.error("Title is required");
     if (!liveCallForm.scheduledAt) return toast.error("Scheduled date is required");
     try {
-      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor };
+      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor, isWebinar: liveCallForm.isWebinar };
       if (editingLiveCall) { await updateLiveCall.mutateAsync({ id: editingLiveCall.id, data: lcData }); toast.success("Live call updated"); }
       else { await createLiveCall.mutateAsync(lcData); toast.success("Live call created"); }
       setShowLiveCallForm(false); refetchLiveCalls();
@@ -872,6 +889,12 @@ export default function WorkshopDetailPage() {
                             {LIVE_CALL_TYPES.find(t => t.value === lc.type)?.label ?? lc.type}
                           </span>
                         )}
+                        {lc.isWebinar && (
+                          <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded" style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6" }}>
+                            Webinar
+                          </span>
+                        )}
+                        <LiveCallStatusPill lcId={lc.id} />
                         <p className="font-bold text-[#f0f0f0] text-sm">{lc.title}</p>
                       </div>
                       {lc.facilitatorName && <p className="text-[12px] text-[#606060] mt-0.5">{lc.facilitatorName}{lc.facilitatorTitle ? ` · ${lc.facilitatorTitle}` : ""}</p>}
@@ -914,6 +937,7 @@ export default function WorkshopDetailPage() {
                 wsUrl={hostCallCreds.wsUrl}
                 roomName={hostCallCreds.roomName}
                 liveCallId={hostCallCreds.liveCallId}
+                hostName={adminName}
                 onLeave={() => setHostCallCreds(null)}
               />
             )}
@@ -1498,6 +1522,18 @@ export default function WorkshopDetailPage() {
                   <span className="text-sm text-[#888] font-mono">{liveCallForm.stayTunedColor}</span>
                 </div>
               </div>
+              <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg border border-[#2a2a2a] bg-[#111]">
+                <input
+                  type="checkbox"
+                  checked={liveCallForm.isWebinar}
+                  onChange={e => setLiveCallForm(f => ({ ...f, isWebinar: e.target.checked }))}
+                  className="w-4 h-4 accent-[#8b5cf6] rounded"
+                />
+                <div>
+                  <span className="text-sm font-bold text-white">Webinar Mode</span>
+                  <p className="text-xs mt-0.5" style={{ color: "#606060" }}>Members can watch but not publish audio/video</p>
+                </div>
+              </label>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
               <button onClick={() => setShowLiveCallForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>

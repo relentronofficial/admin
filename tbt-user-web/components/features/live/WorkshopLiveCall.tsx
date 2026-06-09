@@ -5,24 +5,63 @@ import {
   LiveKitRoom,
   VideoConference,
   PreJoin,
+  useRemoteParticipants,
   type LocalUserChoices,
 } from "@livekit/components-react";
 import { DisconnectReason } from "livekit-client";
-import { PhoneOff } from "lucide-react";
+import { PhoneOff, Users, Clock } from "lucide-react";
+import { getServerNow } from "@/lib/api/client";
 
 interface WorkshopLiveCallProps {
   token: string;
   wsUrl: string;
   roomName: string;
   defaultName?: string;
+  startedAt?: string | null;
   onLeave: () => void;
+  onLeaveByChoice?: () => void;
+}
+
+function WaitingForHostOverlay() {
+  const participants = useRemoteParticipants();
+  const hasHost = participants.some(p => p.identity.startsWith("user_"));
+  if (hasHost) return null;
+  return (
+    <div
+      className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-30 pointer-events-none"
+      style={{ background: "rgba(0,0,0,0.65)" }}
+    >
+      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(220,38,38,0.15)" }}>
+        <Users size={22} style={{ color: "#dc2626" }} />
+      </div>
+      <p className="text-white font-semibold text-sm">Waiting for the host to join…</p>
+      <p className="text-xs" style={{ color: "#a0a0a0" }}>The session will begin when the host enters the room.</p>
+    </div>
+  );
+}
+
+function LateJoinBanner({ startedAt }: { startedAt: string }) {
+  const startMs = new Date(startedAt).getTime();
+  const minutesIn = Math.floor((getServerNow() - startMs) / 60000);
+  if (minutesIn < 5) return null;
+  return (
+    <div
+      className="absolute bottom-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold pointer-events-none"
+      style={{ background: "rgba(0,0,0,0.75)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
+    >
+      <Clock size={12} />
+      You joined {minutesIn} minute{minutesIn !== 1 ? "s" : ""} in
+    </div>
+  );
 }
 
 export function WorkshopLiveCall({
   token,
   wsUrl,
   defaultName = "",
+  startedAt,
   onLeave,
+  onLeaveByChoice,
 }: WorkshopLiveCallProps) {
   const [stage, setStage] = useState<"pre" | "live" | "ended">("pre");
   const [userChoices, setUserChoices] = useState<LocalUserChoices>({
@@ -36,6 +75,7 @@ export function WorkshopLiveCall({
 
   const handleLeave = () => {
     leftByChoiceRef.current = true;
+    onLeaveByChoice?.();
     onLeave();
   };
 
@@ -57,7 +97,8 @@ export function WorkshopLiveCall({
         <PreJoin
           defaults={userChoices}
           onSubmit={(choices) => {
-            setUserChoices(choices);
+            // Lock username to the member's actual name — ignore whatever they typed
+            setUserChoices({ ...choices, username: defaultName || choices.username });
             setStage("live");
           }}
           style={{ height: 420, width: "100%" }}
@@ -85,7 +126,7 @@ export function WorkshopLiveCall({
         <button
           onClick={onLeave}
           className="mt-2 px-5 py-2 rounded-lg text-sm font-bold"
-          style={{ background: "#dc2626", color: "#fff" }}
+          style={{ background: "var(--color-accent)", color: "#fff" }}
         >
           Close
         </button>
@@ -109,17 +150,18 @@ export function WorkshopLiveCall({
         style={{ height: "100%", width: "100%" }}
       >
         <VideoConference />
+        <WaitingForHostOverlay />
+        {startedAt && <LateJoinBanner startedAt={startedAt} />}
+        <button
+          onClick={handleLeave}
+          className="absolute top-3 right-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+          style={{ background: "var(--color-accent)", color: "#fff" }}
+          aria-label="Leave call"
+        >
+          <PhoneOff size={13} />
+          Leave
+        </button>
       </LiveKitRoom>
-
-      <button
-        onClick={handleLeave}
-        className="absolute top-3 right-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-        style={{ background: "#dc2626", color: "#fff" }}
-        aria-label="Leave call"
-      >
-        <PhoneOff size={13} />
-        Leave
-      </button>
     </div>
   );
 }

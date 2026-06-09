@@ -364,6 +364,7 @@ export async function createLiveCallHandler(req: FastifyRequest, reply: FastifyR
       facilitatorDescription: body.facilitatorDescription || null,
       stayTunedMessage: body.stayTunedMessage || 'Stay tuned — the link will unlock before the session begins',
       stayTunedColor: body.stayTunedColor || '#00c4cc',
+      isWebinar: body.isWebinar === true,
     },
   });
   return reply.status(201).send({ success: true, data: call, error: null });
@@ -375,7 +376,7 @@ export async function updateLiveCallHandler(req: FastifyRequest, reply: FastifyR
   const data: any = {};
   ['order', 'type', 'label', 'labelColor', 'title', 'liveUrl', 'liveUrlUnlocksMinutesBefore',
    'recordingUrl', 'recordingLabel', 'prerequisiteNote', 'facilitatorName',
-   'facilitatorTitle', 'facilitatorDescription', 'stayTunedMessage', 'stayTunedColor'].forEach(f => {
+   'facilitatorTitle', 'facilitatorDescription', 'stayTunedMessage', 'stayTunedColor', 'isWebinar'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   if (body.scheduledAt) data.scheduledAt = new Date(body.scheduledAt);
@@ -391,6 +392,33 @@ export async function deleteLiveCallHandler(req: FastifyRequest, reply: FastifyR
   return reply.send({ success: true, data: null, error: null });
 }
 
+export async function getLiveCallStatusHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { env } = await import('../../config/env.js');
+
+  const lc = await req.server.prisma.liveCall.findUnique({
+    where: { id: lcid },
+    select: { id: true, startedAt: true, endedAt: true },
+  });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+
+  let participantCount = 0;
+  if (env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_WS_URL && lc.startedAt && !lc.endedAt) {
+    try {
+      const { RoomServiceClient } = await import('livekit-server-sdk');
+      const httpUrl = env.LIVEKIT_WS_URL.replace(/^wss?:\/\//, 'https://');
+      const svc = new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+      const participants = await svc.listParticipants(`workshop-live-${lcid}`);
+      participantCount = participants.length;
+    } catch {
+      // Room not active yet or service unavailable
+    }
+  }
+
+  const isLive = !!lc.startedAt && !lc.endedAt;
+  return reply.send({ success: true, data: { isLive, participantCount, startedAt: lc.startedAt, endedAt: lc.endedAt }, error: null });
+}
+
 export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: FastifyReply) {
   const { lcid } = req.params as any;
   const { env } = await import('../../config/env.js');
@@ -399,15 +427,25 @@ export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: Fa
     return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Live call service not configured' } });
   }
 
-  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true } });
+  const lc = await req.server.prisma.liveCall.findUnique({
+    where: { id: lcid },
+    select: { id: true, title: true, workshopId: true, startedAt: true },
+  });
   if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+
+  // Look up admin name from DB
+  const admin = await req.server.prisma.admin.findFirst({
+    where: { clerkId: req.user },
+    select: { fullName: true },
+  });
+  const hostName = admin?.fullName || 'Host';
 
   const { AccessToken } = await import('livekit-server-sdk');
 
   const roomName = `workshop-live-${lcid}`;
   const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-    identity: `host-${lcid}`,
-    name: 'Host',
+    identity: req.user || `host-${lcid}`,
+    name: hostName,
     ttl: '8h',
   });
 
@@ -421,6 +459,31 @@ export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: Fa
   });
 
   const token = await at.toJwt();
+
+  // Stamp startedAt on first host join, then notify enrolled members via socket
+  if (!lc.startedAt) {
+    await req.server.prisma.liveCall.update({ where: { id: lcid }, data: { startedAt: new Date() } });
+
+    // Notify all enrolled members in this workshop via socket
+    try {
+      const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+        where: { workshopId: lc.workshopId },
+        select: { memberId: true },
+      });
+      const notifPayload = {
+        title: 'Live Session Started',
+        body: `${lc.title} is now live — join now!`,
+        type: 'live_call',
+        actionUrl: `/workshop`,
+      };
+      for (const { memberId } of enrollments) {
+        req.server.io.to(`user:${memberId}`).emit('notification', notifPayload);
+      }
+    } catch {
+      // Non-fatal — notification failure should not block the host
+    }
+  }
+
   return reply.send({ success: true, data: { token, wsUrl: env.LIVEKIT_WS_URL, roomName }, error: null });
 }
 

@@ -1572,7 +1572,9 @@ model LiveCall {
   facilitatorDescription      String?            @map("facilitator_description")
   stayTunedMessage            String             @default("Stay tuned — the link will unlock before the session begins") @map("stay_tuned_message")
   stayTunedColor              String             @default("#00c4cc") @map("stay_tuned_color")
+  startedAt                   DateTime?          @map("started_at") @db.Timestamptz(6)
   endedAt                     DateTime?          @map("ended_at") @db.Timestamptz(6)
+  isWebinar                   Boolean            @default(false) @map("is_webinar")
   workshop                    Workshop           @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   flowItems                   WorkshopFlowItem[]
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)

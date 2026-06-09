@@ -165,3 +165,42 @@ export async function pubMemberSyncHandler(req: FastifyRequest, reply: FastifyRe
 
   return reply.send({ success: true, data: { memberId: member.id, status: (member as any).status }, error: null });
 }
+
+// ── POST /api/pub/workshops/livekit/webhook ────────────────────────────────────
+// LiveKit server sends webhook events here (no auth required).
+export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+
+  let event: any;
+  try {
+    if (env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET) {
+      const { WebhookReceiver } = await import('livekit-server-sdk');
+      const receiver = new WebhookReceiver(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+      const authHeader = req.headers['authorization'] as string | undefined;
+      event = receiver.receive(rawBody, authHeader ?? '');
+    } else {
+      event = JSON.parse(rawBody);
+    }
+  } catch {
+    return reply.status(400).send({ success: false });
+  }
+
+  const roomName: string = event?.room?.name ?? '';
+  const prefix = 'workshop-live-';
+  if (!roomName.startsWith(prefix)) return reply.send({ success: true });
+
+  const liveCallId = roomName.slice(prefix.length);
+
+  if (event.event === 'egress_ended') {
+    const fileResults: any[] = event?.egressInfo?.fileResults ?? [];
+    const downloadUrl: string | undefined = fileResults[0]?.downloadUrl;
+    if (downloadUrl && liveCallId) {
+      await req.server.prisma.liveCall.update({
+        where: { id: liveCallId },
+        data: { recordingUrl: downloadUrl },
+      }).catch(() => {});
+    }
+  }
+
+  return reply.send({ success: true });
+}

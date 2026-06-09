@@ -983,6 +983,32 @@ export async function getWebinarTokenHandler(request: FastifyRequest, reply: Fas
 
 // ─── Workshop Live Calls (LiveKit) ────────────────────────────────────────────
 
+export async function getLiveCallStatusUserHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+
+  const lc = await request.server.prisma.liveCall.findUnique({
+    where: { id: liveCallId },
+    select: { id: true, startedAt: true, endedAt: true },
+  });
+  if (!lc) return fail(reply, 404, 'Live call not found');
+
+  let participantCount = 0;
+  if (env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_WS_URL && lc.startedAt && !lc.endedAt) {
+    try {
+      const { RoomServiceClient } = await import('livekit-server-sdk');
+      const httpUrl = env.LIVEKIT_WS_URL.replace(/^wss?:\/\//, 'https://');
+      const svc = new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+      const participants = await svc.listParticipants(`workshop-live-${liveCallId}`);
+      participantCount = participants.length;
+    } catch {
+      // Room not active yet
+    }
+  }
+
+  const isLive = !!lc.startedAt && !lc.endedAt;
+  return ok(reply, { isLive, participantCount, startedAt: lc.startedAt, endedAt: lc.endedAt });
+}
+
 export async function joinLiveCallHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: liveCallId } = request.params as { id: string };
 
@@ -992,7 +1018,7 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
 
   const liveCall = await request.server.prisma.liveCall.findUnique({
     where: { id: liveCallId },
-    select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true },
+    select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true, isWebinar: true, startedAt: true },
   });
   if (!liveCall) return fail(reply, 404, 'Live call not found');
 
@@ -1015,13 +1041,13 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
   at.addGrant({
     room: roomName,
     roomJoin: true,
-    canPublish: true,
+    canPublish: !liveCall.isWebinar,
     canSubscribe: true,
     canPublishData: true,
   });
 
   const token = await at.toJwt();
-  return ok(reply, { token, wsUrl: env.LIVEKIT_WS_URL, roomName });
+  return ok(reply, { token, wsUrl: env.LIVEKIT_WS_URL, roomName, startedAt: liveCall.startedAt, isWebinar: liveCall.isWebinar });
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
