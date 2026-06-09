@@ -2685,7 +2685,7 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
       const unlockAt = scheduled && lc.liveUrlUnlocksMinutesBefore
         ? new Date(scheduled.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000)
         : null;
-      const isUnlocked = !isPast && (unlockAt ? now >= unlockAt : !!lc.liveUrl);
+      const isUnlocked = !isPast && (unlockAt ? now >= unlockAt : true);
       return {
         id: fi.id,
         type: 'live_call',
@@ -2701,6 +2701,7 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
         stayTunedMessage: lc.stayTunedMessage ?? null,
         stayTunedColor: lc.stayTunedColor ?? '#2dd4bf',
         status: isPast ? 'past' : 'upcoming',
+        isUnlocked,
         isLocked: false,
         progressPercent: isPast ? 100 : 0,
         numberLabel: null,

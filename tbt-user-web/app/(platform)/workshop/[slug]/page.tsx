@@ -128,6 +128,10 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
     setLeftByChoice(false);
     try {
       const creds = await joinLiveCall.mutateAsync(item.liveCallId);
+      if ((creds as any)?.status === "waiting") {
+        setJoinError("You're in the waiting room. The host will admit you shortly.");
+        return;
+      }
       setCallCreds(creds);
     } catch (err: any) {
       setJoinError(err?.response?.data?.error?.message ?? err?.message ?? "Could not join call");
@@ -2310,6 +2314,10 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
     setLeftByChoice(false);
     try {
       const creds = await joinLiveCall.mutateAsync(challenge.liveCallId);
+      if ((creds as any)?.status === "waiting") {
+        setJoinError("You're in the waiting room. The host will admit you shortly.");
+        return;
+      }
       setCallCreds(creds);
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message ?? err?.message ?? "Could not join call";

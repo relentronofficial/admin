@@ -171,103 +171,102 @@ export function WorkshopLiveCall({
 
   return (
     <div
-      className="relative rounded-xl overflow-hidden flex"
+      className="relative rounded-xl overflow-hidden"
       style={{ height: 580, background: "#000" }}
       data-lk-theme="default"
     >
-      {/* Main video area */}
-      <div className="relative flex-1 min-w-0">
-        <LiveKitRoom
-          serverUrl={wsUrl}
-          token={token}
-          connect={true}
-          audio={userChoices.audioEnabled}
-          video={userChoices.videoEnabled}
-          onDisconnected={handleDisconnected}
-          style={{ height: "100%", width: "100%" }}
-        >
-          <VideoConference />
-          <WaitingForHostOverlay />
-          <CaptionStrip />
-          {startedAt && <LateJoinBanner startedAt={startedAt} />}
+      <LiveKitRoom
+        serverUrl={wsUrl}
+        token={token}
+        connect={true}
+        audio={userChoices.audioEnabled}
+        video={userChoices.videoEnabled}
+        onDisconnected={handleDisconnected}
+        style={{ height: "100%", width: "100%" }}
+      >
+        {/* Inner flex — everything inside LiveKitRoom context so hooks work in all panels */}
+        <div style={{ display: "flex", height: "100%", width: "100%" }}>
+          {/* Main video area */}
+          <div className="relative flex-1 min-w-0" style={{ height: "100%", overflow: "hidden" }}>
+            <VideoConference />
+            <WaitingForHostOverlay />
+            <CaptionStrip />
+            {startedAt && <LateJoinBanner startedAt={startedAt} />}
 
-          {/* Waiting room overlay */}
-          {waitingRoomActive && liveCallId && (
-            <WaitingRoomOverlay
-              liveCallId={liveCallId}
-              onAdmitted={() => onAdmitted?.(token)}
-            />
-          )}
-
-          {/* Emoji reactions */}
-          {showReactions && <EmojiReactionOverlay />}
-
-          {/* Top-right controls */}
-          <div className="absolute top-3 right-3 z-50 flex items-center gap-1.5">
-            {/* Recording indicator */}
-            <RecordingIndicator />
-
-            {/* Background settings */}
-            <button
-              onClick={() => setShowBgSettings(true)}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.1)" }}
-              title="Background & audio settings"
-            >
-              <Settings size={13} style={{ color: "#f0f0f0" }} />
-            </button>
-
-            {/* Emoji reactions toggle */}
-            <button
-              onClick={() => setShowReactions(v => !v)}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{
-                background: showReactions ? "rgba(220,38,38,0.3)" : "rgba(0,0,0,0.6)",
-                border: `1px solid ${showReactions ? "rgba(220,38,38,0.5)" : "rgba(255,255,255,0.1)"}`,
-              }}
-              title="Reactions"
-            >
-              <Smile size={13} style={{ color: "#f0f0f0" }} />
-            </button>
-
-            {/* Leave */}
-            <button
-              onClick={handleLeave}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-              style={{ background: "var(--color-accent)", color: "#fff" }}
-              aria-label="Leave call"
-            >
-              <PhoneOff size={13} />
-              Leave
-            </button>
-          </div>
-
-          {/* Bottom panel tabs */}
-          <div className="absolute bottom-3 left-3 z-50 flex items-center gap-1.5">
-            <PanelTab icon={<MessageSquare size={13} />} label="Chat" active={sidePanel === "chat"} onClick={() => togglePanel("chat")} />
-            <PanelTab icon={<Users size={13} />} label="People" active={sidePanel === "participants"} onClick={() => togglePanel("participants")} />
-            {liveCallId && (
-              <PanelTab icon={<BarChart2 size={13} />} label="Polls" active={sidePanel === "polls"} onClick={() => togglePanel("polls")} />
+            {/* Waiting room overlay */}
+            {waitingRoomActive && liveCallId && (
+              <WaitingRoomOverlay
+                liveCallId={liveCallId}
+                onAdmitted={() => onAdmitted?.(token)}
+              />
             )}
+
+            {/* Emoji reactions */}
+            {showReactions && <EmojiReactionOverlay />}
+
+            {/* Top-right controls */}
+            <div className="absolute top-3 right-3 z-50 flex items-center gap-1.5">
+              <RecordingIndicator />
+
+              <button
+                onClick={() => setShowBgSettings(true)}
+                className="p-1.5 rounded-lg transition-colors"
+                style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.1)" }}
+                title="Background & audio settings"
+              >
+                <Settings size={13} style={{ color: "#f0f0f0" }} />
+              </button>
+
+              <button
+                onClick={() => setShowReactions(v => !v)}
+                className="p-1.5 rounded-lg transition-colors"
+                style={{
+                  background: showReactions ? "rgba(220,38,38,0.3)" : "rgba(0,0,0,0.6)",
+                  border: `1px solid ${showReactions ? "rgba(220,38,38,0.5)" : "rgba(255,255,255,0.1)"}`,
+                }}
+                title="Reactions"
+              >
+                <Smile size={13} style={{ color: "#f0f0f0" }} />
+              </button>
+
+              <button
+                onClick={handleLeave}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                style={{ background: "var(--color-accent)", color: "#fff" }}
+                aria-label="Leave call"
+              >
+                <PhoneOff size={13} />
+                Leave
+              </button>
+            </div>
+
+            {/* Bottom panel tabs */}
+            <div className="absolute bottom-3 left-3 z-50 flex items-center gap-1.5">
+              <PanelTab icon={<MessageSquare size={13} />} label="Chat" active={sidePanel === "chat"} onClick={() => togglePanel("chat")} />
+              <PanelTab icon={<Users size={13} />} label="People" active={sidePanel === "participants"} onClick={() => togglePanel("participants")} />
+              {liveCallId && (
+                <PanelTab icon={<BarChart2 size={13} />} label="Polls" active={sidePanel === "polls"} onClick={() => togglePanel("polls")} />
+              )}
+            </div>
+
+            {showBgSettings && <BackgroundSettingsModal onClose={() => setShowBgSettings(false)} />}
           </div>
 
-          {showBgSettings && <BackgroundSettingsModal onClose={() => setShowBgSettings(false)} />}
-        </LiveKitRoom>
-      </div>
-
-      {/* Side panel */}
-      {hasSide && (
-        <div
-          className="shrink-0 flex flex-col"
-          style={{ width: sidebarWidth, borderLeft: "1px solid #2a2a2a", background: "#181818" }}
-        >
-          {sidePanel === "chat" && <ChatPanel onClose={() => setSidePanel(null)} />}
-          {sidePanel === "participants" && <ParticipantListPanel onClose={() => setSidePanel(null)} />}
-          {sidePanel === "polls" && liveCallId && <PollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />}
+          {/* Side panel — inside LiveKitRoom so useChat/useParticipants have context */}
+          {hasSide && (
+            <div
+              className="shrink-0 flex flex-col"
+              style={{ width: sidebarWidth, borderLeft: "1px solid #2a2a2a", background: "#181818", height: "100%" }}
+            >
+              {sidePanel === "chat" && <ChatPanel onClose={() => setSidePanel(null)} />}
+              {sidePanel === "participants" && <ParticipantListPanel onClose={() => setSidePanel(null)} />}
+              {sidePanel === "polls" && liveCallId && <PollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />}
+            </div>
+          )}
         </div>
-      )}
+      </LiveKitRoom>
 
-      {/* Collapse chevron */}
+      {/* Collapse chevron — absolutely positioned on the outer relative container */}
       {hasSide && (
         <button
           onClick={() => setSidePanel(null)}
