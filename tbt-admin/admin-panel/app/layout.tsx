@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import { Inter, Rajdhani, DM_Sans } from "next/font/google";
 import "./globals.css";
+import "@livekit/components-styles";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/Providers";
 

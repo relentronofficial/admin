@@ -8,19 +8,21 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
-  
   },
   "dependencies": {
     "@clerk/backend": "^3.4.11",
     "@clerk/clerk-react": "^5.12.0",
     "@clerk/nextjs": "^5.7.6",
     "@hookform/resolvers": "^3.4.2",
+    "@livekit/components-react": "^2.9.21",
+    "@livekit/components-styles": "^1.2.0",
     "@tanstack/react-query": "^5.37.1",
     "axios": "^1.7.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "crypto-js": "^4.2.0",
     "date-fns": "^4.2.1",
+    "livekit-client": "^2.19.2",
     "lucide-react": "^0.378.0",
     "next": "14.2.35",
     "react": "^18.3.1",

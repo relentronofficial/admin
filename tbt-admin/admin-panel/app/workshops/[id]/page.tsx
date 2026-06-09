@@ -22,7 +22,9 @@ import {
   useDeleteQAReply,
   useWorkshopFlow, useAddFlowItem, useUpdateFlowItem, useDeleteFlowItem, useReorderFlowItems,
   useEnrollMembers, useListSubmissions, useReorderChallengeEpisodes,
+  useGetLiveCallHostToken,
 } from "@/lib/hooks/useTbt";
+import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -416,6 +418,8 @@ export default function WorkshopDetailPage() {
   // ── Live Call state ───────────────────────────────────────────────────
   const [showLiveCallForm, setShowLiveCallForm] = useState(false);
   const [editingLiveCall, setEditingLiveCall] = useState<any>(null);
+  const [hostCallCreds, setHostCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; liveCallId: string } | null>(null);
+  const getHostToken = useGetLiveCallHostToken();
   const [liveCallForm, setLiveCallForm] = useState({
     title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b",
     scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30",
@@ -879,12 +883,38 @@ export default function WorkshopDetailPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const creds = await getHostToken.mutateAsync(lc.id);
+                            setHostCallCreds({ ...creds, liveCallId: lc.id });
+                          } catch (e: any) {
+                            toast.error(e?.response?.data?.error?.message ?? "Could not join call");
+                          }
+                        }}
+                        disabled={getHostToken.isPending && getHostToken.variables === lc.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors disabled:opacity-50"
+                        style={{ background: "#dc262618", color: "#dc2626", border: "1px solid #dc262630" }}
+                      >
+                        <Video size={12} />
+                        {getHostToken.isPending && getHostToken.variables === lc.id ? "Joining…" : "Join as Host"}
+                      </button>
                       <button onClick={() => openEditLiveCall(lc)} className="p-1.5 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={14} /></button>
                       <button onClick={() => setDeletingLiveCall(lc.id)} className="p-1.5 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={14} /></button>
                     </div>
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Active host call */}
+            {hostCallCreds && (
+              <AdminLiveCall
+                token={hostCallCreds.token}
+                wsUrl={hostCallCreds.wsUrl}
+                roomName={hostCallCreds.roomName}
+                onLeave={() => setHostCallCreds(null)}
+              />
             )}
           </div>
         )}

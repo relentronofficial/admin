@@ -706,3 +706,11 @@ export const useReviewAssignment = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assignment-submissions'] }),
   });
 };
+
+export const useGetLiveCallHostToken = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${liveCallId}/host-token`);
+      return res.data as { token: string; wsUrl: string; roomName: string };
+    },
+  });
