@@ -1703,30 +1703,33 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
         const now = new Date();
         const scheduledAt = new Date(lc.scheduledAt);
         const status = scheduledAt < now ? 'past' : 'upcoming';
+        const unlockAt = lc.liveUrlUnlocksMinutesBefore
+          ? new Date(scheduledAt.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000)
+          : null;
+        const isUnlocked = status === 'past' || (unlockAt ? now >= unlockAt : true);
 
         return {
           id: item.id,
           order: item.order,
           type: 'live_call',
+          liveCallId: lc.id,
           label: lc.label,
           labelColor: lc.labelColor,
           title: lc.title,
           scheduledAt: lc.scheduledAt,
           status,
+          isUnlocked,
           recordingAvailable: status === 'past' && !!lc.recordingUrl,
           recordingLabel: lc.recordingUrl ? (lc.recordingLabel ?? 'Missed it? View the recording.') : null,
           prerequisiteNote: lc.prerequisiteNote ?? null,
-          liveUrl: status === 'upcoming' ? (lc.liveUrl ?? null) : null,
+          liveUrl: isUnlocked ? (lc.liveUrl ?? null) : null,
           liveUrlUnlocksMinutesBefore: lc.liveUrlUnlocksMinutesBefore ?? 30,
           facilitatorName: lc.facilitatorName ?? null,
           facilitatorTitle: lc.facilitatorTitle ?? null,
           facilitatorDescription: lc.facilitatorDescription ?? null,
           countdownConfig:
             status === 'upcoming'
-              ? {
-                  stayTunedMessage: lc.stayTunedMessage,
-                  stayTunedColor: lc.stayTunedColor,
-                }
+              ? { stayTunedMessage: lc.stayTunedMessage, stayTunedColor: lc.stayTunedColor }
               : null,
           isCompleted: status === 'past',
         };

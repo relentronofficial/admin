@@ -405,9 +405,11 @@ export interface WorkshopFlowItem {
   progressPercent?: number;
   episodes?: WorkshopFlowEpisode[];
   // live call fields
+  liveCallId?: string | null;
   labelColor?: string | null;
   scheduledAt?: string | null;
   status?: string | null;
+  isUnlocked?: boolean;
   recordingAvailable?: boolean;
   recordingLabel?: string | null;
   prerequisiteNote?: string | null;

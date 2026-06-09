@@ -110,7 +110,21 @@ function Countdown({
 
 function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const { uiStrings } = useSiteConfig();
+  const joinLiveCall = useJoinLiveCall();
   const [diff, setDiff] = useState(0);
+  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string } | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
+
+  const handleJoinFromFlow = async () => {
+    if (!item.liveCallId) return;
+    setJoinError(null);
+    try {
+      const creds = await joinLiveCall.mutateAsync(item.liveCallId);
+      setCallCreds(creds);
+    } catch (err: any) {
+      setJoinError(err?.response?.data?.error?.message ?? err?.message ?? "Could not join call");
+    }
+  };
 
   useEffect(() => {
     if (!item.scheduledAt) return;
@@ -136,7 +150,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
     .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
     .toUpperCase();
 
-  return (
+  const inner = (
     <div
       className="rounded-xl overflow-hidden flex flex-col items-center justify-center text-center py-12 px-6 space-y-6"
       style={{ background: "#000", minHeight: 300 }}
@@ -187,20 +201,41 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
         </p>
       )}
 
-      {/* Join button — only when liveUrl is unlocked */}
-      {item.liveUrl && (
-        <a
-          href={item.liveUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-bold text-white"
-          style={{ background: "var(--color-accent)" }}
-        >
-          {uiStrings?.liveCallJoinLabel}
-        </a>
+      {/* Join button — unlocked when within unlock window */}
+      {item.isUnlocked && item.status !== 'past' && (
+        <div className="space-y-2">
+          <button
+            onClick={handleJoinFromFlow}
+            disabled={joinLiveCall.isPending}
+            className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {joinLiveCall.isPending ? (
+              <><Loader2 size={15} className="animate-spin" /> Connecting…</>
+            ) : (
+              <><Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}</>
+            )}
+          </button>
+          {joinError && <p className="text-xs text-red-400">{joinError}</p>}
+        </div>
       )}
     </div>
   );
+
+  if (callCreds) {
+    return (
+      <div className="space-y-4">
+        <WorkshopLiveCall
+          token={callCreds.token}
+          wsUrl={callCreds.wsUrl}
+          roomName={callCreds.roomName}
+          onLeave={() => setCallCreds(null)}
+        />
+      </div>
+    );
+  }
+
+  return inner;
 }
 
 // ─── Main Area: Assignment (form + submitted review) ─────────────────────────
@@ -2242,8 +2277,6 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message ?? err?.message ?? "Could not join call";
       setJoinError(msg);
-      // Fallback: open external URL if available
-      if (challenge.liveUrl) window.open(challenge.liveUrl, "_blank");
     }
   };
 
