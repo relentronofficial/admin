@@ -422,6 +422,30 @@ export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: Fa
   return reply.send({ success: true, data: { token, wsUrl: env.LIVEKIT_WS_URL, roomName }, error: null });
 }
 
+export async function endLiveCallHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { env } = await import('../../config/env.js');
+
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_WS_URL) {
+    return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Live call service not configured' } });
+  }
+
+  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true } });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+
+  const { RoomServiceClient } = await import('livekit-server-sdk');
+  const httpUrl = env.LIVEKIT_WS_URL.replace(/^wss?:\/\//, 'https://');
+  const svc = new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+
+  try {
+    await svc.deleteRoom(`workshop-live-${lcid}`);
+  } catch {
+    // Room may not exist yet — not an error
+  }
+
+  return reply.send({ success: true, data: null, error: null });
+}
+
 // ── ASSIGNMENTS ───────────────────────────────────────────────────────
 
 export async function listAssignmentsHandler(req: FastifyRequest, reply: FastifyReply) {

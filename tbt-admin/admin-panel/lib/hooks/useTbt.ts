@@ -714,3 +714,10 @@ export const useGetLiveCallHostToken = () =>
       return res.data as { token: string; wsUrl: string; roomName: string };
     },
   });
+
+export const useEndLiveCall = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      await apiClient.post(`/api/workshops/live-calls/${liveCallId}/end`);
+    },
+  });

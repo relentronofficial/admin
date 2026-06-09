@@ -6,7 +6,7 @@ import {
   getWorkshopFlowHandler, upsertFlowItemHandler, deleteFlowItemHandler, reorderFlowHandler,
   listChallengesHandler, createChallengeHandler, updateChallengeHandler, deleteChallengeHandler,
   listEpisodesHandler, createEpisodeHandler, updateEpisodeHandler, deleteEpisodeHandler, reorderEpisodesHandler,
-  listLiveCallsHandler, createLiveCallHandler, updateLiveCallHandler, deleteLiveCallHandler, getLiveCallHostTokenHandler,
+  listLiveCallsHandler, createLiveCallHandler, updateLiveCallHandler, deleteLiveCallHandler, getLiveCallHostTokenHandler, endLiveCallHandler,
   listAssignmentsHandler, createAssignmentHandler, updateAssignmentHandler, deleteAssignmentHandler,
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
@@ -49,6 +49,7 @@ export async function workshopRoutes(fastify: FastifyInstance) {
   fastify.put('/live-calls/:lcid', updateLiveCallHandler);
   fastify.delete('/live-calls/:lcid', deleteLiveCallHandler);
   fastify.post('/live-calls/:lcid/host-token', getLiveCallHostTokenHandler);
+  fastify.post('/live-calls/:lcid/end', endLiveCallHandler);
 
   fastify.get('/:id/assignments', listAssignmentsHandler);
   fastify.post('/:id/assignments', createAssignmentHandler);

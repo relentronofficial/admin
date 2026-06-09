@@ -913,6 +913,7 @@ export default function WorkshopDetailPage() {
                 token={hostCallCreds.token}
                 wsUrl={hostCallCreds.wsUrl}
                 roomName={hostCallCreds.roomName}
+                liveCallId={hostCallCreds.liveCallId}
                 onLeave={() => setHostCallCreds(null)}
               />
             )}
