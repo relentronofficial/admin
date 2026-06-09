@@ -5,16 +5,16 @@ import {
   LiveKitRoom,
   VideoConference,
   PreJoin,
-  useRemoteParticipants,
   useParticipants,
   useIsRecording,
+  useChat,
   type LocalUserChoices,
 } from "@livekit/components-react";
 import { DisconnectReason, Track } from "livekit-client";
 import {
   PhoneOff, Users, Clock, CheckCircle2, MessageSquare,
   BarChart2, MicOff, XCircle, Lock, Unlock, Disc, StopCircle,
-  Bell, ChevronRight, Plus, X, Settings,
+  Bell, Plus, X, Send,
 } from "lucide-react";
 import {
   useEndLiveCall,
@@ -31,7 +31,7 @@ import {
   useSendReminders,
 } from "@/lib/hooks/useTbt";
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Shared helpers ─────────────────────────────────────────────────────────────
 
 function DurationTicker({ startedAt }: { startedAt: number }) {
   const [elapsed, setElapsed] = useState(0);
@@ -51,20 +51,16 @@ function DurationTicker({ startedAt }: { startedAt: number }) {
   );
 }
 
-function RecBadge() {
-  const isRec = useIsRecording();
-  if (!isRec) return null;
-  return (
-    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded"
-      style={{ background: "rgba(220,38,38,0.2)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.4)" }}>
-      <Disc size={9} className="animate-pulse" /> REC
-    </span>
-  );
+// Headless — syncs LiveKit recording state into parent
+function RoomSyncLayer({ onRecording }: { onRecording: (v: boolean) => void }) {
+  const isRecording = useIsRecording();
+  useEffect(() => { onRecording(isRecording); }, [isRecording, onRecording]);
+  return null;
 }
 
 function ConfirmEndModal({ onConfirm, onCancel, isPending }: { onConfirm: () => void; onCancel: () => void; isPending: boolean }) {
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)" }}>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)" }}>
       <div className="rounded-xl p-6 w-80 space-y-4 border" style={{ background: "#181818", borderColor: "#2a2a2a" }}>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(220,38,38,0.15)" }}>
@@ -86,12 +82,9 @@ function ConfirmEndModal({ onConfirm, onCancel, isPending }: { onConfirm: () => 
   );
 }
 
-// ── Participants panel ─────────────────────────────────────────────────────────
+// ── Participants panel (must be inside LiveKitRoom) ────────────────────────────
 
-function ParticipantsPanel({
-  liveCallId,
-  onClose,
-}: { liveCallId: string; onClose: () => void }) {
+function ParticipantsPanel({ liveCallId, onClose }: { liveCallId: string; onClose: () => void }) {
   const participants = useParticipants();
   const muteParticipant = useMuteParticipant();
   const removeParticipant = useRemoveParticipant();
@@ -111,8 +104,10 @@ function ParticipantsPanel({
           const audioMuted = !audioTrack || audioTrack.isMuted;
           return (
             <div key={p.identity} className="flex items-center gap-2 px-3 py-2 rounded-lg group" style={{ background: "#1a1a1a" }}>
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ background: isHost ? "rgba(220,38,38,0.2)" : "#2a2a2a", color: isHost ? "#dc2626" : "#a0a0a0" }}>
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                style={{ background: isHost ? "rgba(220,38,38,0.2)" : "#2a2a2a", color: isHost ? "#dc2626" : "#a0a0a0" }}
+              >
                 {(p.name ?? p.identity).slice(0, 1).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -140,6 +135,64 @@ function ParticipantsPanel({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ── Chat panel (must be inside LiveKitRoom) ────────────────────────────────────
+
+function AdminChatPanel({ onClose }: { onClose: () => void }) {
+  const { chatMessages, send } = useChat();
+  const [text, setText] = useState("");
+  const bottomRef = useRef<HTMLDivElement | undefined>(undefined);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages.length]);
+
+  const handleSend = () => {
+    const msg = text.trim();
+    if (!msg) return;
+    send(msg);
+    setText("");
+  };
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#181818" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <span className="text-xs font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#a0a0a0" }}>Chat</span>
+        <button onClick={onClose} className="p-1 rounded hover:bg-[#2a2a2a]"><X size={13} style={{ color: "#606060" }} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" style={{ minHeight: 0 }}>
+        {chatMessages.map((msg) => (
+          <div key={msg.id} className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-bold" style={{ color: "#606060" }}>{msg.from?.name ?? "Unknown"}</span>
+            <p className="text-sm px-3 py-2 rounded-xl rounded-tl-sm break-words" style={{ background: "#2a2a2a", color: "#f0f0f0" }}>
+              {msg.message}
+            </p>
+          </div>
+        ))}
+        <div ref={bottomRef as React.RefObject<HTMLDivElement>} />
+      </div>
+      <div className="shrink-0 px-3 pb-3 pt-2" style={{ borderTop: "1px solid #2a2a2a" }}>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+            style={{ background: "#222", border: "1px solid #333", color: "#f0f0f0" }}
+            placeholder="Message everyone…"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          />
+          <button
+            onClick={handleSend}
+            className="p-2 rounded-lg shrink-0"
+            style={{ background: text.trim() ? "#dc2626" : "#2a2a2a", color: "#fff" }}
+          >
+            <Send size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -180,7 +233,6 @@ function AdminPollPanel({ liveCallId, onClose }: { liveCallId: string; onClose: 
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4" style={{ minHeight: 0 }}>
-        {/* Create form */}
         {creating && (
           <div className="rounded-xl p-3 space-y-2.5" style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }}>
             <input
@@ -273,7 +325,7 @@ interface AdminLiveCallProps {
   onLeave: () => void;
 }
 
-type SidePanel = "participants" | "polls" | null;
+type SidePanel = "participants" | "polls" | "chat" | null;
 
 export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: AdminLiveCallProps) {
   const [stage, setStage] = useState<"pre" | "live" | "summary">("pre");
@@ -289,6 +341,7 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [isLocked, setIsLocked] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const handleRecording = useCallback((v: boolean) => setIsRecording(v), []);
 
   const leftByChoiceRef = useRef(false);
   const entryTimeRef = useRef<number>(0);
@@ -300,6 +353,12 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
   const stopRecording = useStopRecording();
   const sendReminders = useSendReminders();
 
+  // Lock body scroll while the overlay is mounted
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
   const handleEndForAll = async () => {
     try { await endCall.mutateAsync(liveCallId); } catch {}
     const duration = Math.floor((Date.now() - entryTimeRef.current) / 1000);
@@ -310,11 +369,7 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
   };
 
   const handleDisconnected = useCallback((reason?: DisconnectReason) => {
-    if (leftByChoiceRef.current || reason === DisconnectReason.CLIENT_INITIATED) {
-      onLeave();
-    } else {
-      onLeave();
-    }
+    onLeave();
   }, [onLeave]);
 
   const toggleLock = async () => {
@@ -325,12 +380,14 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
 
   const toggleRecording = async () => {
     if (isRecording) {
-      setIsRecording(false);
       await stopRecording.mutateAsync(liveCallId);
     } else {
-      setIsRecording(true);
       await startRecording.mutateAsync(liveCallId);
     }
+  };
+
+  const togglePanel = (panel: SidePanel) => {
+    setSidePanel(prev => prev === panel ? null : panel);
   };
 
   // ── Summary screen ──────────────────────────────────────────────────────────
@@ -343,16 +400,21 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
     const fmt = (n: number) => String(n).padStart(2, "0");
     const durationStr = h > 0 ? `${fmt(h)}h ${fmt(m)}m ${fmt(s)}s` : `${fmt(m)}m ${fmt(s)}s`;
     return (
-      <div className="rounded-xl flex flex-col items-center justify-center gap-4 text-center border" style={{ height: 280, background: "#111", borderColor: "#2a2a2a" }}>
-        <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)" }}>
-          <CheckCircle2 size={28} style={{ color: "#22c55e" }} />
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.92)" }}
+      >
+        <div className="rounded-2xl flex flex-col items-center gap-4 text-center p-8 w-80" style={{ background: "#111" }}>
+          <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)" }}>
+            <CheckCircle2 size={28} style={{ color: "#22c55e" }} />
+          </div>
+          <div>
+            <p className="font-bold text-white text-lg">Session Ended</p>
+            <p className="text-sm mt-1" style={{ color: "#a0a0a0" }}>Duration: <span className="font-bold text-white">{durationStr}</span></p>
+            <p className="text-xs mt-0.5" style={{ color: "#606060" }}>Ended at {endedAt.toLocaleTimeString()}</p>
+          </div>
+          <button onClick={onLeave} className="mt-2 px-6 py-2.5 rounded-lg text-sm font-bold w-full" style={{ background: "#dc2626", color: "#fff" }}>Close</button>
         </div>
-        <div>
-          <p className="font-bold text-white text-lg">Session Ended</p>
-          <p className="text-sm mt-1" style={{ color: "#a0a0a0" }}>Duration: <span className="font-bold text-white">{durationStr}</span></p>
-          <p className="text-xs mt-0.5" style={{ color: "#606060" }}>Ended at {endedAt.toLocaleTimeString()}</p>
-        </div>
-        <button onClick={onLeave} className="mt-2 px-6 py-2 rounded-lg text-sm font-bold" style={{ background: "#dc2626", color: "#fff" }}>Close</button>
       </div>
     );
   }
@@ -361,16 +423,26 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
 
   if (stage === "pre") {
     return (
-      <div className="rounded-xl overflow-hidden" style={{ background: "#111", minHeight: 420 }} data-lk-theme="default">
-        <PreJoin
-          defaults={userChoices}
-          onSubmit={(choices) => {
-            setUserChoices({ ...choices, username: hostName || choices.username });
-            entryTimeRef.current = Date.now();
-            setStage("live");
-          }}
-          style={{ height: 420, width: "100%" }}
-        />
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.92)" }}
+        data-lk-theme="default"
+      >
+        <div className="w-full max-w-xl mx-4 rounded-2xl overflow-hidden" style={{ background: "#111" }}>
+          <div className="px-6 py-4" style={{ borderBottom: "1px solid #222" }}>
+            <p className="text-white font-bold text-base">Host Preview</p>
+            <p className="text-xs mt-0.5" style={{ color: "#a0a0a0" }}>Check your camera and mic before going live</p>
+          </div>
+          <PreJoin
+            defaults={userChoices}
+            onSubmit={(choices) => {
+              setUserChoices({ ...choices, username: hostName || choices.username });
+              entryTimeRef.current = Date.now();
+              setStage("live");
+            }}
+            style={{ width: "100%" }}
+          />
+        </div>
       </div>
     );
   }
@@ -386,9 +458,82 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
           isPending={endCall.isPending}
         />
       )}
-      <div className="relative rounded-xl overflow-hidden flex" style={{ height: 620, background: "#000" }} data-lk-theme="default">
-        {/* Main video */}
-        <div className="relative flex-1 min-w-0">
+      <div
+        className="fixed inset-0 z-[9999] flex flex-col"
+        style={{ background: "#0a0a0a" }}
+        data-lk-theme="default"
+      >
+        {/* Top bar — outside LiveKitRoom */}
+        <div
+          className="shrink-0 flex items-center gap-1.5 px-4"
+          style={{ height: 56, background: "#111111", borderBottom: "1px solid #1e1e1e" }}
+        >
+          {/* Left: duration + REC badge */}
+          <DurationTicker startedAt={entryTimeRef.current} />
+          {isRecording && (
+            <span
+              className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded"
+              style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.3)" }}
+            >
+              <Disc size={8} className="animate-pulse" /> REC
+            </span>
+          )}
+
+          <div style={{ width: 1, height: 20, background: "#2a2a2a", margin: "0 6px" }} />
+
+          {/* Host controls with labels */}
+          <CtrlBtn onClick={() => muteAll.mutate(liveCallId)} label="Mute All" title="Mute all participants">
+            <MicOff size={12} />
+          </CtrlBtn>
+          <CtrlBtn onClick={toggleLock} label={isLocked ? "Unlock" : "Lock"} active={isLocked}>
+            {isLocked ? <Lock size={12} /> : <Unlock size={12} />}
+          </CtrlBtn>
+          <CtrlBtn
+            onClick={toggleRecording}
+            label={isRecording ? "Stop Rec" : "Record"}
+            active={isRecording}
+            activeColor="#dc2626"
+          >
+            {isRecording ? <StopCircle size={12} /> : <Disc size={12} />}
+          </CtrlBtn>
+          <CtrlBtn onClick={() => sendReminders.mutate(liveCallId)} label="Remind" title="Send reminder to all members">
+            <Bell size={12} />
+          </CtrlBtn>
+
+          <div className="flex-1" />
+
+          {/* Panel toggles */}
+          <CtrlBtn onClick={() => togglePanel("chat")} label="Chat" active={sidePanel === "chat"}>
+            <MessageSquare size={12} />
+          </CtrlBtn>
+          <CtrlBtn onClick={() => togglePanel("participants")} label="People" active={sidePanel === "participants"}>
+            <Users size={12} />
+          </CtrlBtn>
+          <CtrlBtn onClick={() => togglePanel("polls")} label="Polls" active={sidePanel === "polls"}>
+            <BarChart2 size={12} />
+          </CtrlBtn>
+
+          <div style={{ width: 1, height: 20, background: "#2a2a2a", margin: "0 6px" }} />
+
+          {/* Action buttons — Leave neutral, End All dark red */}
+          <button
+            onClick={() => { leftByChoiceRef.current = true; onLeave(); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
+            style={{ background: "#2a2a2a", color: "#a0a0a0", border: "1px solid #333" }}
+          >
+            <PhoneOff size={13} /> Leave
+          </button>
+          <button
+            onClick={() => setShowConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
+            style={{ background: "#7f1d1d", color: "#fff" }}
+          >
+            <Users size={13} /> End All
+          </button>
+        </div>
+
+        {/* Body — LiveKitRoom fills remaining height */}
+        <div className="flex-1 relative min-h-0">
           <LiveKitRoom
             serverUrl={wsUrl}
             token={token}
@@ -398,122 +543,45 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
             onDisconnected={handleDisconnected}
             style={{ height: "100%", width: "100%" }}
           >
+            <RoomSyncLayer onRecording={handleRecording} />
             <VideoConference />
 
-            {/* Top bar */}
-            <div className="absolute top-3 left-3 right-3 z-50 flex items-center gap-2">
-              <DurationTicker startedAt={entryTimeRef.current} />
-              <RecBadge />
-
-              {/* Spacer */}
-              <div className="flex-1" />
-
-              {/* Host controls */}
-              <HostControlsBar
-                liveCallId={liveCallId}
-                isLocked={isLocked}
-                isRecording={isRecording}
-                onMuteAll={() => muteAll.mutate(liveCallId)}
-                onToggleLock={toggleLock}
-                onToggleRecording={toggleRecording}
-                onReminders={() => sendReminders.mutate(liveCallId)}
-                onSidePanel={(p) => setSidePanel(prev => prev === p ? null : p)}
-                activePanel={sidePanel}
-              />
-
-              {/* End controls */}
-              <button
-                onClick={() => setShowConfirm(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
-                style={{ background: "#7f1d1d", color: "#fff" }}
+            {/* Side panel — overlay, all panels inside LiveKitRoom context */}
+            {sidePanel && (
+              <div
+                className="absolute top-0 right-0 h-full z-50 flex flex-col"
+                style={{
+                  width: 300,
+                  background: "#141414",
+                  borderLeft: "1px solid #2a2a2a",
+                  boxShadow: "-8px 0 32px rgba(0,0,0,0.6)",
+                }}
               >
-                <Users size={13} /> End All
-              </button>
-              <button
-                onClick={() => { leftByChoiceRef.current = true; onLeave(); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
-                style={{ background: "#dc2626", color: "#fff" }}
-              >
-                <PhoneOff size={13} /> Leave
-              </button>
-            </div>
+                {sidePanel === "chat" && <AdminChatPanel onClose={() => setSidePanel(null)} />}
+                {sidePanel === "participants" && (
+                  <ParticipantsPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+                )}
+                {sidePanel === "polls" && (
+                  <AdminPollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+                )}
+              </div>
+            )}
           </LiveKitRoom>
         </div>
-
-        {/* Side panel */}
-        {sidePanel && (
-          <div className="shrink-0 flex flex-col" style={{ width: 280, borderLeft: "1px solid #2a2a2a" }}>
-            {sidePanel === "participants" && (
-              <ParticipantsPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
-            )}
-            {sidePanel === "polls" && (
-              <AdminPollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
-            )}
-          </div>
-        )}
       </div>
     </>
   );
 }
 
-// ── Host controls bar ─────────────────────────────────────────────────────────
-
-function HostControlsBar({
-  liveCallId, isLocked, isRecording,
-  onMuteAll, onToggleLock, onToggleRecording, onReminders,
-  onSidePanel, activePanel,
-}: {
-  liveCallId: string;
-  isLocked: boolean;
-  isRecording: boolean;
-  onMuteAll: () => void;
-  onToggleLock: () => void;
-  onToggleRecording: () => void;
-  onReminders: () => void;
-  onSidePanel: (p: SidePanel) => void;
-  activePanel: SidePanel;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {/* Mute all */}
-      <CtrlBtn onClick={onMuteAll} title="Mute all participants">
-        <MicOff size={12} />
-      </CtrlBtn>
-
-      {/* Lock */}
-      <CtrlBtn onClick={onToggleLock} title={isLocked ? "Unlock room" : "Lock room"} active={isLocked}>
-        {isLocked ? <Lock size={12} /> : <Unlock size={12} />}
-      </CtrlBtn>
-
-      {/* Record */}
-      <CtrlBtn onClick={onToggleRecording} title={isRecording ? "Stop recording" : "Start recording"} active={isRecording} activeColor="#dc2626">
-        {isRecording ? <StopCircle size={12} /> : <Disc size={12} />}
-      </CtrlBtn>
-
-      {/* Reminders */}
-      <CtrlBtn onClick={onReminders} title="Send reminder to all members">
-        <Bell size={12} />
-      </CtrlBtn>
-
-      {/* Participants panel */}
-      <CtrlBtn onClick={() => onSidePanel("participants")} title="Participants" active={activePanel === "participants"}>
-        <Users size={12} />
-      </CtrlBtn>
-
-      {/* Polls panel */}
-      <CtrlBtn onClick={() => onSidePanel("polls")} title="Polls" active={activePanel === "polls"}>
-        <BarChart2 size={12} />
-      </CtrlBtn>
-    </div>
-  );
-}
+// ── CtrlBtn ───────────────────────────────────────────────────────────────────
 
 function CtrlBtn({
-  children, onClick, title, active = false, activeColor = "#f59e0b",
+  children, onClick, title, label, active = false, activeColor = "#f59e0b",
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title?: string;
+  label?: string;
   active?: boolean;
   activeColor?: string;
 }) {
@@ -521,14 +589,15 @@ function CtrlBtn({
     <button
       onClick={onClick}
       title={title}
-      className="p-1.5 rounded-lg transition-colors flex items-center justify-center"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-semibold"
       style={{
-        background: active ? `${activeColor}30` : "rgba(0,0,0,0.6)",
-        border: `1px solid ${active ? activeColor + "60" : "rgba(255,255,255,0.1)"}`,
-        color: active ? activeColor : "#f0f0f0",
+        background: active ? `${activeColor}26` : "rgba(255,255,255,0.06)",
+        border: `1px solid ${active ? activeColor + "50" : "rgba(255,255,255,0.1)"}`,
+        color: active ? activeColor : "#a0a0a0",
       }}
     >
       {children}
+      {label && <span>{label}</span>}
     </button>
   );
 }

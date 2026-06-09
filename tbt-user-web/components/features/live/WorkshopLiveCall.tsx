@@ -6,18 +6,18 @@ import {
   VideoConference,
   PreJoin,
   useRemoteParticipants,
+  useIsRecording,
   type LocalUserChoices,
 } from "@livekit/components-react";
 import { DisconnectReason } from "livekit-client";
 import {
   PhoneOff, Users, Clock, MessageSquare, BarChart2,
-  Smile, Settings, ChevronRight, ChevronLeft,
+  Smile, Settings, Disc,
 } from "lucide-react";
 import { getServerNow } from "@/lib/api/client";
 import { ChatPanel } from "./ChatPanel";
 import { ParticipantListPanel } from "./ParticipantListPanel";
 import { EmojiReactionOverlay } from "./EmojiReactionOverlay";
-import { RecordingIndicator } from "./RecordingIndicator";
 import { CaptionStrip } from "./CaptionStrip";
 import { PollPanel } from "./PollPanel";
 import { WaitingRoomOverlay } from "./WaitingRoomOverlay";
@@ -31,15 +31,20 @@ interface WorkshopLiveCallProps {
   startedAt?: string | null;
   isWebinar?: boolean;
   liveCallId?: string;
-  /** Passed when member was admitted after waiting room */
   onLeave: () => void;
   onLeaveByChoice?: () => void;
-  /** If set, member was in waiting room and this triggers refresh */
   waitingRoomActive?: boolean;
   onAdmitted?: (newToken: string) => void;
 }
 
 type SidePanel = "chat" | "participants" | "polls" | null;
+
+// Headless — syncs LiveKit hook state into parent
+function RoomSyncLayer({ onRecording }: { onRecording: (v: boolean) => void }) {
+  const isRecording = useIsRecording();
+  useEffect(() => { onRecording(isRecording); }, [isRecording, onRecording]);
+  return null;
+}
 
 function WaitingForHostOverlay() {
   const participants = useRemoteParticipants();
@@ -48,28 +53,13 @@ function WaitingForHostOverlay() {
   return (
     <div
       className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-30 pointer-events-none"
-      style={{ background: "rgba(0,0,0,0.65)" }}
+      style={{ background: "rgba(0,0,0,0.5)" }}
     >
       <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(220,38,38,0.15)" }}>
         <Users size={22} style={{ color: "#dc2626" }} />
       </div>
       <p className="text-white font-semibold text-sm">Waiting for the host to join…</p>
       <p className="text-xs" style={{ color: "#a0a0a0" }}>The session will begin when the host enters the room.</p>
-    </div>
-  );
-}
-
-function LateJoinBanner({ startedAt }: { startedAt: string }) {
-  const startMs = new Date(startedAt).getTime();
-  const minutesIn = Math.floor((getServerNow() - startMs) / 60000);
-  if (minutesIn < 5) return null;
-  return (
-    <div
-      className="absolute bottom-[4.5rem] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold pointer-events-none"
-      style={{ background: "rgba(0,0,0,0.75)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
-    >
-      <Clock size={12} />
-      You joined {minutesIn} minute{minutesIn !== 1 ? "s" : ""} in
     </div>
   );
 }
@@ -98,10 +88,13 @@ export function WorkshopLiveCall({
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [showBgSettings, setShowBgSettings] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const handleRecording = useCallback((v: boolean) => setIsRecording(v), []);
 
-  // Socket: listen for live_call:admitted event
+  // Lock body scroll for the duration of the overlay
   useEffect(() => {
-    // The waiting-room admission flow polls in WaitingRoomOverlay
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
   }, []);
 
   const handleLeave = useCallback(() => {
@@ -122,175 +115,218 @@ export function WorkshopLiveCall({
     setSidePanel(prev => prev === panel ? null : panel);
   };
 
+  const minutesIn = startedAt
+    ? Math.floor((getServerNow() - new Date(startedAt).getTime()) / 60000)
+    : 0;
+
+  // ── Pre-join ──────────────────────────────────────────────────────────────────
   if (stage === "pre") {
     return (
       <div
-        className="rounded-xl overflow-hidden"
-        style={{ background: "#111", minHeight: 420 }}
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.92)" }}
         data-lk-theme="default"
       >
-        <PreJoin
-          defaults={userChoices}
-          onSubmit={(choices) => {
-            setUserChoices({ ...choices, username: defaultName || choices.username });
-            setStage("live");
-          }}
-          style={{ height: 420, width: "100%" }}
-        />
+        <div className="w-full max-w-xl mx-4 rounded-2xl overflow-hidden" style={{ background: "#111" }}>
+          <div className="px-6 py-4" style={{ borderBottom: "1px solid #222" }}>
+            <p className="text-white font-bold text-base">Ready to join?</p>
+            <p className="text-xs mt-0.5" style={{ color: "#a0a0a0" }}>Check your camera and mic before entering</p>
+          </div>
+          <PreJoin
+            defaults={userChoices}
+            onSubmit={(choices) => {
+              setUserChoices({ ...choices, username: defaultName || choices.username });
+              setStage("live");
+            }}
+            style={{ width: "100%" }}
+          />
+        </div>
       </div>
     );
   }
 
+  // ── Ended ─────────────────────────────────────────────────────────────────────
   if (stage === "ended") {
     return (
       <div
-        className="rounded-xl flex flex-col items-center justify-center gap-4 text-center"
-        style={{ height: 420, background: "#111" }}
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.92)" }}
       >
         <div
-          className="w-14 h-14 rounded-full flex items-center justify-center"
-          style={{ background: "rgba(220,38,38,0.15)" }}
+          className="rounded-2xl flex flex-col items-center gap-4 text-center p-8 w-80"
+          style={{ background: "#111" }}
         >
-          <PhoneOff size={26} style={{ color: "#dc2626" }} />
+          <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(220,38,38,0.15)" }}>
+            <PhoneOff size={26} style={{ color: "#dc2626" }} />
+          </div>
+          <p className="text-white font-semibold text-lg">Meeting ended by the host</p>
+          <p className="text-sm" style={{ color: "#a0a0a0" }}>The host has ended this session for everyone.</p>
+          <button
+            onClick={onLeave}
+            className="mt-2 px-6 py-2.5 rounded-lg text-sm font-bold w-full"
+            style={{ background: "var(--color-accent)", color: "#fff" }}
+          >
+            Back to Workshop
+          </button>
         </div>
-        <p className="text-white font-semibold text-lg">Meeting ended by the host</p>
-        <p className="text-sm" style={{ color: "#a0a0a0" }}>The host has ended this session for everyone.</p>
-        <button
-          onClick={onLeave}
-          className="mt-2 px-5 py-2 rounded-lg text-sm font-bold"
-          style={{ background: "var(--color-accent)", color: "#fff" }}
-        >
-          Close
-        </button>
       </div>
     );
   }
 
-  const sidebarWidth = 280;
-  const hasSide = !!sidePanel;
-
+  // ── Live ──────────────────────────────────────────────────────────────────────
   return (
     <div
-      className="relative rounded-xl overflow-hidden"
-      style={{ height: 580, background: "#000" }}
+      className="fixed inset-0 z-[9999] flex flex-col"
+      style={{ background: "#0a0a0a" }}
       data-lk-theme="default"
     >
-      <LiveKitRoom
-        serverUrl={wsUrl}
-        token={token}
-        connect={true}
-        audio={userChoices.audioEnabled}
-        video={userChoices.videoEnabled}
-        onDisconnected={handleDisconnected}
-        style={{ height: "100%", width: "100%" }}
+      {/* Top bar — outside LiveKitRoom, no LiveKit hooks */}
+      <div
+        className="shrink-0 flex items-center gap-2 px-4"
+        style={{ height: 52, background: "#111111", borderBottom: "1px solid #1e1e1e" }}
       >
-        {/* Inner flex — everything inside LiveKitRoom context so hooks work in all panels */}
-        <div style={{ display: "flex", height: "100%", width: "100%" }}>
-          {/* Main video area */}
-          <div className="relative flex-1 min-w-0" style={{ height: "100%", overflow: "hidden" }}>
-            <VideoConference />
-            <WaitingForHostOverlay />
-            <CaptionStrip />
-            {startedAt && <LateJoinBanner startedAt={startedAt} />}
+        {/* Left: status badges */}
+        <span
+          className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded"
+          style={{ background: "rgba(220,38,38,0.2)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.4)" }}
+        >
+          LIVE
+        </span>
+        {isRecording && (
+          <span
+            className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded"
+            style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.3)" }}
+          >
+            <Disc size={8} className="animate-pulse" /> REC
+          </span>
+        )}
+        {minutesIn >= 5 && (
+          <span
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold"
+            style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
+          >
+            <Clock size={9} /> Joined {minutesIn}m in
+          </span>
+        )}
 
-            {/* Waiting room overlay */}
-            {waitingRoomActive && liveCallId && (
-              <WaitingRoomOverlay
-                liveCallId={liveCallId}
-                onAdmitted={() => onAdmitted?.(token)}
-              />
-            )}
+        <div className="flex-1" />
 
-            {/* Emoji reactions */}
-            {showReactions && <EmojiReactionOverlay />}
+        {/* Panel toggles */}
+        <TopBarBtn
+          icon={<MessageSquare size={13} />}
+          label="Chat"
+          active={sidePanel === "chat"}
+          onClick={() => togglePanel("chat")}
+        />
+        <TopBarBtn
+          icon={<Users size={13} />}
+          label="People"
+          active={sidePanel === "participants"}
+          onClick={() => togglePanel("participants")}
+        />
+        {liveCallId && (
+          <TopBarBtn
+            icon={<BarChart2 size={13} />}
+            label="Polls"
+            active={sidePanel === "polls"}
+            onClick={() => togglePanel("polls")}
+          />
+        )}
 
-            {/* Top-right controls */}
-            <div className="absolute top-3 right-3 z-50 flex items-center gap-1.5">
-              <RecordingIndicator />
+        <div style={{ width: 1, height: 20, background: "#2a2a2a", margin: "0 4px" }} />
 
-              <button
-                onClick={() => setShowBgSettings(true)}
-                className="p-1.5 rounded-lg transition-colors"
-                style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.1)" }}
-                title="Background & audio settings"
-              >
-                <Settings size={13} style={{ color: "#f0f0f0" }} />
-              </button>
+        <button
+          onClick={() => setShowBgSettings(true)}
+          className="p-2 rounded-lg transition-colors"
+          style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
+          title="Background & audio settings"
+        >
+          <Settings size={13} style={{ color: "#a0a0a0" }} />
+        </button>
 
-              <button
-                onClick={() => setShowReactions(v => !v)}
-                className="p-1.5 rounded-lg transition-colors"
-                style={{
-                  background: showReactions ? "rgba(220,38,38,0.3)" : "rgba(0,0,0,0.6)",
-                  border: `1px solid ${showReactions ? "rgba(220,38,38,0.5)" : "rgba(255,255,255,0.1)"}`,
-                }}
-                title="Reactions"
-              >
-                <Smile size={13} style={{ color: "#f0f0f0" }} />
-              </button>
+        <button
+          onClick={() => setShowReactions(v => !v)}
+          className="p-2 rounded-lg transition-colors"
+          style={{
+            background: showReactions ? "rgba(220,38,38,0.2)" : "rgba(255,255,255,0.05)",
+            border: `1px solid ${showReactions ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.08)"}`,
+          }}
+          title="Reactions"
+        >
+          <Smile size={13} style={{ color: showReactions ? "#dc2626" : "#a0a0a0" }} />
+        </button>
 
-              <button
-                onClick={handleLeave}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                style={{ background: "var(--color-accent)", color: "#fff" }}
-                aria-label="Leave call"
-              >
-                <PhoneOff size={13} />
-                Leave
-              </button>
-            </div>
+        <button
+          onClick={handleLeave}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold ml-1"
+          style={{ background: "var(--color-accent)", color: "#fff" }}
+        >
+          <PhoneOff size={14} /> Leave
+        </button>
+      </div>
 
-            {/* Bottom panel tabs */}
-            <div className="absolute bottom-3 left-3 z-50 flex items-center gap-1.5">
-              <PanelTab icon={<MessageSquare size={13} />} label="Chat" active={sidePanel === "chat"} onClick={() => togglePanel("chat")} />
-              <PanelTab icon={<Users size={13} />} label="People" active={sidePanel === "participants"} onClick={() => togglePanel("participants")} />
-              {liveCallId && (
-                <PanelTab icon={<BarChart2 size={13} />} label="Polls" active={sidePanel === "polls"} onClick={() => togglePanel("polls")} />
-              )}
-            </div>
+      {/* Body — LiveKitRoom fills remaining height */}
+      <div className="flex-1 relative min-h-0">
+        <LiveKitRoom
+          serverUrl={wsUrl}
+          token={token}
+          connect={true}
+          audio={userChoices.audioEnabled}
+          video={userChoices.videoEnabled}
+          onDisconnected={handleDisconnected}
+          style={{ height: "100%", width: "100%" }}
+        >
+          <RoomSyncLayer onRecording={handleRecording} />
+          <VideoConference />
+          <WaitingForHostOverlay />
+          <CaptionStrip />
 
-            {showBgSettings && <BackgroundSettingsModal onClose={() => setShowBgSettings(false)} />}
-          </div>
+          {waitingRoomActive && liveCallId && (
+            <WaitingRoomOverlay
+              liveCallId={liveCallId}
+              onAdmitted={() => onAdmitted?.(token)}
+            />
+          )}
 
-          {/* Side panel — inside LiveKitRoom so useChat/useParticipants have context */}
-          {hasSide && (
+          {showReactions && <EmojiReactionOverlay />}
+
+          {/* Side panel — overlays video, doesn't push it */}
+          {sidePanel && (
             <div
-              className="shrink-0 flex flex-col"
-              style={{ width: sidebarWidth, borderLeft: "1px solid #2a2a2a", background: "#181818", height: "100%" }}
+              className="absolute top-0 right-0 h-full z-50 flex flex-col"
+              style={{
+                width: 300,
+                background: "#141414",
+                borderLeft: "1px solid #2a2a2a",
+                boxShadow: "-8px 0 32px rgba(0,0,0,0.6)",
+              }}
             >
               {sidePanel === "chat" && <ChatPanel onClose={() => setSidePanel(null)} />}
               {sidePanel === "participants" && <ParticipantListPanel onClose={() => setSidePanel(null)} />}
-              {sidePanel === "polls" && liveCallId && <PollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />}
+              {sidePanel === "polls" && liveCallId && (
+                <PollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+              )}
             </div>
           )}
-        </div>
-      </LiveKitRoom>
 
-      {/* Collapse chevron — absolutely positioned on the outer relative container */}
-      {hasSide && (
-        <button
-          onClick={() => setSidePanel(null)}
-          className="absolute right-[280px] top-1/2 -translate-y-1/2 z-50 w-5 h-10 flex items-center justify-center rounded-l-lg"
-          style={{ background: "#2a2a2a" }}
-        >
-          <ChevronRight size={12} style={{ color: "#a0a0a0" }} />
-        </button>
-      )}
+          {showBgSettings && <BackgroundSettingsModal onClose={() => setShowBgSettings(false)} />}
+        </LiveKitRoom>
+      </div>
     </div>
   );
 }
 
-function PanelTab({
+function TopBarBtn({
   icon, label, active, onClick,
 }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
       style={{
-        background: active ? "rgba(220,38,38,0.2)" : "rgba(0,0,0,0.6)",
-        border: `1px solid ${active ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.1)"}`,
-        color: active ? "#dc2626" : "#f0f0f0",
+        background: active ? "rgba(220,38,38,0.15)" : "rgba(255,255,255,0.05)",
+        border: `1px solid ${active ? "rgba(220,38,38,0.35)" : "rgba(255,255,255,0.08)"}`,
+        color: active ? "#dc2626" : "#a0a0a0",
       }}
     >
       {icon}

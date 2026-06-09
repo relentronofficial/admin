@@ -42,7 +42,7 @@ export function EmojiReactionOverlay() {
         {floating.map((f) => (
           <div
             key={f.id}
-            className="absolute bottom-16 text-2xl animate-float-up select-none"
+            className="absolute bottom-[80px] text-2xl animate-float-up select-none"
             style={{ left: `${f.x}%` }}
           >
             {f.emoji}
@@ -52,7 +52,7 @@ export function EmojiReactionOverlay() {
 
       {/* Reaction bar */}
       <div
-        className="absolute bottom-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 px-3 py-1.5 rounded-2xl"
+        className="absolute bottom-[80px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 px-3 py-1.5 rounded-2xl"
         style={{ background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.1)" }}
       >
         {EMOJIS.map((emoji) => (
