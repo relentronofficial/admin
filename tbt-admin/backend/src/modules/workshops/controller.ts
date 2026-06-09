@@ -379,6 +379,8 @@ export async function updateLiveCallHandler(req: FastifyRequest, reply: FastifyR
     if (body[f] !== undefined) data[f] = body[f];
   });
   if (body.scheduledAt) data.scheduledAt = new Date(body.scheduledAt);
+  // Clear endedAt whenever the call is edited so it becomes joinable again
+  data.endedAt = null;
   const call = await req.server.prisma.liveCall.update({ where: { id: lcid }, data });
   return reply.send({ success: true, data: call, error: null });
 }
