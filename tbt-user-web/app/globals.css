@@ -103,3 +103,12 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/30;
 }
+
+/* LiveKit fullscreen — override fixed height so video fills the screen */
+[data-lk-theme]:fullscreen,
+[data-lk-theme]:-webkit-full-screen {
+  height: 100dvh !important;
+  width: 100dvw !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
