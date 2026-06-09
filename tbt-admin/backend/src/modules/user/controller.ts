@@ -2087,7 +2087,7 @@ export async function submitAssignmentHandler(request: FastifyRequest, reply: Fa
   });
 
   void Promise.all([
-    recalculateMemberStats(request.server.prisma, request.memberId!),
+    recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, 'assignment_submitted', { assignmentId }),
   ]).catch(() => {});
 
@@ -3222,7 +3222,7 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
   });
 
   void Promise.all([
-    recalculateMemberStats(request.server.prisma, request.memberId!),
+    recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, 'episode_completed', { episodeId: id }),
   ]).catch(() => {});
 
