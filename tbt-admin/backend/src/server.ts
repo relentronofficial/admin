@@ -42,6 +42,7 @@ import { securityRoutes } from './modules/security/routes.js';
 
 async function bootstrap() {
   const fastify = Fastify({
+    trustProxy: true,   // read real client IP from X-Forwarded-For (GCP load balancer)
     logger: {
       level: 'info',
       transport: env.NODE_ENV === 'development' ? {
@@ -62,7 +63,11 @@ async function bootstrap() {
 
     await fastify.register(cors, { origin: true });
     await fastify.register(helmet);
-    await fastify.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+    await fastify.register(rateLimit, {
+      max: 300,            // per real client IP (trustProxy ensures this is correct)
+      timeWindow: '1 minute',
+      allowList: ['127.0.0.1', '::1'],
+    });
 
     // Register Routes
     console.log('📦 Registering routes...');

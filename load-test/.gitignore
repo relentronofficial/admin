@@ -1,0 +1,4 @@
+token.txt
+cloudrun-env.yaml
+results/
+*.json
