@@ -41,7 +41,7 @@ const TOKEN = __ENV.TOKEN;
 const SLUG  = __ENV.SLUG || "zero-rupee-marketing";
 
 function h() {
-  return { headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" } };
+  return { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 }
 
 function tally(res, label) {
@@ -58,6 +58,17 @@ function tally(res, label) {
   if (!ok) errors.add(1);
 }
 
+export function setup() {
+  // Warm Cloud Run before the test starts — avoids 30s cold-start killing the first wave.
+  // setup() runs once in a single goroutine before any VUs start; we just need one 200.
+  let warm = false;
+  for (let i = 0; i < 20 && !warm; i++) {
+    const r = http.get(`${BASE}/health`);
+    warm = r.status === 200;
+  }
+  console.log(`Cloud Run warm: ${warm}`);
+}
+
 export default function () {
   // Public endpoints — no auth, always valid
   group("public", () => {
@@ -72,12 +83,12 @@ export default function () {
   // Authenticated user endpoints
   group("auth-user", () => {
     const rs = http.batch([
-      { method: "GET", url: `${BASE}/api/user/me`,                                   ...h() },
-      { method: "GET", url: `${BASE}/api/user/notifications/unread-count`,            ...h() },
-      { method: "GET", url: `${BASE}/api/user/dashboard/stats`,                       ...h() },
-      { method: "GET", url: `${BASE}/api/user/dashboard/continue-learning`,           ...h() },
-      { method: "GET", url: `${BASE}/api/user/home/hero`,                             ...h() },
-      { method: "GET", url: `${BASE}/api/user/home/sections`,                         ...h() },
+      { method: "GET", url: `${BASE}/api/user/me`,                                   params: { headers: h() } },
+      { method: "GET", url: `${BASE}/api/user/notifications/unread-count`,            params: { headers: h() } },
+      { method: "GET", url: `${BASE}/api/user/dashboard/stats`,                       params: { headers: h() } },
+      { method: "GET", url: `${BASE}/api/user/dashboard/continue-learning`,           params: { headers: h() } },
+      { method: "GET", url: `${BASE}/api/user/home/hero`,                             params: { headers: h() } },
+      { method: "GET", url: `${BASE}/api/user/home/sections`,                         params: { headers: h() } },
     ]);
     rs.forEach((r, i) => tally(r, `user${i}`));
   });
@@ -85,8 +96,8 @@ export default function () {
   // Workshop detail (heaviest DB query)
   group("workshop-detail", () => {
     const rs = http.batch([
-      { method: "GET", url: `${BASE}/api/user/workshops/${SLUG}/detail`,    ...h() },
-      { method: "GET", url: `${BASE}/api/user/workshops/${SLUG}/flow`,      ...h() },
+      { method: "GET", url: `${BASE}/api/user/workshops/${SLUG}/detail`,    params: { headers: h() } },
+      { method: "GET", url: `${BASE}/api/user/workshops/${SLUG}/flow`,      params: { headers: h() } },
     ]);
     rs.forEach((r, i) => tally(r, `ws${i}`));
   });

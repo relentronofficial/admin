@@ -66,7 +66,7 @@ async function bootstrap() {
     await fastify.register(rateLimit, {
       max: 300,            // per real client IP (trustProxy ensures this is correct)
       timeWindow: '1 minute',
-      allowList: ['127.0.0.1', '::1'],
+      allowList: ['127.0.0.1', '::1', '106.51.170.95'],  // last entry: load-test machine
     });
 
     // Register Routes
