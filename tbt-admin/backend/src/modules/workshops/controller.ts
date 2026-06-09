@@ -735,44 +735,53 @@ export async function sendRemindersHandler(req: FastifyRequest, reply: FastifyRe
   });
 
   const { env } = await import('../../config/env.js');
+  const scheduledTime = lc.scheduledAt ? new Date(lc.scheduledAt).toLocaleString() : 'soon';
+
+  // Lazy-init shared clients once
+  const resend = env.RESEND_API_KEY ? new (await import('resend')).Resend(env.RESEND_API_KEY) : null;
+  const twilioClient = (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN)
+    ? (await import('twilio')).default(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN)
+    : null;
+
   let emailsSent = 0, smsSent = 0;
 
-  for (const { member } of enrollments) {
-    // In-app notification via socket
-    req.server.io.to(`user:${member.id}`).emit('notification', {
-      title: 'Live Session Reminder',
-      body: `"${lc.title}" starts soon. Don't miss it!`,
-      type: 'live_call',
-    });
+  // Process in batches of 20 to avoid overwhelming external APIs while still parallelising
+  const BATCH = 20;
+  for (let i = 0; i < enrollments.length; i += BATCH) {
+    const batch = enrollments.slice(i, i + BATCH);
+    const results = await Promise.allSettled(batch.map(async ({ member }) => {
+      // In-app notification via socket (synchronous emit, no await needed)
+      req.server.io.to(`user:${member.id}`).emit('notification', {
+        title: 'Live Session Reminder',
+        body: `"${lc.title}" starts soon. Don't miss it!`,
+        type: 'live_call',
+      });
 
-    // Email via Resend
-    if (env.RESEND_API_KEY && member.email) {
-      try {
-        const { Resend } = await import('resend');
-        const resend = new Resend(env.RESEND_API_KEY);
-        const scheduledTime = lc.scheduledAt ? new Date(lc.scheduledAt).toLocaleString() : 'soon';
+      if (resend && member.email) {
         await resend.emails.send({
           from: 'TBT <noreply@tamillbiznesstribe.com>',
           to: member.email,
           subject: `Reminder: "${lc.title}" starts soon`,
           html: `<p>Hi ${member.firstName},</p><p>Your live session <strong>${lc.title}</strong> is scheduled for ${scheduledTime}. Log in to TBT to join.</p>`,
         });
-        emailsSent++;
-      } catch { /* non-fatal */ }
-    }
+        return 'email';
+      }
 
-    // SMS via Twilio
-    if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER && member.phone) {
-      try {
-        const twilio = (await import('twilio')).default;
-        const client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
-        await client.messages.create({
+      if (twilioClient && env.TWILIO_PHONE_NUMBER && member.phone) {
+        await twilioClient.messages.create({
           body: `TBT Reminder: "${lc.title}" starts soon. Log in to join.`,
           from: env.TWILIO_PHONE_NUMBER,
           to: member.phone,
         });
-        smsSent++;
-      } catch { /* non-fatal */ }
+        return 'sms';
+      }
+    }));
+
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        if (r.value === 'email') emailsSent++;
+        else if (r.value === 'sms') smsSent++;
+      }
     }
   }
 

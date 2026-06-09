@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { cacheGet, cacheSet, cacheNxSet } from '../../lib/cache.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -19,7 +20,12 @@ async function logActivity(prisma: any, memberId: string, action: string, metada
   }).catch(() => {});
 }
 
-async function recalculateMemberStats(prisma: any, memberId: string): Promise<void> {
+async function recalculateMemberStats(prisma: any, memberId: string, redis?: any): Promise<void> {
+  // Throttle: at most once per minute per member to avoid hammering on every heartbeat
+  const throttleKey = `stats:recalc:${memberId}`;
+  const allowed = await cacheNxSet(redis ?? null, throttleKey, 60);
+  if (!allowed) return;
+
   try {
     const [completedEpisodes, completedChallenges, submittedAssignments, totalEpisodes, member] = await Promise.all([
       prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
@@ -178,13 +184,19 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
   ];
 
   // Fire-and-forget: update device session + detect multiple concurrent devices
+  // Throttled via Redis NX key to skip tracking if already tracked in the last 5 minutes
   const sessionDeviceId = request.headers['x-device-id'] as string | undefined;
   if (sessionDeviceId) {
     const prisma = request.server.prisma;
     const mId = request.memberId!;
     const ip = request.ip;
     const ua = request.headers['user-agent'] as string | undefined;
+    const redis = request.server.redis ?? null;
     void (async () => {
+      const trackKey = `session-tracked:${mId}:${sessionDeviceId}`;
+      const shouldTrack = await cacheNxSet(redis, trackKey, 300);
+      if (!shouldTrack) return;
+
       const existing = await prisma.memberSession.findFirst({ where: { memberId: mId, deviceId: sessionDeviceId }, select: { id: true } }).catch(() => null);
       if (existing) {
         await prisma.memberSession.update({ where: { id: existing.id }, data: { lastActiveAt: new Date(), ipAddress: ip, userAgent: ua } }).catch(() => {});
@@ -692,8 +704,19 @@ async function recalculateCourseProgress(request: FastifyRequest, courseId: stri
 
 export async function getDashboardStatsHandler(request: FastifyRequest, reply: FastifyReply) {
   const now = new Date();
+  const redis = request.server.redis ?? null;
 
-  const [totalCourses, completedCourses, member, upcomingEvents, unreadNotifications] =
+  // upcomingEvents is user-agnostic — cache it globally for 60 seconds
+  const eventsKey = 'events:upcoming-count';
+  let upcomingEvents = await cacheGet<number>(redis, eventsKey);
+  if (upcomingEvents === null) {
+    upcomingEvents = await request.server.prisma.event.count({
+      where: { eventDate: { gt: now }, status: 'scheduled' },
+    });
+    await cacheSet(redis, eventsKey, upcomingEvents, 60);
+  }
+
+  const [totalCourses, completedCourses, member, unreadNotifications] =
     await Promise.all([
       request.server.prisma.courseEnrollment.count({
         where: { memberId: request.memberId },
@@ -704,9 +727,6 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
       request.server.prisma.member.findUnique({
         where: { id: request.memberId },
         select: { totalPoints: true, currentStreak: true },
-      }),
-      request.server.prisma.event.count({
-        where: { eventDate: { gt: now }, status: 'scheduled' },
       }),
       request.server.prisma.notification.count({
         where: { memberId: request.memberId, isRead: false },
@@ -1116,9 +1136,15 @@ function notifIconType(type: string): string {
 }
 
 export async function getNotificationUnreadCountHandler(request: FastifyRequest, reply: FastifyReply) {
+  const redis = request.server.redis ?? null;
+  const cacheKey = `notif:unread:${request.memberId}`;
+  const cached = await cacheGet<{ count: number }>(redis, cacheKey);
+  if (cached) return ok(reply, cached);
+
   const count = await request.server.prisma.appNotificationRecipient.count({
     where: { memberId: request.memberId, readAt: null },
   });
+  await cacheSet(redis, cacheKey, { count }, 30);
   return ok(reply, { count });
 }
 
@@ -1285,6 +1311,11 @@ export async function markAllMessagesReadHandler(request: FastifyRequest, reply:
 // ─── Home ─────────────────────────────────────────────────────────────────────
 
 export async function getHomeHeroHandler(request: FastifyRequest, reply: FastifyReply) {
+  const redis = request.server.redis ?? null;
+  const CACHE_KEY = 'home:hero';
+  const cached = await cacheGet<object>(redis, CACHE_KEY);
+  if (cached) return ok(reply, cached);
+
   const [slides, siteConfig] = await Promise.all([
     request.server.prisma.heroSlide.findMany({
       where: { isActive: true },
@@ -1295,7 +1326,7 @@ export async function getHomeHeroHandler(request: FastifyRequest, reply: Fastify
     }),
   ]);
 
-  return ok(reply, {
+  const data = {
     slides: slides.map((s) => ({
       id: s.id,
       order: s.order,
@@ -1311,55 +1342,63 @@ export async function getHomeHeroHandler(request: FastifyRequest, reply: Fastify
       isActive: s.isActive,
     })),
     autoPlayIntervalMs: siteConfig?.heroAutoPlayIntervalMs ?? 5000,
-  });
+  };
+  await cacheSet(redis, CACHE_KEY, data, 300);
+  return ok(reply, data);
 }
 
 export async function getHomeSectionsHandler(request: FastifyRequest, reply: FastifyReply) {
   const { memberTier } = request.query as { memberTier?: string };
   const tierNum = parseInt(memberTier || '1', 10);
 
-  const sections = await request.server.prisma.contentSection.findMany({
-    where: { isVisible: true },
-    orderBy: { order: 'asc' },
-    include: {
-      items: {
-        where: { isVisible: true },
-        orderBy: { order: 'asc' },
-        include: {
-          course: {
-            select: {
-              id: true,
-              slug: true,
-              _count: { select: { courseEpisodes: { where: { isVisible: true } } } },
-              courseEpisodes: {
-                where: { isVisible: true },
-                orderBy: { order: 'asc' },
-                take: 20,
-                select: {
-                  id: true,
-                  order: true,
-                  title: true,
-                  thumbnailUrl: true,
-                  durationSeconds: true,
+  const redis = request.server.redis ?? null;
+  const CACHE_KEY = 'home:sections:v1';
+  let sections = await cacheGet<any[]>(redis, CACHE_KEY);
+
+  if (!sections) {
+    sections = await request.server.prisma.contentSection.findMany({
+      where: { isVisible: true },
+      orderBy: { order: 'asc' },
+      include: {
+        items: {
+          where: { isVisible: true },
+          orderBy: { order: 'asc' },
+          include: {
+            course: {
+              select: {
+                id: true,
+                slug: true,
+                _count: { select: { courseEpisodes: { where: { isVisible: true } } } },
+                courseEpisodes: {
+                  where: { isVisible: true },
+                  orderBy: { order: 'asc' },
+                  take: 20,
+                  select: {
+                    id: true,
+                    order: true,
+                    title: true,
+                    thumbnailUrl: true,
+                    durationSeconds: true,
+                  },
                 },
               },
             },
-          },
-          workshop: {
-            select: {
-              id: true,
-              slug: true,
-              challenges: {
-                orderBy: { order: 'asc' },
-                select: {
-                  episodes: {
-                    orderBy: { order: 'asc' },
-                    take: 20,
-                    select: {
-                      id: true,
-                      order: true,
-                      title: true,
-                      durationSeconds: true,
+            workshop: {
+              select: {
+                id: true,
+                slug: true,
+                challenges: {
+                  orderBy: { order: 'asc' },
+                  select: {
+                    episodes: {
+                      orderBy: { order: 'asc' },
+                      take: 20,
+                      select: {
+                        id: true,
+                        order: true,
+                        title: true,
+                        durationSeconds: true,
+                      },
                     },
                   },
                 },
@@ -1368,11 +1407,13 @@ export async function getHomeSectionsHandler(request: FastifyRequest, reply: Fas
           },
         },
       },
-    },
-  });
+    });
+    await cacheSet(redis, CACHE_KEY, sections, 60);
+  }
 
+  // Apply tier locks in memory (no DB round-trip)
   return ok(reply, {
-    sections: sections.map((s) => ({
+    sections: sections.map((s: any) => ({
       id: s.id,
       title: s.title,
       slug: s.slug,
@@ -1381,7 +1422,7 @@ export async function getHomeSectionsHandler(request: FastifyRequest, reply: Fas
       requiredTier: s.requiredTier,
       isLocked: tierNum < s.requiredTier,
       lockLabel: tierNum < s.requiredTier ? (s.lockBadgeText ?? null) : null,
-      items: s.items.map((item) => {
+      items: s.items.map((item: any) => {
         const workshopEpisodes = (item.workshop?.challenges ?? []).flatMap(
           (ch: any) => ch.episodes ?? []
         );
@@ -1414,7 +1455,7 @@ export async function getHomeSectionsHandler(request: FastifyRequest, reply: Fas
                 thumbnailUrl: null,
                 durationSeconds: ep.durationSeconds ?? null,
               }))
-            : (item.course?.courseEpisodes ?? []).map((ep) => ({
+            : (item.course?.courseEpisodes ?? []).map((ep: any) => ({
                 id: ep.id,
                 order: ep.order,
                 title: ep.title,
@@ -1722,15 +1763,7 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
         include: {
           challenge: {
             include: {
-              episodes: {
-                orderBy: { order: 'asc' },
-                include: {
-                  progress: {
-                    where: { memberId: request.memberId },
-                    select: { isCompleted: true },
-                  },
-                },
-              },
+              episodes: { orderBy: { order: 'asc' } },
             },
           },
           liveCall: true,
@@ -1741,12 +1774,23 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
 
   if (!workshop) return fail(reply, 404, 'Workshop not found');
 
-  const flowItems = await Promise.all(
-    (workshop as any).flowItems.map(async (item: any) => {
+  // Single flat query for all episode progress instead of N+1 nested includes
+  const allEpisodeIds = (workshop as any).flowItems.flatMap(
+    (item: any) => (item.challenge?.episodes ?? []).map((e: any) => e.id)
+  );
+  const progressRows = allEpisodeIds.length > 0
+    ? await request.server.prisma.memberEpisodeProgress.findMany({
+        where: { memberId: request.memberId, episodeId: { in: allEpisodeIds } },
+        select: { episodeId: true, isCompleted: true },
+      })
+    : [];
+  const progressMap = new Map(progressRows.map((p) => [p.episodeId, p.isCompleted]));
+
+  const flowItems = (workshop as any).flowItems.map((item: any) => {
       if (item.type === 'challenge' && item.challenge) {
         const ch = item.challenge;
         const totalEps = ch.episodes.length;
-        const completedEps = ch.episodes.filter((e: any) => e.progress?.[0]?.isCompleted).length;
+        const completedEps = ch.episodes.filter((e: any) => progressMap.get(e.id) === true).length;
 
         return {
           id: item.id,
@@ -1767,7 +1811,7 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
             typeLabel: ep.typeLabel,
             durationSeconds: ep.durationSeconds ?? null,
             durationLabel: ep.durationLabel ?? null,
-            isCompleted: ep.progress?.[0]?.isCompleted ?? false,
+            isCompleted: progressMap.get(ep.id) ?? false,
             isLocked: false,
             lockIconType: ep.lockIconType,
             completedIconType: ep.completedIconType,
@@ -1822,8 +1866,7 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
         isCompleted: item.isCompleted,
         isExpanded: false,
       };
-    })
-  );
+    });
 
   return ok(reply, { flowItems });
 }
@@ -2189,28 +2232,32 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     }).catch(() => {});
   }
 
-  // Task 1: Verify video duration. Fetch from Bunny if missing in DB.
+  // Fetch duration from Bunny if missing — fire-and-forget so it never blocks the heartbeat response
   let duration = episode.durationSeconds;
   if ((!duration || duration <= 0) && episode.bunnyVideoId && env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
-    try {
-      const bunnyRes = await fetch(
-        `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${episode.bunnyVideoId}`,
-        { headers: { AccessKey: env.BUNNY_STREAM_API_KEY } }
-      );
-      if (bunnyRes.ok) {
-        const bunnyData = (await bunnyRes.json()) as { length: number };
-        if (bunnyData.length > 0) {
-          duration = bunnyData.length;
-          await request.server.prisma.workshopEpisode.update({
-            where: { id: episodeId },
-            data: { durationSeconds: duration }
-          }).catch(() => {});
+    const bunnyApiKey = env.BUNNY_STREAM_API_KEY;
+    const bunnyLibId = env.BUNNY_STREAM_LIBRARY_ID;
+    const bunnyVidId = episode.bunnyVideoId;
+    void (async () => {
+      try {
+        const bunnyRes = await fetch(
+          `https://video.bunnycdn.com/library/${bunnyLibId}/videos/${bunnyVidId}`,
+          { headers: { AccessKey: bunnyApiKey } }
+        );
+        if (bunnyRes.ok) {
+          const bunnyData = (await bunnyRes.json()) as { length: number };
+          if (bunnyData.length > 0) {
+            await request.server.prisma.workshopEpisode.update({
+              where: { id: episodeId },
+              data: { durationSeconds: bunnyData.length }
+            }).catch(() => {});
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    })();
   }
 
-  // Task 3: Backend decides completion based on 85% rule using wall-clock-validated delta.
+  // Backend decides completion based on 85% rule using wall-clock-validated delta.
   const newActualWatched = (existingProgress?.actualWatchedSecs ?? 0) + trueDelta;
   let isCompleted = existingProgress?.isCompleted ?? false;
 
@@ -2271,7 +2318,7 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
   })().catch(() => {});
 
   void Promise.all([
-    recalculateMemberStats(request.server.prisma, request.memberId!),
+    recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, isCompleted && !existingProgress?.isCompleted ? 'episode_completed' : 'episode_watched', { episodeId }),
   ]).catch(() => {});
 
@@ -2862,7 +2909,7 @@ async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promi
       flowItems: {
         orderBy: { order: 'asc' },
         include: {
-          challenge: { include: { episodes: { orderBy: { order: 'asc' }, include: { progress: { where: { memberId: request.memberId }, select: { isCompleted: true } } } } } },
+          challenge: { include: { episodes: { orderBy: { order: 'asc' } } } },
           liveCall: true,
         },
       },
@@ -2870,12 +2917,23 @@ async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promi
   });
   if (!workshop) return [];
 
-  return Promise.all(
-    (workshop as any).flowItems.map(async (item: any) => {
+  // Single flat query — no N+1
+  const allEpisodeIds = (workshop as any).flowItems.flatMap(
+    (item: any) => (item.challenge?.episodes ?? []).map((e: any) => e.id)
+  );
+  const progressRows = allEpisodeIds.length > 0
+    ? await request.server.prisma.memberEpisodeProgress.findMany({
+        where: { memberId: request.memberId, episodeId: { in: allEpisodeIds } },
+        select: { episodeId: true, isCompleted: true },
+      })
+    : [];
+  const progressMap = new Map(progressRows.map((p) => [p.episodeId, p.isCompleted]));
+
+  return (workshop as any).flowItems.map((item: any) => {
       if (item.type === 'challenge' && item.challenge) {
         const ch = item.challenge;
         const totalEps = ch.episodes.length;
-        const completedEps = ch.episodes.filter((e: any) => e.progress?.[0]?.isCompleted).length;
+        const completedEps = ch.episodes.filter((e: any) => progressMap.get(e.id) === true).length;
         return {
           id: item.id, order: item.order, type: item.type,
           challengeNumber: ch.challengeNumber ?? null,
@@ -2886,7 +2944,7 @@ async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promi
           episodes: ch.episodes.map((ep: any) => ({
             id: ep.id, order: ep.order, title: ep.title, type: ep.type, typeLabel: ep.typeLabel,
             durationSeconds: ep.durationSeconds ?? null, durationLabel: ep.durationLabel ?? null,
-            isCompleted: ep.progress?.[0]?.isCompleted ?? false, isLocked: false,
+            isCompleted: progressMap.get(ep.id) ?? false, isLocked: false,
             lockIconType: ep.lockIconType, completedIconType: ep.completedIconType,
           })),
         };
@@ -2912,8 +2970,7 @@ async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promi
         };
       }
       return { id: item.id, order: item.order, type: item.type, label: item.label ?? null, description: item.description ?? null, isCompleted: item.isCompleted, isExpanded: false };
-    })
-  );
+    });
 }
 
 async function getWorkshopChallengesData(request: FastifyRequest, slug: string): Promise<any[]> {
@@ -2926,7 +2983,7 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
     include: {
       challenge: {
         include: {
-          episodes: { orderBy: { order: 'asc' }, include: { progress: { where: { memberId: request.memberId }, select: { isCompleted: true, lastWatchedSecs: true, actualWatchedSecs: true } } } },
+          episodes: { orderBy: { order: 'asc' }, select: { id: true, order: true, title: true, type: true, typeLabel: true, durationSeconds: true, durationLabel: true } },
           memberProgress: { where: { memberId: request.memberId }, select: { status: true, completedAt: true, answersData: true } },
         },
       },
@@ -2934,13 +2991,23 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
     },
   });
 
+  // Single flat query for all episode progress
+  const allEpIds = (flowItems as any[]).flatMap(fi => (fi.challenge?.episodes ?? []).map((e: any) => e.id));
+  const epProgressRows = allEpIds.length > 0
+    ? await request.server.prisma.memberEpisodeProgress.findMany({
+        where: { memberId: request.memberId, episodeId: { in: allEpIds } },
+        select: { episodeId: true, isCompleted: true, lastWatchedSecs: true, actualWatchedSecs: true },
+      })
+    : [];
+  const epProgressMap = new Map(epProgressRows.map((p) => [p.episodeId, p]));
+
   const challengeFlowItems = (flowItems as any[]).filter(fi => fi.type === 'challenge_start');
   const challengeStatuses: string[] = challengeFlowItems.map(fi => {
     const ch = fi.challenge;
     if (!ch) return 'not_started';
     if (!ch.type || ch.type === 'watch') {
       const total = ch.episodes.length;
-      const done = ch.episodes.filter((e: any) => e.progress?.[0]?.isCompleted).length;
+      const done = ch.episodes.filter((e: any) => epProgressMap.get(e.id)?.isCompleted === true).length;
       if (total === 0) return 'not_started';
       if (done >= total) return 'completed';
       if (done > 0) return 'in_progress';
@@ -2957,7 +3024,6 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
       const lc = fi.liveCall;
       if (!lc) return null;
       const scheduled = lc.scheduledAt ? new Date(lc.scheduledAt) : null;
-      // "past" only once the admin explicitly ends the meeting
       const isPast = !!lc.endedAt;
       const unlockAt = scheduled && lc.liveUrlUnlocksMinutesBefore ? new Date(scheduled.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000) : null;
       const isUnlocked = !isPast && (unlockAt ? now >= unlockAt : !!lc.liveUrl);
@@ -2984,7 +3050,7 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
     const rawStatus = challengeStatuses[idx];
     const status = isLocked ? 'locked' : rawStatus;
     const totalEps = ch.episodes.length;
-    const doneEps = ch.episodes.filter((e: any) => e.progress?.[0]?.isCompleted).length;
+    const doneEps = ch.episodes.filter((e: any) => epProgressMap.get(e.id)?.isCompleted === true).length;
     return {
       id: ch.id, order: ch.order, challengeNumber: ch.challengeNumber,
       numberLabel: ch.numberLabel, numberColor: ch.numberColor,
@@ -2992,13 +3058,16 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
       type: ch.type ?? 'watch', quizData: ch.quizData ?? null,
       status, isLocked,
       progressPercent: (!ch.type || ch.type === 'watch') ? (totalEps > 0 ? Math.round((doneEps / totalEps) * 100) : 0) : rawStatus === 'completed' ? 100 : rawStatus === 'in_progress' ? 30 : 0,
-      episodes: (!ch.type || ch.type === 'watch') ? ch.episodes.map((ep: any) => ({
-        id: ep.id, order: ep.order, title: ep.title, type: ep.type, typeLabel: ep.typeLabel ?? null,
-        durationSeconds: ep.durationSeconds ?? null, durationLabel: ep.durationLabel ?? null,
-        isCompleted: ep.progress?.[0]?.isCompleted ?? false,
-        lastWatchedSecs: ep.progress?.[0]?.lastWatchedSecs ?? 0,
-        actualWatchedSecs: ep.progress?.[0]?.actualWatchedSecs ?? 0,
-      })) : [],
+      episodes: (!ch.type || ch.type === 'watch') ? ch.episodes.map((ep: any) => {
+        const p = epProgressMap.get(ep.id);
+        return {
+          id: ep.id, order: ep.order, title: ep.title, type: ep.type, typeLabel: ep.typeLabel ?? null,
+          durationSeconds: ep.durationSeconds ?? null, durationLabel: ep.durationLabel ?? null,
+          isCompleted: p?.isCompleted ?? false,
+          lastWatchedSecs: p?.lastWatchedSecs ?? 0,
+          actualWatchedSecs: p?.actualWatchedSecs ?? 0,
+        };
+      }) : [],
       submission: ch.memberProgress?.[0] ?? null,
     };
   }).filter(Boolean);
@@ -3035,25 +3104,48 @@ export async function completeChallengeHandler(request: FastifyRequest, reply: F
 
     if (prevFlowItems.length > 0) {
       const prevChallengeIds = prevFlowItems.map(fi => fi.challengeId as string);
-      const prevChallenges = await request.server.prisma.challenge.findMany({
-        where: { id: { in: prevChallengeIds } },
-        select: { id: true, type: true },
-      });
+
+      // Bulk load everything in 3 queries instead of 2N serial queries
+      const [prevChallenges, prevEpisodes, prevEpProgress, prevChallengeProgress] = await Promise.all([
+        request.server.prisma.challenge.findMany({
+          where: { id: { in: prevChallengeIds } },
+          select: { id: true, type: true },
+        }),
+        request.server.prisma.workshopEpisode.findMany({
+          where: { challengeId: { in: prevChallengeIds } },
+          select: { id: true, challengeId: true },
+        }),
+        request.server.prisma.memberEpisodeProgress.findMany({
+          where: { memberId: request.memberId, isCompleted: true },
+          select: { episodeId: true },
+        }),
+        (request.server.prisma as any).memberChallengeProgress.findMany({
+          where: { memberId: request.memberId, challengeId: { in: prevChallengeIds }, status: 'completed' },
+          select: { challengeId: true },
+        }),
+      ]);
+
+      const completedEpIds = new Set(prevEpProgress.map((p: any) => p.episodeId));
+      const completedChallengeIds = new Set((prevChallengeProgress as any[]).map((p: any) => p.challengeId));
+      const episodesByChallengeId = new Map<string, string[]>();
+      for (const ep of prevEpisodes) {
+        const list = episodesByChallengeId.get(ep.challengeId) ?? [];
+        list.push(ep.id);
+        episodesByChallengeId.set(ep.challengeId, list);
+      }
+
       // Restore flow order (findMany result order is not guaranteed)
       const orderedPrev = prevFlowItems
-        .map(fi => prevChallenges.find(c => c.id === fi.challengeId))
+        .map(fi => prevChallenges.find((c: any) => c.id === fi.challengeId))
         .filter(Boolean) as { id: string; type: string }[];
 
       for (const prev of orderedPrev) {
         if (!prev.type || prev.type === 'watch') {
-          const epIds = await request.server.prisma.workshopEpisode.findMany({ where: { challengeId: prev.id }, select: { id: true } });
-          const doneCount = await request.server.prisma.memberEpisodeProgress.count({ where: { memberId: request.memberId, episodeId: { in: epIds.map(e => e.id) }, isCompleted: true } });
-          if (doneCount < epIds.length) return fail(reply, 403, 'Complete previous challenges first');
+          const epIds = episodesByChallengeId.get(prev.id) ?? [];
+          const allDone = epIds.length > 0 && epIds.every(eid => completedEpIds.has(eid));
+          if (!allDone) return fail(reply, 403, 'Complete previous challenges first');
         } else {
-          const prevProgress = await (request.server.prisma as any).memberChallengeProgress.findFirst({
-            where: { memberId: request.memberId, challengeId: prev.id, status: 'completed' },
-          });
-          if (!prevProgress) return fail(reply, 403, 'Complete previous challenges first');
+          if (!completedChallengeIds.has(prev.id)) return fail(reply, 403, 'Complete previous challenges first');
         }
       }
     }
@@ -3067,7 +3159,7 @@ export async function completeChallengeHandler(request: FastifyRequest, reply: F
   });
 
   void Promise.all([
-    recalculateMemberStats(request.server.prisma, request.memberId!),
+    recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, 'challenge_completed', { challengeId: id }),
   ]).catch(() => {});
 

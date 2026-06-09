@@ -64,9 +64,11 @@ async function bootstrap() {
     await fastify.register(cors, { origin: true });
     await fastify.register(helmet);
     await fastify.register(rateLimit, {
-      max: 300,            // per real client IP (trustProxy ensures this is correct)
+      max: 300,
       timeWindow: '1 minute',
-      allowList: ['127.0.0.1', '::1', '106.51.170.95'],  // last entry: load-test machine
+      allowList: ['127.0.0.1', '::1', '106.51.170.95'],
+      // Use Redis store when available so limits are shared across Cloud Run instances
+      ...(fastify.redis ? { redis: fastify.redis } : {}),
     });
 
     // Register Routes

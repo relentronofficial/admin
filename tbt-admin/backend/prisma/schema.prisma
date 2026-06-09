@@ -1171,6 +1171,8 @@ model MemberSession {
   // Relations
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
+  @@index([memberId, lastActiveAt])
+  @@index([memberId, deviceId])
   @@map("member_sessions")
 }
 
@@ -1457,6 +1459,7 @@ model WorkshopEnrollment {
   member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@unique([workshopId, memberId])
+  @@index([memberId])
   @@map("workshop_enrollments")
 }
 
@@ -1536,6 +1539,7 @@ model MemberEpisodeProgress {
   updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([memberId, episodeId])
+  @@index([memberId, updatedAt])
   @@map("member_episode_progress")
 }
 
@@ -1779,6 +1783,7 @@ model AppNotificationRecipient {
   member         Member?         @relation(fields: [memberId], references: [id])
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  @@index([memberId, readAt])
   @@map("app_notification_recipients")
 }
 

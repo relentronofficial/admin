@@ -1,9 +1,16 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifyToken } from '@clerk/backend';
 import { env } from '../../config/env.js';
+import { cacheGet, cacheSet } from '../../lib/cache.js';
 
 export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+
+  const redis = req.server.redis ?? null;
+  const CACHE_KEY = 'pub:site-config';
+  const cached = await cacheGet<object>(redis, CACHE_KEY);
+  if (cached) return reply.send({ success: true, data: cached, error: null });
+
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
     config = await req.server.prisma.siteConfig.create({
@@ -11,30 +18,33 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     });
   }
 
-  // Shape the response exactly as specified in TBT_PRD_Dynamic.md §2
-  return reply.send({
-    success: true,
-    data: {
-      siteName: config.siteName,
-      logoUrl: config.logoUrl ?? null,
-      faviconUrl: config.faviconUrl ?? null,
-      footerText: config.footerText,
-      theme: {
-        accentColor: config.accentColor,
-        alertColor: config.alertColor,
-        successColor: config.successColor,
-        bgPrimary: config.bgPrimary,
-        bgSurface: config.bgSurface,
-      },
-      splashLogoUrl: config.splashLogoUrl ?? null,
-      splashDurationMs: config.splashDurationMs,
+  const data = {
+    siteName: config.siteName,
+    logoUrl: config.logoUrl ?? null,
+    faviconUrl: config.faviconUrl ?? null,
+    footerText: config.footerText,
+    theme: {
+      accentColor: config.accentColor,
+      alertColor: config.alertColor,
+      successColor: config.successColor,
+      bgPrimary: config.bgPrimary,
+      bgSurface: config.bgSurface,
     },
-    error: null,
-  });
+    splashLogoUrl: config.splashLogoUrl ?? null,
+    splashDurationMs: config.splashDurationMs,
+  };
+  await cacheSet(redis, CACHE_KEY, data, 300);
+  return reply.send({ success: true, data, error: null });
 }
 
 export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+
+  const redis = req.server.redis ?? null;
+  const CACHE_KEY = 'pub:nav';
+  const cached = await cacheGet<object>(redis, CACHE_KEY);
+  if (cached) return reply.send({ success: true, data: cached, error: null });
+
   const [items, config] = await Promise.all([
     req.server.prisma.navItem.findMany({
       where: { isVisible: true },
@@ -43,26 +53,31 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
     req.server.prisma.siteConfig.findFirst(),
   ]);
 
-  return reply.send({
-    success: true,
-    data: {
-      items,
-      rightIcons: {
-        notifications: config?.navShowNotifications ?? true,
-        messages: config?.navShowMessages ?? true,
-        profile: config?.navShowProfile ?? true,
-      },
+  const data = {
+    items,
+    rightIcons: {
+      notifications: config?.navShowNotifications ?? true,
+      messages: config?.navShowMessages ?? true,
+      profile: config?.navShowProfile ?? true,
     },
-    error: null,
-  });
+  };
+  await cacheSet(redis, CACHE_KEY, data, 300);
+  return reply.send({ success: true, data, error: null });
 }
 
 export async function pubUiStringsHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+
+  const redis = req.server.redis ?? null;
+  const CACHE_KEY = 'pub:ui-strings';
+  const cached = await cacheGet<object>(redis, CACHE_KEY);
+  if (cached) return reply.send({ success: true, data: cached, error: null });
+
   let strings = await req.server.prisma.uiStrings.findFirst();
   if (!strings) {
     strings = await req.server.prisma.uiStrings.create({ data: {} });
   }
+  await cacheSet(redis, CACHE_KEY, strings, 600);
   return reply.send({ success: true, data: strings, error: null });
 }
 
