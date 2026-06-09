@@ -461,10 +461,15 @@ export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: Fa
 
   const token = await at.toJwt();
 
-  // Stamp startedAt on first host join, then notify enrolled members via socket
-  if (!lc.startedAt) {
-    await req.server.prisma.liveCall.update({ where: { id: lcid }, data: { startedAt: new Date() } });
+  // Always clear endedAt so re-joining after a previous end re-opens the room.
+  // Stamp startedAt only on the very first host join.
+  const isFirstJoin = !lc.startedAt;
+  await req.server.prisma.liveCall.update({
+    where: { id: lcid },
+    data: { endedAt: null, ...(isFirstJoin ? { startedAt: new Date() } : {}) },
+  });
 
+  if (isFirstJoin) {
     // Notify all enrolled members in this workshop via socket
     try {
       const enrollments = await req.server.prisma.workshopEnrollment.findMany({
