@@ -440,8 +440,11 @@ export async function endLiveCallHandler(req: FastifyRequest, reply: FastifyRepl
   try {
     await svc.deleteRoom(`workshop-live-${lcid}`);
   } catch {
-    // Room may not exist yet — not an error
+    // Room may not exist — not an error
   }
+
+  // Stamp endedAt so users see "Session Completed" from this point on
+  await req.server.prisma.liveCall.update({ where: { id: lcid }, data: { endedAt: new Date() } });
 
   return reply.send({ success: true, data: null, error: null });
 }
