@@ -1702,7 +1702,8 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
         const lc = item.liveCall;
         const now = new Date();
         const scheduledAt = new Date(lc.scheduledAt);
-        const status = scheduledAt < now ? 'past' : 'upcoming';
+        // "past" only after a 4-hour grace window so active meetings remain joinable
+        const status = (scheduledAt.getTime() + 4 * 60 * 60 * 1000) < now.getTime() ? 'past' : 'upcoming';
         const unlockAt = lc.liveUrlUnlocksMinutesBefore
           ? new Date(scheduledAt.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000)
           : null;
@@ -2602,11 +2603,12 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
       const lc = fi.liveCall;
       if (!lc) return null;
       const scheduled = lc.scheduledAt ? new Date(lc.scheduledAt) : null;
-      const isPast = scheduled ? scheduled < now : false;
+      // "past" only after a 4-hour grace window so active meetings remain joinable
+      const isPast = scheduled ? (scheduled.getTime() + 4 * 60 * 60 * 1000) < now.getTime() : false;
       const unlockAt = scheduled && lc.liveUrlUnlocksMinutesBefore
         ? new Date(scheduled.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000)
         : null;
-      const isUnlocked = unlockAt ? now >= unlockAt : !!lc.liveUrl;
+      const isUnlocked = isPast || (unlockAt ? now >= unlockAt : !!lc.liveUrl);
       return {
         id: fi.id,
         type: 'live_call',
@@ -2815,7 +2817,8 @@ async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promi
         const lc = item.liveCall;
         const now = new Date();
         const scheduledAt = new Date(lc.scheduledAt);
-        const status = scheduledAt < now ? 'past' : 'upcoming';
+        // "past" only after a 4-hour grace window so active meetings remain joinable
+        const status = (scheduledAt.getTime() + 4 * 60 * 60 * 1000) < now.getTime() ? 'past' : 'upcoming';
         return {
           id: item.id, order: item.order, type: 'live_call',
           label: lc.label, labelColor: lc.labelColor, title: lc.title, scheduledAt: lc.scheduledAt, status,
@@ -2876,9 +2879,10 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
       const lc = fi.liveCall;
       if (!lc) return null;
       const scheduled = lc.scheduledAt ? new Date(lc.scheduledAt) : null;
-      const isPast = scheduled ? scheduled < now : false;
+      // "past" only after a 4-hour grace window so active meetings remain joinable
+      const isPast = scheduled ? (scheduled.getTime() + 4 * 60 * 60 * 1000) < now.getTime() : false;
       const unlockAt = scheduled && lc.liveUrlUnlocksMinutesBefore ? new Date(scheduled.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000) : null;
-      const isUnlocked = unlockAt ? now >= unlockAt : !!lc.liveUrl;
+      const isUnlocked = isPast || (unlockAt ? now >= unlockAt : !!lc.liveUrl);
       return {
         id: fi.id, type: 'live_call', liveCallId: lc.id,
         label: lc.label ?? 'LIVE CALL:', labelColor: lc.labelColor ?? '#ff3d8b', title: lc.title,
