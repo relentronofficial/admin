@@ -1,25 +1,37 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LiveKitRoom,
   VideoConference,
   PreJoin,
   useRemoteParticipants,
+  useParticipants,
+  useIsRecording,
   type LocalUserChoices,
 } from "@livekit/components-react";
-import { DisconnectReason } from "livekit-client";
-import { PhoneOff, Users, Clock, CheckCircle2 } from "lucide-react";
-import { useEndLiveCall } from "@/lib/hooks/useTbt";
+import { DisconnectReason, Track } from "livekit-client";
+import {
+  PhoneOff, Users, Clock, CheckCircle2, MessageSquare,
+  BarChart2, MicOff, XCircle, Lock, Unlock, Disc, StopCircle,
+  Bell, ChevronRight, Plus, X, Settings,
+} from "lucide-react";
+import {
+  useEndLiveCall,
+  useMuteAll,
+  useRemoveParticipant,
+  useMuteParticipant,
+  useLockRoom,
+  useAdmitParticipant,
+  useStartRecording,
+  useStopRecording,
+  useCreatePoll,
+  useClosePoll,
+  useGetAdminPolls,
+  useSendReminders,
+} from "@/lib/hooks/useTbt";
 
-interface AdminLiveCallProps {
-  token: string;
-  wsUrl: string;
-  roomName: string;
-  liveCallId: string;
-  hostName?: string;
-  onLeave: () => void;
-}
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function DurationTicker({ startedAt }: { startedAt: number }) {
   const [elapsed, setElapsed] = useState(0);
@@ -32,64 +44,40 @@ function DurationTicker({ startedAt }: { startedAt: number }) {
   const s = elapsed % 60;
   const fmt = (n: number) => String(n).padStart(2, "0");
   return (
-    <span className="font-mono text-xs font-bold" style={{ color: "#a0a0a0" }}>
-      <Clock size={11} className="inline mr-1" />
+    <span className="font-mono text-xs font-bold flex items-center gap-1" style={{ color: "#a0a0a0" }}>
+      <Clock size={11} />
       {h > 0 ? `${fmt(h)}:` : ""}{fmt(m)}:{fmt(s)}
     </span>
   );
 }
 
-function ParticipantCountBadge() {
-  const participants = useRemoteParticipants();
+function RecBadge() {
+  const isRec = useIsRecording();
+  if (!isRec) return null;
   return (
-    <span className="flex items-center gap-1 text-xs font-bold" style={{ color: "#a0a0a0" }}>
-      <Users size={11} />
-      {participants.length + 1}
+    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded"
+      style={{ background: "rgba(220,38,38,0.2)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.4)" }}>
+      <Disc size={9} className="animate-pulse" /> REC
     </span>
   );
 }
 
-interface ConfirmModalProps {
-  onConfirm: () => void;
-  onCancel: () => void;
-  isPending: boolean;
-}
-
-function ConfirmEndModal({ onConfirm, onCancel, isPending }: ConfirmModalProps) {
+function ConfirmEndModal({ onConfirm, onCancel, isPending }: { onConfirm: () => void; onCancel: () => void; isPending: boolean }) {
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.75)" }}
-    >
-      <div
-        className="rounded-xl p-6 w-80 space-y-4 border"
-        style={{ background: "#181818", borderColor: "#2a2a2a" }}
-      >
+    <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)" }}>
+      <div className="rounded-xl p-6 w-80 space-y-4 border" style={{ background: "#181818", borderColor: "#2a2a2a" }}>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(220,38,38,0.15)" }}>
             <Users size={18} style={{ color: "#dc2626" }} />
           </div>
           <div>
             <p className="font-bold text-white text-sm">End for everyone?</p>
-            <p className="text-xs mt-0.5" style={{ color: "#a0a0a0" }}>
-              All participants will be removed from the call.
-            </p>
+            <p className="text-xs mt-0.5" style={{ color: "#a0a0a0" }}>All participants will be disconnected.</p>
           </div>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2 rounded-lg text-sm font-bold border transition-colors"
-            style={{ borderColor: "#333", color: "#a0a0a0", background: "transparent" }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isPending}
-            className="flex-1 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-60"
-            style={{ background: "#7f1d1d", color: "#fff" }}
-          >
+          <button onClick={onCancel} className="flex-1 py-2 rounded-lg text-sm font-bold border transition-colors" style={{ borderColor: "#333", color: "#a0a0a0", background: "transparent" }}>Cancel</button>
+          <button onClick={onConfirm} disabled={isPending} className="flex-1 py-2 rounded-lg text-sm font-bold disabled:opacity-60" style={{ background: "#7f1d1d", color: "#fff" }}>
             {isPending ? "Ending…" : "End for All"}
           </button>
         </div>
@@ -97,6 +85,195 @@ function ConfirmEndModal({ onConfirm, onCancel, isPending }: ConfirmModalProps) 
     </div>
   );
 }
+
+// ── Participants panel ─────────────────────────────────────────────────────────
+
+function ParticipantsPanel({
+  liveCallId,
+  onClose,
+}: { liveCallId: string; onClose: () => void }) {
+  const participants = useParticipants();
+  const muteParticipant = useMuteParticipant();
+  const removeParticipant = useRemoveParticipant();
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#181818" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <span className="text-xs font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#a0a0a0" }}>
+          Participants ({participants.length})
+        </span>
+        <button onClick={onClose} className="p-1 rounded hover:bg-[#2a2a2a]"><X size={13} style={{ color: "#606060" }} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1" style={{ minHeight: 0 }}>
+        {participants.map((p) => {
+          const audioTrack = p.getTrackPublication(Track.Source.Microphone);
+          const isHost = p.identity.startsWith("user_");
+          const audioMuted = !audioTrack || audioTrack.isMuted;
+          return (
+            <div key={p.identity} className="flex items-center gap-2 px-3 py-2 rounded-lg group" style={{ background: "#1a1a1a" }}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                style={{ background: isHost ? "rgba(220,38,38,0.2)" : "#2a2a2a", color: isHost ? "#dc2626" : "#a0a0a0" }}>
+                {(p.name ?? p.identity).slice(0, 1).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm truncate" style={{ color: "#f0f0f0" }}>{p.name ?? p.identity}</p>
+                {isHost && <span className="text-[10px] font-bold uppercase" style={{ color: "#dc2626" }}>You (Host)</span>}
+              </div>
+              {!isHost && (
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {!audioMuted && audioTrack?.trackSid && (
+                    <button
+                      onClick={() => muteParticipant.mutate({ liveCallId, identity: p.identity, trackSid: audioTrack.trackSid! })}
+                      className="p-1 rounded hover:bg-[#2a2a2a]" title="Mute mic"
+                    >
+                      <MicOff size={11} style={{ color: "#f59e0b" }} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => removeParticipant.mutate({ liveCallId, identity: p.identity })}
+                    className="p-1 rounded hover:bg-[#2a2a2a]" title="Remove"
+                  >
+                    <XCircle size={11} style={{ color: "#dc2626" }} />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Poll panel (admin) ─────────────────────────────────────────────────────────
+
+function AdminPollPanel({ liveCallId, onClose }: { liveCallId: string; onClose: () => void }) {
+  const { data: polls = [] } = useGetAdminPolls(liveCallId, true);
+  const createPoll = useCreatePoll();
+  const closePoll = useClosePoll();
+  const [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(["", ""]);
+  const [creating, setCreating] = useState(false);
+
+  const addOption = () => setOptions(o => [...o, ""]);
+  const removeOption = (i: number) => setOptions(o => o.filter((_, idx) => idx !== i));
+  const setOption = (i: number, v: string) => setOptions(o => o.map((x, idx) => idx === i ? v : x));
+
+  const handleCreate = async () => {
+    const valid = options.filter(o => o.trim());
+    if (!question.trim() || valid.length < 2) return;
+    setCreating(false);
+    await createPoll.mutateAsync({ liveCallId, question: question.trim(), options: valid });
+    setQuestion(""); setOptions(["", ""]);
+  };
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#181818" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <span className="text-xs font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#a0a0a0" }}>Polls</span>
+        <div className="flex gap-2">
+          <button onClick={() => setCreating(v => !v)} className="p-1 rounded hover:bg-[#2a2a2a]">
+            <Plus size={13} style={{ color: creating ? "#dc2626" : "#a0a0a0" }} />
+          </button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[#2a2a2a]"><X size={13} style={{ color: "#606060" }} /></button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4" style={{ minHeight: 0 }}>
+        {/* Create form */}
+        {creating && (
+          <div className="rounded-xl p-3 space-y-2.5" style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }}>
+            <input
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={{ background: "#222", border: "1px solid #333", color: "#f0f0f0" }}
+              placeholder="Poll question…"
+              value={question}
+              onChange={e => setQuestion(e.target.value)}
+            />
+            {options.map((opt, i) => (
+              <div key={i} className="flex gap-2">
+                <input
+                  className="flex-1 rounded-lg px-3 py-1.5 text-sm outline-none"
+                  style={{ background: "#222", border: "1px solid #333", color: "#f0f0f0" }}
+                  placeholder={`Option ${i + 1}`}
+                  value={opt}
+                  onChange={e => setOption(i, e.target.value)}
+                />
+                {options.length > 2 && (
+                  <button onClick={() => removeOption(i)} className="p-1"><X size={12} style={{ color: "#606060" }} /></button>
+                )}
+              </div>
+            ))}
+            {options.length < 5 && (
+              <button onClick={addOption} className="text-xs flex items-center gap-1" style={{ color: "#a0a0a0" }}>
+                <Plus size={11} /> Add option
+              </button>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setCreating(false)} className="flex-1 py-1.5 rounded-lg text-xs font-bold border" style={{ borderColor: "#333", color: "#a0a0a0", background: "transparent" }}>Cancel</button>
+              <button
+                onClick={handleCreate}
+                disabled={createPoll.isPending}
+                className="flex-1 py-1.5 rounded-lg text-xs font-bold disabled:opacity-60"
+                style={{ background: "#dc2626", color: "#fff" }}
+              >
+                Launch Poll
+              </button>
+            </div>
+          </div>
+        )}
+
+        {polls.length === 0 && !creating && (
+          <p className="text-center text-xs mt-8" style={{ color: "#606060" }}>No polls yet. Click + to create one.</p>
+        )}
+
+        {polls.map((poll) => {
+          const totalVotes = poll.options.reduce((s, o) => s + o._count.votes, 0);
+          return (
+            <div key={poll.id} className="rounded-xl p-3 space-y-2" style={{ background: "#1a1a1a", border: `1px solid ${poll.isActive ? "#2a2a2a" : "#222"}` }}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold" style={{ color: poll.isActive ? "#f0f0f0" : "#606060" }}>{poll.question}</p>
+                {poll.isActive && (
+                  <button onClick={() => closePoll.mutate(poll.id)} className="text-[10px] font-bold px-2 py-0.5 rounded shrink-0" style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626" }}>
+                    End
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {poll.options.map((opt) => {
+                  const pct = totalVotes > 0 ? Math.round((opt._count.votes / totalVotes) * 100) : 0;
+                  return (
+                    <div key={opt.id} className="relative rounded-lg px-3 py-1.5 overflow-hidden" style={{ background: "#222" }}>
+                      <div className="absolute inset-0 rounded-lg" style={{ width: `${pct}%`, background: "rgba(220,38,38,0.15)" }} />
+                      <div className="relative flex justify-between">
+                        <span className="text-xs" style={{ color: "#f0f0f0" }}>{opt.optionText}</span>
+                        <span className="text-xs font-bold" style={{ color: "#a0a0a0" }}>{opt._count.votes} ({pct}%)</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px]" style={{ color: "#606060" }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Main AdminLiveCall ────────────────────────────────────────────────────────
+
+interface AdminLiveCallProps {
+  token: string;
+  wsUrl: string;
+  roomName: string;
+  liveCallId: string;
+  hostName?: string;
+  onLeave: () => void;
+}
+
+type SidePanel = "participants" | "polls" | null;
 
 export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: AdminLiveCallProps) {
   const [stage, setStage] = useState<"pre" | "live" | "summary">("pre");
@@ -109,21 +286,22 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
   });
   const [showConfirm, setShowConfirm] = useState(false);
   const [summaryData, setSummaryData] = useState<{ duration: number; endedAt: Date } | null>(null);
+  const [sidePanel, setSidePanel] = useState<SidePanel>(null);
+  const [isLocked, setIsLocked] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+
   const leftByChoiceRef = useRef(false);
   const entryTimeRef = useRef<number>(0);
-  const endCall = useEndLiveCall();
 
-  const handleLeave = () => {
-    leftByChoiceRef.current = true;
-    onLeave();
-  };
+  const endCall = useEndLiveCall();
+  const muteAll = useMuteAll();
+  const lockRoom = useLockRoom();
+  const startRecording = useStartRecording();
+  const stopRecording = useStopRecording();
+  const sendReminders = useSendReminders();
 
   const handleEndForAll = async () => {
-    try {
-      await endCall.mutateAsync(liveCallId);
-    } catch {
-      // Room may already be closed
-    }
+    try { await endCall.mutateAsync(liveCallId); } catch {}
     const duration = Math.floor((Date.now() - entryTimeRef.current) / 1000);
     leftByChoiceRef.current = true;
     setShowConfirm(false);
@@ -131,13 +309,31 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
     setStage("summary");
   };
 
-  const handleDisconnected = (reason?: DisconnectReason) => {
+  const handleDisconnected = useCallback((reason?: DisconnectReason) => {
     if (leftByChoiceRef.current || reason === DisconnectReason.CLIENT_INITIATED) {
       onLeave();
     } else {
       onLeave();
     }
+  }, [onLeave]);
+
+  const toggleLock = async () => {
+    const next = !isLocked;
+    setIsLocked(next);
+    await lockRoom.mutateAsync({ liveCallId, locked: next });
   };
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      setIsRecording(false);
+      await stopRecording.mutateAsync(liveCallId);
+    } else {
+      setIsRecording(true);
+      await startRecording.mutateAsync(liveCallId);
+    }
+  };
+
+  // ── Summary screen ──────────────────────────────────────────────────────────
 
   if (stage === "summary" && summaryData) {
     const { duration, endedAt } = summaryData;
@@ -147,45 +343,29 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
     const fmt = (n: number) => String(n).padStart(2, "0");
     const durationStr = h > 0 ? `${fmt(h)}h ${fmt(m)}m ${fmt(s)}s` : `${fmt(m)}m ${fmt(s)}s`;
     return (
-      <div
-        className="rounded-xl flex flex-col items-center justify-center gap-4 text-center border"
-        style={{ height: 280, background: "#111", borderColor: "#2a2a2a" }}
-      >
+      <div className="rounded-xl flex flex-col items-center justify-center gap-4 text-center border" style={{ height: 280, background: "#111", borderColor: "#2a2a2a" }}>
         <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)" }}>
           <CheckCircle2 size={28} style={{ color: "#22c55e" }} />
         </div>
         <div>
           <p className="font-bold text-white text-lg">Session Ended</p>
-          <p className="text-sm mt-1" style={{ color: "#a0a0a0" }}>
-            Duration: <span className="font-bold text-white">{durationStr}</span>
-          </p>
-          <p className="text-xs mt-0.5" style={{ color: "#606060" }}>
-            Ended at {endedAt.toLocaleTimeString()}
-          </p>
+          <p className="text-sm mt-1" style={{ color: "#a0a0a0" }}>Duration: <span className="font-bold text-white">{durationStr}</span></p>
+          <p className="text-xs mt-0.5" style={{ color: "#606060" }}>Ended at {endedAt.toLocaleTimeString()}</p>
         </div>
-        <button
-          onClick={onLeave}
-          className="mt-2 px-6 py-2 rounded-lg text-sm font-bold"
-          style={{ background: "#dc2626", color: "#fff" }}
-        >
-          Close
-        </button>
+        <button onClick={onLeave} className="mt-2 px-6 py-2 rounded-lg text-sm font-bold" style={{ background: "#dc2626", color: "#fff" }}>Close</button>
       </div>
     );
   }
 
+  // ── Pre-join screen ─────────────────────────────────────────────────────────
+
   if (stage === "pre") {
     return (
-      <div
-        className="rounded-xl overflow-hidden"
-        style={{ background: "#111", minHeight: 420 }}
-        data-lk-theme="default"
-      >
+      <div className="rounded-xl overflow-hidden" style={{ background: "#111", minHeight: 420 }} data-lk-theme="default">
         <PreJoin
           defaults={userChoices}
           onSubmit={(choices) => {
-            const locked = { ...choices, username: hostName || choices.username };
-            setUserChoices(locked);
+            setUserChoices({ ...choices, username: hostName || choices.username });
             entryTimeRef.current = Date.now();
             setStage("live");
           }}
@@ -194,6 +374,8 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
       </div>
     );
   }
+
+  // ── Live screen ─────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -204,43 +386,149 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
           isPending={endCall.isPending}
         />
       )}
-      <div
-        className="relative rounded-xl overflow-hidden"
-        style={{ height: 600, background: "#000" }}
-        data-lk-theme="default"
-      >
-        <LiveKitRoom
-          serverUrl={wsUrl}
-          token={token}
-          connect={true}
-          audio={userChoices.audioEnabled}
-          video={userChoices.videoEnabled}
-          onDisconnected={handleDisconnected}
-          style={{ height: "100%", width: "100%" }}
-        >
-          <VideoConference />
-          <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
-            <DurationTicker startedAt={entryTimeRef.current} />
-            <ParticipantCountBadge />
-            <button
-              onClick={() => setShowConfirm(true)}
-              disabled={endCall.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-              style={{ background: "#7f1d1d", color: "#fff" }}
-            >
-              <Users size={13} />
-              End for All
-            </button>
-            <button
-              onClick={handleLeave}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-              style={{ background: "#dc2626", color: "#fff" }}
-            >
-              <PhoneOff size={13} /> Leave
-            </button>
+      <div className="relative rounded-xl overflow-hidden flex" style={{ height: 620, background: "#000" }} data-lk-theme="default">
+        {/* Main video */}
+        <div className="relative flex-1 min-w-0">
+          <LiveKitRoom
+            serverUrl={wsUrl}
+            token={token}
+            connect={true}
+            audio={userChoices.audioEnabled}
+            video={userChoices.videoEnabled}
+            onDisconnected={handleDisconnected}
+            style={{ height: "100%", width: "100%" }}
+          >
+            <VideoConference />
+
+            {/* Top bar */}
+            <div className="absolute top-3 left-3 right-3 z-50 flex items-center gap-2">
+              <DurationTicker startedAt={entryTimeRef.current} />
+              <RecBadge />
+
+              {/* Spacer */}
+              <div className="flex-1" />
+
+              {/* Host controls */}
+              <HostControlsBar
+                liveCallId={liveCallId}
+                isLocked={isLocked}
+                isRecording={isRecording}
+                onMuteAll={() => muteAll.mutate(liveCallId)}
+                onToggleLock={toggleLock}
+                onToggleRecording={toggleRecording}
+                onReminders={() => sendReminders.mutate(liveCallId)}
+                onSidePanel={(p) => setSidePanel(prev => prev === p ? null : p)}
+                activePanel={sidePanel}
+              />
+
+              {/* End controls */}
+              <button
+                onClick={() => setShowConfirm(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
+                style={{ background: "#7f1d1d", color: "#fff" }}
+              >
+                <Users size={13} /> End All
+              </button>
+              <button
+                onClick={() => { leftByChoiceRef.current = true; onLeave(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
+                style={{ background: "#dc2626", color: "#fff" }}
+              >
+                <PhoneOff size={13} /> Leave
+              </button>
+            </div>
+          </LiveKitRoom>
+        </div>
+
+        {/* Side panel */}
+        {sidePanel && (
+          <div className="shrink-0 flex flex-col" style={{ width: 280, borderLeft: "1px solid #2a2a2a" }}>
+            {sidePanel === "participants" && (
+              <ParticipantsPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+            )}
+            {sidePanel === "polls" && (
+              <AdminPollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+            )}
           </div>
-        </LiveKitRoom>
+        )}
       </div>
     </>
+  );
+}
+
+// ── Host controls bar ─────────────────────────────────────────────────────────
+
+function HostControlsBar({
+  liveCallId, isLocked, isRecording,
+  onMuteAll, onToggleLock, onToggleRecording, onReminders,
+  onSidePanel, activePanel,
+}: {
+  liveCallId: string;
+  isLocked: boolean;
+  isRecording: boolean;
+  onMuteAll: () => void;
+  onToggleLock: () => void;
+  onToggleRecording: () => void;
+  onReminders: () => void;
+  onSidePanel: (p: SidePanel) => void;
+  activePanel: SidePanel;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {/* Mute all */}
+      <CtrlBtn onClick={onMuteAll} title="Mute all participants">
+        <MicOff size={12} />
+      </CtrlBtn>
+
+      {/* Lock */}
+      <CtrlBtn onClick={onToggleLock} title={isLocked ? "Unlock room" : "Lock room"} active={isLocked}>
+        {isLocked ? <Lock size={12} /> : <Unlock size={12} />}
+      </CtrlBtn>
+
+      {/* Record */}
+      <CtrlBtn onClick={onToggleRecording} title={isRecording ? "Stop recording" : "Start recording"} active={isRecording} activeColor="#dc2626">
+        {isRecording ? <StopCircle size={12} /> : <Disc size={12} />}
+      </CtrlBtn>
+
+      {/* Reminders */}
+      <CtrlBtn onClick={onReminders} title="Send reminder to all members">
+        <Bell size={12} />
+      </CtrlBtn>
+
+      {/* Participants panel */}
+      <CtrlBtn onClick={() => onSidePanel("participants")} title="Participants" active={activePanel === "participants"}>
+        <Users size={12} />
+      </CtrlBtn>
+
+      {/* Polls panel */}
+      <CtrlBtn onClick={() => onSidePanel("polls")} title="Polls" active={activePanel === "polls"}>
+        <BarChart2 size={12} />
+      </CtrlBtn>
+    </div>
+  );
+}
+
+function CtrlBtn({
+  children, onClick, title, active = false, activeColor = "#f59e0b",
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title?: string;
+  active?: boolean;
+  activeColor?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="p-1.5 rounded-lg transition-colors flex items-center justify-center"
+      style={{
+        background: active ? `${activeColor}30` : "rgba(0,0,0,0.6)",
+        border: `1px solid ${active ? activeColor + "60" : "rgba(255,255,255,0.1)"}`,
+        color: active ? activeColor : "#f0f0f0",
+      }}
+    >
+      {children}
+    </button>
   );
 }

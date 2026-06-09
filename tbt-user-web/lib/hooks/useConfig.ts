@@ -257,3 +257,33 @@ export const useLiveCallStatus = (liveCallId: string, enabled = true) =>
     refetchInterval: 15_000,
     staleTime: 12_000,
   });
+
+export const useGetLiveCallPolls = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["live-call-polls", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(
+        `/api/user/workshop/live-calls/${liveCallId}/polls`
+      );
+      return (res?.data ?? []) as Array<{
+        id: string;
+        question: string;
+        isActive: boolean;
+        options: Array<{
+          id: string;
+          optionText: string;
+          _count: { votes: number };
+          votes: Array<{ id: string }>;
+        }>;
+      }>;
+    },
+    enabled: !!liveCallId && enabled,
+    refetchInterval: 8_000,
+  });
+
+export const useVotePoll = () =>
+  useMutation({
+    mutationFn: async ({ pollId, optionId }: { pollId: string; optionId: string }) => {
+      await apiClient.post(`/api/user/workshop/live-calls/polls/${pollId}/vote`, { optionId });
+    },
+  });

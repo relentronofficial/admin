@@ -26,7 +26,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
-import { useLiveCallAdminStatus } from "@/lib/hooks/useTbt";
+import { useLiveCallAdminStatus, useGetAttendance } from "@/lib/hooks/useTbt";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -55,6 +55,60 @@ const LIVE_CALL_TYPES = [
 const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm";
 const labelCls = "block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani";
 const selectCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none";
+
+function AttendanceRow({ lcId }: { lcId: string }) {
+  const [open, setOpen] = useState(false);
+  const { data: records = [], isLoading } = useGetAttendance(lcId, open);
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full text-left px-6 py-2 text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors"
+        style={{ color: "#444", borderTop: "1px solid #1a1a1a" }}
+      >
+        View Attendance
+      </button>
+    );
+  }
+  return (
+    <div style={{ borderTop: "1px solid #1a1a1a" }}>
+      <div className="px-6 py-3 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#606060" }}>
+          Attendance ({records.length})
+        </span>
+        <button onClick={() => setOpen(false)} className="text-[10px]" style={{ color: "#444" }}>Hide</button>
+      </div>
+      {isLoading ? (
+        <p className="px-6 pb-3 text-xs" style={{ color: "#444" }}>Loading…</p>
+      ) : records.length === 0 ? (
+        <p className="px-6 pb-3 text-xs" style={{ color: "#444" }}>No attendance records yet.</p>
+      ) : (
+        <div className="overflow-x-auto px-6 pb-3">
+          <table className="w-full text-xs" style={{ color: "#a0a0a0" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #1a1a1a" }}>
+                <th className="text-left py-1 font-rajdhani font-bold uppercase tracking-widest text-[10px]" style={{ color: "#606060" }}>Name</th>
+                <th className="text-left py-1 font-rajdhani font-bold uppercase tracking-widest text-[10px]" style={{ color: "#606060" }}>Joined</th>
+                <th className="text-left py-1 font-rajdhani font-bold uppercase tracking-widest text-[10px]" style={{ color: "#606060" }}>Left</th>
+                <th className="text-left py-1 font-rajdhani font-bold uppercase tracking-widest text-[10px]" style={{ color: "#606060" }}>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(records as any[]).map((r: any) => (
+                <tr key={r.id} style={{ borderBottom: "1px solid #111" }}>
+                  <td className="py-1">{r.member ? `${r.member.firstName} ${r.member.lastName || ""}`.trim() : r.identity}</td>
+                  <td className="py-1">{new Date(r.joinedAt).toLocaleTimeString()}</td>
+                  <td className="py-1">{r.leftAt ? new Date(r.leftAt).toLocaleTimeString() : "—"}</td>
+                  <td className="py-1">{r.durationSec ? `${Math.round(r.durationSec / 60)}m` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function LiveCallStatusPill({ lcId }: { lcId: string }) {
   const { data } = useLiveCallAdminStatus(lcId);
@@ -444,15 +498,17 @@ export default function WorkshopDetailPage() {
     stayTunedMessage: "Stay tuned — the link will unlock before the session begins",
     stayTunedColor: "#00c4cc",
     isWebinar: false,
+    waitingRoomEnabled: false,
+    passcode: "",
   });
   const [deletingLiveCall, setDeletingLiveCall] = useState<string | null>(null);
 
   const openCreateLiveCall = () => {
-    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false });
+    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false, waitingRoomEnabled: false, passcode: "" });
     setEditingLiveCall(null); setShowLiveCallForm(true);
   };
   const openEditLiveCall = (lc: any) => {
-    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc", isWebinar: lc.isWebinar || false });
+    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc", isWebinar: lc.isWebinar || false, waitingRoomEnabled: lc.waitingRoomEnabled || false, passcode: lc.passcode || "" });
     setEditingLiveCall(lc); setShowLiveCallForm(true);
   };
 
@@ -460,7 +516,7 @@ export default function WorkshopDetailPage() {
     if (!liveCallForm.title) return toast.error("Title is required");
     if (!liveCallForm.scheduledAt) return toast.error("Scheduled date is required");
     try {
-      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor, isWebinar: liveCallForm.isWebinar };
+      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor, isWebinar: liveCallForm.isWebinar, waitingRoomEnabled: (liveCallForm as any).waitingRoomEnabled || false, passcode: (liveCallForm as any).passcode || null };
       if (editingLiveCall) { await updateLiveCall.mutateAsync({ id: editingLiveCall.id, data: lcData }); toast.success("Live call updated"); }
       else { await createLiveCall.mutateAsync(lcData); toast.success("Live call created"); }
       setShowLiveCallForm(false); refetchLiveCalls();
@@ -877,7 +933,8 @@ export default function WorkshopDetailPage() {
             ) : (
               <div className="divide-y divide-[#2a2a2a] bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
                 {liveCalls.map((lc: any) => (
-                  <div key={lc.id} className="flex items-start gap-4 px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                  <div key={lc.id} className="hover:bg-white/[0.02] transition-colors">
+                  <div className="flex items-start gap-4 px-6 py-4">
                     <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
                       <Video size={16} className="text-blue-400" />
                     </div>
@@ -925,6 +982,8 @@ export default function WorkshopDetailPage() {
                       <button onClick={() => openEditLiveCall(lc)} className="p-1.5 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={14} /></button>
                       <button onClick={() => setDeletingLiveCall(lc.id)} className="p-1.5 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={14} /></button>
                     </div>
+                  </div>
+                  <AttendanceRow lcId={lc.id} />
                   </div>
                 ))}
               </div>
@@ -1534,6 +1593,27 @@ export default function WorkshopDetailPage() {
                   <p className="text-xs mt-0.5" style={{ color: "#606060" }}>Members can watch but not publish audio/video</p>
                 </div>
               </label>
+              <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg border border-[#2a2a2a] bg-[#111]">
+                <input
+                  type="checkbox"
+                  checked={(liveCallForm as any).waitingRoomEnabled}
+                  onChange={e => setLiveCallForm(f => ({ ...f, waitingRoomEnabled: e.target.checked } as any))}
+                  className="w-4 h-4 accent-[#8b5cf6] rounded"
+                />
+                <div>
+                  <span className="text-sm font-bold text-white">Waiting Room</span>
+                  <p className="text-xs mt-0.5" style={{ color: "#606060" }}>Members wait for host to admit them individually</p>
+                </div>
+              </label>
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Passcode (optional)</label>
+                <input
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] mt-1 text-sm font-mono"
+                  placeholder="Leave blank for no passcode"
+                  value={(liveCallForm as any).passcode || ""}
+                  onChange={e => setLiveCallForm(f => ({ ...f, passcode: e.target.value } as any))}
+                />
+              </div>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
               <button onClick={() => setShowLiveCallForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>

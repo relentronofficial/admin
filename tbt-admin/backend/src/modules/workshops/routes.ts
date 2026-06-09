@@ -8,6 +8,11 @@ import {
   listEpisodesHandler, createEpisodeHandler, updateEpisodeHandler, deleteEpisodeHandler, reorderEpisodesHandler,
   listLiveCallsHandler, createLiveCallHandler, updateLiveCallHandler, deleteLiveCallHandler,
   getLiveCallHostTokenHandler, getLiveCallStatusHandler, endLiveCallHandler,
+  muteParticipantHandler, removeParticipantHandler, muteAllHandler, lockRoomHandler, admitParticipantHandler,
+  startRecordingHandler, stopRecordingHandler,
+  createPollHandler, closePollHandler, getPollsHandler,
+  getAttendanceHandler,
+  sendRemindersHandler,
   listAssignmentsHandler, createAssignmentHandler, updateAssignmentHandler, deleteAssignmentHandler,
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
@@ -52,6 +57,28 @@ export async function workshopRoutes(fastify: FastifyInstance) {
   fastify.get('/live-calls/:lcid/status', getLiveCallStatusHandler);
   fastify.post('/live-calls/:lcid/host-token', getLiveCallHostTokenHandler);
   fastify.post('/live-calls/:lcid/end', endLiveCallHandler);
+
+  // Host controls
+  fastify.post('/live-calls/:lcid/participants/:identity/mute', muteParticipantHandler);
+  fastify.delete('/live-calls/:lcid/participants/:identity', removeParticipantHandler);
+  fastify.post('/live-calls/:lcid/mute-all', muteAllHandler);
+  fastify.post('/live-calls/:lcid/lock', lockRoomHandler);
+  fastify.post('/live-calls/:lcid/admit', admitParticipantHandler);
+
+  // Recording
+  fastify.post('/live-calls/:lcid/recording/start', startRecordingHandler);
+  fastify.post('/live-calls/:lcid/recording/stop', stopRecordingHandler);
+
+  // Polls
+  fastify.get('/live-calls/:lcid/polls', getPollsHandler);
+  fastify.post('/live-calls/:lcid/polls', createPollHandler);
+  fastify.post('/polls/:pollId/close', closePollHandler);
+
+  // Attendance
+  fastify.get('/live-calls/:lcid/attendance', getAttendanceHandler);
+
+  // Reminders
+  fastify.post('/live-calls/:lcid/reminders', sendRemindersHandler);
 
   fastify.get('/:id/assignments', listAssignmentsHandler);
   fastify.post('/:id/assignments', createAssignmentHandler);

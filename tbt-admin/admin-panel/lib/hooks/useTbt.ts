@@ -733,3 +733,107 @@ export const useLiveCallAdminStatus = (liveCallId: string, enabled = true) =>
     refetchInterval: 10_000,
     staleTime: 8_000,
   });
+
+// ── Host Controls ──────────────────────────────────────────────────────────────
+
+export const useMuteParticipant = () =>
+  useMutation({
+    mutationFn: async ({ liveCallId, identity, trackSid, muted = true }: { liveCallId: string; identity: string; trackSid: string; muted?: boolean }) => {
+      await apiClient.post(`/api/workshops/live-calls/${liveCallId}/participants/${identity}/mute`, { trackSid, muted });
+    },
+  });
+
+export const useRemoveParticipant = () =>
+  useMutation({
+    mutationFn: async ({ liveCallId, identity }: { liveCallId: string; identity: string }) => {
+      await apiClient.delete(`/api/workshops/live-calls/${liveCallId}/participants/${identity}`);
+    },
+  });
+
+export const useMuteAll = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      await apiClient.post(`/api/workshops/live-calls/${liveCallId}/mute-all`);
+    },
+  });
+
+export const useLockRoom = () =>
+  useMutation({
+    mutationFn: async ({ liveCallId, locked }: { liveCallId: string; locked: boolean }) => {
+      await apiClient.post(`/api/workshops/live-calls/${liveCallId}/lock`, { locked });
+    },
+  });
+
+export const useAdmitParticipant = () =>
+  useMutation({
+    mutationFn: async ({ liveCallId, memberId }: { liveCallId: string; memberId: string }) => {
+      await apiClient.post(`/api/workshops/live-calls/${liveCallId}/admit`, { memberId });
+    },
+  });
+
+// ── Recording ─────────────────────────────────────────────────────────────────
+
+export const useStartRecording = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${liveCallId}/recording/start`);
+      return res.data as { egressId: string };
+    },
+  });
+
+export const useStopRecording = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      await apiClient.post(`/api/workshops/live-calls/${liveCallId}/recording/stop`);
+    },
+  });
+
+// ── Polls (admin) ─────────────────────────────────────────────────────────────
+
+export const useGetAdminPolls = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['admin-polls', liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${liveCallId}/polls`);
+      return res.data as Array<{ id: string; question: string; isActive: boolean; options: Array<{ id: string; optionText: string; _count: { votes: number } }> }>;
+    },
+    enabled: !!liveCallId && enabled,
+    refetchInterval: 8_000,
+  });
+
+export const useCreatePoll = () =>
+  useMutation({
+    mutationFn: async ({ liveCallId, question, options }: { liveCallId: string; question: string; options: string[] }) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${liveCallId}/polls`, { question, options });
+      return res.data;
+    },
+  });
+
+export const useClosePoll = () =>
+  useMutation({
+    mutationFn: async (pollId: string) => {
+      await apiClient.post(`/api/workshops/polls/${pollId}/close`);
+    },
+  });
+
+// ── Attendance ────────────────────────────────────────────────────────────────
+
+export const useGetAttendance = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['attendance', liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${liveCallId}/attendance`);
+      return res.data as Array<{ id: string; identity: string; joinedAt: string; leftAt: string | null; durationSec: number | null; member: { firstName: string; lastName: string; email: string; memberId: string } | null }>;
+    },
+    enabled: !!liveCallId && enabled,
+  });
+
+// ── Reminders ─────────────────────────────────────────────────────────────────
+
+export const useSendReminders = () =>
+  useMutation({
+    mutationFn: async (liveCallId: string) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${liveCallId}/reminders`);
+      return res.data as { emailsSent: number; smsSent: number; notified: number };
+    },
+  });

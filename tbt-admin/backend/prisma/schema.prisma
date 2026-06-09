@@ -311,6 +311,8 @@ model Member {
   courseEpisodeProgress CourseEpisodeProgress[]
   challengeProgress     MemberChallengeProgress[]
   SecurityLog           SecurityLog[]
+  liveCallAttendance    LiveCallAttendance[]
+  liveCallPollVotes     LiveCallPollVote[]
 
   @@map("members")
 }
@@ -1575,12 +1577,72 @@ model LiveCall {
   startedAt                   DateTime?          @map("started_at") @db.Timestamptz(6)
   endedAt                     DateTime?          @map("ended_at") @db.Timestamptz(6)
   isWebinar                   Boolean            @default(false) @map("is_webinar")
+  isLocked                    Boolean            @default(false) @map("is_locked")
+  waitingRoomEnabled          Boolean            @default(false) @map("waiting_room_enabled")
+  passcode                    String?            @map("passcode")
+  egressId                    String?            @map("egress_id")
+  recordingStartedAt          DateTime?          @map("recording_started_at") @db.Timestamptz(6)
+  aiSummary                   String?            @map("ai_summary")
+  aiTranscript                String?            @map("ai_transcript")
   workshop                    Workshop           @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   flowItems                   WorkshopFlowItem[]
+  attendance                  LiveCallAttendance[]
+  polls                       LiveCallPoll[]
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("live_calls")
+}
+
+model LiveCallAttendance {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId  String    @map("live_call_id") @db.Uuid
+  memberId    String?   @map("member_id") @db.Uuid
+  identity    String
+  joinedAt    DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt      DateTime? @map("left_at") @db.Timestamptz(6)
+  durationSec Int?      @map("duration_sec")
+  liveCall    LiveCall  @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+  member      Member?   @relation(fields: [memberId], references: [id])
+
+  @@map("live_call_attendance")
+}
+
+model LiveCallPoll {
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId String              @map("live_call_id") @db.Uuid
+  question   String
+  isActive   Boolean             @default(true) @map("is_active")
+  endsAt     DateTime?           @map("ends_at") @db.Timestamptz(6)
+  liveCall   LiveCall            @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+  options    LiveCallPollOption[]
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("live_call_polls")
+}
+
+model LiveCallPollOption {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pollId     String             @map("poll_id") @db.Uuid
+  optionText String             @map("option_text")
+  order      Int                @default(0)
+  poll       LiveCallPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes      LiveCallPollVote[]
+
+  @@map("live_call_poll_options")
+}
+
+model LiveCallPollVote {
+  id        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  optionId  String             @map("option_id") @db.Uuid
+  memberId  String?            @map("member_id") @db.Uuid
+  identity  String
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  option    LiveCallPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  member    Member?            @relation(fields: [memberId], references: [id])
+
+  @@unique([optionId, identity])
+  @@map("live_call_poll_votes")
 }
 
 model Assignment {

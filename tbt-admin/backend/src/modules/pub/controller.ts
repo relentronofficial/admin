@@ -197,8 +197,38 @@ export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyR
     if (downloadUrl && liveCallId) {
       await req.server.prisma.liveCall.update({
         where: { id: liveCallId },
-        data: { recordingUrl: downloadUrl },
+        data: { recordingUrl: downloadUrl, egressId: null },
       }).catch(() => {});
+    }
+  }
+
+  if (event.event === 'participant_joined') {
+    const identity: string = event?.participant?.identity ?? '';
+    if (identity && liveCallId) {
+      // Resolve memberId from identity (members use their DB UUID as identity)
+      const isHost = identity.startsWith('user_'); // Clerk admin ID
+      const memberId = isHost ? null : identity;
+      await req.server.prisma.liveCallAttendance.create({
+        data: { liveCallId, memberId, identity, joinedAt: new Date() },
+      }).catch(() => {});
+    }
+  }
+
+  if (event.event === 'participant_left') {
+    const identity: string = event?.participant?.identity ?? '';
+    if (identity && liveCallId) {
+      // Find the latest open attendance record for this identity
+      const record = await req.server.prisma.liveCallAttendance.findFirst({
+        where: { liveCallId, identity, leftAt: null },
+        orderBy: { joinedAt: 'desc' },
+      }).catch(() => null);
+      if (record) {
+        const durationSec = Math.round((Date.now() - record.joinedAt.getTime()) / 1000);
+        await req.server.prisma.liveCallAttendance.update({
+          where: { id: record.id },
+          data: { leftAt: new Date(), durationSec },
+        }).catch(() => {});
+      }
     }
   }
 

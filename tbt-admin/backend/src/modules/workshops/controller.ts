@@ -376,7 +376,8 @@ export async function updateLiveCallHandler(req: FastifyRequest, reply: FastifyR
   const data: any = {};
   ['order', 'type', 'label', 'labelColor', 'title', 'liveUrl', 'liveUrlUnlocksMinutesBefore',
    'recordingUrl', 'recordingLabel', 'prerequisiteNote', 'facilitatorName',
-   'facilitatorTitle', 'facilitatorDescription', 'stayTunedMessage', 'stayTunedColor', 'isWebinar'].forEach(f => {
+   'facilitatorTitle', 'facilitatorDescription', 'stayTunedMessage', 'stayTunedColor',
+   'isWebinar', 'waitingRoomEnabled', 'passcode'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   if (body.scheduledAt) data.scheduledAt = new Date(body.scheduledAt);
@@ -512,6 +513,265 @@ export async function endLiveCallHandler(req: FastifyRequest, reply: FastifyRepl
   await req.server.prisma.liveCall.update({ where: { id: lcid }, data: { endedAt: new Date() } });
 
   return reply.send({ success: true, data: null, error: null });
+}
+
+// ── HOST CONTROLS ─────────────────────────────────────────────────────
+
+async function getLkSvc(env: any) {
+  const { RoomServiceClient } = await import('livekit-server-sdk');
+  const httpUrl = (env.LIVEKIT_WS_URL as string).replace(/^wss?:\/\//, 'https://');
+  return new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+}
+
+export async function muteParticipantHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid, identity } = req.params as any;
+  const { trackSid, muted = true } = req.body as any;
+  const { env } = await import('../../config/env.js');
+  if (!env.LIVEKIT_API_KEY) return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not configured' } });
+  const svc = await getLkSvc(env);
+  await svc.mutePublishedTrack(`workshop-live-${lcid}`, identity, trackSid, muted);
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function removeParticipantHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid, identity } = req.params as any;
+  const { env } = await import('../../config/env.js');
+  if (!env.LIVEKIT_API_KEY) return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not configured' } });
+  const svc = await getLkSvc(env);
+  await svc.removeParticipant(`workshop-live-${lcid}`, identity);
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function muteAllHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { env } = await import('../../config/env.js');
+  if (!env.LIVEKIT_API_KEY) return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not configured' } });
+  const svc = await getLkSvc(env);
+  const roomName = `workshop-live-${lcid}`;
+  const participants = await svc.listParticipants(roomName);
+  for (const p of participants) {
+    if (p.identity?.startsWith('user_')) continue; // skip host
+    for (const track of p.tracks ?? []) {
+      if (track.type === 0 /* AUDIO */ && !track.muted) {
+        await svc.mutePublishedTrack(roomName, p.identity!, track.sid!, true).catch(() => {});
+      }
+    }
+  }
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function lockRoomHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { locked } = req.body as any;
+  const call = await req.server.prisma.liveCall.update({
+    where: { id: lcid },
+    data: { isLocked: !!locked },
+    select: { id: true, isLocked: true },
+  });
+  // Emit socket so members know immediately
+  const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+    where: { workshop: { liveCalls: { some: { id: lcid } } } },
+    select: { memberId: true },
+  });
+  for (const { memberId } of enrollments) {
+    req.server.io.to(`user:${memberId}`).emit('live_call:lock', { liveCallId: lcid, isLocked: call.isLocked });
+  }
+  return reply.send({ success: true, data: call, error: null });
+}
+
+export async function admitParticipantHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { memberId } = req.body as any;
+  // Emit socket to the member telling them they've been admitted
+  req.server.io.to(`user:${memberId}`).emit('live_call:admitted', { liveCallId: lcid });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// ── RECORDING ─────────────────────────────────────────────────────────
+
+export async function startRecordingHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { env } = await import('../../config/env.js');
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_WS_URL) {
+    return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not configured' } });
+  }
+
+  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true, egressId: true } });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+  if (lc.egressId) return reply.status(409).send({ success: false, data: null, error: { code: 'ERROR', message: 'Already recording' } });
+
+  const { EgressClient } = await import('livekit-server-sdk');
+  const httpUrl = env.LIVEKIT_WS_URL.replace(/^wss?:\/\//, 'https://');
+  const egress = new EgressClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+
+  const output = { fileType: 0 /* MP4 */, filepath: `recordings/workshop-live-${lcid}-{time}.mp4` };
+  const info = await egress.startRoomCompositeEgress(`workshop-live-${lcid}`, { file: output } as any);
+  const egressId = info.egressId;
+
+  await req.server.prisma.liveCall.update({ where: { id: lcid }, data: { egressId, recordingStartedAt: new Date() } });
+  return reply.send({ success: true, data: { egressId }, error: null });
+}
+
+export async function stopRecordingHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { env } = await import('../../config/env.js');
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_WS_URL) {
+    return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not configured' } });
+  }
+
+  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true, egressId: true } });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+  if (!lc.egressId) return reply.status(409).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not recording' } });
+
+  const { EgressClient } = await import('livekit-server-sdk');
+  const httpUrl = env.LIVEKIT_WS_URL.replace(/^wss?:\/\//, 'https://');
+  const egress = new EgressClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+  await egress.stopEgress(lc.egressId);
+
+  await req.server.prisma.liveCall.update({ where: { id: lcid }, data: { egressId: null } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// ── POLLS ─────────────────────────────────────────────────────────────
+
+export async function createPollHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { question, options, endsAt } = req.body as { question: string; options: string[]; endsAt?: string };
+
+  const poll = await req.server.prisma.liveCallPoll.create({
+    data: {
+      liveCallId: lcid,
+      question,
+      endsAt: endsAt ? new Date(endsAt) : null,
+      options: {
+        create: options.map((optionText, i) => ({ optionText, order: i })),
+      },
+    },
+    include: { options: { orderBy: { order: 'asc' } } },
+  });
+
+  // Broadcast to all enrolled members via socket
+  const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+    where: { workshop: { liveCalls: { some: { id: lcid } } } },
+    select: { memberId: true },
+  });
+  for (const { memberId } of enrollments) {
+    req.server.io.to(`user:${memberId}`).emit('live_call:poll', { liveCallId: lcid, poll });
+  }
+
+  return reply.status(201).send({ success: true, data: poll, error: null });
+}
+
+export async function closePollHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { pollId } = req.params as any;
+  const poll = await req.server.prisma.liveCallPoll.update({
+    where: { id: pollId },
+    data: { isActive: false },
+    include: {
+      options: {
+        include: { _count: { select: { votes: true } } },
+        orderBy: { order: 'asc' },
+      },
+    },
+  });
+  // Broadcast results
+  const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+    where: { workshop: { liveCalls: { some: { id: poll.liveCallId } } } },
+    select: { memberId: true },
+  });
+  for (const { memberId } of enrollments) {
+    req.server.io.to(`user:${memberId}`).emit('live_call:poll_closed', { pollId, results: poll.options });
+  }
+  return reply.send({ success: true, data: poll, error: null });
+}
+
+export async function getPollsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const polls = await req.server.prisma.liveCallPoll.findMany({
+    where: { liveCallId: lcid },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      options: {
+        include: { _count: { select: { votes: true } } },
+        orderBy: { order: 'asc' },
+      },
+    },
+  });
+  return reply.send({ success: true, data: polls, error: null });
+}
+
+// ── ATTENDANCE ────────────────────────────────────────────────────────
+
+export async function getAttendanceHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const records = await req.server.prisma.liveCallAttendance.findMany({
+    where: { liveCallId: lcid },
+    orderBy: { joinedAt: 'asc' },
+    include: {
+      member: { select: { id: true, firstName: true, lastName: true, email: true, memberId: true } },
+    },
+  });
+  return reply.send({ success: true, data: records, error: null });
+}
+
+// ── REMINDERS ─────────────────────────────────────────────────────────
+
+export async function sendRemindersHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const lc = await req.server.prisma.liveCall.findUnique({
+    where: { id: lcid },
+    select: { id: true, title: true, scheduledAt: true, workshopId: true },
+  });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+
+  const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+    where: { workshopId: lc.workshopId },
+    include: { member: { select: { id: true, firstName: true, email: true, phone: true } } },
+  });
+
+  const { env } = await import('../../config/env.js');
+  let emailsSent = 0, smsSent = 0;
+
+  for (const { member } of enrollments) {
+    // In-app notification via socket
+    req.server.io.to(`user:${member.id}`).emit('notification', {
+      title: 'Live Session Reminder',
+      body: `"${lc.title}" starts soon. Don't miss it!`,
+      type: 'live_call',
+    });
+
+    // Email via Resend
+    if (env.RESEND_API_KEY && member.email) {
+      try {
+        const { Resend } = await import('resend');
+        const resend = new Resend(env.RESEND_API_KEY);
+        const scheduledTime = lc.scheduledAt ? new Date(lc.scheduledAt).toLocaleString() : 'soon';
+        await resend.emails.send({
+          from: 'TBT <noreply@tamillbiznesstribe.com>',
+          to: member.email,
+          subject: `Reminder: "${lc.title}" starts soon`,
+          html: `<p>Hi ${member.firstName},</p><p>Your live session <strong>${lc.title}</strong> is scheduled for ${scheduledTime}. Log in to TBT to join.</p>`,
+        });
+        emailsSent++;
+      } catch { /* non-fatal */ }
+    }
+
+    // SMS via Twilio
+    if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER && member.phone) {
+      try {
+        const twilio = (await import('twilio')).default;
+        const client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+        await client.messages.create({
+          body: `TBT Reminder: "${lc.title}" starts soon. Log in to join.`,
+          from: env.TWILIO_PHONE_NUMBER,
+          to: member.phone,
+        });
+        smsSent++;
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  return reply.send({ success: true, data: { emailsSent, smsSent, notified: enrollments.length }, error: null });
 }
 
 // ── ASSIGNMENTS ───────────────────────────────────────────────────────

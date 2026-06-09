@@ -1018,9 +1018,20 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
 
   const liveCall = await request.server.prisma.liveCall.findUnique({
     where: { id: liveCallId },
-    select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true, isWebinar: true, startedAt: true },
+    select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true, isWebinar: true, startedAt: true, isLocked: true, waitingRoomEnabled: true, passcode: true },
   });
   if (!liveCall) return fail(reply, 404, 'Live call not found');
+
+  // Passcode check (if set and caller provides one)
+  const { passcode: inputPasscode } = request.body as any ?? {};
+  if (liveCall.passcode && liveCall.passcode !== inputPasscode) {
+    return reply.status(403).send({ success: false, data: null, error: { code: 'PASSCODE_REQUIRED', message: 'Invalid passcode' } });
+  }
+
+  // Waiting room — return waiting status; admin must admit via socket
+  if (liveCall.waitingRoomEnabled && liveCall.isLocked) {
+    return ok(reply, { status: 'waiting', liveCallId });
+  }
 
   const member = await request.server.prisma.member.findUnique({
     where: { id: request.memberId },
@@ -1047,7 +1058,47 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
   });
 
   const token = await at.toJwt();
-  return ok(reply, { token, wsUrl: env.LIVEKIT_WS_URL, roomName, startedAt: liveCall.startedAt, isWebinar: liveCall.isWebinar });
+  return ok(reply, { status: 'joined', token, wsUrl: env.LIVEKIT_WS_URL, roomName, startedAt: liveCall.startedAt, isWebinar: liveCall.isWebinar });
+}
+
+// ─── Polls (user) ─────────────────────────────────────────────────────────────
+
+export async function getUserPollsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const polls = await request.server.prisma.liveCallPoll.findMany({
+    where: { liveCallId, isActive: true },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      options: {
+        include: {
+          _count: { select: { votes: true } },
+          votes: { where: { memberId: request.memberId }, select: { id: true } },
+        },
+        orderBy: { order: 'asc' },
+      },
+    },
+  });
+  return ok(reply, polls);
+}
+
+export async function votePollHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { pollId } = request.params as { pollId: string };
+  const { optionId } = request.body as { optionId: string };
+
+  // Verify option belongs to a poll in a live call the member is enrolled in
+  const option = await request.server.prisma.liveCallPollOption.findUnique({
+    where: { id: optionId },
+    include: { poll: { select: { id: true, isActive: true } } },
+  });
+  if (!option || option.pollId !== pollId) return fail(reply, 404, 'Option not found');
+  if (!option.poll.isActive) return fail(reply, 409, 'Poll is closed');
+
+  const vote = await request.server.prisma.liveCallPollVote.upsert({
+    where: { optionId_identity: { optionId, identity: request.memberId } },
+    update: {},
+    create: { optionId, memberId: request.memberId, identity: request.memberId },
+  });
+  return ok(reply, vote);
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
