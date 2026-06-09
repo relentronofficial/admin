@@ -7,8 +7,7 @@ import {
   PreJoin,
   type LocalUserChoices,
 } from "@livekit/components-react";
-import "@livekit/components-styles";
-import { Loader2, PhoneOff } from "lucide-react";
+import { PhoneOff } from "lucide-react";
 
 interface WorkshopLiveCallProps {
   token: string;

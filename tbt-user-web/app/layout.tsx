@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
+import "@livekit/components-styles";
 
 const inter = Inter({
   variable: "--font-inter",
