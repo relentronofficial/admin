@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -97,17 +98,8 @@ export function Sidebar() {
 
   return (
     <aside className="w-[220px] bg-[#111] border-r border-[#2a2a2a] flex flex-col fixed inset-y-0 left-0 z-[100] font-sans">
-      <div className="flex items-center gap-2.5 px-5 py-4 border-b border-[#2a2a2a]">
-        <div
-          className="w-9 h-9 bg-[#e02020] flex items-center justify-center font-rajdhani font-bold text-[15px] text-white tracking-tighter"
-          style={{ clipPath: "polygon(8% 0%, 100% 0%, 92% 100%, 0% 100%)" }}
-        >
-          TT
-        </div>
-        <div className="font-rajdhani text-[13px] font-semibold leading-[1.3] text-[#a0a0a0] tracking-wider">
-          <span className="block text-[#f0f0f0] text-[15px]">Tamil Business</span>
-          Tribe
-        </div>
+      <div className="flex items-center justify-center px-5 py-4 border-b border-[#2a2a2a]">
+        <Image src="/tbt_logo.png" alt="Tamil Business Tribe" width={160} height={36} className="object-contain" priority />
       </div>
 
       <nav className="flex-1 py-3 overflow-y-auto">

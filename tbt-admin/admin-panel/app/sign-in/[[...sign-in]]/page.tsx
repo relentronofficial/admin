@@ -115,19 +115,8 @@ export default function SignInPage() {
       <div className="card w-full max-w-[420px] bg-[#1c1c1c] rounded-[16px] p-[44px] pt-[44px] pb-[40px] relative z-10 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_60px_rgba(0,0,0,0.6),0_4px_16px_rgba(0,0,0,0.4)] animate-in fade-in slide-in-from-bottom-5 duration-500">
         
         {/* LOGO */}
-        <div className="flex items-center justify-center gap-[10px] mb-[28px]">
-          <div className="w-[48px] h-[48px] flex-shrink-0">
-            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-              <rect x="4" y="6" width="22" height="7" rx="1.5" fill="#e02020"/>
-              <rect x="11" y="13" width="8" height="22" rx="1.5" fill="#e02020"/>
-              <rect x="18" y="12" width="22" height="6" rx="1.5" fill="#ffffff" opacity=".9"/>
-              <rect x="25" y="18" width="8" height="20" rx="1.5" fill="#ffffff" opacity=".9"/>
-            </svg>
-          </div>
-          <div className="flex flex-col leading-none">
-            <span className="font-rajdhani font-bold text-[18px] tracking-[2px] text-white">TAMIL BUSINESS</span>
-            <small className="font-rajdhani text-[11px] tracking-[3px] text-[#888] font-medium mt-[1px]">TRIBE</small>
-          </div>
+        <div className="flex items-center justify-center mb-[28px]">
+          <Image src="/tbt_logo.png" alt="Tamil Business Tribe" width={200} height={45} className="object-contain" priority />
         </div>
 
         <h1 className="text-[22px] font-semibold text-white text-center tracking-[-0.2px] mb-[6px]">

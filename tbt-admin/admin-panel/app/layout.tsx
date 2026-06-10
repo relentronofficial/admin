@@ -1,9 +1,19 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import { Inter, Rajdhani, DM_Sans } from "next/font/google";
+import type { Metadata } from "next";
 import "./globals.css";
 import "@livekit/components-styles";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/Providers";
+
+export const metadata: Metadata = {
+  title: "TBT Admin",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
+};
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const rajdhani = Rajdhani({ 
