@@ -758,6 +758,11 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
 }
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {
+  const redis = request.server.redis ?? null;
+  const clKey = `cont-learn:${request.memberId}`;
+  const cachedCl = await cacheGet<unknown[]>(redis, clKey);
+  if (cachedCl) return ok(reply, cachedCl);
+
   // Fetch more than needed so deduplication still yields up to 6 unique items
   const [courseProgress, workshopProgress] = await Promise.all([
     request.server.prisma.courseEpisodeProgress.findMany({
@@ -868,6 +873,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     })),
   ].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
 
+  void cacheSet(redis, clKey, combined, 30);
   return ok(reply, combined);
 }
 
@@ -2333,6 +2339,7 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
   void Promise.all([
     recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, isCompleted && !existingProgress?.isCompleted ? 'episode_completed' : 'episode_watched', { episodeId }),
+    invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId}`),
   ]).catch(() => {});
 
   return ok(reply, { updated: true, isCompleted, actualWatchedSecs: newActualWatched });

@@ -105,10 +105,14 @@ export function setup() {
     { method: "GET", url: `${BASE}/api/pub/config/site` },
     { method: "GET", url: `${BASE}/api/pub/config/nav` },
     { method: "GET", url: `${BASE}/api/pub/config/ui-strings` },
-    { method: "GET", url: `${BASE_USER}/home/hero`,     params: { headers: h() } },
-    { method: "GET", url: `${BASE_USER}/home/sections`, params: { headers: h() } },
+    { method: "GET", url: `${BASE_USER}/me`,                          params: { headers: h() } },
+    { method: "GET", url: `${BASE_USER}/notifications/unread-count`,  params: { headers: h() } },
+    { method: "GET", url: `${BASE_USER}/dashboard/stats`,             params: { headers: h() } },
+    { method: "GET", url: `${BASE_USER}/dashboard/continue-learning`, params: { headers: h() } },
+    { method: "GET", url: `${BASE_USER}/home/hero`,                   params: { headers: h() } },
+    { method: "GET", url: `${BASE_USER}/home/sections`,               params: { headers: h() } },
   ]);
-  console.log("Cache warmed");
+  console.log("Cache warmed (pub + auth)");
 
   return { slugs };
 }
