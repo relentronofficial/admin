@@ -163,6 +163,57 @@ export const useListAdmins = (params: { page?: number; limit?: number; search?: 
   });
 };
 
+export const useGetAdmin = (id: string) => {
+  return useQuery({
+    queryKey: ['admins', id],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/admins/${id}`);
+      return res.data || res;
+    },
+    enabled: !!id,
+  });
+};
+
+export const useUpdateAdmin = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      const res: any = await apiClient.put(`/api/admins/${id}`, data);
+      return res.data || res;
+    },
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['admins'] });
+      queryClient.invalidateQueries({ queryKey: ['admins', id] });
+    },
+  });
+};
+
+export const useDeleteAdmin = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res: any = await apiClient.delete(`/api/admins/${id}`);
+      return res.data || res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admins'] });
+    },
+  });
+};
+
+export const useChangeAdminStatus = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res: any = await apiClient.put(`/api/admins/${id}/status`, { status });
+      return res.data || res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admins'] });
+    },
+  });
+};
+
 export const useGetPresignedUrl = () => {
   return useMutation({
     mutationFn: async ({ filename, contentType, bucket, pathPrefix }: { filename: string; contentType: string; bucket?: string; pathPrefix?: string }) => {
