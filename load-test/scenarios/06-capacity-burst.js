@@ -119,10 +119,13 @@ export function setup() {
       { method: "GET", url: `${BASE_USER}/workshops/${s}/flow`,   params: { headers: h() } },
     ]),
   ];
-  for (let i = 0; i < 8; i++) {
-    http.batch(warmupReqs);
-  }
-  console.log(`Cache warmed (${warmupReqs.length} endpoints × 8 passes)`);
+  // Fire all warmup requests in parallel (not sequential) so Cloud Run scales up
+  // immediately and all instances are warm before VUs start.
+  // 8 × 15 = 120 parallel requests → ~5 instances each get ~24 warmup hits → caches fully seeded.
+  const parallelWarmup = [];
+  for (let i = 0; i < 8; i++) parallelWarmup.push(...warmupReqs);
+  http.batch(parallelWarmup);
+  console.log(`Cache warmed (${warmupReqs.length} endpoints × 8 parallel passes)`);
 
   return { slugs };
 }
