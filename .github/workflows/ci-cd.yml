@@ -12,8 +12,23 @@ jobs:
     defaults:
       run:
         working-directory: tbt-admin
+    outputs:
+      backend_changed: ${{ steps.filter.outputs.backend }}
+      admin_changed: ${{ steps.filter.outputs.admin }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'tbt-admin/backend/**'
+              - 'tbt-admin/package*.json'
+            admin:
+              - 'tbt-admin/admin-panel/**'
+              - 'tbt-admin/package*.json'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,7 +51,7 @@ jobs:
 
   deploy-backend:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +74,7 @@ jobs:
 
   deploy-admin:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.admin_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

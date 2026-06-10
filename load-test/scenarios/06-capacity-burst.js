@@ -101,7 +101,9 @@ export function setup() {
 
   console.log(`Loaded ${slugs.length} workshop slug(s): ${slugs.join(", ")}`);
 
-  // Prime in-process caches before VUs start — prevents thundering-herd on first iteration
+  // Prime in-process caches across all Cloud Run instances.
+  // Cloud Run (max-instances=5) load-balances requests across instances.
+  // We make 8 parallel passes so each instance is hit ~8 times and its cache is warm.
   const warmupReqs = [
     { method: "GET", url: `${BASE}/api/pub/config/site` },
     { method: "GET", url: `${BASE}/api/pub/config/nav` },
@@ -117,8 +119,10 @@ export function setup() {
       { method: "GET", url: `${BASE_USER}/workshops/${s}/flow`,   params: { headers: h() } },
     ]),
   ];
-  http.batch(warmupReqs);
-  console.log(`Cache warmed (pub + auth + ${slugs.length * 2} workshop endpoints)`);
+  for (let i = 0; i < 8; i++) {
+    http.batch(warmupReqs);
+  }
+  console.log(`Cache warmed (${warmupReqs.length} endpoints × 8 passes)`);
 
   return { slugs };
 }
