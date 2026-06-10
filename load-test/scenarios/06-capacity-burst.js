@@ -101,7 +101,7 @@ export function setup() {
   console.log(`Loaded ${slugs.length} workshop slug(s): ${slugs.join(", ")}`);
 
   // Prime in-process caches before VUs start — prevents thundering-herd on first iteration
-  http.batch([
+  const warmupReqs = [
     { method: "GET", url: `${BASE}/api/pub/config/site` },
     { method: "GET", url: `${BASE}/api/pub/config/nav` },
     { method: "GET", url: `${BASE}/api/pub/config/ui-strings` },
@@ -111,8 +111,13 @@ export function setup() {
     { method: "GET", url: `${BASE_USER}/dashboard/continue-learning`, params: { headers: h() } },
     { method: "GET", url: `${BASE_USER}/home/hero`,                   params: { headers: h() } },
     { method: "GET", url: `${BASE_USER}/home/sections`,               params: { headers: h() } },
-  ]);
-  console.log("Cache warmed (pub + auth)");
+    ...slugs.flatMap((s) => [
+      { method: "GET", url: `${BASE_USER}/workshops/${s}/detail`, params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/workshops/${s}/flow`,   params: { headers: h() } },
+    ]),
+  ];
+  http.batch(warmupReqs);
+  console.log(`Cache warmed (pub + auth + ${slugs.length * 2} workshop endpoints)`);
 
   return { slugs };
 }

@@ -1589,6 +1589,10 @@ export async function getMyWorkshopsHandler(request: FastifyRequest, reply: Fast
 
 export async function getWorkshopDetailHandler(request: FastifyRequest, reply: FastifyReply) {
   const { slug } = request.params as { slug: string };
+  const redis = request.server.redis ?? null;
+  const wsDetKey = `ws:detail:${request.memberId}:${slug}`;
+  const cachedDet = await cacheGet<Record<string, unknown>>(redis, wsDetKey);
+  if (cachedDet) return ok(reply, cachedDet);
 
   const workshop = await request.server.prisma.workshop.findFirst({
     where: { slug },
@@ -1664,7 +1668,7 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   const hasUpcomingCall = ((workshop as any).liveCalls ?? []).length > 0;
   const defaultMainAreaType = hasUpcomingCall ? 'countdown' : null;
 
-  return ok(reply, {
+  const wsDetPayload = {
     id: workshop.id,
     title: workshop.title,
     backLabel: workshop.backLabel,
@@ -1695,7 +1699,9 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
     workshopFlowLabel: workshop.workshopFlowLabel,
     defaultMainAreaType,
     enrollmentStatus: enrollment?.status ?? null,
-  });
+  };
+  void cacheSet(redis, wsDetKey, wsDetPayload, 60);
+  return ok(reply, wsDetPayload);
 }
 
 export async function getWorkshopCertificateHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -1773,6 +1779,10 @@ export async function getWorkshopCertificateHandler(request: FastifyRequest, rep
 
 export async function getWorkshopFlowHandler(request: FastifyRequest, reply: FastifyReply) {
   const { slug } = request.params as { slug: string };
+  const redis = request.server.redis ?? null;
+  const wsFlowKey = `ws:flow:${request.memberId}:${slug}`;
+  const cachedFlow = await cacheGet<Record<string, unknown>>(redis, wsFlowKey);
+  if (cachedFlow) return ok(reply, cachedFlow);
 
   const workshop = await request.server.prisma.workshop.findFirst({
     where: { slug },
@@ -1887,7 +1897,9 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
       };
     });
 
-  return ok(reply, { flowItems });
+  const wsFlowPayload = { flowItems };
+  void cacheSet(redis, wsFlowKey, wsFlowPayload, 60);
+  return ok(reply, wsFlowPayload);
 }
 
 export async function getWorkshopQaHandler(request: FastifyRequest, reply: FastifyReply) {
