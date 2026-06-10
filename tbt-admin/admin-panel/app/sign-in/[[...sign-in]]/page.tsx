@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useSignIn } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Lock, Mail, User, Eye, EyeOff, ShieldCheck } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -116,7 +115,8 @@ export default function SignInPage() {
         
         {/* LOGO */}
         <div className="flex items-center justify-center mb-[28px]">
-          <Image src="/tbt_logo.png" alt="Tamil Business Tribe" width={200} height={45} className="object-contain" priority />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-12 w-auto object-contain" />
         </div>
 
         <h1 className="text-[22px] font-semibold text-white text-center tracking-[-0.2px] mb-[6px]">

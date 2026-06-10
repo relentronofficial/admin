@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -99,7 +98,8 @@ export function Sidebar() {
   return (
     <aside className="w-[220px] bg-[#111] border-r border-[#2a2a2a] flex flex-col fixed inset-y-0 left-0 z-[100] font-sans">
       <div className="flex items-center justify-center px-5 py-4 border-b border-[#2a2a2a]">
-        <Image src="/tbt_logo.png" alt="Tamil Business Tribe" width={160} height={36} className="object-contain" priority />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-9 w-auto object-contain" />
       </div>
 
       <nav className="flex-1 py-3 overflow-y-auto">
