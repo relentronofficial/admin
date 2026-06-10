@@ -26,12 +26,15 @@ const status5xx = new Counter("s5xx");
 
 export const options = {
   stages: [
-    { duration: "5s",  target: 100 },   // fast ramp
+    { duration: "5s",  target: 100 },
     { duration: "10s", target: 300 },
     { duration: "10s", target: 500 },   // peak
-    { duration: "15s", target: 500 },   // sustain peak (JWT still valid)
+    { duration: "15s", target: 500 },   // sustain
     { duration: "5s",  target: 0 },
   ],
+  // Keep graceful stop short — JWT expires 60s after get-token.mjs runs.
+  // setup() takes ~3s, leaving ~57s before expiry. 45s test + 5s stop = 50s total.
+  gracefulStop: "5s",
   thresholds: {
     burst_latency:   ["p(95)<3000", "p(99)<8000"],
     burst_errors:    ["rate<0.05"],
