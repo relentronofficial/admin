@@ -1,4 +1,5 @@
 token.txt
+clerk-secret.txt
 cloudrun-env.yaml
 results/
 *.json
