@@ -42,7 +42,8 @@ export const options = {
     },
   },
   thresholds: {
-    burst_latency:   ["p(95)<3000", "p(99)<8000"],
+    // p(90) target: <1s (cache hits); p(95) allows for Cloud Run cold-start scale-out
+    burst_latency:   ["p(90)<1000", "p(95)<5000", "p(99)<10000"],
     burst_errors:    ["rate<0.05"],
     http_req_failed: ["rate<0.05"],
   },
@@ -67,7 +68,7 @@ function tally(res, label) {
     [`${label}: not 429`]: (r) => r.status !== 429,
     [`${label}: not 401`]: (r) => r.status !== 401,
   });
-  if (!ok) errors.add(1);
+  errors.add(ok ? 0 : 1);
 }
 
 export function setup() {
