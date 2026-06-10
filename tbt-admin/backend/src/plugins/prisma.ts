@@ -23,8 +23,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$connect();
     fastify.log.info('✅ Database connected');
   } catch (err) {
-    fastify.log.error('❌ Database connection failed:', err as any);
-    throw err;
+    // Non-fatal: allow instance to start and connect lazily on first query.
+    // This prevents deployment deadlocks when the DB connection pool is full
+    // (e.g. during rolling deployments where old instances still hold all slots).
+    fastify.log.warn('⚠️ DB connect on startup failed — will retry on first query:', err as any);
   }
 
   fastify.decorate('prisma', prisma);
