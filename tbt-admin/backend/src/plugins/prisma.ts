@@ -6,8 +6,8 @@ import { env } from '../config/env.js';
 function buildDatasourceUrl(raw: string): string {
   try {
     const url = new URL(raw);
-    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '25');
-    if (!url.searchParams.has('pool_timeout')) url.searchParams.set('pool_timeout', '10');
+    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '100');
+    if (!url.searchParams.has('pool_timeout')) url.searchParams.set('pool_timeout', '30');
     return url.toString();
   } catch {
     return raw;
