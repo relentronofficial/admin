@@ -17,6 +17,8 @@ const envSchema = z.object({
   CLERK_JWT_PUBLIC_KEY: z.string().optional().or(z.literal('')),
   UPSTASH_REDIS_URL: z.string().url().optional().or(z.literal('')),
   UPSTASH_REDIS_TOKEN: z.string().optional().or(z.literal('')),
+  UPSTASH_REDIS_REST_URL: z.string().url().optional().or(z.literal('')),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional().or(z.literal('')),
   CLOUDFLARE_R2_ACCOUNT_ID: z.string().optional().or(z.literal('')),
   CLOUDFLARE_R2_ACCESS_KEY_ID: z.string().optional().or(z.literal('')),
   CLOUDFLARE_R2_SECRET_ACCESS_KEY: z.string().optional().or(z.literal('')),

@@ -1,6 +1,9 @@
-import type { Redis } from 'ioredis';
-
-type RedisLike = Pick<Redis, 'get' | 'set' | 'del' | 'keys'>;
+export interface RedisLike {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ...args: unknown[]): Promise<string | null>;
+  del(key: string): Promise<unknown>;
+  keys(pattern: string): Promise<string[]>;
+}
 
 // In-process fallback cache used when Redis is unavailable.
 // Shared within a single Cloud Run instance; each instance caches independently.
