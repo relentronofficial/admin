@@ -10,6 +10,24 @@ const clerkClient = createClerkClient({ secretKey: env.CLERK_SECRET_KEY });
 const _memberCache = new Map<string, { memberId: string; status: string; expiresAt: number }>();
 const MEMBER_CACHE_TTL = 5 * 60 * 1000;
 
+// Coalesces concurrent Redis reads for the same clerkId on a cold instance.
+// Without this, N simultaneous VUs at burst start all issue individual Redis GETs,
+// exceeding Upstash free-tier RPS limits and falling through to DB pool exhaustion.
+const _inflightAuthGets = new Map<string, Promise<string | null>>();
+
+function getAuthMemberFromRedis(redis: any, clerkId: string): Promise<string | null> {
+  const redisKey = `auth:member:${clerkId}`;
+  let p = _inflightAuthGets.get(redisKey);
+  if (!p) {
+    p = (redis.get(redisKey) as Promise<string | null>).then(
+      (v) => { _inflightAuthGets.delete(redisKey); return v; },
+      () => { _inflightAuthGets.delete(redisKey); return null; },
+    );
+    _inflightAuthGets.set(redisKey, p);
+  }
+  return p;
+}
+
 function getCachedMember(clerkId: string) {
   const entry = _memberCache.get(clerkId);
   if (entry && Date.now() < entry.expiresAt) return entry;
@@ -77,7 +95,7 @@ async function clerkPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions
       const clerkId = await extractAndVerifyClerkToken(request, reply);
       if (!clerkId) return;
 
-      // Fast path: serve from in-memory cache (avoids DB round-trip per request).
+      // Fast path 1: in-memory cache (avoids any network hop).
       const cached = getCachedMember(clerkId);
       if (cached) {
         if (cached.status !== 'active') {
@@ -88,7 +106,27 @@ async function clerkPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions
         return;
       }
 
-      // Look up the Member record linked to this Clerk user.
+      // Fast path 2: Redis cache (avoids DB round-trip on cold instances).
+      // Uses per-instance coalescing so N simultaneous VUs issue only 1 Redis GET,
+      // preventing Upstash RPS exhaustion at 1 000-VU burst.
+      const redis = (fastify as any).redis ?? null;
+      if (redis) {
+        try {
+          const raw = await getAuthMemberFromRedis(redis, clerkId);
+          if (raw) {
+            const { memberId, status } = JSON.parse(raw) as { memberId: string; status: string };
+            setCachedMember(clerkId, memberId, status);
+            if (status !== 'active') {
+              return reply.status(403).send({ success: false, data: null, error: `Forbidden: Account is ${status}` });
+            }
+            request.user = clerkId;
+            request.memberId = memberId;
+            return;
+          }
+        } catch { /* fall through to DB */ }
+      }
+
+      // Slow path: look up the Member record linked to this Clerk user.
       const member = await fastify.prisma.member.findFirst({
         where: { clerkId } as any,
         select: { id: true, status: true },
@@ -142,6 +180,17 @@ async function clerkPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions
           data: null,
           error: `Forbidden: Account is ${member.status}`,
         });
+      }
+
+      // Cache in Redis (10 min TTL) so other cold instances skip the DB.
+      if (redis) {
+        try {
+          await redis.set(
+            `auth:member:${clerkId}`,
+            JSON.stringify({ memberId: member.id, status: member.status }),
+            'EX', 600,
+          );
+        } catch { /* non-fatal */ }
       }
 
       setCachedMember(clerkId, member.id, member.status);

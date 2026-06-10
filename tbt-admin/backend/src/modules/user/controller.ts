@@ -753,7 +753,7 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
     upcomingEvents,
     unreadNotifications,
   };
-  void cacheSet(redis, statsKey, statsPayload, 30);
+  void cacheSet(redis, statsKey, statsPayload, 120);
   return ok(reply, statsPayload);
 }
 
@@ -873,7 +873,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     })),
   ].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
 
-  void cacheSet(redis, clKey, combined, 30);
+  void cacheSet(redis, clKey, combined, 120);
   return ok(reply, combined);
 }
 

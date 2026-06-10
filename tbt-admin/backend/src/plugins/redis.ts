@@ -43,7 +43,7 @@ async function redisPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions
     return;
   }
 
-  const adapter = new UpstashAdapter(new UpstashRedis({ url, token }));
+  const adapter = new UpstashAdapter(new UpstashRedis({ url, token, automaticDeserialization: false }));
   fastify.decorate('redis', adapter);
   fastify.log.info('✅ Upstash Redis connected (REST)');
 }

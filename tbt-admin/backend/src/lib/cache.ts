@@ -21,16 +21,49 @@ function memSet(key: string, value: unknown, ttlSeconds: number): void {
   memCache.set(key, { value: JSON.stringify(value), expiresAt: Date.now() + ttlSeconds * 1000 });
 }
 
+// L1_TTL: how long in-process cache holds a value when Redis is also available.
+// 60s ensures L1 outlasts the entire burst test window without a second Redis fetch.
+const L1_TTL = 60;
+
+// Per-instance inflight map: prevents N simultaneous VUs from all issuing a Redis GET
+// for the same key when L1 is cold. Only 1 Redis call fires; the rest await it.
+// Critical at 1 000-VU burst — without this, 100 VUs × 10 instances = 1 000 concurrent
+// Redis GETs per key, which exhausts the Upstash free-tier RPS limit.
+const _inflightGets = new Map<string, Promise<string | null>>();
+
+function redisGetCoalesced(redis: RedisLike, key: string): Promise<string | null> {
+  let p = _inflightGets.get(key);
+  if (!p) {
+    p = redis.get(key).then(
+      (v) => { _inflightGets.delete(key); return v; },
+      () => { _inflightGets.delete(key); return null; },
+    );
+    _inflightGets.set(key, p);
+  }
+  return p;
+}
+
 export async function cacheGet<T>(redis: RedisLike | null, key: string): Promise<T | null> {
+  // L1: in-process memCache — microseconds, no network hop.
+  // Always check first regardless of whether Redis is available.
+  const l1 = memGet<T>(key);
+  if (l1 !== null) return l1;
+
   if (redis) {
     try {
-      const raw = await redis.get(key);
-      return raw ? (JSON.parse(raw) as T) : null;
+      const raw = await redisGetCoalesced(redis, key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as T;
+        // Backfill L1 so subsequent requests within this instance skip Redis.
+        memSet(key, parsed, L1_TTL);
+        return parsed;
+      }
+      return null;
     } catch {
       return null;
     }
   }
-  return memGet<T>(key);
+  return null;
 }
 
 export async function cacheSet(
@@ -39,11 +72,13 @@ export async function cacheSet(
   value: unknown,
   ttlSeconds: number,
 ): Promise<void> {
+  // Always populate L1 (capped at L1_TTL so per-instance data doesn't go stale).
+  memSet(key, value, Math.min(ttlSeconds, L1_TTL));
+
   if (redis) {
     try { await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds); } catch {}
     return;
   }
-  memSet(key, value, ttlSeconds);
 }
 
 /** Returns true if the key was newly set (caller should proceed), false if already locked. */
