@@ -7,15 +7,17 @@
 #   .\run.ps1 06       -> 45-second capacity burst (JWT-safe, 500 VUs)
 #   .\run.ps1 all      -> run all scenarios sequentially
 #
-# NOTE: Run `CLERK_SECRET=sk_test_... node get-token.mjs` first to refresh token.txt
+# Workshop slugs are discovered dynamically from the API at test start.
+# No SLUG env var needed — scenarios 03, 05, 06 auto-fetch all active workshops.
+#
+# NOTE: Run `$env:CLERK_SECRET="sk_test_..."; node get-token.mjs` first to refresh token.txt
 #       Clerk JWTs expire in ~60s — run the test immediately after get-token.mjs.
 
 param([string]$Scenario = "05")
 
-$K6     = "F:\k6.exe"
-$DIR    = "$PSScriptRoot\scenarios"
-$TOKEN  = Get-Content "$PSScriptRoot\token.txt" -Raw -ErrorAction SilentlyContinue
-$SLUG   = "zero-rupee-marketing"
+$K6    = "F:\k6.exe"
+$DIR   = "$PSScriptRoot\scenarios"
+$TOKEN = Get-Content "$PSScriptRoot\token.txt" -Raw -ErrorAction SilentlyContinue
 
 if (-not $TOKEN) {
   Write-Error "No token found. Run: node get-token.mjs first."
@@ -34,7 +36,6 @@ function Run-Scenario($num) {
   Write-Host "`n=== Running $($file.Name) ===" -ForegroundColor Cyan
   & $K6 run `
     --env TOKEN=$TOKEN `
-    --env SLUG=$SLUG `
     --out "json=$PSScriptRoot\results\$($file.BaseName)-$(Get-Date -Format 'HHmm').json" `
     $file.FullName
 }

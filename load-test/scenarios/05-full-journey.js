@@ -2,7 +2,9 @@
  * Scenario 05 — Full user journey (production replica)
  * Simulates realistic mixed traffic: browsing, workshops, notifications, progress posts.
  * This is the main scenario for overall system capacity testing.
- * Run: k6 run --env TOKEN=$(cat token.txt) --env SLUG=zero-rupee-marketing scenarios/05-full-journey.js
+ *
+ * Workshop slugs are discovered dynamically at test start — no hardcoded slug needed.
+ * Run: k6 run --env TOKEN=$(cat token.txt) scenarios/05-full-journey.js
  */
 import http from "k6/http";
 import { check, sleep, group } from "k6";
@@ -31,7 +33,6 @@ export const options = {
 const BASE_USER = "https://tbt-backend-464464507912.asia-south1.run.app/api/user";
 const BASE_PUB  = "https://tbt-backend-464464507912.asia-south1.run.app/api/pub";
 const TOKEN     = __ENV.TOKEN;
-const SLUG      = __ENV.SLUG || "zero-rupee-marketing";
 
 function h() {
   return { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
@@ -47,7 +48,38 @@ function req(res, label) {
   if (!ok) errors.add(1);
 }
 
-export default function () {
+export function setup() {
+  // Warm Cloud Run
+  for (let i = 0; i < 10; i++) {
+    const r = http.get("https://tbt-backend-464464507912.asia-south1.run.app/health");
+    if (r.status === 200) break;
+  }
+
+  // Fetch all active workshop slugs dynamically
+  const res = http.get(`${BASE_USER}/workshops`, { headers: h() });
+  let slugs = [];
+  if (res.status === 200) {
+    try {
+      const body = JSON.parse(res.body);
+      slugs = (body.data || []).map((w) => w.slug).filter(Boolean);
+    } catch {}
+  }
+
+  if (slugs.length === 0) {
+    console.warn("Could not fetch workshop slugs — falling back to env SLUG or default");
+    const fallback = __ENV.SLUG || "zero-rupee-marketing";
+    slugs = [fallback];
+  }
+
+  console.log(`Loaded ${slugs.length} workshop slug(s): ${slugs.join(", ")}`);
+  return { slugs };
+}
+
+export default function (data) {
+  const slugs = data.slugs;
+  // Each VU picks a random slug — spreads DB load realistically across all workshops
+  const slug = slugs[Math.floor(Math.random() * slugs.length)];
+
   // ── Phase 1: App bootstrap (every new tab) ──────────────────────────────────
   group("bootstrap", () => {
     const rs = http.batch([
@@ -96,9 +128,9 @@ export default function () {
   // ── Phase 5: Workshop detail (heaviest DB query) ────────────────────────────
   group("workshop-detail", () => {
     const rs = http.batch([
-      { method: "GET", url: `${BASE_USER}/workshops/${SLUG}/detail`,     params: { headers: h() } },
-      { method: "GET", url: `${BASE_USER}/workshops/${SLUG}/flow`,       params: { headers: h() } },
-      { method: "GET", url: `${BASE_USER}/workshops/${SLUG}/challenges`, params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/workshops/${slug}/detail`,     params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/workshops/${slug}/flow`,       params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/workshops/${slug}/challenges`, params: { headers: h() } },
     ]);
     rs.forEach((r, i) => req(r, `detail-${i}`));
   });

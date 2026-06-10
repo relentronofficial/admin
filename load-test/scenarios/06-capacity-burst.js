@@ -5,10 +5,13 @@
  * Ramps to 500 VUs in 45s total, no sleep per iteration, so each VU
  * completes 2-4 iterations before the test ends.
  *
+ * Workshop slugs are discovered dynamically at test start — no hardcoded slug needed.
+ * Each VU iteration picks a random slug to spread DB load across all workshops.
+ *
  * What this measures: p50/p95/p99 API latency and error rate under high concurrency.
  * No sleep = worst-case DB + network pressure.
  *
- * Run: k6 run --env TOKEN=$(Get-Content token.txt -Raw) --env SLUG=zero-rupee-marketing scenarios/06-capacity-burst.js
+ * Run: k6 run --env TOKEN=$(Get-Content token.txt -Raw) scenarios/06-capacity-burst.js
  */
 import http from "k6/http";
 import { check, group } from "k6";
@@ -36,9 +39,9 @@ export const options = {
   },
 };
 
-const BASE  = "https://tbt-backend-464464507912.asia-south1.run.app";
-const TOKEN = __ENV.TOKEN;
-const SLUG  = __ENV.SLUG || "zero-rupee-marketing";
+const BASE      = "https://tbt-backend-464464507912.asia-south1.run.app";
+const BASE_USER = `${BASE}/api/user`;
+const TOKEN     = __ENV.TOKEN;
 
 function h() {
   return { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
@@ -59,17 +62,42 @@ function tally(res, label) {
 }
 
 export function setup() {
-  // Warm Cloud Run before the test starts — avoids 30s cold-start killing the first wave.
-  // setup() runs once in a single goroutine before any VUs start; we just need one 200.
+  // Warm Cloud Run before the test starts
   let warm = false;
   for (let i = 0; i < 20 && !warm; i++) {
     const r = http.get(`${BASE}/health`);
     warm = r.status === 200;
   }
   console.log(`Cloud Run warm: ${warm}`);
+
+  // Fetch all active workshop slugs dynamically
+  const res = http.get(`${BASE_USER}/workshops`, {
+    headers: h(),
+  });
+
+  let slugs = [];
+  if (res.status === 200) {
+    try {
+      const body = JSON.parse(res.body);
+      slugs = (body.data || []).map((w) => w.slug).filter(Boolean);
+    } catch {}
+  }
+
+  if (slugs.length === 0) {
+    console.warn("Could not fetch workshop slugs — falling back to env SLUG or default");
+    const fallback = __ENV.SLUG || "zero-rupee-marketing";
+    slugs = [fallback];
+  }
+
+  console.log(`Loaded ${slugs.length} workshop slug(s): ${slugs.join(", ")}`);
+  return { slugs };
 }
 
-export default function () {
+export default function (data) {
+  const slugs = data.slugs;
+  // Each VU iteration picks a random slug — spreads DB load across all workshops
+  const slug = slugs[Math.floor(Math.random() * slugs.length)];
+
   // Public endpoints — no auth, always valid
   group("public", () => {
     const rs = http.batch([
@@ -83,21 +111,21 @@ export default function () {
   // Authenticated user endpoints
   group("auth-user", () => {
     const rs = http.batch([
-      { method: "GET", url: `${BASE}/api/user/me`,                                   params: { headers: h() } },
-      { method: "GET", url: `${BASE}/api/user/notifications/unread-count`,            params: { headers: h() } },
-      { method: "GET", url: `${BASE}/api/user/dashboard/stats`,                       params: { headers: h() } },
-      { method: "GET", url: `${BASE}/api/user/dashboard/continue-learning`,           params: { headers: h() } },
-      { method: "GET", url: `${BASE}/api/user/home/hero`,                             params: { headers: h() } },
-      { method: "GET", url: `${BASE}/api/user/home/sections`,                         params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/me`,                                   params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/notifications/unread-count`,            params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/dashboard/stats`,                       params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/dashboard/continue-learning`,           params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/home/hero`,                             params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/home/sections`,                         params: { headers: h() } },
     ]);
     rs.forEach((r, i) => tally(r, `user${i}`));
   });
 
-  // Workshop detail (heaviest DB query)
+  // Workshop detail (heaviest DB query) — random slug each iteration
   group("workshop-detail", () => {
     const rs = http.batch([
-      { method: "GET", url: `${BASE}/api/user/workshops/${SLUG}/detail`,    params: { headers: h() } },
-      { method: "GET", url: `${BASE}/api/user/workshops/${SLUG}/flow`,      params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/workshops/${slug}/detail`,    params: { headers: h() } },
+      { method: "GET", url: `${BASE_USER}/workshops/${slug}/flow`,      params: { headers: h() } },
     ]);
     rs.forEach((r, i) => tally(r, `ws${i}`));
   });
