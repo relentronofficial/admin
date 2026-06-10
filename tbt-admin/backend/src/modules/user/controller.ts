@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { cacheGet, cacheSet, cacheNxSet } from '../../lib/cache.js';
+import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -97,6 +97,11 @@ function parseUserAgent(ua: string | undefined | null): {
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 export async function getMeHandler(request: FastifyRequest, reply: FastifyReply) {
+  const redis = request.server.redis ?? null;
+  const meKey = `me:${request.memberId}`;
+  const cachedMe = await cacheGet<Record<string, unknown>>(redis, meKey);
+  if (cachedMe) return ok(reply, cachedMe);
+
   const [member, allTiers, uiStrings] = await Promise.all([
     request.server.prisma.member.findUnique({
       where: { id: request.memberId },
@@ -191,7 +196,6 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     const mId = request.memberId!;
     const ip = request.ip;
     const ua = request.headers['user-agent'] as string | undefined;
-    const redis = request.server.redis ?? null;
     void (async () => {
       const trackKey = `session-tracked:${mId}:${sessionDeviceId}`;
       const shouldTrack = await cacheNxSet(redis, trackKey, 300);
@@ -218,7 +222,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     })().catch(() => {});
   }
 
-  return ok(reply, {
+  const mePayload = {
     id: member.id,
     firstName: member.firstName,
     lastName: member.lastName ?? null,
@@ -248,7 +252,9 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     sections,
     saveLabel: uiStrings?.profileSaveLabel ?? 'Save Changes',
     signOutLabel: uiStrings?.profileSignOutLabel ?? 'Sign Out',
-  });
+  };
+  void cacheSet(redis, meKey, mePayload, 60);
+  return ok(reply, mePayload);
 }
 
 export async function updateMeHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -287,6 +293,8 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
       avatarGradient: true,
     },
   });
+
+  void invalidateCache(request.server.redis ?? null, `me:${request.memberId}`);
 
   return ok(reply, {
     ...member,
@@ -705,6 +713,9 @@ async function recalculateCourseProgress(request: FastifyRequest, courseId: stri
 export async function getDashboardStatsHandler(request: FastifyRequest, reply: FastifyReply) {
   const now = new Date();
   const redis = request.server.redis ?? null;
+  const statsKey = `dash:stats:${request.memberId}`;
+  const cachedStats = await cacheGet<Record<string, unknown>>(redis, statsKey);
+  if (cachedStats) return ok(reply, cachedStats);
 
   // upcomingEvents is user-agnostic — cache it globally for 60 seconds
   const eventsKey = 'events:upcoming-count';
@@ -733,7 +744,7 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
       }),
     ]);
 
-  return ok(reply, {
+  const statsPayload = {
     totalCourses,
     completedCourses,
     inProgressCourses: totalCourses - completedCourses,
@@ -741,7 +752,9 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
     currentStreak: member?.currentStreak ?? 0,
     upcomingEvents,
     unreadNotifications,
-  });
+  };
+  void cacheSet(redis, statsKey, statsPayload, 30);
+  return ok(reply, statsPayload);
 }
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {

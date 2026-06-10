@@ -25,16 +25,22 @@ const status429 = new Counter("s429");
 const status5xx = new Counter("s5xx");
 
 export const options = {
-  stages: [
-    { duration: "5s",  target: 100 },
-    { duration: "10s", target: 300 },
-    { duration: "10s", target: 500 },   // peak
-    { duration: "15s", target: 500 },   // sustain
-    { duration: "5s",  target: 0 },
-  ],
-  // Keep graceful stop short — JWT expires 60s after get-token.mjs runs.
-  // setup() takes ~3s, leaving ~57s before expiry. 45s test + 5s stop = 50s total.
-  gracefulStop: "5s",
+  scenarios: {
+    burst: {
+      executor: "ramping-vus",
+      startVUs: 0,
+      stages: [
+        { duration: "5s",  target: 100 },
+        { duration: "10s", target: 300 },
+        { duration: "10s", target: 500 },   // peak
+        { duration: "15s", target: 500 },   // sustain
+        { duration: "5s",  target: 0 },
+      ],
+      // Keep ramp-down short — total must stay under 57s (JWT window minus setup ~3s).
+      // 45s stages + 5s gracefulRampDown = 50s total — within 60s JWT lifetime.
+      gracefulRampDown: "5s",
+    },
+  },
   thresholds: {
     burst_latency:   ["p(95)<3000", "p(99)<8000"],
     burst_errors:    ["rate<0.05"],
@@ -93,6 +99,17 @@ export function setup() {
   }
 
   console.log(`Loaded ${slugs.length} workshop slug(s): ${slugs.join(", ")}`);
+
+  // Prime in-process caches before VUs start — prevents thundering-herd on first iteration
+  http.batch([
+    { method: "GET", url: `${BASE}/api/pub/config/site` },
+    { method: "GET", url: `${BASE}/api/pub/config/nav` },
+    { method: "GET", url: `${BASE}/api/pub/config/ui-strings` },
+    { method: "GET", url: `${BASE_USER}/home/hero`,     params: { headers: h() } },
+    { method: "GET", url: `${BASE_USER}/home/sections`, params: { headers: h() } },
+  ]);
+  console.log("Cache warmed");
+
   return { slugs };
 }
 
