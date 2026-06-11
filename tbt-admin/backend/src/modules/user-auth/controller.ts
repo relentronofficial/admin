@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcrypt';
 import { generateOtp, storeOtp, verifyAndConsumeOtp } from '../../lib/otp.js';
-import { sendOtp } from '../../lib/msg91.js';
+import { sendOtpWhatsapp } from '../../lib/whatsapp.js';
 import {
   setAuthCookies,
   clearAuthCookies,
@@ -58,7 +58,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   if (!m.passwordHash) {
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
-    const sent = await sendOtp(m.phone, otp);
+    const sent = await sendOtpWhatsapp(m.phone, otp);
     fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated (first login)');
     return reply.send({ success: true, data: { step: 'first_login', phone: m.phone, otp: sent ? undefined : otp } });
   }
@@ -75,7 +75,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
 
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
-  const sent = await sendOtp(m.phone, otp);
+  const sent = await sendOtpWhatsapp(m.phone, otp);
   fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated');
   return reply.send({ success: true, data: { step: 'otp_required', phone: m.phone, otp: sent ? undefined : otp } });
 }
@@ -159,8 +159,8 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
 
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), (member as any).phone, otp);
-  const sent = await sendOtp((member as any).phone, otp);
-  if (!sent) fastify.log.warn({ phone }, 'MSG91 resend failed');
+  const sent = await sendOtpWhatsapp((member as any).phone, otp);
+  if (!sent) fastify.log.warn({ phone }, 'WhatsApp OTP resend failed');
 
   return reply.send({ success: true, data: null });
 }

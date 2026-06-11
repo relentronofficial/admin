@@ -45,9 +45,16 @@ const envSchema = z.object({
   USER_WEB_URL: z.string().url().default('http://localhost:3001'),
   ADMIN_WEB_URL: z.string().url().default('http://localhost:3000'),
   JWT_ACCESS_SECRET: z.string().min(16),
-  MSG91_AUTH_KEY: z.string(),
-  MSG91_SENDER_ID: z.string(),
-  MSG91_TEMPLATE_ID: z.string(),
+  MSG91_AUTH_KEY: z.string().optional().or(z.literal('')),
+  MSG91_SENDER_ID: z.string().optional().or(z.literal('')),
+  MSG91_TEMPLATE_ID: z.string().optional().or(z.literal('')),
+  // WhatsApp Cloud API (via BSP)
+  WABA_ACCESS_TOKEN: z.string().optional().or(z.literal('')),
+  WABA_PHONE_NUMBER_ID: z.string().optional().or(z.literal('')),
+  WABA_FROM_NUMBER: z.string().optional().or(z.literal('')),
+  WABA_TEMPLATE_NAME: z.string().optional().or(z.literal('')),
+  WABA_TEMPLATE_LANGUAGE: z.string().default('en'),
+  WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
 });
 
 const _env = envSchema.safeParse(process.env);

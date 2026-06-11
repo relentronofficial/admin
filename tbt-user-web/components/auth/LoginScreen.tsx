@@ -38,7 +38,7 @@ export function LoginScreen() {
 
   // Check if already logged in (silent — 401 is expected when not authenticated)
   useEffect(() => {
-    apiClient.get("/api/user-auth/me")
+    apiClient.get("/api/user-auth/me", { _retry: true } as any)
       .then(() => router.replace(redirectUrl))
       .catch(() => {}); // not logged in — show login form
   // eslint-disable-next-line react-hooks/exhaustive-deps
