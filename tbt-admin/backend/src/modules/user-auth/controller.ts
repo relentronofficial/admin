@@ -75,11 +75,11 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
 
   // Issue tokens directly — OTP step skipped until DLT SMS is approved
   await issueTokens(fastify, reply, m.id);
-  const member = await fastify.prisma.member.findUnique({
+  const profile = await fastify.prisma.member.findUnique({
     where: { id: m.id },
     select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true, avatarGradient: true } as any,
   });
-  return reply.send({ success: true, data: { step: 'done', member } });
+  return reply.send({ success: true, data: { step: 'done', member: profile } });
 }
 
 // POST /api/user-auth/verify-otp
