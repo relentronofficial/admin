@@ -33,6 +33,13 @@ async function issueTokens(fastify: FastifyInstance, reply: any, memberId: strin
   setAuthCookies(reply, accessToken, refreshToken);
 }
 
+function normalizePhoneForLookup(raw: string): string[] {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return [digits, `91${digits}`, `+91${digits}`];
+  if (digits.length === 12 && digits.startsWith('91')) return [digits, `+${digits}`, digits.slice(2)];
+  return [raw.trim(), digits];
+}
+
 // POST /api/user-auth/login
 export async function login(fastify: FastifyInstance, request: any, reply: any) {
   const { phone, password } = request.body as { phone: string; password?: string };
@@ -40,7 +47,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: phone.trim() } as any,
+    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
     select: { id: true, phone: true, passwordHash: true, status: true } as any,
   });
 
@@ -95,7 +102,7 @@ export async function verifyOtp(fastify: FastifyInstance, request: any, reply: a
   if (result === 'max_attempts') return reply.status(429).send({ success: false, data: null, error: 'Too many failed attempts. Please request a new OTP.' });
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: phone.trim() } as any,
+    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
     select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any,
   });
 
@@ -124,7 +131,7 @@ export async function setPassword(fastify: FastifyInstance, request: any, reply:
   const passwordHash = await bcrypt.hash(password, 12);
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: phone.trim() } as any,
+    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
     select: { id: true } as any,
   });
 
@@ -151,7 +158,7 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
   if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: phone.trim() } as any,
+    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
     select: { id: true, phone: true } as any,
   });
 
