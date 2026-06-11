@@ -64,8 +64,9 @@ async function bootstrap() {
     await fastify.register(supabasePlugin);
     await fastify.register(socketPlugin);
 
+    const allowedOrigins = new Set([env.USER_WEB_URL, env.ADMIN_WEB_URL]);
     await fastify.register(cors, {
-      origin: [env.USER_WEB_URL, env.ADMIN_WEB_URL],
+      origin: (origin, cb) => cb(null, !origin || allowedOrigins.has(origin)),
       credentials: true,
     });
     await fastify.register(helmet);
