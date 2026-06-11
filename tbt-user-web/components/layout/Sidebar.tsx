@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import { useUIStore } from "@/lib/stores/useUIStore";
@@ -36,26 +35,9 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <Link href={nav[0]?.href ?? "/tbt"} className="flex items-center gap-2.5">
-            {logoUrl ? (
-              <Image
-                src={logoUrl}
-                alt={siteName}
-                width={32}
-                height={32}
-                className="rounded-lg object-contain"
-              />
-            ) : (
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-sm"
-                style={{ background: "var(--color-accent)" }}
-              >
-                {siteName[0]}
-              </div>
-            )}
-            <span className="font-bold text-sm tracking-tight text-foreground leading-tight">
-              {siteName}
-            </span>
+          <Link href={nav[0]?.href ?? "/tbt"}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={logoUrl || "/tbt_logo.png"} alt={siteName} className="h-8 w-auto object-contain" />
           </Link>
           <button
             className="lg:hidden p-1.5 rounded-md hover:bg-accent"

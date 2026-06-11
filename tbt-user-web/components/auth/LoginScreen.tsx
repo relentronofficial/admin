@@ -274,19 +274,8 @@ export function LoginScreen() {
                 className="flex flex-col items-center mb-8"
               >
                 {/* Logo */}
-                <div
-                  className="flex items-center justify-center w-[68px] h-[68px] rounded-2xl mb-4"
-                  style={{
-                    background:
-                      "linear-gradient(145deg, #dc2626 0%, #991b1b 60%, #7f1d1d 100%)",
-                    boxShadow:
-                      "0 8px 32px rgba(220,38,38,0.45), 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)",
-                  }}
-                >
-                  <span className="text-white font-black text-[22px] tracking-tighter">
-                    TBT
-                  </span>
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-14 w-auto object-contain mb-4" />
 
                 <h1 className="text-[26px] font-bold text-white tracking-tight leading-tight">
                   {verifying ? "Verify Identity" : "Welcome Back"}

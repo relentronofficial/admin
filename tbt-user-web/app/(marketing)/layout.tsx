@@ -6,9 +6,9 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
       {/* Minimal public nav */}
       <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 h-full flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-black text-sm">T</div>
-            <span className="font-bold text-sm">Tamil Business Tribe</span>
+          <Link href="/">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-8 w-auto object-contain" />
           </Link>
           <div className="flex items-center gap-4">
             <Link href="/sign-in" className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium">

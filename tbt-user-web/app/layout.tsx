@@ -20,6 +20,11 @@ export const metadata: Metadata = {
     template: "%s | TBT",
   },
   description: "Your learning platform.",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
 };
 
 export default function RootLayout({

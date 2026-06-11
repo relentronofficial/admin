@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bell, MessageSquare, Menu, X,
@@ -338,19 +337,9 @@ export function Navbar() {
           <Link
             href={homeHref}
             onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-2.5"
           >
-            {logoUrl ? (
-              <Image src={logoUrl} alt={siteName} width={28} height={28} className="rounded-lg object-contain" />
-            ) : (
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-black text-xs"
-                style={{ background: "#dc2626" }}
-              >
-                {siteName[0]}
-              </div>
-            )}
-            <span className="font-bold text-sm text-white">{siteName}</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={logoUrl || "/tbt_logo.png"} alt={siteName} className="h-7 w-auto object-contain" />
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -414,18 +403,9 @@ export function Navbar() {
         </button>
 
         {/* Logo */}
-        <Link href={homeHref} className="flex items-center gap-2.5 flex-shrink-0">
-          {logoUrl ? (
-            <Image src={logoUrl} alt={siteName} width={26} height={26} className="rounded-lg object-contain" />
-          ) : (
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-black text-xs flex-shrink-0"
-              style={{ background: "#dc2626" }}
-            >
-              {siteName[0]}
-            </div>
-          )}
-          <span className="font-bold text-sm text-white">{siteName}</span>
+        <Link href={homeHref} className="flex-shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logoUrl || "/tbt_logo.png"} alt={siteName} className="h-7 w-auto object-contain" />
         </Link>
 
         {/* Visual separator (desktop) */}
