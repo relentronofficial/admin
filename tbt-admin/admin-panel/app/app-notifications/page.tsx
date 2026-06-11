@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { Trash2, Bell, X, Loader2, AlertCircle, Users, Send, BarChart2, Search, CheckCircle2, Image as ImageIcon, Film, Upload } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -234,8 +234,8 @@ export default function AppNotificationsPage() {
               </thead>
               <tbody className="divide-y divide-[#222]">
                 {notifications.map((notif: any) => (
-                  <>
-                    <tr key={notif.id} className="hover:bg-white/[0.02] transition-colors">
+                  <React.Fragment key={notif.id}>
+                    <tr className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-5 py-4">
                         <p className="font-bold text-[#f0f0f0] text-sm">{notif.title}</p>
                         <p className="text-[11px] text-[#606060] mt-0.5 truncate max-w-[260px]">{notif.message}</p>
@@ -283,13 +283,13 @@ export default function AppNotificationsPage() {
                       </td>
                     </tr>
                     {viewingStatsId === notif.id && (
-                      <tr key={`${notif.id}-stats`} className="bg-[#111]">
+                      <tr className="bg-[#111]">
                         <td colSpan={7} className="px-5 py-0">
                           <NotifStats notifId={notif.id} />
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
