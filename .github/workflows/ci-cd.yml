@@ -101,6 +101,6 @@ jobs:
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
+          vercel-project-id: prj_XRo2VGAACpKxqYJ59a2SBH14Tomw
           vercel-args: '--prod'
           working-directory: tbt-user-web
