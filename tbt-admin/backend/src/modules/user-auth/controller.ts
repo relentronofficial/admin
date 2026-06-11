@@ -59,9 +59,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
     const sent = await sendOtp(m.phone, otp);
-    if (!sent) {
-      fastify.log.warn({ phone: m.phone }, 'MSG91 OTP send failed (first login)');
-    }
+    fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated (first login)');
     return reply.send({ success: true, data: { step: 'first_login', phone: m.phone } });
   }
 
@@ -78,9 +76,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
   const sent = await sendOtp(m.phone, otp);
-  if (!sent) {
-    fastify.log.warn({ phone: m.phone }, 'MSG91 OTP send failed');
-  }
+  fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated');
   return reply.send({ success: true, data: { step: 'otp_required', phone: m.phone } });
 }
 
