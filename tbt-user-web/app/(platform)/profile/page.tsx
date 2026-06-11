@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useClerk } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import apiClient from "@/lib/api/client";
 import {
   CheckCircle2, Lock, Pencil, X, Save, Monitor, Smartphone, Tablet, Wifi,
   Camera, Loader2, Trophy, Flame, Heart, LogOut, Bell, Mail, MessageSquare,
@@ -460,7 +462,8 @@ function ProfileSkeleton() {
 
 export default function ProfilePage() {
   const { data: profile, isLoading } = useMe();
-  const { signOut } = useClerk();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const getPresign = useGetAvatarPresignUrl();
   const updateAvatar = useUpdateAvatar();
@@ -549,7 +552,11 @@ export default function ProfilePage() {
       {/* Sign out */}
       <div className="pb-4">
         <button
-          onClick={() => signOut({ redirectUrl: "/login" })}
+          onClick={async () => {
+            try { await apiClient.post("/api/user-auth/logout"); } catch {}
+            queryClient.clear();
+            router.replace("/login");
+          }}
           className="w-full py-3 rounded-xl border text-sm font-semibold transition-colors"
           style={{ borderColor: "var(--color-alert)", color: "var(--color-alert)" }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "color-mix(in srgb, var(--color-alert) 10%, transparent)"; }}
