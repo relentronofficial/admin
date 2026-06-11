@@ -36,9 +36,9 @@ export function LoginScreen() {
   const [focused, setFocused] = useState<FocusedField>(null);
   const [resolvedPhone, setResolvedPhone] = useState(""); // normalized phone from backend
 
-  // Check if already logged in
+  // Check if already logged in (silent — 401 is expected when not authenticated)
   useEffect(() => {
-    apiClient.get("/api/user/me")
+    apiClient.get("/api/user-auth/me")
       .then(() => router.replace(redirectUrl))
       .catch(() => {}); // not logged in — show login form
   // eslint-disable-next-line react-hooks/exhaustive-deps
