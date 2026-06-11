@@ -60,7 +60,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     await storeOtp(getRedis(fastify), m.phone, otp);
     const sent = await sendOtp(m.phone, otp);
     fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated (first login)');
-    return reply.send({ success: true, data: { step: 'first_login', phone: m.phone } });
+    return reply.send({ success: true, data: { step: 'first_login', phone: m.phone, otp: sent ? undefined : otp } });
   }
 
   // Returning user — password required
@@ -73,13 +73,11 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     return reply.status(401).send({ success: false, data: null, error: 'Incorrect password' });
   }
 
-  // Issue tokens directly — OTP step skipped until DLT SMS is approved
-  await issueTokens(fastify, reply, m.id);
-  const profile = await fastify.prisma.member.findUnique({
-    where: { id: m.id },
-    select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true, avatarGradient: true } as any,
-  });
-  return reply.send({ success: true, data: { step: 'done', member: profile } });
+  const otp = generateOtp();
+  await storeOtp(getRedis(fastify), m.phone, otp);
+  const sent = await sendOtp(m.phone, otp);
+  fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated');
+  return reply.send({ success: true, data: { step: 'otp_required', phone: m.phone, otp: sent ? undefined : otp } });
 }
 
 // POST /api/user-auth/verify-otp

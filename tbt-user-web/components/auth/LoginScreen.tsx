@@ -68,12 +68,9 @@ export function LoginScreen() {
         password: password || undefined,
       });
 
-      if (res.data?.step === "done") {
-        router.replace(redirectUrl);
-        return;
-      }
-
       setResolvedPhone(res.data?.phone ?? trimmedPhone);
+
+      if (res.data?.otp) setOtp(res.data.otp);
 
       if (res.data?.step === "first_login") {
         setStep("first_login");
