@@ -260,6 +260,7 @@ model Member {
   notificationPrefs     Json?              @map("notification_prefs")
   lastActiveAt          DateTime?          @map("last_active_at") @db.Timestamptz(6)
   onboardingCompleted   Boolean            @default(false) @map("onboarding_completed")
+  passwordHash          String?            @map("password_hash")
 
   createdBy String?   @map("created_by") @db.Uuid
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

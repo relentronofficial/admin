@@ -10,6 +10,17 @@ declare module 'fastify' {
   }
 }
 
+function parseCookies(header?: string): Record<string, string> {
+  if (!header) return {};
+  return Object.fromEntries(
+    header.split(';').map((c) => {
+      const idx = c.indexOf('=');
+      if (idx === -1) return [c.trim(), ''];
+      return [c.slice(0, idx).trim(), c.slice(idx + 1).trim()];
+    }),
+  );
+}
+
 async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) {
   const io = new Server(fastify.server, {
     cors: {
@@ -20,44 +31,50 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
 
   // ── Handshake auth ─────────────────────────────────────────────────────────
   io.use(async (socket, next) => {
-    const token = socket.handshake.auth?.token as string | undefined;
-    if (!token) return next(new Error('Unauthorized'));
+    // Member auth: JWT from HttpOnly cookie
+    const cookies = parseCookies(socket.handshake.headers.cookie as string | undefined);
+    const jwtToken = cookies['tbt_access'];
 
-    try {
-      const verified = await verifyToken(token, {
-        secretKey: env.CLERK_SECRET_KEY,
-        jwtKey: env.CLERK_JWT_PUBLIC_KEY || undefined,
-      });
-
-      if (!verified?.sub) return next(new Error('Unauthorized'));
-
-      const member = await fastify.prisma.member.findFirst({
-        where: { clerkId: verified.sub } as any,
-        select: { id: true },
-      });
-
-      if (member) {
-        socket.data.memberId = member.id;
-        socket.data.role = 'member';
-        return next();
-      }
-
-      const admin = await fastify.prisma.admin.findFirst({
-        where: { clerkId: verified.sub } as any,
-        select: { id: true },
-      });
-
-      if (admin) {
-        socket.data.adminId = admin.id;
-        socket.data.role = 'admin';
-        return next();
-      }
-
-      return next(new Error('Unauthorized: No account found'));
-    } catch (err: any) {
-      fastify.log.error({ message: err.message }, 'Socket auth failed');
-      return next(new Error('Unauthorized'));
+    if (jwtToken) {
+      try {
+        const decoded = await (fastify as any).jwt.verify(jwtToken) as { memberId: string };
+        if (decoded?.memberId) {
+          const member = await fastify.prisma.member.findUnique({
+            where: { id: decoded.memberId },
+            select: { id: true },
+          });
+          if (member) {
+            socket.data.memberId = member.id;
+            socket.data.role = 'member';
+            return next();
+          }
+        }
+      } catch { /* fall through to Clerk auth */ }
     }
+
+    // Admin auth: Clerk token from auth.token
+    const clerkToken = socket.handshake.auth?.token as string | undefined;
+    if (clerkToken) {
+      try {
+        const verified = await verifyToken(clerkToken, {
+          secretKey: env.CLERK_SECRET_KEY,
+          jwtKey: env.CLERK_JWT_PUBLIC_KEY || undefined,
+        });
+        if (verified?.sub) {
+          const admin = await fastify.prisma.admin.findFirst({
+            where: { clerkId: verified.sub } as any,
+            select: { id: true },
+          });
+          if (admin) {
+            socket.data.adminId = admin.id;
+            socket.data.role = 'admin';
+            return next();
+          }
+        }
+      } catch { /* fall through */ }
+    }
+
+    return next(new Error('Unauthorized'));
   });
 
   // ── Connection lifecycle ───────────────────────────────────────────────────
@@ -71,13 +88,8 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
       fastify.log.info(`Admin ${socket.data.adminId} connected (${socket.id})`);
     }
 
-    socket.on('join:workshop', (slug: string) => {
-      socket.join(`workshop:${slug}`);
-    });
-
-    socket.on('leave:workshop', (slug: string) => {
-      socket.leave(`workshop:${slug}`);
-    });
+    socket.on('join:workshop', (slug: string) => socket.join(`workshop:${slug}`));
+    socket.on('leave:workshop', (slug: string) => socket.leave(`workshop:${slug}`));
 
     socket.on('join:live', (webinarId: string) => {
       socket.join(`live:${webinarId}`);

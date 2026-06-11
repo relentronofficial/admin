@@ -2,18 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSignIn, useClerk, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Eye,
-  EyeOff,
-  User,
-  Lock,
-  ArrowRight,
-  Loader2,
-} from "lucide-react";
-import Link from "next/link";
+import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone } from "lucide-react";
 import Image from "next/image";
+import apiClient from "@/lib/api/client";
 
 const BG_IMAGES = [
   "/auth/backgrounds/bg1.png",
@@ -23,32 +15,34 @@ const BG_IMAGES = [
 
 const SLIDE_MS = 6000;
 
-type FocusedField = "identifier" | "password" | "code" | null;
+type Step = "credentials" | "otp" | "first_login";
+type FocusedField = "phone" | "password" | "otp" | "newPassword" | null;
 
 export function LoginScreen() {
-  const { isLoaded, signIn, setActive } = useSignIn();
-  const { isSignedIn, isLoaded: authLoaded } = useAuth();
-  const clerk = useClerk();
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect_url") || "/tbt";
 
   const [currentBg, setCurrentBg] = useState(0);
-  const [identifier, setIdentifier] = useState("");
+  const [step, setStep] = useState<Step>("credentials");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [verifying, setVerifying] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState<FocusedField>(null);
+  const [resolvedPhone, setResolvedPhone] = useState(""); // normalized phone from backend
 
-  // If already signed in, push to redirectUrl immediately
+  // Check if already logged in
   useEffect(() => {
-    if (authLoaded && isSignedIn && !submitting && !verifying) {
-      router.replace(redirectUrl);
-    }
-  }, [authLoaded, isSignedIn, router, redirectUrl, submitting, verifying]);
+    apiClient.get("/api/user/me")
+      .then(() => router.replace(redirectUrl))
+      .catch(() => {}); // not logged in — show login form
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cinematic background rotation
   useEffect(() => {
@@ -58,137 +52,88 @@ export function LoginScreen() {
     return () => clearInterval(t);
   }, []);
 
-  const handleVerification = useCallback(async (e: React.FormEvent) => {
+  const handleLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoaded || !signIn || submitting) return;
+    if (submitting) return;
+
+    const trimmedPhone = phone.trim();
+    if (!trimmedPhone) { setError("Please enter your phone number"); return; }
 
     setSubmitting(true);
     setError("");
 
     try {
-      let result;
-      // Handle either first or second factor verification flows
-      if (signIn.status === "needs_second_factor") {
-        result = await signIn.attemptSecondFactor({
-          strategy: "email_code",
-          code,
-        });
-      } else {
-        result = await signIn.attemptFirstFactor({
-          strategy: "email_code",
-          code,
-        });
-      }
+      const res: any = await apiClient.post("/api/user-auth/login", {
+        phone: trimmedPhone,
+        password: password || undefined,
+      });
 
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
-        // Give cookies a moment to settle for middleware
-        setTimeout(() => router.replace(redirectUrl), 100);
+      setResolvedPhone(res.data?.phone ?? trimmedPhone);
+
+      if (res.data?.step === "first_login") {
+        setStep("first_login");
       } else {
-        console.error("Incomplete sign in status:", result.status);
-        setError("Verification failed. Please try again.");
+        setStep("otp");
       }
-    } catch (err: unknown) {
-      const clerkErr = err as { errors?: { longMessage?: string; message?: string }[] };
-      setError(
-        clerkErr.errors?.[0]?.longMessage ||
-        clerkErr.errors?.[0]?.message ||
-        "Verification failed. Please check the code."
-      );
+    } catch (err: any) {
+      setError(err.message || "Login failed. Please check your credentials.");
     } finally {
-      setTimeout(() => setSubmitting(false), 1000);
+      setSubmitting(false);
     }
-  }, [isLoaded, signIn, code, setActive, router, redirectUrl, submitting]);
+  }, [phone, password, submitting]);
 
-  const attemptSignIn = useCallback(async () => {
-    if (!signIn) return;
-    console.log("Starting login for:", identifier);
-    const result = await signIn.create({ identifier, password });
-    console.log("Clerk status:", result.status);
+  const handleVerifyOtp = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
 
-    if (result.status === "complete") {
-      console.log("Branch: complete");
-      if (setActive) {
-        await setActive({ session: result.createdSessionId });
-        // Give cookies a moment to settle for middleware
-        setTimeout(() => router.replace(redirectUrl), 100);
-      }
-    } else if (result.status === "needs_first_factor") {
-      console.log("Branch: needs_first_factor");
-      // Start email code verification
-      const factor = result.supportedFirstFactors?.find(f => f.strategy === "email_code") as { emailAddressId: string } | undefined;
-      if (factor) {
-        console.log("Preparing email_code first factor");
-        await signIn.prepareFirstFactor({
-          strategy: "email_code",
-          emailAddressId: factor.emailAddressId,
-        });
-        setVerifying(true);
-      } else {
-        console.log("Error: email_code factor not found");
-        setError("Email verification not available for this account.");
-      }
-    } else if (result.status === "needs_second_factor") {
-      console.log("Branch: needs_second_factor");
-      // Start second factor email code verification
-      const factor = result.supportedSecondFactors?.find(f => f.strategy === "email_code");
-      if (factor) {
-        console.log("Preparing email_code second factor");
-        await signIn.prepareSecondFactor({
-          strategy: "email_code",
-        });
-        setVerifying(true);
-      } else {
-        console.log("Error: email_code second factor strategy not found");
-        setError("Email MFA verification not available for this account.");
-      }
-    } else {
-      console.log("Branch: error (unknown status)", result.status);
-      setError(`Additional verification required (${result.status}). Please use the standard sign-in flow.`);
+    if (!otp.trim()) { setError("Please enter the OTP"); return; }
+
+    setSubmitting(true);
+    setError("");
+
+    try {
+      await apiClient.post("/api/user-auth/verify-otp", {
+        phone: resolvedPhone,
+        otp: otp.trim(),
+      });
+      router.replace(redirectUrl);
+    } catch (err: any) {
+      setError(err.message || "OTP verification failed. Please try again.");
+      setSubmitting(false);
     }
-  }, [signIn, setActive, identifier, password, router, redirectUrl]);
+  }, [otp, resolvedPhone, redirectUrl, router, submitting]);
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      if (!isLoaded || submitting) return;
+  const handleSetPassword = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
 
-      setSubmitting(true);
-      setError("");
+    if (!otp.trim()) { setError("Please enter the OTP sent to your phone"); return; }
+    if (!newPassword || newPassword.length < 6) { setError("Password must be at least 6 characters"); return; }
 
-      try {
-        await attemptSignIn();
-      } catch (err: unknown) {
-        const clerkErr = err as { errors?: { code?: string; longMessage?: string; message?: string }[] };
-        const code = clerkErr.errors?.[0]?.code;
+    setSubmitting(true);
+    setError("");
 
-        if (code === "session_exists" || code === "identifier_already_signed_in") {
-          try {
-            await clerk.signOut({ redirectUrl: window.location.href });
-            await new Promise(r => setTimeout(r, 500));
-            await attemptSignIn();
-            return;
-          } catch (retryErr: unknown) {
-            const retryClerkErr = retryErr as { errors?: { longMessage?: string; message?: string }[] };
-            setError(
-              retryClerkErr.errors?.[0]?.longMessage ||
-              retryClerkErr.errors?.[0]?.message ||
-              "Login failed. Please check your credentials."
-            );
-          }
-        } else {
-          setError(
-            clerkErr.errors?.[0]?.longMessage ||
-            clerkErr.errors?.[0]?.message ||
-            "Login failed. Please check your credentials."
-          );
-        }
-      } finally {
-        setTimeout(() => setSubmitting(false), 1000);
-      }
-    },
-    [isLoaded, submitting, attemptSignIn, clerk]
-  );
+    try {
+      await apiClient.post("/api/user-auth/set-password", {
+        phone: resolvedPhone,
+        otp: otp.trim(),
+        password: newPassword,
+      });
+      router.replace(redirectUrl);
+    } catch (err: any) {
+      setError(err.message || "Failed. Please try again.");
+      setSubmitting(false);
+    }
+  }, [otp, newPassword, resolvedPhone, redirectUrl, router, submitting]);
+
+  const handleResendOtp = useCallback(async () => {
+    setError("");
+    try {
+      await apiClient.post("/api/user-auth/resend-otp", { phone: resolvedPhone });
+    } catch (err: any) {
+      setError(err.message || "Failed to resend OTP");
+    }
+  }, [resolvedPhone]);
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black">
@@ -202,7 +147,6 @@ export function LoginScreen() {
           exit={{ opacity: 0 }}
           transition={{ duration: 1.8, ease: "easeInOut" }}
         >
-          {/* Ken Burns zoom */}
           <motion.div
             className="absolute inset-0"
             initial={{ scale: 1.04 }}
@@ -221,16 +165,11 @@ export function LoginScreen() {
         </motion.div>
       </AnimatePresence>
 
-      {/* Layered overlays for depth */}
       <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/70 via-black/30 to-black/80" />
       <div className="absolute inset-0 z-10 bg-gradient-to-r from-black/50 via-transparent to-black/50" />
-      {/* Red tint vignette */}
       <div
         className="absolute inset-0 z-10 opacity-20"
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 40%, rgba(180,0,0,0.4) 100%)",
-        }}
+        style={{ background: "radial-gradient(ellipse at center, transparent 40%, rgba(180,0,0,0.4) 100%)" }}
       />
 
       {/* ── Main Content ── */}
@@ -241,7 +180,6 @@ export function LoginScreen() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
           className="w-full max-w-[420px]"
         >
-          {/* ── Glass Card ── */}
           <div
             className="relative rounded-2xl overflow-hidden"
             style={{
@@ -249,43 +187,38 @@ export function LoginScreen() {
               backdropFilter: "blur(48px) saturate(180%)",
               WebkitBackdropFilter: "blur(48px) saturate(180%)",
               border: "1px solid rgba(255,255,255,0.07)",
-              boxShadow:
-                "0 0 0 1px rgba(255,255,255,0.04), 0 40px 80px rgba(0,0,0,0.7), 0 16px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.09)",
+              boxShadow: "0 0 0 1px rgba(255,255,255,0.04), 0 40px 80px rgba(0,0,0,0.7), 0 16px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.09)",
             }}
           >
-            {/* Top gradient accent line */}
             <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-red-500/60 to-transparent" />
-
-            {/* Subtle inner glow */}
             <div
               className="absolute top-0 left-0 right-0 h-40 pointer-events-none"
-              style={{
-                background:
-                  "radial-gradient(ellipse at 50% -20%, rgba(220,38,38,0.07) 0%, transparent 70%)",
-              }}
+              style={{ background: "radial-gradient(ellipse at 50% -20%, rgba(220,38,38,0.07) 0%, transparent 70%)" }}
             />
 
             <div className="relative px-8 pt-10 pb-9">
-              {/* ── Brand Header ── */}
+              {/* Brand Header */}
               <motion.div
                 initial={{ opacity: 0, y: -12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.35, duration: 0.6 }}
                 className="flex flex-col items-center mb-8"
               >
-                {/* Logo */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-14 w-auto object-contain mb-4" />
-
                 <h1 className="text-[26px] font-bold text-white tracking-tight leading-tight">
-                  {verifying ? "Verify Identity" : "Welcome Back"}
+                  {step === "credentials" ? "Welcome Back" : step === "first_login" ? "Set Your Password" : "Verify Identity"}
                 </h1>
                 <p className="text-white/35 text-[13px] mt-1 tracking-wide">
-                  {verifying ? "Enter the code sent to your email" : "Sign in to continue your journey"}
+                  {step === "credentials"
+                    ? "Sign in to continue your journey"
+                    : step === "first_login"
+                    ? `OTP sent to ${resolvedPhone}`
+                    : `Enter the OTP sent to ${resolvedPhone}`}
                 </p>
               </motion.div>
 
-              {/* ── Error Banner ── */}
+              {/* Error Banner */}
               <AnimatePresence>
                 {error && (
                   <motion.div
@@ -297,10 +230,7 @@ export function LoginScreen() {
                   >
                     <div
                       className="px-4 py-3 rounded-xl text-sm text-red-300"
-                      style={{
-                        background: "rgba(220,38,38,0.1)",
-                        border: "1px solid rgba(220,38,38,0.25)",
-                      }}
+                      style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.25)" }}
                     >
                       {error}
                     </div>
@@ -308,250 +238,154 @@ export function LoginScreen() {
                 )}
               </AnimatePresence>
 
-              {/* ── Form ── */}
-              {!verifying ? (
-                <form onSubmit={handleSubmit} className="space-y-3.5">
-                  {/* User ID */}
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.45, duration: 0.55 }}
-                  >
-                    <InputField
-                      type="text"
-                      value={identifier}
-                      onChange={setIdentifier}
-                      placeholder="User ID or Email"
-                      icon={<User className="w-[15px] h-[15px]" />}
-                      focused={focused === "identifier"}
-                      onFocus={() => setFocused("identifier")}
-                      onBlur={() => setFocused(null)}
-                      autoComplete="username"
-                      required
-                    />
+              {/* ── Step: credentials ── */}
+              {step === "credentials" && (
+                <form onSubmit={handleLogin} className="space-y-3.5">
+                  <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.45, duration: 0.55 }}>
+                    <div className="flex items-center rounded-xl overflow-hidden"
+                      style={{
+                        background: focused === "phone" ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+                        border: focused === "phone" ? "1px solid rgba(220,38,38,0.55)" : "1px solid rgba(255,255,255,0.07)",
+                        boxShadow: focused === "phone" ? "0 0 0 3px rgba(220,38,38,0.12)" : undefined,
+                      }}
+                    >
+                      <span className="pl-4 flex-shrink-0 text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>+91</span>
+                      <Phone className="ml-2 flex-shrink-0 w-[15px] h-[15px]" style={{ color: focused === "phone" ? "#dc2626" : "rgba(255,255,255,0.28)" }} />
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        onFocus={() => setFocused("phone")}
+                        onBlur={() => setFocused(null)}
+                        placeholder="10-digit mobile number"
+                        autoComplete="tel"
+                        required
+                        className="flex-1 bg-transparent pl-2 pr-4 py-[13px] text-white text-[14px] placeholder-white/20 outline-none"
+                        style={{ caretColor: "#dc2626" }}
+                      />
+                    </div>
                   </motion.div>
 
-                  {/* Password */}
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.52, duration: 0.55 }}
-                  >
+                  <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.52, duration: 0.55 }}>
                     <InputField
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={setPassword}
-                      placeholder="Password"
+                      placeholder="Password (leave blank if first login)"
                       icon={<Lock className="w-[15px] h-[15px]" />}
                       focused={focused === "password"}
                       onFocus={() => setFocused("password")}
                       onBlur={() => setFocused(null)}
                       autoComplete="current-password"
-                      required
                       suffix={
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((v) => !v)}
-                          className="text-white/30 hover:text-white/60 transition-colors duration-200 flex-shrink-0"
-                          aria-label={showPassword ? "Hide password" : "Show password"}
-                        >
-                          {showPassword ? (
-                            <EyeOff className="w-[15px] h-[15px]" />
-                          ) : (
-                            <Eye className="w-[15px] h-[15px]" />
-                          )}
+                        <button type="button" onClick={() => setShowPassword((v) => !v)}
+                          className="text-white/30 hover:text-white/60 transition-colors duration-200 flex-shrink-0">
+                          {showPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
                         </button>
                       }
                     />
                   </motion.div>
 
-                  {/* Forgot password */}
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.6, duration: 0.5 }}
-                    className="flex justify-end pt-0.5"
-                  >
-                    <Link
-                      href="/sign-in"
-                      className="text-[12px] text-white/35 hover:text-red-400 transition-colors duration-200"
-                    >
-                      Forgot Password?
-                    </Link>
+                  <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65, duration: 0.55 }} className="pt-1">
+                    <SubmitButton submitting={submitting} label="Continue" loadingLabel="Checking..." />
                   </motion.div>
-
-                  {/* Login Button */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.65, duration: 0.55 }}
-                    className="pt-1"
-                  >
-                    <motion.button
-                      type="submit"
-                      disabled={submitting || !isLoaded}
-                      whileHover={
-                        !submitting ? { scale: 1.015, y: -1 } : undefined
-                      }
-                      whileTap={!submitting ? { scale: 0.975 } : undefined}
-                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                      className="relative w-full py-[14px] rounded-xl font-semibold text-white text-[14px] tracking-wide overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%)",
-                        boxShadow:
-                          "0 4px 24px rgba(220,38,38,0.5), 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
-                      }}
-                    >
-                      {/* Shine overlay on hover */}
-                      <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/8 to-white/0 opacity-0 hover:opacity-100 transition-opacity duration-300" />
-
-                      <span className="relative flex items-center justify-center gap-2">
-                        {submitting ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Signing in...
-                          </>
-                        ) : (
-                          <>
-                            Sign In
-                            <ArrowRight className="w-4 h-4" />
-                          </>
-                        )}
-                      </span>
-                    </motion.button>
-                  </motion.div>
-                </form>
-              ) : (
-                <form onSubmit={handleVerification} className="space-y-4">
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1, duration: 0.55 }}
-                  >
-                    <InputField
-                      type="text"
-                      value={code}
-                      onChange={setCode}
-                      placeholder="Enter 6-digit code"
-                      icon={<Lock className="w-[15px] h-[15px]" />}
-                      focused={focused === "code"}
-                      onFocus={() => setFocused("code")}
-                      onBlur={() => setFocused(null)}
-                      autoComplete="one-time-code"
-                      required
-                    />
-                  </motion.div>
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2, duration: 0.55 }}
-                  >
-                    <motion.button
-                      type="submit"
-                      disabled={submitting || !isLoaded}
-                      whileHover={!submitting ? { scale: 1.015, y: -1 } : undefined}
-                      whileTap={!submitting ? { scale: 0.975 } : undefined}
-                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                      className="relative w-full py-[14px] rounded-xl font-semibold text-white text-[14px] tracking-wide overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{
-                        background: "linear-gradient(135deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%)",
-                        boxShadow: "0 4px 24px rgba(220,38,38,0.5), 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
-                      }}
-                    >
-                      <span className="relative flex items-center justify-center gap-2">
-                        {submitting ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Verifying...
-                          </>
-                        ) : (
-                          <>
-                            Verify Code
-                            <ArrowRight className="w-4 h-4" />
-                          </>
-                        )}
-                      </span>
-                    </motion.button>
-                  </motion.div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVerifying(false);
-                      setCode("");
-                      setError("");
-                    }}
-                    className="w-full text-center text-[12px] text-white/35 hover:text-white/60 transition-colors"
-                  >
-                    Back to login
-                  </button>
                 </form>
               )}
 
-              {/* ── Divider ── */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.75, duration: 0.5 }}
-                className="flex items-center gap-3 mt-6"
-              >
-                <div className="flex-1 h-px bg-white/8" />
-                <span className="text-[11px] text-white/20 uppercase tracking-widest">
-                  or
-                </span>
-                <div className="flex-1 h-px bg-white/8" />
-              </motion.div>
+              {/* ── Step: otp ── */}
+              {step === "otp" && (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <InputField
+                    type="text"
+                    inputMode="numeric"
+                    value={otp}
+                    onChange={(v) => setOtp(v.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="Enter 6-digit OTP"
+                    icon={<Lock className="w-[15px] h-[15px]" />}
+                    focused={focused === "otp"}
+                    onFocus={() => setFocused("otp")}
+                    onBlur={() => setFocused(null)}
+                    autoComplete="one-time-code"
+                    required
+                  />
+                  <SubmitButton submitting={submitting} label="Verify & Sign In" loadingLabel="Verifying..." />
+                  <div className="flex justify-between items-center pt-1">
+                    <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setError(""); }}
+                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+                      ← Back
+                    </button>
+                    <button type="button" onClick={handleResendOtp}
+                      className="text-[12px] transition-colors" style={{ color: "var(--color-accent, #dc2626)" }}>
+                      Resend OTP
+                    </button>
+                  </div>
+                </form>
+              )}
 
-              {/* ── Sign Up Link ── */}
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.8, duration: 0.5 }}
-                className="mt-5 text-center"
-              >
-                <p className="text-[13px] text-white/35">
-                  New to TBT?{" "}
-                  <Link href="/sign-up" className="group inline-flex items-center gap-0.5">
-                    <motion.span
-                      className="text-red-400 font-semibold group-hover:text-red-300 transition-colors duration-200"
-                      whileHover={{ x: 1 }}
-                    >
-                      Sign up here
-                    </motion.span>
-                    <ArrowRight className="w-3 h-3 text-red-400 group-hover:text-red-300 opacity-0 group-hover:opacity-100 transition-all duration-200 -translate-x-1 group-hover:translate-x-0" />
-                  </Link>
-                </p>
-              </motion.div>
+              {/* ── Step: first_login ── */}
+              {step === "first_login" && (
+                <form onSubmit={handleSetPassword} className="space-y-3.5">
+                  <InputField
+                    type="text"
+                    inputMode="numeric"
+                    value={otp}
+                    onChange={(v) => setOtp(v.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="Enter OTP sent to your phone"
+                    icon={<Lock className="w-[15px] h-[15px]" />}
+                    focused={focused === "otp"}
+                    onFocus={() => setFocused("otp")}
+                    onBlur={() => setFocused(null)}
+                    autoComplete="one-time-code"
+                    required
+                  />
+                  <InputField
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={setNewPassword}
+                    placeholder="Set a new password (min 6 chars)"
+                    icon={<Lock className="w-[15px] h-[15px]" />}
+                    focused={focused === "newPassword"}
+                    onFocus={() => setFocused("newPassword")}
+                    onBlur={() => setFocused(null)}
+                    autoComplete="new-password"
+                    required
+                    suffix={
+                      <button type="button" onClick={() => setShowNewPassword((v) => !v)}
+                        className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0">
+                        {showNewPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
+                      </button>
+                    }
+                  />
+                  <SubmitButton submitting={submitting} label="Set Password & Sign In" loadingLabel="Setting up..." />
+                  <div className="flex justify-between items-center pt-1">
+                    <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setNewPassword(""); setError(""); }}
+                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+                      ← Back
+                    </button>
+                    <button type="button" onClick={handleResendOtp}
+                      className="text-[12px] transition-colors" style={{ color: "var(--color-accent, #dc2626)" }}>
+                      Resend OTP
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
 
-          {/* ── Slide Indicators ── */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.9, duration: 0.6 }}
-            className="flex justify-center items-center gap-2 mt-5"
-          >
+          {/* Slide Indicators */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9, duration: 0.6 }}
+            className="flex justify-center items-center gap-2 mt-5">
             {BG_IMAGES.map((_, i) => (
               <motion.button
                 key={i}
                 onClick={() => setCurrentBg(i)}
                 whileHover={{ scale: 1.2 }}
                 whileTap={{ scale: 0.85 }}
-                animate={{
-                  width: i === currentBg ? 28 : 6,
-                  opacity: i === currentBg ? 1 : 0.35,
-                }}
+                animate={{ width: i === currentBg ? 28 : 6, opacity: i === currentBg ? 1 : 0.35 }}
                 transition={{ duration: 0.4, ease: "easeInOut" }}
                 className="h-[5px] rounded-full"
-                style={{
-                  background:
-                    i === currentBg
-                      ? "linear-gradient(90deg, #ef4444, #dc2626)"
-                      : "rgba(255,255,255,0.5)",
-                }}
+                style={{ background: i === currentBg ? "linear-gradient(90deg, #ef4444, #dc2626)" : "rgba(255,255,255,0.5)" }}
                 aria-label={`Switch to background ${i + 1}`}
               />
             ))}
@@ -562,10 +396,11 @@ export function LoginScreen() {
   );
 }
 
-// ── Reusable Input Field ──────────────────────────────────────────────────────
+// ── Shared sub-components ─────────────────────────────────────────────────────
 
 interface InputFieldProps {
   type: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
@@ -578,45 +413,22 @@ interface InputFieldProps {
   suffix?: React.ReactNode;
 }
 
-function InputField({
-  type,
-  value,
-  onChange,
-  placeholder,
-  icon,
-  focused,
-  onFocus,
-  onBlur,
-  autoComplete,
-  required,
-  suffix,
-}: InputFieldProps) {
+function InputField({ type, inputMode, value, onChange, placeholder, icon, focused, onFocus, onBlur, autoComplete, required, suffix }: InputFieldProps) {
   return (
     <div
       className="relative flex items-center rounded-xl transition-all duration-300"
       style={{
-        background: focused
-          ? "rgba(255,255,255,0.07)"
-          : "rgba(255,255,255,0.04)",
-        border: focused
-          ? "1px solid rgba(220,38,38,0.55)"
-          : "1px solid rgba(255,255,255,0.07)",
-        boxShadow: focused
-          ? "0 0 0 3px rgba(220,38,38,0.12), inset 0 1px 0 rgba(255,255,255,0.05)"
-          : "inset 0 1px 0 rgba(255,255,255,0.03)",
+        background: focused ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+        border: focused ? "1px solid rgba(220,38,38,0.55)" : "1px solid rgba(255,255,255,0.07)",
+        boxShadow: focused ? "0 0 0 3px rgba(220,38,38,0.12), inset 0 1px 0 rgba(255,255,255,0.05)" : "inset 0 1px 0 rgba(255,255,255,0.03)",
       }}
     >
-      {/* Icon */}
-      <span
-        className="absolute left-4 flex-shrink-0 transition-colors duration-300"
-        style={{ color: focused ? "#dc2626" : "rgba(255,255,255,0.28)" }}
-      >
+      <span className="absolute left-4 flex-shrink-0 transition-colors duration-300" style={{ color: focused ? "#dc2626" : "rgba(255,255,255,0.28)" }}>
         {icon}
       </span>
-
-      {/* Input */}
       <input
         type={type}
+        inputMode={inputMode}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
@@ -627,9 +439,33 @@ function InputField({
         className="w-full bg-transparent pl-10 pr-4 py-[13px] text-white text-[14px] placeholder-white/20 outline-none"
         style={{ caretColor: "#dc2626" }}
       />
-
-      {/* Suffix (show/hide toggle) */}
       {suffix && <span className="absolute right-4">{suffix}</span>}
     </div>
+  );
+}
+
+function SubmitButton({ submitting, label, loadingLabel }: { submitting: boolean; label: string; loadingLabel: string }) {
+  return (
+    <motion.button
+      type="submit"
+      disabled={submitting}
+      whileHover={!submitting ? { scale: 1.015, y: -1 } : undefined}
+      whileTap={!submitting ? { scale: 0.975 } : undefined}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      className="relative w-full py-[14px] rounded-xl font-semibold text-white text-[14px] tracking-wide overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+      style={{
+        background: "linear-gradient(135deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%)",
+        boxShadow: "0 4px 24px rgba(220,38,38,0.5), 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2)",
+      }}
+    >
+      <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/8 to-white/0 opacity-0 hover:opacity-100 transition-opacity duration-300" />
+      <span className="relative flex items-center justify-center gap-2">
+        {submitting ? (
+          <><Loader2 className="w-4 h-4 animate-spin" />{loadingLabel}</>
+        ) : (
+          <>{label}<ArrowRight className="w-4 h-4" /></>
+        )}
+      </span>
+    </motion.button>
   );
 }

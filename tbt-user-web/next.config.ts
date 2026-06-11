@@ -3,16 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   async redirects() {
     return [
-      {
-        source: "/eiflix",
-        destination: "/tbt",
-        permanent: true,
-      },
-      {
-        source: "/eiflix/:path*",
-        destination: "/tbt/:path*",
-        permanent: true,
-      },
+      { source: "/eiflix", destination: "/tbt", permanent: true },
+      { source: "/eiflix/:path*", destination: "/tbt/:path*", permanent: true },
+      { source: "/sign-in", destination: "/login", permanent: false },
+      { source: "/sign-up", destination: "/login", permanent: false },
     ];
   },
   images: {

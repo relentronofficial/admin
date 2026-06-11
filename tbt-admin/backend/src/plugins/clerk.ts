@@ -5,200 +5,29 @@ import { env } from '../config/env.js';
 
 const clerkClient = createClerkClient({ secretKey: env.CLERK_SECRET_KEY });
 
-// In-memory cache: clerkId → { memberId, status } for 5 minutes.
-// Eliminates a Supabase round-trip on every authenticated request.
-const _memberCache = new Map<string, { memberId: string; status: string; expiresAt: number }>();
-const MEMBER_CACHE_TTL = 5 * 60 * 1000;
-
-// Coalesces concurrent Redis reads for the same clerkId on a cold instance.
-// Without this, N simultaneous VUs at burst start all issue individual Redis GETs,
-// exceeding Upstash free-tier RPS limits and falling through to DB pool exhaustion.
-const _inflightAuthGets = new Map<string, Promise<string | null>>();
-
-function getAuthMemberFromRedis(redis: any, clerkId: string): Promise<string | null> {
-  const redisKey = `auth:member:${clerkId}`;
-  let p = _inflightAuthGets.get(redisKey);
-  if (!p) {
-    p = (redis.get(redisKey) as Promise<string | null>).then(
-      (v) => { _inflightAuthGets.delete(redisKey); return v; },
-      () => { _inflightAuthGets.delete(redisKey); return null; },
-    );
-    _inflightAuthGets.set(redisKey, p);
-  }
-  return p;
-}
-
-function getCachedMember(clerkId: string) {
-  const entry = _memberCache.get(clerkId);
-  if (entry && Date.now() < entry.expiresAt) return entry;
-  _memberCache.delete(clerkId);
-  return null;
-}
-
-function setCachedMember(clerkId: string, memberId: string, status: string) {
-  _memberCache.set(clerkId, { memberId, status, expiresAt: Date.now() + MEMBER_CACHE_TTL });
-}
-
-// Shared JWT extraction + verification logic used by both decorators.
-async function extractAndVerifyClerkToken(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<string | null> {
-  const authHeader = request.headers.authorization;
-  if (!authHeader) {
-    reply.status(401).send({ success: false, data: null, error: 'Unauthorized: No token provided' });
-    return null;
-  }
-
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    reply.status(401).send({ success: false, data: null, error: 'Unauthorized: Invalid token format' });
-    return null;
-  }
-
-  try {
-    const verifiedToken = await verifyToken(match[1], {
-      secretKey: env.CLERK_SECRET_KEY,
-      jwtKey: env.CLERK_JWT_PUBLIC_KEY || undefined,
-    });
-
-    if (!verifiedToken?.sub) {
-      throw new Error('Token subject (sub) is missing');
-    }
-
-    return verifiedToken.sub;
-  } catch (err: any) {
-    request.server.log.error({ message: err.message }, 'Clerk JWT verification failed');
-    reply.status(401).send({ success: false, data: null, error: `Unauthorized: ${err.message}` });
-    return null;
-  }
-}
-
 async function clerkPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) {
   fastify.decorate('clerk', clerkClient);
 
-  // ── Admin auth ─────────────────────────────────────────────────────────────
+  // ── Admin auth (Clerk JWT) ───────────────────────────────────────────────────
   fastify.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const clerkId = await extractAndVerifyClerkToken(request, reply);
-      if (!clerkId) return;
-      request.user = clerkId;
-    } catch (error: any) {
-      request.server.log.error({ err: error.message }, 'Unexpected authentication error');
-      return reply.status(401).send({ success: false, data: null, error: 'Unauthorized: Authentication failed' });
+    const authHeader = request.headers.authorization;
+    if (!authHeader) {
+      return reply.status(401).send({ success: false, data: null, error: 'Unauthorized: No token provided' });
     }
-  });
-
-  // ── Member (user web app) auth ─────────────────────────────────────────────
-  fastify.decorate('authenticateUser', async (request: FastifyRequest, reply: FastifyReply) => {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!match) {
+      return reply.status(401).send({ success: false, data: null, error: 'Unauthorized: Invalid token format' });
+    }
     try {
-      const clerkId = await extractAndVerifyClerkToken(request, reply);
-      if (!clerkId) return;
-
-      // Fast path 1: in-memory cache (avoids any network hop).
-      const cached = getCachedMember(clerkId);
-      if (cached) {
-        if (cached.status !== 'active') {
-          return reply.status(403).send({ success: false, data: null, error: `Forbidden: Account is ${cached.status}` });
-        }
-        request.user = clerkId;
-        request.memberId = cached.memberId;
-        return;
-      }
-
-      // Fast path 2: Redis cache (avoids DB round-trip on cold instances).
-      // Uses per-instance coalescing so N simultaneous VUs issue only 1 Redis GET,
-      // preventing Upstash RPS exhaustion at 1 000-VU burst.
-      const redis = (fastify as any).redis ?? null;
-      if (redis) {
-        try {
-          const raw = await getAuthMemberFromRedis(redis, clerkId);
-          if (raw) {
-            const { memberId, status } = JSON.parse(raw) as { memberId: string; status: string };
-            setCachedMember(clerkId, memberId, status);
-            if (status !== 'active') {
-              return reply.status(403).send({ success: false, data: null, error: `Forbidden: Account is ${status}` });
-            }
-            request.user = clerkId;
-            request.memberId = memberId;
-            return;
-          }
-        } catch { /* fall through to DB */ }
-      }
-
-      // Slow path: look up the Member record linked to this Clerk user.
-      const member = await fastify.prisma.member.findFirst({
-        where: { clerkId } as any,
-        select: { id: true, status: true },
+      const verified = await verifyToken(match[1], {
+        secretKey: env.CLERK_SECRET_KEY,
+        jwtKey: env.CLERK_JWT_PUBLIC_KEY || undefined,
       });
-
-      if (!member) {
-        // First sign-in: auto-create the Member record from Clerk profile.
-        let clerkUser: any = null;
-        try {
-          clerkUser = await fastify.clerk.users.getUser(clerkId);
-        } catch { /* use fallback values below */ }
-
-        const email     = clerkUser?.emailAddresses?.[0]?.emailAddress ?? `${clerkId}@unknown.tbt`;
-        const firstName = clerkUser?.firstName ?? email.split('@')[0] ?? 'Member';
-        const lastName  = clerkUser?.lastName ?? '';
-        const phone     = clerkUser?.phoneNumbers?.[0]?.phoneNumber || `clerk:${clerkId}`;
-        const memberId  = `TBT-${Math.floor(1000 + Math.random() * 9000)}`;
-
-        try {
-          const created = await fastify.prisma.member.create({
-            data: { clerkId, memberId, firstName, lastName, email, phone } as any,
-            select: { id: true, status: true },
-          });
-          // Give new members a 1-year active subscription so they can access the platform
-          await fastify.prisma.subscription.create({
-            data: {
-              memberId: created.id,
-              plan: 'premium',
-              status: 'active',
-              startsAt: new Date(),
-              endsAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-              amount: 0,
-            } as any,
-          }).catch(() => { /* non-fatal */ });
-          setCachedMember(clerkId, created.id, (created as any).status ?? 'active');
-          request.user = clerkId;
-          request.memberId = created.id;
-          return;
-        } catch {
-          return reply.status(401).send({
-            success: false,
-            data: null,
-            error: 'Unauthorized: Could not provision member account',
-          });
-        }
-      }
-
-      if (member.status !== 'active') {
-        return reply.status(403).send({
-          success: false,
-          data: null,
-          error: `Forbidden: Account is ${member.status}`,
-        });
-      }
-
-      // Cache in Redis (10 min TTL) so other cold instances skip the DB.
-      if (redis) {
-        try {
-          await redis.set(
-            `auth:member:${clerkId}`,
-            JSON.stringify({ memberId: member.id, status: member.status }),
-            'EX', 600,
-          );
-        } catch { /* non-fatal */ }
-      }
-
-      setCachedMember(clerkId, member.id, member.status);
-      request.user = clerkId;
-      request.memberId = member.id;
-    } catch (error: any) {
-      request.server.log.error({ err: error.message }, 'Unexpected user authentication error');
-      return reply.status(401).send({ success: false, data: null, error: 'Unauthorized: Authentication failed' });
+      if (!verified?.sub) throw new Error('Token subject missing');
+      request.user = verified.sub;
+    } catch (err: any) {
+      request.server.log.error({ message: err.message }, 'Clerk JWT verification failed');
+      return reply.status(401).send({ success: false, data: null, error: `Unauthorized: ${err.message}` });
     }
   });
 }
@@ -207,7 +36,6 @@ declare module 'fastify' {
   interface FastifyInstance {
     clerk: any;
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
-    authenticateUser: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
   interface FastifyRequest {
     user: string;

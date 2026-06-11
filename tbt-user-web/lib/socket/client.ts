@@ -1,30 +1,16 @@
-import { io, Socket } from 'socket.io-client';
+import { io, Socket } from "socket.io-client";
 
 let _socket: Socket | null = null;
-let _getToken: (() => Promise<string | null>) | null = null;
-
-export function initSocket(getToken: () => Promise<string | null>) {
-  _getToken = getToken;
-}
 
 export async function getSocket(): Promise<Socket> {
   if (_socket?.connected) return _socket;
 
-  const token = _getToken ? await _getToken() : null;
-
-  _socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000', {
-    auth: { token },
-    transports: ['websocket'],
+  _socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000", {
+    withCredentials: true, // send HttpOnly auth cookies automatically
+    transports: ["websocket"],
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 2000,
-  });
-
-  // Clerk tokens expire — on each reconnect attempt, destroy and recreate with a
-  // fresh token so the handshake doesn't fail with a stale JWT.
-  _socket.io.on('reconnect_attempt', async () => {
-    disconnectSocket();
-    await getSocket();
   });
 
   return _socket;
@@ -36,3 +22,6 @@ export function disconnectSocket() {
     _socket = null;
   }
 }
+
+// No-op kept for callers that imported it — no longer needed with cookie auth
+export function initSocket(_getToken?: () => Promise<string | null>) {}

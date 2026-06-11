@@ -7,7 +7,6 @@ import {
   Bell, MessageSquare, Menu, X,
   PlayCircle, ClipboardList, Video, Trophy, Megaphone, Settings2, Film,
 } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -21,6 +20,8 @@ import {
 import { getSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils/cn";
 import toast from "react-hot-toast";
+import apiClient from "@/lib/api/client";
+import { useMe } from "@/lib/hooks/useUser";
 import type { Notification } from "@/types";
 
 // ── Notification type icon config ─────────────────────────────────────────────
@@ -196,6 +197,70 @@ function GlowBg({ active }: { active: boolean }) {
         background: `color-mix(in srgb, ${accentRed} 9%, rgba(255,255,255,0.03))`,
       }}
     />
+  );
+}
+
+// ── Profile / Logout button ───────────────────────────────────────────────────
+
+function ProfileButton() {
+  const { data: me } = useMe();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await apiClient.post("/api/user-auth/logout").catch(() => {});
+    queryClient.clear();
+    router.replace("/login");
+  };
+
+  const initials = me
+    ? `${me.firstName?.[0] ?? ""}${me.lastName?.[0] ?? ""}`.toUpperCase() || "?"
+    : "?";
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white overflow-hidden flex-shrink-0"
+        style={{ background: (me as any)?.avatarGradient || "var(--color-accent, #dc2626)" }}
+        aria-label="Account menu"
+      >
+        {(me as any)?.profilePhotoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={(me as any).profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+        ) : initials}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-full mt-2 w-44 rounded-xl z-50 py-1 overflow-hidden"
+            style={{
+              background: "rgba(10,10,10,0.97)",
+              backdropFilter: "blur(16px)",
+              border: "1px solid rgba(255,255,255,0.09)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+            }}
+          >
+            <Link
+              href="/profile"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-sm text-[#ccc] hover:text-white hover:bg-white/5 transition-colors"
+            >
+              Profile
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -486,11 +551,7 @@ export function Navbar() {
           {/* Profile avatar */}
           {rightIcons.profile && (
             <div className="pl-0.5">
-              <UserButton
-                userProfileUrl="/profile"
-                userProfileMode="navigation"
-                appearance={{ elements: { avatarBox: "w-7 h-7" } }}
-              />
+              <ProfileButton />
             </div>
           )}
         </div>

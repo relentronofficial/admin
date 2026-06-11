@@ -44,6 +44,10 @@ const envSchema = z.object({
   BETTER_STACK_SOURCE_TOKEN: z.string().optional().or(z.literal('')),
   USER_WEB_URL: z.string().url().default('http://localhost:3001'),
   ADMIN_WEB_URL: z.string().url().default('http://localhost:3000'),
+  JWT_ACCESS_SECRET: z.string().min(16),
+  MSG91_AUTH_KEY: z.string(),
+  MSG91_SENDER_ID: z.string(),
+  MSG91_TEMPLATE_ID: z.string(),
 });
 
 const _env = envSchema.safeParse(process.env);

@@ -9,6 +9,7 @@ import sentryPlugin from './plugins/sentry.js';
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js';
 import clerkPlugin from './plugins/clerk.js';
+import jwtPlugin from './plugins/jwt.js';
 import socketPlugin from './plugins/socket.js';
 import supabasePlugin from './plugins/supabase.js';
 
@@ -39,6 +40,7 @@ import { pubRoutes } from './modules/pub/routes.js';
 import { messagesRoutes } from './modules/messages/routes.js';
 import { conversationsRoutes } from './modules/conversations/routes.js';
 import { securityRoutes } from './modules/security/routes.js';
+import { userAuthRoutes } from './modules/user-auth/routes.js';
 
 async function bootstrap() {
   const fastify = Fastify({
@@ -58,10 +60,14 @@ async function bootstrap() {
     await fastify.register(prismaPlugin);
     await fastify.register(redisPlugin);
     await fastify.register(clerkPlugin);
+    await fastify.register(jwtPlugin);
     await fastify.register(supabasePlugin);
     await fastify.register(socketPlugin);
 
-    await fastify.register(cors, { origin: true });
+    await fastify.register(cors, {
+      origin: [env.USER_WEB_URL, env.ADMIN_WEB_URL],
+      credentials: true,
+    });
     await fastify.register(helmet);
     await fastify.register(rateLimit, {
       max: 100000,
@@ -99,6 +105,7 @@ async function bootstrap() {
     await fastify.register(messagesRoutes, { prefix: '/api/messages' });
     await fastify.register(conversationsRoutes, { prefix: '/api/conversations' });
     await fastify.register(securityRoutes, { prefix: '/api/security-logs' });
+    await fastify.register(userAuthRoutes, { prefix: '/api/user-auth' });
 
     // Root + Health Check
     fastify.get('/', async () => ({ name: 'TBT Admin API', status: 'ok' }));
