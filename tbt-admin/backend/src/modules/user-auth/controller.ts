@@ -44,11 +44,24 @@ function normalizePhoneForLookup(raw: string): string[] {
 export async function login(fastify: FastifyInstance, request: any, reply: any) {
   const { phone, password } = request.body as { phone: string; password?: string };
 
+  console.log('[LOGIN] body received:', { phone, hasPassword: !!password, passwordLen: password?.length });
+
   if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
 
+  const variants = normalizePhoneForLookup(phone);
+  console.log('[LOGIN] phone variants for lookup:', variants);
+
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
+    where: { phone: { in: variants } } as any,
     select: { id: true, phone: true, passwordHash: true, status: true } as any,
+  });
+
+  console.log('[LOGIN] member lookup result:', {
+    found: !!member,
+    dbPhone: (member as any)?.phone,
+    status: (member as any)?.status,
+    hasPasswordHash: !!(member as any)?.passwordHash,
+    passwordHashPrefix: (member as any)?.passwordHash?.substring(0, 7) ?? null,
   });
 
   if (!member) {
@@ -58,11 +71,13 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   const m = member as any;
 
   if (m.status !== 'active') {
+    console.log('[LOGIN] account not active:', m.status);
     return reply.status(403).send({ success: false, data: null, error: `Account is ${m.status}. Please contact admin.` });
   }
 
   // First-time login: no password set
   if (!m.passwordHash) {
+    console.log('[LOGIN] no passwordHash — first_login flow');
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
     const sent = await sendOtpWhatsapp(m.phone, otp);
@@ -72,11 +87,16 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
 
   // Returning user — password required
   if (!password) {
+    console.log('[LOGIN] passwordHash exists but no password provided — 400');
     return reply.status(400).send({ success: false, data: null, error: 'Password is required' });
   }
 
+  console.log('[LOGIN] comparing password — hash prefix:', m.passwordHash.substring(0, 7));
   const valid = await bcrypt.compare(password, m.passwordHash);
+  console.log('[LOGIN] bcrypt.compare result:', valid);
+
   if (!valid) {
+    console.log('[LOGIN] 401 — password mismatch');
     return reply.status(401).send({ success: false, data: null, error: 'Incorrect password' });
   }
 
