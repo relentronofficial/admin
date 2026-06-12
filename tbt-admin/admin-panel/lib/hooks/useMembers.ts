@@ -11,12 +11,14 @@ export const useGetMember = (id: string) =>
     enabled: !!id,
   });
 
-export const useListMembers = (params: { page?: number; limit?: number; search?: string } = {}) => {
+export const useListMembers = (params: { page?: number; limit?: number; search?: string; status?: string } = {}) => {
   return useQuery({
     queryKey: ['members', params],
     queryFn: async () => {
-      const { page = 1, limit = 10, search = '' } = params;
-      const res: any = await apiClient.get(`/api/members?page=${page}&limit=${limit}&search=${search}`);
+      const { page = 1, limit = 10, search = '', status = '' } = params;
+      let url = `/api/members?page=${page}&limit=${limit}&search=${search}`;
+      if (status) url += `&status=${status}`;
+      const res: any = await apiClient.get(url);
       return res;
     },
   });
@@ -53,6 +55,19 @@ export const useDeleteMember = () => {
   return useMutation({
     mutationFn: async (id: string) => {
       const res: any = await apiClient.delete(`/api/members/${id}`);
+      return res.data || res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['members'] });
+    },
+  });
+};
+
+export const useApproveMember = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res: any = await apiClient.post(`/api/members/${id}/approve`, data);
       return res.data || res;
     },
     onSuccess: () => {

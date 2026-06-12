@@ -35,7 +35,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers } from "@/lib/hooks/useMembers";
+import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers, useApproveMember } from "@/lib/hooks/useMembers";
+import { getAdminSocket } from "@/lib/socket/client";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
@@ -111,13 +112,17 @@ export default function MembersListPage() {
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [editKycDoc, setEditKycDoc] = useState<File | null>(null);
   const [editIsUploading, setEditIsUploading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [pendingBadge, setPendingBadge] = useState(0);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const editKycRef = useRef<HTMLInputElement>(null);
 
-  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search });
+  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: statusFilter });
+  const { data: pendingData, refetch: refetchPending } = useListMembers({ page: 1, limit: 1, status: 'pending' });
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
+  const approveMember = useApproveMember();
   const { data: managers } = useGetManagers();
   const uploadImage = useUploadImage();
   const { data: tiersData } = useListTiers();
@@ -161,6 +166,27 @@ export default function MembersListPage() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const count = (pendingData as any)?.meta?.total ?? 0;
+    setPendingBadge(count);
+  }, [pendingData]);
+
+  useEffect(() => {
+    let mounted = true;
+    getAdminSocket().then((socket) => {
+      if (!mounted) return;
+      socket.on('admin:member_pending', (data: { memberId: string; fullName: string; phone: string }) => {
+        toast.success(`New signup: ${data.fullName} is waiting for approval`);
+        refetchPending();
+        if (statusFilter === 'pending') refetch();
+      });
+    });
+    return () => {
+      mounted = false;
+      getAdminSocket().then((s) => s.off('admin:member_pending'));
+    };
+  }, [statusFilter]);
 
   useEffect(() => {
     if (editingMember) {
@@ -222,6 +248,7 @@ export default function MembersListPage() {
       case 'inactive': return 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20';
       case 'suspended': return 'text-red-500 bg-red-500/10 border-red-500/20';
       case 'paused': return 'text-gray-400 bg-gray-400/10 border-gray-400/20';
+      case 'pending': return 'text-orange-400 bg-orange-400/10 border-orange-400/20';
       default: return 'text-gray-500 bg-gray-500/10 border-gray-500/20';
     }
   };
@@ -304,7 +331,7 @@ export default function MembersListPage() {
              { label: 'Total Members', value: total, icon: Users, color: 'text-[#dc2626]' },
              { label: 'Active Now', value: members.filter((m:any) => m.status === 'active').length, icon: Clock, color: 'text-green-500' },
              { label: 'Premium Plans', value: members.filter((m:any) => ['premium', 'vip', 'enterprise'].includes(m.membershipPlan)).length, icon: Shield, color: 'text-purple-500' },
-             { label: 'Pending KYC', value: members.filter((m:any) => m.verificationStatus === 'awaiting_kyc').length, icon: Filter, color: 'text-amber-500' }
+             { label: 'Pending Approval', value: pendingBadge, icon: Clock, color: 'text-orange-400' }
            ].map((stat, i) => (
              <div key={i} className="bg-[#181818] border border-[#2a2a2a] p-4 rounded-xl flex items-center gap-4">
                <div className={cn("p-2.5 rounded-lg bg-[#1a1a1a] border border-[#333]", stat.color)}>
@@ -321,10 +348,39 @@ export default function MembersListPage() {
         {/* Table Section */}
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden shadow-2xl relative">
           
+          {/* Status Filter Tabs */}
+          <div className="px-4 pt-4 flex gap-2 border-b border-[#2a2a2a] pb-0">
+            {[
+              { label: 'All', value: '' },
+              { label: 'Active', value: 'active' },
+              { label: 'Pending', value: 'pending', badge: pendingBadge },
+              { label: 'Inactive', value: 'inactive' },
+              { label: 'Suspended', value: 'suspended' },
+            ].map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => { setStatusFilter(tab.value); setPage(1); }}
+                className={cn(
+                  "relative px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani border-b-2 transition-all flex items-center gap-1.5",
+                  statusFilter === tab.value
+                    ? "text-[#dc2626] border-[#dc2626]"
+                    : "text-[#606060] border-transparent hover:text-[#a0a0a0]"
+                )}
+              >
+                {tab.label}
+                {tab.badge != null && tab.badge > 0 && (
+                  <span className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
           <div className="p-4 border-b border-[#2a2a2a] flex flex-col md:flex-row gap-4 items-center justify-between bg-[#1a1a1a]/50">
             <div className="relative w-full md:w-[400px]">
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="SEARCH MEMBERS..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -910,6 +966,7 @@ export default function MembersListPage() {
                           <option value="inactive">Inactive</option>
                           <option value="paused">Paused</option>
                           <option value="suspended">Suspended</option>
+                          <option value="pending">Pending</option>
                         </select>
                       </div>
                     </div>
@@ -1015,22 +1072,54 @@ export default function MembersListPage() {
                 </section>
 
               </div>
-              <div className="px-8 py-6 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingMember(null)}
-                  className="px-8 py-2.5 rounded-md font-rajdhani font-bold text-[12px] text-[#606060] hover:text-white uppercase tracking-widest transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isUpdating || editIsUploading}
-                  className="bg-[#dc2626] hover:bg-red-700 text-white px-10 py-2.5 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-[2px] transition-all shadow-xl flex items-center gap-2 active:scale-95"
-                >
-                  {(isUpdating || editIsUploading) && <Loader2 size={16} className="animate-spin" />}
-                  Save Changes
-                </button>
+              <div className="px-8 py-6 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-between items-center gap-4">
+                {editingMember?.status === 'pending' ? (
+                  <button
+                    type="button"
+                    disabled={approveMember.isPending}
+                    onClick={async () => {
+                      try {
+                        const formValues = watch();
+                        const { challenge1, challenge2, challenge3, password, ...rest } = formValues as any;
+                        const payload: any = { ...rest, currentChallenges: [challenge1, challenge2, challenge3].filter(Boolean) };
+                        if (password && password.trim() !== "") payload.password = password;
+                        if (editKycDoc) {
+                          const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
+                          payload.kycDocumentUrl = publicUrl;
+                        }
+                        await approveMember.mutateAsync({ id: editingMember.id, data: payload });
+                        toast.success("Member approved and activated");
+                        setEditingMember(null);
+                        setEditKycDoc(null);
+                        refetch();
+                        refetchPending();
+                      } catch (err: any) {
+                        toast.error(err.message || "Failed to approve member");
+                      }
+                    }}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-8 py-2.5 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-[2px] transition-all shadow-xl active:scale-95 disabled:opacity-50"
+                  >
+                    {approveMember.isPending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                    Approve Member
+                  </button>
+                ) : <div />}
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setEditingMember(null)}
+                    className="px-8 py-2.5 rounded-md font-rajdhani font-bold text-[12px] text-[#606060] hover:text-white uppercase tracking-widest transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUpdating || editIsUploading}
+                    className="bg-[#dc2626] hover:bg-red-700 text-white px-10 py-2.5 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-[2px] transition-all shadow-xl flex items-center gap-2 active:scale-95"
+                  >
+                    {(isUpdating || editIsUploading) && <Loader2 size={16} className="animate-spin" />}
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </form>
           </div>
