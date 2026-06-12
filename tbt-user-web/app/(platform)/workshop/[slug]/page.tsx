@@ -1251,6 +1251,11 @@ function WatchChallengeView({
   const [speed, setSpeed] = useState(1);
   const speedRef = useRef(1);
 
+  // Accumulated watched seconds — starts from server value, ticks up in real-time while playing
+  const [liveWatched, setLiveWatched] = useState<number>(0);
+  const liveWatchedRef = useRef<number>(0);
+  const isPlayingRef = useRef(false);
+
   useEffect(() => { activeEpIdxRef.current = activeEpIdx; }, [activeEpIdx]);
   useEffect(() => { onChallengeCompleteRef.current = onChallengeComplete; }, [onChallengeComplete]);
   useEffect(() => { currentEpRef.current = ep; }, [ep]);
@@ -1269,6 +1274,7 @@ function WatchChallengeView({
   useEffect(() => {
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
+    isPlayingRef.current = false;
     setUpNextCountdown(null);
 
     if (!ep) return;
@@ -1281,6 +1287,24 @@ function WatchChallengeView({
     setCurrentPlayhead(alreadyDone ? 0 : resumeSecs);
     lastPlayheadRef.current = alreadyDone ? 0 : resumeSecs;
     markCalledRef.current = alreadyDone;
+    // Seed local watched counter from server-saved value
+    const serverWatched = ep.actualWatchedSecs ?? 0;
+    liveWatchedRef.current = serverWatched;
+    setLiveWatched(serverWatched);
+  }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 1-second tick: increment liveWatched while video is actually playing
+  useEffect(() => {
+    if (!ep?.id) return;
+    const id = setInterval(() => {
+      if (!isPlayingRef.current) return;
+      const dur = currentEpRef.current?.durationSeconds ?? 0;
+      const inc = 1 * (speedRef.current || 1);
+      const next = dur > 0 ? Math.min(dur, liveWatchedRef.current + inc) : liveWatchedRef.current + inc;
+      liveWatchedRef.current = next;
+      setLiveWatched(next);
+    }, 1000);
+    return () => clearInterval(id);
   }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Up Next countdown: auto-advance
@@ -1405,6 +1429,7 @@ function WatchChallengeView({
 
       if (isPlay && !isEnd) {
         setWatchState("watching");
+        isPlayingRef.current = true;
         if (!iframeFocusedRef.current) {
           iframeFocusedRef.current = true;
           qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
@@ -1415,6 +1440,11 @@ function WatchChallengeView({
               {
                 onSuccess: (data: any) => {
                   if (data?.isCompleted) { doMarkComplete(); return; }
+                  // Sync liveWatched from server-confirmed value
+                  if (typeof data?.actualWatchedSecs === 'number') {
+                    liveWatchedRef.current = data.actualWatchedSecs;
+                    setLiveWatched(data.actualWatchedSecs);
+                  }
                   // Refresh sidebar progress stats after every heartbeat
                   qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
                   qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
@@ -1425,6 +1455,7 @@ function WatchChallengeView({
         }
       } else if (isPause && !isEnd) {
         setWatchState("paused");
+        isPlayingRef.current = false;
         iframeFocusedRef.current = false;
         clearInterval(timerRef.current);
       }
@@ -1432,6 +1463,7 @@ function WatchChallengeView({
       if (isEnd) {
         clearInterval(timerRef.current);
         iframeFocusedRef.current = false;
+        isPlayingRef.current = false;
         postProgress.mutate(
           { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
           {
@@ -1466,13 +1498,13 @@ function WatchChallengeView({
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  // Reflects the actual video timeline position, not accumulated watch time
+  // Watched percentage = actual seconds watched / total duration (updates every second while playing)
   const activeProgressPct = ep.durationSeconds > 0
-    ? Math.min(100, Math.round((currentPlayhead / ep.durationSeconds) * 100))
+    ? Math.min(100, Math.round((liveWatched / ep.durationSeconds) * 100))
     : 0;
-  // Saved resume position (shown when not actively watching)
+  // Saved watched percentage (from server — used for resume display before playing starts)
   const savedProgressPct = ep.durationSeconds > 0
-    ? Math.min(100, Math.round(((ep.lastWatchedSecs ?? 0) / ep.durationSeconds) * 100))
+    ? Math.min(100, Math.round(((ep.actualWatchedSecs ?? 0) / ep.durationSeconds) * 100))
     : 0;
 
   const iframeSrc = ep.videoUrl
@@ -1669,8 +1701,9 @@ function WatchChallengeView({
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
+          // Active episode: use live watched counter; inactive: use server's actualWatchedSecs
           const progressPct = e.durationSeconds > 0
-            ? Math.min(100, Math.round(((isActive ? currentPlayhead : (e.lastWatchedSecs ?? 0)) / e.durationSeconds) * 100))
+            ? Math.min(100, Math.round(((isActive ? liveWatched : (e.actualWatchedSecs ?? 0)) / e.durationSeconds) * 100))
             : 0;
 
           const isWatching = isActive && watchState === "watching";
