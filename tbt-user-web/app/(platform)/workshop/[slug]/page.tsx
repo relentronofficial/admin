@@ -1407,6 +1407,7 @@ function WatchChallengeView({
         setWatchState("watching");
         if (!iframeFocusedRef.current) {
           iframeFocusedRef.current = true;
+          qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
           clearInterval(timerRef.current);
           timerRef.current = setInterval(() => {
             postProgress.mutate(

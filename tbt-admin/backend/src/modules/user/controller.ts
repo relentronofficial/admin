@@ -1617,7 +1617,14 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   if (!workshop) return fail(reply, 404, 'Workshop not found');
 
   const enrollment = (workshop as any).enrollments?.[0];
-  const allChallenges: any[] = (workshop as any).challenges ?? [];
+
+  // Only count challenges that are actually in the flow — keeps stats consistent with sidebar
+  const flowChallengeRefs = await request.server.prisma.workshopFlowItem.findMany({
+    where: { workshopId: workshop.id, type: 'challenge_start', challengeId: { not: null } },
+    select: { challengeId: true },
+  });
+  const flowChallengeIdSet = new Set(flowChallengeRefs.map((fi: any) => fi.challengeId));
+  const allChallenges: any[] = ((workshop as any).challenges ?? []).filter((c: any) => flowChallengeIdSet.has(c.id));
   const allEpisodes = allChallenges.flatMap((c: any) => c.episodes ?? []);
 
   const [episodeProgress, challengeProgressRows] = await Promise.all([
@@ -2211,7 +2218,11 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
 
   const episode = await request.server.prisma.workshopEpisode.findUnique({
     where: { id: episodeId },
-    select: { durationSeconds: true, bunnyVideoId: true }
+    select: {
+      durationSeconds: true,
+      bunnyVideoId: true,
+      challenge: { select: { workshop: { select: { slug: true } } } },
+    },
   });
   if (!episode) return fail(reply, 404, 'Episode not found');
 
@@ -2348,10 +2359,12 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     }
   })().catch(() => {});
 
+  const wsSlug = (episode as any).challenge?.workshop?.slug;
   void Promise.all([
     recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, isCompleted && !existingProgress?.isCompleted ? 'episode_completed' : 'episode_watched', { episodeId }),
     invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId}`),
+    ...(wsSlug ? [invalidateCache(request.server.redis ?? null, `ws:detail:${request.memberId}:${wsSlug}`)] : []),
   ]).catch(() => {});
 
   return ok(reply, { updated: true, isCompleted, actualWatchedSecs: newActualWatched });
@@ -3040,9 +3053,10 @@ async function getWorkshopChallengesData(request: FastifyRequest, slug: string):
     if (!ch.type || ch.type === 'watch') {
       const total = ch.episodes.length;
       const done = ch.episodes.filter((e: any) => epProgressMap.get(e.id)?.isCompleted === true).length;
+      const started = ch.episodes.some((e: any) => (epProgressMap.get(e.id)?.actualWatchedSecs ?? 0) > 0);
       if (total === 0) return 'not_started';
       if (done >= total) return 'completed';
-      if (done > 0) return 'in_progress';
+      if (done > 0 || started) return 'in_progress';
       return 'not_started';
     }
     return ch.memberProgress?.[0]?.status ?? 'not_started';
