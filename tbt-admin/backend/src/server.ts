@@ -55,6 +55,13 @@ async function bootstrap() {
   });
 
   try {
+    // Allow empty JSON bodies on DELETE/GET — Axios always sends Content-Type: application/json
+    fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+      if (!body || (body as string).trim() === '') { done(null, {}); return; }
+      try { done(null, JSON.parse(body as string)); }
+      catch (err: any) { done(err, undefined); }
+    });
+
     // Register Plugins
     await fastify.register(sentryPlugin);
     await fastify.register(prismaPlugin);

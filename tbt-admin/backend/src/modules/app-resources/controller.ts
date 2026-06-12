@@ -26,9 +26,12 @@ export async function createResourceHandler(req: FastifyRequest, reply: FastifyR
       fileUrl: body.fileUrl,
       previewUrl: body.previewUrl || null,
       fileType: body.fileType || 'pdf',
+      fileTypeIconUrl: body.fileTypeIconUrl || null,
       fileCount: Number(body.fileCount) || 1,
       order: body.order ?? count,
       isVisible: body.isVisible ?? true,
+      previewLabel: body.previewLabel || 'Preview',
+      downloadLabel: body.downloadLabel || 'Download',
     },
   });
   return reply.status(201).send({ success: true, data: resource, error: null });
@@ -38,7 +41,7 @@ export async function updateResourceHandler(req: FastifyRequest, reply: FastifyR
   const { id } = req.params as any;
   const body = req.body as any;
   const data: any = {};
-  ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'isVisible'].forEach(f => {
+  ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'isVisible', 'previewLabel', 'downloadLabel'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   if (body.date !== undefined) data.date = body.date ? new Date(body.date) : null;

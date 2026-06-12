@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
 export const createPostSchema = z.object({
-  content: z.string(),
+  memberId: z.string(),
+  content: z.string().min(1),
+  postType: z.enum(['post', 'announcement', 'poll']).default('post'),
   mediaUrls: z.array(z.string()).optional(),
-  type: z.enum(['Post', 'Announcement', 'Poll']),
+  isPinned: z.boolean().optional(),
+  isAnnouncement: z.boolean().optional(),
 });
 
 export const updatePostPinSchema = z.object({

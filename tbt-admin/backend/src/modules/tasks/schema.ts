@@ -1,31 +1,20 @@
 import { z } from 'zod';
 
-export const createTaskSchema = z.object({
-  title: z.string(),
-  description: z.string(),
-  priority: z.enum(['Low', 'Medium', 'High', 'Critical']),
-  assignedToId: z.string(),
-  dueDate: z.string(),
-});
-
-export const updateTaskSchema = createTaskSchema.partial();
-
-export const updateTaskStatusSchema = z.object({
-  status: z.enum(['Todo', 'InProgress', 'Review', 'Done']),
-});
-
-export const assignTaskSchema = z.object({
-  adminId: z.string(),
-});
-
 export const taskInitiativeSchema = z.object({
-  dayNumber: z.string(),
-  stepCategory: z.string(),
-  taskTitle: z.string(),
-  taskDescription: z.string(),
-  basePoints: z.number(),
-  proofType: z.string(),
-  isMilestone: z.boolean(),
+  programId: z.string(),
+  stepId: z.string().optional(),
+  dayNumber: z.number().int().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  deliverables: z.string().optional(),
+  contentUrl: z.string().optional(),
+  basePoints: z.number().int().default(100),
+  proofType: z.string().default('text'),
+  estimatedMinutes: z.number().int().default(15),
+  isMilestone: z.boolean().default(false),
   milestoneLabel: z.string().optional(),
-  bonusPoints: z.number().optional(),
+  bonusPoints: z.number().int().default(0),
+  sortOrder: z.number().int().default(0),
 });
+
+export const updateTaskSchema = taskInitiativeSchema.partial().omit({ programId: true });

@@ -2,15 +2,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../api/apiClient';
 
 export interface TaskInitiativeInput {
-  dayNumber: string;
-  stepCategory: string;
-  taskTitle: string;
-  taskDescription: string;
-  basePoints: number;
-  proofType: string;
-  isMilestone: boolean;
+  programId: string;
+  stepId?: string;
+  dayNumber: number;
+  title: string;
+  description?: string;
+  deliverables?: string;
+  contentUrl?: string;
+  basePoints?: number;
+  proofType?: string;
+  estimatedMinutes?: number;
+  isMilestone?: boolean;
   milestoneLabel?: string;
   bonusPoints?: number;
+  sortOrder?: number;
 }
 
 export const useCreateTaskInitiative = () => {
@@ -26,11 +31,11 @@ export const useCreateTaskInitiative = () => {
   });
 };
 
-export const useListTasks = () => {
+export const useListTasks = (params?: { programId?: string; stepId?: string }) => {
   return useQuery({
-    queryKey: ['tasks'],
+    queryKey: ['tasks', params],
     queryFn: async () => {
-      const res: any = await apiClient.get('/api/tasks');
+      const res: any = await apiClient.get('/api/tasks', { params });
       return res.data || res;
     },
   });
