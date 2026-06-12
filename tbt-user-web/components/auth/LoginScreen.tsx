@@ -98,6 +98,7 @@ export function LoginScreen() {
         phone: resolvedPhone,
         otp: otp.trim(),
       });
+      setSubmitting(false);
       router.replace(redirectUrl);
     } catch (err: any) {
       setError(err.message || "OTP verification failed. Please try again.");
@@ -121,6 +122,7 @@ export function LoginScreen() {
         otp: otp.trim(),
         password: newPassword,
       });
+      setSubmitting(false);
       router.replace(redirectUrl);
     } catch (err: any) {
       setError(err.message || "Failed. Please try again.");

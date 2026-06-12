@@ -1,40 +1,10 @@
 import { NextResponse, NextRequest } from "next/server";
 
-const PROTECTED_PREFIXES = [
-  "/tbt",
-  "/workshops",
-  "/workshop",
-  "/watch",
-  "/Products",
-  "/Resources",
-  "/profile",
-  "/notifications",
-  "/messages",
-  // legacy routes
-  "/dashboard",
-  "/learning",
-  "/programs",
-  "/events",
-  "/live",
-  "/search",
-];
-
-export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
-
-  const isProtected = PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-
-  if (isProtected) {
-    const accessToken = req.cookies.get("tbt_access")?.value;
-    if (!accessToken) {
-      const loginUrl = new URL("/login", req.url);
-      loginUrl.searchParams.set("redirect_url", pathname + search);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
+export function middleware(_req: NextRequest) {
+  // Auth is enforced client-side by SubscriptionGate.
+  // The tbt_access cookie is HttpOnly and set by the backend (run.app domain),
+  // so it is never visible here at the vercel.app domain — checking it would
+  // always redirect authenticated users back to /login.
   return NextResponse.next();
 }
 
