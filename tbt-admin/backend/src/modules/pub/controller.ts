@@ -249,3 +249,20 @@ export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyR
 
   return reply.send({ success: true });
 }
+
+// GET /api/pub/session-check
+// Always returns 200 — never 401. Used by the login page to check if the user
+// already has a valid session (avoids a 401 console error on every login page load).
+export async function pubSessionCheckHandler(req: FastifyRequest, reply: FastifyReply) {
+  const cookies = req.headers.cookie ?? '';
+  const match = cookies.match(/(?:^|;\s*)tbt_access=([^;]+)/);
+  const token = match?.[1] ?? null;
+  if (!token) return reply.send({ success: true, data: { loggedIn: false } });
+
+  try {
+    await (req.server as any).jwt.verify(token);
+    return reply.send({ success: true, data: { loggedIn: true } });
+  } catch {
+    return reply.send({ success: true, data: { loggedIn: false } });
+  }
+}
