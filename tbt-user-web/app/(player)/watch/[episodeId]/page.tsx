@@ -169,7 +169,7 @@ export default function WatchPage() {
             <button
               onClick={() => {
                 completedRef.current = true;
-                completeEp.mutate(episodeId, {
+                completeEp.mutate({ episodeId }, {
                   onSuccess: () => {
                     setIsMarkedComplete(true);
                     qc.invalidateQueries({ queryKey: ["user", "dashboard", "continue-learning"] });

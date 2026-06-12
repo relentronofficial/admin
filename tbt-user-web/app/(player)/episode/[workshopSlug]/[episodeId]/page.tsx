@@ -148,7 +148,7 @@ export default function LearningPlayerPage() {
             <button
               onClick={() => {
                 completedRef.current = true;
-                completeEp.mutate(episodeId, {
+                completeEp.mutate({ episodeId }, {
                   onSuccess: () => {
                     setIsMarkedComplete(true);
                     router.push(`/workshop/${workshopSlug}`);
