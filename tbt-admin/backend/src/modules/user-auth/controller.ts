@@ -151,6 +151,34 @@ export async function setPassword(fastify: FastifyInstance, request: any, reply:
   return reply.send({ success: true, data: updated });
 }
 
+// POST /api/user-auth/forgot-password
+export async function forgotPassword(fastify: FastifyInstance, request: any, reply: any) {
+  const { phone } = request.body as { phone: string };
+
+  if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
+
+  const member = await fastify.prisma.member.findFirst({
+    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
+    select: { id: true, phone: true, status: true } as any,
+  });
+
+  if (!member) {
+    return reply.status(404).send({ success: false, data: null, error: 'Account not found. Please contact admin.' });
+  }
+
+  const m = member as any;
+  if (m.status !== 'active') {
+    return reply.status(403).send({ success: false, data: null, error: `Account is ${m.status}. Please contact admin.` });
+  }
+
+  const otp = generateOtp();
+  await storeOtp(getRedis(fastify), m.phone, otp);
+  const sent = await sendOtpWhatsapp(m.phone, otp);
+  fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated (forgot password)');
+
+  return reply.send({ success: true, data: { step: 'reset_password', phone: m.phone, otp: sent ? undefined : otp } });
+}
+
 // POST /api/user-auth/resend-otp
 export async function resendOtp(fastify: FastifyInstance, request: any, reply: any) {
   const { phone } = request.body as { phone: string };

@@ -15,7 +15,7 @@ const BG_IMAGES = [
 
 const SLIDE_MS = 6000;
 
-type Step = "credentials" | "otp" | "first_login";
+type Step = "credentials" | "otp" | "first_login" | "reset_password";
 type FocusedField = "phone" | "password" | "otp" | "newPassword" | null;
 
 export function LoginScreen() {
@@ -75,6 +75,8 @@ export function LoginScreen() {
 
       if (res.data?.step === "first_login") {
         setStep("first_login");
+      } else if (res.data?.step === "reset_password") {
+        setStep("reset_password");
       } else {
         setStep("otp");
       }
@@ -139,6 +141,23 @@ export function LoginScreen() {
       setError(err.message || "Failed to resend OTP");
     }
   }, [resolvedPhone]);
+
+  const handleForgotPassword = useCallback(async () => {
+    const trimmedPhone = phone.trim();
+    if (!trimmedPhone) { setError("Please enter your phone number first"); return; }
+    setSubmitting(true);
+    setError("");
+    try {
+      const res: any = await apiClient.post("/api/user-auth/forgot-password", { phone: trimmedPhone });
+      setResolvedPhone(res.data?.phone ?? trimmedPhone);
+      if (res.data?.otp) setOtp(res.data.otp);
+      setStep("reset_password");
+    } catch (err: any) {
+      setError(err.message || "Failed to send OTP. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [phone]);
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black">
@@ -212,12 +231,15 @@ export function LoginScreen() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-14 w-auto object-contain mb-4" />
                 <h1 className="text-[26px] font-bold text-white tracking-tight leading-tight">
-                  {step === "credentials" ? "Welcome Back" : step === "first_login" ? "Set Your Password" : "Verify Identity"}
+                  {step === "credentials" ? "Welcome Back"
+                    : step === "first_login" ? "Set Your Password"
+                    : step === "reset_password" ? "Reset Password"
+                    : "Verify Identity"}
                 </h1>
                 <p className="text-white/35 text-[13px] mt-1 tracking-wide">
                   {step === "credentials"
                     ? "Sign in to continue your journey"
-                    : step === "first_login"
+                    : step === "first_login" || step === "reset_password"
                     ? `OTP sent to ${resolvedPhone}`
                     : `Enter the OTP sent to ${resolvedPhone}`}
                 </p>
@@ -295,6 +317,17 @@ export function LoginScreen() {
                   <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65, duration: 0.55 }} className="pt-1">
                     <SubmitButton submitting={submitting} label="Continue" loadingLabel="Checking..." />
                   </motion.div>
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.75, duration: 0.5 }} className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={submitting}
+                      className="text-[12px] transition-colors disabled:opacity-40"
+                      style={{ color: "var(--color-accent, #dc2626)" }}
+                    >
+                      Forgot Password?
+                    </button>
+                  </motion.div>
                 </form>
               )}
 
@@ -317,6 +350,54 @@ export function LoginScreen() {
                   <SubmitButton submitting={submitting} label="Verify & Sign In" loadingLabel="Verifying..." />
                   <div className="flex justify-between items-center pt-1">
                     <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setError(""); }}
+                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+                      ← Back
+                    </button>
+                    <button type="button" onClick={handleResendOtp}
+                      className="text-[12px] transition-colors" style={{ color: "var(--color-accent, #dc2626)" }}>
+                      Resend OTP
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* ── Step: reset_password ── */}
+              {step === "reset_password" && (
+                <form onSubmit={handleSetPassword} className="space-y-3.5">
+                  <InputField
+                    type="text"
+                    inputMode="numeric"
+                    value={otp}
+                    onChange={(v) => setOtp(v.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="Enter OTP sent to your phone"
+                    icon={<Lock className="w-[15px] h-[15px]" />}
+                    focused={focused === "otp"}
+                    onFocus={() => setFocused("otp")}
+                    onBlur={() => setFocused(null)}
+                    autoComplete="one-time-code"
+                    required
+                  />
+                  <InputField
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={setNewPassword}
+                    placeholder="Set a new password (min 6 chars)"
+                    icon={<Lock className="w-[15px] h-[15px]" />}
+                    focused={focused === "newPassword"}
+                    onFocus={() => setFocused("newPassword")}
+                    onBlur={() => setFocused(null)}
+                    autoComplete="new-password"
+                    required
+                    suffix={
+                      <button type="button" onClick={() => setShowNewPassword((v) => !v)}
+                        className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0">
+                        {showNewPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
+                      </button>
+                    }
+                  />
+                  <SubmitButton submitting={submitting} label="Reset & Sign In" loadingLabel="Resetting..." />
+                  <div className="flex justify-between items-center pt-1">
+                    <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setNewPassword(""); setError(""); }}
                       className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
                       ← Back
                     </button>

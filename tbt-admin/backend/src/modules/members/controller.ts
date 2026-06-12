@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
 
 export async function listMembersHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -64,8 +65,9 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
       ...restBody
     } = body;
 
-    // Create Clerk user if a password was provided
+    // Create Clerk user and hash password for user-web login if a password was provided
     let clerkId: string | undefined;
+    let passwordHash: string | undefined;
     if (password) {
       try {
         const baseUsername = body.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
@@ -79,6 +81,7 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
           lastName: body.lastName || undefined,
         });
         clerkId = clerkUser.id;
+        passwordHash = await bcrypt.hash(password, 12);
       } catch (clerkErr: any) {
         const msg = clerkErr.errors?.[0]?.longMessage || clerkErr.message || 'Failed to create auth account';
         return reply.status(400).send({ success: false, error: { code: 'AUTH_FAILED', message: msg } });
@@ -92,6 +95,7 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
       marketingChannels: body.marketingChannels || [],
       currentChallenges: body.currentChallenges || [],
       ...(clerkId && { clerkId }),
+      ...(passwordHash && { passwordHash }),
     };
 
     if (accountManagerId) {
@@ -171,7 +175,8 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       ...restBody
     } = body as any;
 
-    // Handle password update via Clerk
+    // Handle password update — sync to both Clerk and passwordHash (user-web login)
+    let newPasswordHash: string | undefined;
     if (password && password.trim() !== '') {
       const currentMember = await request.server.prisma.member.findUnique({
         where: { id },
@@ -207,9 +212,14 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
           return reply.status(400).send({ success: false, error: { code: 'AUTH_FAILED', message: msg } });
         }
       }
+
+      // Always sync to passwordHash so the user-web login works with the same password
+      newPasswordHash = await bcrypt.hash(password, 12);
     }
 
     const data: any = {};
+
+    if (newPasswordHash) data.passwordHash = newPasswordHash;
 
     // Only assign non-empty strings and valid fields from restBody
     for (const key in restBody) {
