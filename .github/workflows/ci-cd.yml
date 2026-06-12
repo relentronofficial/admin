@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -14,8 +17,6 @@ jobs:
         working-directory: tbt-admin
     outputs:
       backend_changed: ${{ steps.filter.outputs.backend }}
-      admin_changed: ${{ steps.filter.outputs.admin }}
-      userweb_changed: ${{ steps.filter.outputs.userweb }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,11 +28,6 @@ jobs:
             backend:
               - 'tbt-admin/backend/**'
               - 'tbt-admin/package*.json'
-            admin:
-              - 'tbt-admin/admin-panel/**'
-              - 'tbt-admin/package*.json'
-            userweb:
-              - 'tbt-user-web/**'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -74,33 +70,3 @@ jobs:
             --region asia-south1 \
             --project tbt-lms-platform \
             --quiet
-
-  deploy-admin:
-    needs: build-and-test
-    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.admin_changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: prj_0zN4yp3AQp1MgxgROqapzPAIsRPK
-          vercel-args: '--prod'
-          working-directory: tbt-admin/admin-panel
-
-  deploy-user-web:
-    needs: build-and-test
-    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.userweb_changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: prj_XRo2VGAACpKxqYJ59a2SBH14Tomw
-          vercel-args: '--prod'
-          working-directory: tbt-user-web
