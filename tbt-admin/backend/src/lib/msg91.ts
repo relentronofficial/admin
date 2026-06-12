@@ -14,11 +14,11 @@ export async function sendOtp(phone: string, otp: string): Promise<boolean> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'authkey': env.MSG91_AUTH_KEY,
+        'authkey': env.MSG91_AUTH_KEY ?? '',
       },
       body: JSON.stringify({
-        flow_id: env.MSG91_TEMPLATE_ID,
-        sender: env.MSG91_SENDER_ID,
+        flow_id: env.MSG91_TEMPLATE_ID ?? '',
+        sender: env.MSG91_SENDER_ID ?? '',
         short_url: '0',
         mobiles: mobile,
         VAR1: otp,
