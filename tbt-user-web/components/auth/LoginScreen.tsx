@@ -16,7 +16,7 @@ const BG_IMAGES = [
 
 const SLIDE_MS = 6000;
 
-type Step = "credentials" | "otp" | "first_login" | "reset_password";
+type Step = "credentials" | "otp" | "reset_password";
 type FocusedField = "phone" | "password" | "otp" | "newPassword" | null;
 
 export function LoginScreen() {
@@ -35,8 +35,7 @@ export function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState<FocusedField>(null);
-  const [resolvedPhone, setResolvedPhone] = useState(""); // normalized phone from backend
-  const [showSignupPrompt, setShowSignupPrompt] = useState(false);
+  const [resolvedPhone, setResolvedPhone] = useState("");
 
   // Check if already logged in — uses a public endpoint that always returns 200
   // (avoids a 401 console error when the user has no active session)
@@ -61,6 +60,7 @@ export function LoginScreen() {
 
     const trimmedPhone = phone.trim();
     if (!trimmedPhone) { setError("Please enter your phone number"); return; }
+    if (!password) { setError("Please enter your password"); return; }
 
     setSubmitting(true);
     setError("");
@@ -68,28 +68,21 @@ export function LoginScreen() {
     try {
       const res: any = await apiClient.post("/api/user-auth/login", {
         phone: trimmedPhone,
-        password: password || undefined,
+        password,
       });
 
       setResolvedPhone(res.data?.phone ?? trimmedPhone);
-      setShowSignupPrompt(false);
 
       if (res.data?.otp) setOtp(res.data.otp);
 
-      if (res.data?.step === "first_login") {
-        setStep("first_login");
-      } else if (res.data?.step === "reset_password") {
+      if (res.data?.step === "reset_password" || res.data?.step === "first_login") {
+        // first_login = admin-created account with no password set yet → same forgot-password flow
         setStep("reset_password");
       } else {
         setStep("otp");
       }
     } catch (err: any) {
-      const msg = err.message || "Login failed. Please check your credentials.";
-      setError(msg);
-      // Show signup link when no account is found for this phone
-      if (msg.toLowerCase().includes("account not found") || msg.toLowerCase().includes("not found")) {
-        setShowSignupPrompt(true);
-      }
+      setError(err.message || "Login failed. Please check your credentials.");
     } finally {
       setSubmitting(false);
     }
@@ -240,14 +233,13 @@ export function LoginScreen() {
                 <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-14 w-auto object-contain mb-4" />
                 <h1 className="text-[26px] font-bold text-white tracking-tight leading-tight">
                   {step === "credentials" ? "Welcome Back"
-                    : step === "first_login" ? "Set Your Password"
                     : step === "reset_password" ? "Reset Password"
                     : "Verify Identity"}
                 </h1>
                 <p className="text-white/35 text-[13px] mt-1 tracking-wide">
                   {step === "credentials"
                     ? "Sign in to continue your journey"
-                    : step === "first_login" || step === "reset_password"
+                    : step === "reset_password"
                     ? `OTP sent to ${resolvedPhone}`
                     : `Enter the OTP sent to ${resolvedPhone}`}
                 </p>
@@ -307,12 +299,13 @@ export function LoginScreen() {
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={setPassword}
-                      placeholder="Password (leave blank if first login)"
+                      placeholder="Password"
                       icon={<Lock className="w-[15px] h-[15px]" />}
                       focused={focused === "password"}
                       onFocus={() => setFocused("password")}
                       onBlur={() => setFocused(null)}
                       autoComplete="current-password"
+                      required
                       suffix={
                         <button type="button" onClick={() => setShowPassword((v) => !v)}
                           className="text-white/30 hover:text-white/60 transition-colors duration-200 flex-shrink-0">
@@ -335,12 +328,10 @@ export function LoginScreen() {
                     >
                       Forgot Password?
                     </button>
-                    {showSignupPrompt && (
-                      <Link href="/signup" className="text-[12px] font-semibold transition-opacity hover:opacity-80"
-                        style={{ color: "var(--color-accent, #dc2626)" }}>
-                        New here? Sign up →
-                      </Link>
-                    )}
+                    <Link href="/signup" className="text-[12px] font-semibold transition-opacity hover:opacity-80"
+                      style={{ color: "rgba(255,255,255,0.45)" }}>
+                      New to TBT? <span style={{ color: "var(--color-accent, #dc2626)" }}>Sign up</span>
+                    </Link>
                   </motion.div>
                 </form>
               )}
@@ -423,53 +414,6 @@ export function LoginScreen() {
                 </form>
               )}
 
-              {/* ── Step: first_login ── */}
-              {step === "first_login" && (
-                <form onSubmit={handleSetPassword} className="space-y-3.5">
-                  <InputField
-                    type="text"
-                    inputMode="numeric"
-                    value={otp}
-                    onChange={(v) => setOtp(v.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="Enter OTP sent to your phone"
-                    icon={<Lock className="w-[15px] h-[15px]" />}
-                    focused={focused === "otp"}
-                    onFocus={() => setFocused("otp")}
-                    onBlur={() => setFocused(null)}
-                    autoComplete="one-time-code"
-                    required
-                  />
-                  <InputField
-                    type={showNewPassword ? "text" : "password"}
-                    value={newPassword}
-                    onChange={setNewPassword}
-                    placeholder="Set a new password (min 6 chars)"
-                    icon={<Lock className="w-[15px] h-[15px]" />}
-                    focused={focused === "newPassword"}
-                    onFocus={() => setFocused("newPassword")}
-                    onBlur={() => setFocused(null)}
-                    autoComplete="new-password"
-                    required
-                    suffix={
-                      <button type="button" onClick={() => setShowNewPassword((v) => !v)}
-                        className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0">
-                        {showNewPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
-                      </button>
-                    }
-                  />
-                  <SubmitButton submitting={submitting} label="Set Password & Sign In" loadingLabel="Setting up..." />
-                  <div className="flex justify-between items-center pt-1">
-                    <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setNewPassword(""); setError(""); }}
-                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
-                      ← Back
-                    </button>
-                    <button type="button" onClick={handleResendOtp}
-                      className="text-[12px] transition-colors" style={{ color: "var(--color-accent, #dc2626)" }}>
-                      Resend OTP
-                    </button>
-                  </div>
-                </form>
-              )}
             </div>
           </div>
 
