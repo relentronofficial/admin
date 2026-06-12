@@ -189,12 +189,19 @@ export async function updateAdminHandler(request: FastifyRequest, reply: Fastify
     const { id } = request.params as { id: string };
     const body = updateAdminSchema.parse(request.body);
 
+    // password is Clerk-managed — never write it to the DB
+    const { password, ...fields } = body as any;
+
+    // Drop empty-string enum/optional fields so Prisma doesn't write blank strings
+    const data: any = {};
+    for (const [k, v] of Object.entries(fields)) {
+      if (v !== '') data[k] = v;
+    }
+    if (data.dob) data.dob = new Date(data.dob);
+
     const admin = await request.server.prisma.admin.update({
       where: { id },
-      data: {
-        ...body as any,
-        dob: body.dob ? new Date(body.dob) : undefined,
-      }
+      data,
     });
 
     return reply.send({ success: true, data: admin, error: null });

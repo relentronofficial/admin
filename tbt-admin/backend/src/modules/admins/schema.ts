@@ -25,7 +25,11 @@ export const createAdminSchema = z.object({
   password: z.string().min(8).optional(), // Used for Clerk user creation if needed
 });
 
-export const updateAdminSchema = createAdminSchema.partial();
+export const updateAdminSchema = createAdminSchema.partial().extend({
+  role: z.enum(['super_admin', 'admin', 'account_manager', 'mentor', 'moderator']).optional().or(z.literal('')),
+  status: z.enum(['active', 'inactive', 'suspended', 'pending_approval']).optional().or(z.literal('')),
+  password: z.string().optional().or(z.literal('')),
+});
 
 export const updateStatusSchema = z.object({
   status: z.enum(['active', 'inactive', 'suspended', 'pending_approval']),
