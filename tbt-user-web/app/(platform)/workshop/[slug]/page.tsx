@@ -1244,6 +1244,7 @@ function WatchChallengeView({
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const markCalledRef = useRef(false);
   const lastPlayheadRef = useRef<number>(0);
+  const lastHeartbeatAt = useRef<number>(0); // wall-clock ms of last sent heartbeat
   const activeEpIdxRef = useRef(activeEpIdx);
   const onChallengeCompleteRef = useRef(onChallengeComplete);
   const currentEpRef = useRef<any>(undefined);
@@ -1278,6 +1279,7 @@ function WatchChallengeView({
     iframeFocusedRef.current = false;
     isPlayingRef.current = false;
     realDurationRef.current = 0;
+    lastHeartbeatAt.current = 0;
     setUpNextCountdown(null);
 
     if (!ep) return;
@@ -1335,7 +1337,7 @@ function WatchChallengeView({
       const token = getCachedTokenSync();
       if (!token) return;
       const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      fetch(`${base}/api/user/workshop/episodes/${curEp.id}/progress`, {
+      fetch(`${base}/api/user/episodes/${curEp.id}/progress`, {
         method: "POST",
         keepalive: true,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -1375,9 +1377,7 @@ function WatchChallengeView({
           }
         },
         onError: () => {
-          // Complete endpoint failed (e.g. still checking 85%) — retry won't help,
-          // but keep UI state as completed so user experience isn't broken
-          markCalledRef.current = false;
+          // Keep markCalledRef true — video already ended, UI stays "completed"
         },
       });
     };
@@ -1453,7 +1453,9 @@ function WatchChallengeView({
           iframeFocusedRef.current = true;
           qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
           clearInterval(timerRef.current);
+          lastHeartbeatAt.current = Date.now();
           timerRef.current = setInterval(() => {
+            lastHeartbeatAt.current = Date.now();
             postProgress.mutate(
               { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined },
               {
@@ -1484,8 +1486,12 @@ function WatchChallengeView({
         iframeFocusedRef.current = false;
         isPlayingRef.current = false;
         const rd = realDurationRef.current > 0 ? realDurationRef.current : undefined;
+        // Real elapsed seconds since last heartbeat — gives backend maximum valid delta credit
+        const elapsedSinceLastHb = lastHeartbeatAt.current > 0
+          ? Math.round((Date.now() - lastHeartbeatAt.current) / 1000)
+          : 30; // no previous heartbeat (very short video / first play)
         postProgress.mutate(
-          { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false, reportedDuration: rd },
+          { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: elapsedSinceLastHb, isCompleted: false, reportedDuration: rd },
           {
             onSuccess: () => doMarkComplete(),
             onError: () => doMarkComplete(), // trust ended event — always complete

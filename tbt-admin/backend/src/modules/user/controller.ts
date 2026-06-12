@@ -3239,7 +3239,7 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
 
   const progress = await request.server.prisma.memberEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId: id } },
-    select: { actualWatchedSecs: true, isCompleted: true }
+    select: { lastWatchedSecs: true, actualWatchedSecs: true, isCompleted: true }
   });
 
   if (progress?.isCompleted) {
@@ -3284,9 +3284,14 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
   }
 
   // Task 3: Backend decides completion based on 85% rule.
+  // actualWatchedSecs = wall-clock seconds accumulated (anti-cheat).
+  // lastWatchedSecs   = playhead position — covers fast playback speeds (2x) where
+  //                     wall-clock elapsed is legitimately < 85% of duration.
   if (duration && duration > 0) {
     const actual = progress?.actualWatchedSecs ?? 0;
-    if (actual < duration * 0.85) {
+    const playhead = progress?.lastWatchedSecs ?? 0;
+    const threshold = duration * 0.85;
+    if (actual < threshold && playhead < threshold) {
       return fail(reply, 403, 'Watch at least 85% of the video to complete this lesson.');
     }
   }
