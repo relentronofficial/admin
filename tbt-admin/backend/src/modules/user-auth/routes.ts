@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as controller from './controller.js';
 
 export async function userAuthRoutes(fastify: FastifyInstance) {
+  fastify.post('/signup', (req, reply) => controller.signup(fastify, req, reply));
   fastify.post('/login', (req, reply) => controller.login(fastify, req, reply));
   fastify.post('/forgot-password', (req, reply) => controller.forgotPassword(fastify, req, reply));
   fastify.post('/verify-otp', (req, reply) => controller.verifyOtp(fastify, req, reply));

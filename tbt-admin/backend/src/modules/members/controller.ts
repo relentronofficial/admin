@@ -3,18 +3,20 @@ import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
 
 export async function listMembersHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 10, search } = request.query as any;
+  const { page = 1, limit = 10, search, status } = request.query as any;
   const skip = (page - 1) * limit;
 
-  const where = search ? {
-    OR: [
+  const where: any = {};
+  if (status) where.status = status;
+  if (search) {
+    where.OR = [
       { firstName: { contains: search, mode: 'insensitive' } },
       { lastName: { contains: search, mode: 'insensitive' } },
       { email: { contains: search, mode: 'insensitive' } },
       { memberId: { contains: search, mode: 'insensitive' } },
       { businessName: { contains: search, mode: 'insensitive' } },
-    ]
-  } : {};
+    ];
+  }
 
   const [members, total] = await Promise.all([
     request.server.prisma.member.findMany({
@@ -945,4 +947,57 @@ export async function listAllAssignmentSubmissionsHandler(req: FastifyRequest, r
   ]);
 
   return reply.send({ success: true, data: submissions, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+}
+
+// POST /api/members/:id/approve  (admin only — approve a self-registered pending member)
+export async function approveMemberHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string };
+    const body = (request.body || {}) as Record<string, any>;
+
+    const existing = await request.server.prisma.member.findUnique({
+      where: { id },
+      select: { id: true, status: true } as any,
+    });
+    if (!existing) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+    if ((existing as any).status !== 'pending') {
+      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Member is not in pending status' } });
+    }
+
+    const { password, dob, businessEstablishedOn, accountManagerId, batchId, ...rest } = body;
+    const data: any = { ...rest, status: 'active' };
+
+    if (dob) data.dob = new Date(dob);
+    if (businessEstablishedOn) data.businessEstablishedOn = new Date(businessEstablishedOn);
+    if (accountManagerId) data.accountManager = { connect: { id: accountManagerId } };
+    if (batchId) data.batch = { connect: { id: batchId } };
+
+    if (password && password.trim() !== '') {
+      const bcrypt = await import('bcrypt');
+      data.passwordHash = await bcrypt.hash(password, 12);
+      try {
+        const member = await request.server.prisma.member.findUnique({ where: { id }, select: { email: true, firstName: true, lastName: true, clerkId: true } });
+        if (member) {
+          if ((member as any).clerkId) {
+            await request.server.clerk.users.updateUser((member as any).clerkId, { password });
+          } else {
+            const baseUsername = (member.email).split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
+            const clerkUser = await request.server.clerk.users.createUser({
+              emailAddress: [member.email], password,
+              username: `${baseUsername}_${Math.floor(100 + Math.random() * 900)}`,
+              firstName: member.firstName, lastName: member.lastName || undefined,
+            });
+            data.clerkId = clerkUser.id;
+          }
+        }
+      } catch (_) {}
+    }
+
+    const updated = await request.server.prisma.member.update({ where: { id }, data });
+    request.server.io.to('admin').emit('admin:member_approved', { memberId: id });
+    return reply.send({ success: true, data: updated, error: null });
+  } catch (err: any) {
+    request.server.log.error({ err }, 'Failed to approve member');
+    return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+  }
 }

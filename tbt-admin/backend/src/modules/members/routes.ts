@@ -22,6 +22,7 @@ import {
   getCompletionMatrixHandler,
   reviewAssignmentHandler,
   listAllAssignmentSubmissionsHandler,
+  approveMemberHandler,
 } from './controller.js';
 
 export async function memberRoutes(fastify: FastifyInstance) {
@@ -41,6 +42,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
   fastify.post('/', createMemberHandler);
   fastify.get('/:id', getMemberHandler);
   fastify.put('/:id', updateMemberHandler);
+  fastify.post('/:id/approve', approveMemberHandler);
   fastify.delete('/:id', deleteMemberHandler);
   fastify.get('/:id/progress', getMemberProgressHandler);
   fastify.get('/:id/badges', listMemberBadgesHandler);

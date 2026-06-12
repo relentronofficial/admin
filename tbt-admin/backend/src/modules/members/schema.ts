@@ -35,7 +35,7 @@ export const createMemberSchema = z.object({
   currentChallenges: z.array(z.string()).optional(),
   notes: z.string().optional(),
   membershipPlan: z.enum(['free', 'starter', 'premium', 'vip', 'enterprise']).optional(),
-  status: z.enum(['active', 'inactive', 'paused', 'suspended']).optional(),
+  status: z.enum(['active', 'inactive', 'paused', 'suspended', 'pending']).optional(),
   verificationStatus: z.enum(['awaiting_kyc', 'under_review', 'verified', 'rejected']).optional(),
   accountManagerId: z.string().optional(),
   batchId: z.string().optional(),
@@ -51,7 +51,7 @@ export const updateMemberSchema = createMemberSchema.partial().extend({
   preferredSessionMode: z.enum(['online', 'offline', 'hybrid']).optional().or(z.literal('')),
   businessStage: z.enum(['idea', 'startup', 'growth', 'scaling']).optional().or(z.literal('')),
   membershipPlan: z.enum(['free', 'starter', 'premium', 'vip', 'enterprise']).optional().or(z.literal('')),
-  status: z.enum(['active', 'inactive', 'paused', 'suspended']).optional().or(z.literal('')),
+  status: z.enum(['active', 'inactive', 'paused', 'suspended', 'pending']).optional().or(z.literal('')),
   verificationStatus: z.enum(['awaiting_kyc', 'under_review', 'verified', 'rejected']).optional().or(z.literal('')),
   password: z.string().min(8).optional().or(z.literal('')),
 });

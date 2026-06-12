@@ -30,6 +30,7 @@ enum MemberStatus {
   inactive
   paused
   suspended
+  pending
 }
 
 enum VerificationStatus {

@@ -22,6 +22,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
   try {
     await prisma.$connect();
     fastify.log.info('✅ Database connected');
+    // Idempotent enum migration — adds 'pending' to MemberStatus if not already present.
+    // Safe to run on every startup; PostgreSQL ignores it when the value already exists.
+    await prisma.$executeRawUnsafe(`ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'`);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

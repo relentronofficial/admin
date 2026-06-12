@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import apiClient from "@/lib/api/client";
 
 const BG_IMAGES = [
@@ -35,6 +36,7 @@ export function LoginScreen() {
   const [error, setError] = useState("");
   const [focused, setFocused] = useState<FocusedField>(null);
   const [resolvedPhone, setResolvedPhone] = useState(""); // normalized phone from backend
+  const [showSignupPrompt, setShowSignupPrompt] = useState(false);
 
   // Check if already logged in — uses a public endpoint that always returns 200
   // (avoids a 401 console error when the user has no active session)
@@ -70,6 +72,7 @@ export function LoginScreen() {
       });
 
       setResolvedPhone(res.data?.phone ?? trimmedPhone);
+      setShowSignupPrompt(false);
 
       if (res.data?.otp) setOtp(res.data.otp);
 
@@ -81,7 +84,12 @@ export function LoginScreen() {
         setStep("otp");
       }
     } catch (err: any) {
-      setError(err.message || "Login failed. Please check your credentials.");
+      const msg = err.message || "Login failed. Please check your credentials.";
+      setError(msg);
+      // Show signup link when no account is found for this phone
+      if (msg.toLowerCase().includes("account not found") || msg.toLowerCase().includes("not found")) {
+        setShowSignupPrompt(true);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -317,7 +325,7 @@ export function LoginScreen() {
                   <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65, duration: 0.55 }} className="pt-1">
                     <SubmitButton submitting={submitting} label="Continue" loadingLabel="Checking..." />
                   </motion.div>
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.75, duration: 0.5 }} className="flex justify-end pt-1">
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.75, duration: 0.5 }} className="flex justify-between items-center pt-1">
                     <button
                       type="button"
                       onClick={handleForgotPassword}
@@ -327,6 +335,12 @@ export function LoginScreen() {
                     >
                       Forgot Password?
                     </button>
+                    {showSignupPrompt && (
+                      <Link href="/signup" className="text-[12px] font-semibold transition-opacity hover:opacity-80"
+                        style={{ color: "var(--color-accent, #dc2626)" }}>
+                        New here? Sign up →
+                      </Link>
+                    )}
                   </motion.div>
                 </form>
               )}

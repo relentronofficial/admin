@@ -57,7 +57,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
 
   const m = member as any;
 
-  if (m.status !== 'active') {
+  if (['inactive', 'suspended', 'paused'].includes(m.status)) {
     return reply.status(403).send({ success: false, data: null, error: `Account is ${m.status}. Please contact admin.` });
   }
 
@@ -174,7 +174,7 @@ export async function forgotPassword(fastify: FastifyInstance, request: any, rep
   }
 
   const m = member as any;
-  if (m.status !== 'active') {
+  if (['inactive', 'suspended', 'paused'].includes(m.status)) {
     return reply.status(403).send({ success: false, data: null, error: `Account is ${m.status}. Please contact admin.` });
   }
 
@@ -268,4 +268,64 @@ export async function me(fastify: FastifyInstance, request: any, reply: any) {
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Not found' });
   return reply.send({ success: true, data: member });
+}
+
+// POST /api/user-auth/signup  (public — self-registration)
+export async function signup(fastify: FastifyInstance, request: any, reply: any) {
+  const { firstName, lastName, phone, email, password, businessName, city, state } =
+    request.body as {
+      firstName: string; lastName?: string; phone: string; email: string;
+      password: string; businessName?: string; city?: string; state?: string;
+    };
+
+  if (!firstName || !phone || !email || !password) {
+    return reply.status(400).send({ success: false, data: null, error: 'firstName, phone, email and password are required' });
+  }
+  if (password.length < 6) {
+    return reply.status(400).send({ success: false, data: null, error: 'Password must be at least 6 characters' });
+  }
+
+  const phoneVariants = normalizePhoneForLookup(phone);
+
+  const [existingPhone, existingEmail] = await Promise.all([
+    fastify.prisma.member.findFirst({ where: { phone: { in: phoneVariants } } as any, select: { id: true } as any }),
+    fastify.prisma.member.findUnique({ where: { email }, select: { id: true } }),
+  ]);
+
+  if (existingPhone) {
+    return reply.status(409).send({ success: false, data: null, error: 'An account with this phone number already exists. Please log in.' });
+  }
+  if (existingEmail) {
+    return reply.status(409).send({ success: false, data: null, error: 'An account with this email already exists. Please log in.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const memberId = `TBT-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  const member = await (fastify.prisma.member as any).create({
+    data: {
+      firstName,
+      lastName: lastName || null,
+      phone: phone.trim(),
+      email,
+      passwordHash,
+      memberId,
+      businessName: businessName || null,
+      city: city || null,
+      state: state || null,
+      status: 'pending',
+      membershipPlan: 'free',
+    },
+  });
+
+  // Notify all connected admins in real-time
+  (fastify as any).io?.to('admin').emit('admin:member_pending', {
+    memberId: member.id,
+    fullName: `${firstName} ${lastName ?? ''}`.trim(),
+    phone: member.phone,
+    createdAt: member.createdAt,
+  });
+
+  fastify.log.info({ memberId: member.id, phone: member.phone }, 'New self-signup — pending approval');
+  return reply.status(201).send({ success: true, data: null });
 }
