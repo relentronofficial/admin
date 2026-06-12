@@ -8,13 +8,13 @@ function normalizePhone(phone: string): string {
 }
 
 export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boolean> {
-  if (!env.WABA_ACCESS_TOKEN || !env.WABA_PHONE_NUMBER_ID || !env.WABA_TEMPLATE_NAME) {
+  if (!env.WABA_ACCESS_TOKEN || !env.WABA_FROM_NUMBER || !env.WABA_TEMPLATE_NAME) {
     console.warn('[WhatsApp] credentials not configured — skipping');
     return false;
   }
 
   const to = normalizePhone(phone);
-  const url = `${env.WABA_API_BASE_URL}/${env.WABA_PHONE_NUMBER_ID}/messages`;
+  const url = `${env.WABA_API_BASE_URL}/message/send`;
 
   try {
     const res = await fetch(url, {
@@ -24,18 +24,13 @@ export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boole
         'Authorization': `Bearer ${env.WABA_ACCESS_TOKEN}`,
       },
       body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
+        wabaNumber: env.WABA_FROM_NUMBER,
+        recipient: { phoneNumber: to },
         type: 'template',
         template: {
           name: env.WABA_TEMPLATE_NAME,
-          language: { code: env.WABA_TEMPLATE_LANGUAGE },
-          components: [
-            {
-              type: 'body',
-              parameters: [{ type: 'text', text: otp }],
-            },
-          ],
+          language: env.WABA_TEMPLATE_LANGUAGE,
+          body: [otp],
         },
       }),
     });
@@ -49,13 +44,8 @@ export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boole
 
     try {
       const json = JSON.parse(body);
-      // Success: { "messages": [{ "id": "..." }] }
-      // Error:   { "error": { "message": "...", "code": ... } }
-      if (json?.error) {
-        console.error('[WhatsApp] API error', json.error.message ?? body);
-        return false;
-      }
-      if (!json?.messages?.length) {
+      // Success: { "status": "success", "data": { "messageId": "..." } }
+      if (json?.status !== 'success' || !json?.data?.messageId) {
         console.error('[WhatsApp] unexpected response', body);
         return false;
       }
