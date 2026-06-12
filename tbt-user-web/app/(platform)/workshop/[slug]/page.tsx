@@ -1269,16 +1269,17 @@ function WatchChallengeView({
   useEffect(() => {
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
-    setForceStartFrom(null);
     setUpNextCountdown(null);
 
     if (!ep) return;
     const alreadyDone = !!ep.isCompleted;
     const resumeSecs = ep.lastWatchedSecs ?? 0;
     const hasProgress = !alreadyDone && resumeSecs > 3;
+    // Completed episodes always start from beginning on rewatch
+    setForceStartFrom(alreadyDone ? 0 : null);
     setWatchState(alreadyDone ? "completed" : hasProgress ? "resume" : "not_started");
-    setCurrentPlayhead(resumeSecs);
-    lastPlayheadRef.current = resumeSecs;
+    setCurrentPlayhead(alreadyDone ? 0 : resumeSecs);
+    lastPlayheadRef.current = alreadyDone ? 0 : resumeSecs;
     markCalledRef.current = alreadyDone;
   }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1334,6 +1335,7 @@ function WatchChallengeView({
           qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
           qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
           qc.invalidateQueries({ queryKey: ["user", "dashboard", "continue-learning"] });
+          qc.invalidateQueries({ queryKey: ["user", "dashboard", "watch-history"] });
           const curIdx = activeEpIdxRef.current;
           if (curIdx + 1 < episodes.length) {
             setUpNextCountdown(5);

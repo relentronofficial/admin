@@ -9,6 +9,7 @@ import { useContinueLearning, useWatchHistory, useRemoveFromHistory } from "@/li
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useMe } from "@/lib/hooks/useUser";
 import { cn } from "@/lib/utils/cn";
+import { getServerNow } from "@/lib/api/client";
 import type { HeroSlide, ContentSection, ContentItem, ContinueLearningItem, WatchHistoryItem } from "@/types";
 
 // ─── Hero Carousel ────────────────────────────────────────────────────────────
@@ -613,7 +614,7 @@ function ContinueWatchingSection() {
 // ─── Watch History ────────────────────────────────────────────────────────────
 
 function relativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMs = getServerNow() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60_000);
   const hours = Math.floor(diffMs / 3_600_000);
   const days = Math.floor(diffMs / 86_400_000);

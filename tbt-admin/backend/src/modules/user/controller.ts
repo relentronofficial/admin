@@ -818,7 +818,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
 
   // Progress % based on playhead position (lastWatchedSecs) — shows where the user is in the video
   const pct = (lastWatched: number, duration: number | null | undefined) =>
-    duration && duration > 0 ? Math.min(99, Math.round((lastWatched / duration) * 100)) : 0;
+    duration && duration > 0 ? Math.min(100, Math.round((lastWatched / duration) * 100)) : 0;
 
   // Deduplicate courses — keep only the most-recently-watched episode per course
   const seenCourseIds = new Set<string>();
