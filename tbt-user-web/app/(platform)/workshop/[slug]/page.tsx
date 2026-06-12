@@ -1411,6 +1411,8 @@ function WatchChallengeView({
             "*"
           );
         });
+        // Ask player for its real duration — response comes back as evt="getDuration"
+        win.postMessage(JSON.stringify({ context: "player.js", method: "getDuration" }), "*");
         if (speedRef.current !== 1) {
           win.postMessage(
             JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: speedRef.current }),
@@ -1420,6 +1422,11 @@ function WatchChallengeView({
         return;
       }
 
+      // Handle getDuration response — real duration from player, corrects wrong DB value
+      if (evt === "getduration" && typeof payloadValue === 'number' && payloadValue > 0) {
+        realDurationRef.current = payloadValue;
+      }
+
       const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
       const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
                     evt === "onfinish" || evt === "complete" || evt === "onended";
@@ -1427,13 +1434,13 @@ function WatchChallengeView({
       const isTimeUpdate = evt === "timeupdate";
 
       if (isTimeUpdate && payloadValue !== undefined) {
-        const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue.seconds;
+        const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue?.seconds;
         if (currentTime !== undefined) {
           lastPlayhead = currentTime;
           lastPlayheadRef.current = currentTime;
           setCurrentPlayhead(currentTime);
         }
-        // Capture real video duration from player (corrects wrong DB value)
+        // Capture duration if player includes it in timeupdate payload (object form)
         if (typeof payloadValue === 'object' && payloadValue !== null && payloadValue.duration > 0 && realDurationRef.current === 0) {
           realDurationRef.current = payloadValue.duration;
         }
