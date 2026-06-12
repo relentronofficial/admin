@@ -44,6 +44,8 @@ const envSchema = z.object({
   BETTER_STACK_SOURCE_TOKEN: z.string().optional().or(z.literal('')),
   USER_WEB_URL: z.string().url().default('http://localhost:3001'),
   ADMIN_WEB_URL: z.string().url().default('http://localhost:3000'),
+  // Comma-separated extra origins for CORS — use in production to add Vercel/custom domains
+  CORS_EXTRA_ORIGINS: z.string().optional().or(z.literal('')),
   JWT_ACCESS_SECRET: z.string().min(16),
   MSG91_AUTH_KEY: z.string().optional().or(z.literal('')),
   MSG91_SENDER_ID: z.string().optional().or(z.literal('')),

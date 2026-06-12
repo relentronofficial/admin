@@ -42,8 +42,11 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Auto-refresh on 401 (once per request)
-    if (error.response?.status === 401 && !originalRequest?._retry) {
+    // Auto-refresh on 401 (once per request).
+    // Skip for user-auth endpoints — a 401 there is a real credential/OTP error,
+    // not an expired session, so we should surface the error directly.
+    const isAuthEndpoint = !!originalRequest?.url?.includes("/api/user-auth/");
+    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       if (_isRefreshing) {
