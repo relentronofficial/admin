@@ -1414,7 +1414,10 @@ function WatchChallengeView({
               { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
               {
                 onSuccess: (data: any) => {
-                  if (data?.isCompleted) doMarkComplete();
+                  if (data?.isCompleted) { doMarkComplete(); return; }
+                  // Refresh sidebar progress stats after every heartbeat
+                  qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+                  qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
                 },
               }
             );
@@ -1434,7 +1437,10 @@ function WatchChallengeView({
           {
             onSuccess: (data: any) => {
               if (data?.isCompleted) { doMarkComplete(); return; }
-              doMarkComplete();
+              // Only auto-complete if >= 90% of video actually played
+              const dur = currentEpRef.current?.durationSeconds ?? 0;
+              if (dur > 0 && Math.floor(lastPlayhead) >= dur * 0.9) doMarkComplete();
+              else if (dur === 0) doMarkComplete(); // no duration data, trust the ended event
             },
           }
         );
@@ -1460,8 +1466,13 @@ function WatchChallengeView({
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  // Reflects the actual video timeline position, not accumulated watch time
   const activeProgressPct = ep.durationSeconds > 0
-    ? Math.min(100, Math.round((Math.max(ep.actualWatchedSecs ?? 0, currentPlayhead) / ep.durationSeconds) * 100))
+    ? Math.min(100, Math.round((currentPlayhead / ep.durationSeconds) * 100))
+    : 0;
+  // Saved resume position (shown when not actively watching)
+  const savedProgressPct = ep.durationSeconds > 0
+    ? Math.min(100, Math.round(((ep.lastWatchedSecs ?? 0) / ep.durationSeconds) * 100))
     : 0;
 
   const iframeSrc = ep.videoUrl
@@ -1472,26 +1483,25 @@ function WatchChallengeView({
     <div className="space-y-4">
       <ChallengeHeader challenge={challenge} />
 
-      {/* Player — sticky on mobile so controls stay visible while scrolling the episode list */}
-      <div className="sticky top-0 z-10 lg:static lg:z-auto -mx-4 px-4 lg:mx-0 lg:px-0 pt-2 pb-1 lg:pt-0 lg:pb-0" style={{ background: "var(--color-bg-primary)" }}>
-        <VideoWatermark
-          className="rounded-xl overflow-hidden bg-black aspect-video relative"
-          containerId="workshop-video-root"
-          showFullscreenButton={!!ep.videoUrl}
-        >
-          {iframeSrc ? (
-            <iframe
-              ref={iframeRef}
-              key={`${ep.id}-${forceStartFrom}`}
-              src={iframeSrc}
-              className="w-full h-full"
-              allow="autoplay"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No video</div>
-          )}
-        </VideoWatermark>
-      </div>
+      {/* Video player — full-width 16:9, immersive Udemy-style */}
+      <VideoWatermark
+        className="w-full rounded-xl overflow-hidden bg-black relative"
+        style={{ aspectRatio: "16/9" }}
+        containerId="workshop-video-root"
+        showFullscreenButton={!!ep.videoUrl}
+      >
+        {iframeSrc ? (
+          <iframe
+            ref={iframeRef}
+            key={`${ep.id}-${forceStartFrom}`}
+            src={iframeSrc}
+            className="absolute inset-0 w-full h-full"
+            allow="autoplay"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">No video</div>
+        )}
+      </VideoWatermark>
 
       {/* Speed control */}
       {iframeSrc && (
@@ -1535,7 +1545,7 @@ function WatchChallengeView({
           </span>
         ) : watchState === "resume" ? (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
-            <Play size={11} fill="currentColor" className="ml-0.5" /> Resume from {formatTime(Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead))}
+            <Play size={11} fill="currentColor" className="ml-0.5" /> Resume {savedProgressPct}%
           </span>
         ) : (
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
@@ -1545,7 +1555,7 @@ function WatchChallengeView({
       </div>
 
       {/* Resume card — only when there's saved progress */}
-      {(watchState === "resume" || watchState === "paused") && Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead) > 3 && (
+      {(watchState === "resume" || watchState === "paused") && (ep.lastWatchedSecs ?? 0) > 3 && (
         <div
           className="rounded-xl border px-4 py-3 space-y-2"
           style={{
@@ -1563,14 +1573,14 @@ function WatchChallengeView({
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold leading-tight" style={{ color: "var(--color-accent)" }}>
-                  Resume from {formatTime(Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead))}
+                  Resume from {formatTime(ep.lastWatchedSecs ?? 0)}
                 </p>
                 <p className="text-[11px] text-muted-foreground truncate">{ep.title}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-sm font-bold" style={{ color: "var(--color-accent)" }}>
-                {activeProgressPct}%
+                {savedProgressPct}%
               </span>
               <button
                 onClick={() => { setForceStartFrom(0); setWatchState("not_started"); }}
@@ -1584,12 +1594,12 @@ function WatchChallengeView({
             <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
-                style={{ width: `${activeProgressPct}%`, background: "var(--color-accent)" }}
+                style={{ width: `${savedProgressPct}%`, background: "var(--color-accent)" }}
               />
             </div>
             {ep.durationSeconds > 0 && (
               <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
-                {formatTime(Math.max(ep.lastWatchedSecs ?? 0, currentPlayhead))} / {formatTime(ep.durationSeconds)}
+                {formatTime(ep.lastWatchedSecs ?? 0)} / {formatTime(ep.durationSeconds)}
               </span>
             )}
           </div>
@@ -1660,7 +1670,7 @@ function WatchChallengeView({
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
           const progressPct = e.durationSeconds > 0
-            ? Math.min(100, Math.round((Math.max(e.actualWatchedSecs ?? 0, isActive ? currentPlayhead : (e.lastWatchedSecs ?? 0)) / e.durationSeconds) * 100))
+            ? Math.min(100, Math.round(((isActive ? currentPlayhead : (e.lastWatchedSecs ?? 0)) / e.durationSeconds) * 100))
             : 0;
 
           const isWatching = isActive && watchState === "watching";
@@ -2730,7 +2740,7 @@ export default function WorkshopDetailPage() {
       <h1 className="text-xl font-bold text-foreground leading-tight">{detail.title}</h1>
 
       {/* Two-column body */}
-      <div className="flex flex-col lg:flex-row gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
 
         {/* ── Left: Main Area ── */}
         <div className="flex-1 min-w-0">
@@ -2764,7 +2774,7 @@ export default function WorkshopDetailPage() {
         </div>
 
         {/* ── Right: Sidebar ── */}
-        <div className="w-full lg:w-[280px] flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
+        <div className="w-full lg:w-[30%] lg:max-w-[380px] flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
           {/* Challenge progress + certificate — always visible above tabs */}
           <LearningProgressWidget progress={progress} />
           {detail.certificate && (

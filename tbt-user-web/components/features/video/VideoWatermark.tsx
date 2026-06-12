@@ -47,6 +47,7 @@ function b64(s: string): string {
 interface VideoWatermarkProps {
   children: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
   containerId?: string;
   showFullscreenButton?: boolean;
 }
@@ -56,6 +57,7 @@ interface VideoWatermarkProps {
 export function VideoWatermark({
   children,
   className = "",
+  style,
   containerId,
   showFullscreenButton = false,
 }: VideoWatermarkProps) {
@@ -147,7 +149,7 @@ export function VideoWatermark({
         isFullscreen ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center" : "",
         className,
       ].join(" ")}
-      style={{ isolation: "isolate" }}
+      style={{ isolation: "isolate", ...(!isFullscreen ? style : {}) }}
     >
       {/* ── Main content (iframe / video) ──────────────────────────────────── */}
       <div className={isFullscreen ? "w-full h-full" : "contents"}>
