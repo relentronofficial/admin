@@ -1255,6 +1255,8 @@ function WatchChallengeView({
   const [liveWatched, setLiveWatched] = useState<number>(0);
   const liveWatchedRef = useRef<number>(0);
   const isPlayingRef = useRef(false);
+  // Real duration captured from Bunny player's timeupdate event (overrides wrong DB value)
+  const realDurationRef = useRef<number>(0);
 
   useEffect(() => { activeEpIdxRef.current = activeEpIdx; }, [activeEpIdx]);
   useEffect(() => { onChallengeCompleteRef.current = onChallengeComplete; }, [onChallengeComplete]);
@@ -1275,6 +1277,7 @@ function WatchChallengeView({
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
     isPlayingRef.current = false;
+    realDurationRef.current = 0;
     setUpNextCountdown(null);
 
     if (!ep) return;
@@ -1298,7 +1301,7 @@ function WatchChallengeView({
     if (!ep?.id) return;
     const id = setInterval(() => {
       if (!isPlayingRef.current) return;
-      const dur = currentEpRef.current?.durationSeconds ?? 0;
+      const dur = realDurationRef.current > 0 ? realDurationRef.current : (currentEpRef.current?.durationSeconds ?? 0);
       const inc = 1 * (speedRef.current || 1);
       const next = dur > 0 ? Math.min(dur, liveWatchedRef.current + inc) : liveWatchedRef.current + inc;
       liveWatchedRef.current = next;
@@ -1352,8 +1355,12 @@ function WatchChallengeView({
       if (markCalledRef.current) return;
       markCalledRef.current = true;
       clearInterval(timerRef.current);
+      isPlayingRef.current = false;
       setWatchState("completed");
-      completeEp.mutate(ep.id, {
+      // Cap liveWatched to realDuration so it shows 100%
+      const rd = realDurationRef.current > 0 ? realDurationRef.current : (ep.durationSeconds ?? 0);
+      if (rd > 0) { liveWatchedRef.current = rd; setLiveWatched(rd); }
+      completeEp.mutate({ episodeId: ep.id, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined }, {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
           qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
@@ -1368,8 +1375,9 @@ function WatchChallengeView({
           }
         },
         onError: () => {
+          // Complete endpoint failed (e.g. still checking 85%) — retry won't help,
+          // but keep UI state as completed so user experience isn't broken
           markCalledRef.current = false;
-          setWatchState("paused");
         },
       });
     };
@@ -1425,6 +1433,10 @@ function WatchChallengeView({
           lastPlayheadRef.current = currentTime;
           setCurrentPlayhead(currentTime);
         }
+        // Capture real video duration from player (corrects wrong DB value)
+        if (typeof payloadValue === 'object' && payloadValue !== null && payloadValue.duration > 0 && realDurationRef.current === 0) {
+          realDurationRef.current = payloadValue.duration;
+        }
       }
 
       if (isPlay && !isEnd) {
@@ -1436,7 +1448,7 @@ function WatchChallengeView({
           clearInterval(timerRef.current);
           timerRef.current = setInterval(() => {
             postProgress.mutate(
-              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
+              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined },
               {
                 onSuccess: (data: any) => {
                   if (data?.isCompleted) { doMarkComplete(); return; }
@@ -1464,16 +1476,12 @@ function WatchChallengeView({
         clearInterval(timerRef.current);
         iframeFocusedRef.current = false;
         isPlayingRef.current = false;
+        const rd = realDurationRef.current > 0 ? realDurationRef.current : undefined;
         postProgress.mutate(
-          { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false },
+          { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false, reportedDuration: rd },
           {
-            onSuccess: (data: any) => {
-              if (data?.isCompleted) { doMarkComplete(); return; }
-              // Only auto-complete if >= 90% of video actually played
-              const dur = currentEpRef.current?.durationSeconds ?? 0;
-              if (dur > 0 && Math.floor(lastPlayhead) >= dur * 0.9) doMarkComplete();
-              else if (dur === 0) doMarkComplete(); // no duration data, trust the ended event
-            },
+            onSuccess: () => doMarkComplete(),
+            onError: () => doMarkComplete(), // trust ended event — always complete
           }
         );
       }
@@ -1498,13 +1506,15 @@ function WatchChallengeView({
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  // Prefer real duration captured from player over potentially wrong DB value
+  const activeDuration = realDurationRef.current > 0 ? realDurationRef.current : (ep.durationSeconds ?? 0);
   // Watched percentage = actual seconds watched / total duration (updates every second while playing)
-  const activeProgressPct = ep.durationSeconds > 0
-    ? Math.min(100, Math.round((liveWatched / ep.durationSeconds) * 100))
+  const activeProgressPct = activeDuration > 0
+    ? Math.min(100, Math.round((liveWatched / activeDuration) * 100))
     : 0;
   // Saved watched percentage (from server — used for resume display before playing starts)
-  const savedProgressPct = ep.durationSeconds > 0
-    ? Math.min(100, Math.round(((ep.actualWatchedSecs ?? 0) / ep.durationSeconds) * 100))
+  const savedProgressPct = activeDuration > 0
+    ? Math.min(100, Math.round(((ep.actualWatchedSecs ?? 0) / activeDuration) * 100))
     : 0;
 
   const iframeSrc = ep.videoUrl

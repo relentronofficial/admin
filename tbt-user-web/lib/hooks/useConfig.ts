@@ -135,16 +135,19 @@ export const usePostEpisodeProgress = () =>
       watchedSeconds,
       deltaSeconds,
       isCompleted,
+      reportedDuration,
     }: {
       episodeId: string;
       watchedSeconds?: number;
       deltaSeconds?: number;
       isCompleted?: boolean;
+      reportedDuration?: number;
     }) => {
       const res: any = await apiClient.post(`/api/user/episodes/${episodeId}/progress`, {
         watchedSeconds,
         deltaSeconds,
         isCompleted,
+        ...(reportedDuration && reportedDuration > 0 ? { reportedDuration } : {}),
       });
       return res?.data;
     },
@@ -207,8 +210,10 @@ export const useCompleteChallenge = () =>
 
 export const useCompleteWorkshopEpisode = () =>
   useMutation({
-    mutationFn: async (episodeId: string) => {
-      const res: any = await apiClient.post(`/api/user/workshop-episodes/${episodeId}/complete`, {});
+    mutationFn: async ({ episodeId, reportedDuration }: { episodeId: string; reportedDuration?: number }) => {
+      const res: any = await apiClient.post(`/api/user/workshop-episodes/${episodeId}/complete`, {
+        ...(reportedDuration && reportedDuration > 0 ? { reportedDuration } : {}),
+      });
       return res?.data;
     },
   });

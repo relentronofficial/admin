@@ -2208,9 +2208,10 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
 export async function postEpisodeProgressHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: episodeId } = request.params as { id: string };
-  const { watchedSeconds, deltaSeconds } = request.body as {
+  const { watchedSeconds, deltaSeconds, reportedDuration } = request.body as {
     watchedSeconds?: number;
     deltaSeconds?: number;
+    reportedDuration?: number;
   };
 
   const safeDelta = Math.min(deltaSeconds ?? 0, 30);
@@ -2274,8 +2275,23 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     }).catch(() => {});
   }
 
-  // Fetch duration from Bunny if missing — fire-and-forget so it never blocks the heartbeat response
+  // Correct stored duration when client reports the real value and it differs significantly.
+  // Covers the case where admin entered wrong duration (e.g. 780s for a 36s video).
+  // Threshold: stored is >2x or <0.5x of reported → treat stored as wrong.
   let duration = episode.durationSeconds;
+  if (reportedDuration && reportedDuration > 0) {
+    const storedIsWrong = !duration || duration <= 0 ||
+      Math.max(duration, reportedDuration) / Math.min(duration, reportedDuration) > 2;
+    if (storedIsWrong) {
+      duration = reportedDuration;
+      void request.server.prisma.workshopEpisode.update({
+        where: { id: episodeId },
+        data: { durationSeconds: reportedDuration },
+      }).catch(() => {});
+    }
+  }
+
+  // Fetch duration from Bunny if still missing — fire-and-forget
   if ((!duration || duration <= 0) && episode.bunnyVideoId && env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
     const bunnyApiKey = env.BUNNY_STREAM_API_KEY;
     const bunnyLibId = env.BUNNY_STREAM_LIBRARY_ID;
@@ -3230,9 +3246,24 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
     return ok(reply, { episodeId: id, isCompleted: true });
   }
 
+  const { reportedDuration } = (request.body ?? {}) as { reportedDuration?: number };
+
   let duration = episode.durationSeconds;
 
-  // Task 1: Fetch duration if missing for validation
+  // Correct stored duration when client reports the real value (same 2x threshold as progress handler)
+  if (reportedDuration && reportedDuration > 0) {
+    const storedIsWrong = !duration || duration <= 0 ||
+      Math.max(duration, reportedDuration) / Math.min(duration, reportedDuration) > 2;
+    if (storedIsWrong) {
+      duration = reportedDuration;
+      void request.server.prisma.workshopEpisode.update({
+        where: { id: episode.id },
+        data: { durationSeconds: reportedDuration },
+      }).catch(() => {});
+    }
+  }
+
+  // Fetch duration if still missing
   if ((!duration || duration <= 0) && episode.bunnyVideoId && env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
     try {
       const bunnyRes = await fetch(
