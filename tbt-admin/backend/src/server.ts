@@ -71,15 +71,21 @@ async function bootstrap() {
     await fastify.register(supabasePlugin);
     await fastify.register(socketPlugin);
 
+    // Strip trailing slashes — browsers send origins without them but env vars often include one
+    const normalizeOrigin = (u: string) => u.replace(/\/+$/, '');
     const allowedOrigins = new Set([
-      env.USER_WEB_URL,
-      env.ADMIN_WEB_URL,
+      normalizeOrigin(env.USER_WEB_URL),
+      normalizeOrigin(env.ADMIN_WEB_URL),
       ...(env.CORS_EXTRA_ORIGINS
-        ? env.CORS_EXTRA_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+        ? env.CORS_EXTRA_ORIGINS.split(',').map((o) => normalizeOrigin(o.trim())).filter(Boolean)
         : []),
     ]);
     await fastify.register(cors, {
-      origin: (origin, cb) => cb(null, !origin || allowedOrigins.has(origin)),
+      origin: (origin, cb) => {
+        const allowed = !origin || allowedOrigins.has(origin);
+        fastify.log.debug({ origin, allowed }, 'CORS check');
+        cb(null, allowed);
+      },
       credentials: true,
     });
     await fastify.register(helmet);
