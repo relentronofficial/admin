@@ -21,6 +21,8 @@ export default function WatchPage() {
   const [speed, setSpeed] = useState<string>("");
   const [quality, setQuality] = useState<string>("");
   const [isMarkedComplete, setIsMarkedComplete] = useState(false);
+  const [liveElapsed, setLiveElapsed] = useState(0);
+  const liveElapsedRef = useRef(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Track when playback started so we can compute watched seconds for periodic posts
@@ -36,6 +38,19 @@ export default function WatchPage() {
   useEffect(() => {
     if (playback && !speed) setSpeed(playback.defaultSpeed);
     if (playback && !quality) setQuality(playback.defaultQuality);
+  }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Gap 5: 1-second tick to estimate playhead position for Complete button gating
+  useEffect(() => {
+    if (!playback) return;
+    liveElapsedRef.current = 0;
+    setLiveElapsed(0);
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      liveElapsedRef.current += 1;
+      setLiveElapsed(liveElapsedRef.current);
+    }, 1000);
+    return () => clearInterval(id);
   }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -108,6 +123,10 @@ export default function WatchPage() {
   }
 
   const hasQualityChoice = playback.qualityOptions.length > 1;
+  // Gap 5: disable Complete button until estimated playhead reaches 85% of duration
+  const estimatedPlayhead = (playback.resumeAtSeconds ?? 0) + liveElapsed * speedRef.current;
+  const canComplete = !(playback as any).durationSeconds ||
+    estimatedPlayhead >= (playback as any).durationSeconds * 0.85;
   const videoSrc = withResumeTime(normalizeBunnyUrl(playback.videoUrl), playback.resumeAtSeconds);
 
   return (
@@ -211,8 +230,9 @@ export default function WatchPage() {
                   },
                 });
               }}
-              disabled={completeEp.isPending}
-              className="ml-auto inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg text-white font-medium disabled:opacity-50 transition-opacity"
+              disabled={completeEp.isPending || !canComplete}
+              title={!canComplete ? "Watch at least 85% of the video to complete" : undefined}
+              className="ml-auto inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
               style={{ background: "var(--color-success)" }}
             >
               {completeEp.isPending
