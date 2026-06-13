@@ -123,6 +123,14 @@ function SplashOverlay({
   const [entered, setEntered] = useState(false);
   // `dismissed` removes the node after the exit fade completes
   const [dismissed, setDismissed] = useState(false);
+  // `videoEnded` fires when the logo video finishes playing
+  const [videoEnded, setVideoEnded] = useState(false);
+
+  const logoUrl = config?.splashLogoUrl ?? config?.logoUrl ?? null;
+  const siteName = config?.siteName ?? "TBT";
+
+  // In image mode exit is controlled by splashDone; in video mode by videoEnded
+  const shouldExit = logoUrl ? splashDone : videoEnded;
 
   // Trigger entrance animation on next paint
   useEffect(() => {
@@ -130,18 +138,16 @@ function SplashOverlay({
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // When splash timer fires, wait for exit transition then unmount
+  // When exit condition fires, wait for fade-out transition then unmount
   useEffect(() => {
-    if (!splashDone) return;
+    if (!shouldExit) return;
     const t = setTimeout(() => setDismissed(true), 500);
     return () => clearTimeout(t);
-  }, [splashDone]);
+  }, [shouldExit]);
 
   if (dismissed) return null;
 
-  const logoUrl = config?.splashLogoUrl ?? config?.logoUrl ?? null;
-  const siteName = config?.siteName ?? "TBT";
-  const exiting = splashDone && !dismissed;
+  const exiting = shouldExit && !dismissed;
 
   return (
     <div
@@ -150,7 +156,7 @@ function SplashOverlay({
         background: "var(--color-bg-primary, #000)",
         opacity: exiting ? 0 : entered ? 1 : 0,
         transition: "opacity 500ms ease",
-        pointerEvents: splashDone ? "none" : "auto",
+        pointerEvents: shouldExit ? "none" : "auto",
       }}
     >
       {/* Logo / wordmark — slides up while fading in */}
@@ -166,16 +172,17 @@ function SplashOverlay({
           <img
             src={logoUrl}
             alt={siteName}
-            className="w-40 h-40 object-contain"
+            className="object-contain"
+            style={{ width: "min(480px, 85vw)", height: "min(480px, 85vw)" }}
           />
         ) : (
           <video
             autoPlay
             muted
             playsInline
-            loop
-            className="w-40 h-40 object-contain"
-            style={{ background: "transparent" }}
+            onEnded={() => setVideoEnded(true)}
+            className="object-contain"
+            style={{ width: "min(480px, 85vw)", height: "min(480px, 85vw)", background: "transparent" }}
           >
             <source src="/tbt-logo.webm" type="video/webm" />
             <source src="/tbt-logo.mp4" type="video/mp4" />
