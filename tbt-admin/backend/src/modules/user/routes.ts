@@ -45,6 +45,7 @@ import {
   getEpisodePlaybackHandler,
   postEpisodeProgressHandler,
   getUserProductsHandler,
+  submitProductInquiryHandler,
   getUserResourcesHandler,
   startConversationHandler,
   listMemberConversationsHandler,
@@ -151,6 +152,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Products & Resources ──────────────────────────────────────────────────
   fastify.get('/products', getUserProductsHandler);
+  fastify.post('/products/:id/inquire', submitProductInquiryHandler);
   fastify.get('/resources', getUserResourcesHandler);
 
   // ── Conversations (live chat) ─────────────────────────────────────────────

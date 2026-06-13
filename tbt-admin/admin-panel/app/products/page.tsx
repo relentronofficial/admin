@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Pencil, X, Loader2, ShoppingBag, AlertCircle, Eye, EyeOff, ExternalLink, Save, GripVertical } from "lucide-react";
+import { Plus, Trash2, Pencil, X, Loader2, ShoppingBag, AlertCircle, Eye, EyeOff, ExternalLink, Save, GripVertical, ShoppingCart, Clock, CheckCircle, PhoneCall } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListProducts, useCreateProduct, useUpdateProduct, useDeleteProduct,
   useGetProductsPageConfig, useUpdateProductsPageConfig, useReorderProducts,
+  useListProductInquiries, useUpdateInquiryStatus,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
@@ -23,7 +24,136 @@ const EMPTY_FORM = { title: "", description: "", thumbnailUrl: "", order: "", is
 const labelCls = "block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani";
 const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm";
 
+const INQUIRY_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: any }> = {
+  pending:   { label: "Pending",   color: "#f59e0b", bg: "rgba(245,158,11,0.12)",  Icon: Clock },
+  contacted: { label: "Contacted", color: "#3b82f6", bg: "rgba(59,130,246,0.12)", Icon: PhoneCall },
+  resolved:  { label: "Resolved",  color: "#22c55e", bg: "rgba(34,197,94,0.12)",   Icon: CheckCircle },
+};
+
+function InquiriesTab() {
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [page, setPage] = useState(1);
+  const { data, isLoading, refetch } = useListProductInquiries({ status: statusFilter || undefined, page, limit: 20 });
+  const updateStatus = useUpdateInquiryStatus();
+
+  const inquiries: any[] = (data as any)?.data ?? [];
+  const total: number = (data as any)?.meta?.total ?? 0;
+  const totalPages = Math.ceil(total / 20);
+
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      await updateStatus.mutateAsync({ id, status: newStatus });
+      toast.success(`Marked as ${newStatus}`);
+      refetch();
+    } catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Filter tabs */}
+      <div className="flex items-center gap-2">
+        {["", "pending", "contacted", "resolved"].map(s => (
+          <button
+            key={s}
+            onClick={() => { setStatusFilter(s); setPage(1); }}
+            className={`px-4 py-1.5 rounded-md font-rajdhani font-bold text-[11px] uppercase tracking-widest transition-all ${statusFilter === s ? "bg-[#dc2626] text-white" : "bg-[#181818] border border-[#2a2a2a] text-[#606060] hover:text-white"}`}
+          >
+            {s === "" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+          </button>
+        ))}
+        <span className="ml-auto text-[11px] text-[#444] font-rajdhani">{total} total</span>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-[#dc2626]" /></div>
+      ) : inquiries.length === 0 ? (
+        <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16 space-y-2">
+          <ShoppingCart size={28} className="mx-auto text-[#333]" />
+          <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-xs">No inquiries</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {inquiries.map((inq: any) => {
+            const cfg = INQUIRY_STATUS_CONFIG[inq.status] ?? INQUIRY_STATUS_CONFIG.pending;
+            const StatusIcon = cfg.Icon;
+            return (
+              <div key={inq.id} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 flex flex-col sm:flex-row gap-4">
+                {/* Product thumbnail */}
+                <div className="shrink-0">
+                  {inq.product?.thumbnailUrl ? (
+                    <img src={inq.product.thumbnailUrl} alt="" className="w-14 h-14 rounded-lg object-cover" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-lg bg-[#141414] flex items-center justify-center">
+                      <ShoppingBag size={18} className="text-[#333]" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start gap-2 flex-wrap">
+                    <p className="font-bold text-[#f0f0f0] text-sm">{inq.product?.title ?? "Unknown product"}</p>
+                    {inq.product?.price != null && (
+                      <span className="text-[11px] font-bold text-[#dc2626] font-rajdhani">
+                        {inq.product.currency === "INR" ? "₹" : "$"}{Number(inq.product.price).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#a0a0a0] mt-0.5">
+                    <span className="font-semibold text-[#f0f0f0]">{inq.member?.firstName} {inq.member?.lastName}</span>
+                    {inq.member?.phone && <> · {inq.member.phone}</>}
+                    {inq.member?.email && <> · <span className="text-[#606060]">{inq.member.email}</span></>}
+                  </p>
+                  {inq.message && (
+                    <p className="text-xs text-[#606060] mt-1.5 italic">"{inq.message}"</p>
+                  )}
+                  <p className="text-[10px] text-[#444] mt-1.5 font-rajdhani">
+                    {new Date(inq.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+
+                {/* Status + actions */}
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <span
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide font-rajdhani"
+                    style={{ background: cfg.bg, color: cfg.color }}
+                  >
+                    <StatusIcon size={11} />
+                    {cfg.label}
+                  </span>
+                  <div className="flex gap-1.5">
+                    {["pending", "contacted", "resolved"].filter(s => s !== inq.status).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => handleStatusChange(inq.id, s)}
+                        disabled={updateStatus.isPending}
+                        className="px-2.5 py-1 rounded font-rajdhani font-bold text-[10px] uppercase tracking-wide bg-[#1a1a1a] border border-[#333] text-[#a0a0a0] hover:text-white hover:border-[#555] transition-all disabled:opacity-40"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 bg-[#181818] border border-[#2a2a2a] rounded text-[11px] font-rajdhani font-bold text-[#a0a0a0] hover:text-white disabled:opacity-30 transition-all">Prev</button>
+          <span className="text-[11px] text-[#444] font-rajdhani">{page} / {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1.5 bg-[#181818] border border-[#2a2a2a] rounded text-[11px] font-rajdhani font-bold text-[#a0a0a0] hover:text-white disabled:opacity-30 transition-all">Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProductsPage() {
+  const [activeTab, setActiveTab] = useState<"products" | "inquiries">("products");
   const { data, isLoading, refetch } = useListProducts();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
@@ -185,17 +315,38 @@ export default function ProductsPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {isDirty && (
+            {activeTab === "products" && isDirty && (
               <button onClick={handleSaveOrder} disabled={reorderProducts.isPending} className="flex items-center gap-2 bg-[#1a1a1a] border border-[#333] text-[#a0a0a0] hover:text-white px-4 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase transition-all">
                 {reorderProducts.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Order
               </button>
             )}
-            <button onClick={openCreate} className="flex items-center gap-2 bg-[#dc2626] text-white px-5 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
-              <Plus size={15} /> Add Product
-            </button>
+            {activeTab === "products" && (
+              <button onClick={openCreate} className="flex items-center gap-2 bg-[#dc2626] text-white px-5 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
+                <Plus size={15} /> Add Product
+              </button>
+            )}
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="flex gap-1 bg-[#181818] border border-[#2a2a2a] rounded-xl p-1 w-fit">
+          <button
+            onClick={() => setActiveTab("products")}
+            className={`flex items-center gap-2 px-5 py-2 rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all ${activeTab === "products" ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-white"}`}
+          >
+            <ShoppingBag size={13} /> Products
+          </button>
+          <button
+            onClick={() => setActiveTab("inquiries")}
+            className={`flex items-center gap-2 px-5 py-2 rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all ${activeTab === "inquiries" ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-white"}`}
+          >
+            <ShoppingCart size={13} /> Purchase Inquiries
+          </button>
+        </div>
+
+        {activeTab === "inquiries" && <InquiriesTab />}
+
+        {activeTab === "products" && <>
         {/* Page Config */}
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-[#2a2a2a] pb-3">
@@ -278,6 +429,7 @@ export default function ProductsPage() {
             ))}
           </div>
         )}
+        </>}
       </div>
 
       {/* ── FORM MODAL ────────────────────────────────────────────────────── */}

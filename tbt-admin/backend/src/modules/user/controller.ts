@@ -2399,7 +2399,7 @@ export async function getUserProductsHandler(request: FastifyRequest, reply: Fas
   ]);
 
   return ok(reply, {
-    pageTitle: pageConfig?.pageTitle ?? 'Products',
+    pageTitle: pageConfig?.pageTitle ?? 'TBT Store',
     pageBg: pageConfig?.pageBg ?? '',
     products: products.map((p) => ({
       id: p.id,
@@ -2420,6 +2420,33 @@ export async function getUserProductsHandler(request: FastifyRequest, reply: Fas
       })),
     })),
   });
+}
+
+export async function submitProductInquiryHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id: productId } = request.params as { id: string };
+  const { message } = (request.body || {}) as { message?: string };
+
+  const [product, member] = await Promise.all([
+    request.server.prisma.product.findUnique({ where: { id: productId }, select: { id: true, title: true, isVisible: true } }),
+    request.server.prisma.member.findUnique({ where: { id: memberId }, select: { firstName: true, lastName: true, phone: true, email: true } }),
+  ]);
+
+  if (!product || !product.isVisible) return fail(reply, 404, 'Product not found');
+
+  const inquiry = await (request.server.prisma as any).productInquiry.create({
+    data: { memberId, productId, message: message?.trim() || null, status: 'pending' },
+  });
+
+  const memberName = `${member?.firstName ?? ''} ${member?.lastName ?? ''}`.trim();
+  request.server.io.to('admin').emit('admin:product_inquiry', {
+    inquiryId: inquiry.id,
+    productTitle: product.title,
+    memberName,
+    phone: member?.phone ?? '',
+  });
+
+  return reply.status(201).send({ success: true, data: { id: inquiry.id }, error: null });
 }
 
 export async function getUserResourcesHandler(request: FastifyRequest, reply: FastifyReply) {

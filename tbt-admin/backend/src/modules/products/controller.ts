@@ -49,6 +49,48 @@ export async function deleteProductHandler(req: FastifyRequest, reply: FastifyRe
   return reply.send({ success: true, data: null, error: null });
 }
 
+export async function listProductInquiriesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { status, page = 1, limit = 50 } = req.query as any;
+  const where: any = {};
+  if (status) where.status = status;
+
+  const [inquiries, total] = await Promise.all([
+    (req.server.prisma as any).productInquiry.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+      include: {
+        member: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+        product: { select: { id: true, title: true, thumbnailUrl: true, price: true, currency: true } },
+      },
+    }),
+    (req.server.prisma as any).productInquiry.count({ where }),
+  ]);
+
+  return reply.send({ success: true, data: inquiries, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+}
+
+export async function updateInquiryStatusHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const { status } = req.body as { status: string };
+
+  if (!['pending', 'contacted', 'resolved'].includes(status)) {
+    return reply.status(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid status' } });
+  }
+
+  const inquiry = await (req.server.prisma as any).productInquiry.update({
+    where: { id },
+    data: { status },
+    include: {
+      member: { select: { id: true, firstName: true, lastName: true, phone: true } },
+      product: { select: { id: true, title: true } },
+    },
+  });
+
+  return reply.send({ success: true, data: inquiry, error: null });
+}
+
 export async function reorderProductsHandler(req: FastifyRequest, reply: FastifyReply) {
   const { ids } = req.body as any;
   await req.server.prisma.$transaction(

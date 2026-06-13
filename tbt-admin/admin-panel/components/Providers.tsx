@@ -50,10 +50,17 @@ function AuthInterceptor() {
         toast.success(`New signup: ${data.fullName} is waiting for approval`);
         queryClient.invalidateQueries({ queryKey: ['members'] });
       });
+      socket.on('admin:product_inquiry', (data: { memberName: string; productTitle: string }) => {
+        toast.success(`Purchase inquiry: ${data.memberName} is interested in "${data.productTitle}"`);
+        queryClient.invalidateQueries({ queryKey: ['product-inquiries'] });
+      });
     });
     return () => {
       mounted = false;
-      getAdminSocket().then((s) => s.off('admin:member_pending'));
+      getAdminSocket().then((s) => {
+        s.off('admin:member_pending');
+        s.off('admin:product_inquiry');
+      });
     };
   }, [isLoaded, queryClient]);
 

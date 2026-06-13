@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { listProductsHandler, createProductHandler, updateProductHandler, deleteProductHandler, reorderProductsHandler } from './controller.js';
+import { listProductsHandler, createProductHandler, updateProductHandler, deleteProductHandler, reorderProductsHandler, listProductInquiriesHandler, updateInquiryStatusHandler } from './controller.js';
 
 export async function productRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -8,4 +8,6 @@ export async function productRoutes(fastify: FastifyInstance) {
   fastify.put('/reorder', reorderProductsHandler);
   fastify.put('/:id', updateProductHandler);
   fastify.delete('/:id', deleteProductHandler);
+  fastify.get('/inquiries', listProductInquiriesHandler);
+  fastify.patch('/inquiries/:id', updateInquiryStatusHandler);
 }

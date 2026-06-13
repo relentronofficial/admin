@@ -315,6 +315,7 @@ model Member {
   SecurityLog           SecurityLog[]
   liveCallAttendance    LiveCallAttendance[]
   liveCallPollVotes     LiveCallPollVote[]
+  productInquiries      ProductInquiry[]
 
   @@map("members")
 }
@@ -1727,6 +1728,7 @@ model Product {
   category     String?
   stockStatus  String       @default("in_stock") @map("stock_status")
   ctas         ProductCta[]
+  inquiries    ProductInquiry[]
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1744,6 +1746,21 @@ model ProductCta {
   product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_ctas")
+}
+
+model ProductInquiry {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  message   String?
+  status    String   @default("pending")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_inquiries")
 }
 
 model AppResource {

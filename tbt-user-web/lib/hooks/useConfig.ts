@@ -292,3 +292,11 @@ export const useVotePoll = () =>
       await apiClient.post(`/api/user/workshop/live-calls/polls/${pollId}/vote`, { optionId });
     },
   });
+
+export const useSubmitProductInquiry = () =>
+  useMutation({
+    mutationFn: async ({ productId, message }: { productId: string; message?: string }) => {
+      const res: any = await apiClient.post(`/api/user/products/${productId}/inquire`, { message });
+      return res?.data;
+    },
+  });

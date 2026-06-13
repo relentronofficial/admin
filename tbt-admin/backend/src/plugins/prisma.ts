@@ -30,6 +30,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`ALTER TABLE products ADD COLUMN IF NOT EXISTS currency VARCHAR(10) NOT NULL DEFAULT 'INR'`);
     await prisma.$executeRawUnsafe(`ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100)`);
     await prisma.$executeRawUnsafe(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_status VARCHAR(50) NOT NULL DEFAULT 'in_stock'`);
+    // Product inquiries table — idempotent, safe on every startup
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS product_inquiries (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id  UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        message    TEXT,
+        status     VARCHAR(50) NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

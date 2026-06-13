@@ -837,3 +837,26 @@ export const useSendReminders = () =>
       return res.data as { emailsSent: number; smsSent: number; notified: number };
     },
   });
+
+// ── PRODUCT INQUIRIES ─────────────────────────────────────────────────────────
+
+export const useListProductInquiries = (params: { status?: string; page?: number; limit?: number } = {}) =>
+  useQuery({
+    queryKey: ['product-inquiries', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/products/inquiries', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useUpdateInquiryStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res: any = await apiClient.patch(`/api/products/inquiries/${id}`, { status });
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['product-inquiries'] }),
+  });
+};
