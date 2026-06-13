@@ -3,7 +3,7 @@ import { env } from '../../config/env.js';
 
 // ── BUNNY STREAM DURATION HELPER ──────────────────────────────────────
 
-async function fetchBunnyDuration(bunnyVideoId: string): Promise<number | null> {
+export async function fetchBunnyDuration(bunnyVideoId: string): Promise<number | null> {
   const apiKey = env.BUNNY_STREAM_API_KEY;
   const libraryId = env.BUNNY_STREAM_LIBRARY_ID;
   if (!apiKey || !libraryId) return null;

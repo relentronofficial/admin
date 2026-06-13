@@ -41,6 +41,7 @@ import { messagesRoutes } from './modules/messages/routes.js';
 import { conversationsRoutes } from './modules/conversations/routes.js';
 import { securityRoutes } from './modules/security/routes.js';
 import { userAuthRoutes } from './modules/user-auth/routes.js';
+import { fetchBunnyDuration } from './modules/workshops/controller.js';
 
 async function bootstrap() {
   const fastify = Fastify({
@@ -136,6 +137,28 @@ async function bootstrap() {
 
     await fastify.listen({ port, host });
     console.log(`🚀 Server ready at http://localhost:${port}`);
+
+    // Background: sync durationSeconds from Bunny for all existing episodes.
+    // Runs once per startup, non-blocking, fixes episodes with wrong manually-typed durations.
+    setImmediate(async () => {
+      try {
+        const episodes = await fastify.prisma.workshopEpisode.findMany({
+          where: { bunnyVideoId: { not: null } },
+          select: { id: true, bunnyVideoId: true, durationSeconds: true },
+        });
+        fastify.log.info(`[bunny-sync] Syncing duration for ${episodes.length} episodes`);
+        for (const ep of episodes) {
+          const real = await fetchBunnyDuration(ep.bunnyVideoId!);
+          if (real !== null && real !== ep.durationSeconds) {
+            await fastify.prisma.workshopEpisode.update({ where: { id: ep.id }, data: { durationSeconds: real } });
+            fastify.log.info(`[bunny-sync] ${ep.id}: ${ep.durationSeconds}s → ${real}s`);
+          }
+        }
+        fastify.log.info('[bunny-sync] Done');
+      } catch (err) {
+        fastify.log.warn({ err }, '[bunny-sync] Failed — will retry on next startup');
+      }
+    });
 
     // Graceful Shutdown
     for (const signal of ['SIGINT', 'SIGTERM']) {
