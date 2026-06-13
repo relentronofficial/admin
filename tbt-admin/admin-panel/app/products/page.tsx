@@ -11,8 +11,14 @@ import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
 
 const CTA_TYPES = ["primary", "secondary"];
+const CATEGORIES = ["general", "book", "apparel", "digital", "other"];
+const STOCK_STATUSES = [
+  { value: "in_stock", label: "In Stock" },
+  { value: "out_of_stock", label: "Out of Stock" },
+  { value: "pre_order", label: "Pre-Order" },
+];
 const EMPTY_CTA = { label: "", url: "", type: "primary", openInNewTab: true };
-const EMPTY_FORM = { title: "", description: "", thumbnailUrl: "", order: "", isVisible: true, ctas: [{ ...EMPTY_CTA }] };
+const EMPTY_FORM = { title: "", description: "", thumbnailUrl: "", order: "", isVisible: true, price: "", currency: "INR", category: "general", stockStatus: "in_stock", ctas: [{ ...EMPTY_CTA }] };
 
 const labelCls = "block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani";
 const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm";
@@ -113,6 +119,10 @@ export default function ProductsPage() {
       thumbnailUrl: p.thumbnailUrl || "",
       order: String(p.order ?? ""),
       isVisible: p.isVisible ?? true,
+      price: p.price != null ? String(p.price) : "",
+      currency: p.currency || "INR",
+      category: p.category || "general",
+      stockStatus: p.stockStatus || "in_stock",
       ctas: p.ctas?.length
         ? p.ctas.map((c: any) => ({ label: c.label, url: c.url, type: c.type || "primary", openInNewTab: c.openInNewTab ?? true }))
         : [{ ...EMPTY_CTA }],
@@ -130,6 +140,10 @@ export default function ProductsPage() {
         thumbnailUrl: form.thumbnailUrl || null,
         order: Number(form.order) || 0,
         isVisible: form.isVisible,
+        price: form.price !== "" ? Number(form.price) : null,
+        currency: form.currency || "INR",
+        category: form.category || null,
+        stockStatus: form.stockStatus || "in_stock",
         ctas: form.ctas.filter((c: any) => c.label && c.url),
       };
       if (editing) {
@@ -284,6 +298,44 @@ export default function ProductsPage() {
               <div>
                 <label className={labelCls}>Description</label>
                 <textarea value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
+              </div>
+
+              {/* Price + Currency + Category + Stock */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Price <span className="normal-case font-normal text-[#333]">(leave blank if free)</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.price}
+                    onChange={e => setForm((f: any) => ({ ...f, price: e.target.value }))}
+                    placeholder="0.00"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Currency</label>
+                  <select value={form.currency} onChange={e => setForm((f: any) => ({ ...f, currency: e.target.value }))} className={inputCls + " appearance-none"}>
+                    <option value="INR">INR (₹)</option>
+                    <option value="USD">USD ($)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Category</label>
+                  <select value={form.category} onChange={e => setForm((f: any) => ({ ...f, category: e.target.value }))} className={inputCls + " appearance-none"}>
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Stock Status</label>
+                  <select value={form.stockStatus} onChange={e => setForm((f: any) => ({ ...f, stockStatus: e.target.value }))} className={inputCls + " appearance-none"}>
+                    {STOCK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
               </div>
 
               {/* Thumbnail upload */}

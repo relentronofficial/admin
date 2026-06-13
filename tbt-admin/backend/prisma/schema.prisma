@@ -1722,6 +1722,10 @@ model Product {
   thumbnailUrl String?      @map("thumbnail_url")
   order        Int          @default(0)
   isVisible    Boolean      @default(true) @map("is_visible")
+  price        Decimal?     @db.Decimal(10, 2)
+  currency     String       @default("INR")
+  category     String?
+  stockStatus  String       @default("in_stock") @map("stock_status")
   ctas         ProductCta[]
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)

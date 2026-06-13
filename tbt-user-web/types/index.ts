@@ -543,6 +543,10 @@ export interface Product {
   description?: string | null;
   thumbnailUrl?: string | null;
   isVisible: boolean;
+  price?: number | null;
+  currency?: string;
+  category?: string | null;
+  stockStatus?: string;
   ctas: ProductCta[];
 }
 
