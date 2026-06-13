@@ -158,7 +158,8 @@ async function bootstrap() {
 
         // Phase 2: episodes with bunnyVideoId=null but a Bunny embed/player URL in videoUrl
         // Extracts the video ID from the URL, fetches real duration, and backfills bunnyVideoId.
-        const BUNNY_VIDEO_ID_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
+        // Matches: iframe embed, player, or CDN pull zone URL (vz-*.b-cdn.net/{videoId}/...)
+        const BUNNY_VIDEO_ID_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)|(?:vz-[^.]+\.b-cdn\.net)\/([\w-]{8,})\//;
         const urlEpisodes = await fastify.prisma.workshopEpisode.findMany({
           where: { bunnyVideoId: null, videoUrl: { not: null } },
           select: { id: true, videoUrl: true, durationSeconds: true },
@@ -171,7 +172,7 @@ async function bootstrap() {
             fastify.log.warn(`[bunny-sync] URL-ep ${ep.id}: no regex match — skipped`);
             continue;
           }
-          const videoId = match[1];
+          const videoId = match[1] ?? match[2]; // group 1 = embed URL, group 2 = CDN pull zone URL
           const real = await fetchBunnyDuration(videoId);
           if (real !== null) {
             await fastify.prisma.workshopEpisode.update({

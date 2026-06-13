@@ -2163,8 +2163,9 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
   // Always fetch authoritative duration from Bunny — stored value may be wrong/placeholder.
   // Extract bunnyVideoId from URL if not stored directly (handles URL-only episodes).
   if (env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
-    const BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
-    const bunnyId = episode.bunnyVideoId ?? episode.videoUrl?.match(BUNNY_URL_RE)?.[1] ?? null;
+    const BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)|(?:vz-[^.]+\.b-cdn\.net)\/([\w-]{8,})\//;
+    const urlMatch = episode.videoUrl?.match(BUNNY_URL_RE);
+    const bunnyId = episode.bunnyVideoId ?? urlMatch?.[1] ?? urlMatch?.[2] ?? null;
     if (bunnyId) {
       try {
         const bunnyRes = await fetch(
