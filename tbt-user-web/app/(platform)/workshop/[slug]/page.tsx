@@ -1562,6 +1562,15 @@ function WatchChallengeView({
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  const formatDuration = (s: number) => {
+    if (!s || s <= 0) return null;
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    if (m === 0) return `${sec}s`;
+    if (sec === 0) return `${m} min`;
+    return `${m}m ${sec}s`;
+  };
+
   // Prefer real duration captured from player over potentially wrong DB value
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (ep.durationSeconds ?? 0);
   // Watched percentage = actual seconds watched / total duration (updates every second while playing)
@@ -1868,9 +1877,9 @@ function WatchChallengeView({
                       Resume {progressPct}%
                     </span>
                   ) : isActive && liveRealDuration > 0 ? (
-                    <span className="text-[11px] text-muted-foreground">{Math.ceil(liveRealDuration / 60)} min</span>
+                    <span className="text-[11px] text-muted-foreground">{formatDuration(liveRealDuration)}</span>
                   ) : e.durationSeconds > 0 ? (
-                    <span className="text-[11px] text-muted-foreground">{Math.ceil(e.durationSeconds / 60)} min</span>
+                    <span className="text-[11px] text-muted-foreground">{formatDuration(e.durationSeconds)}</span>
                   ) : e.durationLabel ? (
                     <span className="text-[11px] text-muted-foreground">{e.durationLabel}</span>
                   ) : null}
