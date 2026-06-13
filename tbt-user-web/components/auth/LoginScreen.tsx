@@ -8,14 +8,6 @@ import Image from "next/image";
 import Link from "next/link";
 import apiClient from "@/lib/api/client";
 
-const BG_IMAGES = [
-  "/auth/backgrounds/bg1.png",
-  "/auth/backgrounds/bg2.png",
-  "/auth/backgrounds/bg3.png",
-];
-
-const SLIDE_MS = 6000;
-
 type Step = "credentials" | "otp" | "reset_password";
 type FocusedField = "phone" | "password" | "otp" | "newPassword" | null;
 
@@ -24,7 +16,6 @@ export function LoginScreen() {
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect_url") || "/tbt";
 
-  const [currentBg, setCurrentBg] = useState(0);
   const [step, setStep] = useState<Step>("credentials");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -44,14 +35,6 @@ export function LoginScreen() {
       .then((res: any) => { if (res.data?.loggedIn) router.replace(redirectUrl); })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Cinematic background rotation
-  useEffect(() => {
-    const t = setInterval(() => {
-      setCurrentBg((p) => (p + 1) % BG_IMAGES.length);
-    }, SLIDE_MS);
-    return () => clearInterval(t);
   }, []);
 
   const handleLogin = useCallback(async (e: React.FormEvent) => {
@@ -162,33 +145,17 @@ export function LoginScreen() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black">
-      {/* ── Background Slider ── */}
-      <AnimatePresence mode="sync">
-        <motion.div
-          key={currentBg}
-          className="absolute inset-0 z-0"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 1.8, ease: "easeInOut" }}
-        >
-          <motion.div
-            className="absolute inset-0"
-            initial={{ scale: 1.04 }}
-            animate={{ scale: 1.12 }}
-            transition={{ duration: SLIDE_MS / 1000 + 1.8, ease: "linear" }}
-          >
-            <Image
-              src={BG_IMAGES[currentBg]}
-              alt="TBT background"
-              fill
-              className="object-cover"
-              priority={currentBg === 0}
-              quality={85}
-            />
-          </motion.div>
-        </motion.div>
-      </AnimatePresence>
+      {/* ── Static Background ── */}
+      <div className="absolute inset-0 z-0">
+        <Image
+          src="/loginfinal.png"
+          alt="TBT background"
+          fill
+          className="object-cover"
+          priority
+          quality={90}
+        />
+      </div>
 
       <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/70 via-black/30 to-black/80" />
       <div className="absolute inset-0 z-10 bg-gradient-to-r from-black/50 via-transparent to-black/50" />
@@ -417,23 +384,6 @@ export function LoginScreen() {
             </div>
           </div>
 
-          {/* Slide Indicators */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9, duration: 0.6 }}
-            className="flex justify-center items-center gap-2 mt-5">
-            {BG_IMAGES.map((_, i) => (
-              <motion.button
-                key={i}
-                onClick={() => setCurrentBg(i)}
-                whileHover={{ scale: 1.2 }}
-                whileTap={{ scale: 0.85 }}
-                animate={{ width: i === currentBg ? 28 : 6, opacity: i === currentBg ? 1 : 0.35 }}
-                transition={{ duration: 0.4, ease: "easeInOut" }}
-                className="h-[5px] rounded-full"
-                style={{ background: i === currentBg ? "linear-gradient(90deg, #ef4444, #dc2626)" : "rgba(255,255,255,0.5)" }}
-                aria-label={`Switch to background ${i + 1}`}
-              />
-            ))}
-          </motion.div>
         </motion.div>
       </div>
     </div>
