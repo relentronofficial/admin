@@ -27,6 +27,11 @@ export default function WatchPage() {
   const startRef = useRef<number>(Date.now());
   // Prevent posting isCompleted:false after the user already clicked Complete
   const completedRef = useRef(false);
+  // Speed ref — avoids stale closure inside the 15s interval
+  const speedRef = useRef(1);
+  // Track milliseconds the tab was hidden so they don't count toward elapsed
+  const hiddenMsRef = useRef(0);
+  const hiddenStartRef = useRef(0);
 
   useEffect(() => {
     if (playback && !speed) setSpeed(playback.defaultSpeed);
@@ -37,6 +42,7 @@ export default function WatchPage() {
     if (!speed) return;
     const numericSpeed = parseFloat(speed.replace("x", ""));
     if (isNaN(numericSpeed)) return;
+    speedRef.current = numericSpeed;
     iframeRef.current?.contentWindow?.postMessage(
       JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: numericSpeed }),
       "*"
@@ -48,15 +54,35 @@ export default function WatchPage() {
     if (!playback) return;
     startRef.current = Date.now();
     completedRef.current = false;
+    hiddenMsRef.current = 0;
+    hiddenStartRef.current = 0;
+
+    // Gap 3: track time the tab was hidden so it doesn't count toward elapsed
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        hiddenStartRef.current = Date.now();
+      } else if (hiddenStartRef.current > 0) {
+        hiddenMsRef.current += Date.now() - hiddenStartRef.current;
+        hiddenStartRef.current = 0;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const id = setInterval(() => {
       if (completedRef.current) return;
-      const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
-      const watchedSeconds = playback.resumeAtSeconds + elapsed;
+      // Gap 3: subtract hidden time; Gap 4: multiply by playback speed for video seconds
+      const currentHiddenMs = hiddenStartRef.current > 0
+        ? hiddenMsRef.current + (Date.now() - hiddenStartRef.current)
+        : hiddenMsRef.current;
+      const elapsed = Math.floor((Date.now() - startRef.current - currentHiddenMs) / 1000);
+      const watchedSeconds = playback.resumeAtSeconds + Math.floor(elapsed * speedRef.current);
       postProgress.mutate({ episodeId, watchedSeconds, deltaSeconds: 15, isCompleted: false });
     }, 15_000);
 
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {

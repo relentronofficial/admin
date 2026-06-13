@@ -1537,6 +1537,7 @@ model MemberEpisodeProgress {
   completedAt       DateTime?       @map("completed_at") @db.Timestamptz(6)
   lastWatchedSecs   Int             @default(0) @map("last_watched_secs")
   actualWatchedSecs Int             @default(0) @map("actual_watched_secs")
+  watchedSegments   String?         @map("watched_segments")
   member            Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
   episode           WorkshopEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)

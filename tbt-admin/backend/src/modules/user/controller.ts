@@ -2208,10 +2208,11 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
 export async function postEpisodeProgressHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: episodeId } = request.params as { id: string };
-  const { watchedSeconds, deltaSeconds, reportedDuration } = request.body as {
+  const { watchedSeconds, deltaSeconds, reportedDuration, segments } = request.body as {
     watchedSeconds?: number;
     deltaSeconds?: number;
     reportedDuration?: number;
+    segments?: number[];
   };
 
   const safeDelta = Math.min(deltaSeconds ?? 0, 30);
@@ -2229,7 +2230,7 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
 
   const existingProgress = await request.server.prisma.memberEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    select: { lastWatchedSecs: true, actualWatchedSecs: true, isCompleted: true, updatedAt: true }
+    select: { lastWatchedSecs: true, actualWatchedSecs: true, isCompleted: true, updatedAt: true, watchedSegments: true }
   });
 
   // Wall-clock-based delta validation: cap credit to actual time elapsed since last heartbeat.
@@ -2315,6 +2316,15 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     })();
   }
 
+  // Merge incoming watched segments with stored ones (union of sorted unique indices)
+  const existingSegs: number[] = existingProgress?.watchedSegments
+    ? JSON.parse(existingProgress.watchedSegments)
+    : [];
+  const mergedSegs = segments && segments.length > 0
+    ? [...new Set([...existingSegs, ...segments])].sort((a, b) => a - b)
+    : existingSegs;
+  const mergedSegsJson = mergedSegs.length > 0 ? JSON.stringify(mergedSegs) : undefined;
+
   // Backend decides completion based on 85% rule using wall-clock-validated delta.
   const newActualWatched = (existingProgress?.actualWatchedSecs ?? 0) + trueDelta;
   let isCompleted = existingProgress?.isCompleted ?? false;
@@ -2334,12 +2344,14 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
       actualWatchedSecs: trueDelta,
       isCompleted: isCompleted,
       completedAt: isCompleted ? new Date() : null,
+      ...(mergedSegsJson ? { watchedSegments: mergedSegsJson } : {}),
     },
     update: {
       lastWatchedSecs: watchedSeconds ?? undefined,
       actualWatchedSecs: { increment: trueDelta },
       isCompleted: isCompleted,
       completedAt: isCompleted && !existingProgress?.isCompleted ? new Date() : undefined,
+      ...(mergedSegsJson ? { watchedSegments: mergedSegsJson } : {}),
     },
   });
 

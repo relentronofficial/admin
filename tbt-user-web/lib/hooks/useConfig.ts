@@ -136,18 +136,21 @@ export const usePostEpisodeProgress = () =>
       deltaSeconds,
       isCompleted,
       reportedDuration,
+      segments,
     }: {
       episodeId: string;
       watchedSeconds?: number;
       deltaSeconds?: number;
       isCompleted?: boolean;
       reportedDuration?: number;
+      segments?: number[];
     }) => {
       const res: any = await apiClient.post(`/api/user/episodes/${episodeId}/progress`, {
         watchedSeconds,
         deltaSeconds,
         isCompleted,
         ...(reportedDuration && reportedDuration > 0 ? { reportedDuration } : {}),
+        ...(segments && segments.length > 0 ? { segments } : {}),
       });
       return res?.data;
     },

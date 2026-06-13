@@ -1256,6 +1256,10 @@ function WatchChallengeView({
   const [liveWatched, setLiveWatched] = useState<number>(0);
   const liveWatchedRef = useRef<number>(0);
   const isPlayingRef = useRef(false);
+  const isHiddenRef = useRef(false);
+  const isSeekingRef = useRef(false);
+  const seekStartPosRef = useRef<number>(0);
+  const watchedSegmentsRef = useRef<Set<number>>(new Set());
   // Real duration captured from Bunny player's timeupdate event (overrides wrong DB value)
   const realDurationRef = useRef<number>(0);
 
@@ -1278,8 +1282,11 @@ function WatchChallengeView({
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
     isPlayingRef.current = false;
+    isHiddenRef.current = false;
+    isSeekingRef.current = false;
     realDurationRef.current = 0;
     lastHeartbeatAt.current = 0;
+    watchedSegmentsRef.current = new Set();
     setUpNextCountdown(null);
 
     if (!ep) return;
@@ -1298,16 +1305,19 @@ function WatchChallengeView({
     setLiveWatched(serverWatched);
   }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 1-second tick: increment liveWatched while video is actually playing
+  // 1-second tick: increment liveWatched while video is actually playing (paused when tab hidden or seeking)
   useEffect(() => {
     if (!ep?.id) return;
     const id = setInterval(() => {
-      if (!isPlayingRef.current) return;
+      if (!isPlayingRef.current || isHiddenRef.current || isSeekingRef.current) return;
       const dur = realDurationRef.current > 0 ? realDurationRef.current : (currentEpRef.current?.durationSeconds ?? 0);
       const inc = 1 * (speedRef.current || 1);
       const next = dur > 0 ? Math.min(dur, liveWatchedRef.current + inc) : liveWatchedRef.current + inc;
       liveWatchedRef.current = next;
       setLiveWatched(next);
+      // Record which 10-second video segment the playhead is currently in
+      const segIdx = Math.floor(lastPlayheadRef.current / 10);
+      watchedSegmentsRef.current.add(segIdx);
     }, 1000);
     return () => clearInterval(id);
   }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1405,7 +1415,7 @@ function WatchChallengeView({
 
       if (evt === "ready" && e.source) {
         const win = e.source as Window;
-        ["play", "pause", "timeupdate", "ended"].forEach((eventName) => {
+        ["play", "pause", "timeupdate", "ended", "seeking", "seeked"].forEach((eventName) => {
           win.postMessage(
             JSON.stringify({ context: "player.js", method: "addEventListener", value: eventName }),
             "*"
@@ -1433,9 +1443,29 @@ function WatchChallengeView({
       const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
 
+      // Gap 6: Seek event handling
+      if (evt === "seeking") {
+        isSeekingRef.current = true;
+        seekStartPosRef.current = lastPlayhead;
+      }
+      if (evt === "seeked") {
+        isSeekingRef.current = false;
+        const seekDest = typeof payloadValue === 'number' ? payloadValue : lastPlayhead;
+        lastPlayhead = seekDest;
+        lastPlayheadRef.current = seekDest;
+        setCurrentPlayhead(seekDest);
+      }
+
       if (isTimeUpdate && payloadValue !== undefined) {
         const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue?.seconds;
         if (currentTime !== undefined) {
+          // Detect large forward jump as a seek (fallback when seeking/seeked events are not fired by player)
+          const jump = currentTime - lastPlayhead;
+          if (jump > 5 && jump < 300 && !isSeekingRef.current) {
+            isSeekingRef.current = true;
+            seekStartPosRef.current = lastPlayhead;
+            setTimeout(() => { isSeekingRef.current = false; }, 800);
+          }
           lastPlayhead = currentTime;
           lastPlayheadRef.current = currentTime;
           setCurrentPlayhead(currentTime);
@@ -1457,7 +1487,7 @@ function WatchChallengeView({
           timerRef.current = setInterval(() => {
             lastHeartbeatAt.current = Date.now();
             postProgress.mutate(
-              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined },
+              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined, segments: [...watchedSegmentsRef.current] },
               {
                 onSuccess: (data: any) => {
                   if (data?.isCompleted) { doMarkComplete(); return; }
@@ -1500,9 +1530,23 @@ function WatchChallengeView({
       }
     };
 
+    // Gap 3: pause all tracking when the browser tab is hidden
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        isHiddenRef.current = true;
+        isPlayingRef.current = false;
+        clearInterval(timerRef.current);
+        iframeFocusedRef.current = false;
+      } else {
+        isHiddenRef.current = false;
+        // Bunny's play event re-enables tracking when video actually resumes
+      }
+    };
     window.addEventListener("message", handler);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.removeEventListener("message", handler);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(timerRef.current);
       const saved = lastPlayheadRef.current;
       if (saved > 3 && !markCalledRef.current) {
