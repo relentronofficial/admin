@@ -169,12 +169,17 @@ function SplashOverlay({
             className="w-40 h-40 object-contain"
           />
         ) : (
-          <p
-            className="text-white font-black tracking-widest uppercase"
-            style={{ fontSize: "clamp(2.5rem, 8vw, 5rem)" }}
+          <video
+            autoPlay
+            muted
+            playsInline
+            loop
+            className="w-40 h-40 object-contain"
+            style={{ background: "transparent" }}
           >
-            {siteName}
-          </p>
+            <source src="/tbt-logo.webm" type="video/webm" />
+            <source src="/tbt-logo.mp4" type="video/mp4" />
+          </video>
         )}
       </div>
     </div>
