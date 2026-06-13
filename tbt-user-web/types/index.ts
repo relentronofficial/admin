@@ -441,6 +441,7 @@ export interface LearningProgress {
 export interface WorkshopCertificate {
   eligible: boolean;
   videosCompletedPct: number;
+  videosWatchPct?: number;
   challengesCompletedPct: number;
   remainingVideos: number;
   remainingChallenges: number;

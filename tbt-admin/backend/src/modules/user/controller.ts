@@ -2926,7 +2926,7 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
     where: { slug },
     include: {
       enrollments: { where: { memberId: request.memberId }, select: { status: true } },
-      challenges: { select: { id: true, type: true, episodes: { select: { id: true } } }, orderBy: { order: 'asc' } },
+      challenges: { select: { id: true, type: true, episodes: { select: { id: true, durationSeconds: true } } }, orderBy: { order: 'asc' } },
       liveCalls: { where: { scheduledAt: { gt: new Date() } }, orderBy: { scheduledAt: 'asc' }, take: 1, select: { id: true, scheduledAt: true } },
     },
   });
@@ -2939,7 +2939,7 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
   const [episodeProgress, challengeProgressRows] = await Promise.all([
     request.server.prisma.memberEpisodeProgress.findMany({
       where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e: any) => e.id) } },
-      select: { episodeId: true, isCompleted: true },
+      select: { episodeId: true, isCompleted: true, actualWatchedSecs: true },
     }),
     (request.server.prisma as any).memberChallengeProgress.findMany({
       where: { memberId: request.memberId, challengeId: { in: allChallenges.map((c: any) => c.id) } },
@@ -2952,6 +2952,11 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
   const completableChallenges = allChallenges.filter((c: any) => c.type !== 'live_call');
   const challengeProgressMap = new Map((challengeProgressRows as any[]).map((r: any) => [r.challengeId, r.status]));
   const completedEpIds = new Set(episodeProgress.filter((p: any) => p.isCompleted).map((p: any) => p.episodeId));
+
+  const progressWatchMap = new Map(episodeProgress.map((p: any) => [p.episodeId, p.actualWatchedSecs ?? 0]));
+  const totalDurationSecs = allEpisodes.reduce((sum: number, e: any) => sum + (e.durationSeconds ?? 0), 0);
+  const totalWatchedSecs = allEpisodes.reduce((sum: number, e: any) => sum + (progressWatchMap.get(e.id) ?? 0), 0);
+  const videosWatchPct = totalDurationSecs > 0 ? Math.min(100, Math.round((totalWatchedSecs / totalDurationSecs) * 100)) : 0;
 
   let completedChallengeCount = 0;
   for (const ch of completableChallenges) {
@@ -2987,7 +2992,7 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
         achieved: challengesCompletedPct >= Math.round(((i + 1) / (workshop.progressMilestoneCount ?? 3)) * 100),
       })),
     },
-    certificate: { eligible: certEligible, videosCompletedPct, challengesCompletedPct, remainingVideos: totalCount - completedCount, remainingChallenges: totalChallenges - completedChallengeCount },
+    certificate: { eligible: certEligible, videosCompletedPct, videosWatchPct, challengesCompletedPct, remainingVideos: totalCount - completedCount, remainingChallenges: totalChallenges - completedChallengeCount },
     workshopFlowLabel: workshop.workshopFlowLabel,
     defaultMainAreaType: hasUpcomingCall ? 'countdown' : null,
     enrollmentStatus: enrollment?.status ?? null,

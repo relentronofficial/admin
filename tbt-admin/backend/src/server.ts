@@ -142,6 +142,7 @@ async function bootstrap() {
     // Runs once per startup, non-blocking, fixes episodes with wrong manually-typed durations.
     setImmediate(async () => {
       try {
+        // Phase 1: episodes that already have bunnyVideoId stored
         const episodes = await fastify.prisma.workshopEpisode.findMany({
           where: { bunnyVideoId: { not: null } },
           select: { id: true, bunnyVideoId: true, durationSeconds: true },
@@ -154,6 +155,29 @@ async function bootstrap() {
             fastify.log.info(`[bunny-sync] ${ep.id}: ${ep.durationSeconds}s → ${real}s`);
           }
         }
+
+        // Phase 2: episodes with bunnyVideoId=null but a Bunny embed/player URL in videoUrl
+        // Extracts the video ID from the URL, fetches real duration, and backfills bunnyVideoId.
+        const BUNNY_VIDEO_ID_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
+        const urlEpisodes = await fastify.prisma.workshopEpisode.findMany({
+          where: { bunnyVideoId: null, videoUrl: { not: null } },
+          select: { id: true, videoUrl: true, durationSeconds: true },
+        });
+        fastify.log.info(`[bunny-sync] Checking ${urlEpisodes.length} URL-only episodes`);
+        for (const ep of urlEpisodes) {
+          const match = ep.videoUrl!.match(BUNNY_VIDEO_ID_RE);
+          if (!match) continue;
+          const videoId = match[1];
+          const real = await fetchBunnyDuration(videoId);
+          if (real !== null) {
+            await fastify.prisma.workshopEpisode.update({
+              where: { id: ep.id },
+              data: { bunnyVideoId: videoId, durationSeconds: real },
+            });
+            fastify.log.info(`[bunny-sync] URL-ep ${ep.id}: backfilled bunnyVideoId=${videoId}, ${ep.durationSeconds}s → ${real}s`);
+          }
+        }
+
         fastify.log.info('[bunny-sync] Done');
       } catch (err) {
         fastify.log.warn({ err }, '[bunny-sync] Failed — will retry on next startup');

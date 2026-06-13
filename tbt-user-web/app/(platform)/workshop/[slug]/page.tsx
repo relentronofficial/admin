@@ -511,17 +511,17 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
               <span className="text-[10px] text-muted-foreground">Videos</span>
               <span
                 className="text-[10px] font-bold tabular-nums"
-                style={{ color: cert.videosCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)" }}
+                style={{ color: (cert.videosWatchPct ?? cert.videosCompletedPct) === 100 ? "var(--color-success)" : "var(--color-accent)" }}
               >
-                {cert.videosCompletedPct}%
+                {cert.videosWatchPct ?? cert.videosCompletedPct}%
               </span>
             </div>
             <div className="h-1 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${cert.videosCompletedPct}%`,
-                  background: cert.videosCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)",
+                  width: `${cert.videosWatchPct ?? cert.videosCompletedPct}%`,
+                  background: (cert.videosWatchPct ?? cert.videosCompletedPct) === 100 ? "var(--color-success)" : "var(--color-accent)",
                 }}
               />
             </div>

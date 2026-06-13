@@ -29,7 +29,7 @@ export const normalizeBunnyUrl = (url: string): string => {
     "https://iframe.mediadelivery.net/embed/$1/$2"
   );
   const sep = normalized.includes("?") ? "&" : "?";
-  return `${normalized}${sep}fullscreen=false`;
+  return `${normalized}${sep}fullscreen=false&controls=false`;
 };
 
 // Appends ?t=N (or &t=N) to a Bunny Stream iframe embed URL for resume-from-position.
