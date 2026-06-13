@@ -165,8 +165,12 @@ async function bootstrap() {
         });
         fastify.log.info(`[bunny-sync] Checking ${urlEpisodes.length} URL-only episodes`);
         for (const ep of urlEpisodes) {
+          fastify.log.info(`[bunny-sync] URL-ep ${ep.id}: checking videoUrl=${ep.videoUrl}`);
           const match = ep.videoUrl!.match(BUNNY_VIDEO_ID_RE);
-          if (!match) continue;
+          if (!match) {
+            fastify.log.warn(`[bunny-sync] URL-ep ${ep.id}: no regex match — skipped`);
+            continue;
+          }
           const videoId = match[1];
           const real = await fetchBunnyDuration(videoId);
           if (real !== null) {

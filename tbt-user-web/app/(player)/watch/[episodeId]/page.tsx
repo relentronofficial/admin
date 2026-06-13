@@ -19,6 +19,7 @@ export default function WatchPage() {
   const completeEp = useCompleteWorkshopEpisode();
   const { uiStrings } = useSiteConfig();
   const [speed, setSpeed] = useState<string>("");
+  const [liveRealDuration, setLiveRealDuration] = useState(0);
   const [quality, setQuality] = useState<string>("");
   const [isMarkedComplete, setIsMarkedComplete] = useState(false);
   const [liveElapsed, setLiveElapsed] = useState(0);
@@ -70,18 +71,22 @@ export default function WatchPage() {
   useEffect(() => {
     if (!playback) return;
     realDurationRef.current = 0;
+    setLiveRealDuration(0);
     const handler = (e: MessageEvent) => {
       try {
         const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
         if (msg?.context !== 'player.js') return;
-        const val = msg.value;
-        // timeupdate fires frequently — grab duration from object payload
-        if (msg.event === 'timeupdate' && typeof val === 'object' && val?.duration > 0 && realDurationRef.current === 0) {
-          realDurationRef.current = val.duration;
+        const evt = (msg.event || '').toLowerCase();
+        // Player signals it's ready — now safe to request duration
+        if (evt === 'ready') {
+          iframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ context: 'player.js', method: 'getDuration' }), '*'
+          );
         }
-        // getDuration explicit response
-        if (msg.event === 'getDuration' && typeof val === 'number' && val > 0) {
-          realDurationRef.current = val;
+        // getDuration response — set both ref (for heartbeat) and state (for re-render)
+        if (evt === 'getduration' && typeof msg.value === 'number' && msg.value > 0) {
+          realDurationRef.current = msg.value;
+          setLiveRealDuration(msg.value);
         }
       } catch {}
     };
@@ -150,8 +155,8 @@ export default function WatchPage() {
   const hasQualityChoice = playback.qualityOptions.length > 1;
   // Gap 5: disable Complete button until estimated playhead reaches 85% of duration
   const estimatedPlayhead = (playback.resumeAtSeconds ?? 0) + liveElapsed * speedRef.current;
-  const canComplete = !(playback as any).durationSeconds ||
-    estimatedPlayhead >= (playback as any).durationSeconds * 0.85;
+  const effectiveDuration = liveRealDuration || (playback as any).durationSeconds || 0;
+  const canComplete = !effectiveDuration || estimatedPlayhead >= effectiveDuration * 0.85;
   const videoSrc = withResumeTime(normalizeBunnyUrl(playback.videoUrl), playback.resumeAtSeconds);
 
   return (
@@ -188,10 +193,7 @@ export default function WatchPage() {
             title={playback.title}
             onLoad={() => {
               iframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ context: "player.js", method: "addEventListener", value: "timeupdate" }), "*"
-              );
-              iframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ context: "player.js", method: "getDuration" }), "*"
+                JSON.stringify({ context: "player.js", method: "addEventListener", value: "ready" }), "*"
               );
             }}
           />

@@ -1260,8 +1260,9 @@ function WatchChallengeView({
   const isSeekingRef = useRef(false);
   const seekStartPosRef = useRef<number>(0);
   const watchedSegmentsRef = useRef<Set<number>>(new Set());
-  // Real duration captured from Bunny player's timeupdate event (overrides wrong DB value)
+  // Real duration captured from Bunny player getDuration response (overrides wrong DB value)
   const realDurationRef = useRef<number>(0);
+  const [liveRealDuration, setLiveRealDuration] = useState(0);
 
   useEffect(() => { activeEpIdxRef.current = activeEpIdx; }, [activeEpIdx]);
   useEffect(() => { onChallengeCompleteRef.current = onChallengeComplete; }, [onChallengeComplete]);
@@ -1285,6 +1286,7 @@ function WatchChallengeView({
     isHiddenRef.current = false;
     isSeekingRef.current = false;
     realDurationRef.current = 0;
+    setLiveRealDuration(0);
     lastHeartbeatAt.current = 0;
     watchedSegmentsRef.current = new Set();
     setUpNextCountdown(null);
@@ -1435,6 +1437,7 @@ function WatchChallengeView({
       // Handle getDuration response — real duration from player, corrects wrong DB value
       if (evt === "getduration" && typeof payloadValue === 'number' && payloadValue > 0) {
         realDurationRef.current = payloadValue;
+        setLiveRealDuration(payloadValue);
       }
 
       const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
@@ -1469,10 +1472,6 @@ function WatchChallengeView({
           lastPlayhead = currentTime;
           lastPlayheadRef.current = currentTime;
           setCurrentPlayhead(currentTime);
-        }
-        // Capture duration if player includes it in timeupdate payload (object form)
-        if (typeof payloadValue === 'object' && payloadValue !== null && payloadValue.duration > 0 && realDurationRef.current === 0) {
-          realDurationRef.current = payloadValue.duration;
         }
       }
 
@@ -1564,7 +1563,7 @@ function WatchChallengeView({
   };
 
   // Prefer real duration captured from player over potentially wrong DB value
-  const activeDuration = realDurationRef.current > 0 ? realDurationRef.current : (ep.durationSeconds ?? 0);
+  const activeDuration = liveRealDuration > 0 ? liveRealDuration : (ep.durationSeconds ?? 0);
   // Watched percentage = actual seconds watched / total duration (updates every second while playing)
   const activeProgressPct = activeDuration > 0
     ? Math.min(100, Math.round((liveWatched / activeDuration) * 100))
@@ -1868,8 +1867,8 @@ function WatchChallengeView({
                     <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--color-accent)" }}>
                       Resume {progressPct}%
                     </span>
-                  ) : isActive && realDurationRef.current > 0 ? (
-                    <span className="text-[11px] text-muted-foreground">{Math.ceil(realDurationRef.current / 60)} min</span>
+                  ) : isActive && liveRealDuration > 0 ? (
+                    <span className="text-[11px] text-muted-foreground">{Math.ceil(liveRealDuration / 60)} min</span>
                   ) : e.durationLabel ? (
                     <span className="text-[11px] text-muted-foreground">{e.durationLabel}</span>
                   ) : e.durationSeconds > 0 ? (
