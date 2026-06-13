@@ -2160,26 +2160,35 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
   let duration = episode.durationSeconds;
 
-  // Task 1: Verify video duration. Fetch from Bunny if missing.
-  if ((!duration || duration <= 0) && episode.bunnyVideoId && env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
-    try {
-      const bunnyRes = await fetch(
-        `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${episode.bunnyVideoId}`,
-        { headers: { AccessKey: env.BUNNY_STREAM_API_KEY } }
-      );
-      if (bunnyRes.ok) {
-        const bunnyData = (await bunnyRes.json()) as { length: number };
-        if (bunnyData.length > 0) {
-          duration = bunnyData.length;
-          // Update DB for future requests
-          await request.server.prisma.workshopEpisode.update({
-            where: { id: episode.id },
-            data: { durationSeconds: duration },
-          }).catch(() => {});
+  // Always fetch authoritative duration from Bunny — stored value may be wrong/placeholder.
+  // Extract bunnyVideoId from URL if not stored directly (handles URL-only episodes).
+  if (env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
+    const BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
+    const bunnyId = episode.bunnyVideoId ?? episode.videoUrl?.match(BUNNY_URL_RE)?.[1] ?? null;
+    if (bunnyId) {
+      try {
+        const bunnyRes = await fetch(
+          `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${bunnyId}`,
+          { headers: { AccessKey: env.BUNNY_STREAM_API_KEY, accept: 'application/json' } }
+        );
+        if (bunnyRes.ok) {
+          const bunnyData = (await bunnyRes.json()) as any;
+          const bunnyDuration = Number(bunnyData.length ?? bunnyData.duration ?? 0);
+          if (bunnyDuration > 0) {
+            duration = bunnyDuration;
+            // Backfill DB async — don't block the response
+            void request.server.prisma.workshopEpisode.update({
+              where: { id: episode.id },
+              data: {
+                durationSeconds: bunnyDuration,
+                ...(episode.bunnyVideoId ? {} : { bunnyVideoId: bunnyId }),
+              },
+            }).catch(() => {});
+          }
         }
+      } catch (err) {
+        request.server.log.warn(`[bunny] duration fetch failed for episode ${episode.id}: ${err}`);
       }
-    } catch (err) {
-      request.server.log.error(`Bunny duration fetch failed for ${episode.bunnyVideoId}: ${err}`);
     }
   }
 
