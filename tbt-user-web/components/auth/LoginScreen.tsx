@@ -8,7 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 import apiClient from "@/lib/api/client";
 
-type Step = "credentials" | "otp" | "reset_password";
+type Step = "credentials" | "otp" | "reset_password" | "set_password";
 type FocusedField = "phone" | "password" | "otp" | "newPassword" | null;
 
 export function LoginScreen() {
@@ -117,6 +117,13 @@ export function LoginScreen() {
     }
   }, [otp, newPassword, resolvedPhone, redirectUrl, router, submitting]);
 
+  const handleConfirmResetOtp = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp.trim()) { setError("Please enter the OTP"); return; }
+    setError("");
+    setStep("set_password");
+  }, [otp]);
+
   const handleResendOtp = useCallback(async () => {
     setError("");
     try {
@@ -201,6 +208,7 @@ export function LoginScreen() {
                 <h1 className="text-[26px] font-bold text-white tracking-tight leading-tight">
                   {step === "credentials" ? "Welcome Back"
                     : step === "reset_password" ? "Reset Password"
+                    : step === "set_password" ? "Set New Password"
                     : "Verify Identity"}
                 </h1>
                 <p className="text-white/35 text-[13px] mt-1 tracking-wide">
@@ -208,6 +216,8 @@ export function LoginScreen() {
                     ? "Sign in to continue your journey"
                     : step === "reset_password"
                     ? `OTP sent to ${resolvedPhone}`
+                    : step === "set_password"
+                    ? "Choose a strong password"
                     : `Enter the OTP sent to ${resolvedPhone}`}
                 </p>
               </motion.div>
@@ -333,9 +343,9 @@ export function LoginScreen() {
                 </form>
               )}
 
-              {/* ── Step: reset_password ── */}
+              {/* ── Step: reset_password (OTP only) ── */}
               {step === "reset_password" && (
-                <form onSubmit={handleSetPassword} className="space-y-3.5">
+                <form onSubmit={handleConfirmResetOtp} className="space-y-4">
                   <InputField
                     type="text"
                     inputMode="numeric"
@@ -349,6 +359,23 @@ export function LoginScreen() {
                     autoComplete="one-time-code"
                     required
                   />
+                  <SubmitButton submitting={false} label="Continue" loadingLabel="Verifying..." />
+                  <div className="flex justify-between items-center pt-1">
+                    <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setError(""); }}
+                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+                      ← Back
+                    </button>
+                    <button type="button" onClick={handleResendOtp}
+                      className="text-[12px] transition-colors" style={{ color: "var(--color-accent, #dc2626)" }}>
+                      Resend OTP
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* ── Step: set_password (new password only) ── */}
+              {step === "set_password" && (
+                <form onSubmit={handleSetPassword} className="space-y-3.5">
                   <InputField
                     type={showNewPassword ? "text" : "password"}
                     value={newPassword}
@@ -368,14 +395,10 @@ export function LoginScreen() {
                     }
                   />
                   <SubmitButton submitting={submitting} label="Reset & Sign In" loadingLabel="Resetting..." />
-                  <div className="flex justify-between items-center pt-1">
-                    <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setNewPassword(""); setError(""); }}
+                  <div className="flex justify-start items-center pt-1">
+                    <button type="button" onClick={() => { setStep("reset_password"); setNewPassword(""); setError(""); }}
                       className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
                       ← Back
-                    </button>
-                    <button type="button" onClick={handleResendOtp}
-                      className="text-[12px] transition-colors" style={{ color: "var(--color-accent, #dc2626)" }}>
-                      Resend OTP
                     </button>
                   </div>
                 </form>
