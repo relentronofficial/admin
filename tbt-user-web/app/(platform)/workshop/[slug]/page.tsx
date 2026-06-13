@@ -1550,7 +1550,8 @@ function WatchChallengeView({
             ref={iframeRef}
             key={`${ep.id}-${forceStartFrom}`}
             src={iframeSrc}
-            className="absolute inset-0 w-full h-full"
+            className="absolute inset-x-0 top-0 w-full"
+            style={{ height: 'calc(100% + 56px)' }}
             allow="autoplay"
           />
         ) : (

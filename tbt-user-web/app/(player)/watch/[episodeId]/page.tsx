@@ -112,7 +112,8 @@ export default function WatchPage() {
           <iframe
             ref={iframeRef}
             src={videoSrc}
-            className="w-full h-full border-0"
+            className="absolute inset-x-0 top-0 w-full border-0"
+            style={{ height: 'calc(100% + 56px)' }}
             allow="accelerometer; gyroscope; autoplay; encrypted-media"
             title={playback.title}
           />
