@@ -1,4 +1,24 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { env } from '../../config/env.js';
+
+// ── BUNNY STREAM DURATION HELPER ──────────────────────────────────────
+
+async function fetchBunnyDuration(bunnyVideoId: string): Promise<number | null> {
+  const apiKey = env.BUNNY_STREAM_API_KEY;
+  const libraryId = env.BUNNY_STREAM_LIBRARY_ID;
+  if (!apiKey || !libraryId) return null;
+  try {
+    const res = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos/${bunnyVideoId}`, {
+      headers: { AccessKey: apiKey, accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as any;
+    const length = Number(json.length ?? json.duration ?? 0);
+    return length > 0 ? length : null;
+  } catch {
+    return null;
+  }
+}
 
 // ── WORKSHOPS ─────────────────────────────────────────────────────────
 
@@ -286,6 +306,9 @@ export async function createEpisodeHandler(req: FastifyRequest, reply: FastifyRe
   const { cid } = req.params as any;
   const body = req.body as any;
   const count = await req.server.prisma.workshopEpisode.count({ where: { challengeId: cid } });
+  const bunnyVideoId = body.bunnyVideoId || null;
+  const bunnyDuration = bunnyVideoId ? await fetchBunnyDuration(bunnyVideoId) : null;
+  const durationSeconds = bunnyDuration ?? (body.durationSeconds ? Number(body.durationSeconds) : null);
   const episode = await req.server.prisma.workshopEpisode.create({
     data: {
       challengeId: cid,
@@ -294,8 +317,8 @@ export async function createEpisodeHandler(req: FastifyRequest, reply: FastifyRe
       type: body.type || 'video',
       typeLabel: body.typeLabel || 'Video',
       videoUrl: body.videoUrl,
-      bunnyVideoId: body.bunnyVideoId || null,
-      durationSeconds: body.durationSeconds ? Number(body.durationSeconds) : null,
+      bunnyVideoId,
+      durationSeconds,
       durationLabel: body.durationLabel,
     },
   });
@@ -309,7 +332,21 @@ export async function updateEpisodeHandler(req: FastifyRequest, reply: FastifyRe
   ['order', 'title', 'type', 'typeLabel', 'videoUrl', 'bunnyVideoId', 'durationLabel'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
-  if (body.durationSeconds !== undefined) data.durationSeconds = body.durationSeconds ? Number(body.durationSeconds) : null;
+  // Determine which bunnyVideoId to use for duration lookup
+  let bunnyVideoId: string | null;
+  if (body.bunnyVideoId !== undefined) {
+    bunnyVideoId = body.bunnyVideoId || null;
+  } else {
+    const existing = await req.server.prisma.workshopEpisode.findUnique({ where: { id: eid }, select: { bunnyVideoId: true } });
+    bunnyVideoId = existing?.bunnyVideoId ?? null;
+  }
+  // Prefer Bunny API truth; fall back to manual entry if Bunny unavailable
+  const bunnyDuration = bunnyVideoId ? await fetchBunnyDuration(bunnyVideoId) : null;
+  if (bunnyDuration !== null) {
+    data.durationSeconds = bunnyDuration;
+  } else if (body.durationSeconds !== undefined) {
+    data.durationSeconds = body.durationSeconds ? Number(body.durationSeconds) : null;
+  }
   const episode = await req.server.prisma.workshopEpisode.update({ where: { id: eid }, data });
   return reply.send({ success: true, data: episode, error: null });
 }
