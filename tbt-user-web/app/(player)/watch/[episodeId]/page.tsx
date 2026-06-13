@@ -116,8 +116,8 @@ export default function WatchPage() {
         : hiddenMsRef.current;
       const elapsed = Math.floor((Date.now() - startRef.current - currentHiddenMs) / 1000);
       const watchedSeconds = playback.resumeAtSeconds + Math.floor(elapsed * speedRef.current);
-      postProgress.mutate({ episodeId, watchedSeconds, deltaSeconds: 15, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
-    }, 15_000);
+      postProgress.mutate({ episodeId, watchedSeconds, deltaSeconds: 5, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
+    }, 5_000);
 
     return () => {
       clearInterval(id);

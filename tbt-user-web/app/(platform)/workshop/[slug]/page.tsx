@@ -1487,7 +1487,7 @@ function WatchChallengeView({
           timerRef.current = setInterval(() => {
             lastHeartbeatAt.current = Date.now();
             postProgress.mutate(
-              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 15, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined, segments: [...watchedSegmentsRef.current] },
+              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 5, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined, segments: [...watchedSegmentsRef.current] },
               {
                 onSuccess: (data: any) => {
                   if (data?.isCompleted) { doMarkComplete(); return; }
@@ -1502,7 +1502,7 @@ function WatchChallengeView({
                 },
               }
             );
-          }, 15000);
+          }, 5000);
         }
       } else if (isPause && !isEnd) {
         setWatchState("paused");
@@ -1697,9 +1697,9 @@ function WatchChallengeView({
                 style={{ width: `${savedProgressPct}%`, background: "var(--color-accent)" }}
               />
             </div>
-            {ep.durationSeconds > 0 && (
+            {activeDuration > 0 && (
               <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
-                {formatTime(ep.lastWatchedSecs ?? 0)} / {formatTime(ep.durationSeconds)}
+                {formatTime(ep.lastWatchedSecs ?? 0)} / {formatTime(activeDuration)}
               </span>
             )}
           </div>
@@ -1770,8 +1770,9 @@ function WatchChallengeView({
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
           // Active episode: use live watched counter; inactive: use server's actualWatchedSecs
-          const progressPct = e.durationSeconds > 0
-            ? Math.min(100, Math.round(((isActive ? liveWatched : (e.actualWatchedSecs ?? 0)) / e.durationSeconds) * 100))
+          const epDuration = isActive ? activeDuration : (e.durationSeconds ?? 0);
+          const progressPct = epDuration > 0
+            ? Math.min(100, Math.round(((isActive ? liveWatched : (e.actualWatchedSecs ?? 0)) / epDuration) * 100))
             : 0;
 
           const isWatching = isActive && watchState === "watching";
@@ -1867,6 +1868,8 @@ function WatchChallengeView({
                     <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--color-accent)" }}>
                       Resume {progressPct}%
                     </span>
+                  ) : isActive && realDurationRef.current > 0 ? (
+                    <span className="text-[11px] text-muted-foreground">{Math.ceil(realDurationRef.current / 60)} min</span>
                   ) : e.durationLabel ? (
                     <span className="text-[11px] text-muted-foreground">{e.durationLabel}</span>
                   ) : e.durationSeconds > 0 ? (

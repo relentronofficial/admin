@@ -142,7 +142,7 @@ async function bootstrap() {
     // Runs once per startup, non-blocking, fixes episodes with wrong manually-typed durations.
     setImmediate(async () => {
       try {
-        // Phase 1: episodes that already have bunnyVideoId stored
+        // Phase 1: all episodes with bunnyVideoId — always overwrite with Bunny's authoritative value
         const episodes = await fastify.prisma.workshopEpisode.findMany({
           where: { bunnyVideoId: { not: null } },
           select: { id: true, bunnyVideoId: true, durationSeconds: true },
@@ -150,7 +150,7 @@ async function bootstrap() {
         fastify.log.info(`[bunny-sync] Syncing duration for ${episodes.length} episodes`);
         for (const ep of episodes) {
           const real = await fetchBunnyDuration(ep.bunnyVideoId!);
-          if (real !== null && real !== ep.durationSeconds) {
+          if (real !== null) {
             await fastify.prisma.workshopEpisode.update({ where: { id: ep.id }, data: { durationSeconds: real } });
             fastify.log.info(`[bunny-sync] ${ep.id}: ${ep.durationSeconds}s → ${real}s`);
           }
