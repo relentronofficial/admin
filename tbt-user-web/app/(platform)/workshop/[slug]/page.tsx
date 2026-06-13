@@ -1869,6 +1869,8 @@ function WatchChallengeView({
                     </span>
                   ) : e.durationLabel ? (
                     <span className="text-[11px] text-muted-foreground">{e.durationLabel}</span>
+                  ) : e.durationSeconds > 0 ? (
+                    <span className="text-[11px] text-muted-foreground">{Math.ceil(e.durationSeconds / 60)} min</span>
                   ) : null}
                 </span>
               </div>

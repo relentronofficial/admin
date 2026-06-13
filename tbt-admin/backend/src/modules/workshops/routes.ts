@@ -17,6 +17,7 @@ import {
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
   getMemberProgressHandler,
+  syncEpisodeDurationsHandler,
 } from './controller.js';
 
 export async function workshopRoutes(fastify: FastifyInstance) {
@@ -92,4 +93,6 @@ export async function workshopRoutes(fastify: FastifyInstance) {
   fastify.delete('/qa/replies/:replyId', deleteQAReplyHandler);
 
   fastify.get('/:id/progress/:memberId', getMemberProgressHandler);
+
+  fastify.post('/sync-durations', syncEpisodeDurationsHandler);
 }

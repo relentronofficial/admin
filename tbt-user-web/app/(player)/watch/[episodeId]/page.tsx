@@ -31,6 +31,8 @@ export default function WatchPage() {
   const completedRef = useRef(false);
   // Speed ref — avoids stale closure inside the 15s interval
   const speedRef = useRef(1);
+  // Real duration reported by the Bunny player (overrides potentially-wrong DB value)
+  const realDurationRef = useRef(0);
   // Track milliseconds the tab was hidden so they don't count toward elapsed
   const hiddenMsRef = useRef(0);
   const hiddenStartRef = useRef(0);
@@ -64,6 +66,29 @@ export default function WatchPage() {
     );
   }, [speed]);
 
+  // Listen to Bunny player events to capture real video duration
+  useEffect(() => {
+    if (!playback) return;
+    realDurationRef.current = 0;
+    const handler = (e: MessageEvent) => {
+      try {
+        const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (msg?.context !== 'player.js') return;
+        const val = msg.value;
+        // timeupdate fires frequently — grab duration from object payload
+        if (msg.event === 'timeupdate' && typeof val === 'object' && val?.duration > 0 && realDurationRef.current === 0) {
+          realDurationRef.current = val.duration;
+        }
+        // getDuration explicit response
+        if (msg.event === 'getDuration' && typeof val === 'number' && val > 0) {
+          realDurationRef.current = val;
+        }
+      } catch {}
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Post partial progress every 15 s so resumeAtSeconds stays fresh server-side
   useEffect(() => {
     if (!playback) return;
@@ -91,7 +116,7 @@ export default function WatchPage() {
         : hiddenMsRef.current;
       const elapsed = Math.floor((Date.now() - startRef.current - currentHiddenMs) / 1000);
       const watchedSeconds = playback.resumeAtSeconds + Math.floor(elapsed * speedRef.current);
-      postProgress.mutate({ episodeId, watchedSeconds, deltaSeconds: 15, isCompleted: false });
+      postProgress.mutate({ episodeId, watchedSeconds, deltaSeconds: 15, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
     }, 15_000);
 
     return () => {
@@ -161,6 +186,14 @@ export default function WatchPage() {
             style={{ height: 'calc(100% + 56px)' }}
             allow="accelerometer; gyroscope; autoplay; encrypted-media"
             title={playback.title}
+            onLoad={() => {
+              iframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ context: "player.js", method: "addEventListener", value: "timeupdate" }), "*"
+              );
+              iframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ context: "player.js", method: "getDuration" }), "*"
+              );
+            }}
           />
         </VideoWatermark>
 

@@ -26,7 +26,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
-import { useLiveCallAdminStatus, useGetAttendance } from "@/lib/hooks/useTbt";
+import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations } from "@/lib/hooks/useTbt";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -176,6 +176,7 @@ export default function WorkshopDetailPage() {
   const reorderFlowItems = useReorderFlowItems(id);
   const reorderChallengeEpisodes = useReorderChallengeEpisodes(id);
   const enrollMembers = useEnrollMembers(id);
+  const syncDurations = useSyncEpisodeDurations();
 
   // ── Info/Labels tab state ─────────────────────────────────────────────
   const [labelsForm, setLabelsForm] = useState({
@@ -832,7 +833,20 @@ export default function WorkshopDetailPage() {
         {/* ── CHALLENGES TAB ──────────────────────────────────────────── */}
         {activeTab === "challenges" && (
           <div className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex justify-between items-center">
+              <button
+                onClick={() => {
+                  syncDurations.mutate(undefined, {
+                    onSuccess: (d) => toast.success(`Synced ${d.updated} of ${d.total} episodes from Bunny`),
+                    onError: (e: any) => toast.error(e?.message || 'Sync failed — check Bunny API keys in Cloud Run'),
+                  });
+                }}
+                disabled={syncDurations.isPending}
+                className="flex items-center gap-2 bg-[#1a1a1a] border border-[#333] text-[#a0a0a0] hover:text-white px-3 py-2 rounded-md font-rajdhani font-bold text-[11px] tracking-widest uppercase hover:border-[#555] transition-all disabled:opacity-50"
+              >
+                {syncDurations.isPending ? <Loader2 size={12} className="animate-spin" /> : <Clock size={12} />}
+                Sync Durations from Bunny
+              </button>
               <button onClick={openCreateChallenge} className="flex items-center gap-2 bg-[#dc2626] text-white px-4 py-2 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
                 <Plus size={14} /> Add Challenge
               </button>

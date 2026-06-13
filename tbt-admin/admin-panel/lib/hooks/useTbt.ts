@@ -860,3 +860,11 @@ export const useUpdateInquiryStatus = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['product-inquiries'] }),
   });
 };
+
+export const useSyncEpisodeDurations = () =>
+  useMutation({
+    mutationFn: async () => {
+      const res: any = await apiClient.post('/api/workshops/sync-durations');
+      return res.data as { total: number; updated: number };
+    },
+  });

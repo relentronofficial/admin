@@ -357,6 +357,25 @@ export async function deleteEpisodeHandler(req: FastifyRequest, reply: FastifyRe
   return reply.send({ success: true, data: null, error: null });
 }
 
+export async function syncEpisodeDurationsHandler(req: FastifyRequest, reply: FastifyReply) {
+  if (!env.BUNNY_STREAM_API_KEY || !env.BUNNY_STREAM_LIBRARY_ID) {
+    return reply.status(400).send({ success: false, data: null, error: 'BUNNY_STREAM_API_KEY and BUNNY_STREAM_LIBRARY_ID are not configured in environment.' });
+  }
+  const episodes = await req.server.prisma.workshopEpisode.findMany({
+    where: { bunnyVideoId: { not: null } },
+    select: { id: true, bunnyVideoId: true, durationSeconds: true },
+  });
+  let updated = 0;
+  for (const ep of episodes) {
+    const real = await fetchBunnyDuration(ep.bunnyVideoId!);
+    if (real !== null && real !== ep.durationSeconds) {
+      await req.server.prisma.workshopEpisode.update({ where: { id: ep.id }, data: { durationSeconds: real } });
+      updated++;
+    }
+  }
+  return reply.send({ success: true, data: { total: episodes.length, updated }, error: null });
+}
+
 export async function reorderEpisodesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { ids } = req.body as any;
   await req.server.prisma.$transaction(

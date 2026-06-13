@@ -2276,14 +2276,12 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     }).catch(() => {});
   }
 
-  // Correct stored duration when client reports the real value and it differs significantly.
-  // Covers the case where admin entered wrong duration (e.g. 780s for a 36s video).
-  // Threshold: stored is >2x or <0.5x of reported → treat stored as wrong.
+  // Always trust the player-reported duration — it comes from Bunny's own timeupdate event
+  // and is more accurate than whatever the admin typed. Update DB whenever it differs by >5s.
   let duration = episode.durationSeconds;
   if (reportedDuration && reportedDuration > 0) {
-    const storedIsWrong = !duration || duration <= 0 ||
-      Math.max(duration, reportedDuration) / Math.min(duration, reportedDuration) > 2;
-    if (storedIsWrong) {
+    const stored = duration ?? 0;
+    if (!stored || stored <= 0 || Math.abs(stored - reportedDuration) > 5) {
       duration = reportedDuration;
       void request.server.prisma.workshopEpisode.update({
         where: { id: episodeId },
