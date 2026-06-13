@@ -36,7 +36,6 @@ import {
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers, useApproveMember } from "@/lib/hooks/useMembers";
-import { getAdminSocket } from "@/lib/socket/client";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
@@ -172,21 +171,6 @@ export default function MembersListPage() {
     setPendingBadge(count);
   }, [pendingData]);
 
-  useEffect(() => {
-    let mounted = true;
-    getAdminSocket().then((socket) => {
-      if (!mounted) return;
-      socket.on('admin:member_pending', (data: { memberId: string; fullName: string; phone: string }) => {
-        toast.success(`New signup: ${data.fullName} is waiting for approval`);
-        refetchPending();
-        if (statusFilter === 'pending') refetch();
-      });
-    });
-    return () => {
-      mounted = false;
-      getAdminSocket().then((s) => s.off('admin:member_pending'));
-    };
-  }, [statusFilter]);
 
   useEffect(() => {
     if (editingMember) {

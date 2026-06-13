@@ -1,15 +1,17 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import apiClient from "../lib/api/apiClient";
-import { initAdminSocket } from "@/lib/socket/client";
+import { initAdminSocket, getAdminSocket } from "@/lib/socket/client";
 
 function AuthInterceptor() {
   const { getToken, isLoaded } = useAuth();
   const getTokenRef = useRef(getToken);
+  const queryClient = useQueryClient();
   initAdminSocket(() => getTokenRef.current());
 
   // Keep the ref current without triggering interceptor re-registration
@@ -37,6 +39,23 @@ function AuthInterceptor() {
       apiClient.interceptors.request.eject(interceptor);
     };
   }, [isLoaded]);
+
+  // Global listener — fires regardless of which page the admin is on
+  useEffect(() => {
+    if (!isLoaded) return;
+    let mounted = true;
+    getAdminSocket().then((socket) => {
+      if (!mounted) return;
+      socket.on('admin:member_pending', (data: { fullName: string; phone: string }) => {
+        toast.success(`New signup: ${data.fullName} is waiting for approval`);
+        queryClient.invalidateQueries({ queryKey: ['members'] });
+      });
+    });
+    return () => {
+      mounted = false;
+      getAdminSocket().then((s) => s.off('admin:member_pending'));
+    };
+  }, [isLoaded, queryClient]);
 
   return null;
 }

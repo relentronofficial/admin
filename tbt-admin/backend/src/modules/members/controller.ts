@@ -965,7 +965,14 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
     }
 
     const { password, dob, businessEstablishedOn, accountManagerId, batchId, ...rest } = body;
-    const data: any = { ...rest, status: 'active' };
+
+    // Filter out empty strings — enum fields (gender, preferredSessionMode, etc.) reject "" in Prisma
+    const data: any = { status: 'active' };
+    for (const key in rest) {
+      if ((rest as any)[key] !== '' && (rest as any)[key] !== undefined) {
+        data[key] = (rest as any)[key];
+      }
+    }
 
     if (dob) data.dob = new Date(dob);
     if (businessEstablishedOn) data.businessEstablishedOn = new Date(businessEstablishedOn);
