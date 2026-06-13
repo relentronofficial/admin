@@ -76,7 +76,7 @@ Clerk is the auth provider for both frontend and backend.
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). The response interceptor unwraps `response.data`, so hooks receive the server payload directly (`{ success, data, meta, error }`). Access lists as `data?.data || []` and total as `data?.meta?.total`.
 - **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~600+ lines). Add new hooks to the bottom of this file.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload for images/videos ≤100 MB)
-- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers`, `useCreateMember`, and related member mutations
+- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter param), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`), and related mutations
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related task/initiative mutations
 - **State:** TanStack Query for server state; Zustand for client state
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
@@ -95,6 +95,7 @@ app/
   (platform)/       # All member pages — wrapped by Navbar + SubscriptionGate
   (player)/         # Full-screen video player — bare layout (no Navbar/Footer)
   login/            # Custom LoginScreen — DO NOT MODIFY
+  signup/           # Self-registration form (SignupScreen) — DO NOT MODIFY
   loading/          # Standalone loading page
 ```
 `(platform)/layout.tsx` renders `<Navbar>`, `<SubscriptionGate>`, and `<Footer>`. All platform pages sit inside `max-w-7xl mx-auto`.
@@ -144,7 +145,25 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 - All hooks are `"use client"` and use TanStack Query v5
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
-Reads `useMe()` and redirects to `/Products` if `me.subscription` is missing or expired. Paths `["/Products", "/profile"]` are exempt. Runs client-side only.
+Reads `useMe()` and:
+- If `me.status === 'pending'` → renders `PendingApprovalScreen` overlay (full-screen, blocks all content, shows sign-out button)
+- If subscription missing or expired → redirects to `/Products`
+- Paths `["/Products", "/profile"]` are exempt from the subscription check. Runs client-side only.
+
+### Self-Registration & Pending Approval Flow
+1. **User signs up** at `/signup` (`components/auth/SignupScreen.tsx`) — `POST /api/user-auth/signup` — creates member with `status='pending'`, `membershipPlan='free'`, emits `admin:member_pending` socket event
+2. **User logs in** — can log in immediately with the password they set at signup; `SubscriptionGate` shows `PendingApprovalScreen` until approved
+3. **Admin notified** — socket toast in admin panel; "Pending" tab in `/members` with badge count; stat card shows pending count
+4. **Admin approves** — opens edit modal for the pending member, fills any missing fields, clicks green "Approve Member" button → `POST /api/members/:id/approve` → status set to `active`
+
+`MemberStatus` enum: `active | inactive | paused | suspended | pending`. `pending` is added at DB startup via idempotent `ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'` in `backend/src/plugins/prisma.ts`.
+
+### Login Flow (`components/auth/LoginScreen.tsx`)
+- Password is **required** — no skip/blank allowed
+- "New to TBT? Sign up" link always visible below the login form
+- Forgot Password → `POST /api/user-auth/forgot-password` → OTP + new password screen (`reset_password` step)
+- Admin-created accounts with no password set are silently routed to the `reset_password` step (backend sends OTP)
+- **Off-limits: never modify** `app/login/page.tsx` or `app/(auth)/`
 
 ### Video Player Progress Pattern (30s periodic POST)
 Used in any component that embeds video playback:
@@ -172,8 +191,8 @@ The full-screen player (`(player)/watch/[episodeId]`) AND the embedded `EpisodeP
 2. **No hardcoded colors for theme tokens** — use `var(--color-accent)` etc.
 3. **`getServerNow()`** instead of `Date.now()` for countdowns — avoids client clock skew
 4. **`initApiClient`** is called once in `Providers`; hooks must not attach tokens themselves
-5. **`SubscriptionGate`** is already in the platform layout — don't duplicate the subscription check in individual pages
-6. **Login page is permanently off-limits** — never modify `app/login/page.tsx` or `app/(auth)/`
+5. **`SubscriptionGate`** is already in the platform layout — don't duplicate the subscription check in individual pages; it also handles `pending` status
+6. **Login page is permanently off-limits** — never modify `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
 7. **`useRef` requires an initial value** (React 19) — use `useRef<T | undefined>(undefined)`, never `useRef<T>()`
 8. **`refetchQueries` predicate in TanStack Query v5** — use `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
 

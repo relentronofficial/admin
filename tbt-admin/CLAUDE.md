@@ -59,7 +59,7 @@ Clerk is the auth provider for both frontend and backend.
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). Response interceptor unwraps `response.data`.
 - **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks for workshops, hero, content sections, courses, config, nav, tiers, badges, notifications, products, resources, batches
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload)
-- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers`, `useCreateMember`, and related mutations
+- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `{ status }` filter for pending/active/etc.), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`), and related mutations
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related mutations
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
 
@@ -133,6 +133,20 @@ Font:        font-rajdhani (headings/labels, uppercase tracking-widest), system 
 Label style: text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani
 Input:       bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626]
 ```
+
+### Pending Member Approval Workflow
+When a user self-registers via `/signup` on the user web:
+1. Backend creates member with `status='pending'`, `membershipPlan='free'`
+2. Backend emits `admin:member_pending` socket event to the `'admin'` room
+3. Admin panel `/members` page receives the socket event → shows toast + increments badge on the "Pending" tab
+4. Admin opens the member via the edit modal → fills any missing fields → clicks **"Approve Member"** (green button, only visible when `status === 'pending'`)
+5. `useApproveMember` calls `POST /api/members/:id/approve` → member's status becomes `active`
+
+`MemberStatus` enum: `active | inactive | paused | suspended | pending`. The `pending` value is added at DB startup via idempotent `ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'` in `backend/src/plugins/prisma.ts` — no migration file needed.
+
+Socket events (`admin-panel/lib/socket/client.ts`):
+- `admin:member_pending` — new self-signup awaiting approval (handled in `/members`)
+- `admin:member_joined` — new member fully onboarded (handled in `/dashboard`)
 
 ### API Response Shape
 ```json

@@ -21,7 +21,8 @@ app/
   (marketing)/      # Public landing page
   (platform)/       # All member pages — Navbar + SubscriptionGate in layout
   (player)/         # Full-screen video player — bare layout, no Navbar
-  login/            # Custom login page (LoginScreen component)
+  login/            # Custom login page (LoginScreen) — DO NOT MODIFY
+  signup/           # Self-registration (SignupScreen) — DO NOT MODIFY
   loading/          # Splash screen — auto-redirects to /tbt
 ```
 
@@ -66,7 +67,21 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 `--color-locked: #4a4a4a` is the only static token (not from API).
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
-Wraps all `(platform)` children. Reads `useMe()` and redirects to `/Products` if `me.subscription` is missing or expired. `/Products` and `/profile` are exempt.
+Wraps all `(platform)` children. Reads `useMe()` and:
+- `me.status === 'pending'` → renders `PendingApprovalScreen` overlay (full-screen block, sign-out only — account awaiting admin approval)
+- Subscription missing or expired → redirects to `/Products`
+- `/Products` and `/profile` are exempt from the subscription redirect
+
+### Self-Registration Flow
+- `POST /api/user-auth/signup` (public) — creates member with `status='pending'`, `membershipPlan='free'`
+- `SignupScreen` (`components/auth/SignupScreen.tsx`) posts to this endpoint; on success shows "Registration Submitted" confirmation
+- Pending members can log in immediately but see `PendingApprovalScreen` until an admin approves them via the admin panel
+
+### Login Flow (`components/auth/LoginScreen.tsx`)
+- **Password is required** — no blank/skip allowed
+- "New to TBT? Sign up" link is always visible below the credentials form
+- Forgot Password → OTP → set new password (`reset_password` step) — this is also the path for admin-created accounts with no password
+- **DO NOT MODIFY** `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
 
 ### Hook Files
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa`, `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
@@ -99,6 +114,6 @@ useEffect(() => {
 2. **`refetchQueries` in TanStack Query v5** — use `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
 3. **No hardcoded strings** — every user-facing label from `uiStrings`
 4. **No hardcoded colors for theme tokens** — use `var(--color-accent)` etc.
-5. **Login page is off-limits** — never modify `app/login/page.tsx` or `app/(auth)/`
-6. **`SubscriptionGate` is already in the platform layout** — don't add subscription checks in individual pages
+5. **Login/signup pages are off-limits** — never modify `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
+6. **`SubscriptionGate` is already in the platform layout** — don't add subscription or pending checks in individual pages
 7. **NEVER use the word "EiFlix"** in user-facing code or strings — use "TBT"
