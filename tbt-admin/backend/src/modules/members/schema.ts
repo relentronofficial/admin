@@ -54,4 +54,5 @@ export const updateMemberSchema = createMemberSchema.partial().extend({
   status: z.enum(['active', 'inactive', 'paused', 'suspended', 'pending']).optional().or(z.literal('')),
   verificationStatus: z.enum(['awaiting_kyc', 'under_review', 'verified', 'rejected']).optional().or(z.literal('')),
   password: z.string().min(8).optional().or(z.literal('')),
+  subscriptionEndsAt: z.string().optional().or(z.literal('')),
 });

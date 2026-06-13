@@ -93,6 +93,7 @@ const memberUpdateSchema = z.object({
   accountManagerId: z.string().optional().or(z.literal("")),
   currentTier: z.number().int().min(1).default(1),
   password: z.string().min(8, "Password must be at least 8 characters").optional().or(z.literal("")),
+  subscriptionEndsAt: z.string().optional().or(z.literal("")).nullable(),
 });
 
 type MemberUpdateInput = z.infer<typeof memberUpdateSchema>;
@@ -147,6 +148,7 @@ export default function MembersListPage() {
   const watchChannels = watch("marketingChannels") || [];
   const watchHasSMM = watch("hasMarketingTeam");
   const watchHasVideo = watch("hasVideoEditing");
+  const watchPlan = watch("membershipPlan");
 
   const toggleChannel = (channel: string) => {
     if (watchChannels.includes(channel)) {
@@ -209,6 +211,7 @@ export default function MembersListPage() {
         verificationStatus: editingMember.verificationStatus || "awaiting_kyc",
         accountManagerId: editingMember.accountManagerId || "",
         currentTier: editingMember.currentTier ?? 1,
+        subscriptionEndsAt: "",
       });
     }
   }, [editingMember, reset]);
@@ -985,6 +988,20 @@ export default function MembersListPage() {
                         }
                       </select>
                     </div>
+                    {watchPlan && watchPlan !== 'free' && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">
+                          Subscription End Date <span className="normal-case text-[#444] font-normal">(set to create or extend access)</span>
+                        </label>
+                        <input
+                          type="date"
+                          {...register("subscriptionEndsAt")}
+                          min={new Date().toISOString().split('T')[0]}
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm color-scheme-dark"
+                        />
+                        <p className="text-[11px] text-[#555] mt-1.5">Leave blank to keep existing subscription unchanged.</p>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">
                         Password <span className="normal-case text-[#444] font-normal">(leave blank to keep unchanged)</span>

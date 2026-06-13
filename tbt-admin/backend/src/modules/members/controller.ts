@@ -174,6 +174,7 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       batchId,
       createdBy,
       password,
+      subscriptionEndsAt,
       ...restBody
     } = body as any;
 
@@ -266,11 +267,30 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       }
     }
 
-    const member = await request.server.prisma.member.update({ 
-      where: { id }, 
-      data 
+    const member = await request.server.prisma.member.update({
+      where: { id },
+      data
     });
-    
+
+    // If a paid plan + end date are provided, deactivate old subscriptions and create a new one
+    const effectivePlan = data.membershipPlan;
+    if (subscriptionEndsAt && subscriptionEndsAt.trim() !== '' && effectivePlan && effectivePlan !== 'free') {
+      await request.server.prisma.subscription.updateMany({
+        where: { memberId: id, status: 'active' },
+        data: { status: 'inactive' },
+      });
+      await request.server.prisma.subscription.create({
+        data: {
+          memberId: id,
+          plan: effectivePlan as any,
+          startsAt: new Date(),
+          endsAt: new Date(subscriptionEndsAt),
+          amount: 0,
+          status: 'active',
+        },
+      });
+    }
+
     return reply.send({ success: true, data: member, error: null });
   } catch (err: any) {
     if (err.name === 'ZodError') {
@@ -964,7 +984,7 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Member is not in pending status' } });
     }
 
-    const { password, dob, businessEstablishedOn, accountManagerId, batchId, ...rest } = body;
+    const { password, dob, businessEstablishedOn, accountManagerId, batchId, subscriptionEndsAt, ...rest } = body;
 
     // Filter out empty strings — enum fields (gender, preferredSessionMode, etc.) reject "" in Prisma
     const data: any = { status: 'active' };
@@ -1001,6 +1021,22 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
     }
 
     const updated = await request.server.prisma.member.update({ where: { id }, data });
+
+    // Create subscription if a paid plan + end date are provided
+    const approvedPlan = data.membershipPlan;
+    if (subscriptionEndsAt && subscriptionEndsAt.trim() !== '' && approvedPlan && approvedPlan !== 'free') {
+      await request.server.prisma.subscription.create({
+        data: {
+          memberId: id,
+          plan: approvedPlan as any,
+          startsAt: new Date(),
+          endsAt: new Date(subscriptionEndsAt),
+          amount: 0,
+          status: 'active',
+        },
+      });
+    }
+
     request.server.io.to('admin').emit('admin:member_approved', { memberId: id });
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
