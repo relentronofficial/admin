@@ -1438,6 +1438,7 @@ function WatchChallengeView({
   };
 
   const handlePlay = () => {
+    console.log('[TBT-TRACK] handlePlay called — iframeFocused:', iframeFocusedRef.current, 'ep:', epRef.current?.id);
     setWatchState("watching");
     isPlayingRef.current = true;
     if (!iframeFocusedRef.current) {
@@ -1445,27 +1446,34 @@ function WatchChallengeView({
       qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
       clearInterval(timerRef.current);
       lastHeartbeatAt.current = Date.now();
+      console.log('[TBT-TRACK] starting 5s heartbeat timer for ep:', epRef.current?.id);
       timerRef.current = setInterval(() => {
         const curEp = epRef.current;
-        if (!curEp) return;
+        if (!curEp) { console.warn('[TBT-TRACK] heartbeat tick — epRef is null, skipping'); return; }
+        console.log('[TBT-TRACK] heartbeat tick — ep:', curEp.id, 'playhead:', Math.floor(lastPlayheadRef.current), 'duration:', realDurationRef.current);
         lastHeartbeatAt.current = Date.now();
         postProgress.mutate(
           { episodeId: curEp.id, watchedSeconds: Math.floor(lastPlayheadRef.current), deltaSeconds: 5, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined, segments: [...watchedSegmentsRef.current] },
           {
             onSuccess: (data: any) => {
+              console.log('[TBT-TRACK] heartbeat success — isCompleted:', data?.isCompleted, 'actualWatchedSecs:', data?.actualWatchedSecs);
               if (data?.isCompleted) { doMarkCompleteRef.current(); return; }
               if (typeof data?.actualWatchedSecs === 'number') {
                 liveWatchedRef.current = data.actualWatchedSecs;
                 setLiveWatched(data.actualWatchedSecs);
               }
             },
+            onError: (err: any) => console.error('[TBT-TRACK] heartbeat ERROR:', err?.message, err?.response?.status, err?.response?.data),
           }
         );
       }, 5000);
+    } else {
+      console.log('[TBT-TRACK] handlePlay skipped timer start — iframeFocused already true');
     }
   };
 
   const handlePause = () => {
+    console.log('[TBT-TRACK] handlePause called — playhead:', Math.floor(lastPlayheadRef.current));
     setWatchState("paused");
     isPlayingRef.current = false;
     iframeFocusedRef.current = false;
@@ -1473,6 +1481,7 @@ function WatchChallengeView({
   };
 
   const handleEnded = () => {
+    console.log('[TBT-TRACK] handleEnded called — playhead:', Math.floor(lastPlayheadRef.current), 'markCalled:', markCalledRef.current);
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
     isPlayingRef.current = false;
@@ -1481,10 +1490,14 @@ function WatchChallengeView({
       ? Math.round((Date.now() - lastHeartbeatAt.current) / 1000)
       : 30;
     const curEp = epRef.current;
-    if (!curEp) return;
+    if (!curEp) { console.warn('[TBT-TRACK] handleEnded — epRef is null'); return; }
+    console.log('[TBT-TRACK] handleEnded posting final progress — ep:', curEp.id, 'delta:', elapsedSinceLastHb);
     postProgress.mutate(
       { episodeId: curEp.id, watchedSeconds: Math.floor(lastPlayheadRef.current), deltaSeconds: elapsedSinceLastHb, isCompleted: false, reportedDuration: rd },
-      { onSuccess: () => doMarkCompleteRef.current(), onError: () => doMarkCompleteRef.current() }
+      {
+        onSuccess: () => { console.log('[TBT-TRACK] final progress saved — calling doMarkComplete'); doMarkCompleteRef.current(); },
+        onError: (err: any) => { console.error('[TBT-TRACK] final progress ERROR:', err?.message, err?.response?.status); doMarkCompleteRef.current(); },
+      }
     );
   };
 
@@ -1516,6 +1529,7 @@ function WatchChallengeView({
     ? Math.min(100, Math.round(((ep.actualWatchedSecs ?? 0) / activeDuration) * 100))
     : 0;
 
+  console.log('[TBT-TRACK] WatchChallengeView render — ep.id:', ep?.id, 'hlsUrl:', ep?.hlsUrl ? ep.hlsUrl.slice(0, 60) : null, 'videoUrl:', !!ep?.videoUrl);
   const iframeFallbackSrc = !ep.hlsUrl && ep.videoUrl
     ? withResumeTime(normalizeBunnyUrl(ep.videoUrl), forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0))
     : null;
