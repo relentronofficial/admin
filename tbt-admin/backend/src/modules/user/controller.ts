@@ -2160,38 +2160,41 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
   let duration = episode.durationSeconds;
 
+  // Hoist bunnyId — used for both Bunny API duration fetch and HLS URL construction
+  const BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)|(?:vz-[^.]+\.b-cdn\.net)\/([\w-]{8,})\//;
+  const _urlMatch = episode.videoUrl?.match(BUNNY_URL_RE);
+  const bunnyId = episode.bunnyVideoId ?? _urlMatch?.[1] ?? _urlMatch?.[2] ?? null;
+
   // Always fetch authoritative duration from Bunny — stored value may be wrong/placeholder.
-  // Extract bunnyVideoId from URL if not stored directly (handles URL-only episodes).
-  if (env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID) {
-    const BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)|(?:vz-[^.]+\.b-cdn\.net)\/([\w-]{8,})\//;
-    const urlMatch = episode.videoUrl?.match(BUNNY_URL_RE);
-    const bunnyId = episode.bunnyVideoId ?? urlMatch?.[1] ?? urlMatch?.[2] ?? null;
-    if (bunnyId) {
-      try {
-        const bunnyRes = await fetch(
-          `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${bunnyId}`,
-          { headers: { AccessKey: env.BUNNY_STREAM_API_KEY, accept: 'application/json' } }
-        );
-        if (bunnyRes.ok) {
-          const bunnyData = (await bunnyRes.json()) as any;
-          const bunnyDuration = Number(bunnyData.length ?? bunnyData.duration ?? 0);
-          if (bunnyDuration > 0) {
-            duration = bunnyDuration;
-            // Backfill DB async — don't block the response
-            void request.server.prisma.workshopEpisode.update({
-              where: { id: episode.id },
-              data: {
-                durationSeconds: bunnyDuration,
-                ...(episode.bunnyVideoId ? {} : { bunnyVideoId: bunnyId }),
-              },
-            }).catch(() => {});
-          }
+  if (env.BUNNY_STREAM_API_KEY && env.BUNNY_STREAM_LIBRARY_ID && bunnyId) {
+    try {
+      const bunnyRes = await fetch(
+        `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${bunnyId}`,
+        { headers: { AccessKey: env.BUNNY_STREAM_API_KEY, accept: 'application/json' } }
+      );
+      if (bunnyRes.ok) {
+        const bunnyData = (await bunnyRes.json()) as any;
+        const bunnyDuration = Number(bunnyData.length ?? bunnyData.duration ?? 0);
+        if (bunnyDuration > 0) {
+          duration = bunnyDuration;
+          // Backfill DB async — don't block the response
+          void request.server.prisma.workshopEpisode.update({
+            where: { id: episode.id },
+            data: {
+              durationSeconds: bunnyDuration,
+              ...(episode.bunnyVideoId ? {} : { bunnyVideoId: bunnyId }),
+            },
+          }).catch(() => {});
         }
-      } catch (err) {
-        request.server.log.warn(`[bunny] duration fetch failed for episode ${episode.id}: ${err}`);
       }
+    } catch (err) {
+      request.server.log.warn(`[bunny] duration fetch failed for episode ${episode.id}: ${err}`);
     }
   }
+
+  const hlsUrl = (bunnyId && env.BUNNY_CDN_URL)
+    ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
+    : null;
 
   const prog = (episode as any).progress?.[0];
 
@@ -2200,7 +2203,8 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
     title: episode.title,
     description: episode.description ?? null,
     videoUrl: episode.videoUrl ?? null,
-    videoType: 'iframe',
+    hlsUrl,
+    videoType: hlsUrl ? 'hls' : 'iframe',
     durationSeconds: duration ?? null,
     resumeAtSeconds: prog?.lastWatchedSecs ?? 0,
     qualityOptions: ['auto'],
@@ -2905,6 +2909,9 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
         description: ep.description ?? null,
         typeLabel: ep.typeLabel,
         videoUrl: ep.videoUrl ?? null,
+        hlsUrl: (ep.bunnyVideoId && env.BUNNY_CDN_URL)
+          ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${ep.bunnyVideoId}/playlist.m3u8`
+          : null,
         durationLabel: ep.durationLabel ?? null,
         durationSeconds: ep.durationSeconds ?? null,
         isCompleted: ep.progress?.[0]?.isCompleted ?? false,

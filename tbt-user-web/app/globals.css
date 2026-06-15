@@ -1,3 +1,30 @@
+@import 'plyr/dist/plyr.css';
+
+/* Plyr theme — accent color from SiteConfig, dark background */
+:root {
+  --plyr-color-main: var(--color-accent, #dc2626);
+  --plyr-video-background: #000000;
+  --plyr-font-family: inherit;
+  --plyr-font-size-base: 13px;
+  --plyr-control-radius: 6px;
+  --plyr-range-thumb-height: 14px;
+  --plyr-range-fill-background: var(--color-accent, #dc2626);
+}
+.plyr--video .plyr__controls {
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
+  padding: 8px 12px 10px;
+}
+.plyr__control--overlaid {
+  background: var(--color-accent, #dc2626) !important;
+}
+.plyr__menu__container {
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.plyr__menu__container .plyr__control[role="menuitemradio"][aria-checked="true"]::before {
+  background: var(--color-accent, #dc2626);
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
