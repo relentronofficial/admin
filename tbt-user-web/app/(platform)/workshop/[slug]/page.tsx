@@ -46,6 +46,8 @@ import { cn } from "@/lib/utils/cn";
 import { getServerNow, getCachedTokenSync } from "@/lib/api/client";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
+import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
+import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import type {
   WorkshopFlowItem,
   WorkshopTab,
@@ -1244,11 +1246,13 @@ function WatchChallengeView({
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const markCalledRef = useRef(false);
   const lastPlayheadRef = useRef<number>(0);
-  const lastHeartbeatAt = useRef<number>(0); // wall-clock ms of last sent heartbeat
+  const lastHeartbeatAt = useRef<number>(0);
   const activeEpIdxRef = useRef(activeEpIdx);
   const onChallengeCompleteRef = useRef(onChallengeComplete);
   const currentEpRef = useRef<any>(undefined);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const playerRef = useRef<PlyrPlayerHandle | null>(null);
+  const doMarkCompleteRef = useRef<() => void>(() => {});
+  const epRef = useRef<any>(undefined);
   const [speed, setSpeed] = useState(1);
   const speedRef = useRef(1);
 
@@ -1258,24 +1262,20 @@ function WatchChallengeView({
   const isPlayingRef = useRef(false);
   const isHiddenRef = useRef(false);
   const isSeekingRef = useRef(false);
-  const seekStartPosRef = useRef<number>(0);
   const watchedSegmentsRef = useRef<Set<number>>(new Set());
-  // Real duration captured from Bunny player getDuration response (overrides wrong DB value)
+  // Real duration captured from Plyr player (overrides potentially-wrong DB value)
   const realDurationRef = useRef<number>(0);
   const [liveRealDuration, setLiveRealDuration] = useState(0);
 
   useEffect(() => { activeEpIdxRef.current = activeEpIdx; }, [activeEpIdx]);
   useEffect(() => { onChallengeCompleteRef.current = onChallengeComplete; }, [onChallengeComplete]);
-  useEffect(() => { currentEpRef.current = ep; }, [ep]);
+  useEffect(() => { currentEpRef.current = ep; epRef.current = ep; }, [ep]);
   useEffect(() => { speedRef.current = speed; }, [speed]);
 
   const handleSpeedChange = (s: number) => {
     setSpeed(s);
     speedRef.current = s;
-    iframeRef.current?.contentWindow?.postMessage(
-      JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: s }),
-      "*"
-    );
+    // PlyrPlayer applies speed via its speed prop (see speed={speed} on the component)
   };
 
   // Episode switch: reset local state
@@ -1286,6 +1286,7 @@ function WatchChallengeView({
     isHiddenRef.current = false;
     isSeekingRef.current = false;
     realDurationRef.current = 0;
+    playerRef.current = null;
     setLiveRealDuration(0);
     lastHeartbeatAt.current = 0;
     watchedSegmentsRef.current = new Set();
@@ -1360,18 +1361,16 @@ function WatchChallengeView({
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep doMarkCompleteRef fresh on every episode — PlyrPlayer's onEnded reads it
   useEffect(() => {
-    if (!ep || !ep.videoUrl) return;
+    if (!ep) return;
 
-    let lastPlayhead = ep.lastWatchedSecs ?? 0;
-
-    const doMarkComplete = () => {
+    doMarkCompleteRef.current = () => {
       if (markCalledRef.current) return;
       markCalledRef.current = true;
       clearInterval(timerRef.current);
       isPlayingRef.current = false;
       setWatchState("completed");
-      // Cap liveWatched to realDuration so it shows 100%
       const rd = realDurationRef.current > 0 ? realDurationRef.current : (ep.durationSeconds ?? 0);
       if (rd > 0) { liveWatchedRef.current = rd; setLiveWatched(rd); }
       completeEp.mutate({ episodeId: ep.id, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined }, {
@@ -1382,154 +1381,14 @@ function WatchChallengeView({
           qc.invalidateQueries({ queryKey: ["user", "dashboard", "continue-learning"] });
           qc.invalidateQueries({ queryKey: ["user", "dashboard", "watch-history"] });
           const curIdx = activeEpIdxRef.current;
-          if (curIdx + 1 < episodes.length) {
-            setUpNextCountdown(5);
-          } else {
-            onChallengeCompleteRef.current?.();
-          }
+          if (curIdx + 1 < episodes.length) setUpNextCountdown(5);
+          else onChallengeCompleteRef.current?.();
         },
-        onError: () => {
-          // Keep markCalledRef true — video already ended, UI stays "completed"
-        },
+        onError: () => {},
       });
     };
 
-    const handler = (e: MessageEvent) => {
-      let data = e.data;
-      if (typeof data === "string") {
-        try { data = JSON.parse(data); } catch { return; }
-      }
-      if (!data || typeof data !== "object") return;
-
-      let evt = "";
-      let payloadValue: any = undefined;
-
-      if (data.context === "player.js") {
-        evt = (data.event || "").toLowerCase();
-        payloadValue = data.value;
-      } else {
-        const inner = data.data ?? data;
-        evt = (inner.event || inner.type || inner.action || "").toLowerCase();
-        payloadValue = inner.value ?? inner;
-      }
-
-      if (!evt) return;
-
-      if (evt === "ready" && e.source) {
-        const win = e.source as Window;
-        ["play", "pause", "timeupdate", "ended", "seeking", "seeked"].forEach((eventName) => {
-          win.postMessage(
-            JSON.stringify({ context: "player.js", method: "addEventListener", value: eventName }),
-            "*"
-          );
-        });
-        // Ask player for its real duration — response comes back as evt="getDuration"
-        win.postMessage(JSON.stringify({ context: "player.js", method: "getDuration" }), "*");
-        if (speedRef.current !== 1) {
-          win.postMessage(
-            JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: speedRef.current }),
-            "*"
-          );
-        }
-        return;
-      }
-
-      // Handle getDuration response — real duration from player, corrects wrong DB value
-      if (evt === "getduration" && typeof payloadValue === 'number' && payloadValue > 0) {
-        realDurationRef.current = payloadValue;
-        setLiveRealDuration(payloadValue);
-      }
-
-      const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
-      const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
-                    evt === "onfinish" || evt === "complete" || evt === "onended";
-      const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
-      const isTimeUpdate = evt === "timeupdate";
-
-      // Gap 6: Seek event handling
-      if (evt === "seeking") {
-        isSeekingRef.current = true;
-        seekStartPosRef.current = lastPlayhead;
-      }
-      if (evt === "seeked") {
-        isSeekingRef.current = false;
-        const seekDest = typeof payloadValue === 'number' ? payloadValue : lastPlayhead;
-        lastPlayhead = seekDest;
-        lastPlayheadRef.current = seekDest;
-        setCurrentPlayhead(seekDest);
-      }
-
-      if (isTimeUpdate && payloadValue !== undefined) {
-        const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue?.seconds;
-        if (currentTime !== undefined) {
-          // Detect large forward jump as a seek (fallback when seeking/seeked events are not fired by player)
-          const jump = currentTime - lastPlayhead;
-          if (jump > 5 && jump < 300 && !isSeekingRef.current) {
-            isSeekingRef.current = true;
-            seekStartPosRef.current = lastPlayhead;
-            setTimeout(() => { isSeekingRef.current = false; }, 800);
-          }
-          lastPlayhead = currentTime;
-          lastPlayheadRef.current = currentTime;
-          setCurrentPlayhead(currentTime);
-        }
-      }
-
-      if (isPlay && !isEnd) {
-        setWatchState("watching");
-        isPlayingRef.current = true;
-        if (!iframeFocusedRef.current) {
-          iframeFocusedRef.current = true;
-          qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
-          clearInterval(timerRef.current);
-          lastHeartbeatAt.current = Date.now();
-          timerRef.current = setInterval(() => {
-            lastHeartbeatAt.current = Date.now();
-            postProgress.mutate(
-              { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: 5, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined, segments: [...watchedSegmentsRef.current] },
-              {
-                onSuccess: (data: any) => {
-                  if (data?.isCompleted) { doMarkComplete(); return; }
-                  // Sync liveWatched from server-confirmed value
-                  if (typeof data?.actualWatchedSecs === 'number') {
-                    liveWatchedRef.current = data.actualWatchedSecs;
-                    setLiveWatched(data.actualWatchedSecs);
-                  }
-                  // Refresh sidebar progress stats after every heartbeat
-                  qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
-                  qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
-                },
-              }
-            );
-          }, 5000);
-        }
-      } else if (isPause && !isEnd) {
-        setWatchState("paused");
-        isPlayingRef.current = false;
-        iframeFocusedRef.current = false;
-        clearInterval(timerRef.current);
-      }
-
-      if (isEnd) {
-        clearInterval(timerRef.current);
-        iframeFocusedRef.current = false;
-        isPlayingRef.current = false;
-        const rd = realDurationRef.current > 0 ? realDurationRef.current : undefined;
-        // Real elapsed seconds since last heartbeat — gives backend maximum valid delta credit
-        const elapsedSinceLastHb = lastHeartbeatAt.current > 0
-          ? Math.round((Date.now() - lastHeartbeatAt.current) / 1000)
-          : 30; // no previous heartbeat (very short video / first play)
-        postProgress.mutate(
-          { episodeId: ep.id, watchedSeconds: Math.floor(lastPlayhead), deltaSeconds: elapsedSinceLastHb, isCompleted: false, reportedDuration: rd },
-          {
-            onSuccess: () => doMarkComplete(),
-            onError: () => doMarkComplete(), // trust ended event — always complete
-          }
-        );
-      }
-    };
-
-    // Gap 3: pause all tracking when the browser tab is hidden
+    // Pause all tracking when tab is hidden — re-enabled on next play event from player
     const handleVisibilityChange = () => {
       if (document.hidden) {
         isHiddenRef.current = true;
@@ -1538,13 +1397,11 @@ function WatchChallengeView({
         iframeFocusedRef.current = false;
       } else {
         isHiddenRef.current = false;
-        // Bunny's play event re-enables tracking when video actually resumes
       }
     };
-    window.addEventListener("message", handler);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
-      window.removeEventListener("message", handler);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(timerRef.current);
       const saved = lastPlayheadRef.current;
@@ -1552,7 +1409,78 @@ function WatchChallengeView({
         postProgress.mutate({ episodeId: ep.id, watchedSeconds: Math.floor(saved), deltaSeconds: 0, isCompleted: false });
       }
     };
-  }, [ep?.id, ep?.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── PlyrPlayer callbacks (stable — read from refs, never stale) ─────────────
+
+  const handlePlayerReady = (duration: number) => {
+    realDurationRef.current = duration;
+    setLiveRealDuration(duration);
+  };
+
+  const handleTimeUpdate = (currentTime: number) => {
+    const prev = lastPlayheadRef.current;
+    const jump = currentTime - prev;
+    if (jump > 5 && jump < 300) {
+      isSeekingRef.current = true;
+      setTimeout(() => { isSeekingRef.current = false; }, 800);
+    }
+    lastPlayheadRef.current = currentTime;
+    setCurrentPlayhead(currentTime);
+  };
+
+  const handlePlay = () => {
+    setWatchState("watching");
+    isPlayingRef.current = true;
+    if (!iframeFocusedRef.current) {
+      iframeFocusedRef.current = true;
+      qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+      clearInterval(timerRef.current);
+      lastHeartbeatAt.current = Date.now();
+      timerRef.current = setInterval(() => {
+        const curEp = epRef.current;
+        if (!curEp) return;
+        lastHeartbeatAt.current = Date.now();
+        postProgress.mutate(
+          { episodeId: curEp.id, watchedSeconds: Math.floor(lastPlayheadRef.current), deltaSeconds: 5, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined, segments: [...watchedSegmentsRef.current] },
+          {
+            onSuccess: (data: any) => {
+              if (data?.isCompleted) { doMarkCompleteRef.current(); return; }
+              if (typeof data?.actualWatchedSecs === 'number') {
+                liveWatchedRef.current = data.actualWatchedSecs;
+                setLiveWatched(data.actualWatchedSecs);
+              }
+              qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+              qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+            },
+          }
+        );
+      }, 5000);
+    }
+  };
+
+  const handlePause = () => {
+    setWatchState("paused");
+    isPlayingRef.current = false;
+    iframeFocusedRef.current = false;
+    clearInterval(timerRef.current);
+  };
+
+  const handleEnded = () => {
+    clearInterval(timerRef.current);
+    iframeFocusedRef.current = false;
+    isPlayingRef.current = false;
+    const rd = realDurationRef.current > 0 ? realDurationRef.current : undefined;
+    const elapsedSinceLastHb = lastHeartbeatAt.current > 0
+      ? Math.round((Date.now() - lastHeartbeatAt.current) / 1000)
+      : 30;
+    const curEp = epRef.current;
+    if (!curEp) return;
+    postProgress.mutate(
+      { episodeId: curEp.id, watchedSeconds: Math.floor(lastPlayheadRef.current), deltaSeconds: elapsedSinceLastHb, isCompleted: false, reportedDuration: rd },
+      { onSuccess: () => doMarkCompleteRef.current(), onError: () => doMarkCompleteRef.current() }
+    );
+  };
 
   if (!ep) return <p className="text-sm text-muted-foreground text-center py-8">No episodes yet.</p>;
 
@@ -1582,9 +1510,10 @@ function WatchChallengeView({
     ? Math.min(100, Math.round(((ep.actualWatchedSecs ?? 0) / activeDuration) * 100))
     : 0;
 
-  const iframeSrc = ep.videoUrl
+  const iframeFallbackSrc = !ep.hlsUrl && ep.videoUrl
     ? withResumeTime(normalizeBunnyUrl(ep.videoUrl), forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0))
     : null;
+  const startAt = forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0);
 
   return (
     <div className="space-y-4">
@@ -1595,13 +1524,26 @@ function WatchChallengeView({
         className="w-full rounded-xl overflow-hidden bg-black relative"
         style={{ aspectRatio: "16/9" }}
         containerId="workshop-video-root"
-        showFullscreenButton={!!ep.videoUrl}
+        showFullscreenButton={!!(ep.hlsUrl || ep.videoUrl)}
       >
-        {iframeSrc ? (
+        {ep.hlsUrl ? (
+          <PlyrPlayer
+            ref={playerRef}
+            key={`plyr-${ep.id}-${forceStartFrom ?? 'r'}`}
+            hlsUrl={ep.hlsUrl}
+            startAt={startAt}
+            speed={speed}
+            className="absolute inset-0 w-full h-full bg-black"
+            onReady={handlePlayerReady}
+            onTimeUpdate={handleTimeUpdate}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onEnded={handleEnded}
+          />
+        ) : iframeFallbackSrc ? (
           <iframe
-            ref={iframeRef}
-            key={`${ep.id}-${forceStartFrom}`}
-            src={iframeSrc}
+            key={`iframe-${ep.id}-${forceStartFrom}`}
+            src={iframeFallbackSrc}
             className="absolute inset-x-0 top-0 w-full"
             style={{ height: 'calc(100% + 56px)' }}
             allow="autoplay"
@@ -1611,8 +1553,8 @@ function WatchChallengeView({
         )}
       </VideoWatermark>
 
-      {/* Speed control */}
-      {iframeSrc && (
+      {/* Speed control — only when using PlyrPlayer (speed prop is wired) */}
+      {ep.hlsUrl && (
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-bold uppercase tracking-wider mr-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Speed</span>
           {[1, 1.25, 1.5, 2].map((s) => (

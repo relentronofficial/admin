@@ -15,6 +15,7 @@ interface PlyrPlayerProps {
   hlsUrl: string;
   startAt?: number;
   speed?: number;
+  className?: string;
   onReady?: (duration: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
   onPlay?: () => void;
@@ -25,7 +26,7 @@ interface PlyrPlayerProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPlayer(
-  { hlsUrl, startAt = 0, speed = 1, onReady, onTimeUpdate, onPlay, onPause, onEnded },
+  { hlsUrl, startAt = 0, speed = 1, className, onReady, onTimeUpdate, onPlay, onPause, onEnded },
   ref,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -138,7 +139,7 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
   }, [speed]);
 
   return (
-    <div className="w-full h-full bg-black">
+    <div className={className ?? "w-full h-full bg-black"}>
       <video ref={videoRef} className="w-full h-full" playsInline crossOrigin="anonymous" />
     </div>
   );

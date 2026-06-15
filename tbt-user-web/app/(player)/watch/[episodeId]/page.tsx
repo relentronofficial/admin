@@ -8,6 +8,8 @@ import { useEpisodePlayback, usePostEpisodeProgress, useCompleteWorkshopEpisode 
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
+import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
+import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import toast from "react-hot-toast";
 
 export default function WatchPage() {
@@ -18,116 +20,36 @@ export default function WatchPage() {
   const postProgress = usePostEpisodeProgress();
   const completeEp = useCompleteWorkshopEpisode();
   const { uiStrings } = useSiteConfig();
-  const [speed, setSpeed] = useState<string>("");
   const [liveRealDuration, setLiveRealDuration] = useState(0);
-  const [quality, setQuality] = useState<string>("");
   const [isMarkedComplete, setIsMarkedComplete] = useState(false);
-  const [liveElapsed, setLiveElapsed] = useState(0);
-  const liveElapsedRef = useRef(0);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [liveCurrentTime, setLiveCurrentTime] = useState(0);
 
-  // Track when playback started so we can compute watched seconds for periodic posts
-  const startRef = useRef<number>(Date.now());
-  // Prevent posting isCompleted:false after the user already clicked Complete
+  const playerRef = useRef<PlyrPlayerHandle | null>(null);
   const completedRef = useRef(false);
-  // Speed ref — avoids stale closure inside the 15s interval
-  const speedRef = useRef(1);
-  // Real duration reported by the Bunny player (overrides potentially-wrong DB value)
   const realDurationRef = useRef(0);
-  // Track milliseconds the tab was hidden so they don't count toward elapsed
-  const hiddenMsRef = useRef(0);
-  const hiddenStartRef = useRef(0);
 
-  useEffect(() => {
-    if (playback && !speed) setSpeed(playback.defaultSpeed);
-    if (playback && !quality) setQuality(playback.defaultQuality);
-  }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Gap 5: 1-second tick to estimate playhead position for Complete button gating
+  // 1-second tick: read exact currentTime from player for Complete button gating
   useEffect(() => {
     if (!playback) return;
-    liveElapsedRef.current = 0;
-    setLiveElapsed(0);
+    setLiveCurrentTime(0);
     const id = setInterval(() => {
-      if (document.hidden) return;
-      liveElapsedRef.current += 1;
-      setLiveElapsed(liveElapsedRef.current);
+      if (!document.hidden) setLiveCurrentTime(playerRef.current?.currentTime ?? 0);
     }, 1000);
     return () => clearInterval(id);
   }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!speed) return;
-    const numericSpeed = parseFloat(speed.replace("x", ""));
-    if (isNaN(numericSpeed)) return;
-    speedRef.current = numericSpeed;
-    iframeRef.current?.contentWindow?.postMessage(
-      JSON.stringify({ context: "player.js", method: "setPlaybackSpeed", value: numericSpeed }),
-      "*"
-    );
-  }, [speed]);
-
-  // Listen to Bunny player events to capture real video duration
+  // 5s heartbeat — watchedSeconds from actual player currentTime (no clock estimation needed)
   useEffect(() => {
     if (!playback) return;
+    completedRef.current = false;
     realDurationRef.current = 0;
     setLiveRealDuration(0);
-    const handler = (e: MessageEvent) => {
-      try {
-        const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-        if (msg?.context !== 'player.js') return;
-        const evt = (msg.event || '').toLowerCase();
-        // Player signals it's ready — now safe to request duration
-        if (evt === 'ready') {
-          iframeRef.current?.contentWindow?.postMessage(
-            JSON.stringify({ context: 'player.js', method: 'getDuration' }), '*'
-          );
-        }
-        // getDuration response — set both ref (for heartbeat) and state (for re-render)
-        if (evt === 'getduration' && typeof msg.value === 'number' && msg.value > 0) {
-          realDurationRef.current = msg.value;
-          setLiveRealDuration(msg.value);
-        }
-      } catch {}
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Post partial progress every 15 s so resumeAtSeconds stays fresh server-side
-  useEffect(() => {
-    if (!playback) return;
-    startRef.current = Date.now();
-    completedRef.current = false;
-    hiddenMsRef.current = 0;
-    hiddenStartRef.current = 0;
-
-    // Gap 3: track time the tab was hidden so it doesn't count toward elapsed
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        hiddenStartRef.current = Date.now();
-      } else if (hiddenStartRef.current > 0) {
-        hiddenMsRef.current += Date.now() - hiddenStartRef.current;
-        hiddenStartRef.current = 0;
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
     const id = setInterval(() => {
       if (completedRef.current) return;
-      // Gap 3: subtract hidden time; Gap 4: multiply by playback speed for video seconds
-      const currentHiddenMs = hiddenStartRef.current > 0
-        ? hiddenMsRef.current + (Date.now() - hiddenStartRef.current)
-        : hiddenMsRef.current;
-      const elapsed = Math.floor((Date.now() - startRef.current - currentHiddenMs) / 1000);
-      const watchedSeconds = playback.resumeAtSeconds + Math.floor(elapsed * speedRef.current);
+      const watchedSeconds = Math.floor(playerRef.current?.currentTime ?? playback.resumeAtSeconds);
       postProgress.mutate({ episodeId, watchedSeconds, deltaSeconds: 5, isCompleted: false, reportedDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
     }, 5_000);
-
-    return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    return () => clearInterval(id);
   }, [playback?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {
@@ -152,12 +74,12 @@ export default function WatchPage() {
     );
   }
 
-  const hasQualityChoice = playback.qualityOptions.length > 1;
-  // Gap 5: disable Complete button until estimated playhead reaches 85% of duration
-  const estimatedPlayhead = (playback.resumeAtSeconds ?? 0) + liveElapsed * speedRef.current;
   const effectiveDuration = liveRealDuration || (playback as any).durationSeconds || 0;
-  const canComplete = !effectiveDuration || estimatedPlayhead >= effectiveDuration * 0.85;
-  const videoSrc = withResumeTime(normalizeBunnyUrl(playback.videoUrl), playback.resumeAtSeconds);
+  // canComplete: exact player currentTime vs 85% of duration; always true for iframe fallback
+  const canComplete = !(playback as any).hlsUrl || !effectiveDuration || liveCurrentTime >= effectiveDuration * 0.85;
+  const iframeFallbackSrc = !(playback as any).hlsUrl
+    ? withResumeTime(normalizeBunnyUrl(playback.videoUrl ?? ""), playback.resumeAtSeconds)
+    : null;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "#000" }}>
@@ -184,59 +106,28 @@ export default function WatchPage() {
           containerId="watch-video-root"
           showFullscreenButton={true}
         >
-          <iframe
-            ref={iframeRef}
-            src={videoSrc}
-            className="absolute inset-x-0 top-0 w-full border-0"
-            style={{ height: 'calc(100% + 56px)' }}
-            allow="accelerometer; gyroscope; autoplay; encrypted-media"
-            title={playback.title}
-            onLoad={() => {
-              iframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ context: "player.js", method: "addEventListener", value: "ready" }), "*"
-              );
-            }}
-          />
+          {(playback as any).hlsUrl ? (
+            <PlyrPlayer
+              ref={playerRef}
+              key={episodeId}
+              hlsUrl={(playback as any).hlsUrl}
+              startAt={playback.resumeAtSeconds}
+              className="absolute inset-0 w-full h-full bg-black"
+              onReady={(duration) => { realDurationRef.current = duration; setLiveRealDuration(duration); }}
+            />
+          ) : iframeFallbackSrc ? (
+            <iframe
+              src={iframeFallbackSrc}
+              className="absolute inset-x-0 top-0 w-full border-0"
+              style={{ height: 'calc(100% + 56px)' }}
+              allow="accelerometer; gyroscope; autoplay; encrypted-media"
+              title={playback.title}
+            />
+          ) : null}
         </VideoWatermark>
 
-        {/* Controls bar: speed / quality / complete */}
-        <div className="w-full max-w-5xl flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <select
-              value={speed}
-              onChange={(e) => setSpeed(e.target.value)}
-              className="text-xs rounded-lg px-2.5 py-1.5 outline-none border"
-              style={{
-                background: "rgba(255,255,255,0.08)",
-                borderColor: "rgba(255,255,255,0.15)",
-                color: "#fff",
-              }}
-            >
-              {playback.speedOptions.map((s: string) => (
-                <option key={s} value={s} style={{ background: "#111" }}>{s}</option>
-              ))}
-            </select>
-
-            {hasQualityChoice && (
-              <select
-                value={quality}
-                onChange={(e) => setQuality(e.target.value)}
-                className="text-xs rounded-lg px-2.5 py-1.5 outline-none border"
-                style={{
-                  background: "rgba(255,255,255,0.08)",
-                  borderColor: "rgba(255,255,255,0.15)",
-                  color: "#fff",
-                }}
-              >
-                {playback.qualityOptions.map((q: string) => (
-                  <option key={q} value={q} style={{ background: "#111" }}>
-                    {q === "auto" ? playback.playerLabels.autoLabel : q}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
+        {/* Controls bar: complete button (speed/quality now inside Plyr's gear) */}
+        <div className="w-full max-w-5xl flex items-center">
           {/* Complete button */}
           {isMarkedComplete ? (
             <span
