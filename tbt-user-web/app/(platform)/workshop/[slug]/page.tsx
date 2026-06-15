@@ -1250,6 +1250,7 @@ function WatchChallengeView({
   const [forceStartFrom, setForceStartFrom] = useState<number | null>(null);
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
 
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const iframeFocusedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const markCalledRef = useRef(false);
@@ -1502,10 +1503,20 @@ function WatchChallengeView({
   };
 
   // Bunny iframe postMessage tracking — used when ep.hlsUrl is null and iframe fallback is rendered.
-  // Bunny player.js v0.0.11 sends data as a JSON *string* (not an object), context="player.js".
-  // Event shape: { context:"player.js", event:"play"|"pause"|"ended"|"timeupdate"|..., value:any }
+  // Bunny player.js v0.0.11 sends data as a JSON *string*, context="player.js".
+  // Events are NOT sent automatically — the parent must subscribe by posting addEventListener
+  // commands back to the iframe after receiving "ready". Because the video may already be
+  // autoplaying before "ready", the first "timeupdate" also triggers handlePlay if not started.
   useEffect(() => {
     if (!ep?.id) return;
+    const bunnySubscribe = (event: string) => {
+      const win = iframeRef.current?.contentWindow;
+      if (!win) return;
+      win.postMessage(
+        JSON.stringify({ context: 'player.js', version: '0.0.11', method: 'addEventListener', value: event }),
+        'https://iframe.mediadelivery.net'
+      );
+    };
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== 'https://iframe.mediadelivery.net') return;
       let data: { context?: string; event?: string; value?: any } | null = null;
@@ -1513,16 +1524,21 @@ function WatchChallengeView({
       if (!data || data.context !== 'player.js' || !data.event) return;
       console.log('[TBT-TRACK] Bunny player event:', data.event, 'value:', JSON.stringify(data.value));
       const ev = data.event;
-      if (ev === 'play')       handlePlay();
-      else if (ev === 'pause') handlePause();
-      else if (ev === 'ended') handleEnded();
-      else if (ev === 'timeupdate') {
+      if (ev === 'ready') {
+        // Subscribe to all events we need
+        ['play', 'pause', 'ended', 'timeupdate', 'seeked'].forEach(bunnySubscribe);
+      } else if (ev === 'play') {
+        handlePlay();
+      } else if (ev === 'pause') {
+        handlePause();
+      } else if (ev === 'ended') {
+        handleEnded();
+      } else if (ev === 'timeupdate') {
         const val = data.value;
         const ct = typeof val === 'number' ? val : (val?.currentTime ?? val?.seconds ?? 0);
         handleTimeUpdate(ct);
-      } else if (ev === 'ready' && typeof data.value?.duration === 'number') {
-        realDurationRef.current = data.value.duration;
-        setLiveRealDuration(data.value.duration);
+        // Video was already autoplaying before ready fired — start tracking on first timeupdate
+        if (!iframeFocusedRef.current) handlePlay();
       }
     };
     window.addEventListener('message', onMessage);
@@ -1592,6 +1608,7 @@ function WatchChallengeView({
           />
         ) : iframeFallbackSrc ? (
           <iframe
+            ref={iframeRef}
             key={`iframe-${ep.id}-${forceStartFrom}`}
             src={iframeFallbackSrc}
             className="absolute inset-x-0 top-0 w-full"
