@@ -2902,22 +2902,26 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
       progressPercent: (!ch.type || ch.type === 'watch')
         ? (totalEps > 0 ? Math.round((doneEps / totalEps) * 100) : 0)
         : rawStatus === 'completed' ? 100 : rawStatus === 'in_progress' ? 30 : 0,
-      episodes: (!ch.type || ch.type === 'watch') ? ch.episodes.map((ep: any) => ({
+      episodes: (!ch.type || ch.type === 'watch') ? ch.episodes.map((ep: any) => {
+        const BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)|(?:vz-[^.]+\.b-cdn\.net)\/([\w-]{8,})\//;
+        const urlMatch = ep.videoUrl?.match(BUNNY_URL_RE);
+        const bunnyId = ep.bunnyVideoId ?? urlMatch?.[1] ?? urlMatch?.[2] ?? null;
+        return ({
         id: ep.id,
         order: ep.order,
         title: ep.title,
         description: ep.description ?? null,
         typeLabel: ep.typeLabel,
         videoUrl: ep.videoUrl ?? null,
-        hlsUrl: (ep.bunnyVideoId && env.BUNNY_CDN_URL)
-          ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${ep.bunnyVideoId}/playlist.m3u8`
+        hlsUrl: (bunnyId && env.BUNNY_CDN_URL)
+          ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
           : null,
         durationLabel: ep.durationLabel ?? null,
         durationSeconds: ep.durationSeconds ?? null,
         isCompleted: ep.progress?.[0]?.isCompleted ?? false,
         lastWatchedSecs: ep.progress?.[0]?.lastWatchedSecs ?? 0,
         actualWatchedSecs: ep.progress?.[0]?.actualWatchedSecs ?? 0,
-      })) : [],
+      }); }) : [],
       submission: ch.memberProgress?.[0] ?? null,
     };
   }).filter(Boolean);
