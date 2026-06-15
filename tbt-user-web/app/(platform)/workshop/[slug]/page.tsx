@@ -1502,23 +1502,27 @@ function WatchChallengeView({
   };
 
   // Bunny iframe postMessage tracking — used when ep.hlsUrl is null and iframe fallback is rendered.
-  // Bunny's embed player fires play/pause/timeupdate/ended events via window.postMessage.
-  // When ep.hlsUrl is non-null the iframe is not in the DOM, so this listener never fires.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Bunny player.js v0.0.11 sends data as a JSON *string* (not an object), context="player.js".
+  // Event shape: { context:"player.js", event:"play"|"pause"|"ended"|"timeupdate"|..., value:any }
   useEffect(() => {
     if (!ep?.id) return;
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== 'https://iframe.mediadelivery.net') return;
-      const data = e.data as { event?: string; seconds?: number; currentTime?: number; duration?: number } | null;
-      console.log('[TBT-TRACK] Bunny postMessage raw:', JSON.stringify(data));
-      if (!data || typeof data !== 'object' || !data.event) return;
-      if (data.event === 'play')             handlePlay();
-      else if (data.event === 'pause')       handlePause();
-      else if (data.event === 'ended')       handleEnded();
-      else if (data.event === 'timeupdate')  handleTimeUpdate(data.seconds ?? data.currentTime ?? 0);
-      else if (data.event === 'loaded' && typeof data.duration === 'number') {
-        realDurationRef.current = data.duration;
-        setLiveRealDuration(data.duration);
+      let data: { context?: string; event?: string; value?: any } | null = null;
+      try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch { return; }
+      if (!data || data.context !== 'player.js' || !data.event) return;
+      console.log('[TBT-TRACK] Bunny player event:', data.event, 'value:', JSON.stringify(data.value));
+      const ev = data.event;
+      if (ev === 'play')       handlePlay();
+      else if (ev === 'pause') handlePause();
+      else if (ev === 'ended') handleEnded();
+      else if (ev === 'timeupdate') {
+        const val = data.value;
+        const ct = typeof val === 'number' ? val : (val?.currentTime ?? val?.seconds ?? 0);
+        handleTimeUpdate(ct);
+      } else if (ev === 'ready' && typeof data.value?.duration === 'number') {
+        realDurationRef.current = data.value.duration;
+        setLiveRealDuration(data.value.duration);
       }
     };
     window.addEventListener('message', onMessage);
