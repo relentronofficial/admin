@@ -21,12 +21,13 @@ interface PlyrPlayerProps {
   onPlay?: () => void;
   onPause?: () => void;
   onEnded?: () => void;
+  onSpeedChange?: (speed: number) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPlayer(
-  { hlsUrl, startAt = 0, speed = 1, className, onReady, onTimeUpdate, onPlay, onPause, onEnded },
+  { hlsUrl, startAt = 0, speed = 1, className, onReady, onTimeUpdate, onPlay, onPause, onEnded, onSpeedChange },
   ref,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -40,11 +41,13 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
   const cbPlay = useRef(onPlay);
   const cbPause = useRef(onPause);
   const cbEnded = useRef(onEnded);
+  const cbSpeedChange = useRef(onSpeedChange);
   cbReady.current = onReady;
   cbTimeUpdate.current = onTimeUpdate;
   cbPlay.current = onPlay;
   cbPause.current = onPause;
   cbEnded.current = onEnded;
+  cbSpeedChange.current = onSpeedChange;
 
   useImperativeHandle(ref, () => ({
     get currentTime() { return videoRef.current?.currentTime ?? 0; },
@@ -105,12 +108,14 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
       const onPlay = () => cbPlay.current?.();
       const onPause = () => cbPause.current?.();
       const onEnded = () => cbEnded.current?.();
+      const onRateChange = () => cbSpeedChange.current?.(el.playbackRate);
 
       el.addEventListener("loadedmetadata", onLoadedMetadata);
       el.addEventListener("timeupdate", onTimeUpdate);
       el.addEventListener("play", onPlay);
       el.addEventListener("pause", onPause);
       el.addEventListener("ended", onEnded);
+      el.addEventListener("ratechange", onRateChange);
 
       cleanupRef.current = () => {
         el.removeEventListener("loadedmetadata", onLoadedMetadata);
@@ -118,6 +123,7 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
         el.removeEventListener("play", onPlay);
         el.removeEventListener("pause", onPause);
         el.removeEventListener("ended", onEnded);
+        el.removeEventListener("ratechange", onRateChange);
         try { player.destroy(); } catch {}
         try { hls?.destroy(); } catch {}
         playerRef.current = null;

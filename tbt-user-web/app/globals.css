@@ -1,206 +1,106 @@
 @import 'plyr/dist/plyr.css';
 
-/* ─── Plyr skin: Pearl White + Red Neon + Neumorphism ───────────────────────
-   Base surface:  #0a0812  (near-black with warm undertone)
-   Pearl white:   #e8ddd0  (warm off-white, slight iridescence)
-   Neon red:      var(--color-accent, #dc2626) with layered glow
+/* ─── Plyr skin: flat dark + neon red accent ────────────────────────────────
+   No neumorphism, no backdrop-filter — keeps z-index clean with VideoWatermark
    ──────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  --plyr-color-main:           var(--color-accent, #dc2626);
-  --plyr-video-background:     #000000;
-  --plyr-font-family:          inherit;
-  --plyr-font-size-base:       12px;
-  --plyr-font-size-time:       12px;
-  --plyr-control-radius:       8px;
-  --plyr-control-spacing:      10px;
-  --plyr-range-thumb-height:   14px;
-  --plyr-range-thumb-background: #e8ddd0;
-  --plyr-range-fill-background: var(--color-accent, #dc2626);
-  --plyr-range-track-height:   4px;
-  /* Pearl-white icon colour for all controls */
-  --plyr-video-control-color:  #e8ddd0;
+  --plyr-color-main:                var(--color-accent, #dc2626);
+  --plyr-video-background:          #000000;
+  --plyr-font-family:               inherit;
+  --plyr-font-size-base:            13px;
+  --plyr-font-size-time:            13px;
+  --plyr-control-radius:            6px;
+  --plyr-control-spacing:           8px;
+  --plyr-range-thumb-height:        13px;
+  --plyr-range-thumb-background:    var(--color-accent, #dc2626);
+  --plyr-range-fill-background:     var(--color-accent, #dc2626);
+  --plyr-range-track-height:        3px;
+  --plyr-video-control-color:       rgba(255, 255, 255, 0.90);
   --plyr-video-control-color-hover: #ffffff;
-  --plyr-video-control-background-hover: rgba(220, 38, 38, 0.18);
+  --plyr-video-control-background-hover: rgba(255, 255, 255, 0.12);
 }
 
-/* ── Controls bar: frosted dark glass with neumorphic depth ── */
+/* ── Controls bar: z-65 sits above all VideoWatermark overlay layers ── */
 .plyr--video .plyr__controls {
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(8, 5, 16, 0.72) 40%,
-    rgba(6, 3, 12, 0.96) 100%
-  );
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  padding: 24px 14px 12px;
-  /* Neumorphic inner shadow — sunken tray effect */
-  box-shadow:
-    inset 0 2px 8px rgba(0, 0, 0, 0.7),
-    inset 0 -1px 2px rgba(255, 255, 255, 0.03);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
+  padding: 28px 10px 10px;
+  z-index: 65;
 }
 
-/* ── Every control button: pearl-white icon, neumorphic hover ── */
+/* ── Control buttons ── */
 .plyr--video .plyr__control {
-  color: #e8ddd0;
-  border-radius: 8px;
-  transition: background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+  color: rgba(255, 255, 255, 0.9);
+  transition: color 0.15s, background 0.15s;
 }
 .plyr--video .plyr__control:hover,
 .plyr--video .plyr__control:focus-visible {
-  background: rgba(220, 38, 38, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
-  /* Neumorphic raised button on hover */
-  box-shadow:
-    3px 3px 7px rgba(0, 0, 0, 0.65),
-    -1px -1px 4px rgba(255, 255, 255, 0.04),
-    0 0 8px rgba(220, 38, 38, 0.25);
   outline: none;
 }
-.plyr--video .plyr__control:active {
-  /* Neumorphic pressed/inset */
-  background: rgba(220, 38, 38, 0.1);
-  box-shadow:
-    inset 2px 2px 6px rgba(0, 0, 0, 0.75),
-    inset -1px -1px 3px rgba(255, 255, 255, 0.03);
-}
 
-/* ── Large centred play button: pearl shell + red neon ring ── */
+/* ── Large centred play button ── */
 .plyr__control--overlaid {
-  background: rgba(10, 6, 20, 0.72) !important;
-  border: 2px solid rgba(220, 38, 38, 0.75) !important;
-  backdrop-filter: blur(10px) !important;
-  /* Neumorphic outer raise + layered red neon glow */
-  box-shadow:
-    0 0 0 1px rgba(232, 221, 208, 0.08),
-    0 0 12px rgba(220, 38, 38, 0.55),
-    0 0 28px rgba(220, 38, 38, 0.30),
-    0 0 55px rgba(220, 38, 38, 0.12),
-    6px 6px 16px rgba(0, 0, 0, 0.8),
-    -2px -2px 8px rgba(255, 255, 255, 0.04) !important;
-  transition: box-shadow 0.3s ease, transform 0.25s ease, background 0.25s ease !important;
-}
-/* Pearl-white icon with subtle luminous text-shadow */
-.plyr__control--overlaid svg {
-  fill: #e8ddd0 !important;
-  filter: drop-shadow(0 0 5px rgba(232, 221, 208, 0.65));
+  background: rgba(0, 0, 0, 0.55) !important;
+  border: 2px solid rgba(255, 255, 255, 0.22) !important;
+  transition: background 0.2s, transform 0.2s, border-color 0.2s, box-shadow 0.2s !important;
 }
 .plyr__control--overlaid:hover {
-  background: rgba(220, 38, 38, 0.18) !important;
-  transform: scale(1.07) !important;
-  box-shadow:
-    0 0 0 1px rgba(232, 221, 208, 0.12),
-    0 0 18px rgba(220, 38, 38, 0.80),
-    0 0 40px rgba(220, 38, 38, 0.45),
-    0 0 80px rgba(220, 38, 38, 0.18),
-    8px 8px 20px rgba(0, 0, 0, 0.85),
-    -2px -2px 8px rgba(255, 255, 255, 0.05) !important;
+  background: rgba(220, 38, 38, 0.80) !important;
+  border-color: rgba(220, 38, 38, 0.95) !important;
+  transform: scale(1.06) !important;
+  box-shadow: 0 0 22px rgba(220, 38, 38, 0.50) !important;
 }
 
-/* ── Progress / seek bar ── */
-.plyr__progress {
-  /* Neumorphic inset groove for the track */
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-}
-/* Tooltip above scrubber */
-.plyr__progress .plyr__tooltip {
-  background: rgba(10, 6, 20, 0.92);
-  color: #e8ddd0;
-  border: 1px solid rgba(220, 38, 38, 0.4);
-  border-radius: 6px;
-  box-shadow: 0 0 10px rgba(220, 38, 38, 0.3);
-  font-size: 11px;
-}
-.plyr__progress .plyr__tooltip::before {
-  border-top-color: rgba(220, 38, 38, 0.4);
-}
-
-/* Thumb: pearl white with dual neon glow */
+/* ── Seek + volume thumb: neon red with subtle glow ── */
 .plyr--full-ui input[type=range]::-webkit-slider-thumb {
-  background: #e8ddd0 !important;
-  box-shadow:
-    0 0 5px rgba(232, 221, 208, 0.7),
-    0 0 10px rgba(220, 38, 38, 0.55),
-    0 0 18px rgba(220, 38, 38, 0.25) !important;
+  background: var(--color-accent, #dc2626) !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.30), 0 0 8px rgba(220, 38, 38, 0.40) !important;
   border: none !important;
-  width: 14px !important;
-  height: 14px !important;
+  width: 13px !important;
+  height: 13px !important;
 }
 .plyr--full-ui input[type=range]::-moz-range-thumb {
-  background: #e8ddd0 !important;
-  box-shadow:
-    0 0 5px rgba(232, 221, 208, 0.7),
-    0 0 10px rgba(220, 38, 38, 0.55) !important;
+  background: var(--color-accent, #dc2626) !important;
   border: none !important;
 }
 
-/* Buffered track */
-.plyr__progress input[type=range]::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
-  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.6);
+/* ── Seek tooltip ── */
+.plyr__progress .plyr__tooltip {
+  background: rgba(0, 0, 0, 0.88);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 11px;
 }
 
-/* ── Volume slider ── */
-.plyr__volume input[type=range]::-webkit-slider-thumb {
-  background: #e8ddd0 !important;
-  box-shadow: 0 0 4px rgba(232, 221, 208, 0.6) !important;
-}
-
-/* ── Time stamps ── */
+/* ── Time labels ── */
 .plyr__time {
-  color: #e8ddd0 !important;
-  font-weight: 500;
-  /* Subtle pearl glow on the time text */
-  text-shadow: 0 0 8px rgba(232, 221, 208, 0.25);
-}
-.plyr__time + .plyr__time::before {
-  color: rgba(232, 221, 208, 0.35);
+  color: rgba(255, 255, 255, 0.80) !important;
 }
 
-/* ── Settings / speed menu ── */
+/* ── Settings / speed popup: z-66 stays above controls bar ── */
 .plyr__menu__container {
-  background: rgba(8, 5, 16, 0.97) !important;
-  border: 1px solid rgba(220, 38, 38, 0.35) !important;
-  border-radius: 12px !important;
-  /* Neumorphic outer raise + neon halo */
-  box-shadow:
-    5px 5px 14px rgba(0, 0, 0, 0.8),
-    -2px -2px 8px rgba(255, 255, 255, 0.03),
-    0 0 18px rgba(220, 38, 38, 0.18),
-    0 0 35px rgba(220, 38, 38, 0.08) !important;
-  backdrop-filter: blur(16px) !important;
-  overflow: hidden;
+  background: rgba(12, 10, 20, 0.97) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65) !important;
+  z-index: 66 !important;
 }
 .plyr__menu__container .plyr__control {
-  color: #e8ddd0 !important;
-  border-radius: 6px !important;
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 .plyr__menu__container .plyr__control:hover {
-  background: rgba(220, 38, 38, 0.14) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
   color: #ffffff !important;
 }
-/* Active radio dot — red neon pip */
+/* Active speed selection — neon red pip */
 .plyr__menu__container .plyr__control[role="menuitemradio"][aria-checked="true"]::before {
   background: var(--color-accent, #dc2626) !important;
-  box-shadow:
-    0 0 6px rgba(220, 38, 38, 0.9),
-    0 0 12px rgba(220, 38, 38, 0.5) !important;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.70) !important;
 }
-/* Menu divider */
-.plyr__menu__container [role="menu"] {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-/* Back button text */
 .plyr__menu__container .plyr__menu__value {
-  color: rgba(232, 221, 208, 0.6);
-}
-
-/* ── Fullscreen icon colour ── */
-.plyr--video .plyr__control[data-plyr="fullscreen"] svg {
-  color: #e8ddd0;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 @tailwind base;

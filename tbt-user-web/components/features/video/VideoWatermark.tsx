@@ -254,7 +254,7 @@ export function VideoWatermark({
         <button
           onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
           aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-          className="absolute bottom-3 right-3 z-[70] p-2 rounded-lg
+          className="absolute bottom-3 right-3 z-[80] p-2 rounded-lg
                      bg-black/50 hover:bg-black/75 text-white
                      opacity-40 group-hover/wm:opacity-100
                      transition-opacity duration-200 backdrop-blur-sm"

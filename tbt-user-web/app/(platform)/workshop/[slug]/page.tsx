@@ -1547,6 +1547,7 @@ function WatchChallengeView({
             onPlay={handlePlay}
             onPause={handlePause}
             onEnded={handleEnded}
+            onSpeedChange={handleSpeedChange}
           />
         ) : iframeFallbackSrc ? (
           <iframe
@@ -1560,29 +1561,6 @@ function WatchChallengeView({
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">No video</div>
         )}
       </VideoWatermark>
-
-      {/* Speed control — only when using PlyrPlayer (speed prop is wired) */}
-      {ep.hlsUrl && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-wider mr-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Speed</span>
-          {[1, 1.25, 1.5, 2].map((s) => (
-            <button
-              key={s}
-              onClick={() => handleSpeedChange(s)}
-              className="text-xs px-2.5 py-1 rounded-md font-medium transition-colors"
-              style={speed === s ? {
-                background: "color-mix(in srgb, var(--color-accent) 20%, transparent)",
-                color: "var(--color-accent)",
-              } : {
-                background: "rgba(255,255,255,0.07)",
-                color: "rgba(255,255,255,0.45)",
-              }}
-            >
-              {s}×
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Episode title + live status badge */}
       <div className="flex items-center justify-between gap-3">
