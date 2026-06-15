@@ -1264,6 +1264,7 @@ function WatchChallengeView({
   const epRef = useRef<any>(undefined);
   const [speed, setSpeed] = useState(1);
   const speedRef = useRef(1);
+  const [hlsFailed, setHlsFailed] = useState(false);
 
   // Accumulated watched seconds — starts from server value, ticks up in real-time while playing
   const [liveWatched, setLiveWatched] = useState<number>(0);
@@ -1419,6 +1420,9 @@ function WatchChallengeView({
       }
     };
   }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset HLS error state when episode changes
+  useEffect(() => { setHlsFailed(false); }, [ep?.id]);
 
   // ─── PlyrPlayer callbacks (stable — read from refs, never stale) ─────────────
 
@@ -1579,7 +1583,7 @@ function WatchChallengeView({
         containerId="workshop-video-root"
         showFullscreenButton={!!(ep.hlsUrl || ep.videoUrl)}
       >
-        {ep.hlsUrl ? (
+        {ep.hlsUrl && !hlsFailed ? (
           <PlyrPlayer
             ref={playerRef}
             key={`plyr-${ep.id}-${forceStartFrom ?? 'r'}`}
@@ -1594,6 +1598,7 @@ function WatchChallengeView({
             onPause={handlePause}
             onEnded={handleEnded}
             onSpeedChange={handleSpeedChange}
+            onError={() => setHlsFailed(true)}
           />
         ) : iframeFallbackSrc ? (
           <iframe

@@ -23,12 +23,13 @@ interface PlyrPlayerProps {
   onPause?: () => void;
   onEnded?: () => void;
   onSpeedChange?: (speed: number) => void;
+  onError?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPlayer(
-  { hlsUrl, startAt = 0, speed = 1, autoplay = false, className, onReady, onTimeUpdate, onPlay, onPause, onEnded, onSpeedChange },
+  { hlsUrl, startAt = 0, speed = 1, autoplay = false, className, onReady, onTimeUpdate, onPlay, onPause, onEnded, onSpeedChange, onError },
   ref,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -45,12 +46,14 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
   const cbPause = useRef(onPause);
   const cbEnded = useRef(onEnded);
   const cbSpeedChange = useRef(onSpeedChange);
+  const cbError = useRef(onError);
   cbReady.current = onReady;
   cbTimeUpdate.current = onTimeUpdate;
   cbPlay.current = onPlay;
   cbPause.current = onPause;
   cbEnded.current = onEnded;
   cbSpeedChange.current = onSpeedChange;
+  cbError.current = onError;
 
   useImperativeHandle(ref, () => ({
     get currentTime() { return videoRef.current?.currentTime ?? 0; },
@@ -86,6 +89,7 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
         hls.attachMedia(el);
 
         // Wait for quality levels before initialising Plyr so the quality menu is populated
+        let fatalDuringInit = false;
         await new Promise<void>(resolve => {
           const fallback = setTimeout(resolve, 3000);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,8 +103,13 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
             if (unique.length > 0) qualityOptions = [0, ...unique];
             resolve();
           });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          hls!.on(Hls.Events.ERROR, (_: any, data: any) => {
+            if (data.fatal) { clearTimeout(fallback); fatalDuringInit = true; resolve(); }
+          });
         });
 
+        if (fatalDuringInit) { cbError.current?.(); return; }
         if (destroyed) return;
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari native HLS
@@ -132,6 +141,14 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
         invertTime: false,
       });
       playerRef.current = player;
+
+      // Fatal HLS errors during playback (e.g. stream not found, network error)
+      if (hls) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        hls.on(Hls.Events.ERROR, (_: any, data: any) => {
+          if (data.fatal) cbError.current?.();
+        });
+      }
 
       // Native video events — more reliable than Plyr's own event system for timeupdate
       const onLoadedMetadata = () => {
