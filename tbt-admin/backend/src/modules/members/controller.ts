@@ -712,7 +712,7 @@ export async function getAnalyticsOverviewHandler(req: FastifyRequest, reply: Fa
     req.server.prisma.member.count({ where: { ...activeFilter, lastActiveAt: { gte: thirtyDaysAgo } } }),
     req.server.prisma.workshopEnrollment.count(),
     req.server.prisma.memberEpisodeProgress.count({ where: { isCompleted: true } }),
-    (req.server.prisma as any).memberChallengeProgress.count({ where: { status: 'completed' } }),
+    req.server.prisma.memberChallengeProgress.count({ where: { status: 'completed' } }),
     req.server.prisma.assignmentSubmission.count(),
     req.server.prisma.member.aggregate({ where: activeFilter, _avg: { healthScore: true } }),
     req.server.prisma.member.count({ where: { ...activeFilter, createdAt: { gte: sevenDaysAgo } } }),
@@ -826,7 +826,7 @@ export async function getCompletionMatrixHandler(req: FastifyRequest, reply: Fas
   // 4. Watch: check all episodes completed via MemberEpisodeProgress
   const [challengeProgressRows, watchEpisodes] = await Promise.all([
     nonWatchChallengeIds.length > 0
-      ? (req.server.prisma as any).memberChallengeProgress.findMany({
+      ? req.server.prisma.memberChallengeProgress.findMany({
           where: { memberId: { in: memberIds }, challengeId: { in: nonWatchChallengeIds }, status: 'completed' },
           select: { memberId: true, challengeId: true },
         })

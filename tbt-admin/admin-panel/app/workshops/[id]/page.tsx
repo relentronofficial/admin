@@ -901,15 +901,48 @@ export default function WorkshopDetailPage() {
                         {c.challengeNumber}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-[#f0f0f0] text-sm">{c.title}</p>
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          <p className="font-bold text-[#f0f0f0] text-sm">{c.title}</p>
+                          {(() => {
+                            const typeMeta: Record<string, { label: string; color: string }> = {
+                              watch:     { label: "WATCH",     color: "#3b82f6" },
+                              quiz:      { label: "QUIZ",      color: "#f59e0b" },
+                              written:   { label: "WRITTEN",   color: "#8b5cf6" },
+                              matching:  { label: "MATCH",     color: "#ec4899" },
+                              flashcard: { label: "FLASHCARD", color: "#06b6d4" },
+                              live_call: { label: "LIVE CALL", color: "#22c55e" },
+                            };
+                            const meta = typeMeta[c.type] ?? typeMeta.watch;
+                            return (
+                              <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded"
+                                style={{ color: meta.color, background: `${meta.color}20`, border: `1px solid ${meta.color}40` }}>
+                                {meta.label}
+                              </span>
+                            );
+                          })()}
+                        </div>
                         {c.numberLabel && <p className="text-[11px] text-[#444] mt-0.5">{c.numberLabel}</p>}
                         {c.description && <p className="text-[11px] text-[#555] mt-0.5 truncate">{c.description}</p>}
-                        <p className="text-[11px] text-[#444] mt-0.5">{c.episodes?.length || 0} episode{(c.episodes?.length || 0) !== 1 ? "s" : ""}</p>
+                        <p className="text-[11px] text-[#444] mt-0.5">
+                          {(!c.type || c.type === "watch")
+                            ? `${c.episodes?.length || 0} episode${(c.episodes?.length || 0) !== 1 ? "s" : ""}`
+                            : c.type === "quiz"
+                            ? `${c.quizData?.questions?.length || 0} question${(c.quizData?.questions?.length || 0) !== 1 ? "s" : ""}`
+                            : c.type === "matching"
+                            ? `${c.quizData?.pairs?.length || 0} pair${(c.quizData?.pairs?.length || 0) !== 1 ? "s" : ""}`
+                            : c.type === "flashcard"
+                            ? `${c.quizData?.cards?.length || 0} card${(c.quizData?.cards?.length || 0) !== 1 ? "s" : ""}`
+                            : c.type === "written"
+                            ? (c.quizData?.prompt ? `"${c.quizData.prompt.slice(0, 40)}${c.quizData.prompt.length > 40 ? "…" : ""}"` : "No prompt set")
+                            : ""}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => openCreateEpisode(c.id)} className="flex items-center gap-1 px-2.5 py-1 bg-[#1a1a1a] border border-[#333] rounded text-[10px] font-bold text-[#606060] hover:text-white font-rajdhani uppercase tracking-widest transition-all">
-                          <Plus size={10} /> Episode
-                        </button>
+                        {(!c.type || c.type === "watch") && (
+                          <button onClick={() => openCreateEpisode(c.id)} className="flex items-center gap-1 px-2.5 py-1 bg-[#1a1a1a] border border-[#333] rounded text-[10px] font-bold text-[#606060] hover:text-white font-rajdhani uppercase tracking-widest transition-all">
+                            <Plus size={10} /> Episode
+                          </button>
+                        )}
                         <button onClick={() => setExpandedChallenge(expandedChallenge === c.id ? null : c.id)} className="p-1.5 text-[#444] hover:text-white rounded transition-all">
                           <ChevronRight size={16} className={`transition-transform ${expandedChallenge === c.id ? "rotate-90" : ""}`} />
                         </button>
@@ -919,44 +952,108 @@ export default function WorkshopDetailPage() {
                     </div>
                     {expandedChallenge === c.id && (
                       <div className="border-t border-[#222]">
-                        {episodesDirty && (
-                          <div className="px-5 py-2 bg-[#1a1a1a] border-b border-[#222] flex items-center justify-between">
-                            <span className="text-[10px] text-[#dc2626] font-bold uppercase tracking-widest font-rajdhani animate-pulse">Unsaved order</span>
-                            <button onClick={handleSaveEpisodeOrder} disabled={reorderChallengeEpisodes.isPending} className="flex items-center gap-1.5 bg-[#dc2626] text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest font-rajdhani hover:bg-red-700 transition-all">
-                              {reorderChallengeEpisodes.isPending ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save Order
-                            </button>
-                          </div>
-                        )}
-                        <div className="divide-y divide-[#1e1e1e]">
-                          {localEpisodes.length === 0 && <p className="px-6 py-4 text-[12px] text-[#444] italic">No episodes — click &quot;+ Episode&quot; to add one.</p>}
-                          {localEpisodes.map((ep: any, epIdx: number) => (
-                            <div
-                              key={ep.id}
-                              draggable
-                              onDragStart={() => onEpDragStart(epIdx)}
-                              onDragOver={e => onEpDragOver(e, epIdx)}
-                              onDrop={e => onEpDrop(e, epIdx)}
-                              onDragEnd={onEpDragEnd}
-                              className={`flex items-center gap-3 px-6 py-3 bg-[#141414] transition-colors select-none
-                                ${epDragOver === epIdx ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-[#161616]"}
-                                ${epDragIdx.current === epIdx ? "opacity-40" : "opacity-100"}`}
-                            >
-                              <GripVertical size={14} className="text-[#333] cursor-grab active:cursor-grabbing hover:text-[#555] shrink-0" />
-                              <div className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-[10px] text-[#444] font-rajdhani font-bold shrink-0">{epIdx + 1}</div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm text-[#e0e0e0] truncate">{ep.title}</p>
-                                <p className="text-[10px] text-[#444] mt-0.5 uppercase">
-                                  {ep.typeLabel || ep.type}
-                                  {ep.durationSeconds ? ` · ${Math.floor(ep.durationSeconds / 60)}m ${ep.durationSeconds % 60 > 0 ? `${ep.durationSeconds % 60}s` : ""}`.trim() : ""}
-                                </p>
+                        {(!c.type || c.type === "watch") ? (
+                          <>
+                            {episodesDirty && (
+                              <div className="px-5 py-2 bg-[#1a1a1a] border-b border-[#222] flex items-center justify-between">
+                                <span className="text-[10px] text-[#dc2626] font-bold uppercase tracking-widest font-rajdhani animate-pulse">Unsaved order</span>
+                                <button onClick={handleSaveEpisodeOrder} disabled={reorderChallengeEpisodes.isPending} className="flex items-center gap-1.5 bg-[#dc2626] text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest font-rajdhani hover:bg-red-700 transition-all">
+                                  {reorderChallengeEpisodes.isPending ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save Order
+                                </button>
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <button onClick={() => openEditEpisode(ep, c.id)} className="p-1 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={12} /></button>
-                                <button onClick={() => setDeletingEpisode(ep.id)} className="p-1 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={12} /></button>
-                              </div>
+                            )}
+                            <div className="divide-y divide-[#1e1e1e]">
+                              {localEpisodes.length === 0 && <p className="px-6 py-4 text-[12px] text-[#444] italic">No episodes — click &quot;+ Episode&quot; to add one.</p>}
+                              {localEpisodes.map((ep: any, epIdx: number) => (
+                                <div
+                                  key={ep.id}
+                                  draggable
+                                  onDragStart={() => onEpDragStart(epIdx)}
+                                  onDragOver={e => onEpDragOver(e, epIdx)}
+                                  onDrop={e => onEpDrop(e, epIdx)}
+                                  onDragEnd={onEpDragEnd}
+                                  className={`flex items-center gap-3 px-6 py-3 bg-[#141414] transition-colors select-none
+                                    ${epDragOver === epIdx ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-[#161616]"}
+                                    ${epDragIdx.current === epIdx ? "opacity-40" : "opacity-100"}`}
+                                >
+                                  <GripVertical size={14} className="text-[#333] cursor-grab active:cursor-grabbing hover:text-[#555] shrink-0" />
+                                  <div className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-[10px] text-[#444] font-rajdhani font-bold shrink-0">{epIdx + 1}</div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm text-[#e0e0e0] truncate">{ep.title}</p>
+                                    <p className="text-[10px] text-[#444] mt-0.5 uppercase">
+                                      {ep.typeLabel || ep.type}
+                                      {ep.durationSeconds ? ` · ${Math.floor(ep.durationSeconds / 60)}m ${ep.durationSeconds % 60 > 0 ? `${ep.durationSeconds % 60}s` : ""}`.trim() : ""}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button onClick={() => openEditEpisode(ep, c.id)} className="p-1 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={12} /></button>
+                                    <button onClick={() => setDeletingEpisode(ep.id)} className="p-1 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={12} /></button>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          </>
+                        ) : c.type === "quiz" ? (
+                          <div className="px-6 py-4 space-y-2">
+                            {(c.quizData?.questions ?? []).length === 0
+                              ? <p className="text-[12px] text-[#444] italic">No questions — click edit to add.</p>
+                              : (c.quizData.questions as any[]).map((q: any, qi: number) => (
+                                <div key={q.id ?? qi} className="bg-[#141414] rounded-lg px-4 py-3">
+                                  <p className="text-[12px] text-[#e0e0e0] font-medium">{qi + 1}. {q.question || <span className="text-[#444] italic">No question text</span>}</p>
+                                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                    {(q.options ?? []).map((opt: any) => (
+                                      <span key={opt.id} className={`text-[10px] px-2 py-0.5 rounded font-rajdhani font-bold uppercase tracking-wide ${opt.correct ? "bg-green-500/15 text-green-400 border border-green-500/30" : "bg-[#1a1a1a] text-[#555] border border-[#2a2a2a]"}`}>
+                                        {opt.text || "—"}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))
+                            }
+                          </div>
+                        ) : c.type === "written" ? (
+                          <div className="px-6 py-4">
+                            {c.quizData?.prompt
+                              ? <p className="text-[12px] text-[#a0a0a0] italic">&quot;{c.quizData.prompt}&quot;</p>
+                              : <p className="text-[12px] text-[#444] italic">No prompt set — click edit to add.</p>
+                            }
+                            {c.quizData?.placeholder && (
+                              <p className="text-[11px] text-[#444] mt-1">Placeholder: {c.quizData.placeholder}</p>
+                            )}
+                          </div>
+                        ) : c.type === "matching" ? (
+                          <div className="px-6 py-4 space-y-2">
+                            {(c.quizData?.pairs ?? []).length === 0
+                              ? <p className="text-[12px] text-[#444] italic">No pairs — click edit to add.</p>
+                              : (c.quizData.pairs as any[]).map((p: any, pi: number) => (
+                                <div key={p.id ?? pi} className="flex items-center gap-3 bg-[#141414] rounded-lg px-4 py-2.5">
+                                  <span className="text-[12px] text-[#e0e0e0] flex-1">{p.left || <span className="text-[#444] italic">Term</span>}</span>
+                                  <span className="text-[#333] text-[10px]">→</span>
+                                  <span className="text-[12px] text-[#a0a0a0] flex-1 text-right">{p.right || <span className="text-[#444] italic">Definition</span>}</span>
+                                </div>
+                              ))
+                            }
+                          </div>
+                        ) : c.type === "flashcard" ? (
+                          <div className="px-6 py-4 space-y-2">
+                            {(c.quizData?.cards ?? []).length === 0
+                              ? <p className="text-[12px] text-[#444] italic">No cards — click edit to add.</p>
+                              : (c.quizData.cards as any[]).map((card: any, ci: number) => (
+                                <div key={card.id ?? ci} className="flex gap-3 bg-[#141414] rounded-lg px-4 py-2.5">
+                                  <div className="flex-1">
+                                    <p className="text-[9px] uppercase tracking-widest text-[#444] font-rajdhani font-bold mb-0.5">Front</p>
+                                    <p className="text-[12px] text-[#e0e0e0]">{card.front || <span className="text-[#444] italic">—</span>}</p>
+                                  </div>
+                                  <div className="w-px bg-[#2a2a2a]" />
+                                  <div className="flex-1">
+                                    <p className="text-[9px] uppercase tracking-widest text-[#444] font-rajdhani font-bold mb-0.5">Back</p>
+                                    <p className="text-[12px] text-[#a0a0a0]">{card.back || <span className="text-[#444] italic">—</span>}</p>
+                                  </div>
+                                </div>
+                              ))
+                            }
+                          </div>
+                        ) : null}
                       </div>
                     )}
                   </div>
