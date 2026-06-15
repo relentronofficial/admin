@@ -269,6 +269,8 @@ export async function createChallengeHandler(req: FastifyRequest, reply: Fastify
       numberColor: body.numberColor || '#00c4cc',
       title: body.title,
       description: body.description,
+      type: body.type || 'watch',
+      ...(body.quizData !== undefined ? { quizData: body.quizData } : {}),
     },
   });
   return reply.status(201).send({ success: true, data: challenge, error: null });
@@ -278,7 +280,7 @@ export async function updateChallengeHandler(req: FastifyRequest, reply: Fastify
   const { cid } = req.params as any;
   const body = req.body as any;
   const data: any = {};
-  ['order', 'challengeNumber', 'numberLabel', 'numberColor', 'title', 'description'].forEach(f => {
+  ['order', 'challengeNumber', 'numberLabel', 'numberColor', 'title', 'description', 'type', 'quizData'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   const challenge = await req.server.prisma.challenge.update({ where: { id: cid }, data });

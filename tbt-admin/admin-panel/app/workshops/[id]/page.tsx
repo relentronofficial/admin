@@ -333,8 +333,14 @@ export default function WorkshopDetailPage() {
   // ── Challenge state ───────────────────────────────────────────────────
   const [showChallengeForm, setShowChallengeForm] = useState(false);
   const [editingChallenge, setEditingChallenge] = useState<any>(null);
-  const [challengeForm, setChallengeForm] = useState({ title: "", numberLabel: "", numberColor: "#dc2626", challengeNumber: 1, description: "" });
+  const [challengeForm, setChallengeForm] = useState({ title: "", numberLabel: "", numberColor: "#dc2626", challengeNumber: 1, description: "", type: "watch" });
   const [numberLabelManual, setNumberLabelManual] = useState(false);
+  // Quiz data sub-states
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [matchingPairs, setMatchingPairs] = useState<any[]>([]);
+  const [flashCards, setFlashCards] = useState<any[]>([]);
+  const [writtenPrompt, setWrittenPrompt] = useState("");
+  const [writtenPlaceholder, setWrittenPlaceholder] = useState("");
   const [expandedChallenge, setExpandedChallenge] = useState<string | null>(null);
   const [deletingChallenge, setDeletingChallenge] = useState<string | null>(null);
 
@@ -377,25 +383,54 @@ export default function WorkshopDetailPage() {
     } catch (err: any) { toast.error(err.message || "Failed to save order"); }
   };
 
+  const mkId = () => Math.random().toString(36).slice(2, 8);
+
+  const resetQuizState = (qd: any, type: string) => {
+    if (type === "quiz") {
+      setQuizQuestions(qd?.questions ?? [{ id: mkId(), question: "", options: [{ id: "a", text: "", correct: true }, { id: "b", text: "", correct: false }] }]);
+    } else { setQuizQuestions([]); }
+    if (type === "matching") {
+      setMatchingPairs(qd?.pairs ?? [{ id: mkId(), left: "", right: "" }]);
+    } else { setMatchingPairs([]); }
+    if (type === "flashcard") {
+      setFlashCards(qd?.cards ?? [{ id: mkId(), front: "", back: "" }]);
+    } else { setFlashCards([]); }
+    setWrittenPrompt(type === "written" ? (qd?.prompt ?? "") : "");
+    setWrittenPlaceholder(type === "written" ? (qd?.placeholder ?? "") : "");
+  };
+
   const openCreateChallenge = () => {
     const nextNum = challenges.length + 1;
-    setChallengeForm({ title: "", numberLabel: `Challenge ${String(nextNum).padStart(2, "0")}:`, numberColor: "#dc2626", challengeNumber: nextNum, description: "" });
+    setChallengeForm({ title: "", numberLabel: `Challenge ${String(nextNum).padStart(2, "0")}:`, numberColor: "#dc2626", challengeNumber: nextNum, description: "", type: "watch" });
+    resetQuizState(null, "watch");
     setNumberLabelManual(false);
     setEditingChallenge(null);
     setShowChallengeForm(true);
   };
   const openEditChallenge = (c: any) => {
-    setChallengeForm({ title: c.title, numberLabel: c.numberLabel || "", numberColor: c.numberColor || "#dc2626", challengeNumber: c.challengeNumber || 1, description: c.description || "" });
+    const type = c.type || "watch";
+    setChallengeForm({ title: c.title, numberLabel: c.numberLabel || "", numberColor: c.numberColor || "#dc2626", challengeNumber: c.challengeNumber || 1, description: c.description || "", type });
+    resetQuizState(c.quizData, type);
     setNumberLabelManual(true);
     setEditingChallenge(c);
     setShowChallengeForm(true);
   };
 
+  const buildQuizData = (type: string): any => {
+    if (type === "quiz") return { questions: quizQuestions };
+    if (type === "written") return { prompt: writtenPrompt, placeholder: writtenPlaceholder || undefined };
+    if (type === "matching") return { pairs: matchingPairs };
+    if (type === "flashcard") return { cards: flashCards };
+    return null;
+  };
+
   const handleSaveChallenge = async () => {
     if (!challengeForm.title) return toast.error("Title is required");
+    const quizData = buildQuizData(challengeForm.type);
+    const payload = { ...challengeForm, quizData };
     try {
-      if (editingChallenge) { await updateChallenge.mutateAsync({ id: editingChallenge.id, data: challengeForm }); toast.success("Challenge updated"); }
-      else { await createChallenge.mutateAsync(challengeForm); toast.success("Challenge created"); }
+      if (editingChallenge) { await updateChallenge.mutateAsync({ id: editingChallenge.id, data: payload }); toast.success("Challenge updated"); }
+      else { await createChallenge.mutateAsync(payload); toast.success("Challenge created"); }
       setShowChallengeForm(false); refetchChallenges();
     } catch (err: any) { toast.error(err.message || "Failed"); }
   };
@@ -1391,12 +1426,13 @@ export default function WorkshopDetailPage() {
       {/* ── CHALLENGE FORM ────────────────────────────────────────────── */}
       {showChallengeForm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
-            <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
+          <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a] flex-shrink-0">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingChallenge ? "Edit Challenge" : "New Challenge"}</h3>
               <button onClick={() => setShowChallengeForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Basic fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Challenge Number</label>
@@ -1423,44 +1459,178 @@ export default function WorkshopDetailPage() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-bold text-[#606060] uppercase tracking-widest font-rajdhani">Number Label</span>
                   {numberLabelManual && !editingChallenge && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNumberLabelManual(false);
-                        setChallengeForm(f => ({ ...f, numberLabel: `Challenge ${String(f.challengeNumber).padStart(2, "0")}:` }));
-                      }}
-                      className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#606060] hover:text-[#a0a0a0] transition-colors"
-                    >
-                      ↺ Auto
-                    </button>
+                    <button type="button" onClick={() => { setNumberLabelManual(false); setChallengeForm(f => ({ ...f, numberLabel: `Challenge ${String(f.challengeNumber).padStart(2, "0")}:` })); }}
+                      className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#606060] hover:text-[#a0a0a0] transition-colors">↺ Auto</button>
                   )}
                 </div>
-                <input
-                  value={challengeForm.numberLabel}
-                  onChange={e => { setNumberLabelManual(true); setChallengeForm(f => ({ ...f, numberLabel: e.target.value })); }}
-                  placeholder="e.g. Challenge 01:"
-                  className={inputCls}
-                />
+                <input value={challengeForm.numberLabel} onChange={e => { setNumberLabelManual(true); setChallengeForm(f => ({ ...f, numberLabel: e.target.value })); }} placeholder="e.g. Challenge 01:" className={inputCls} />
               </div>
-              <div>
-                <label className={labelCls}>Number Color</label>
-                <div className="flex gap-3 items-center bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-3">
-                  <input type="color" value={challengeForm.numberColor} onChange={e => setChallengeForm(f => ({ ...f, numberColor: e.target.value }))} className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent" />
-                  <span className="text-sm text-[#888] font-mono">{challengeForm.numberColor}</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Number Color</label>
+                  <div className="flex gap-3 items-center bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-3">
+                    <input type="color" value={challengeForm.numberColor} onChange={e => setChallengeForm(f => ({ ...f, numberColor: e.target.value }))} className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent" />
+                    <span className="text-sm text-[#888] font-mono">{challengeForm.numberColor}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Challenge Type</label>
+                  <select
+                    value={challengeForm.type}
+                    onChange={e => {
+                      const t = e.target.value;
+                      setChallengeForm(f => ({ ...f, type: t }));
+                      resetQuizState(null, t);
+                    }}
+                    className={selectCls}
+                  >
+                    <option value="watch">Watch (Video)</option>
+                    <option value="quiz">Quiz</option>
+                    <option value="written">Written</option>
+                    <option value="matching">Matching</option>
+                    <option value="flashcard">Flashcard</option>
+                    <option value="live_call">Live Call</option>
+                  </select>
                 </div>
               </div>
               <div>
                 <label className={labelCls}>Description</label>
-                <textarea
-                  value={challengeForm.description}
-                  onChange={e => setChallengeForm(f => ({ ...f, description: e.target.value }))}
-                  rows={3}
+                <textarea value={challengeForm.description} onChange={e => setChallengeForm(f => ({ ...f, description: e.target.value }))} rows={2}
                   placeholder="Optional description shown to members"
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none"
-                />
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
               </div>
+
+              {/* ── Quiz editor ── */}
+              {challengeForm.type === "quiz" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className={labelCls} style={{ margin: 0 }}>Questions</span>
+                    <button type="button" onClick={() => setQuizQuestions(qs => [...qs, { id: mkId(), question: "", options: [{ id: "a", text: "", correct: true }, { id: "b", text: "", correct: false }] }])}
+                      className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#dc2626] hover:text-red-400 transition-colors flex items-center gap-1">
+                      <Plus size={12} /> Add Question
+                    </button>
+                  </div>
+                  {quizQuestions.map((q, qi) => (
+                    <div key={q.id} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#606060]">Q{qi + 1}</span>
+                        <input
+                          value={q.question} placeholder="Question text"
+                          onChange={e => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, question: e.target.value } : x))}
+                          className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm"
+                        />
+                        <button type="button" onClick={() => setQuizQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-[#606060] hover:text-red-400 transition-colors flex-shrink-0"><Trash2 size={14} /></button>
+                      </div>
+                      <div className="space-y-2 pl-6">
+                        {q.options.map((opt: any, oi: number) => (
+                          <div key={opt.id} className="flex items-center gap-2">
+                            <input type="radio" checked={opt.correct} onChange={() => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: x.options.map((o: any) => ({ ...o, correct: o.id === opt.id })) } : x))}
+                              className="accent-[#dc2626] flex-shrink-0" title="Mark as correct" />
+                            <span className="text-[10px] font-mono text-[#555] w-4">{opt.id}</span>
+                            <input value={opt.text} placeholder={`Option ${opt.id.toUpperCase()}`}
+                              onChange={e => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: x.options.map((o: any) => o.id === opt.id ? { ...o, text: e.target.value } : o) } : x))}
+                              className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-8 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
+                            {q.options.length > 2 && (
+                              <button type="button" onClick={() => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: x.options.filter((o: any) => o.id !== opt.id) } : x))}
+                                className="text-[#444] hover:text-red-400 transition-colors flex-shrink-0"><X size={12} /></button>
+                            )}
+                          </div>
+                        ))}
+                        {q.options.length < 5 && (
+                          <button type="button" onClick={() => {
+                            const ids = ["a","b","c","d","e"];
+                            const nextId = ids.find(id => !q.options.some((o: any) => o.id === id)) ?? mkId();
+                            setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: [...x.options, { id: nextId, text: "", correct: false }] } : x));
+                          }} className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#444] hover:text-[#a0a0a0] transition-colors flex items-center gap-1">
+                            <Plus size={10} /> Add Option
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {quizQuestions.length === 0 && (
+                    <p className="text-[#444] text-xs text-center py-4">No questions yet. Click "Add Question" to start.</p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Written editor ── */}
+              {challengeForm.type === "written" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className={labelCls}>Prompt *</label>
+                    <textarea value={writtenPrompt} onChange={e => setWrittenPrompt(e.target.value)} rows={3} placeholder="What should members write about?"
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Placeholder text (optional)</label>
+                    <input value={writtenPlaceholder} onChange={e => setWrittenPlaceholder(e.target.value)} placeholder="e.g. Write your answer here..."
+                      className={inputCls} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Matching editor ── */}
+              {challengeForm.type === "matching" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className={labelCls} style={{ margin: 0 }}>Pairs</span>
+                    <button type="button" onClick={() => setMatchingPairs(ps => [...ps, { id: mkId(), left: "", right: "" }])}
+                      className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#dc2626] hover:text-red-400 transition-colors flex items-center gap-1">
+                      <Plus size={12} /> Add Pair
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                    <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#444] text-center">Term</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#444] text-center">Definition</span>
+                    <span />
+                  </div>
+                  {matchingPairs.map((p, pi) => (
+                    <div key={p.id} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                      <input value={p.left} placeholder="Term" onChange={e => setMatchingPairs(ps => ps.map((x, i) => i === pi ? { ...x, left: e.target.value } : x))}
+                        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
+                      <input value={p.right} placeholder="Definition" onChange={e => setMatchingPairs(ps => ps.map((x, i) => i === pi ? { ...x, right: e.target.value } : x))}
+                        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
+                      <button type="button" onClick={() => setMatchingPairs(ps => ps.filter((_, i) => i !== pi))} disabled={matchingPairs.length <= 1}
+                        className="text-[#606060] hover:text-red-400 transition-colors disabled:opacity-30"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {matchingPairs.length === 0 && (
+                    <p className="text-[#444] text-xs text-center py-4">No pairs yet. Click "Add Pair" to start.</p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Flashcard editor ── */}
+              {challengeForm.type === "flashcard" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className={labelCls} style={{ margin: 0 }}>Cards</span>
+                    <button type="button" onClick={() => setFlashCards(cs => [...cs, { id: mkId(), front: "", back: "" }])}
+                      className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#dc2626] hover:text-red-400 transition-colors flex items-center gap-1">
+                      <Plus size={12} /> Add Card
+                    </button>
+                  </div>
+                  {flashCards.map((c, ci) => (
+                    <div key={c.id} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#606060]">Card {ci + 1}</span>
+                        <button type="button" onClick={() => setFlashCards(cs => cs.filter((_, i) => i !== ci))} disabled={flashCards.length <= 1}
+                          className="text-[#444] hover:text-red-400 transition-colors disabled:opacity-30"><Trash2 size={13} /></button>
+                      </div>
+                      <input value={c.front} placeholder="Front (question / term)" onChange={e => setFlashCards(cs => cs.map((x, i) => i === ci ? { ...x, front: e.target.value } : x))}
+                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
+                      <input value={c.back} placeholder="Back (answer / definition)" onChange={e => setFlashCards(cs => cs.map((x, i) => i === ci ? { ...x, back: e.target.value } : x))}
+                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
+                    </div>
+                  ))}
+                  {flashCards.length === 0 && (
+                    <p className="text-[#444] text-xs text-center py-4">No cards yet. Click "Add Card" to start.</p>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3 flex-shrink-0">
               <button onClick={() => setShowChallengeForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSaveChallenge} disabled={createChallenge.isPending || updateChallenge.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">
                 {(createChallenge.isPending || updateChallenge.isPending) && <Loader2 size={14} className="animate-spin" />} Save
