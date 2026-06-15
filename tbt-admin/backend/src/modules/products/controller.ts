@@ -55,7 +55,7 @@ export async function listProductInquiriesHandler(req: FastifyRequest, reply: Fa
   if (status) where.status = status;
 
   const [inquiries, total] = await Promise.all([
-    (req.server.prisma as any).productInquiry.findMany({
+    req.server.prisma.productInquiry.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       take: Number(limit),
@@ -65,7 +65,7 @@ export async function listProductInquiriesHandler(req: FastifyRequest, reply: Fa
         product: { select: { id: true, title: true, thumbnailUrl: true, price: true, currency: true } },
       },
     }),
-    (req.server.prisma as any).productInquiry.count({ where }),
+    req.server.prisma.productInquiry.count({ where }),
   ]);
 
   return reply.send({ success: true, data: inquiries, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
@@ -79,7 +79,7 @@ export async function updateInquiryStatusHandler(req: FastifyRequest, reply: Fas
     return reply.status(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid status' } });
   }
 
-  const inquiry = await (req.server.prisma as any).productInquiry.update({
+  const inquiry = await req.server.prisma.productInquiry.update({
     where: { id },
     data: { status },
     include: {

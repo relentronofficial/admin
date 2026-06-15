@@ -2433,9 +2433,9 @@ export async function getUserProductsHandler(request: FastifyRequest, reply: Fas
       thumbnailUrl: p.thumbnailUrl ?? null,
       isVisible: p.isVisible,
       price: p.price ? Number(p.price) : null,
-      currency: (p as any).currency ?? 'INR',
-      category: (p as any).category ?? null,
-      stockStatus: (p as any).stockStatus ?? 'in_stock',
+      currency: p.currency ?? 'INR',
+      category: p.category ?? null,
+      stockStatus: p.stockStatus ?? 'in_stock',
       ctas: p.ctas.map((c) => ({
         label: c.label,
         url: c.url,
