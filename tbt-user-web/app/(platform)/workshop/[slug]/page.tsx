@@ -1458,8 +1458,6 @@ function WatchChallengeView({
                 liveWatchedRef.current = data.actualWatchedSecs;
                 setLiveWatched(data.actualWatchedSecs);
               }
-              qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
-              qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
             },
           }
         );

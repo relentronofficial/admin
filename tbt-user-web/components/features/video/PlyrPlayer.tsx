@@ -172,6 +172,9 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
       };
 
       el.addEventListener("loadedmetadata", onLoadedMetadata);
+      // If loadedmetadata already fired before our listener was registered (e.g. manifest cached,
+      // fired during MANIFEST_PARSED await), call it now so onReady + autoplay are not skipped.
+      if (el.readyState >= 1) onLoadedMetadata();
       el.addEventListener("timeupdate",     handleTimeUpdate);
       el.addEventListener("play",           handlePlay);
       el.addEventListener("pause",          handlePause);
@@ -200,7 +203,12 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
       cleanupRef.current?.();
       cleanupRef.current = null;
     };
-  }, [hlsUrl, startAt, autoplay]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hlsUrl, autoplay]); // eslint-disable-line react-hooks/exhaustive-deps
+  // startAt is intentionally excluded — the key prop (plyr-${ep.id}-${forceStartFrom}) handles
+  // episode switches and rewatch-from-beginning. Including startAt causes PlyrPlayer to
+  // destroy+recreate every heartbeat cycle (ep.lastWatchedSecs updates → startAt changes → effect
+  // reruns → 3-second MANIFEST_PARSED wait → tracking breaks). The initial seek is done once
+  // in onLoadedMetadata when the component first mounts.
 
   // Apply speed changes without reinitialising the player
   useEffect(() => {
