@@ -79,6 +79,11 @@
   color: rgba(255, 255, 255, 0.80) !important;
 }
 
+/* ── Plyr container fills parent — keeps controls inside VideoWatermark bounds ── */
+.plyr--video {
+  height: 100%;
+}
+
 /* ── Settings / speed popup: z-66 stays above controls bar ── */
 .plyr__menu__container {
   background: rgba(12, 10, 20, 0.97) !important;

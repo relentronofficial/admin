@@ -2784,23 +2784,13 @@ export default function WorkshopDetailPage() {
   const currentTabId = activeTab || tabs[0]?.id;
 
   return (
-    <div className="space-y-4">
-      {/* Live URL auto-refetch when unlock window opens */}
+    <div className="-mx-4 md:-mx-6 px-3 md:px-4 space-y-3">
       {flowData?.flowItems && (
         <LiveCallUnlockWatcher
           flowItems={flowData.flowItems}
           onUnlock={handleLiveUrlUnlock}
         />
       )}
-
-      {/* Header — back link + title */}
-      <Link
-        href={detail.backUrl}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ChevronLeft size={15} />
-        {detail.backLabel}
-      </Link>
       <h1 className="text-xl font-bold leading-tight" style={{ color: "#e8ddd0", textShadow: "0 0 20px rgba(220,38,38,0.15)" }}>{detail.title}</h1>
 
       {/* Two-column body */}
