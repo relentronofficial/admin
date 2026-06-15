@@ -1522,12 +1522,12 @@ function WatchChallengeView({
     ? withResumeTime(normalizeBunnyUrl(ep.videoUrl), forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0))
     : null;
   const startAt = forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0);
+  const typeMeta = CHALLENGE_TYPE_META[challenge.type] ?? CHALLENGE_TYPE_META.watch;
+  const challengeSs = statusStyle(challenge.status);
 
   return (
-    <div className="space-y-4">
-      <ChallengeHeader challenge={challenge} />
-
-      {/* Video player — full-width 16:9, immersive Udemy-style */}
+    <div className="space-y-3">
+      {/* Video player — full-width 16:9, YouTube-style: video first */}
       <VideoWatermark
         className="w-full rounded-xl bg-black relative"
         style={{ aspectRatio: "16/9" }}
@@ -1563,32 +1563,46 @@ function WatchChallengeView({
         )}
       </VideoWatermark>
 
-      {/* Episode title + live status badge */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-semibold text-sm text-foreground truncate">{ep.title}</p>
+      {/* YouTube-style meta: episode title + challenge context + watch state */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-sm md:text-base text-foreground leading-snug">{ep.title}</p>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            {challenge.numberLabel && (
+              <span className="text-[10px] font-black" style={{ color: challenge.numberColor }}>{challenge.numberLabel}</span>
+            )}
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${typeMeta.color}22`, color: typeMeta.color }}>{typeMeta.label}</span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: challengeSs.bg, color: challengeSs.text }}>
+              {challenge.status === "completed" ? "Completed" : challenge.status === "in_progress" ? "In Progress" : "Not Started"}
+            </span>
+          </div>
+          {challenge.description && (
+            <p className="text-xs text-muted-foreground leading-relaxed mt-1.5 line-clamp-3">{challenge.description}</p>
+          )}
         </div>
-        {ep.isCompleted || watchState === "completed" ? (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
-            <CheckCircle2 size={13} /> Completed
-          </span>
-        ) : watchState === "watching" ? (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
-            <Play size={13} fill="currentColor" /> Watching {activeProgressPct}%
-          </span>
-        ) : watchState === "paused" ? (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
-            <Pause size={13} /> Paused at {formatTime(currentPlayhead)}
-          </span>
-        ) : watchState === "resume" ? (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
-            <Play size={11} fill="currentColor" className="ml-0.5" /> Resume {savedProgressPct}%
-          </span>
-        ) : (
-          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold flex-shrink-0 text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
-            Progress saved automatically
-          </span>
-        )}
+        <div className="flex-shrink-0 pt-0.5">
+          {ep.isCompleted || watchState === "completed" ? (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
+              <CheckCircle2 size={13} /> Completed
+            </span>
+          ) : watchState === "watching" ? (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
+              <Play size={13} fill="currentColor" /> Watching {activeProgressPct}%
+            </span>
+          ) : watchState === "paused" ? (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
+              <Pause size={13} /> Paused at {formatTime(currentPlayhead)}
+            </span>
+          ) : watchState === "resume" ? (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
+              <Play size={11} fill="currentColor" className="ml-0.5" /> Resume {savedProgressPct}%
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
+              Progress saved
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Resume card — only when there's saved progress */}
@@ -2790,7 +2804,7 @@ export default function WorkshopDetailPage() {
       <h1 className="text-xl font-bold leading-tight" style={{ color: "#e8ddd0", textShadow: "0 0 20px rgba(220,38,38,0.15)" }}>{detail.title}</h1>
 
       {/* Two-column body */}
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 items-start">
 
         {/* ── Left: Main Area ── */}
         <div className="flex-1 min-w-0">
@@ -2824,7 +2838,7 @@ export default function WorkshopDetailPage() {
         </div>
 
         {/* ── Right: Sidebar ── */}
-        <div className="w-full lg:w-[30%] lg:max-w-[380px] flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
+        <div className="w-full lg:w-80 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
           {/* Challenge progress + certificate — always visible above tabs */}
           <LearningProgressWidget progress={progress} />
           {detail.certificate && (
