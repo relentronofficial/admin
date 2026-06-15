@@ -1501,6 +1501,30 @@ function WatchChallengeView({
     );
   };
 
+  // Bunny iframe postMessage tracking — used when ep.hlsUrl is null and iframe fallback is rendered.
+  // Bunny's embed player fires play/pause/timeupdate/ended events via window.postMessage.
+  // When ep.hlsUrl is non-null the iframe is not in the DOM, so this listener never fires.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!ep?.id) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== 'https://iframe.mediadelivery.net') return;
+      const data = e.data as { event?: string; seconds?: number; currentTime?: number; duration?: number } | null;
+      console.log('[TBT-TRACK] Bunny postMessage raw:', JSON.stringify(data));
+      if (!data || typeof data !== 'object' || !data.event) return;
+      if (data.event === 'play')             handlePlay();
+      else if (data.event === 'pause')       handlePause();
+      else if (data.event === 'ended')       handleEnded();
+      else if (data.event === 'timeupdate')  handleTimeUpdate(data.seconds ?? data.currentTime ?? 0);
+      else if (data.event === 'loaded' && typeof data.duration === 'number') {
+        realDurationRef.current = data.duration;
+        setLiveRealDuration(data.duration);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [ep?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!ep) return <p className="text-sm text-muted-foreground text-center py-8">No episodes yet.</p>;
 
   const formatTime = (s: number) => {
