@@ -145,7 +145,7 @@ export function VideoWatermark({
       // forensic token readable by developer tools / DOM inspection
       data-wm={forensicToken}
       className={[
-        "relative overflow-hidden group/wm",
+        "relative group/wm",
         isFullscreen ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center" : "",
         className,
       ].join(" ")}
@@ -159,7 +159,7 @@ export function VideoWatermark({
       {user && (
         <>
           {/* ── Layer 1: Dynamic floating watermark (appear → move → disappear) */}
-          <div className="absolute inset-0 pointer-events-none select-none z-50">
+          <div className="absolute inset-0 pointer-events-none select-none z-50 overflow-hidden">
             <AnimatePresence>
               {isVisible && (
                 <motion.div

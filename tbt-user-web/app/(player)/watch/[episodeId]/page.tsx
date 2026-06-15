@@ -112,6 +112,7 @@ export default function WatchPage() {
               key={episodeId}
               hlsUrl={(playback as any).hlsUrl}
               startAt={playback.resumeAtSeconds}
+              autoplay={true}
               className="absolute inset-0 w-full h-full bg-black"
               onReady={(duration) => { realDurationRef.current = duration; setLiveRealDuration(duration); }}
             />

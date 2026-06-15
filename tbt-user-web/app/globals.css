@@ -103,6 +103,11 @@
   color: rgba(255, 255, 255, 0.45);
 }
 
+@keyframes plyr-hint-fade {
+  0%, 60% { opacity: 0.88; }
+  100%     { opacity: 0; }
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

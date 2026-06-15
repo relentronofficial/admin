@@ -1541,6 +1541,7 @@ function WatchChallengeView({
             hlsUrl={ep.hlsUrl}
             startAt={startAt}
             speed={speed}
+            autoplay={true}
             className="absolute inset-0 w-full h-full bg-black"
             onReady={handlePlayerReady}
             onTimeUpdate={handleTimeUpdate}

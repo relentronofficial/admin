@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from "react";
 
 // ─── Public handle exposed to parent via ref ──────────────────────────────────
 
@@ -15,6 +15,7 @@ interface PlyrPlayerProps {
   hlsUrl: string;
   startAt?: number;
   speed?: number;
+  autoplay?: boolean;
   className?: string;
   onReady?: (duration: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
@@ -27,13 +28,15 @@ interface PlyrPlayerProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPlayer(
-  { hlsUrl, startAt = 0, speed = 1, className, onReady, onTimeUpdate, onPlay, onPause, onEnded, onSpeedChange },
+  { hlsUrl, startAt = 0, speed = 1, autoplay = false, className, onReady, onTimeUpdate, onPlay, onPause, onEnded, onSpeedChange },
   ref,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const playerRef = useRef<any>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [seekHint, setSeekHint] = useState<{ dir: "left" | "right"; key: number } | null>(null);
 
   // Callback refs — keep callbacks current without re-running the init effect
   const cbReady = useRef(onReady);
@@ -73,24 +76,58 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
 
       if (destroyed) return;
 
-      // Attach HLS stream
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let hls: InstanceType<typeof Hls> | null = null;
+      let qualityOptions: number[] = [0]; // 0 = Auto
+
       if (Hls.isSupported()) {
         hls = new Hls({ enableWorker: true, startLevel: -1 });
         hls.loadSource(hlsUrl);
         hls.attachMedia(el);
+
+        // Wait for quality levels before initialising Plyr so the quality menu is populated
+        await new Promise<void>(resolve => {
+          const fallback = setTimeout(resolve, 3000);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          hls!.on(Hls.Events.MANIFEST_PARSED, (_: any, data: any) => {
+            clearTimeout(fallback);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const heights = (data.levels as any[])
+              .map((l: any) => l.height as number)
+              .filter(h => h > 0);
+            const unique = [...new Set<number>(heights)].sort((a, b) => b - a);
+            if (unique.length > 0) qualityOptions = [0, ...unique];
+            resolve();
+          });
+        });
+
+        if (destroyed) return;
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari native HLS
         el.src = hlsUrl;
       }
 
-      // Init Plyr — fullscreen disabled; VideoWatermark handles it to keep watermark layers in frame
       const player = new Plyr(el, {
-        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "settings", "fullscreen"],
-        settings: ["speed"],
+        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "pip", "settings", "fullscreen"],
+        settings: ["speed", "quality"],
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-        fullscreen: { enabled: false },
-        keyboard: { global: false },
+        quality: {
+          default: 0,
+          options: qualityOptions,
+          forced: true,
+          onChange: (quality: number) => {
+            if (!hls) return;
+            if (quality === 0) {
+              hls.currentLevel = -1; // ABR auto
+            } else {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const idx = hls.levels.findIndex((l: any) => l.height === quality);
+              if (idx >= 0) hls.currentLevel = idx;
+            }
+          },
+        },
+        fullscreen: { enabled: false }, // VideoWatermark handles fullscreen to keep watermark layers in frame
+        keyboard: { focused: true },    // arrow keys / space / f work when player is focused
         tooltips: { controls: true, seek: true },
         invertTime: false,
       });
@@ -103,27 +140,53 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
           startSet = true;
         }
         if (el.duration > 0) cbReady.current?.(el.duration);
+        // Autoplay after seek so there's no flash from position 0
+        if (autoplay) player.play().catch(() => {});
       };
-      const onTimeUpdate = () => cbTimeUpdate.current?.(el.currentTime);
-      const onPlay = () => cbPlay.current?.();
-      const onPause = () => cbPause.current?.();
-      const onEnded = () => cbEnded.current?.();
-      const onRateChange = () => cbSpeedChange.current?.(el.playbackRate);
+      const handleTimeUpdate = () => cbTimeUpdate.current?.(el.currentTime);
+      const handlePlay     = () => cbPlay.current?.();
+      const handlePause    = () => cbPause.current?.();
+      const handleEnded    = () => cbEnded.current?.();
+      const handleRateChange = () => cbSpeedChange.current?.(el.playbackRate);
+
+      // Double-tap seek on mobile (±10 s)
+      let lastTap = 0;
+      const handleTouchEnd = (e: TouchEvent) => {
+        const touch = e.changedTouches[0];
+        const rect  = el.getBoundingClientRect();
+        // Ignore taps in the bottom 20% (Plyr controls area)
+        if ((touch.clientY - rect.top) / rect.height > 0.8) return;
+        const now = Date.now();
+        const gap = now - lastTap;
+        lastTap   = now;
+        if (gap > 0 && gap < 300) {
+          lastTap = 0; // reset to prevent triple-tap double-seeking
+          const dir = (touch.clientX - rect.left) / rect.width < 0.5 ? "left" as const : "right" as const;
+          el.currentTime = dir === "left"
+            ? Math.max(0, el.currentTime - 10)
+            : Math.min(el.duration || 0, el.currentTime + 10);
+          clearTimeout(hintTimerRef.current);
+          setSeekHint({ dir, key: Date.now() });
+          hintTimerRef.current = setTimeout(() => setSeekHint(null), 900);
+        }
+      };
 
       el.addEventListener("loadedmetadata", onLoadedMetadata);
-      el.addEventListener("timeupdate", onTimeUpdate);
-      el.addEventListener("play", onPlay);
-      el.addEventListener("pause", onPause);
-      el.addEventListener("ended", onEnded);
-      el.addEventListener("ratechange", onRateChange);
+      el.addEventListener("timeupdate",     handleTimeUpdate);
+      el.addEventListener("play",           handlePlay);
+      el.addEventListener("pause",          handlePause);
+      el.addEventListener("ended",          handleEnded);
+      el.addEventListener("ratechange",     handleRateChange);
+      el.addEventListener("touchend",       handleTouchEnd);
 
       cleanupRef.current = () => {
         el.removeEventListener("loadedmetadata", onLoadedMetadata);
-        el.removeEventListener("timeupdate", onTimeUpdate);
-        el.removeEventListener("play", onPlay);
-        el.removeEventListener("pause", onPause);
-        el.removeEventListener("ended", onEnded);
-        el.removeEventListener("ratechange", onRateChange);
+        el.removeEventListener("timeupdate",     handleTimeUpdate);
+        el.removeEventListener("play",           handlePlay);
+        el.removeEventListener("pause",          handlePause);
+        el.removeEventListener("ended",          handleEnded);
+        el.removeEventListener("ratechange",     handleRateChange);
+        el.removeEventListener("touchend",       handleTouchEnd);
         try { player.destroy(); } catch {}
         try { hls?.destroy(); } catch {}
         playerRef.current = null;
@@ -137,7 +200,7 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
       cleanupRef.current?.();
       cleanupRef.current = null;
     };
-  }, [hlsUrl, startAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hlsUrl, startAt, autoplay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply speed changes without reinitialising the player
   useEffect(() => {
@@ -145,8 +208,52 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
   }, [speed]);
 
   return (
-    <div className={className ?? "w-full h-full bg-black"}>
+    <div className={className ?? "relative w-full h-full bg-black"}>
       <video ref={videoRef} className="w-full h-full" playsInline crossOrigin="anonymous" />
+
+      {/* Double-tap seek feedback overlay */}
+      {seekHint && (
+        <div
+          key={seekHint.key}
+          style={{
+            position: "absolute",
+            top: "50%",
+            [seekHint.dir === "left" ? "left" : "right"]: "12%",
+            transform: "translateY(-50%)",
+            pointerEvents: "none",
+            zIndex: 70,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 4,
+            animation: "plyr-hint-fade 0.9s ease forwards",
+          }}
+        >
+          <div style={{
+            width: 52,
+            height: 52,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.18)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 20,
+            color: "#fff",
+          }}>
+            {seekHint.dir === "left" ? "«" : "»"}
+          </div>
+          <span style={{
+            color: "#fff",
+            fontSize: 11,
+            fontFamily: "monospace",
+            fontWeight: 700,
+            textShadow: "0 1px 4px rgba(0,0,0,0.9)",
+          }}>
+            {seekHint.dir === "left" ? "−10s" : "+10s"}
+          </span>
+        </div>
+      )}
     </div>
   );
 });
