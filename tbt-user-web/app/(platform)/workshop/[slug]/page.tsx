@@ -1529,7 +1529,7 @@ function WatchChallengeView({
 
       {/* Video player — full-width 16:9, immersive Udemy-style */}
       <VideoWatermark
-        className="w-full rounded-xl overflow-hidden bg-black relative"
+        className="w-full rounded-xl bg-black relative"
         style={{ aspectRatio: "16/9" }}
         containerId="workshop-video-root"
         showFullscreenButton={!!(ep.hlsUrl || ep.videoUrl)}
