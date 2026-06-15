@@ -426,24 +426,24 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
   ];
 
   return (
-    <div className="rounded-xl border border-border overflow-hidden">
+    <div className="rounded-xl overflow-hidden" style={{ background: "rgba(8,5,16,0.9)", boxShadow: "5px 5px 12px rgba(0,0,0,0.8), -2px -2px 6px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-accent/5 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
       >
-        <span className="text-sm font-medium text-foreground">
+        <span className="text-sm font-medium" style={{ color: "#e8ddd0" }}>
           {progress.label}{" "}
           <span
             className="font-bold tabular-nums"
-            style={{ color: "var(--color-accent)" }}
+            style={{ color: "var(--color-accent)", textShadow: "0 0 8px rgba(220,38,38,0.5)" }}
           >
             {pct}%
           </span>
         </span>
         {open ? (
-          <ChevronUp size={14} className="text-muted-foreground" />
+          <ChevronUp size={14} style={{ color: "#e8ddd0" }} />
         ) : (
-          <ChevronDown size={14} className="text-muted-foreground" />
+          <ChevronDown size={14} style={{ color: "#e8ddd0" }} />
         )}
       </button>
 
@@ -456,21 +456,21 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
                 key={i}
                 size={14}
                 className={filled ? "" : "text-muted-foreground"}
-                style={filled ? { color: "var(--color-accent)", fill: "var(--color-accent)" } : {}}
+                style={filled ? { color: "var(--color-accent)", fill: "var(--color-accent)", filter: "drop-shadow(0 0 5px rgba(220,38,38,0.8))" } : {}}
               />
             ))}
           </div>
 
           {/* Progress bar */}
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${pct}%`, background: "var(--color-accent)" }}
+              style={{ width: `${pct}%`, background: "var(--color-accent)", boxShadow: "0 0 8px rgba(220,38,38,0.6), 0 0 16px rgba(220,38,38,0.3)" }}
             />
           </div>
 
           {/* Count */}
-          <p className="text-xs text-muted-foreground tabular-nums">
+          <p className="text-xs tabular-nums" style={{ color: "rgba(232,221,208,0.55)" }}>
             {progress.completedCount} / {progress.totalCount}{" "}
             {progress.completedLabel ?? "Completed"}
           </p>
@@ -501,16 +501,16 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
     if (allDone) return null; // eligible === true would show, so this shouldn't fire
 
     return (
-      <div className="rounded-xl border border-border overflow-hidden">
+      <div className="rounded-xl overflow-hidden" style={{ background: "rgba(8,5,16,0.9)", boxShadow: "5px 5px 12px rgba(0,0,0,0.8), -2px -2px 6px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
         <div className="px-4 py-3 flex items-center gap-2.5">
-          <GraduationCap size={15} className="text-muted-foreground flex-shrink-0" />
-          <span className="text-xs font-semibold text-muted-foreground">Certificate Progress</span>
+          <GraduationCap size={15} style={{ color: "rgba(232,221,208,0.5)" }} className="flex-shrink-0" />
+          <span className="text-xs font-semibold" style={{ color: "rgba(232,221,208,0.6)" }}>Certificate Progress</span>
         </div>
         <div className="px-4 pb-4 space-y-2.5">
           {/* Videos bar */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">Videos</span>
+              <span className="text-[10px]" style={{ color: "rgba(232,221,208,0.5)" }}>Videos</span>
               <span
                 className="text-[10px] font-bold tabular-nums"
                 style={{ color: (cert.videosWatchPct ?? cert.videosCompletedPct) === 100 ? "var(--color-success)" : "var(--color-accent)" }}
@@ -518,12 +518,13 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
                 {cert.videosWatchPct ?? cert.videosCompletedPct}%
               </span>
             </div>
-            <div className="h-1 bg-muted rounded-full overflow-hidden">
+            <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
                   width: `${cert.videosWatchPct ?? cert.videosCompletedPct}%`,
                   background: (cert.videosWatchPct ?? cert.videosCompletedPct) === 100 ? "var(--color-success)" : "var(--color-accent)",
+                  boxShadow: (cert.videosWatchPct ?? cert.videosCompletedPct) === 100 ? "0 0 6px rgba(34,197,94,0.5)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)",
                 }}
               />
             </div>
@@ -531,7 +532,7 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
           {/* Challenges bar */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">Challenges</span>
+              <span className="text-[10px]" style={{ color: "rgba(232,221,208,0.5)" }}>Challenges</span>
               <span
                 className="text-[10px] font-bold tabular-nums"
                 style={{ color: cert.challengesCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)" }}
@@ -539,12 +540,13 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
                 {cert.challengesCompletedPct}%
               </span>
             </div>
-            <div className="h-1 bg-muted rounded-full overflow-hidden">
+            <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
                   width: `${cert.challengesCompletedPct}%`,
                   background: cert.challengesCompletedPct === 100 ? "var(--color-success)" : "var(--color-accent)",
+                  boxShadow: cert.challengesCompletedPct === 100 ? "0 0 6px rgba(34,197,94,0.5)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)",
                 }}
               />
             </div>
@@ -1100,10 +1102,13 @@ function ChallengeList({
             <button
               key={ch.id}
               onClick={() => onSelect(ch)}
-              className="w-full text-left rounded-xl border p-3 transition-all"
+              className="w-full text-left rounded-xl p-3 transition-all"
               style={{
-                background: isSelected ? `color-mix(in srgb, var(--color-accent) 12%, transparent)` : ss.bg,
-                borderColor: isSelected ? "var(--color-accent)" : ss.border,
+                background: isSelected ? "rgba(10,6,20,0.95)" : "rgba(8,5,16,0.75)",
+                border: isSelected ? "1px solid rgba(220,38,38,0.5)" : "1px solid rgba(255,255,255,0.06)",
+                boxShadow: isSelected
+                  ? "3px 3px 10px rgba(0,0,0,0.7), -1px -1px 4px rgba(255,255,255,0.04), 0 0 12px rgba(220,38,38,0.45), 0 0 26px rgba(220,38,38,0.18)"
+                  : "3px 3px 8px rgba(0,0,0,0.6), -1px -1px 3px rgba(255,255,255,0.03)",
               }}
             >
               <div className="flex items-center gap-2">
@@ -1140,20 +1145,23 @@ function ChallengeList({
             key={ch.id}
             disabled={ch.isLocked}
             onClick={() => !ch.isLocked && onSelect(ch)}
-            className="w-full text-left rounded-xl border p-3 transition-all"
+            className="w-full text-left rounded-xl p-3 transition-all"
             style={{
               background: isSelected
-                ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                ? "rgba(10,6,20,0.95)"
                 : isCompleted
                   ? "rgba(34,197,94,0.04)"
-                  : ss.bg,
-              borderColor: isSelected
-                ? "var(--color-accent)"
+                  : "rgba(8,5,16,0.75)",
+              border: isSelected
+                ? "1px solid rgba(220,38,38,0.5)"
                 : isCompleted
-                  ? "rgba(34,197,94,0.3)"
-                  : ss.border,
-              opacity: ch.isLocked ? 0.55 : isCompleted && !isSelected ? 0.7 : 1,
+                  ? "1px solid rgba(34,197,94,0.3)"
+                  : "1px solid rgba(255,255,255,0.06)",
               borderLeft: isCompleted && !isSelected ? "3px solid rgba(34,197,94,0.5)" : undefined,
+              boxShadow: isSelected
+                ? "3px 3px 10px rgba(0,0,0,0.7), -1px -1px 4px rgba(255,255,255,0.04), 0 0 12px rgba(220,38,38,0.45), 0 0 26px rgba(220,38,38,0.18)"
+                : "3px 3px 8px rgba(0,0,0,0.6), -1px -1px 3px rgba(255,255,255,0.03)",
+              opacity: ch.isLocked ? 0.55 : isCompleted && !isSelected ? 0.7 : 1,
             }}
           >
             <div className="flex items-center gap-2">
@@ -1704,10 +1712,14 @@ function WatchChallengeView({
                 {done} / {total} completed
               </span>
             </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${pct}%`, background: done === total ? "#22c55e" : "var(--color-accent)" }}
+                style={{
+                  width: `${pct}%`,
+                  background: done === total ? "#22c55e" : "var(--color-accent)",
+                  boxShadow: done === total ? "0 0 8px rgba(34,197,94,0.55)" : "0 0 8px rgba(220,38,38,0.6), 0 0 16px rgba(220,38,38,0.3)",
+                }}
               />
             </div>
           </div>
@@ -1715,7 +1727,7 @@ function WatchChallengeView({
       })()}
 
       {/* Dynamic Episode list */}
-      <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+      <div className="rounded-xl overflow-hidden divide-y divide-white/5" style={{ border: "1px solid rgba(255,255,255,0.05)", boxShadow: "inset 2px 2px 8px rgba(0,0,0,0.7), inset -1px -1px 4px rgba(255,255,255,0.03)", background: "rgba(6,3,12,0.85)" }}>
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
@@ -1831,7 +1843,7 @@ function WatchChallengeView({
               {/* Row 2: progress bar — only for in-progress states, never for completed */}
               {showBar && (
                 <div className="mt-2.5 pl-10 flex items-center gap-2.5">
-                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
                     <div
                       className="h-full rounded-full transition-all duration-300"
                       style={{
@@ -1839,6 +1851,9 @@ function WatchChallengeView({
                         background: isWatching || isResumeState || hasPartialProgress
                           ? "var(--color-accent)"
                           : "rgba(255,255,255,0.3)",
+                        boxShadow: (isWatching || isResumeState || hasPartialProgress)
+                          ? "0 0 6px rgba(220,38,38,0.65), 0 0 14px rgba(220,38,38,0.3)"
+                          : "none",
                       }}
                     />
                   </div>
@@ -2793,7 +2808,7 @@ export default function WorkshopDetailPage() {
         <ChevronLeft size={15} />
         {detail.backLabel}
       </Link>
-      <h1 className="text-xl font-bold text-foreground leading-tight">{detail.title}</h1>
+      <h1 className="text-xl font-bold leading-tight" style={{ color: "#e8ddd0", textShadow: "0 0 20px rgba(220,38,38,0.15)" }}>{detail.title}</h1>
 
       {/* Two-column body */}
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
@@ -2819,10 +2834,10 @@ export default function WorkshopDetailPage() {
             <MainAreaCountdown item={upcomingLiveCall} />
           ) : (
             <div
-              className="rounded-xl border border-border border-dashed flex items-center justify-center"
-              style={{ minHeight: 180 }}
+              className="rounded-xl flex items-center justify-center"
+              style={{ minHeight: 180, background: "rgba(6,3,12,0.7)", border: "1px dashed rgba(220,38,38,0.2)", boxShadow: "inset 2px 2px 8px rgba(0,0,0,0.6), inset -1px -1px 4px rgba(255,255,255,0.02), 0 0 20px rgba(220,38,38,0.05)" }}
             >
-              <p className="text-sm text-muted-foreground text-center px-4">
+              <p className="text-sm text-center px-4" style={{ color: "rgba(232,221,208,0.35)" }}>
                 Select a challenge from the sidebar to begin
               </p>
             </div>
@@ -2839,7 +2854,7 @@ export default function WorkshopDetailPage() {
 
           {/* Tab buttons */}
           {tabs.length > 0 && (
-            <div className="flex border-b border-border">
+            <div className="flex gap-1.5 p-1.5 rounded-xl" style={{ background: "rgba(0,0,0,0.55)", boxShadow: "inset 2px 2px 6px rgba(0,0,0,0.8), inset -1px -1px 3px rgba(255,255,255,0.04)" }}>
               {tabs
                 .slice()
                 .sort((a: WorkshopTab, b: WorkshopTab) => a.order - b.order)
@@ -2848,15 +2863,18 @@ export default function WorkshopDetailPage() {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={cn(
-                      "flex-1 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors",
-                      currentTabId === tab.id
-                        ? "border-current"
-                        : "text-muted-foreground border-transparent hover:text-foreground"
+                      "flex-1 px-3 py-2 text-xs font-bold rounded-lg transition-all",
+                      currentTabId === tab.id ? "" : "hover:text-white/70"
                     )}
                     style={
                       currentTabId === tab.id
-                        ? { borderColor: "var(--color-accent)", color: "var(--color-accent)" }
-                        : {}
+                        ? {
+                            background: "rgba(10,6,20,0.95)",
+                            color: "#e8ddd0",
+                            border: "1px solid rgba(220,38,38,0.5)",
+                            boxShadow: "3px 3px 8px rgba(0,0,0,0.7), -1px -1px 4px rgba(255,255,255,0.04), 0 0 10px rgba(220,38,38,0.4), 0 0 22px rgba(220,38,38,0.18)",
+                          }
+                        : { color: "rgba(232,221,208,0.4)" }
                     }
                   >
                     {tab.label}
