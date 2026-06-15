@@ -66,7 +66,6 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
     let startSet = false;
 
     async function init(el: HTMLVideoElement) {
-      console.log('[TBT-TRACK] PlyrPlayer init start — hlsUrl:', hlsUrl?.slice(0, 60), 'readyState:', el.readyState);
       // Plyr uses export= style — normalise to a constructor regardless of bundler
       const [PlyrModule, { default: Hls }] = await Promise.all([
         import("plyr"),
@@ -136,19 +135,17 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
 
       // Native video events — more reliable than Plyr's own event system for timeupdate
       const onLoadedMetadata = () => {
-        console.log('[TBT-TRACK] loadedmetadata — duration:', el.duration, 'readyState:', el.readyState, 'autoplay:', autoplay);
         if (!startSet && startAt > 0) {
           el.currentTime = startAt;
           startSet = true;
         }
         if (el.duration > 0) cbReady.current?.(el.duration);
-        // Autoplay after seek so there's no flash from position 0
-        if (autoplay) player.play().catch((e: any) => console.warn('[TBT-TRACK] autoplay blocked:', e?.message));
+        if (autoplay) player.play().catch(() => {});
       };
       const handleTimeUpdate = () => cbTimeUpdate.current?.(el.currentTime);
-      const handlePlay     = () => { console.log('[TBT-TRACK] play event fired'); cbPlay.current?.(); };
-      const handlePause    = () => { console.log('[TBT-TRACK] pause event fired'); cbPause.current?.(); };
-      const handleEnded    = () => { console.log('[TBT-TRACK] ended event fired'); cbEnded.current?.(); };
+      const handlePlay  = () => cbPlay.current?.();
+      const handlePause = () => cbPause.current?.();
+      const handleEnded = () => cbEnded.current?.();
       const handleRateChange = () => cbSpeedChange.current?.(el.playbackRate);
 
       // Double-tap seek on mobile (±10 s)
@@ -185,10 +182,7 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
       el.addEventListener("touchend",       handleTouchEnd);
       // If loadedmetadata already fired before our listener was registered (e.g. manifest cached,
       // fired during MANIFEST_PARSED await), call it now so onReady + autoplay are not skipped.
-      if (el.readyState >= 1) {
-        console.log('[TBT-TRACK] readyState >= 1 after init — calling onLoadedMetadata manually, readyState:', el.readyState);
-        onLoadedMetadata();
-      }
+      if (el.readyState >= 1) onLoadedMetadata();
 
       cleanupRef.current = () => {
         el.removeEventListener("loadedmetadata", onLoadedMetadata);
