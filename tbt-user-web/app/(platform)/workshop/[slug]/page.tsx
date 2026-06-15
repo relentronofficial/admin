@@ -1567,7 +1567,7 @@ function WatchChallengeView({
     ? Math.min(100, Math.round(((ep.actualWatchedSecs ?? 0) / activeDuration) * 100))
     : 0;
 
-  const iframeFallbackSrc = !ep.hlsUrl && ep.videoUrl
+  const iframeFallbackSrc = (!ep.hlsUrl || hlsFailed) && ep.videoUrl
     ? withResumeTime(normalizeBunnyUrl(ep.videoUrl), forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0))
     : null;
   const startAt = forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0);
