@@ -2,14 +2,17 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging, develop]
   pull_request:
-    branches: [main]
+    branches: [main, staging, develop]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GCP_PROJECT: tbt-lms-platform
+  GCP_REGION: asia-south1
 
 jobs:
+  # ── Build & typecheck (all branches) ──────────────────────────────────────
   build-and-test:
     runs-on: ubuntu-latest
     defaults:
@@ -48,10 +51,12 @@ jobs:
       - name: Build Admin Panel
         run: npm run build:admin
 
-  deploy-backend:
+  # ── Deploy staging backend (staging branch only) ──────────────────────────
+  deploy-backend-staging:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
+    if: github.ref == 'refs/heads/staging' && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
+    environment: staging
     steps:
       - uses: actions/checkout@v4
 
@@ -63,10 +68,39 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (staging)
+        run: |
+          gcloud run deploy tbt-backend-staging \
+            --source tbt-admin/backend \
+            --region $GCP_REGION \
+            --project $GCP_PROJECT \
+            --set-secrets="DATABASE_URL=stg-DATABASE_URL:latest,DIRECT_URL=stg-DIRECT_URL:latest,SUPABASE_URL=stg-SUPABASE_URL:latest,SUPABASE_ANON_KEY=stg-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=stg-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=stg-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest" \
+            --set-env-vars="NODE_ENV=staging,USER_WEB_URL=${{ secrets.STG_USER_WEB_URL }},ADMIN_WEB_URL=${{ secrets.STG_ADMIN_WEB_URL }}" \
+            --quiet
+
+  # ── Deploy production backend (main branch only) ───────────────────────────
+  deploy-backend-production:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run (production)
         run: |
           gcloud run deploy tbt-backend \
             --source tbt-admin/backend \
-            --region asia-south1 \
-            --project tbt-lms-platform \
+            --region $GCP_REGION \
+            --project $GCP_PROJECT \
+            --set-secrets="DATABASE_URL=prod-DATABASE_URL:latest,DIRECT_URL=prod-DIRECT_URL:latest,SUPABASE_URL=prod-SUPABASE_URL:latest,SUPABASE_ANON_KEY=prod-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=prod-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=prod-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest" \
+            --set-env-vars="NODE_ENV=production,USER_WEB_URL=https://v0-tbt-ott-user-web.vercel.app/,ADMIN_WEB_URL=https://v0-tbt-ott-admin.vercel.app" \
             --quiet

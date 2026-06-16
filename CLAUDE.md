@@ -137,6 +137,9 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 
 `--color-locked: #4a4a4a` is the only static design token (gating indicator, not from API).
 
+### Real-time (User Web)
+`lib/socket/client.ts` exports `getSocket(): Promise<Socket>` (lazy-connects, passes Clerk token from `localStorage`). `lib/socket/useSocket.ts` exports `useSocket()` which returns `{ socket, connected }`. Call `socket.on(event, handler)` inside `useEffect` — the socket ref is stable but may be null on first render.
+
 ### Hook Files
 - `lib/hooks/useConfig.ts` — content hooks: `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
@@ -259,6 +262,9 @@ const detectDuration = (file: File): Promise<number> =>
   });
 ```
 
+### Real-time (Admin)
+`lib/socket/client.ts` exports `getAdminSocket()` — call it inside `useEffect` and register `.on()` listeners; clean up with `.off()` on unmount. Currently used in `app/dashboard/page.tsx` and `app/messages/page.tsx`.
+
 ### Design System Constants
 ```
 Background:  bg-[#0f0f0f] (page), bg-[#181818] (card), bg-[#1a1a1a] (input/header), bg-[#141414] (modal)
@@ -293,7 +299,32 @@ Backend endpoints: `GET /api/security-logs` and `GET /api/security-logs/stats`.
 7. **`useGetPresignedUrl`** — from `useAdmin`, not `useTbt`
 8. **apiClient interceptor** unwraps `response.data` — hooks already receive `{ success, data, meta }`, not doubly-nested
 9. **Flow item type values** — `"custom"` (Pre-Req), `"challenge_start"`, `"live_call"` (DB strings differ from PRD labels)
-10. **Workshop detail page is monolithic by design** — all 7 tabs in one `workshops/[id]/page.tsx` (~960 lines)
+10. **Workshop detail page is monolithic by design** — all 7 tabs in one `workshops/[id]/page.tsx`: `info`, `flow`, `challenges`, `live-calls`, `assignments`, `qa`, `enrollments`
+11. **Challenge `type` field** — valid values: `"watch"` | `"quiz"` | `"matching"` | `"written"` | `"flashcard"`. Each type has a distinct `quizData` shape stored as JSON:
+    - `"quiz"` → `{ questions: [{ id, question, options: [{ id, text, correct }] }] }`
+    - `"written"` → `{ prompt, placeholder? }`
+    - `"matching"` → `{ pairs: [{ id, left, right }] }`
+    - `"flashcard"` → `{ cards: [{ id, front, back }] }`
+    - `"watch"` → `quizData: null`
+12. **Episode `type` field** — valid values: `["video", "assignment", "offer"]` only
+
+## Socket Events
+
+Admin panel uses `getAdminSocket()` from `admin-panel/lib/socket/client.ts` (singleton, lazy-connects).
+User web uses `getSocket()` (async/lazy) from `tbt-user-web/lib/socket/client.ts` and the `useSocket()` hook from `lib/socket/useSocket.ts`.
+
+Socket.IO rooms and the events each room receives:
+
+| Room | Events emitted |
+|---|---|
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `chat:conversation_new`, `chat:unread_ping` |
+| `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder` |
+| `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
+| `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
+| `conversation:{id}` | `chat:message`, `chat:typing`, `chat:conversation_closed`, `chat:conversation_reopened` |
+| broadcast | `notification:broadcast` |
+
+Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` and `join:live` / `leave:live`. Admin socket authenticates via Clerk token in `socket.handshake.auth.token`; member socket authenticates via session cookie.
 
 ## Key Services
 | Service | Purpose |
@@ -301,8 +332,8 @@ Backend endpoints: `GET /api/security-logs` and `GET /api/security-logs/stats`.
 | Supabase (PostgreSQL) | Primary DB via Prisma ORM |
 | Upstash Redis | BullMQ job queues |
 | Cloudflare R2 | File/image/video storage (presigned URL uploads) |
-| Bunny Stream | Video hosting |
-| Agora.io | Live webinars |
+| Bunny Stream | Video hosting (HLS + iframe embed) |
+| LiveKit | Workshop live calls (env: `LIVEKIT_API_KEY/SECRET/WS_URL/WEBHOOK_SECRET`) |
 | Clerk | Auth (admin panel + API) |
 | Firebase | Push notifications |
 | Resend / Twilio | Email / SMS |
@@ -315,7 +346,7 @@ Copy and fill both env files before starting:
 - `backend/.env.example` → `backend/.env` (required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys, `CLOUDFLARE_R2_*`)
 - `admin-panel/.env.example` → `admin-panel/.env.local`
 
-Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STREAM_*`, `AGORA_*`, `FIREBASE_*`, `RESEND_API_KEY`, `TWILIO_*`, `SENTRY_DSN`.
+Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STREAM_*`, `LIVEKIT_*`, `FIREBASE_*`, `RESEND_API_KEY`, `TWILIO_*`, `SENTRY_DSN`.
 
 ## Initial Super Admin Seed
 
