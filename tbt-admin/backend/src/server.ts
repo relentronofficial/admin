@@ -136,7 +136,7 @@ async function bootstrap() {
     const host = '0.0.0.0';
 
     await fastify.listen({ port, host });
-    console.log(`🚀 Server ready at http://localhost:${port}`);
+    console.log(`🚀 TBT Backend v1.0.0 ready at http://localhost:${port}`);
 
     // Background: sync durationSeconds from Bunny for all existing episodes.
     // Runs once per startup, non-blocking, fixes episodes with wrong manually-typed durations.
