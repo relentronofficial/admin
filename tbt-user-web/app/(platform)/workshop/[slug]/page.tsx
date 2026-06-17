@@ -2036,6 +2036,7 @@ function QuizChallengeView({
 
       {questions.map((q: any, qi: number) => {
         const selected = answers[q.id];
+        const isAnswered = selected !== undefined;
         return (
           <div key={q.id} className="space-y-2.5">
             <p className="text-sm font-semibold text-foreground">
@@ -2044,30 +2045,62 @@ function QuizChallengeView({
             <div className="space-y-1.5">
               {(q.options ?? []).map((opt: any) => {
                 const isSelected = selected === opt.id;
-                const borderColor = isSelected
-                  ? "var(--color-accent)"
-                  : "var(--color-border, rgba(255,255,255,0.1))";
-                const bg = isSelected
-                  ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
-                  : "transparent";
+                const isCorrect = !!opt.correct;
+
+                let borderColor: string;
+                let bg: string;
+                let circleColor: string;
+
+                if (isAnswered) {
+                  if (isSelected && isCorrect) {
+                    borderColor = "#22c55e";
+                    bg = "rgba(34,197,94,0.1)";
+                    circleColor = "#22c55e";
+                  } else if (isSelected && !isCorrect) {
+                    borderColor = "#ef4444";
+                    bg = "rgba(239,68,68,0.1)";
+                    circleColor = "#ef4444";
+                  } else if (!isSelected && isCorrect) {
+                    // reveal correct answer when user picked wrong
+                    borderColor = "rgba(34,197,94,0.5)";
+                    bg = "rgba(34,197,94,0.06)";
+                    circleColor = "#22c55e";
+                  } else {
+                    borderColor = "rgba(255,255,255,0.06)";
+                    bg = "transparent";
+                    circleColor = "rgba(255,255,255,0.2)";
+                  }
+                } else {
+                  borderColor = isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.1))";
+                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent";
+                  circleColor = isSelected ? "var(--color-accent)" : "var(--color-muted)";
+                }
 
                 return (
                   <button
                     key={opt.id}
-                    onClick={() => setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
+                    onClick={() => !isAnswered && setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left text-xs transition-all"
-                    style={{ borderColor, background: bg }}
+                    style={{ borderColor, background: bg, cursor: isAnswered ? "default" : "pointer" }}
                   >
                     <span
                       className="w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] font-bold"
-                      style={{
-                        borderColor: isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.15))",
-                        color: isSelected ? "var(--color-accent)" : "var(--color-muted)",
-                      }}
+                      style={{ borderColor: circleColor, color: circleColor }}
                     >
                       {opt.id.toUpperCase()}
                     </span>
-                    <span className="flex-1 text-foreground">{opt.text}</span>
+                    <span className={`flex-1 ${isAnswered && !isSelected && !isCorrect ? "text-muted-foreground" : "text-foreground"}`}>
+                      {opt.text}
+                    </span>
+                    {isAnswered && isSelected && isCorrect && (
+                      <CheckCircle2 size={14} style={{ color: "#22c55e", flexShrink: 0 }} />
+                    )}
+                    {isAnswered && isSelected && !isCorrect && (
+                      <X size={14} style={{ color: "#ef4444", flexShrink: 0 }} />
+                    )}
+                    {isAnswered && !isSelected && isCorrect && (
+                      <CheckCircle2 size={14} style={{ color: "#22c55e", opacity: 0.7, flexShrink: 0 }} />
+                    )}
                   </button>
                 );
               })}
