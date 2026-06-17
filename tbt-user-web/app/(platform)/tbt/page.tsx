@@ -291,7 +291,7 @@ function ContentItemCard({ item }: { item: ContentItem }) {
   return (
     <div
       className={cn(
-        "flex-shrink-0 w-44 md:w-[calc(33.333%-8px)] lg:w-[calc(25%-9px)]",
+        "flex-shrink-0 w-44 md:w-56 lg:w-72",
         item.isLocked ? "cursor-not-allowed" : "cursor-pointer"
       )}
       onMouseEnter={() => setHovered(true)}
@@ -916,7 +916,7 @@ function SectionsSkeleton() {
             {[1, 2, 3, 4, 5].map((i) => (
               <div
                 key={i}
-                className="flex-shrink-0 w-44 md:w-[calc(33.333%-8px)] lg:w-[calc(25%-9px)] aspect-[2/3] md:aspect-video rounded-xl animate-pulse"
+                className="flex-shrink-0 w-44 md:w-56 lg:w-72 aspect-[2/3] md:aspect-video rounded-xl animate-pulse"
                 style={{ background: "var(--color-bg-surface)" }}
               />
             ))}
