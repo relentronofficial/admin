@@ -20,6 +20,7 @@ import {
   GraduationCap,
   Download,
   X,
+  SkipForward,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -1245,7 +1246,7 @@ function WatchChallengeView({
 
   const ep = episodes[activeEpIdx];
 
-  const [watchState, setWatchState] = useState<"not_started" | "resume" | "watching" | "paused" | "completed">("not_started");
+  const [watchState, setWatchState] = useState<"not_started" | "resume" | "watching" | "rewatching" | "paused" | "completed">("not_started");
   const [currentPlayhead, setCurrentPlayhead] = useState(0);
   const [forceStartFrom, setForceStartFrom] = useState<number | null>(null);
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
@@ -1262,6 +1263,7 @@ function WatchChallengeView({
   const playerRef = useRef<PlyrPlayerHandle | null>(null);
   const doMarkCompleteRef = useRef<() => void>(() => {});
   const epRef = useRef<any>(undefined);
+  const wasCompletedRef = useRef(false);
   const [speed, setSpeed] = useState(1);
   const speedRef = useRef(1);
   const [hlsFailed, setHlsFailed] = useState(false);
@@ -1304,6 +1306,7 @@ function WatchChallengeView({
 
     if (!ep) return;
     const alreadyDone = !!ep.isCompleted;
+    wasCompletedRef.current = alreadyDone;
     const resumeSecs = ep.lastWatchedSecs ?? 0;
     const hasProgress = !alreadyDone && resumeSecs > 3;
     // Completed episodes always start from beginning on rewatch
@@ -1443,7 +1446,7 @@ function WatchChallengeView({
   };
 
   const handlePlay = () => {
-    setWatchState("watching");
+    setWatchState(wasCompletedRef.current ? "rewatching" : "watching");
     isPlayingRef.current = true;
     if (!iframeFocusedRef.current) {
       iframeFocusedRef.current = true;
@@ -1573,6 +1576,8 @@ function WatchChallengeView({
   const startAt = forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0);
   const typeMeta = CHALLENGE_TYPE_META[challenge.type] ?? CHALLENGE_TYPE_META.watch;
   const challengeSs = statusStyle(challenge.status);
+  const hasNextEp = activeEpIdx + 1 < episodes.length;
+  const showWatchNext = hasNextEp && watchState === "watching" && activeDuration > 0 && currentPlayhead >= activeDuration - 20;
 
   return (
     <div className="space-y-3">
@@ -1612,6 +1617,28 @@ function WatchChallengeView({
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">No video</div>
         )}
+
+        {/* Watch Next overlay — appears in last 20s when a next episode exists */}
+        {showWatchNext && (
+          <div className="absolute bottom-14 right-4 z-[70] flex flex-col items-end gap-1">
+            <button
+              onClick={() => setActiveEpIdx((prev) => prev + 1)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-white transition-all"
+              style={{
+                background: "rgba(0,0,0,0.65)",
+                backdropFilter: "blur(6px)",
+                border: "1px solid rgba(255,255,255,0.18)",
+              }}
+            >
+              Watch Next <SkipForward size={13} />
+            </button>
+            {episodes[activeEpIdx + 1]?.title && (
+              <p className="text-[9px] text-white/50 max-w-[160px] truncate text-right pr-0.5">
+                {episodes[activeEpIdx + 1].title}
+              </p>
+            )}
+          </div>
+        )}
       </VideoWatermark>
 
       {/* YouTube-style meta: episode title + challenge context + watch state */}
@@ -1636,6 +1663,10 @@ function WatchChallengeView({
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
               <CheckCircle2 size={13} /> Completed
             </span>
+          ) : watchState === "rewatching" ? (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
+              <RotateCcw size={12} /> Rewatching
+            </span>
           ) : watchState === "watching" ? (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
               <Play size={13} fill="currentColor" /> Watching {activeProgressPct}%
@@ -1646,11 +1677,11 @@ function WatchChallengeView({
             </span>
           ) : watchState === "resume" ? (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
-              <Play size={11} fill="currentColor" className="ml-0.5" /> Resume {savedProgressPct}%
+              <Play size={11} fill="currentColor" className="ml-0.5" /> Continue Watching {savedProgressPct}%
             </span>
           ) : (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
-              Progress saved
+              <Play size={11} fill="currentColor" className="ml-0.5 opacity-50" /> Start Watching
             </span>
           )}
         </div>
@@ -1781,7 +1812,8 @@ function WatchChallengeView({
             ? Math.min(100, Math.round(((isActive ? liveWatched : (e.actualWatchedSecs ?? 0)) / epDuration) * 100))
             : 0;
 
-          const isWatching = isActive && watchState === "watching";
+          const isRewatching = isActive && watchState === "rewatching";
+          const isWatching = isActive && (watchState === "watching" || isRewatching);
           const isPausedState = isActive && watchState === "paused";
           const isResumeState = isActive && watchState === "resume";
           const hasPartialProgress = !isDone && !isActive && (e.lastWatchedSecs > 0 || e.actualWatchedSecs > 0);
@@ -1860,6 +1892,8 @@ function WatchChallengeView({
                 <span className="flex-shrink-0 min-w-0">
                   {isDone ? (
                     <span className="text-[11px] font-bold" style={{ color: "#22c55e" }}>Completed</span>
+                  ) : isRewatching ? (
+                    <span className="text-[11px] font-bold" style={{ color: "#a78bfa" }}>Rewatching...</span>
                   ) : isWatching ? (
                     <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>Watching...</span>
                   ) : isPausedState ? (
@@ -2036,6 +2070,7 @@ function QuizChallengeView({
 
       {questions.map((q: any, qi: number) => {
         const selected = answers[q.id];
+        const isAnswered = selected !== undefined;
         return (
           <div key={q.id} className="space-y-2.5">
             <p className="text-sm font-semibold text-foreground">
@@ -2044,30 +2079,62 @@ function QuizChallengeView({
             <div className="space-y-1.5">
               {(q.options ?? []).map((opt: any) => {
                 const isSelected = selected === opt.id;
-                const borderColor = isSelected
-                  ? "var(--color-accent)"
-                  : "var(--color-border, rgba(255,255,255,0.1))";
-                const bg = isSelected
-                  ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
-                  : "transparent";
+                const isCorrect = !!opt.correct;
+
+                let borderColor: string;
+                let bg: string;
+                let circleColor: string;
+
+                if (isAnswered) {
+                  if (isSelected && isCorrect) {
+                    borderColor = "#22c55e";
+                    bg = "rgba(34,197,94,0.1)";
+                    circleColor = "#22c55e";
+                  } else if (isSelected && !isCorrect) {
+                    borderColor = "#ef4444";
+                    bg = "rgba(239,68,68,0.1)";
+                    circleColor = "#ef4444";
+                  } else if (!isSelected && isCorrect) {
+                    // reveal correct answer when user picked wrong
+                    borderColor = "rgba(34,197,94,0.5)";
+                    bg = "rgba(34,197,94,0.06)";
+                    circleColor = "#22c55e";
+                  } else {
+                    borderColor = "rgba(255,255,255,0.06)";
+                    bg = "transparent";
+                    circleColor = "rgba(255,255,255,0.2)";
+                  }
+                } else {
+                  borderColor = isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.1))";
+                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent";
+                  circleColor = isSelected ? "var(--color-accent)" : "var(--color-muted)";
+                }
 
                 return (
                   <button
                     key={opt.id}
-                    onClick={() => setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
+                    onClick={() => !isAnswered && setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left text-xs transition-all"
-                    style={{ borderColor, background: bg }}
+                    style={{ borderColor, background: bg, cursor: isAnswered ? "default" : "pointer" }}
                   >
                     <span
                       className="w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] font-bold"
-                      style={{
-                        borderColor: isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.15))",
-                        color: isSelected ? "var(--color-accent)" : "var(--color-muted)",
-                      }}
+                      style={{ borderColor: circleColor, color: circleColor }}
                     >
                       {opt.id.toUpperCase()}
                     </span>
-                    <span className="flex-1 text-foreground">{opt.text}</span>
+                    <span className={`flex-1 ${isAnswered && !isSelected && !isCorrect ? "text-muted-foreground" : "text-foreground"}`}>
+                      {opt.text}
+                    </span>
+                    {isAnswered && isSelected && isCorrect && (
+                      <CheckCircle2 size={14} style={{ color: "#22c55e", flexShrink: 0 }} />
+                    )}
+                    {isAnswered && isSelected && !isCorrect && (
+                      <X size={14} style={{ color: "#ef4444", flexShrink: 0 }} />
+                    )}
+                    {isAnswered && !isSelected && isCorrect && (
+                      <CheckCircle2 size={14} style={{ color: "#22c55e", opacity: 0.7, flexShrink: 0 }} />
+                    )}
                   </button>
                 );
               })}
