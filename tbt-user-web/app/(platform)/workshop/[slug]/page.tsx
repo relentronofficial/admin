@@ -1246,7 +1246,7 @@ function WatchChallengeView({
 
   const ep = episodes[activeEpIdx];
 
-  const [watchState, setWatchState] = useState<"not_started" | "resume" | "watching" | "paused" | "completed">("not_started");
+  const [watchState, setWatchState] = useState<"not_started" | "resume" | "watching" | "rewatching" | "paused" | "completed">("not_started");
   const [currentPlayhead, setCurrentPlayhead] = useState(0);
   const [forceStartFrom, setForceStartFrom] = useState<number | null>(null);
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
@@ -1263,6 +1263,7 @@ function WatchChallengeView({
   const playerRef = useRef<PlyrPlayerHandle | null>(null);
   const doMarkCompleteRef = useRef<() => void>(() => {});
   const epRef = useRef<any>(undefined);
+  const wasCompletedRef = useRef(false);
   const [speed, setSpeed] = useState(1);
   const speedRef = useRef(1);
   const [hlsFailed, setHlsFailed] = useState(false);
@@ -1305,6 +1306,7 @@ function WatchChallengeView({
 
     if (!ep) return;
     const alreadyDone = !!ep.isCompleted;
+    wasCompletedRef.current = alreadyDone;
     const resumeSecs = ep.lastWatchedSecs ?? 0;
     const hasProgress = !alreadyDone && resumeSecs > 3;
     // Completed episodes always start from beginning on rewatch
@@ -1444,7 +1446,7 @@ function WatchChallengeView({
   };
 
   const handlePlay = () => {
-    setWatchState("watching");
+    setWatchState(wasCompletedRef.current ? "rewatching" : "watching");
     isPlayingRef.current = true;
     if (!iframeFocusedRef.current) {
       iframeFocusedRef.current = true;
@@ -1661,6 +1663,10 @@ function WatchChallengeView({
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>
               <CheckCircle2 size={13} /> Completed
             </span>
+          ) : watchState === "rewatching" ? (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
+              <RotateCcw size={12} /> Rewatching
+            </span>
           ) : watchState === "watching" ? (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
               <Play size={13} fill="currentColor" /> Watching {activeProgressPct}%
@@ -1671,11 +1677,11 @@ function WatchChallengeView({
             </span>
           ) : watchState === "resume" ? (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
-              <Play size={11} fill="currentColor" className="ml-0.5" /> Resume {savedProgressPct}%
+              <Play size={11} fill="currentColor" className="ml-0.5" /> Continue Watching {savedProgressPct}%
             </span>
           ) : (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
-              Progress saved
+              <Play size={11} fill="currentColor" className="ml-0.5 opacity-50" /> Start Watching
             </span>
           )}
         </div>
@@ -1806,7 +1812,8 @@ function WatchChallengeView({
             ? Math.min(100, Math.round(((isActive ? liveWatched : (e.actualWatchedSecs ?? 0)) / epDuration) * 100))
             : 0;
 
-          const isWatching = isActive && watchState === "watching";
+          const isRewatching = isActive && watchState === "rewatching";
+          const isWatching = isActive && (watchState === "watching" || isRewatching);
           const isPausedState = isActive && watchState === "paused";
           const isResumeState = isActive && watchState === "resume";
           const hasPartialProgress = !isDone && !isActive && (e.lastWatchedSecs > 0 || e.actualWatchedSecs > 0);
@@ -1885,6 +1892,8 @@ function WatchChallengeView({
                 <span className="flex-shrink-0 min-w-0">
                   {isDone ? (
                     <span className="text-[11px] font-bold" style={{ color: "#22c55e" }}>Completed</span>
+                  ) : isRewatching ? (
+                    <span className="text-[11px] font-bold" style={{ color: "#a78bfa" }}>Rewatching...</span>
                   ) : isWatching ? (
                     <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>Watching...</span>
                   ) : isPausedState ? (
