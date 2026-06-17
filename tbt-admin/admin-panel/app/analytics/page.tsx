@@ -14,7 +14,7 @@ export default function AnalyticsPage() {
   const { data: overviewData, isLoading: overviewLoading, isError: overviewError } = useAnalyticsOverview();
   const overview = (overviewData as any)?.data;
 
-  const [inactiveDays, setInactiveDays] = useState(7);
+  const [inactiveDays, setInactiveDays] = useState(2);
   const [atRiskPage, setAtRiskPage] = useState(1);
   const { data: atRiskData, isLoading: atRiskLoading, isError: atRiskError } = useAtRiskMembers({
     inactiveDays,
@@ -90,7 +90,7 @@ export default function AnalyticsPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-[#606060] font-rajdhani uppercase tracking-widest">Inactive for:</span>
-              {[3, 7, 14, 30].map(d => (
+              {[2, 3, 4, 5, 6].map(d => (
                 <button
                   key={d}
                   onClick={() => { setInactiveDays(d); setAtRiskPage(1); }}
