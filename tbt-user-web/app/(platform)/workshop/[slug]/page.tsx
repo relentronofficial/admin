@@ -20,6 +20,7 @@ import {
   GraduationCap,
   Download,
   X,
+  SkipForward,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -1573,6 +1574,8 @@ function WatchChallengeView({
   const startAt = forceStartFrom !== null ? forceStartFrom : (ep.lastWatchedSecs ?? 0);
   const typeMeta = CHALLENGE_TYPE_META[challenge.type] ?? CHALLENGE_TYPE_META.watch;
   const challengeSs = statusStyle(challenge.status);
+  const hasNextEp = activeEpIdx + 1 < episodes.length;
+  const showWatchNext = hasNextEp && watchState === "watching" && activeDuration > 0 && currentPlayhead >= activeDuration - 20;
 
   return (
     <div className="space-y-3">
@@ -1611,6 +1614,28 @@ function WatchChallengeView({
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">No video</div>
+        )}
+
+        {/* Watch Next overlay — appears in last 20s when a next episode exists */}
+        {showWatchNext && (
+          <div className="absolute bottom-14 right-4 z-[70] flex flex-col items-end gap-1">
+            <button
+              onClick={() => setActiveEpIdx((prev) => prev + 1)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-white transition-all"
+              style={{
+                background: "rgba(0,0,0,0.65)",
+                backdropFilter: "blur(6px)",
+                border: "1px solid rgba(255,255,255,0.18)",
+              }}
+            >
+              Watch Next <SkipForward size={13} />
+            </button>
+            {episodes[activeEpIdx + 1]?.title && (
+              <p className="text-[9px] text-white/50 max-w-[160px] truncate text-right pr-0.5">
+                {episodes[activeEpIdx + 1].title}
+              </p>
+            )}
+          </div>
         )}
       </VideoWatermark>
 
