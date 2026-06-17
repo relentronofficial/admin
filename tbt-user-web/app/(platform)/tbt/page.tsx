@@ -956,32 +956,42 @@ export default function TBTHomePage() {
         ) : null}
       </div>
 
-      {/* Continue Watching — shown when user has in-progress episodes */}
-      <div className="mb-10">
-        <ContinueWatchingSection />
-      </div>
-
-      {/* Recently Watched — full history sorted by last watched */}
-      <div className="mb-10">
-        <RecentlyWatchedSection />
-      </div>
-
-      {/* Content Sections */}
-      {sectionsLoading ? (
-        <SectionsSkeleton />
-      ) : sectionsData?.sections?.length ? (
-        <div className="space-y-10">
-          {sectionsData.sections.map((section) => (
-            <SectionRow key={section.id} section={section} />
-          ))}
+      {/* All content below hero — break out of max-w-7xl to fill the viewport */}
+      <div
+        style={{
+          marginLeft: "calc(50% - 50vw)",
+          marginRight: "calc(50% - 50vw)",
+          width: "100vw",
+        }}
+        className="px-4 md:px-6"
+      >
+        {/* Continue Watching — shown when user has in-progress episodes */}
+        <div className="mb-10">
+          <ContinueWatchingSection />
         </div>
-      ) : (
-        !sectionsLoading && (
-          <p className="text-sm text-muted-foreground text-center py-10">
-            {uiStrings?.loading}
-          </p>
-        )
-      )}
+
+        {/* Recently Watched — full history sorted by last watched */}
+        <div className="mb-10">
+          <RecentlyWatchedSection />
+        </div>
+
+        {/* Content Sections */}
+        {sectionsLoading ? (
+          <SectionsSkeleton />
+        ) : sectionsData?.sections?.length ? (
+          <div className="space-y-10 pb-10">
+            {sectionsData.sections.map((section) => (
+              <SectionRow key={section.id} section={section} />
+            ))}
+          </div>
+        ) : (
+          !sectionsLoading && (
+            <p className="text-sm text-muted-foreground text-center py-10">
+              {uiStrings?.loading}
+            </p>
+          )
+        )}
+      </div>
     </div>
   );
 }
