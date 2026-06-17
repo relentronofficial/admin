@@ -870,8 +870,9 @@ export async function createAssignmentHandler(req: FastifyRequest, reply: Fastif
       challengeId: body.challengeId,
       order: body.order || 0,
       title: body.title,
-      questionText: body.questionText,
-      typeLabel: body.typeLabel || 'QUESTION',
+      questionText: body.questionText || null,
+      assignmentType: body.assignmentType || 'qa',
+      typeLabel: body.typeLabel || (body.assignmentType === 'image_upload' ? 'IMAGE' : 'QUESTION'),
     },
   });
   return reply.status(201).send({ success: true, data: assignment, error: null });
@@ -881,7 +882,7 @@ export async function updateAssignmentHandler(req: FastifyRequest, reply: Fastif
   const { aid } = req.params as any;
   const body = req.body as any;
   const data: any = {};
-  ['title', 'questionText', 'typeLabel', 'order'].forEach(f => {
+  ['title', 'questionText', 'assignmentType', 'typeLabel', 'order'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   const assignment = await req.server.prisma.assignment.update({ where: { id: aid }, data });
@@ -898,7 +899,13 @@ export async function listSubmissionsHandler(req: FastifyRequest, reply: Fastify
   const { aid } = req.params as any;
   const submissions = await req.server.prisma.assignmentSubmission.findMany({
     where: { assignmentId: aid },
-    include: {
+    select: {
+      id: true,
+      answerText: true,
+      imageUrl: true,
+      submittedAt: true,
+      reviewNote: true,
+      reviewedAt: true,
       member: { select: { id: true, firstName: true, lastName: true, email: true, memberId: true } },
     },
     orderBy: { submittedAt: 'desc' },

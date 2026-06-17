@@ -1654,17 +1654,18 @@ model LiveCallPollVote {
 }
 
 model Assignment {
-  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  challengeId  String                 @map("challenge_id") @db.Uuid
-  order        Int                    @default(0)
-  title        String
-  questionText String                 @map("question_text")
-  typeLabel    String                 @default("QUESTION") @map("type_label")
-  iconType     String                 @default("document") @map("icon_type")
-  challenge    Challenge              @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  submissions  AssignmentSubmission[]
-  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  challengeId    String                 @map("challenge_id") @db.Uuid
+  order          Int                    @default(0)
+  title          String
+  questionText   String?                @map("question_text")
+  assignmentType String                 @default("qa") @map("assignment_type")
+  typeLabel      String                 @default("QUESTION") @map("type_label")
+  iconType       String                 @default("document") @map("icon_type")
+  challenge      Challenge              @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  submissions    AssignmentSubmission[]
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("assignments")
 }
@@ -1673,7 +1674,8 @@ model AssignmentSubmission {
   id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   assignmentId      String     @map("assignment_id") @db.Uuid
   memberId          String     @map("member_id") @db.Uuid
-  answerText        String     @map("answer_text")
+  answerText        String?    @map("answer_text")
+  imageUrl          String?    @map("image_url")
   completedIconType String     @default("checkmark_green") @map("completed_icon_type")
   yourAnswerLabel   String     @default("Your Answer:") @map("your_answer_label")
   backLabel         String     @default("Back") @map("back_label")

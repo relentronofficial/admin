@@ -21,6 +21,8 @@ import {
   Download,
   X,
   SkipForward,
+  ImageIcon,
+  Upload,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -30,6 +32,7 @@ import {
   usePostQaReply,
   useWorkshopAssignments,
   useSubmitAssignment,
+  useAssignmentImagePresign,
   useWorkshopChallenges,
   useCompleteChallenge,
   useCompleteWorkshopEpisode,
@@ -308,7 +311,11 @@ function AssignmentMainView({
   const qc = useQueryClient();
   const { data } = useWorkshopAssignments(slug);
   const submit = useSubmitAssignment();
+  const presign = useAssignmentImagePresign();
   const [answer, setAnswer] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | undefined>(undefined);
+  const [previewUrl, setPreviewUrl] = useState<string | undefined>(undefined);
+  const [uploading, setUploading] = useState(false);
 
   const assignment = data?.groups
     .flatMap((g) => g.assignments)
@@ -318,6 +325,44 @@ function AssignmentMainView({
 
   const sub = assignment.submission;
   const isSubmitted = !!sub?.isSubmitted;
+  const isImageType = assignment.assignmentType === "image_upload";
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleSubmit = async () => {
+    try {
+      if (isImageType) {
+        if (!selectedFile) return;
+        setUploading(true);
+        const { uploadUrl, publicUrl } = await presign.mutateAsync({
+          filename: selectedFile.name,
+          contentType: selectedFile.type,
+        });
+        await fetch(uploadUrl, { method: "PUT", body: selectedFile, headers: { "Content-Type": selectedFile.type } });
+        await submit.mutateAsync({ id: assignment.id, imageUrl: publicUrl });
+        setSelectedFile(undefined);
+        setPreviewUrl(undefined);
+      } else {
+        if (!answer.trim()) return;
+        await submit.mutateAsync({ id: assignment.id, answerText: answer });
+        setAnswer("");
+      }
+      qc.invalidateQueries({ queryKey: ["workshop-assignments", slug] });
+      qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+    } catch {
+      // mutation failed — user can retry
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const isLoading = uploading || submit.isPending || presign.isPending;
+  const canSubmit = isImageType ? !!selectedFile : !!answer.trim();
 
   // ── Submitted: show answer review ──
   if (isSubmitted) {
@@ -343,13 +388,17 @@ function AssignmentMainView({
         )}
 
         <div className="rounded-lg border border-border bg-card p-4">
-          {sub.answerText ? renderAnswerText(sub.answerText) : null}
+          {sub.imageUrl ? (
+            <img src={sub.imageUrl} alt="Submitted" className="max-w-full rounded-lg max-h-80 object-contain" />
+          ) : sub.answerText ? (
+            renderAnswerText(sub.answerText)
+          ) : null}
         </div>
       </div>
     );
   }
 
-  // ── Not yet submitted: show question + answer form ──
+  // ── Not yet submitted: show question + answer/image form ──
   return (
     <div className="space-y-4">
       <button
@@ -361,7 +410,9 @@ function AssignmentMainView({
       </button>
 
       <div className="flex items-center gap-1.5">
-        <FileText size={14} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />
+        {isImageType
+          ? <ImageIcon size={14} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />
+          : <FileText size={14} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />}
         <span
           className="text-[10px] font-bold uppercase tracking-widest"
           style={{ color: "var(--color-accent)" }}
@@ -372,31 +423,55 @@ function AssignmentMainView({
 
       <h3 className="font-semibold text-foreground text-base leading-snug">{assignment.title}</h3>
 
-      <textarea
-        value={answer}
-        onChange={(e) => setAnswer(e.target.value)}
-        rows={6}
-        className="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground outline-none focus:border-ring resize-none transition-colors"
-      />
+      {assignment.questionText && (
+        <p className="text-sm text-muted-foreground leading-relaxed">{assignment.questionText}</p>
+      )}
+
+      {isImageType ? (
+        <div className="space-y-3">
+          <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-card p-6 cursor-pointer hover:border-ring transition-colors">
+            {previewUrl ? (
+              <img src={previewUrl} alt="Preview" className="max-h-48 max-w-full rounded-lg object-contain" />
+            ) : (
+              <>
+                <Upload size={24} className="text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Click to upload an image</span>
+                <span className="text-xs text-muted-foreground/60">PNG, JPG, WEBP up to 10MB</span>
+              </>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </label>
+          {previewUrl && (
+            <button
+              onClick={() => { setSelectedFile(undefined); setPreviewUrl(undefined); }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Remove image
+            </button>
+          )}
+        </div>
+      ) : (
+        <textarea
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          rows={6}
+          className="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground outline-none focus:border-ring resize-none transition-colors"
+        />
+      )}
 
       <div className="flex gap-2">
         <button
-          onClick={async () => {
-            if (!answer.trim()) return;
-            try {
-              await submit.mutateAsync({ id: assignment.id, answerText: answer });
-              setAnswer("");
-              // Refetch assignments (sidebar + this view both update) and flow (progress bar)
-              qc.invalidateQueries({ queryKey: ["workshop-assignments", slug] });
-              qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
-            } catch {
-              // mutation failed — user can retry
-            }
-          }}
-          disabled={submit.isPending || !answer.trim()}
-          className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity"
+          onClick={handleSubmit}
+          disabled={isLoading || !canSubmit}
+          className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60 transition-opacity flex items-center gap-2"
           style={{ background: "var(--color-accent)" }}
         >
+          {isLoading && <Loader2 size={14} className="animate-spin" />}
           {assignment.submitLabel}
         </button>
         <button

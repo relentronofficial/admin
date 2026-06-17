@@ -502,7 +502,8 @@ export interface QAResponse {
 
 export interface AssignmentSubmissionData {
   isSubmitted: boolean;
-  answerText: string;
+  answerText?: string | null;
+  imageUrl?: string | null;
   yourAnswerLabel?: string | null;
   backLabel?: string | null;
   completedIcon?: string | null;
@@ -511,6 +512,8 @@ export interface AssignmentSubmissionData {
 export interface WorkshopAssignment {
   id: string;
   title: string;
+  assignmentType: string;
+  questionText?: string | null;
   typeLabel: string;
   ctaLabel: string;
   submitLabel: string;

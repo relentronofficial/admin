@@ -32,6 +32,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_status VARCHAR(50) NOT NULL DEFAULT 'in_stock'`);
     // Watched segments bitmask column — stores JSON array of 10s segment indices actually watched
     await prisma.$executeRawUnsafe(`ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS watched_segments TEXT`);
+    // Assignment type (qa vs image_upload) and image submission support
+    await prisma.$executeRawUnsafe(`ALTER TABLE assignments ADD COLUMN IF NOT EXISTS assignment_type VARCHAR(50) NOT NULL DEFAULT 'qa'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE assignments ALTER COLUMN question_text DROP NOT NULL`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE assignment_submissions ALTER COLUMN answer_text DROP NOT NULL`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS image_url TEXT`);
     // Product inquiries table — idempotent, safe on every startup
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS product_inquiries (

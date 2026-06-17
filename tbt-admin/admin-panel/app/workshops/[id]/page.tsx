@@ -568,7 +568,7 @@ export default function WorkshopDetailPage() {
   const [showAssignmentForm, setShowAssignmentForm] = useState(false);
   const [assignmentChallengeId, setAssignmentChallengeId] = useState<string>("");
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
-  const [assignmentForm, setAssignmentForm] = useState({ title: "", questionText: "", typeLabel: "", iconType: "document", order: 1 });
+  const [assignmentForm, setAssignmentForm] = useState({ title: "", assignmentType: "qa", questionText: "", typeLabel: "", iconType: "document", order: 1 });
   const [deletingAssignment, setDeletingAssignment] = useState<string | null>(null);
   const [viewingSubmissionsId, setViewingSubmissionsId] = useState<string | null>(null);
 
@@ -576,13 +576,13 @@ export default function WorkshopDetailPage() {
     const group = assignmentGroups.find((g: any) => g.challengeId === challengeId);
     const nextOrder = (group?.assignments?.length || 0) + 1;
     setAssignmentChallengeId(challengeId);
-    setAssignmentForm({ title: "", questionText: "", typeLabel: "", iconType: "document", order: nextOrder });
+    setAssignmentForm({ title: "", assignmentType: "qa", questionText: "", typeLabel: "", iconType: "document", order: nextOrder });
     setEditingAssignment(null);
     setShowAssignmentForm(true);
   };
   const openEditAssignment = (a: any, challengeId: string) => {
     setAssignmentChallengeId(challengeId);
-    setAssignmentForm({ title: a.title, questionText: a.questionText || "", typeLabel: a.typeLabel || "", iconType: a.iconType || "document", order: a.order ?? 1 });
+    setAssignmentForm({ title: a.title, assignmentType: a.assignmentType || "qa", questionText: a.questionText || "", typeLabel: a.typeLabel || "", iconType: a.iconType || "document", order: a.order ?? 1 });
     setEditingAssignment(a);
     setShowAssignmentForm(true);
   };
@@ -1181,6 +1181,9 @@ export default function WorkshopDetailPage() {
                               <p className="font-bold text-[#f0f0f0] text-sm">{a.title}</p>
                               {a.questionText && <p className="text-[12px] text-[#606060] mt-1">{a.questionText}</p>}
                               <div className="flex items-center gap-3 mt-1">
+                                {a.assignmentType === "image_upload"
+                                  ? <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded" style={{ color: "#06b6d4", background: "#06b6d420", border: "1px solid #06b6d440" }}>Image Upload</span>
+                                  : <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded" style={{ color: "#a78bfa", background: "#a78bfa20", border: "1px solid #a78bfa40" }}>Q &amp; A</span>}
                                 {a.typeLabel && <span className="text-[10px] text-[#444] uppercase font-rajdhani font-bold tracking-widest">{a.typeLabel}</span>}
                                 {a._count?.submissions != null && (
                                   <button onClick={() => setViewingSubmissionsId(viewingSubmissionsId === a.id ? null : a.id)} className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-rajdhani font-bold uppercase tracking-widest transition-colors">
@@ -1916,7 +1919,30 @@ export default function WorkshopDetailPage() {
             </div>
             <div className="p-6 space-y-4">
               <div><label className={labelCls}>Title *</label><input value={assignmentForm.title} onChange={e => setAssignmentForm(f => ({ ...f, title: e.target.value }))} className={inputCls} /></div>
-              <div><label className={labelCls}>Question Text</label><textarea value={assignmentForm.questionText} onChange={e => setAssignmentForm(f => ({ ...f, questionText: e.target.value }))} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" /></div>
+              {/* Assignment type toggle */}
+              <div>
+                <label className={labelCls}>Assignment Type</label>
+                <div className="flex gap-2 mt-1">
+                  {[{ value: "qa", label: "Question & Answer" }, { value: "image_upload", label: "Image Upload" }].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setAssignmentForm(f => ({
+                        ...f,
+                        assignmentType: opt.value,
+                        typeLabel: opt.value === "image_upload" ? "IMAGE" : (f.typeLabel || "QUESTION"),
+                      }))}
+                      className={`flex-1 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${assignmentForm.assignmentType === opt.value ? "bg-[#dc2626] text-white border-[#dc2626]" : "bg-[#1a1a1a] text-[#606060] border-[#2a2a2a] hover:text-white"}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>{assignmentForm.assignmentType === "image_upload" ? "Instructions (optional)" : "Question Text"}</label>
+                <textarea value={assignmentForm.questionText} onChange={e => setAssignmentForm(f => ({ ...f, questionText: e.target.value }))} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 <div><label className={labelCls}>Type Label</label><input value={assignmentForm.typeLabel} onChange={e => setAssignmentForm(f => ({ ...f, typeLabel: e.target.value }))} placeholder="e.g. QUESTION" className={inputCls} /></div>
                 <div>
@@ -2004,7 +2030,7 @@ function SubmissionsList({ assignmentId }: { assignmentId: string }) {
                   {s.submittedAt ? format(new Date(s.submittedAt), "dd MMM yyyy HH:mm") : "—"}
                 </td>
                 <td className="px-5 py-3">
-                  {s.answer || s.fileUrl ? (
+                  {s.answerText || s.imageUrl ? (
                     <button
                       onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
                       className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-rajdhani font-bold uppercase tracking-widest transition-colors"
@@ -2019,11 +2045,14 @@ function SubmissionsList({ assignmentId }: { assignmentId: string }) {
               {expandedId === s.id && (
                 <tr key={`${s.id}-expand`} className="bg-[#0d0d0d]">
                   <td colSpan={3} className="px-5 py-3">
-                    {s.answer && <p className="text-[13px] text-[#c0c0c0] leading-relaxed whitespace-pre-wrap">{s.answer}</p>}
-                    {s.fileUrl && (
-                      <a href={s.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] text-blue-400 hover:underline mt-1">
-                        <FileText size={12} /> View attachment
-                      </a>
+                    {s.answerText && <p className="text-[13px] text-[#c0c0c0] leading-relaxed whitespace-pre-wrap">{s.answerText}</p>}
+                    {s.imageUrl && (
+                      <div className="space-y-2">
+                        <img src={s.imageUrl} alt="Submission" className="max-h-60 max-w-full rounded-lg object-contain" />
+                        <a href={s.imageUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:underline">
+                          <FileText size={11} /> Open full image
+                        </a>
+                      </div>
                     )}
                   </td>
                 </tr>

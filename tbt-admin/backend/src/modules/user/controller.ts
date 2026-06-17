@@ -2055,6 +2055,7 @@ export async function getWorkshopAssignmentsHandler(request: FastifyRequest, rep
                   select: {
                     id: true,
                     answerText: true,
+                    imageUrl: true,
                     submittedAt: true,
                     completedIconType: true,
                     yourAnswerLabel: true,
@@ -2085,6 +2086,8 @@ export async function getWorkshopAssignmentsHandler(request: FastifyRequest, rep
         return {
           id: a.id,
           title: a.title,
+          assignmentType: a.assignmentType ?? 'qa',
+          questionText: a.questionText ?? null,
           typeLabel: a.typeLabel,
           iconType: a.iconType,
           ctaLabel,
@@ -2094,7 +2097,8 @@ export async function getWorkshopAssignmentsHandler(request: FastifyRequest, rep
             ? {
                 isSubmitted: true,
                 submittedAt: sub.submittedAt,
-                answerText: sub.answerText,
+                answerText: sub.answerText ?? null,
+                imageUrl: sub.imageUrl ?? null,
                 completedIcon: sub.completedIconType,
                 yourAnswerLabel: sub.yourAnswerLabel,
                 backLabel: sub.backLabel,
@@ -2108,20 +2112,34 @@ export async function getWorkshopAssignmentsHandler(request: FastifyRequest, rep
 
 export async function submitAssignmentHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: assignmentId } = request.params as { id: string };
-  const { answerText } = request.body as { answerText: string };
-
-  if (!answerText?.trim()) return fail(reply, 400, 'Answer text is required');
+  const { answerText, imageUrl } = request.body as { answerText?: string; imageUrl?: string };
 
   const assignment = await request.server.prisma.assignment.findUnique({
     where: { id: assignmentId },
   });
   if (!assignment) return fail(reply, 404, 'Assignment not found');
 
+  const isImageUpload = (assignment as any).assignmentType === 'image_upload';
+  if (isImageUpload) {
+    if (!imageUrl?.trim()) return fail(reply, 400, 'Image URL is required');
+  } else {
+    if (!answerText?.trim()) return fail(reply, 400, 'Answer text is required');
+  }
+
   const submission = await request.server.prisma.assignmentSubmission.upsert({
     where: { assignmentId_memberId: { assignmentId, memberId: request.memberId } },
-    create: { assignmentId, memberId: request.memberId, answerText: answerText.trim() },
-    update: { answerText: answerText.trim(), submittedAt: new Date() },
-    select: { id: true, answerText: true, submittedAt: true },
+    create: {
+      assignmentId,
+      memberId: request.memberId,
+      answerText: isImageUpload ? null : answerText!.trim(),
+      imageUrl: isImageUpload ? imageUrl!.trim() : null,
+    },
+    update: {
+      answerText: isImageUpload ? null : answerText!.trim(),
+      imageUrl: isImageUpload ? imageUrl!.trim() : null,
+      submittedAt: new Date(),
+    },
+    select: { id: true, answerText: true, imageUrl: true, submittedAt: true },
   });
 
   void Promise.all([
@@ -2736,6 +2754,35 @@ export async function avatarPresignHandler(request: FastifyRequest, reply: Fasti
       const { data, error } = await (request.server as any).supabase.storage.from('avatars').createSignedUploadUrl(key);
       if (error) throw error;
       const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/avatars/${key}`;
+      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
+    } catch (err: any) {
+      return fail(reply, 500, err.message || 'Failed to generate upload URL');
+    }
+  }
+
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID!, secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY! },
+  });
+  const command = new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, ContentType: contentType });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+  const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+  return ok(reply, { uploadUrl, publicUrl });
+}
+
+export async function assignmentImagePresignHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { filename, contentType } = request.body as { filename: string; contentType: string };
+  if (!filename || !contentType) return fail(reply, 400, 'filename and contentType are required');
+  if (!contentType.startsWith('image/')) return fail(reply, 400, 'Only image uploads allowed');
+
+  const key = `assignment-submissions/${Date.now()}-${filename}`;
+
+  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
+    try {
+      const { data, error } = await (request.server as any).supabase.storage.from('workshops').createSignedUploadUrl(key);
+      if (error) throw error;
+      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/workshops/${key}`;
       return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
     } catch (err: any) {
       return fail(reply, 500, err.message || 'Failed to generate upload URL');
