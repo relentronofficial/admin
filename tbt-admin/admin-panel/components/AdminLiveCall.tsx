@@ -14,7 +14,7 @@ import { DisconnectReason, Track } from "livekit-client";
 import {
   PhoneOff, Users, Clock, CheckCircle2, MessageSquare,
   BarChart2, MicOff, XCircle, Lock, Unlock, Disc, StopCircle,
-  Bell, Plus, X, Send,
+  Bell, Plus, X, Send, HelpCircle, Check, EyeOff,
 } from "lucide-react";
 import { getAdminSocket } from "@/lib/socket/client";
 import {
@@ -30,7 +30,10 @@ import {
   useClosePoll,
   useGetAdminPolls,
   useSendReminders,
+  useGetAdminLiveCallQuestions,
+  useUpdateLiveCallQuestion,
 } from "@/lib/hooks/useTbt";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -360,6 +363,89 @@ function HandsPanel({ liveCallId, hands, onClear, onClose }: {
   );
 }
 
+// ── Q&A moderation panel ──────────────────────────────────────────────────────
+
+function AdminQaPanel({ liveCallId, onClose }: { liveCallId: string; onClose: () => void }) {
+  const { data: questions = [], refetch } = useGetAdminLiveCallQuestions(liveCallId, true);
+  const updateQuestion = useUpdateLiveCallQuestion();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    let socket: Awaited<ReturnType<typeof getAdminSocket>> | null = null;
+    let mounted = true;
+    const onNew = (data: any) => {
+      if (data.liveCallId === liveCallId) qc.invalidateQueries({ queryKey: ['admin-live-call-questions', liveCallId] });
+    };
+    getAdminSocket().then((s) => {
+      if (!mounted) return;
+      socket = s;
+      s.on('live_call:question_new', onNew);
+    });
+    return () => {
+      mounted = false;
+      if (socket) socket.off('live_call:question_new', onNew);
+    };
+  }, [liveCallId, qc]);
+
+  const visible = questions.filter(q => !q.isHidden);
+  const unanswered = visible.filter(q => !q.isAnswered);
+  const answered = visible.filter(q => q.isAnswered);
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#181818" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <span className="text-xs font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#a0a0a0" }}>
+          Q&amp;A ({unanswered.length} pending)
+        </span>
+        <button onClick={onClose} className="p-1 rounded hover:bg-[#2a2a2a]"><X size={13} style={{ color: "#606060" }} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5" style={{ minHeight: 0 }}>
+        {visible.length === 0 && (
+          <p className="text-center text-xs mt-8" style={{ color: "#606060" }}>No questions yet.</p>
+        )}
+        {unanswered.map(q => (
+          <div key={q.id} className="rounded-xl p-3 space-y-2" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
+            <p className="text-xs font-semibold" style={{ color: "#f59e0b" }}>
+              {[q.member.firstName, q.member.lastName].filter(Boolean).join(' ') || 'Member'}
+            </p>
+            <p className="text-sm" style={{ color: "#f0f0f0" }}>{q.question}</p>
+            <div className="flex gap-1.5 pt-0.5">
+              <button
+                onClick={() => updateQuestion.mutate({ lcid: liveCallId, qid: q.id, isAnswered: true })}
+                disabled={updateQuestion.isPending}
+                className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold disabled:opacity-40"
+                style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)" }}
+              >
+                <Check size={10} /> Mark Answered
+              </button>
+              <button
+                onClick={() => updateQuestion.mutate({ lcid: liveCallId, qid: q.id, isHidden: true })}
+                disabled={updateQuestion.isPending}
+                className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold disabled:opacity-40"
+                style={{ background: "rgba(96,96,96,0.12)", color: "#606060", border: "1px solid rgba(96,96,96,0.3)" }}
+              >
+                <EyeOff size={10} /> Hide
+              </button>
+            </div>
+          </div>
+        ))}
+        {answered.length > 0 && (
+          <p className="text-[10px] uppercase tracking-widest font-rajdhani font-bold px-1 pt-2" style={{ color: "#444" }}>Answered</p>
+        )}
+        {answered.map(q => (
+          <div key={q.id} className="rounded-xl p-3 space-y-1" style={{ background: "#141414", border: "1px solid #222", opacity: 0.6 }}>
+            <p className="text-xs font-semibold" style={{ color: "#606060" }}>
+              {[q.member.firstName, q.member.lastName].filter(Boolean).join(' ') || 'Member'}
+            </p>
+            <p className="text-sm" style={{ color: "#a0a0a0" }}>{q.question}</p>
+            <p className="text-[10px] flex items-center gap-1" style={{ color: "#22c55e" }}><Check size={9} /> Answered</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main AdminLiveCall ────────────────────────────────────────────────────────
 
 interface AdminLiveCallProps {
@@ -371,7 +457,7 @@ interface AdminLiveCallProps {
   onLeave: () => void;
 }
 
-type SidePanel = "participants" | "polls" | "chat" | "hands" | null;
+type SidePanel = "participants" | "polls" | "chat" | "hands" | "qa" | null;
 
 export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: AdminLiveCallProps) {
   const [stage, setStage] = useState<"pre" | "live" | "summary">("pre");
@@ -607,6 +693,9 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
           >
             <span className="text-sm leading-none">✋</span>
           </CtrlBtn>
+          <CtrlBtn onClick={() => togglePanel("qa")} label="Q&A" active={sidePanel === "qa"}>
+            <HelpCircle size={12} />
+          </CtrlBtn>
 
           <div style={{ width: 1, height: 20, background: "#2a2a2a", margin: "0 6px" }} />
 
@@ -666,6 +755,9 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
                     onClear={clearHand}
                     onClose={() => setSidePanel(null)}
                   />
+                )}
+                {sidePanel === "qa" && (
+                  <AdminQaPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
                 )}
               </div>
             )}

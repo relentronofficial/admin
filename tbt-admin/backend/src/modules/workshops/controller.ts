@@ -1030,6 +1030,32 @@ Write bullet points only. Be concise and practical.`;
   }
 }
 
+// ── LIVE CALL Q&A (admin) ──────────────────────────────────────────────────────
+
+export async function listLiveCallQuestionsAdminHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const questions = await req.server.prisma.liveCallQuestion.findMany({
+    where: { liveCallId: lcid },
+    include: { member: { select: { id: true, firstName: true, lastName: true, memberId: true } } },
+    orderBy: [{ isAnswered: 'asc' }, { submittedAt: 'asc' }],
+  });
+  return reply.send({ success: true, data: questions, error: null });
+}
+
+export async function updateLiveCallQuestionHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid, qid } = req.params as any;
+  const { isAnswered, isHidden } = req.body as any;
+  const data: any = {};
+  if (typeof isAnswered === 'boolean') {
+    data.isAnswered = isAnswered;
+    data.answeredAt = isAnswered ? new Date() : null;
+  }
+  if (typeof isHidden === 'boolean') data.isHidden = isHidden;
+  const question = await req.server.prisma.liveCallQuestion.update({ where: { id: qid }, data });
+  req.server.io.to('admin').emit('live_call:question_answered', { questionId: qid, liveCallId: lcid, isAnswered: question.isAnswered });
+  return reply.send({ success: true, data: question, error: null });
+}
+
 export async function createAssignmentHandler(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as any;
   const assignment = await req.server.prisma.assignment.create({

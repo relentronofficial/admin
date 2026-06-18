@@ -12,10 +12,11 @@ import {
 import { DisconnectReason } from "livekit-client";
 import {
   PhoneOff, Users, Clock, MessageSquare, BarChart2,
-  Smile, Settings, Disc,
+  Smile, Settings, Disc, HelpCircle, Send, CheckCircle2,
 } from "lucide-react";
 import { getServerNow } from "@/lib/api/client";
 import { getSocket } from "@/lib/socket/client";
+import { useGetLiveCallQuestions, usePostLiveCallQuestion } from "@/lib/hooks/useConfig";
 import { ChatPanel } from "./ChatPanel";
 import { ParticipantListPanel } from "./ParticipantListPanel";
 import { EmojiReactionOverlay } from "./EmojiReactionOverlay";
@@ -38,7 +39,7 @@ interface WorkshopLiveCallProps {
   onAdmitted?: (newToken: string) => void;
 }
 
-type SidePanel = "chat" | "participants" | "polls" | null;
+type SidePanel = "chat" | "participants" | "polls" | "qa" | null;
 
 // Headless — syncs LiveKit hook state into parent
 function RoomSyncLayer({ onRecording }: { onRecording: (v: boolean) => void }) {
@@ -61,6 +62,77 @@ function WaitingForHostOverlay() {
       </div>
       <p className="text-white font-semibold text-sm">Waiting for the host to join…</p>
       <p className="text-xs" style={{ color: "#a0a0a0" }}>The session will begin when the host enters the room.</p>
+    </div>
+  );
+}
+
+// ── Member Q&A panel ──────────────────────────────────────────────────────────
+
+function MemberQaPanel({ liveCallId, onClose }: { liveCallId: string; onClose: () => void }) {
+  const { data: questions = [] } = useGetLiveCallQuestions(liveCallId, true);
+  const postQuestion = usePostLiveCallQuestion();
+  const [text, setText] = useState("");
+
+  const handleSubmit = async () => {
+    const q = text.trim();
+    if (!q || postQuestion.isPending) return;
+    await postQuestion.mutateAsync({ liveCallId, question: q });
+    setText("");
+  };
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#141414" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#a0a0a0", fontFamily: "Rajdhani, sans-serif" }}>Q&amp;A</span>
+        <button onClick={onClose} className="p-1 rounded" style={{ color: "#606060" }}>✕</button>
+      </div>
+
+      {/* Submit input */}
+      <div className="shrink-0 px-3 py-2.5" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+            style={{ background: "#222", border: "1px solid #333", color: "#f0f0f0" }}
+            placeholder="Ask a question…"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={!text.trim() || postQuestion.isPending}
+            className="p-2 rounded-lg shrink-0 disabled:opacity-40"
+            style={{ background: text.trim() ? "var(--color-accent)" : "#2a2a2a", color: "#fff" }}
+          >
+            <Send size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5" style={{ minHeight: 0 }}>
+        {questions.length === 0 && (
+          <p className="text-center text-xs mt-8" style={{ color: "#606060" }}>No questions yet. Be the first!</p>
+        )}
+        {questions.map(q => (
+          <div
+            key={q.id}
+            className="rounded-xl p-3 space-y-1.5"
+            style={{ background: q.isAnswered ? "#0f2318" : "#1a1a1a", border: `1px solid ${q.isAnswered ? "rgba(34,197,94,0.2)" : "#2a2a2a"}` }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold" style={{ color: q.isOwn ? "var(--color-accent)" : "#606060" }}>
+                {q.isOwn ? "You" : q.memberName}
+              </p>
+              {q.isAnswered && (
+                <span className="flex items-center gap-0.5 text-[10px] font-bold" style={{ color: "#22c55e" }}>
+                  <CheckCircle2 size={9} /> Answered
+                </span>
+              )}
+            </div>
+            <p className="text-sm" style={{ color: q.isAnswered ? "#a0a0a0" : "#f0f0f0" }}>{q.question}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -271,6 +343,14 @@ export function WorkshopLiveCall({
             onClick={toggleHand}
           />
         )}
+        {liveCallId && (
+          <TopBarBtn
+            icon={<HelpCircle size={13} />}
+            label="Q&A"
+            active={sidePanel === "qa"}
+            onClick={() => togglePanel("qa")}
+          />
+        )}
 
         <div style={{ width: 1, height: 20, background: "#2a2a2a", margin: "0 4px" }} />
 
@@ -344,6 +424,9 @@ export function WorkshopLiveCall({
               {sidePanel === "participants" && <ParticipantListPanel onClose={() => setSidePanel(null)} />}
               {sidePanel === "polls" && liveCallId && (
                 <PollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+              )}
+              {sidePanel === "qa" && liveCallId && (
+                <MemberQaPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
               )}
             </div>
           )}

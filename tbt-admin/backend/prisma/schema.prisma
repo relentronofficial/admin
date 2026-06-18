@@ -317,6 +317,7 @@ model Member {
   liveCallPollVotes     LiveCallPollVote[]
   productInquiries      ProductInquiry[]
   liveCallRsvps         LiveCallRsvp[]
+  liveCallQuestions     LiveCallQuestion[]
 
   @@map("members")
 }
@@ -1601,6 +1602,7 @@ model LiveCall {
   polls                       LiveCallPoll[]
   rsvps                       LiveCallRsvp[]
   resources                   LiveCallResource[]
+  questions                   LiveCallQuestion[]
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1630,6 +1632,21 @@ model LiveCallRsvp {
 
   @@unique([liveCallId, memberId])
   @@map("live_call_rsvps")
+}
+
+model LiveCallQuestion {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId  String    @map("live_call_id") @db.Uuid
+  memberId    String    @map("member_id") @db.Uuid
+  question    String
+  isAnswered  Boolean   @default(false) @map("is_answered")
+  answeredAt  DateTime? @map("answered_at") @db.Timestamptz(6)
+  isHidden    Boolean   @default(false) @map("is_hidden")
+  submittedAt DateTime  @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  liveCall    LiveCall  @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+  member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("live_call_questions")
 }
 
 model LiveCallAttendance {

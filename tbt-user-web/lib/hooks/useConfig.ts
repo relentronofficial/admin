@@ -350,3 +350,33 @@ export const useUpsertRsvp = () => {
     },
   });
 };
+
+// ── Live Call Q&A (user) ──────────────────────────────────────────────────────
+
+export const useGetLiveCallQuestions = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["live-call-questions", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshop/live-calls/${liveCallId}/questions`);
+      return (res?.data ?? []) as Array<{
+        id: string; question: string; isAnswered: boolean;
+        answeredAt: string | null; submittedAt: string;
+        memberName: string; isOwn: boolean;
+      }>;
+    },
+    enabled: !!liveCallId && enabled,
+    refetchInterval: 8_000,
+  });
+
+export const usePostLiveCallQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ liveCallId, question }: { liveCallId: string; question: string }) => {
+      const res: any = await apiClient.post(`/api/user/workshop/live-calls/${liveCallId}/questions`, { question });
+      return res?.data;
+    },
+    onSuccess: (_data, { liveCallId }) => {
+      qc.invalidateQueries({ queryKey: ["live-call-questions", liveCallId] });
+    },
+  });
+};

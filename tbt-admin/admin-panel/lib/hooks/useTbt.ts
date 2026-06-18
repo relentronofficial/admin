@@ -970,3 +970,30 @@ export const useSummarizeLiveCall = () => {
     onSuccess: (_data, lcid) => qc.invalidateQueries({ queryKey: ['live-calls', lcid] }),
   });
 };
+
+// ── Live Call Q&A (admin) ─────────────────────────────────────────────────────
+
+export const useGetAdminLiveCallQuestions = (lcid: string, enabled = true) =>
+  useQuery({
+    queryKey: ['admin-live-call-questions', lcid],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${lcid}/questions`);
+      return (res.data ?? []) as Array<{
+        id: string; question: string; isAnswered: boolean; isHidden: boolean;
+        answeredAt: string | null; submittedAt: string;
+        member: { id: string; firstName: string | null; lastName: string | null; memberId: string };
+      }>;
+    },
+    enabled: !!lcid && enabled,
+  });
+
+export const useUpdateLiveCallQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, qid, isAnswered, isHidden }: { lcid: string; qid: string; isAnswered?: boolean; isHidden?: boolean }) => {
+      const res: any = await apiClient.put(`/api/workshops/live-calls/${lcid}/questions/${qid}`, { isAnswered, isHidden });
+      return res.data;
+    },
+    onSuccess: (_data, { lcid }) => qc.invalidateQueries({ queryKey: ['admin-live-call-questions', lcid] }),
+  });
+};

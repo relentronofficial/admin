@@ -1157,6 +1157,48 @@ export async function getRsvpStatusHandler(request: FastifyRequest, reply: Fasti
   return ok(reply, rsvp ?? null);
 }
 
+// ─── Live Call Q&A (user) ─────────────────────────────────────────────────────
+
+export async function postLiveCallQuestionHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const { question } = request.body as { question: string };
+  if (!question?.trim()) return fail(reply, 400, 'question is required');
+
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: request.memberId },
+    select: { firstName: true, lastName: true },
+  });
+  const memberName = [member?.firstName, member?.lastName].filter(Boolean).join(' ') || 'Member';
+
+  const q = await request.server.prisma.liveCallQuestion.create({
+    data: { liveCallId, memberId: request.memberId, question: question.trim() },
+  });
+
+  request.server.io.to('admin').emit('live_call:question_new', {
+    liveCallId, questionId: q.id, question: q.question, memberName,
+  });
+
+  return ok(reply, q);
+}
+
+export async function getLiveCallQuestionsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const questions = await request.server.prisma.liveCallQuestion.findMany({
+    where: { liveCallId, isHidden: false },
+    include: { member: { select: { firstName: true, lastName: true } } },
+    orderBy: [{ isAnswered: 'asc' }, { submittedAt: 'asc' }],
+  });
+  return ok(reply, questions.map(q => ({
+    id: q.id,
+    question: q.question,
+    isAnswered: q.isAnswered,
+    answeredAt: q.answeredAt,
+    submittedAt: q.submittedAt,
+    memberName: [q.member.firstName, q.member.lastName].filter(Boolean).join(' ') || 'Member',
+    isOwn: q.memberId === request.memberId,
+  })));
+}
+
 // ─── Polls (user) ─────────────────────────────────────────────────────────────
 
 export async function getUserPollsHandler(request: FastifyRequest, reply: FastifyReply) {
