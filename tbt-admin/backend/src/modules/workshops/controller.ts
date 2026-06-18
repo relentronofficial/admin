@@ -866,6 +866,103 @@ export async function listAssignmentsHandler(req: FastifyRequest, reply: Fastify
   return reply.send({ success: true, data: challenges, error: null });
 }
 
+// ── LIVE CALL ANALYTICS ────────────────────────────────────────────────
+
+export async function getLiveCallAnalyticsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const [lc, attendance, polls] = await Promise.all([
+    req.server.prisma.liveCall.findUnique({ where: { id: lcid } }),
+    req.server.prisma.liveCallAttendance.findMany({ where: { liveCallId: lcid } }),
+    req.server.prisma.liveCallPoll.findMany({
+      where: { liveCallId: lcid },
+      include: { options: { include: { votes: true } } },
+    }),
+  ]);
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Not found' } });
+
+  const durations = attendance.map(a => a.durationSec ?? 0).filter(d => d > 0);
+  const totalDuration = lc.endedAt && lc.startedAt
+    ? Math.round((new Date(lc.endedAt).getTime() - new Date(lc.startedAt).getTime()) / 1000)
+    : null;
+
+  return reply.send({
+    success: true,
+    data: {
+      totalAttendees: attendance.length,
+      avgStaySeconds: durations.length
+        ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+        : 0,
+      sessionDurationSeconds: totalDuration,
+      pollParticipation: polls.length
+        ? Math.round(polls.reduce((sum, p) => sum + p.options.reduce((s, o) => s + o.votes.length, 0), 0) / polls.length)
+        : 0,
+      polls: polls.map(p => ({
+        question: p.question,
+        totalVotes: p.options.reduce((s, o) => s + o.votes.length, 0),
+        options: p.options
+          .map(o => ({ text: o.optionText, votes: o.votes.length }))
+          .sort((a, b) => b.votes - a.votes),
+      })),
+    },
+    error: null,
+  });
+}
+
+// ── AI SUMMARY ─────────────────────────────────────────────────────────
+
+export async function summarizeLiveCallHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { env } = await import('../../config/env.js');
+  if (!env.ANTHROPIC_API_KEY) {
+    return reply.status(503).send({ success: false, data: null, error: { code: 'NO_API_KEY', message: 'ANTHROPIC_API_KEY not configured' } });
+  }
+  await generateLiveCallSummary(req.server.prisma, lcid);
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function generateLiveCallSummary(prisma: any, liveCallId: string) {
+  const { env } = await import('../../config/env.js');
+  if (!env.ANTHROPIC_API_KEY) return;
+
+  const lc = await prisma.liveCall.findUnique({
+    where: { id: liveCallId },
+    include: {
+      attendance: true,
+      polls: { include: { options: { include: { votes: true } } } },
+    },
+  });
+  if (!lc) return;
+
+  const attendanceCount = lc.attendance.length;
+  const avgDuration = lc.attendance.reduce((a: number, r: any) => a + (r.durationSec ?? 0), 0) / (attendanceCount || 1);
+  const pollSummary = lc.polls.map((p: any) => {
+    const winner = [...p.options].sort((a: any, b: any) => b.votes.length - a.votes.length)[0];
+    return `Poll: "${p.question}" — top answer: "${winner?.optionText}" (${winner?.votes.length} votes)`;
+  }).join('\n');
+
+  const prompt = `Summarize this live session in 3-5 bullet points for members who missed it.
+Title: ${lc.title}
+Attendees: ${attendanceCount}, avg stay: ${Math.round(avgDuration / 60)} min
+${pollSummary || '(no poll data)'}
+Write bullet points only. Be concise and practical.`;
+
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+    const message = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const summary = (message.content[0] as any)?.text ?? '';
+    if (summary) {
+      await prisma.liveCall.update({ where: { id: liveCallId }, data: { aiSummary: summary } });
+    }
+  } catch {
+    // Non-fatal — summary generation is best-effort
+  }
+}
+
 export async function createAssignmentHandler(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as any;
   const assignment = await req.server.prisma.assignment.create({

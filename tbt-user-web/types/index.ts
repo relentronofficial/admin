@@ -421,6 +421,7 @@ export interface WorkshopFlowItem {
   countdownConfig?: { stayTunedMessage: string; stayTunedColor: string } | null;
   externalMeetingUrl?: string | null;
   externalMeetingProvider?: string | null;
+  aiSummary?: string | null;
 }
 
 // ─── Workshop Detail ──────────────────────────────────────────────────────────

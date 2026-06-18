@@ -2748,6 +2748,15 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
               {challenge.recordingLabel ?? "Missed it? View the recording."}
             </a>
           )}
+          {challenge.aiSummary && (
+            <div
+              className="rounded-xl border p-4 text-left space-y-2"
+              style={{ borderColor: "#333", background: "#0d0d0d" }}
+            >
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#606060" }}>AI Session Summary</p>
+              <p className="text-xs leading-relaxed italic whitespace-pre-line" style={{ color: "#a0a0a0" }}>{challenge.aiSummary}</p>
+            </div>
+          )}
         </div>
       ) : (
         <div

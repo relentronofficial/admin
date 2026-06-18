@@ -1892,6 +1892,7 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
           isCompleted: status === 'past',
           externalMeetingUrl: isUnlocked ? (lc.externalMeetingUrl ?? null) : null,
           externalMeetingProvider: lc.externalMeetingProvider ?? null,
+          aiSummary: status === 'past' ? (lc.aiSummary ?? null) : null,
         };
       }
 
@@ -2924,6 +2925,7 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
         submission: null,
         externalMeetingUrl: isUnlocked ? (lc.externalMeetingUrl ?? null) : null,
         externalMeetingProvider: lc.externalMeetingProvider ?? null,
+        aiSummary: isPast ? (lc.aiSummary ?? null) : null,
       };
     }
 
@@ -3146,6 +3148,7 @@ async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promi
           facilitatorDescription: lc.facilitatorDescription ?? null,
           countdownConfig: status === 'upcoming' ? { stayTunedMessage: lc.stayTunedMessage, stayTunedColor: lc.stayTunedColor } : null,
           isCompleted: status === 'past',
+          aiSummary: status === 'past' ? (lc.aiSummary ?? null) : null,
         };
       }
       return { id: item.id, order: item.order, type: item.type, label: item.label ?? null, description: item.description ?? null, isCompleted: item.isCompleted, isExpanded: false };

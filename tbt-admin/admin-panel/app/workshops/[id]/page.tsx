@@ -26,7 +26,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
-import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations } from "@/lib/hooks/useTbt";
+import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall } from "@/lib/hooks/useTbt";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -118,6 +118,107 @@ function LiveCallStatusPill({ lcId }: { lcId: string }) {
       <span className="w-1.5 h-1.5 rounded-full bg-[#dc2626]" />
       LIVE · {data.participantCount}
     </span>
+  );
+}
+
+function fmtDuration(sec: number | null) {
+  if (!sec || sec <= 0) return "—";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m ${s}s`;
+}
+
+function AnalyticsRow({ lcId, lc }: { lcId: string; lc: any }) {
+  const [open, setOpen] = useState(false);
+  const summarize = useSummarizeLiveCall();
+  const { data, isLoading } = useLiveCallAnalytics(lcId, open);
+
+  const borderTop = "1px solid #1a1a1a";
+
+  return (
+    <div style={{ borderTop }}>
+      {/* Analytics toggle */}
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="w-full text-left px-6 py-2 text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors"
+          style={{ color: "#444" }}
+        >
+          View Analytics
+        </button>
+      ) : (
+        <div>
+          <div className="px-6 py-3 flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#606060" }}>
+              Analytics
+            </span>
+            <button onClick={() => setOpen(false)} className="text-[10px]" style={{ color: "#444" }}>Hide</button>
+          </div>
+          {isLoading ? (
+            <p className="px-6 pb-3 text-xs" style={{ color: "#444" }}>Loading…</p>
+          ) : data ? (
+            <div className="px-6 pb-4 space-y-3">
+              {/* Stats row */}
+              <div className="flex gap-6 flex-wrap text-xs" style={{ color: "#a0a0a0" }}>
+                <div><span style={{ color: "#606060" }}>Attendees:</span> <span className="font-semibold text-[#f0f0f0]">{data.totalAttendees}</span></div>
+                <div><span style={{ color: "#606060" }}>Avg stay:</span> <span className="font-semibold text-[#f0f0f0]">{fmtDuration(data.avgStaySeconds)}</span></div>
+                <div><span style={{ color: "#606060" }}>Session length:</span> <span className="font-semibold text-[#f0f0f0]">{fmtDuration(data.sessionDurationSeconds)}</span></div>
+                <div><span style={{ color: "#606060" }}>Poll avg votes:</span> <span className="font-semibold text-[#f0f0f0]">{data.pollParticipation}</span></div>
+              </div>
+              {/* Per-poll breakdown */}
+              {data.polls.map((poll, i) => (
+                <div key={i} className="rounded-lg p-3 space-y-2" style={{ background: "#111" }}>
+                  <p className="text-[11px] font-semibold" style={{ color: "#f0f0f0" }}>{poll.question}</p>
+                  {poll.options.map((opt, j) => {
+                    const pct = poll.totalVotes > 0 ? Math.round((opt.votes / poll.totalVotes) * 100) : 0;
+                    return (
+                      <div key={j}>
+                        <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "#a0a0a0" }}>
+                          <span>{opt.text}</span>
+                          <span>{opt.votes} ({pct}%)</span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1a1a1a" }}>
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#dc2626" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* AI Summary section */}
+      <div style={{ borderTop }}>
+        {lc.aiSummary ? (
+          <div className="px-6 py-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#606060" }}>AI Summary</span>
+              <button
+                onClick={() => summarize.mutate(lcId)}
+                disabled={summarize.isPending}
+                className="text-[10px] font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40"
+                style={{ color: "#444" }}
+              >
+                {summarize.isPending ? "Generating…" : "Regenerate"}
+              </button>
+            </div>
+            <p className="text-xs italic leading-relaxed whitespace-pre-line" style={{ color: "#a0a0a0" }}>{lc.aiSummary}</p>
+          </div>
+        ) : (
+          <button
+            onClick={() => summarize.mutate(lcId)}
+            disabled={summarize.isPending}
+            className="w-full text-left px-6 py-2 text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors disabled:opacity-40"
+            style={{ color: "#444" }}
+          >
+            {summarize.isPending ? "Generating AI Summary…" : "Generate AI Summary"}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1133,6 +1234,7 @@ export default function WorkshopDetailPage() {
                     </div>
                   </div>
                   <AttendanceRow lcId={lc.id} />
+                  <AnalyticsRow lcId={lc.id} lc={lc} />
                   </div>
                 ))}
               </div>

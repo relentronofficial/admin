@@ -13,6 +13,7 @@ import {
   createPollHandler, closePollHandler, getPollsHandler,
   getAttendanceHandler,
   sendRemindersHandler,
+  getLiveCallAnalyticsHandler, summarizeLiveCallHandler,
   listAssignmentsHandler, createAssignmentHandler, updateAssignmentHandler, deleteAssignmentHandler,
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
@@ -77,6 +78,10 @@ export async function workshopRoutes(fastify: FastifyInstance) {
 
   // Attendance
   fastify.get('/live-calls/:lcid/attendance', getAttendanceHandler);
+
+  // Analytics & AI summary
+  fastify.get('/live-calls/:lcid/analytics', getLiveCallAnalyticsHandler);
+  fastify.post('/live-calls/:lcid/summarize', summarizeLiveCallHandler);
 
   // Reminders
   fastify.post('/live-calls/:lcid/reminders', sendRemindersHandler);

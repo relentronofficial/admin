@@ -868,3 +868,33 @@ export const useSyncEpisodeDurations = () =>
       return res.data as { total: number; updated: number };
     },
   });
+
+// ── Live Call Analytics ────────────────────────────────────────────────────────
+
+export const useLiveCallAnalytics = (lcid: string, enabled = true) =>
+  useQuery({
+    queryKey: ['live-call-analytics', lcid],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${lcid}/analytics`);
+      return res.data as {
+        totalAttendees: number;
+        avgStaySeconds: number;
+        sessionDurationSeconds: number | null;
+        pollParticipation: number;
+        polls: Array<{ question: string; totalVotes: number; options: Array<{ text: string; votes: number }> }>;
+      };
+    },
+    enabled: !!lcid && enabled,
+  });
+
+// ── AI Summary ─────────────────────────────────────────────────────────────────
+
+export const useSummarizeLiveCall = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (lcid: string) => {
+      await apiClient.post(`/api/workshops/live-calls/${lcid}/summarize`);
+    },
+    onSuccess: (_data, lcid) => qc.invalidateQueries({ queryKey: ['live-calls', lcid] }),
+  });
+};

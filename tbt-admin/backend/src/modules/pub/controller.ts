@@ -215,6 +215,10 @@ export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyR
         data: { recordingUrl: downloadUrl, egressId: null },
       }).catch(() => {});
     }
+    if (liveCallId && env.ANTHROPIC_API_KEY) {
+      const { generateLiveCallSummary } = await import('../workshops/controller.js');
+      void generateLiveCallSummary(req.server.prisma, liveCallId);
+    }
   }
 
   if (event.event === 'participant_joined') {
