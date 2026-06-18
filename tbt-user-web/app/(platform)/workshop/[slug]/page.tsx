@@ -24,6 +24,7 @@ import {
   ImageIcon,
   Upload,
   ExternalLink,
+  CalendarDays,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -114,6 +115,46 @@ function Countdown({
   );
 }
 
+// ─── Calendar helpers (pure, client-side only) ───────────────────────────────
+
+function calendarDateLabel(isoString: string): string {
+  return new Date(isoString).toLocaleString(undefined, {
+    month: "long", day: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit", timeZoneName: "short",
+  });
+}
+
+function googleCalendarUrl(title: string, isoString: string): string {
+  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  const start = new Date(isoString);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return (
+    "https://calendar.google.com/calendar/render?action=TEMPLATE" +
+    `&text=${encodeURIComponent(title)}` +
+    `&dates=${fmt(start)}/${fmt(end)}`
+  );
+}
+
+function downloadIcs(title: string, isoString: string): void {
+  const fmt = (d: Date) => d.toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
+  const start = new Date(isoString);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//TBT//Live Session//EN",
+    "BEGIN:VEVENT",
+    `DTSTART:${fmt(start)}`,
+    `DTEND:${fmt(end)}`,
+    `SUMMARY:${title}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "live-session.ics"; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Main Area: Live Call Countdown ──────────────────────────────────────────
 // Pure black background, centered layout, date label in teal, monospace digits.
 
@@ -165,9 +206,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
     [Math.floor((diff % 60000) / 1000), uiStrings?.countdownSecs ?? "SECS"],
   ] as [number, string][];
 
-  const dateLabel = new Date(item.scheduledAt)
-    .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
-    .toUpperCase();
+  const dateLabel = calendarDateLabel(item.scheduledAt);
 
   const inner = (
     <div
@@ -208,10 +247,34 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
         ))}
       </div>
 
-      {/* Date label — "JUNE 2, 2026" in teal small-caps */}
-      <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: teal }}>
+      {/* Date label — timezone-aware */}
+      <p className="text-xs font-semibold tracking-wide" style={{ color: teal }}>
         {dateLabel}
       </p>
+
+      {/* Add to Calendar — only before session starts */}
+      {item.status !== 'past' && item.title && (
+        <div className="flex items-center gap-3 -mt-3">
+          <a
+            href={googleCalendarUrl(item.title, item.scheduledAt!)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
+            style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+          >
+            <CalendarDays size={12} />
+            Google Calendar
+          </a>
+          <button
+            onClick={() => downloadIcs(item.title!, item.scheduledAt!)}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
+            style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+          >
+            <CalendarDays size={12} />
+            Download .ics
+          </button>
+        </div>
+      )}
 
       {/* Stay tuned message */}
       {item.countdownConfig.stayTunedMessage && (
@@ -2585,11 +2648,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
     [Math.floor((diff % 60000) / 1000), uiStrings?.countdownSecs ?? "SECS"],
   ] as [number, string][];
 
-  const dateLabel = challenge.scheduledAt
-    ? new Date(challenge.scheduledAt)
-        .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
-        .toUpperCase()
-    : null;
+  const dateLabel = challenge.scheduledAt ? calendarDateLabel(challenge.scheduledAt) : null;
 
   const handleJoin = async () => {
     if (!challenge.liveCallId) return;
@@ -2713,9 +2772,32 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                 ))}
               </div>
               {dateLabel && (
-                <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: teal }}>
+                <p className="text-xs font-semibold tracking-wide" style={{ color: teal }}>
                   {dateLabel}
                 </p>
+              )}
+              {/* Add to Calendar */}
+              {challenge.scheduledAt && challenge.title && (
+                <div className="flex items-center justify-center gap-3">
+                  <a
+                    href={googleCalendarUrl(challenge.title, challenge.scheduledAt)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
+                    style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+                  >
+                    <CalendarDays size={12} />
+                    Google Calendar
+                  </a>
+                  <button
+                    onClick={() => downloadIcs(challenge.title!, challenge.scheduledAt!)}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
+                    style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+                  >
+                    <CalendarDays size={12} />
+                    Download .ics
+                  </button>
+                </div>
               )}
               {challenge.stayTunedMessage && (
                 <p className="text-sm italic max-w-sm mx-auto" style={{ color: teal }}>
