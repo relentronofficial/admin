@@ -138,7 +138,7 @@ export default function CreateAdminPage() {
   const { data: managers, isLoading: isLoadingManagers } = useSearchManagers(managerSearch);
 
   useEffect(() => {
-    if (!isLoadingMe && me && me.role !== "SuperAdmin") {
+    if (!isLoadingMe && me && me.role !== "super_admin") {
       router.push("/dashboard");
     }
   }, [me, isLoadingMe, router]);
@@ -185,7 +185,7 @@ export default function CreateAdminPage() {
     }
   }, [cities, setValue, watchState, getValues]);
 
-  if (isLoadingMe || (me && me.role !== "SuperAdmin")) {
+  if (isLoadingMe || (me && me.role !== "super_admin")) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
