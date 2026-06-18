@@ -26,7 +26,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
-import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall, useLiveCallRsvps } from "@/lib/hooks/useTbt";
+import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall, useLiveCallRsvps, useListLiveCallResources, useCreateLiveCallResource, useUpdateLiveCallResource, useDeleteLiveCallResource, useReorderLiveCallResources } from "@/lib/hooks/useTbt";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -218,6 +218,152 @@ function AnalyticsRow({ lcId, lc }: { lcId: string; lc: any }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+const RESOURCE_ICONS: Record<string, string> = { link: "🔗", pdf: "📄", video: "🎬" };
+
+function LiveCallResourcesSection({ lcId }: { lcId: string }) {
+  const { data: resources = [], isLoading } = useListLiveCallResources(lcId, true);
+  const createRes = useCreateLiveCallResource();
+  const updateRes = useUpdateLiveCallResource();
+  const deleteRes = useDeleteLiveCallResource();
+  const reorderRes = useReorderLiveCallResources();
+  const [localItems, setLocalItems] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ title: "", url: "", type: "link" });
+  const [addForm, setAddForm] = useState({ title: "", url: "", type: "link" });
+  const [showAdd, setShowAdd] = useState(false);
+  const dragIdx = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  useEffect(() => { setLocalItems(resources); setIsDirty(false); }, [resources]);
+
+  const onDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const next = [...localItems];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalItems(next);
+    setIsDirty(true);
+    dragIdx.current = null;
+    setDragOver(null);
+  };
+
+  const labelCls2 = "block text-[10px] font-bold text-[#606060] uppercase tracking-widest mb-1 font-rajdhani";
+  const inputCls2 = "w-full bg-[#111] border border-[#333] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs";
+  const selectCls2 = "bg-[#111] border border-[#333] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs";
+
+  return (
+    <div className="px-6 pb-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Pre-Session Resources</p>
+        {isDirty && (
+          <button
+            onClick={() => reorderRes.mutate({ lcid: lcId, ids: localItems.map(r => r.id) })}
+            disabled={reorderRes.isPending}
+            className="text-[10px] font-bold uppercase tracking-widest font-rajdhani px-2 py-0.5 rounded disabled:opacity-40"
+            style={{ background: "rgba(220,38,38,0.15)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.3)" }}
+          >
+            {reorderRes.isPending ? "Saving…" : "Save Order"}
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-[#444]">Loading…</p>
+      ) : (
+        <div className="space-y-2">
+          {localItems.map((r, i) => (
+            <div
+              key={r.id}
+              draggable
+              onDragStart={() => { dragIdx.current = i; }}
+              onDragOver={e => { e.preventDefault(); setDragOver(i); }}
+              onDragLeave={() => setDragOver(null)}
+              onDrop={e => onDrop(e, i)}
+              className="rounded-lg p-2.5 flex gap-2 items-start cursor-grab"
+              style={{
+                background: dragOver === i ? "#1e1e1e" : "#111",
+                border: `1px solid ${dragOver === i ? "#333" : "#1e1e1e"}`,
+              }}
+            >
+              <span className="text-sm mt-0.5 select-none">{RESOURCE_ICONS[r.type] ?? "🔗"}</span>
+              {editingId === r.id ? (
+                <div className="flex-1 space-y-1.5">
+                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                    <input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} className={inputCls2} placeholder="Title" />
+                    <select value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))} className={selectCls2}>
+                      {["link", "pdf", "video"].map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <input value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} className={inputCls2} placeholder="URL" />
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setEditingId(null)} className="text-[10px] text-[#444] hover:text-white">Cancel</button>
+                    <button
+                      onClick={async () => {
+                        await updateRes.mutateAsync({ lcid: lcId, rid: r.id, title: editForm.title, url: editForm.url, type: editForm.type });
+                        setEditingId(null);
+                      }}
+                      className="text-[10px] font-bold text-[#dc2626] hover:text-red-400"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-[#f0f0f0] truncate">{r.title}</p>
+                  <p className="text-[10px] text-[#444] truncate">{r.url}</p>
+                </div>
+              )}
+              {editingId !== r.id && (
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => { setEditingId(r.id); setEditForm({ title: r.title, url: r.url, type: r.type }); }} className="p-1 text-[#444] hover:text-green-400"><Pencil size={11} /></button>
+                  <button onClick={() => deleteRes.mutate({ lcid: lcId, rid: r.id })} className="p-1 text-[#444] hover:text-red-400"><Trash2 size={11} /></button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAdd ? (
+        <div className="rounded-lg p-3 space-y-2" style={{ background: "#111", border: "1px solid #1e1e1e" }}>
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div><label className={labelCls2}>Title</label><input value={addForm.title} onChange={e => setAddForm(f => ({ ...f, title: e.target.value }))} className={inputCls2} placeholder="e.g. Session slides" /></div>
+            <div><label className={labelCls2}>Type</label><select value={addForm.type} onChange={e => setAddForm(f => ({ ...f, type: e.target.value }))} className={selectCls2}>{["link", "pdf", "video"].map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+          </div>
+          <div><label className={labelCls2}>URL</label><input value={addForm.url} onChange={e => setAddForm(f => ({ ...f, url: e.target.value }))} className={inputCls2} placeholder="https://…" /></div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowAdd(false); setAddForm({ title: "", url: "", type: "link" }); }} className="text-[10px] text-[#444] hover:text-white">Cancel</button>
+            <button
+              onClick={async () => {
+                if (!addForm.title || !addForm.url) return;
+                await createRes.mutateAsync({ lcid: lcId, title: addForm.title, url: addForm.url, type: addForm.type });
+                setAddForm({ title: "", url: "", type: "link" });
+                setShowAdd(false);
+              }}
+              disabled={createRes.isPending}
+              className="text-[10px] font-bold text-[#dc2626] hover:text-red-400 disabled:opacity-40"
+            >
+              {createRes.isPending ? "Adding…" : "Add Resource"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowAdd(true)}
+          className="text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors"
+          style={{ color: "#444" }}
+        >
+          + Add Resource
+        </button>
+      )}
     </div>
   );
 }
@@ -2045,6 +2191,14 @@ export default function WorkshopDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* Pre-Session Resources — only visible when editing an existing live call */}
+            {editingLiveCall && (
+              <>
+                <div style={{ borderTop: "1px solid #2a2a2a" }} />
+                <LiveCallResourcesSection lcId={editingLiveCall.id} />
+              </>
+            )}
 
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
               <button onClick={() => setShowLiveCallForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>

@@ -869,6 +869,62 @@ export const useSyncEpisodeDurations = () =>
     },
   });
 
+// ── Pre-Session Resources (admin) ─────────────────────────────────────────────
+
+export type LiveCallResource = { id: string; liveCallId: string; title: string; url: string; type: string; order: number };
+
+export const useListLiveCallResources = (lcid: string, enabled = true) =>
+  useQuery({
+    queryKey: ['live-call-resources', lcid],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${lcid}/resources`);
+      return res.data as LiveCallResource[];
+    },
+    enabled: !!lcid && enabled,
+  });
+
+export const useCreateLiveCallResource = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, title, url, type }: { lcid: string; title: string; url: string; type: string }) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${lcid}/resources`, { title, url, type });
+      return res.data as LiveCallResource;
+    },
+    onSuccess: (_d, { lcid }) => qc.invalidateQueries({ queryKey: ['live-call-resources', lcid] }),
+  });
+};
+
+export const useUpdateLiveCallResource = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, rid, ...fields }: { lcid: string; rid: string; title?: string; url?: string; type?: string }) => {
+      const res: any = await apiClient.put(`/api/workshops/live-calls/${lcid}/resources/${rid}`, fields);
+      return res.data as LiveCallResource;
+    },
+    onSuccess: (_d, { lcid }) => qc.invalidateQueries({ queryKey: ['live-call-resources', lcid] }),
+  });
+};
+
+export const useDeleteLiveCallResource = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, rid }: { lcid: string; rid: string }) => {
+      await apiClient.delete(`/api/workshops/live-calls/${lcid}/resources/${rid}`);
+    },
+    onSuccess: (_d, { lcid }) => qc.invalidateQueries({ queryKey: ['live-call-resources', lcid] }),
+  });
+};
+
+export const useReorderLiveCallResources = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, ids }: { lcid: string; ids: string[] }) => {
+      await apiClient.put(`/api/workshops/live-calls/${lcid}/resources/reorder`, { ids });
+    },
+    onSuccess: (_d, { lcid }) => qc.invalidateQueries({ queryKey: ['live-call-resources', lcid] }),
+  });
+};
+
 // ── Live Call RSVPs ────────────────────────────────────────────────────────────
 
 export const useLiveCallRsvps = (lcid: string, enabled = true) =>

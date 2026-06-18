@@ -44,6 +44,7 @@ import {
   useLiveCallStatus,
   useGetMyRsvp,
   useUpsertRsvp,
+  useGetLiveCallResources,
 } from "@/lib/hooks/useConfig";
 import { useMe } from "@/lib/hooks/useUser";
 import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
@@ -165,6 +166,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const joinLiveCall = useJoinLiveCall();
   const upsertRsvp = useUpsertRsvp();
   const { data: rsvpData } = useGetMyRsvp(item.liveCallId ?? "", !!item.liveCallId && item.status !== "past");
+  const { data: resources = [] } = useGetLiveCallResources(item.liveCallId ?? "", !!item.liveCallId && item.status !== "past");
   const { data: meData } = useMe();
   const me = (meData as any)?.data;
   const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
@@ -285,6 +287,27 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
         <p className="text-sm italic max-w-sm -mt-3" style={{ color: teal }}>
           {item.countdownConfig.stayTunedMessage}
         </p>
+      )}
+
+      {/* Pre-session resources */}
+      {item.status !== "past" && resources.length > 0 && (
+        <div className="w-full max-w-sm space-y-2 -mt-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: teal }}>Prepare for this session</p>
+          {resources.map(r => (
+            <a
+              key={r.id}
+              href={r.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+              style={{ background: `${teal}10`, border: `1px solid ${teal}30`, color: teal }}
+            >
+              <span>{r.type === "pdf" ? "📄" : r.type === "video" ? "🎬" : "🔗"}</span>
+              <span className="flex-1 truncate">{r.title}</span>
+              <ExternalLink size={10} />
+            </a>
+          ))}
+        </div>
       )}
 
       {/* RSVP — only before the session starts */}
@@ -2681,6 +2704,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   const [joinError, setJoinError] = useState<string | null>(null);
 
   const { data: liveStatus } = useLiveCallStatus(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
+  const { data: resources = [] } = useGetLiveCallResources(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
 
   useEffect(() => {
     if (!challenge.scheduledAt || isPast) return;
@@ -2863,6 +2887,21 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                 <p className="text-sm italic max-w-sm mx-auto" style={{ color: teal }}>
                   {challenge.stayTunedMessage}
                 </p>
+              )}
+              {/* Pre-session resources */}
+              {!isPast && resources.length > 0 && (
+                <div className="w-full max-w-sm space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: teal }}>Prepare for this session</p>
+                  {resources.map((r: { id: string; title: string; url: string; type: string }) => (
+                    <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                       style={{ background: `${teal}10`, border: `1px solid ${teal}30`, color: teal }}>
+                      <span>{r.type === "pdf" ? "📄" : r.type === "video" ? "🎬" : "🔗"}</span>
+                      <span className="flex-1 truncate">{r.title}</span>
+                      <ExternalLink size={10} />
+                    </a>
+                  ))}
+                </div>
               )}
               {/* RSVP */}
               {!isPast && challenge.liveCallId && (

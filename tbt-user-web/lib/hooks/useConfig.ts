@@ -312,6 +312,19 @@ export const useSubmitProductInquiry = () =>
     },
   });
 
+// ── Pre-session resources ─────────────────────────────────────────────────────
+
+export const useGetLiveCallResources = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["live-call-resources", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshop/live-calls/${liveCallId}/resources`);
+      return (res?.data ?? []) as Array<{ id: string; title: string; url: string; type: string; order: number }>;
+    },
+    enabled: !!liveCallId && enabled,
+    staleTime: 60_000,
+  });
+
 // ── Live Call RSVP ────────────────────────────────────────────────────────────
 
 export const useGetMyRsvp = (liveCallId: string, enabled = true) =>

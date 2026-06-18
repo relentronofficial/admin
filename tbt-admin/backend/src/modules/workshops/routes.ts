@@ -15,6 +15,7 @@ import {
   sendRemindersHandler,
   getLiveCallAnalyticsHandler, summarizeLiveCallHandler,
   listRsvpsHandler,
+  listResourcesHandler, createResourceHandler, updateResourceHandler, deleteResourceHandler, reorderResourcesHandler,
   listAssignmentsHandler, createAssignmentHandler, updateAssignmentHandler, deleteAssignmentHandler,
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
@@ -86,6 +87,13 @@ export async function workshopRoutes(fastify: FastifyInstance) {
 
   // RSVPs (admin view)
   fastify.get('/live-calls/:lcid/rsvps', listRsvpsHandler);
+
+  // Pre-session resources (admin)
+  fastify.get('/live-calls/:lcid/resources', listResourcesHandler);
+  fastify.post('/live-calls/:lcid/resources', createResourceHandler);
+  fastify.put('/live-calls/:lcid/resources/reorder', reorderResourcesHandler);
+  fastify.put('/live-calls/:lcid/resources/:rid', updateResourceHandler);
+  fastify.delete('/live-calls/:lcid/resources/:rid', deleteResourceHandler);
 
   // Reminders
   fastify.post('/live-calls/:lcid/reminders', sendRemindersHandler);

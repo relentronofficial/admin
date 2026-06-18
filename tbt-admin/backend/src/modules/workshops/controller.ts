@@ -866,6 +866,57 @@ export async function listAssignmentsHandler(req: FastifyRequest, reply: Fastify
   return reply.send({ success: true, data: challenges, error: null });
 }
 
+// ── PRE-SESSION RESOURCES ─────────────────────────────────────────────────────
+
+export async function listResourcesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const resources = await req.server.prisma.liveCallResource.findMany({
+    where: { liveCallId: lcid },
+    orderBy: { order: 'asc' },
+  });
+  return reply.send({ success: true, data: resources, error: null });
+}
+
+export async function createResourceHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { title, url, type } = req.body as any;
+  const maxOrder = await req.server.prisma.liveCallResource.findFirst({
+    where: { liveCallId: lcid },
+    orderBy: { order: 'desc' },
+    select: { order: true },
+  });
+  const resource = await req.server.prisma.liveCallResource.create({
+    data: { liveCallId: lcid, title, url, type: type ?? 'link', order: (maxOrder?.order ?? -1) + 1 },
+  });
+  return reply.send({ success: true, data: resource, error: null });
+}
+
+export async function updateResourceHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { rid } = req.params as any;
+  const body = req.body as any;
+  const fields: any = {};
+  if (body.title !== undefined) fields.title = body.title;
+  if (body.url !== undefined) fields.url = body.url;
+  if (body.type !== undefined) fields.type = body.type;
+  if (body.order !== undefined) fields.order = body.order;
+  const resource = await req.server.prisma.liveCallResource.update({ where: { id: rid }, data: fields });
+  return reply.send({ success: true, data: resource, error: null });
+}
+
+export async function deleteResourceHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { rid } = req.params as any;
+  await req.server.prisma.liveCallResource.delete({ where: { id: rid } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function reorderResourcesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { ids } = req.body as { ids: string[] };
+  await Promise.all(ids.map((id, order) =>
+    req.server.prisma.liveCallResource.update({ where: { id }, data: { order } })
+  ));
+  return reply.send({ success: true, data: null, error: null });
+}
+
 // ── RSVP (admin) ──────────────────────────────────────────────────────────────
 
 export async function listRsvpsHandler(req: FastifyRequest, reply: FastifyReply) {

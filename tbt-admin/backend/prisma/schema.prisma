@@ -1600,10 +1600,23 @@ model LiveCall {
   attendance                  LiveCallAttendance[]
   polls                       LiveCallPoll[]
   rsvps                       LiveCallRsvp[]
+  resources                   LiveCallResource[]
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("live_calls")
+}
+
+model LiveCallResource {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId String   @map("live_call_id") @db.Uuid
+  title      String
+  url        String
+  type       String   @default("link")
+  order      Int      @default(0)
+  liveCall   LiveCall @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+
+  @@map("live_call_resources")
 }
 
 model LiveCallRsvp {

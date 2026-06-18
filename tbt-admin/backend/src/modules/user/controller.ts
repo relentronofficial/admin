@@ -1100,6 +1100,35 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
   return ok(reply, { status: 'joined', token, wsUrl: env.LIVEKIT_WS_URL, roomName, startedAt: liveCall.startedAt, isWebinar: liveCall.isWebinar });
 }
 
+// ─── Pre-session resources (user) ─────────────────────────────────────────────
+
+export async function getLiveCallResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const lc = await request.server.prisma.liveCall.findUnique({
+    where: { id: liveCallId },
+    select: { endedAt: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true },
+  });
+  if (!lc) return fail(reply, 404, 'Live call not found');
+
+  const isPast = !!lc.endedAt;
+  const now = new Date();
+  const unlockAt = lc.scheduledAt && lc.liveUrlUnlocksMinutesBefore
+    ? new Date(new Date(lc.scheduledAt).getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000)
+    : null;
+  const isUnlocked = !lc.endedAt && (unlockAt ? now >= unlockAt : true);
+
+  if (!isPast && !isUnlocked) {
+    return ok(reply, []);
+  }
+
+  const resources = await request.server.prisma.liveCallResource.findMany({
+    where: { liveCallId },
+    orderBy: { order: 'asc' },
+    select: { id: true, title: true, url: true, type: true, order: true },
+  });
+  return ok(reply, resources);
+}
+
 // ─── RSVP (user) ──────────────────────────────────────────────────────────────
 
 export async function upsertRsvpHandler(request: FastifyRequest, reply: FastifyReply) {
