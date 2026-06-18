@@ -28,30 +28,30 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 
     if (!admin) {
       // Fallback for development if clerk user not in DB yet
-      return reply.send({ 
-        success: true, 
-        data: { 
-          id: request.user, 
-          fullName: 'Super Admin (Dev)', 
-          role: 'SuperAdmin', 
-          email: 'dev@tbt-security.com' 
-        }, 
-        error: null 
+      return reply.send({
+        success: true,
+        data: {
+          id: request.user,
+          fullName: 'Super Admin (Dev)',
+          role: 'super_admin',
+          email: 'dev@tbt-security.com'
+        },
+        error: null
       });
     }
 
     return reply.send({ success: true, data: admin, error: null });
   } catch (err) {
     // Database connection failure fallback
-    return reply.send({ 
-      success: true, 
-      data: { 
-        id: request.user, 
-        fullName: 'Super Admin (System Fallback)', 
-        role: 'SuperAdmin', 
-        email: 'fallback@tbt-security.com' 
-      }, 
-      error: null 
+    return reply.send({
+      success: true,
+      data: {
+        id: request.user,
+        fullName: 'Super Admin (System Fallback)',
+        role: 'super_admin',
+        email: 'fallback@tbt-security.com'
+      },
+      error: null
     });
   }
 }
