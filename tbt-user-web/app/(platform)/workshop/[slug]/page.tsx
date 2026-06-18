@@ -42,6 +42,8 @@ import {
   useWorkshopCertificate,
   useJoinLiveCall,
   useLiveCallStatus,
+  useGetMyRsvp,
+  useUpsertRsvp,
 } from "@/lib/hooks/useConfig";
 import { useMe } from "@/lib/hooks/useUser";
 import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
@@ -161,6 +163,8 @@ function downloadIcs(title: string, isoString: string): void {
 function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const { uiStrings } = useSiteConfig();
   const joinLiveCall = useJoinLiveCall();
+  const upsertRsvp = useUpsertRsvp();
+  const { data: rsvpData } = useGetMyRsvp(item.liveCallId ?? "", !!item.liveCallId && item.status !== "past");
   const { data: meData } = useMe();
   const me = (meData as any)?.data;
   const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
@@ -281,6 +285,49 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
         <p className="text-sm italic max-w-sm -mt-3" style={{ color: teal }}>
           {item.countdownConfig.stayTunedMessage}
         </p>
+      )}
+
+      {/* RSVP — only before the session starts */}
+      {item.status !== "past" && diff > 0 && item.liveCallId && (
+        <div className="flex flex-col items-center gap-2 -mt-2">
+          {rsvpData ? (
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold" style={{ color: rsvpData.status === "confirmed" ? "#22c55e" : "#f87171" }}>
+                {rsvpData.status === "confirmed" ? "✓ You're confirmed" : "✗ You declined"}
+              </span>
+              <button
+                onClick={() => upsertRsvp.mutate({ liveCallId: item.liveCallId!, status: rsvpData.status === "confirmed" ? "declined" : "confirmed" })}
+                disabled={upsertRsvp.isPending}
+                className="text-[11px] underline disabled:opacity-40"
+                style={{ color: teal }}
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1.5">
+              <p className="text-[11px] font-semibold" style={{ color: "#a0a0a0" }}>Will you attend?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => upsertRsvp.mutate({ liveCallId: item.liveCallId!, status: "confirmed" })}
+                  disabled={upsertRsvp.isPending}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
+                  style={{ borderColor: "rgba(34,197,94,0.4)", color: "#22c55e", background: "rgba(34,197,94,0.08)" }}
+                >
+                  ✓ Yes, I&apos;ll be there
+                </button>
+                <button
+                  onClick={() => upsertRsvp.mutate({ liveCallId: item.liveCallId!, status: "declined" })}
+                  disabled={upsertRsvp.isPending}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
+                  style={{ borderColor: "rgba(248,113,113,0.4)", color: "#f87171", background: "rgba(248,113,113,0.08)" }}
+                >
+                  ✗ Can&apos;t make it
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* LIVE NOW indicator */}
@@ -2620,6 +2667,8 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
 function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => void }) {
   const { uiStrings } = useSiteConfig();
   const joinLiveCall = useJoinLiveCall();
+  const upsertRsvp = useUpsertRsvp();
+  const { data: rsvpData } = useGetMyRsvp(challenge.liveCallId ?? "", !!challenge.liveCallId && challenge.status !== "past");
   const { data: meData } = useMe();
   const me = (meData as any)?.data;
   const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
@@ -2814,6 +2863,48 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                 <p className="text-sm italic max-w-sm mx-auto" style={{ color: teal }}>
                   {challenge.stayTunedMessage}
                 </p>
+              )}
+              {/* RSVP */}
+              {!isPast && challenge.liveCallId && (
+                <div className="flex flex-col items-center gap-2">
+                  {rsvpData ? (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold" style={{ color: rsvpData.status === "confirmed" ? "#22c55e" : "#f87171" }}>
+                        {rsvpData.status === "confirmed" ? "✓ You're confirmed" : "✗ You declined"}
+                      </span>
+                      <button
+                        onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: rsvpData.status === "confirmed" ? "declined" : "confirmed" })}
+                        disabled={upsertRsvp.isPending}
+                        className="text-[11px] underline disabled:opacity-40"
+                        style={{ color: teal }}
+                      >
+                        Change
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5">
+                      <p className="text-[11px] font-semibold" style={{ color: "#a0a0a0" }}>Will you attend?</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: "confirmed" })}
+                          disabled={upsertRsvp.isPending}
+                          className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
+                          style={{ borderColor: "rgba(34,197,94,0.4)", color: "#22c55e", background: "rgba(34,197,94,0.08)" }}
+                        >
+                          ✓ Yes, I&apos;ll be there
+                        </button>
+                        <button
+                          onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: "declined" })}
+                          disabled={upsertRsvp.isPending}
+                          className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
+                          style={{ borderColor: "rgba(248,113,113,0.4)", color: "#f87171", background: "rgba(248,113,113,0.08)" }}
+                        >
+                          ✗ Can&apos;t make it
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </>
           ) : null}

@@ -26,7 +26,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
-import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall } from "@/lib/hooks/useTbt";
+import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall, useLiveCallRsvps } from "@/lib/hooks/useTbt";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -219,6 +219,20 @@ function AnalyticsRow({ lcId, lc }: { lcId: string; lc: any }) {
         )}
       </div>
     </div>
+  );
+}
+
+function RsvpBadge({ lcId, onClick }: { lcId: string; onClick: () => void }) {
+  const { data } = useLiveCallRsvps(lcId, true);
+  if (!data || (data.confirmed === 0 && data.declined === 0)) return null;
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest font-rajdhani px-2 py-0.5 rounded transition-colors hover:opacity-80"
+      style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.25)" }}
+    >
+      {data.confirmed} confirmed · {data.declined} declined
+    </button>
   );
 }
 
@@ -641,6 +655,7 @@ export default function WorkshopDetailPage() {
     externalMeetingProvider: "",
   });
   const [deletingLiveCall, setDeletingLiveCall] = useState<string | null>(null);
+  const [rsvpModalLcId, setRsvpModalLcId] = useState<string | null>(null);
 
   const openCreateLiveCall = () => {
     setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false, waitingRoomEnabled: false, passcode: "", externalMeetingUrl: "", externalMeetingProvider: "" });
@@ -1201,6 +1216,7 @@ export default function WorkshopDetailPage() {
                           </span>
                         )}
                         <LiveCallStatusPill lcId={lc.id} />
+                        <RsvpBadge lcId={lc.id} onClick={() => setRsvpModalLcId(lc.id)} />
                         <p className="font-bold text-[#f0f0f0] text-sm">{lc.title}</p>
                       </div>
                       {lc.facilitatorName && <p className="text-[12px] text-[#606060] mt-0.5">{lc.facilitatorName}{lc.facilitatorTitle ? ` · ${lc.facilitatorTitle}` : ""}</p>}
@@ -2096,6 +2112,9 @@ export default function WorkshopDetailPage() {
       )}
 
       {/* ── SHARED DELETE CONFIRMATION ────────────────────────────────── */}
+      {/* RSVP modal */}
+      {rsvpModalLcId && <RsvpModal lcId={rsvpModalLcId} onClose={() => setRsvpModalLcId(null)} />}
+
       {(deletingChallenge || deletingEpisode || deletingLiveCall || deletingAssignment || deletingQAPost || deletingQAReply || deletingFlowItem || deletingEnrollment) && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
@@ -2124,6 +2143,63 @@ export default function WorkshopDetailPage() {
         </div>
       )}
     </DashboardLayout>
+  );
+}
+
+function RsvpModal({ lcId, onClose }: { lcId: string; onClose: () => void }) {
+  const { data, isLoading } = useLiveCallRsvps(lcId, true);
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[250] flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-[#141414] border border-[#2a2a2a] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid #222" }}>
+          <div>
+            <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] text-sm">RSVP List</h3>
+            {data && (
+              <p className="text-xs mt-0.5" style={{ color: "#a0a0a0" }}>
+                {data.confirmed} confirmed · {data.declined} declined
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1 text-[#444] hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+        <div className="max-h-96 overflow-y-auto">
+          {isLoading ? (
+            <p className="px-6 py-4 text-xs text-[#444]">Loading…</p>
+          ) : !data || data.members.length === 0 ? (
+            <p className="px-6 py-4 text-xs text-[#444]">No RSVPs yet.</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: "1px solid #1a1a1a" }}>
+                  <th className="text-left px-6 py-2 font-rajdhani font-bold uppercase tracking-widest text-[10px]" style={{ color: "#606060" }}>Member</th>
+                  <th className="text-left px-6 py-2 font-rajdhani font-bold uppercase tracking-widest text-[10px]" style={{ color: "#606060" }}>Status</th>
+                  <th className="text-left px-6 py-2 font-rajdhani font-bold uppercase tracking-widest text-[10px]" style={{ color: "#606060" }}>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((r: any) => (
+                  <tr key={r.id} style={{ borderBottom: "1px solid #111" }}>
+                    <td className="px-6 py-2 text-[#a0a0a0]">
+                      {r.member.firstName} {r.member.lastName || ""}
+                      <span className="text-[#444] ml-1">({r.member.memberId})</span>
+                    </td>
+                    <td className="px-6 py-2">
+                      <span className="font-bold" style={{ color: r.status === "confirmed" ? "#22c55e" : "#f87171" }}>
+                        {r.status === "confirmed" ? "✓ Confirmed" : "✗ Declined"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-2 text-[#444]">{new Date(r.confirmedAt).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

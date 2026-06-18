@@ -14,6 +14,7 @@ import {
   getAttendanceHandler,
   sendRemindersHandler,
   getLiveCallAnalyticsHandler, summarizeLiveCallHandler,
+  listRsvpsHandler,
   listAssignmentsHandler, createAssignmentHandler, updateAssignmentHandler, deleteAssignmentHandler,
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
@@ -82,6 +83,9 @@ export async function workshopRoutes(fastify: FastifyInstance) {
   // Analytics & AI summary
   fastify.get('/live-calls/:lcid/analytics', getLiveCallAnalyticsHandler);
   fastify.post('/live-calls/:lcid/summarize', summarizeLiveCallHandler);
+
+  // RSVPs (admin view)
+  fastify.get('/live-calls/:lcid/rsvps', listRsvpsHandler);
 
   // Reminders
   fastify.post('/live-calls/:lcid/reminders', sendRemindersHandler);

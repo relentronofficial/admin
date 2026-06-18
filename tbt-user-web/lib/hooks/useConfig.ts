@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import type {
   HeroSlide,
@@ -311,3 +311,29 @@ export const useSubmitProductInquiry = () =>
       return res?.data;
     },
   });
+
+// ── Live Call RSVP ────────────────────────────────────────────────────────────
+
+export const useGetMyRsvp = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["live-call-rsvp", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshop/live-calls/${liveCallId}/rsvp`);
+      return res?.data as { id: string; status: "confirmed" | "declined" } | null;
+    },
+    enabled: !!liveCallId && enabled,
+    staleTime: 30_000,
+  });
+
+export const useUpsertRsvp = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ liveCallId, status }: { liveCallId: string; status: "confirmed" | "declined" }) => {
+      const res: any = await apiClient.post(`/api/user/workshop/live-calls/${liveCallId}/rsvp`, { status });
+      return res?.data;
+    },
+    onSuccess: (_data, { liveCallId }) => {
+      qc.invalidateQueries({ queryKey: ["live-call-rsvp", liveCallId] });
+    },
+  });
+};

@@ -866,6 +866,22 @@ export async function listAssignmentsHandler(req: FastifyRequest, reply: Fastify
   return reply.send({ success: true, data: challenges, error: null });
 }
 
+// ── RSVP (admin) ──────────────────────────────────────────────────────────────
+
+export async function listRsvpsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const rsvps = await req.server.prisma.liveCallRsvp.findMany({
+    where: { liveCallId: lcid },
+    include: {
+      member: { select: { id: true, firstName: true, lastName: true, email: true, memberId: true } },
+    },
+    orderBy: { confirmedAt: 'asc' },
+  });
+  const confirmed = rsvps.filter(r => r.status === 'confirmed').length;
+  const declined = rsvps.filter(r => r.status === 'declined').length;
+  return reply.send({ success: true, data: { confirmed, declined, members: rsvps }, error: null });
+}
+
 // ── LIVE CALL ANALYTICS ────────────────────────────────────────────────
 
 export async function getLiveCallAnalyticsHandler(req: FastifyRequest, reply: FastifyReply) {

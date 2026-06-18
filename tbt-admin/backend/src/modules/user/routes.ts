@@ -66,6 +66,8 @@ import {
   getLiveCallStatusUserHandler,
   getUserPollsHandler,
   votePollHandler,
+  upsertRsvpHandler,
+  getRsvpStatusHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -147,6 +149,8 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/workshop/live-calls/:id/token/refresh', joinLiveCallHandler);
   fastify.get('/workshop/live-calls/:id/polls', getUserPollsHandler);
   fastify.post('/workshop/live-calls/polls/:pollId/vote', votePollHandler);
+  fastify.post('/workshop/live-calls/:id/rsvp', upsertRsvpHandler);
+  fastify.get('/workshop/live-calls/:id/rsvp', getRsvpStatusHandler);
 
   // ── Episodes ──────────────────────────────────────────────────────────────
   fastify.get('/episodes/:id/playback', getEpisodePlaybackHandler);

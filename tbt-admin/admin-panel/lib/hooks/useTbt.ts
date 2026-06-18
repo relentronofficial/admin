@@ -869,6 +869,22 @@ export const useSyncEpisodeDurations = () =>
     },
   });
 
+// ── Live Call RSVPs ────────────────────────────────────────────────────────────
+
+export const useLiveCallRsvps = (lcid: string, enabled = true) =>
+  useQuery({
+    queryKey: ['live-call-rsvps', lcid],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${lcid}/rsvps`);
+      return res.data as {
+        confirmed: number;
+        declined: number;
+        members: Array<{ id: string; status: string; confirmedAt: string; member: { id: string; firstName: string; lastName: string; email: string; memberId: string } }>;
+      };
+    },
+    enabled: !!lcid && enabled,
+  });
+
 // ── Live Call Analytics ────────────────────────────────────────────────────────
 
 export const useLiveCallAnalytics = (lcid: string, enabled = true) =>

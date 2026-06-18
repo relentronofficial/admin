@@ -316,6 +316,7 @@ model Member {
   liveCallAttendance    LiveCallAttendance[]
   liveCallPollVotes     LiveCallPollVote[]
   productInquiries      ProductInquiry[]
+  liveCallRsvps         LiveCallRsvp[]
 
   @@map("members")
 }
@@ -1598,10 +1599,24 @@ model LiveCall {
   flowItems                   WorkshopFlowItem[]
   attendance                  LiveCallAttendance[]
   polls                       LiveCallPoll[]
+  rsvps                       LiveCallRsvp[]
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("live_calls")
+}
+
+model LiveCallRsvp {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId  String   @map("live_call_id") @db.Uuid
+  memberId    String   @map("member_id") @db.Uuid
+  status      String   @default("confirmed")
+  confirmedAt DateTime @default(now()) @map("confirmed_at") @db.Timestamptz(6)
+  liveCall    LiveCall @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([liveCallId, memberId])
+  @@map("live_call_rsvps")
 }
 
 model LiveCallAttendance {

@@ -1100,6 +1100,34 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
   return ok(reply, { status: 'joined', token, wsUrl: env.LIVEKIT_WS_URL, roomName, startedAt: liveCall.startedAt, isWebinar: liveCall.isWebinar });
 }
 
+// ─── RSVP (user) ──────────────────────────────────────────────────────────────
+
+export async function upsertRsvpHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const { status } = request.body as { status: 'confirmed' | 'declined' };
+  if (!['confirmed', 'declined'].includes(status)) {
+    return fail(reply, 400, 'status must be confirmed or declined');
+  }
+  const rsvp = await request.server.prisma.liveCallRsvp.upsert({
+    where: { liveCallId_memberId: { liveCallId, memberId: request.memberId } },
+    create: { liveCallId, memberId: request.memberId, status },
+    update: { status, confirmedAt: new Date() },
+  });
+  // Notify admin room so badge updates live
+  const confirmed = await request.server.prisma.liveCallRsvp.count({ where: { liveCallId, status: 'confirmed' } });
+  const declined = await request.server.prisma.liveCallRsvp.count({ where: { liveCallId, status: 'declined' } });
+  request.server.io.to('admin').emit('admin:live_rsvp', { liveCallId, confirmed, declined });
+  return ok(reply, rsvp);
+}
+
+export async function getRsvpStatusHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const rsvp = await request.server.prisma.liveCallRsvp.findUnique({
+    where: { liveCallId_memberId: { liveCallId, memberId: request.memberId } },
+  });
+  return ok(reply, rsvp ?? null);
+}
+
 // ─── Polls (user) ─────────────────────────────────────────────────────────────
 
 export async function getUserPollsHandler(request: FastifyRequest, reply: FastifyReply) {
