@@ -1058,3 +1058,152 @@ export const useGetLiveCallFeedbackAdmin = (lcid: string, enabled = true) =>
     },
     enabled: !!lcid && enabled,
   });
+
+// ── Co-host Promotion ─────────────────────────────────────────────────────────
+
+export const usePromoteCoHost = () =>
+  useMutation({
+    mutationFn: async ({ lcid, memberId }: { lcid: string; memberId: string }) => {
+      await apiClient.post(`/api/workshops/live-calls/${lcid}/co-host/${memberId}`);
+    },
+  });
+
+// ── Attendance Certificates ───────────────────────────────────────────────────
+
+export const useGenerateCertificates = () =>
+  useMutation({
+    mutationFn: async ({ lcid, minAttendancePercent }: { lcid: string; minAttendancePercent: number }) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${lcid}/certificates/generate`, { minAttendancePercent });
+      return res.data as { generated: number; errors: number };
+    },
+  });
+
+// ── Breakout Rooms ────────────────────────────────────────────────────────────
+
+export const useGetBreakoutRooms = (lcid: string, enabled = true) =>
+  useQuery({
+    queryKey: ['breakout-rooms', lcid],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${lcid}/breakout-rooms`);
+      return (res.data ?? []) as Array<{ id: string; liveCallId: string; name: string; roomName: string; isActive: boolean; createdAt: string }>;
+    },
+    enabled: !!lcid && enabled,
+  });
+
+export const useCreateBreakoutRooms = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, count, names }: { lcid: string; count: number; names?: string[] }) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${lcid}/breakout-rooms`, { count, names });
+      return res.data;
+    },
+    onSuccess: (_d, { lcid }) => qc.invalidateQueries({ queryKey: ['breakout-rooms', lcid] }),
+  });
+};
+
+export const useAssignToBreakout = () =>
+  useMutation({
+    mutationFn: async ({ lcid, brid, identity }: { lcid: string; brid: string; identity: string }) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${lcid}/breakout-rooms/${brid}/assign`, { identity });
+      return res.data;
+    },
+  });
+
+export const useRecallAll = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (lcid: string) => {
+      await apiClient.post(`/api/workshops/live-calls/${lcid}/breakout-rooms/recall-all`);
+    },
+    onSuccess: (_d, lcid) => qc.invalidateQueries({ queryKey: ['breakout-rooms', lcid] }),
+  });
+};
+
+export const useDeleteBreakoutRoom = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, brid }: { lcid: string; brid: string }) => {
+      await apiClient.delete(`/api/workshops/live-calls/${lcid}/breakout-rooms/${brid}`);
+    },
+    onSuccess: (_d, { lcid }) => qc.invalidateQueries({ queryKey: ['breakout-rooms', lcid] }),
+  });
+};
+
+// ── Live Call Templates ───────────────────────────────────────────────────────
+
+export interface LiveCallTemplate {
+  id: string;
+  workshopId: string;
+  title: string;
+  label: string;
+  labelColor: string;
+  recurrence: string;
+  dayOfWeek: number;
+  timeHour: number;
+  timeMinute: number;
+  durationMinutes: number;
+  liveUrlUnlocksMinutesBefore: number;
+  facilitatorName: string | null;
+  stayTunedMessage: string;
+  stayTunedColor: string;
+  isActive: boolean;
+  lastGeneratedAt: string | null;
+  weeksAhead: number;
+  createdAt: string;
+}
+
+export const useListLiveCallTemplates = (workshopId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['live-call-templates', workshopId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/${workshopId}/live-call-templates`);
+      return (res.data ?? []) as LiveCallTemplate[];
+    },
+    enabled: !!workshopId && enabled,
+  });
+
+export const useCreateLiveCallTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ workshopId, ...body }: Partial<LiveCallTemplate> & { workshopId: string }) => {
+      const res: any = await apiClient.post(`/api/workshops/${workshopId}/live-call-templates`, body);
+      return res.data as LiveCallTemplate;
+    },
+    onSuccess: (_d, { workshopId }) => qc.invalidateQueries({ queryKey: ['live-call-templates', workshopId] }),
+  });
+};
+
+export const useUpdateLiveCallTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tid, workshopId, ...body }: Partial<LiveCallTemplate> & { tid: string; workshopId: string }) => {
+      const res: any = await apiClient.put(`/api/workshops/live-call-templates/${tid}`, body);
+      return res.data as LiveCallTemplate;
+    },
+    onSuccess: (_d, { workshopId }) => qc.invalidateQueries({ queryKey: ['live-call-templates', workshopId] }),
+  });
+};
+
+export const useDeleteLiveCallTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tid, workshopId }: { tid: string; workshopId: string }) => {
+      await apiClient.delete(`/api/workshops/live-call-templates/${tid}`);
+    },
+    onSuccess: (_d, { workshopId }) => qc.invalidateQueries({ queryKey: ['live-call-templates', workshopId] }),
+  });
+};
+
+export const useGenerateNow = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tid, workshopId }: { tid: string; workshopId: string }) => {
+      const res: any = await apiClient.post(`/api/workshops/live-call-templates/${tid}/generate-now`);
+      return res.data as { created: number };
+    },
+    onSuccess: (_d, { workshopId }) => {
+      qc.invalidateQueries({ queryKey: ['live-call-templates', workshopId] });
+      qc.invalidateQueries({ queryKey: ['workshop-live-calls'] });
+    },
+  });
+};

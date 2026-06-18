@@ -41,7 +41,7 @@ import { messagesRoutes } from './modules/messages/routes.js';
 import { conversationsRoutes } from './modules/conversations/routes.js';
 import { securityRoutes } from './modules/security/routes.js';
 import { userAuthRoutes } from './modules/user-auth/routes.js';
-import { fetchBunnyDuration } from './modules/workshops/controller.js';
+import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 
 async function bootstrap() {
   const fastify = Fastify({
@@ -127,6 +127,9 @@ async function bootstrap() {
     await fastify.register(conversationsRoutes, { prefix: '/api/conversations' });
     await fastify.register(securityRoutes, { prefix: '/api/security-logs' });
     await fastify.register(userAuthRoutes, { prefix: '/api/user-auth' });
+
+    // Cron endpoint (no auth — protected by CRON_SECRET header)
+    fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
 
     // Root + Health Check
     fastify.get('/', async () => ({ name: 'TBT Admin API', status: 'ok' }));

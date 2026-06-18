@@ -206,7 +206,7 @@ function MemberQaPanel({ liveCallId, onClose }: { liveCallId: string; onClose: (
 }
 
 export function WorkshopLiveCall({
-  token,
+  token: initialToken,
   wsUrl,
   defaultName = "",
   startedAt,
@@ -218,6 +218,8 @@ export function WorkshopLiveCall({
   onAdmitted,
 }: WorkshopLiveCallProps) {
   const [stage, setStage] = useState<"pre" | "live" | "ended">("pre");
+  const originalTokenRef = useRef(initialToken);
+  const [activeToken, setActiveToken] = useState(initialToken);
   const [userChoices, setUserChoices] = useState<LocalUserChoices>({
     username: defaultName,
     videoEnabled: !isWebinar,
@@ -257,6 +259,50 @@ export function WorkshopLiveCall({
     return () => {
       mounted = false;
       getSocket().then((s) => s.off('live_call:hand_cleared', onCleared));
+    };
+  }, [liveCallId]);
+
+  // Listen for co-host promotion — swap to new token so camera/mic publish
+  useEffect(() => {
+    if (!liveCallId) return;
+    let mounted = true;
+    const onPromoted = (data: { liveCallId: string; token: string }) => {
+      if (data.liveCallId !== liveCallId) return;
+      setActiveToken(data.token);
+    };
+    getSocket().then((s) => {
+      if (!mounted) return;
+      s.on('live_call:promoted_co_host', onPromoted);
+    });
+    return () => {
+      mounted = false;
+      getSocket().then((s) => s.off('live_call:promoted_co_host', onPromoted));
+    };
+  }, [liveCallId]);
+
+  // Listen for breakout room assignment / recall
+  useEffect(() => {
+    if (!liveCallId) return;
+    let mounted = true;
+    const onAssigned = (data: { liveCallId: string; token: string; wsUrl: string }) => {
+      if (data.liveCallId !== liveCallId) return;
+      setActiveToken(data.token);
+    };
+    const onRecall = (data: { liveCallId: string }) => {
+      if (data.liveCallId !== liveCallId) return;
+      setActiveToken(originalTokenRef.current);
+    };
+    getSocket().then((s) => {
+      if (!mounted) return;
+      s.on('live_call:breakout_assigned', onAssigned);
+      s.on('live_call:breakout_recall', onRecall);
+    });
+    return () => {
+      mounted = false;
+      getSocket().then((s) => {
+        s.off('live_call:breakout_assigned', onAssigned);
+        s.off('live_call:breakout_recall', onRecall);
+      });
     };
   }, [liveCallId]);
 
@@ -469,7 +515,7 @@ export function WorkshopLiveCall({
       <div className="flex-1 relative min-h-0">
         <LiveKitRoom
           serverUrl={wsUrl}
-          token={token}
+          token={activeToken}
           connect={true}
           audio={userChoices.audioEnabled}
           video={userChoices.videoEnabled}
@@ -484,7 +530,7 @@ export function WorkshopLiveCall({
           {waitingRoomActive && liveCallId && (
             <WaitingRoomOverlay
               liveCallId={liveCallId}
-              onAdmitted={() => onAdmitted?.(token)}
+              onAdmitted={() => onAdmitted?.(activeToken)}
             />
           )}
 

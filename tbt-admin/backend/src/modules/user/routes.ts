@@ -74,6 +74,7 @@ import {
   getLiveCallChaptersHandler,
   postLiveCallFeedbackHandler,
   getMyLiveCallFeedbackHandler,
+  getMyLiveCallCertificateHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -163,6 +164,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/workshop/live-calls/:id/chapters', getLiveCallChaptersHandler);
   fastify.post('/workshop/live-calls/:id/feedback', postLiveCallFeedbackHandler);
   fastify.get('/workshop/live-calls/:id/feedback', getMyLiveCallFeedbackHandler);
+  fastify.get('/workshop/live-calls/:id/certificate', getMyLiveCallCertificateHandler);
 
   // ── Episodes ──────────────────────────────────────────────────────────────
   fastify.get('/episodes/:id/playback', getEpisodePlaybackHandler);

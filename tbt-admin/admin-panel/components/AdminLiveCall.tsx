@@ -14,7 +14,7 @@ import { DisconnectReason, Track } from "livekit-client";
 import {
   PhoneOff, Users, Clock, CheckCircle2, MessageSquare,
   BarChart2, MicOff, XCircle, Lock, Unlock, Disc, StopCircle,
-  Bell, Plus, X, Send, HelpCircle, Check, EyeOff,
+  Bell, Plus, X, Send, HelpCircle, Check, EyeOff, Mic2, LayoutGrid, ArrowLeftToLine,
 } from "lucide-react";
 import { getAdminSocket } from "@/lib/socket/client";
 import {
@@ -32,6 +32,12 @@ import {
   useSendReminders,
   useGetAdminLiveCallQuestions,
   useUpdateLiveCallQuestion,
+  usePromoteCoHost,
+  useGetBreakoutRooms,
+  useCreateBreakoutRooms,
+  useAssignToBreakout,
+  useRecallAll,
+  useDeleteBreakoutRoom,
 } from "@/lib/hooks/useTbt";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -92,6 +98,8 @@ function ParticipantsPanel({ liveCallId, onClose }: { liveCallId: string; onClos
   const participants = useParticipants();
   const muteParticipant = useMuteParticipant();
   const removeParticipant = useRemoveParticipant();
+  const promoteCoHost = usePromoteCoHost();
+  const [promoted, setPromoted] = useState<Set<string>>(new Set());
 
   return (
     <div className="flex flex-col h-full" style={{ background: "#181818" }}>
@@ -106,6 +114,7 @@ function ParticipantsPanel({ liveCallId, onClose }: { liveCallId: string; onClos
           const audioTrack = p.getTrackPublication(Track.Source.Microphone);
           const isHost = p.identity.startsWith("user_");
           const audioMuted = !audioTrack || audioTrack.isMuted;
+          const isPromoted = promoted.has(p.identity);
           return (
             <div key={p.identity} className="flex items-center gap-2 px-3 py-2 rounded-lg group" style={{ background: "#1a1a1a" }}>
               <div
@@ -117,9 +126,21 @@ function ParticipantsPanel({ liveCallId, onClose }: { liveCallId: string; onClos
               <div className="flex-1 min-w-0">
                 <p className="text-sm truncate" style={{ color: "#f0f0f0" }}>{p.name ?? p.identity}</p>
                 {isHost && <span className="text-[10px] font-bold uppercase" style={{ color: "#dc2626" }}>You (Host)</span>}
+                {isPromoted && <span className="text-[10px] font-bold uppercase" style={{ color: "#f59e0b" }}>Co-host</span>}
               </div>
               {!isHost && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {!isPromoted && (
+                    <button
+                      onClick={async () => {
+                        await promoteCoHost.mutateAsync({ lcid: liveCallId, memberId: p.identity });
+                        setPromoted(prev => new Set([...prev, p.identity]));
+                      }}
+                      className="p-1 rounded hover:bg-[#2a2a2a]" title="Promote to presenter"
+                    >
+                      <Mic2 size={11} style={{ color: "#22c55e" }} />
+                    </button>
+                  )}
                   {!audioMuted && audioTrack?.trackSid && (
                     <button
                       onClick={() => muteParticipant.mutate({ liveCallId, identity: p.identity, trackSid: audioTrack.trackSid! })}
@@ -446,6 +467,115 @@ function AdminQaPanel({ liveCallId, onClose }: { liveCallId: string; onClose: ()
   );
 }
 
+// ── Breakout rooms panel ──────────────────────────────────────────────────────
+
+function BreakoutPanel({ liveCallId, onClose }: { liveCallId: string; onClose: () => void }) {
+  const participants = useParticipants();
+  const { data: rooms = [], isLoading } = useGetBreakoutRooms(liveCallId, true);
+  const createRooms = useCreateBreakoutRooms();
+  const assignTo = useAssignToBreakout();
+  const recallAll = useRecallAll();
+  const deleteRoom = useDeleteBreakoutRoom();
+  const [count, setCount] = useState(2);
+  const [assigning, setAssigning] = useState<string | null>(null); // brid being assigned
+
+  const handleCreate = async () => {
+    await createRooms.mutateAsync({ lcid: liveCallId, count });
+  };
+
+  const handleAssign = async (brid: string, identity: string) => {
+    await assignTo.mutateAsync({ lcid: liveCallId, brid, identity });
+    setAssigning(null);
+  };
+
+  const activeRooms = rooms.filter(r => r.isActive);
+  const nonHostParticipants = participants.filter(p => !p.identity.startsWith("user_"));
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#181818" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <span className="text-xs font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#a0a0a0" }}>
+          Breakout Rooms
+        </span>
+        <button onClick={onClose} className="p-1 rounded hover:bg-[#2a2a2a]"><X size={13} style={{ color: "#606060" }} /></button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" style={{ minHeight: 0 }}>
+        {/* Create rooms */}
+        {activeRooms.length === 0 && (
+          <div className="rounded-xl p-3 space-y-2" style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }}>
+            <p className="text-xs font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#606060" }}>Create Rooms</p>
+            <div className="flex gap-2 items-center">
+              <input
+                type="number" min={1} max={20} value={count}
+                onChange={e => setCount(Math.min(20, Math.max(1, Number(e.target.value))))}
+                className="w-16 rounded-lg px-2 py-1.5 text-sm text-center outline-none"
+                style={{ background: "#222", border: "1px solid #333", color: "#f0f0f0" }}
+              />
+              <span className="text-xs" style={{ color: "#a0a0a0" }}>rooms</span>
+              <button
+                onClick={handleCreate}
+                disabled={createRooms.isPending}
+                className="flex-1 py-1.5 rounded-lg text-xs font-bold disabled:opacity-60"
+                style={{ background: "#dc2626", color: "#fff" }}
+              >
+                {createRooms.isPending ? "Creating…" : "Create Breakouts"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Active rooms */}
+        {activeRooms.map(room => (
+          <div key={room.id} className="rounded-xl p-3 space-y-2" style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold" style={{ color: "#f0f0f0" }}>{room.name}</p>
+              <button
+                onClick={() => deleteRoom.mutateAsync({ lcid: liveCallId, brid: room.id })}
+                className="p-1 rounded hover:bg-[#2a2a2a]"
+                title="Delete room"
+              >
+                <X size={11} style={{ color: "#606060" }} />
+              </button>
+            </div>
+            <div className="space-y-1">
+              {nonHostParticipants.map(p => (
+                <div key={p.identity} className="flex items-center gap-2">
+                  <span className="text-xs flex-1 truncate" style={{ color: "#a0a0a0" }}>{p.name ?? p.identity}</span>
+                  <button
+                    onClick={() => handleAssign(room.id, p.identity)}
+                    disabled={assignTo.isPending}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded disabled:opacity-40"
+                    style={{ background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)" }}
+                  >
+                    Move Here
+                  </button>
+                </div>
+              ))}
+              {nonHostParticipants.length === 0 && (
+                <p className="text-[10px]" style={{ color: "#606060" }}>No participants to assign</p>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* Recall all */}
+        {activeRooms.length > 0 && (
+          <button
+            onClick={() => recallAll.mutateAsync(liveCallId)}
+            disabled={recallAll.isPending}
+            className="w-full py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
+            style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
+          >
+            <ArrowLeftToLine size={12} />
+            {recallAll.isPending ? "Recalling…" : "Recall All to Main Room"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main AdminLiveCall ────────────────────────────────────────────────────────
 
 interface AdminLiveCallProps {
@@ -457,7 +587,7 @@ interface AdminLiveCallProps {
   onLeave: () => void;
 }
 
-type SidePanel = "participants" | "polls" | "chat" | "hands" | "qa" | null;
+type SidePanel = "participants" | "polls" | "chat" | "hands" | "qa" | "breakout" | null;
 
 export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: AdminLiveCallProps) {
   const [stage, setStage] = useState<"pre" | "live" | "summary">("pre");
@@ -696,6 +826,9 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
           <CtrlBtn onClick={() => togglePanel("qa")} label="Q&A" active={sidePanel === "qa"}>
             <HelpCircle size={12} />
           </CtrlBtn>
+          <CtrlBtn onClick={() => togglePanel("breakout")} label="Breakout" active={sidePanel === "breakout"}>
+            <LayoutGrid size={12} />
+          </CtrlBtn>
 
           <div style={{ width: 1, height: 20, background: "#2a2a2a", margin: "0 6px" }} />
 
@@ -758,6 +891,9 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
                 )}
                 {sidePanel === "qa" && (
                   <AdminQaPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+                )}
+                {sidePanel === "breakout" && (
+                  <BreakoutPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
                 )}
               </div>
             )}

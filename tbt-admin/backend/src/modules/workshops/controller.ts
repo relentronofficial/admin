@@ -441,6 +441,10 @@ export async function updateLiveCallHandler(req: FastifyRequest, reply: FastifyR
    'externalMeetingUrl', 'externalMeetingProvider'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
+  // UUID FK fields — coerce empty string to null so Postgres doesn't reject it
+  for (const f of ['prerequisiteChallengeId', 'postSessionUnlockChallengeId'] as const) {
+    if (body[f] !== undefined) data[f] = body[f] || null;
+  }
   if (body.scheduledAt) data.scheduledAt = new Date(body.scheduledAt);
   // Clear endedAt whenever the call is edited so it becomes joinable again
   data.endedAt = null;
@@ -562,7 +566,10 @@ export async function endLiveCallHandler(req: FastifyRequest, reply: FastifyRepl
     return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Live call service not configured' } });
   }
 
-  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true } });
+  const lc = await req.server.prisma.liveCall.findUnique({
+    where: { id: lcid },
+    select: { id: true, workshopId: true, postSessionUnlockChallengeId: true },
+  });
   if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
 
   const { RoomServiceClient } = await import('livekit-server-sdk');
@@ -578,7 +585,234 @@ export async function endLiveCallHandler(req: FastifyRequest, reply: FastifyRepl
   // Stamp endedAt so users see "Session Completed" from this point on
   await req.server.prisma.liveCall.update({ where: { id: lcid }, data: { endedAt: new Date() } });
 
+  // Auto-unlock post-session challenge for all active enrollees
+  if (lc.postSessionUnlockChallengeId) {
+    const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+      where: { workshopId: lc.workshopId, status: 'active' },
+      select: { memberId: true },
+    });
+    await Promise.allSettled(enrollments.map(e =>
+      req.server.prisma.memberChallengeProgress.upsert({
+        where: { memberId_challengeId: { memberId: e.memberId, challengeId: lc.postSessionUnlockChallengeId! } },
+        create: { memberId: e.memberId, challengeId: lc.postSessionUnlockChallengeId!, status: 'not_started' },
+        update: {},
+      })
+    ));
+  }
+
   return reply.send({ success: true, data: null, error: null });
+}
+
+// ── CO-HOST PROMOTION ──────────────────────────────────────────────────
+
+export async function promoteCoHostHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid, memberId } = req.params as any;
+  const { env } = await import('../../config/env.js');
+
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_WS_URL) {
+    return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Live call service not configured' } });
+  }
+
+  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true } });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+
+  const member = await req.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { firstName: true, lastName: true },
+  });
+
+  const { AccessToken } = await import('livekit-server-sdk');
+  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+    identity: memberId,
+    name: [member?.firstName, member?.lastName].filter(Boolean).join(' ') || memberId,
+    ttl: '4h',
+  });
+  at.addGrant({
+    room: `workshop-live-${lcid}`,
+    roomJoin: true,
+    canPublish: true,
+    canPublishData: true,
+    canSubscribe: true,
+  });
+  const jwt = await at.toJwt();
+
+  req.server.io.to(`user:${memberId}`).emit('live_call:promoted_co_host', {
+    liveCallId: lcid,
+    token: jwt,
+    wsUrl: env.LIVEKIT_WS_URL,
+  });
+
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// ── ATTENDANCE CERTIFICATES ───────────────────────────────────────────
+
+async function uploadBufferToR2(key: string, buffer: Buffer, contentType: string, envCfg: any): Promise<string> {
+  const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${envCfg.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: envCfg.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
+      secretAccessKey: envCfg.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '',
+    },
+  });
+  await s3.send(new PutObjectCommand({
+    Bucket: envCfg.CLOUDFLARE_R2_BUCKET_NAME,
+    Key: key,
+    Body: buffer,
+    ContentType: contentType,
+  }));
+  return `https://${envCfg.BUNNY_CDN_URL}/${key}`;
+}
+
+async function generateCertificatePdf(
+  memberName: string,
+  sessionTitle: string,
+  sessionDate: string,
+  attendancePercent: number,
+  facilitatorName?: string | null,
+): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit');
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 60 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const W = doc.page.width;
+    const bgColor = '#0d0d0d';
+    const accentColor = '#dc2626';
+    const textPrimary = '#ffffff';
+    const textSecondary = '#a0a0a0';
+    const borderColor = '#dc2626';
+
+    // Background
+    doc.rect(0, 0, W, doc.page.height).fill(bgColor);
+
+    // Border
+    doc.rect(24, 24, W - 48, doc.page.height - 48)
+       .lineWidth(2)
+       .stroke(borderColor);
+
+    // Accent lines
+    doc.moveTo(60, 80).lineTo(W - 60, 80).lineWidth(0.5).stroke('#444');
+    doc.moveTo(60, doc.page.height - 80).lineTo(W - 60, doc.page.height - 80).lineWidth(0.5).stroke('#444');
+
+    let y = 110;
+
+    // Header label
+    doc.fillColor(accentColor)
+       .fontSize(10)
+       .font('Helvetica-Bold')
+       .text('TAMIL BUSINESS TRIBE', { align: 'center' });
+    y += 22;
+
+    // Title
+    doc.fillColor(textPrimary)
+       .fontSize(32)
+       .font('Helvetica-Bold')
+       .text('CERTIFICATE OF ATTENDANCE', { align: 'center' });
+    y += 60;
+
+    // Divider
+    doc.fillColor('#333').rect(W / 2 - 40, y, 80, 1).fill();
+    y += 20;
+
+    // Presented to
+    doc.fillColor(textSecondary).fontSize(12).font('Helvetica').text('This certifies that', { align: 'center' });
+    y += 26;
+
+    // Member name
+    doc.fillColor(textPrimary).fontSize(28).font('Helvetica-Bold').text(memberName, { align: 'center' });
+    y += 50;
+
+    // Description
+    doc.fillColor(textSecondary).fontSize(12).font('Helvetica').text('attended the live session', { align: 'center' });
+    y += 22;
+
+    // Session title
+    doc.fillColor(accentColor).fontSize(18).font('Helvetica-Bold').text(sessionTitle, { align: 'center' });
+    y += 40;
+
+    // Details row
+    const details = [
+      `Date: ${sessionDate}`,
+      `Attendance: ${attendancePercent}%`,
+      ...(facilitatorName ? [`Facilitator: ${facilitatorName}`] : []),
+    ].join('   ·   ');
+    doc.fillColor(textSecondary).fontSize(11).font('Helvetica').text(details, { align: 'center' });
+
+    doc.end();
+  });
+}
+
+export async function generateCertificatesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { minAttendancePercent = 70 } = (req.body as any) ?? {};
+  const { env } = await import('../../config/env.js');
+
+  const lc = await req.server.prisma.liveCall.findUnique({
+    where: { id: lcid },
+    select: { id: true, title: true, startedAt: true, endedAt: true, facilitatorName: true },
+  });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+  if (!lc.startedAt || !lc.endedAt) {
+    return reply.status(400).send({ success: false, data: null, error: { code: 'ERROR', message: 'Session has not ended yet' } });
+  }
+
+  const sessionDurationSec = Math.max(1, Math.round((lc.endedAt.getTime() - lc.startedAt.getTime()) / 1000));
+
+  // Aggregate attendance per member
+  const attendance = await req.server.prisma.liveCallAttendance.findMany({
+    where: { liveCallId: lcid, memberId: { not: null } },
+    select: { memberId: true, durationSec: true, member: { select: { firstName: true, lastName: true } } },
+  });
+
+  const memberMap = new Map<string, { name: string; totalSec: number }>();
+  for (const a of attendance) {
+    if (!a.memberId) continue;
+    const name = [a.member?.firstName, a.member?.lastName].filter(Boolean).join(' ') || 'Member';
+    const existing = memberMap.get(a.memberId);
+    memberMap.set(a.memberId, {
+      name,
+      totalSec: (existing?.totalSec ?? 0) + (a.durationSec ?? 0),
+    });
+  }
+
+  const sessionDate = lc.startedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const canUpload = !!(env.CLOUDFLARE_R2_ACCESS_KEY_ID && env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && env.CLOUDFLARE_R2_ACCOUNT_ID && env.BUNNY_CDN_URL);
+
+  let generated = 0;
+  const errors: string[] = [];
+
+  await Promise.allSettled(Array.from(memberMap.entries()).map(async ([memberId, info]) => {
+    const pct = Math.min(100, Math.round((info.totalSec / sessionDurationSec) * 100));
+    if (pct < minAttendancePercent) return;
+
+    try {
+      let certUrl = `https://tbt.internal/certificates/${lcid}/${memberId}`;
+      if (canUpload) {
+        const pdfBuf = await generateCertificatePdf(info.name, lc.title, sessionDate, pct, lc.facilitatorName);
+        const key = `certificates/${lcid}/${memberId}.pdf`;
+        certUrl = await uploadBufferToR2(key, pdfBuf, 'application/pdf', env);
+      }
+
+      await req.server.prisma.liveCallCertificate.upsert({
+        where: { liveCallId_memberId: { liveCallId: lcid, memberId } },
+        create: { liveCallId: lcid, memberId, attendancePercent: pct, certificateUrl: certUrl },
+        update: { attendancePercent: pct, certificateUrl: certUrl },
+      });
+      generated++;
+    } catch (err: any) {
+      errors.push(`${memberId}: ${err.message}`);
+    }
+  }));
+
+  if (errors.length) req.log.warn({ errors }, 'Some certificates failed to generate');
+
+  return reply.send({ success: true, data: { generated, errors: errors.length }, error: null });
 }
 
 // ── HOST CONTROLS ─────────────────────────────────────────────────────
@@ -1254,4 +1488,248 @@ export async function getMemberProgressHandler(req: FastifyRequest, reply: Fasti
     },
     error: null,
   });
+}
+
+// ── BREAKOUT ROOMS ────────────────────────────────────────────────────
+
+export async function getBreakoutRoomsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const rooms = await req.server.prisma.breakoutRoom.findMany({
+    where: { liveCallId: lcid },
+    orderBy: { createdAt: 'asc' },
+  });
+  return reply.send({ success: true, data: rooms, error: null });
+}
+
+export async function createBreakoutRoomsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const body = req.body as any;
+  const count: number = Math.min(Math.max(Number(body.count) || 2, 1), 20);
+  const names: string[] = Array.isArray(body.names) ? body.names : [];
+
+  const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true } });
+  if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Live call not found' } });
+
+  const rooms = [];
+  for (let i = 0; i < count; i++) {
+    const name = names[i] || `Breakout Room ${i + 1}`;
+    const roomName = `breakout-${lcid}-${i + 1}-${Date.now()}`;
+    const room = await req.server.prisma.breakoutRoom.create({
+      data: { liveCallId: lcid, name, roomName, isActive: true },
+    });
+    rooms.push(room);
+  }
+  return reply.status(201).send({ success: true, data: rooms, error: null });
+}
+
+export async function assignToBreakoutHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid, brid } = req.params as any;
+  const body = req.body as any;
+  const identity: string = body.identity;
+
+  const { env } = await import('../../config/env.js');
+  if (!env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET || !env.LIVEKIT_WS_URL) {
+    return reply.status(503).send({ success: false, data: null, error: { code: 'ERROR', message: 'Live call service not configured' } });
+  }
+
+  const room = await req.server.prisma.breakoutRoom.findUnique({ where: { id: brid } });
+  if (!room || room.liveCallId !== lcid) {
+    return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Breakout room not found' } });
+  }
+
+  const member = await req.server.prisma.member.findUnique({
+    where: { id: identity },
+    select: { id: true, firstName: true, lastName: true },
+  });
+
+  const { AccessToken } = await import('livekit-server-sdk');
+  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+    identity,
+    name: member ? [member.firstName, member.lastName].filter(Boolean).join(' ') : identity,
+    ttl: '4h',
+  });
+  at.addGrant({
+    room: room.roomName,
+    roomJoin: true,
+    canPublish: true,
+    canPublishData: true,
+    canSubscribe: true,
+  });
+  const token = await at.toJwt();
+
+  req.server.io.to(`user:${identity}`).emit('live_call:breakout_assigned', {
+    liveCallId: lcid,
+    breakoutRoomId: brid,
+    roomName: room.roomName,
+    roomLabel: room.name,
+    token,
+    wsUrl: env.LIVEKIT_WS_URL,
+  });
+
+  return reply.send({ success: true, data: { token, wsUrl: env.LIVEKIT_WS_URL, roomName: room.roomName }, error: null });
+}
+
+export async function recallAllHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+
+  await req.server.prisma.breakoutRoom.updateMany({
+    where: { liveCallId: lcid, isActive: true },
+    data: { isActive: false },
+  });
+
+  // Notify all connected members in this live call room to return
+  req.server.io.to(`live:${lcid}`).emit('live_call:breakout_recall', { liveCallId: lcid });
+
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function deleteBreakoutRoomHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { brid } = req.params as any;
+  await req.server.prisma.breakoutRoom.delete({ where: { id: brid } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// ── LIVE CALL TEMPLATES ───────────────────────────────────────────────
+
+export async function listLiveCallTemplatesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as any;
+  const templates = await req.server.prisma.liveCallTemplate.findMany({
+    where: { workshopId: id },
+    orderBy: { createdAt: 'asc' },
+  });
+  return reply.send({ success: true, data: templates, error: null });
+}
+
+export async function createLiveCallTemplateHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as any;
+  const body = req.body as any;
+
+  const workshop = await req.server.prisma.workshop.findUnique({ where: { id }, select: { id: true } });
+  if (!workshop) return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Workshop not found' } });
+
+  const template = await req.server.prisma.liveCallTemplate.create({
+    data: {
+      workshopId: id,
+      title: body.title,
+      label: body.label ?? 'LIVE CALL:',
+      labelColor: body.labelColor ?? '#ff3d8b',
+      recurrence: body.recurrence ?? 'weekly',
+      dayOfWeek: Number(body.dayOfWeek ?? 1),
+      timeHour: Number(body.timeHour ?? 10),
+      timeMinute: Number(body.timeMinute ?? 0),
+      durationMinutes: Number(body.durationMinutes ?? 60),
+      liveUrlUnlocksMinutesBefore: Number(body.liveUrlUnlocksMinutesBefore ?? 30),
+      facilitatorName: body.facilitatorName ?? null,
+      stayTunedMessage: body.stayTunedMessage ?? 'Stay tuned — the link will unlock before the session begins',
+      stayTunedColor: body.stayTunedColor ?? '#00c4cc',
+      isActive: body.isActive !== false,
+      weeksAhead: Number(body.weeksAhead ?? 4),
+    },
+  });
+  return reply.status(201).send({ success: true, data: template, error: null });
+}
+
+export async function updateLiveCallTemplateHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { tid } = req.params as any;
+  const body = req.body as any;
+
+  const allowed = [
+    'title', 'label', 'labelColor', 'recurrence', 'dayOfWeek', 'timeHour',
+    'timeMinute', 'durationMinutes', 'liveUrlUnlocksMinutesBefore', 'facilitatorName',
+    'stayTunedMessage', 'stayTunedColor', 'isActive', 'weeksAhead',
+  ] as const;
+  const data: Record<string, any> = {};
+  for (const f of allowed) {
+    if (body[f] !== undefined) data[f] = body[f];
+  }
+
+  const template = await req.server.prisma.liveCallTemplate.update({ where: { id: tid }, data });
+  return reply.send({ success: true, data: template, error: null });
+}
+
+export async function deleteLiveCallTemplateHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { tid } = req.params as any;
+  await req.server.prisma.liveCallTemplate.delete({ where: { id: tid } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+function nextOccurrence(dayOfWeek: number, timeHour: number, timeMinute: number, after: Date): Date {
+  const d = new Date(after);
+  d.setUTCSeconds(0, 0);
+  d.setUTCHours(timeHour, timeMinute);
+  // dayOfWeek: 0=Sun ... 6=Sat
+  const diff = (dayOfWeek - d.getUTCDay() + 7) % 7 || 7;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d;
+}
+
+async function generateFromTemplate(prisma: any, template: any, weeksAhead: number): Promise<number> {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + weeksAhead * 7 * 24 * 60 * 60 * 1000);
+
+  const existing = await prisma.liveCall.findMany({
+    where: {
+      workshopId: template.workshopId,
+      scheduledAt: { gte: now },
+      title: template.title,
+    },
+    select: { scheduledAt: true },
+  });
+  const existingTimes = new Set(existing.map((lc: any) => lc.scheduledAt.toISOString()));
+
+  let created = 0;
+  let cursor = nextOccurrence(template.dayOfWeek, template.timeHour, template.timeMinute, now);
+  while (cursor <= cutoff) {
+    const iso = cursor.toISOString();
+    if (!existingTimes.has(iso)) {
+      await prisma.liveCall.create({
+        data: {
+          workshopId: template.workshopId,
+          title: template.title,
+          label: template.label,
+          labelColor: template.labelColor,
+          scheduledAt: cursor,
+          liveUrlUnlocksMinutesBefore: template.liveUrlUnlocksMinutesBefore,
+          facilitatorName: template.facilitatorName,
+          stayTunedMessage: template.stayTunedMessage,
+          stayTunedColor: template.stayTunedColor,
+        },
+      });
+      created++;
+    }
+    cursor = new Date(cursor.getTime() + 7 * 24 * 60 * 60 * 1000);
+  }
+  return created;
+}
+
+export async function generateNowHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { tid } = req.params as any;
+  const template = await req.server.prisma.liveCallTemplate.findUnique({ where: { id: tid } });
+  if (!template) return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Template not found' } });
+
+  const created = await generateFromTemplate(req.server.prisma, template, template.weeksAhead);
+  await req.server.prisma.liveCallTemplate.update({ where: { id: tid }, data: { lastGeneratedAt: new Date() } });
+
+  return reply.send({ success: true, data: { created }, error: null });
+}
+
+export async function generateRecurringHandler(req: FastifyRequest, reply: FastifyReply) {
+  const secret = (req.headers['x-cron-secret'] as string) || '';
+  const { env } = await import('../../config/env.js');
+  if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {
+    return reply.status(401).send({ success: false, data: null, error: { code: 'UNAUTHORIZED', message: 'Invalid cron secret' } });
+  }
+
+  const templates = await req.server.prisma.liveCallTemplate.findMany({ where: { isActive: true } });
+  let totalCreated = 0;
+  for (const t of templates) {
+    try {
+      const n = await generateFromTemplate(req.server.prisma, t, t.weeksAhead);
+      totalCreated += n;
+      await req.server.prisma.liveCallTemplate.update({ where: { id: t.id }, data: { lastGeneratedAt: new Date() } });
+    } catch {
+      // continue on individual failure
+    }
+  }
+  return reply.send({ success: true, data: { templatesProcessed: templates.length, created: totalCreated }, error: null });
 }

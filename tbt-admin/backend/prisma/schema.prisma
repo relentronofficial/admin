@@ -319,6 +319,7 @@ model Member {
   liveCallRsvps         LiveCallRsvp[]
   liveCallQuestions     LiveCallQuestion[]
   liveCallFeedback      LiveCallFeedback[]
+  liveCallCertificates  LiveCallCertificate[]
 
   @@map("members")
 }
@@ -1448,6 +1449,7 @@ model Workshop {
   flowItems              WorkshopFlowItem[]
   qaPosts                QAPost[]
   contentItems           ContentItem[]
+  liveCallTemplates      LiveCallTemplate[]
   createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1503,9 +1505,11 @@ model Challenge {
   workshop        Workshop                  @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   episodes        WorkshopEpisode[]
   assignments     Assignment[]
-  flowItems       WorkshopFlowItem[]
-  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  flowItems           WorkshopFlowItem[]
+  gatedLiveCalls      LiveCall[]            @relation("LiveCallPrereq")
+  unlockedByLiveCalls LiveCall[]            @relation("LiveCallUnlock")
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("challenges")
 }
@@ -1591,6 +1595,10 @@ model LiveCall {
   isLocked                    Boolean            @default(false) @map("is_locked")
   waitingRoomEnabled          Boolean            @default(false) @map("waiting_room_enabled")
   passcode                    String?            @map("passcode")
+  prerequisiteChallengeId     String?            @map("prerequisite_challenge_id") @db.Uuid
+  prerequisiteChallenge       Challenge?         @relation("LiveCallPrereq", fields: [prerequisiteChallengeId], references: [id], onDelete: SetNull)
+  postSessionUnlockChallengeId String?           @map("post_session_unlock_challenge_id") @db.Uuid
+  postSessionUnlockChallenge  Challenge?         @relation("LiveCallUnlock", fields: [postSessionUnlockChallengeId], references: [id], onDelete: SetNull)
   egressId                    String?            @map("egress_id")
   recordingStartedAt          DateTime?          @map("recording_started_at") @db.Timestamptz(6)
   aiSummary                   String?            @map("ai_summary")
@@ -1606,6 +1614,8 @@ model LiveCall {
   questions                   LiveCallQuestion[]
   chapters                    RecordingChapter[]
   feedback                    LiveCallFeedback[]
+  certificates                LiveCallCertificate[]
+  breakoutRooms               BreakoutRoom[]
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1676,6 +1686,20 @@ model LiveCallFeedback {
 
   @@unique([liveCallId, memberId])
   @@map("live_call_feedback")
+}
+
+model LiveCallCertificate {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId        String   @map("live_call_id") @db.Uuid
+  memberId          String   @map("member_id") @db.Uuid
+  attendancePercent Int      @map("attendance_percent")
+  certificateUrl    String   @map("certificate_url")
+  issuedAt          DateTime @default(now()) @map("issued_at") @db.Timestamptz(6)
+  liveCall          LiveCall @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+  member            Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([liveCallId, memberId])
+  @@map("live_call_certificates")
 }
 
 model LiveCallAttendance {
@@ -2047,4 +2071,40 @@ model ResourcesPageConfig {
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("resources_page_config")
+}
+
+model BreakoutRoom {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId String   @map("live_call_id") @db.Uuid
+  name       String
+  roomName   String   @map("room_name")
+  isActive   Boolean  @default(true) @map("is_active")
+  liveCall   LiveCall @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("breakout_rooms")
+}
+
+model LiveCallTemplate {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workshopId                  String    @map("workshop_id") @db.Uuid
+  title                       String
+  label                       String    @default("LIVE CALL:")
+  labelColor                  String    @default("#ff3d8b") @map("label_color")
+  recurrence                  String
+  dayOfWeek                   Int       @map("day_of_week")
+  timeHour                    Int       @map("time_hour")
+  timeMinute                  Int       @map("time_minute")
+  durationMinutes             Int       @default(60) @map("duration_minutes")
+  liveUrlUnlocksMinutesBefore Int       @default(30) @map("live_url_unlocks_minutes_before")
+  facilitatorName             String?   @map("facilitator_name")
+  stayTunedMessage            String    @default("Stay tuned — the link will unlock before the session begins") @map("stay_tuned_message")
+  stayTunedColor              String    @default("#00c4cc") @map("stay_tuned_color")
+  isActive                    Boolean   @default(true) @map("is_active")
+  lastGeneratedAt             DateTime? @map("last_generated_at") @db.Timestamptz(6)
+  weeksAhead                  Int       @default(4) @map("weeks_ahead")
+  workshop                    Workshop  @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  createdAt                   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("live_call_templates")
 }

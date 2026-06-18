@@ -139,7 +139,8 @@ async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) 
     // Fast path: in-memory status cache
     const cached = getCachedMemberStatus(memberId);
     if (cached !== null) {
-      if (cached !== 'active') {
+      const blockedStatuses = ['inactive', 'suspended', 'paused'];
+      if (blockedStatuses.includes(cached)) {
         return reply.status(403).send({ success: false, data: null, error: `Forbidden: Account is ${cached}` });
       }
       request.memberId = memberId;
@@ -159,7 +160,12 @@ async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) 
 
       setCachedMemberStatus(memberId, (member as any).status);
 
-      if ((member as any).status !== 'active') {
+      // Allow 'active' and 'pending' through — SubscriptionGate on the frontend
+      // reads the status from /me and shows the pending-approval overlay for pending members.
+      // Blocking 'pending' here would prevent /me from ever returning the status,
+      // causing SubscriptionGate to silently skip the overlay.
+      const blockedStatuses = ['inactive', 'suspended', 'paused'];
+      if (blockedStatuses.includes((member as any).status)) {
         return reply.status(403).send({ success: false, data: null, error: `Forbidden: Account is ${(member as any).status}` });
       }
 

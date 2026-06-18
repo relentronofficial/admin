@@ -418,3 +418,14 @@ export const usePostLiveCallFeedback = () => {
     },
   });
 };
+
+export const useGetMyLiveCallCertificate = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["my-live-call-certificate", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshop/live-calls/${liveCallId}/certificate`);
+      return res?.data as { certificateUrl: string; attendancePercent: number; issuedAt: string } | null;
+    },
+    enabled: !!liveCallId && enabled,
+    retry: false,
+  });

@@ -19,6 +19,10 @@ import {
   listLiveCallQuestionsAdminHandler, updateLiveCallQuestionHandler,
   listChaptersHandler, createChapterHandler, deleteChapterHandler, reorderChaptersHandler,
   getLiveCallFeedbackAdminHandler,
+  promoteCoHostHandler, generateCertificatesHandler,
+  getBreakoutRoomsHandler, createBreakoutRoomsHandler, assignToBreakoutHandler, recallAllHandler, deleteBreakoutRoomHandler,
+  listLiveCallTemplatesHandler, createLiveCallTemplateHandler, updateLiveCallTemplateHandler, deleteLiveCallTemplateHandler,
+  generateNowHandler, generateRecurringHandler,
   listAssignmentsHandler, createAssignmentHandler, updateAssignmentHandler, deleteAssignmentHandler,
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
@@ -111,8 +115,28 @@ export async function workshopRoutes(fastify: FastifyInstance) {
   // Session feedback (admin view)
   fastify.get('/live-calls/:lcid/feedback', getLiveCallFeedbackAdminHandler);
 
+  // Co-host promotion
+  fastify.post('/live-calls/:lcid/co-host/:memberId', promoteCoHostHandler);
+
+  // Attendance certificates
+  fastify.post('/live-calls/:lcid/certificates/generate', generateCertificatesHandler);
+
   // Reminders
   fastify.post('/live-calls/:lcid/reminders', sendRemindersHandler);
+
+  // Breakout rooms
+  fastify.get('/live-calls/:lcid/breakout-rooms', getBreakoutRoomsHandler);
+  fastify.post('/live-calls/:lcid/breakout-rooms', createBreakoutRoomsHandler);
+  fastify.post('/live-calls/:lcid/breakout-rooms/:brid/assign', assignToBreakoutHandler);
+  fastify.post('/live-calls/:lcid/breakout-rooms/recall-all', recallAllHandler);
+  fastify.delete('/live-calls/:lcid/breakout-rooms/:brid', deleteBreakoutRoomHandler);
+
+  // Live call templates (recurring)
+  fastify.get('/:id/live-call-templates', listLiveCallTemplatesHandler);
+  fastify.post('/:id/live-call-templates', createLiveCallTemplateHandler);
+  fastify.put('/live-call-templates/:tid', updateLiveCallTemplateHandler);
+  fastify.delete('/live-call-templates/:tid', deleteLiveCallTemplateHandler);
+  fastify.post('/live-call-templates/:tid/generate-now', generateNowHandler);
 
   fastify.get('/:id/assignments', listAssignmentsHandler);
   fastify.post('/:id/assignments', createAssignmentHandler);

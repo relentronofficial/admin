@@ -7,7 +7,7 @@ import {
   Video, BookOpen, Users, MessageSquare, ClipboardList,
   CheckCircle2, Clock, ChevronRight, Settings, Workflow,
   GripVertical, BarChart2, Save, BookMarked, PhoneCall, FileText, ChevronDown, Search, Upload,
-  Star, BookMarked as Bookmark2,
+  Star, BookMarked as Bookmark2, GraduationCap, RefreshCw, CalendarClock,
 } from "lucide-react";
 import { useCreateBunnyVideo } from "@/lib/hooks/useAdmin";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -27,7 +27,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
-import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall, useLiveCallRsvps, useListLiveCallResources, useCreateLiveCallResource, useUpdateLiveCallResource, useDeleteLiveCallResource, useReorderLiveCallResources, useGetChapters, useCreateChapter, useDeleteChapter, useReorderChapters, useGetLiveCallFeedbackAdmin } from "@/lib/hooks/useTbt";
+import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall, useLiveCallRsvps, useListLiveCallResources, useCreateLiveCallResource, useUpdateLiveCallResource, useDeleteLiveCallResource, useReorderLiveCallResources, useGetChapters, useCreateChapter, useDeleteChapter, useReorderChapters, useGetLiveCallFeedbackAdmin, useGenerateCertificates, useListLiveCallTemplates, useCreateLiveCallTemplate, useUpdateLiveCallTemplate, useDeleteLiveCallTemplate, useGenerateNow, type LiveCallTemplate } from "@/lib/hooks/useTbt";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -245,6 +245,253 @@ function FeedbackBadge({ lcId }: { lcId: string }) {
       </button>
       {open && <FeedbackModal data={fb} onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+function CertificateButton({ lcId }: { lcId: string }) {
+  const [open, setOpen] = useState(false);
+  const [minPct, setMinPct] = useState("70");
+  const generateCertificates = useGenerateCertificates();
+
+  const handleGenerate = async () => {
+    try {
+      const result = await generateCertificates.mutateAsync({ lcid: lcId, minAttendancePercent: Number(minPct) || 70 });
+      toast.success(`Generated ${result.generated} certificate${result.generated !== 1 ? "s" : ""}${result.errors > 0 ? ` (${result.errors} failed)` : ""}`);
+      setOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate certificates");
+    }
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded transition-opacity hover:opacity-80"
+        style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.25)" }}
+      >
+        <GraduationCap size={9} />
+        Generate Certificates
+      </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/80 z-[300] flex items-center justify-center">
+          <div className="rounded-2xl border p-6 w-72 space-y-4" style={{ background: "#141414", borderColor: "#2a2a2a" }}>
+            <p className="font-rajdhani font-bold uppercase tracking-widest text-sm text-white">Generate Certificates</p>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Min Attendance %</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={minPct}
+                onChange={e => setMinPct(e.target.value)}
+                className="mt-1 w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm"
+              />
+              <p className="text-[10px] mt-1" style={{ color: "#606060" }}>Members who attended at least this % will receive a certificate</p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setOpen(false)} className="flex-1 py-2 rounded-lg text-sm font-bold border" style={{ borderColor: "#333", color: "#606060" }}>Cancel</button>
+              <button
+                onClick={handleGenerate}
+                disabled={generateCertificates.isPending}
+                className="flex-1 py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+                style={{ background: "#22c55e", color: "#000" }}
+              >
+                {generateCertificates.isPending ? "Generating…" : "Generate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function TemplatesSection({ workshopId }: { workshopId: string }) {
+  const { data: templates = [], isLoading } = useListLiveCallTemplates(workshopId, true);
+  const createTemplate = useCreateLiveCallTemplate();
+  const updateTemplate = useUpdateLiveCallTemplate();
+  const deleteTemplate = useDeleteLiveCallTemplate();
+  const generateNow = useGenerateNow();
+
+  const emptyForm = (): Partial<LiveCallTemplate> => ({
+    title: "",
+    label: "LIVE CALL:",
+    labelColor: "#ff3d8b",
+    recurrence: "weekly",
+    dayOfWeek: 1,
+    timeHour: 10,
+    timeMinute: 0,
+    durationMinutes: 60,
+    liveUrlUnlocksMinutesBefore: 30,
+    facilitatorName: "",
+    stayTunedMessage: "Stay tuned — the link will unlock before the session begins",
+    stayTunedColor: "#00c4cc",
+    isActive: true,
+    weeksAhead: 4,
+  });
+
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<LiveCallTemplate | null>(null);
+  const [form, setForm] = useState<Partial<LiveCallTemplate>>(emptyForm());
+
+  const openCreate = () => { setEditing(null); setForm(emptyForm()); setOpen(true); };
+  const openEdit = (t: LiveCallTemplate) => { setEditing(t); setForm({ ...t }); setOpen(true); };
+
+  const handleSave = async () => {
+    if (!form.title?.trim()) return toast.error("Title is required");
+    try {
+      if (editing) {
+        await updateTemplate.mutateAsync({ tid: editing.id, workshopId, ...form });
+      } else {
+        await createTemplate.mutateAsync({ workshopId, ...form });
+      }
+      setOpen(false);
+      toast.success(editing ? "Template updated" : "Template created");
+    } catch (err: any) { toast.error(err.message || "Failed"); }
+  };
+
+  const handleDelete = async (tid: string) => {
+    if (!confirm("Delete this template?")) return;
+    await deleteTemplate.mutateAsync({ tid, workshopId });
+    toast.success("Deleted");
+  };
+
+  const handleGenerate = async (t: LiveCallTemplate) => {
+    try {
+      const res = await generateNow.mutateAsync({ tid: t.id, workshopId });
+      toast.success(`Created ${res.created} live call${res.created !== 1 ? "s" : ""} from template`);
+    } catch (err: any) { toast.error(err.message || "Failed"); }
+  };
+
+  return (
+    <div className="rounded-xl border border-[#2a2a2a] overflow-hidden mb-4" style={{ background: "#181818" }}>
+      <div className="flex items-center justify-between px-6 py-3" style={{ borderBottom: "1px solid #1a1a1a" }}>
+        <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani flex items-center gap-2">
+          <CalendarClock size={12} /> Recurring Templates
+        </span>
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded uppercase tracking-widest font-rajdhani"
+          style={{ background: "rgba(220,38,38,0.1)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.25)" }}
+        >
+          <Plus size={10} /> New Template
+        </button>
+      </div>
+
+      {templates.length === 0 ? (
+        <p className="text-center text-xs py-6" style={{ color: "#444" }}>No recurring templates yet.</p>
+      ) : (
+        <div className="divide-y divide-[#1a1a1a]">
+          {templates.map(t => (
+            <div key={t.id} className="flex items-center gap-4 px-6 py-3">
+              <RefreshCw size={13} style={{ color: t.isActive ? "#22c55e" : "#444", flexShrink: 0 }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold truncate" style={{ color: "#f0f0f0" }}>{t.title}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: "#606060" }}>
+                  {t.recurrence} · {DAYS_OF_WEEK[t.dayOfWeek]} · {String(t.timeHour).padStart(2, "0")}:{String(t.timeMinute).padStart(2, "0")} · {t.weeksAhead}w ahead
+                </p>
+                {t.lastGeneratedAt && (
+                  <p className="text-[10px]" style={{ color: "#444" }}>Last generated: {format(new Date(t.lastGeneratedAt), "dd MMM yyyy")}</p>
+                )}
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                <button
+                  onClick={() => handleGenerate(t)}
+                  disabled={generateNow.isPending}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded disabled:opacity-40"
+                  style={{ background: "rgba(99,102,241,0.12)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)" }}
+                >
+                  Generate Now
+                </button>
+                <button onClick={() => openEdit(t)} className="p-1 rounded hover:bg-[#2a2a2a]"><Pencil size={11} style={{ color: "#606060" }} /></button>
+                <button onClick={() => handleDelete(t.id)} className="p-1 rounded hover:bg-[#2a2a2a]"><Trash2 size={11} style={{ color: "#606060" }} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Template modal */}
+      {open && (
+        <div className="fixed inset-0 bg-black/80 z-[300] flex items-center justify-center overflow-auto py-8">
+          <div className="rounded-2xl border p-6 w-full max-w-lg space-y-4 mx-4" style={{ background: "#141414", borderColor: "#2a2a2a" }}>
+            <p className="font-rajdhani font-bold uppercase tracking-widest text-sm text-white">
+              {editing ? "Edit Template" : "New Recurring Template"}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className={labelCls}>Title *</label>
+                <input value={form.title ?? ""} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className={inputCls} placeholder="Weekly Strategy Call" />
+              </div>
+              <div>
+                <label className={labelCls}>Day of Week</label>
+                <select value={form.dayOfWeek ?? 1} onChange={e => setForm(f => ({ ...f, dayOfWeek: Number(e.target.value) }))} className={selectCls}>
+                  {DAYS_OF_WEEK.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Time (UTC)</label>
+                <div className="flex gap-2">
+                  <input type="number" min={0} max={23} value={form.timeHour ?? 10} onChange={e => setForm(f => ({ ...f, timeHour: Number(e.target.value) }))} className={inputCls} placeholder="HH" />
+                  <input type="number" min={0} max={59} value={form.timeMinute ?? 0} onChange={e => setForm(f => ({ ...f, timeMinute: Number(e.target.value) }))} className={inputCls} placeholder="MM" />
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>Duration (min)</label>
+                <input type="number" value={form.durationMinutes ?? 60} onChange={e => setForm(f => ({ ...f, durationMinutes: Number(e.target.value) }))} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Weeks Ahead</label>
+                <input type="number" min={1} max={12} value={form.weeksAhead ?? 4} onChange={e => setForm(f => ({ ...f, weeksAhead: Number(e.target.value) }))} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Unlock Before (min)</label>
+                <input type="number" value={form.liveUrlUnlocksMinutesBefore ?? 30} onChange={e => setForm(f => ({ ...f, liveUrlUnlocksMinutesBefore: Number(e.target.value) }))} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Facilitator Name</label>
+                <input value={form.facilitatorName ?? ""} onChange={e => setForm(f => ({ ...f, facilitatorName: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Label</label>
+                <input value={form.label ?? "LIVE CALL:"} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Label Color</label>
+                <div className="flex items-center gap-2 h-11">
+                  <input type="color" value={form.labelColor ?? "#ff3d8b"} onChange={e => setForm(f => ({ ...f, labelColor: e.target.value }))} className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent" />
+                  <span className="text-sm text-[#888] font-mono">{form.labelColor}</span>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <label className={labelCls}>Stay Tuned Message</label>
+                <input value={form.stayTunedMessage ?? ""} onChange={e => setForm(f => ({ ...f, stayTunedMessage: e.target.value }))} className={inputCls} />
+              </div>
+              <div className="flex items-center gap-3 col-span-2">
+                <input type="checkbox" id="tplActive" checked={form.isActive ?? true} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} className="w-4 h-4 accent-red-600" />
+                <label htmlFor="tplActive" className="text-sm text-[#a0a0a0]">Active (will generate automatically)</label>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setOpen(false)} className="flex-1 py-2 rounded-lg text-sm font-bold border" style={{ borderColor: "#333", color: "#606060" }}>Cancel</button>
+              <button
+                onClick={handleSave}
+                disabled={createTemplate.isPending || updateTemplate.isPending}
+                className="flex-1 py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+                style={{ background: "#dc2626", color: "#fff" }}
+              >
+                {editing ? "Save Changes" : "Create Template"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -991,16 +1238,18 @@ export default function WorkshopDetailPage() {
     passcode: "",
     externalMeetingUrl: "",
     externalMeetingProvider: "",
+    prerequisiteChallengeId: "",
+    postSessionUnlockChallengeId: "",
   });
   const [deletingLiveCall, setDeletingLiveCall] = useState<string | null>(null);
   const [rsvpModalLcId, setRsvpModalLcId] = useState<string | null>(null);
 
   const openCreateLiveCall = () => {
-    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false, waitingRoomEnabled: false, passcode: "", externalMeetingUrl: "", externalMeetingProvider: "" });
+    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false, waitingRoomEnabled: false, passcode: "", externalMeetingUrl: "", externalMeetingProvider: "", prerequisiteChallengeId: "", postSessionUnlockChallengeId: "" });
     setEditingLiveCall(null); setShowLiveCallForm(true);
   };
   const openEditLiveCall = (lc: any) => {
-    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc", isWebinar: lc.isWebinar || false, waitingRoomEnabled: lc.waitingRoomEnabled || false, passcode: lc.passcode || "", externalMeetingUrl: lc.externalMeetingUrl || "", externalMeetingProvider: lc.externalMeetingProvider || "" });
+    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc", isWebinar: lc.isWebinar || false, waitingRoomEnabled: lc.waitingRoomEnabled || false, passcode: lc.passcode || "", externalMeetingUrl: lc.externalMeetingUrl || "", externalMeetingProvider: lc.externalMeetingProvider || "", prerequisiteChallengeId: lc.prerequisiteChallengeId || "", postSessionUnlockChallengeId: lc.postSessionUnlockChallengeId || "" });
     setEditingLiveCall(lc); setShowLiveCallForm(true);
   };
 
@@ -1008,7 +1257,7 @@ export default function WorkshopDetailPage() {
     if (!liveCallForm.title) return toast.error("Title is required");
     if (!liveCallForm.scheduledAt) return toast.error("Scheduled date is required");
     try {
-      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor, isWebinar: liveCallForm.isWebinar, waitingRoomEnabled: (liveCallForm as any).waitingRoomEnabled || false, passcode: (liveCallForm as any).passcode || null, externalMeetingUrl: liveCallForm.externalMeetingUrl || null, externalMeetingProvider: liveCallForm.externalMeetingProvider || null };
+      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor, isWebinar: liveCallForm.isWebinar, waitingRoomEnabled: (liveCallForm as any).waitingRoomEnabled || false, passcode: (liveCallForm as any).passcode || null, externalMeetingUrl: liveCallForm.externalMeetingUrl || null, externalMeetingProvider: liveCallForm.externalMeetingProvider || null, prerequisiteChallengeId: liveCallForm.prerequisiteChallengeId || null, postSessionUnlockChallengeId: liveCallForm.postSessionUnlockChallengeId || null };
       if (editingLiveCall) { await updateLiveCall.mutateAsync({ id: editingLiveCall.id, data: lcData }); toast.success("Live call updated"); }
       else { await createLiveCall.mutateAsync(lcData); toast.success("Live call created"); }
       setShowLiveCallForm(false); refetchLiveCalls();
@@ -1522,6 +1771,7 @@ export default function WorkshopDetailPage() {
         {/* ── LIVE CALLS TAB ──────────────────────────────────────────── */}
         {activeTab === "live-calls" && (
           <div className="space-y-4">
+            <TemplatesSection workshopId={id} />
             <div className="flex justify-end">
               <button onClick={openCreateLiveCall} className="flex items-center gap-2 bg-[#dc2626] text-white px-4 py-2 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
                 <Plus size={14} /> Add Live Call
@@ -1589,7 +1839,10 @@ export default function WorkshopDetailPage() {
                   </div>
                   <AttendanceRow lcId={lc.id} />
                   <AnalyticsRow lcId={lc.id} lc={lc} />
-                  <div className="px-4 pb-3 flex items-center gap-2"><FeedbackBadge lcId={lc.id} /></div>
+                  <div className="px-4 pb-3 flex items-center gap-2">
+                    <FeedbackBadge lcId={lc.id} />
+                    {lc.endedAt && <CertificateButton lcId={lc.id} />}
+                  </div>
                   </div>
                 ))}
               </div>
@@ -2312,6 +2565,28 @@ export default function WorkshopDetailPage() {
                 <div><label className={labelCls}>Recording Label</label><input value={liveCallForm.recordingLabel} onChange={e => setLiveCallForm(f => ({ ...f, recordingLabel: e.target.value }))} placeholder="Watch Recording" className={inputCls} /></div>
               </div>
               <div><label className={labelCls}>Prerequisite Note</label><input value={liveCallForm.prerequisiteNote} onChange={e => setLiveCallForm(f => ({ ...f, prerequisiteNote: e.target.value }))} placeholder="Complete challenge 3 before joining" className={inputCls} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Hard Prerequisite (optional)</label>
+                  <select value={liveCallForm.prerequisiteChallengeId} onChange={e => setLiveCallForm(f => ({ ...f, prerequisiteChallengeId: e.target.value }))} className={inputCls}>
+                    <option value="">— None —</option>
+                    {challenges.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.numberLabel} — {c.title}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-[#606060] mt-1">Member must complete this challenge to join</p>
+                </div>
+                <div>
+                  <label className={labelCls}>Auto-unlock after session (optional)</label>
+                  <select value={liveCallForm.postSessionUnlockChallengeId} onChange={e => setLiveCallForm(f => ({ ...f, postSessionUnlockChallengeId: e.target.value }))} className={inputCls}>
+                    <option value="">— None —</option>
+                    {challenges.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.numberLabel} — {c.title}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-[#606060] mt-1">Unlocked for all enrollees when session ends</p>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div><label className={labelCls}>Facilitator Name</label><input value={liveCallForm.facilitatorName} onChange={e => setLiveCallForm(f => ({ ...f, facilitatorName: e.target.value }))} className={inputCls} /></div>
                 <div><label className={labelCls}>Facilitator Title</label><input value={liveCallForm.facilitatorTitle} onChange={e => setLiveCallForm(f => ({ ...f, facilitatorTitle: e.target.value }))} placeholder="Head of Growth" className={inputCls} /></div>

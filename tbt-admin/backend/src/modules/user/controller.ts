@@ -1057,7 +1057,7 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
 
   const liveCall = await request.server.prisma.liveCall.findUnique({
     where: { id: liveCallId },
-    select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true, isWebinar: true, startedAt: true, isLocked: true, waitingRoomEnabled: true, passcode: true },
+    select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true, isWebinar: true, startedAt: true, isLocked: true, waitingRoomEnabled: true, passcode: true, prerequisiteChallengeId: true },
   });
   if (!liveCall) return fail(reply, 404, 'Live call not found');
 
@@ -1065,6 +1065,16 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
   const { passcode: inputPasscode } = request.body as any ?? {};
   if (liveCall.passcode && liveCall.passcode !== inputPasscode) {
     return reply.status(403).send({ success: false, data: null, error: { code: 'PASSCODE_REQUIRED', message: 'Invalid passcode' } });
+  }
+
+  // Prerequisite challenge check — member must have completed it
+  if (liveCall.prerequisiteChallengeId) {
+    const progress = await request.server.prisma.memberChallengeProgress.findFirst({
+      where: { challengeId: liveCall.prerequisiteChallengeId, memberId: request.memberId, status: 'completed' },
+    });
+    if (!progress) {
+      return reply.status(403).send({ success: false, data: null, error: { code: 'PREREQ_REQUIRED', message: 'Complete the prerequisite challenge before joining this session.' } });
+    }
   }
 
   // Waiting room — return waiting status; admin must admit via socket
@@ -1196,6 +1206,16 @@ export async function getMyLiveCallFeedbackHandler(request: FastifyRequest, repl
     where: { liveCallId_memberId: { liveCallId, memberId: request.memberId } },
   });
   return ok(reply, feedback ?? null);
+}
+
+export async function getMyLiveCallCertificateHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const cert = await request.server.prisma.liveCallCertificate.findUnique({
+    where: { liveCallId_memberId: { liveCallId, memberId: request.memberId } },
+    select: { certificateUrl: true, attendancePercent: true, issuedAt: true },
+  });
+  if (!cert) return fail(reply, 404, 'Certificate not found');
+  return ok(reply, cert);
 }
 
 // ─── Live Call Q&A (user) ─────────────────────────────────────────────────────

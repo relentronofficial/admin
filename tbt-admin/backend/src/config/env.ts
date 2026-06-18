@@ -58,6 +58,7 @@ const envSchema = z.object({
   WABA_TEMPLATE_LANGUAGE: z.string().default('en'),
   WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
+  CRON_SECRET: z.string().optional().or(z.literal('')),
 });
 
 const _env = envSchema.safeParse(process.env);

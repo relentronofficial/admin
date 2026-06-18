@@ -46,6 +46,7 @@ import {
   useUpsertRsvp,
   useGetLiveCallResources,
   useGetLiveCallChapters,
+  useGetMyLiveCallCertificate,
 } from "@/lib/hooks/useConfig";
 import { useMe } from "@/lib/hooks/useUser";
 import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
@@ -2715,6 +2716,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   const { data: liveStatus } = useLiveCallStatus(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
   const { data: resources = [] } = useGetLiveCallResources(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
   const { data: chapters = [] } = useGetLiveCallChapters(challenge.liveCallId ?? "", !!challenge.liveCallId && isPast);
+  const { data: certData } = useGetMyLiveCallCertificate(challenge.liveCallId ?? "", !!challenge.liveCallId && isPast);
 
   useEffect(() => {
     if (!challenge.scheduledAt || isPast) return;
@@ -2854,6 +2856,18 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
               <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#606060" }}>AI Session Summary</p>
               <p className="text-xs leading-relaxed italic whitespace-pre-line" style={{ color: "#a0a0a0" }}>{challenge.aiSummary}</p>
             </div>
+          )}
+          {certData?.certificateUrl && (
+            <a
+              href={certData.certificateUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-bold border transition-colors"
+              style={{ borderColor: "rgba(34,197,94,0.35)", color: "#22c55e", background: "rgba(34,197,94,0.08)" }}
+            >
+              <Download size={14} />
+              Download Certificate
+            </a>
           )}
         </div>
       ) : (
