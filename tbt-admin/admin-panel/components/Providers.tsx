@@ -8,6 +8,10 @@ import { useAuth } from "@clerk/nextjs";
 import apiClient from "../lib/api/apiClient";
 import { initAdminSocket, getAdminSocket } from "@/lib/socket/client";
 
+// Token cache — Clerk tokens are valid for 60s; refresh 8s before expiry
+let _cachedToken: string | null = null;
+let _tokenExpiresAt = 0;
+
 function AuthInterceptor() {
   const { getToken, isLoaded } = useAuth();
   const getTokenRef = useRef(getToken);
@@ -17,6 +21,9 @@ function AuthInterceptor() {
   // Keep the ref current without triggering interceptor re-registration
   useEffect(() => {
     getTokenRef.current = getToken;
+    // Invalidate cache when getToken identity changes (e.g., user switch)
+    _cachedToken = null;
+    _tokenExpiresAt = 0;
   }, [getToken]);
 
   // Register once when Clerk loads — ref ensures the latest getToken is always used
@@ -25,17 +32,24 @@ function AuthInterceptor() {
 
     const interceptor = apiClient.interceptors.request.use(async (config) => {
       try {
-        const token = await getTokenRef.current();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+        const now = Date.now();
+        if (!_cachedToken || now >= _tokenExpiresAt) {
+          _cachedToken = await getTokenRef.current();
+          _tokenExpiresAt = now + 52_000; // cache for 52s (Clerk default lifetime is 60s)
+        }
+        if (_cachedToken) {
+          config.headers.Authorization = `Bearer ${_cachedToken}`;
         }
       } catch (error) {
-        console.error("Error getting auth token", error);
+        _cachedToken = null;
+        _tokenExpiresAt = 0;
       }
       return config;
     });
 
     return () => {
+      _cachedToken = null;
+      _tokenExpiresAt = 0;
       apiClient.interceptors.request.eject(interceptor);
     };
   }, [isLoaded]);
@@ -71,7 +85,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 60 * 1000,
+        staleTime: 5 * 60 * 1000, // 5 minutes — admin data rarely changes faster
         retry: 1,
       },
     },

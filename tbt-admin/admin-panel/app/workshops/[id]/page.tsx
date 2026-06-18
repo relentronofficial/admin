@@ -833,24 +833,24 @@ export default function WorkshopDetailPage() {
   const workshop = workshopData?.data;
   const updateWorkshop = useUpdateWorkshop();
 
-  const { data: challengesData, refetch: refetchChallenges } = useWorkshopChallenges(id);
+  const { data: challengesData, refetch: refetchChallenges } = useWorkshopChallenges(id, activeTab === 'challenges');
   const challenges = (challengesData as any)?.data || [];
 
-  const { data: liveCallsData, refetch: refetchLiveCalls } = useWorkshopLiveCalls(id);
+  const { data: liveCallsData, refetch: refetchLiveCalls } = useWorkshopLiveCalls(id, activeTab === 'live-calls');
   const liveCalls = (liveCallsData as any)?.data || [];
 
-  const { data: assignmentsData, refetch: refetchAssignments } = useWorkshopAssignments(id);
+  const { data: assignmentsData, refetch: refetchAssignments } = useWorkshopAssignments(id, activeTab === 'assignments');
   const assignmentGroups = (assignmentsData as any)?.data || [];
 
   const [qaPage, setQaPage] = useState(1);
-  const { data: qaData, refetch: refetchQA } = useWorkshopQA(id, qaPage);
+  const { data: qaData, refetch: refetchQA } = useWorkshopQA(id, qaPage, 20, activeTab === 'qa');
   const qaPosts = (qaData as any)?.data || [];
   const qaMeta = (qaData as any)?.meta;
 
-  const { data: enrollmentsData, refetch: refetchEnrollments } = useWorkshopEnrollments(id);
+  const { data: enrollmentsData, refetch: refetchEnrollments } = useWorkshopEnrollments(id, activeTab === 'enrollments');
   const enrollments = (enrollmentsData as any)?.data || [];
 
-  const { data: flowData, refetch: refetchFlow } = useWorkshopFlow(id);
+  const { data: flowData, refetch: refetchFlow } = useWorkshopFlow(id, activeTab === 'flow');
   const flowItems = (flowData as any)?.data || [];
 
   const createChallenge = useCreateChallenge(id);

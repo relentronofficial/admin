@@ -55,46 +55,46 @@ export const useDeleteWorkshop = () => {
   });
 };
 
-export const useWorkshopFlow = (id: string) =>
+export const useWorkshopFlow = (id: string, tabActive = true) =>
   useQuery({
     queryKey: ['workshop-flow', id],
     queryFn: async () => { const res: any = await apiClient.get(`/api/workshops/${id}/flow`); return res; },
-    enabled: !!id,
+    enabled: !!id && tabActive,
   });
 
-export const useWorkshopChallenges = (id: string) =>
+export const useWorkshopChallenges = (id: string, tabActive = true) =>
   useQuery({
     queryKey: ['workshop-challenges', id],
     queryFn: async () => { const res: any = await apiClient.get(`/api/workshops/${id}/challenges`); return res; },
-    enabled: !!id,
+    enabled: !!id && tabActive,
   });
 
-export const useWorkshopLiveCalls = (id: string) =>
+export const useWorkshopLiveCalls = (id: string, tabActive = true) =>
   useQuery({
     queryKey: ['workshop-live-calls', id],
     queryFn: async () => { const res: any = await apiClient.get(`/api/workshops/${id}/live-calls`); return res; },
-    enabled: !!id,
+    enabled: !!id && tabActive,
   });
 
-export const useWorkshopAssignments = (id: string) =>
+export const useWorkshopAssignments = (id: string, tabActive = true) =>
   useQuery({
     queryKey: ['workshop-assignments', id],
     queryFn: async () => { const res: any = await apiClient.get(`/api/workshops/${id}/assignments`); return res; },
-    enabled: !!id,
+    enabled: !!id && tabActive,
   });
 
-export const useWorkshopQA = (id: string, page = 1, limit = 20) =>
+export const useWorkshopQA = (id: string, page = 1, limit = 20, tabActive = true) =>
   useQuery({
     queryKey: ['workshop-qa', id, page, limit],
     queryFn: async () => { const res: any = await apiClient.get(`/api/workshops/${id}/qa`, { params: { page, limit } }); return res; },
-    enabled: !!id,
+    enabled: !!id && tabActive,
   });
 
-export const useWorkshopEnrollments = (id: string) =>
+export const useWorkshopEnrollments = (id: string, tabActive = true) =>
   useQuery({
     queryKey: ['workshop-enrollments', id],
     queryFn: async () => { const res: any = await apiClient.get(`/api/workshops/${id}/enrollments`); return res; },
-    enabled: !!id,
+    enabled: !!id && tabActive,
   });
 
 export const useEnrollMembers = (workshopId: string) => {
