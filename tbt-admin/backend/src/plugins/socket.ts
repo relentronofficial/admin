@@ -119,6 +119,32 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
       });
     });
 
+    // Hand raise queue — ephemeral, no DB
+    socket.on('live_call:hand_raised', (data: { liveCallId: string; memberName: string }) => {
+      io.to('admin').emit('live_call:hand_raised', {
+        liveCallId: data.liveCallId,
+        memberName: data.memberName || 'Member',
+        memberId: socket.data.memberId ?? socket.id,
+        raisedAt: new Date().toISOString(),
+      });
+    });
+
+    socket.on('live_call:hand_lowered', (data: { liveCallId: string }) => {
+      io.to('admin').emit('live_call:hand_lowered', {
+        liveCallId: data.liveCallId,
+        memberId: socket.data.memberId ?? socket.id,
+      });
+    });
+
+    // Admin clears a specific member's hand
+    socket.on('live_call:hand_cleared', (data: { liveCallId: string; memberId: string }) => {
+      if (data.memberId) {
+        io.to(`user:${data.memberId}`).emit('live_call:hand_cleared', { liveCallId: data.liveCallId });
+      }
+      // Remove from admin queue too
+      io.to('admin').emit('live_call:hand_lowered', { liveCallId: data.liveCallId, memberId: data.memberId });
+    });
+
     socket.on('disconnect', () => {
       fastify.log.info(`Socket disconnected: ${socket.id}`);
     });

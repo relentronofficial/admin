@@ -16,6 +16,7 @@ import {
   BarChart2, MicOff, XCircle, Lock, Unlock, Disc, StopCircle,
   Bell, Plus, X, Send,
 } from "lucide-react";
+import { getAdminSocket } from "@/lib/socket/client";
 import {
   useEndLiveCall,
   useMuteAll,
@@ -314,6 +315,51 @@ function AdminPollPanel({ liveCallId, onClose }: { liveCallId: string; onClose: 
   );
 }
 
+// ── Hand raise panel ──────────────────────────────────────────────────────────
+
+interface RaisedHand { memberId: string; memberName: string; raisedAt: string; }
+
+function HandsPanel({ liveCallId, hands, onClear, onClose }: {
+  liveCallId: string;
+  hands: RaisedHand[];
+  onClear: (memberId: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#181818" }}>
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+        <span className="text-xs font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#a0a0a0" }}>
+          Raised Hands ({hands.length})
+        </span>
+        <button onClick={onClose} className="p-1 rounded hover:bg-[#2a2a2a]"><X size={13} style={{ color: "#606060" }} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1" style={{ minHeight: 0 }}>
+        {hands.length === 0 && (
+          <p className="text-center text-xs mt-8" style={{ color: "#606060" }}>No hands raised yet.</p>
+        )}
+        {hands.map((h) => (
+          <div key={h.memberId} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "#1a1a1a" }}>
+            <span className="text-lg leading-none">✋</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm truncate" style={{ color: "#f0f0f0" }}>{h.memberName}</p>
+              <p className="text-[10px]" style={{ color: "#606060" }}>
+                {new Date(h.raisedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+            <button
+              onClick={() => onClear(h.memberId)}
+              className="text-[10px] font-bold px-2 py-0.5 rounded shrink-0"
+              style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}
+            >
+              Clear
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main AdminLiveCall ────────────────────────────────────────────────────────
 
 interface AdminLiveCallProps {
@@ -325,7 +371,7 @@ interface AdminLiveCallProps {
   onLeave: () => void;
 }
 
-type SidePanel = "participants" | "polls" | "chat" | null;
+type SidePanel = "participants" | "polls" | "chat" | "hands" | null;
 
 export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: AdminLiveCallProps) {
   const [stage, setStage] = useState<"pre" | "live" | "summary">("pre");
@@ -341,6 +387,7 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [isLocked, setIsLocked] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [raisedHands, setRaisedHands] = useState<RaisedHand[]>([]);
   const handleRecording = useCallback((v: boolean) => setIsRecording(v), []);
 
   const leftByChoiceRef = useRef(false);
@@ -358,6 +405,46 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, []);
+
+  // Hand raise socket listeners
+  useEffect(() => {
+    let socket: Awaited<ReturnType<typeof getAdminSocket>> | null = null;
+    let mounted = true;
+
+    const onHandRaised = (data: RaisedHand & { liveCallId: string }) => {
+      if (data.liveCallId !== liveCallId) return;
+      setRaisedHands(prev =>
+        prev.some(h => h.memberId === data.memberId)
+          ? prev
+          : [...prev, { memberId: data.memberId, memberName: data.memberName, raisedAt: data.raisedAt }]
+      );
+    };
+    const onHandLowered = (data: { liveCallId: string; memberId: string }) => {
+      if (data.liveCallId !== liveCallId) return;
+      setRaisedHands(prev => prev.filter(h => h.memberId !== data.memberId));
+    };
+
+    getAdminSocket().then((s) => {
+      if (!mounted) return;
+      socket = s;
+      s.on('live_call:hand_raised', onHandRaised);
+      s.on('live_call:hand_lowered', onHandLowered);
+    });
+
+    return () => {
+      mounted = false;
+      if (socket) {
+        socket.off('live_call:hand_raised', onHandRaised);
+        socket.off('live_call:hand_lowered', onHandLowered);
+      }
+    };
+  }, [liveCallId]);
+
+  const clearHand = useCallback(async (memberId: string) => {
+    const s = await getAdminSocket();
+    s.emit('live_call:hand_cleared', { liveCallId, memberId });
+    setRaisedHands(prev => prev.filter(h => h.memberId !== memberId));
+  }, [liveCallId]);
 
   const handleEndForAll = async () => {
     try { await endCall.mutateAsync(liveCallId); } catch {}
@@ -512,6 +599,14 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
           <CtrlBtn onClick={() => togglePanel("polls")} label="Polls" active={sidePanel === "polls"}>
             <BarChart2 size={12} />
           </CtrlBtn>
+          <CtrlBtn
+            onClick={() => togglePanel("hands")}
+            label={raisedHands.length > 0 ? `Hands (${raisedHands.length})` : "Hands"}
+            active={sidePanel === "hands"}
+            activeColor={raisedHands.length > 0 ? "#f59e0b" : "#f59e0b"}
+          >
+            <span className="text-sm leading-none">✋</span>
+          </CtrlBtn>
 
           <div style={{ width: 1, height: 20, background: "#2a2a2a", margin: "0 6px" }} />
 
@@ -563,6 +658,14 @@ export function AdminLiveCall({ token, wsUrl, liveCallId, hostName, onLeave }: A
                 )}
                 {sidePanel === "polls" && (
                   <AdminPollPanel liveCallId={liveCallId} onClose={() => setSidePanel(null)} />
+                )}
+                {sidePanel === "hands" && (
+                  <HandsPanel
+                    liveCallId={liveCallId}
+                    hands={raisedHands}
+                    onClear={clearHand}
+                    onClose={() => setSidePanel(null)}
+                  />
                 )}
               </div>
             )}

@@ -344,6 +344,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
           roomName={callCreds.roomName}
           defaultName={memberName}
           startedAt={callCreds.startedAt ?? liveStatus?.startedAt}
+          liveCallId={item.liveCallId ?? undefined}
           onLeave={() => setCallCreds(null)}
           onLeaveByChoice={() => setLeftByChoice(true)}
         />
@@ -2711,6 +2712,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
           roomName={callCreds.roomName}
           defaultName={memberName}
           startedAt={callCreds.startedAt ?? liveStatus?.startedAt}
+          liveCallId={challenge.liveCallId ?? undefined}
           onLeave={() => setCallCreds(null)}
           onLeaveByChoice={() => setLeftByChoice(true)}
         />

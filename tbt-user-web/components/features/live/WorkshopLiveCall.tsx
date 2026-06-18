@@ -15,6 +15,7 @@ import {
   Smile, Settings, Disc,
 } from "lucide-react";
 import { getServerNow } from "@/lib/api/client";
+import { getSocket } from "@/lib/socket/client";
 import { ChatPanel } from "./ChatPanel";
 import { ParticipantListPanel } from "./ParticipantListPanel";
 import { EmojiReactionOverlay } from "./EmojiReactionOverlay";
@@ -89,7 +90,37 @@ export function WorkshopLiveCall({
   const [showBgSettings, setShowBgSettings] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isHandRaised, setIsHandRaised] = useState(false);
   const handleRecording = useCallback((v: boolean) => setIsRecording(v), []);
+
+  // Listen for admin clearing this member's hand
+  useEffect(() => {
+    if (!liveCallId) return;
+    let mounted = true;
+    const onCleared = (data: { liveCallId: string }) => {
+      if (data.liveCallId === liveCallId) setIsHandRaised(false);
+    };
+    getSocket().then((s) => {
+      if (!mounted) return;
+      s.on('live_call:hand_cleared', onCleared);
+    });
+    return () => {
+      mounted = false;
+      getSocket().then((s) => s.off('live_call:hand_cleared', onCleared));
+    };
+  }, [liveCallId]);
+
+  const toggleHand = useCallback(async () => {
+    if (!liveCallId) return;
+    const s = await getSocket();
+    if (isHandRaised) {
+      s.emit('live_call:hand_lowered', { liveCallId });
+      setIsHandRaised(false);
+    } else {
+      s.emit('live_call:hand_raised', { liveCallId, memberName: defaultName || 'Member' });
+      setIsHandRaised(true);
+    }
+  }, [liveCallId, isHandRaised, defaultName]);
 
   // Lock body scroll for the duration of the overlay
   useEffect(() => {
@@ -230,6 +261,14 @@ export function WorkshopLiveCall({
             label="Polls"
             active={sidePanel === "polls"}
             onClick={() => togglePanel("polls")}
+          />
+        )}
+        {liveCallId && (
+          <TopBarBtn
+            icon={<span className="text-sm leading-none">✋</span>}
+            label={isHandRaised ? "Lower Hand" : "Raise Hand"}
+            active={isHandRaised}
+            onClick={toggleHand}
           />
         )}
 
