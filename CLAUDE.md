@@ -58,30 +58,38 @@ npm run format      # prettier --write .
 
 ## Architecture
 
-### Authentication Flow
-Clerk is the auth provider for both frontend and backend.
+### Authentication — Two Completely Different Systems
 
-- **Backend:** `clerkPlugin` (`backend/src/plugins/clerk.ts`) decorates Fastify with `fastify.authenticate`, used as `preHandler` on all protected route groups.
-- **Frontend:** `ClerkProvider` wraps the root layout. `AuthInterceptor` inside `components/Providers.tsx` registers an Axios request interceptor (via `useAuth().getToken()`) that attaches `Authorization: Bearer <token>` to every `apiClient` call. The interceptor is mounted once when Clerk loads and ejected on unmount — **not** per-hook.
+**Admin panel auth (Clerk):**
+- `clerkPlugin` (`backend/src/plugins/clerk.ts`) decorates Fastify with `fastify.authenticate` — verifies Clerk JWTs, used as `preHandler` on all admin-protected routes
+- `ClerkProvider` wraps root layout. `AuthInterceptor` in `admin-panel/components/Providers.tsx` registers an Axios request interceptor that calls `getToken()` (with 52-second in-memory cache) and attaches `Authorization: Bearer <token>` to every `apiClient` call
+- Admin socket authenticates via Clerk token in `socket.handshake.auth.token`
+
+**User web auth (custom JWT cookies — NO Clerk):**
+- `POST /api/user-auth/login` → phone + password → bcrypt check → OTP sent via WhatsApp → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
+- Axios client has `withCredentials: true`; cookies are sent automatically on every request
+- Auto-refresh: interceptor catches 401, calls `/api/user-auth/refresh`, retries original request (skipped for `/api/user-auth/` paths)
+- `initApiClient()` in `tbt-user-web/lib/api/client.ts` is a **no-op stub** — user web never attaches bearer tokens; auth is entirely cookie-based
+- `jwtPlugin` (`backend/src/plugins/jwt.ts`) provides `fastify.authenticateUser` for user-web routes — reads `tbt_access` cookie, verifies JWT locally, checks member status
+- Member socket authenticates via the session cookie
 
 ### Backend Structure
 - **Entry:** `backend/src/server.ts` — registers plugins then route modules
-- **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins (redis, supabase, etc.) skip gracefully if their env vars are missing.
+- **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins skip gracefully if env vars are missing.
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` + `schema.ts` pattern
 - **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
 - **Route prefix convention:** `/api/<module>` (e.g. `/api/courses`, `/api/members`)
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
+- **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
 
-### Frontend Structure
-- **API client:** `admin-panel/lib/api/apiClient.ts` — Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). The response interceptor unwraps `response.data`, so hooks receive the server payload directly (`{ success, data, meta, error }`). Access lists as `data?.data || []` and total as `data?.meta?.total`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~600+ lines). Add new hooks to the bottom of this file.
-- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload for images/videos ≤100 MB)
-- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter param), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`), and related mutations
-- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related task/initiative mutations
-- **State:** TanStack Query for server state; Zustand for client state
+### Frontend Structure (Admin Panel)
+- **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~700+ lines). Add new hooks to the bottom.
+- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB)
+- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
+- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts`
+- **State:** TanStack Query (server state, `staleTime: 5min`), Zustand (client state)
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
-- **Validation:** Zod in `lib/validators/`; React Hook Form + `@hookform/resolvers/zod`
-- **Notifications:** `react-hot-toast`, configured in `Providers.tsx`
 
 ---
 
@@ -103,29 +111,24 @@ app/
 `/eiflix` and `/eiflix/:path*` permanently redirect to `/tbt` and `/tbt/:path*` (see `next.config.ts`).
 
 ### API Client (`lib/api/client.ts`)
-- Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)
-- Response interceptor **unwraps** `response.data` — hooks receive `{ success, data, meta, error }` directly, not doubly-nested
-- Response interceptor **also** captures the HTTP `Date` header to sync `_serverTimeOffset` (never set this directly)
-- `initApiClient(getToken)` must be called once inside a client component (done in `Providers`) to attach Clerk bearer tokens. Hooks must NOT call `getToken` themselves
-- `getCachedToken()` polls up to 600 ms for `initApiClient` to be called — handles the race between `SubscriptionGate`'s first query and `AuthInterceptor`'s `useEffect`
-- `getServerNow()` — exported helper; use instead of `Date.now()` for any countdown or time-sensitive display to avoid client clock skew
-- A stable `tbt_device_id` is generated in `localStorage` on first load (used for multi-device detection in security logs)
-
-### Authentication (`Providers.tsx`)
-`ClerkProvider` wraps root; inside it, a component calls `initApiClient(useAuth().getToken)` once. Clerk's `<UserButton>` is rendered directly in `Navbar`.
+- Axios instance pointing to `NEXT_PUBLIC_API_URL`, **`withCredentials: true`** — auth via HttpOnly cookies
+- Response interceptor unwraps `response.data`; also captures HTTP `Date` header to sync `_serverTimeOffset`
+- `initApiClient(getToken)` is a NO-OP stub — never attaches a bearer token; cookie is sent automatically
+- `getServerNow()` — use instead of `Date.now()` for countdowns to avoid client clock skew
+- A stable `tbt_device_id` is generated in `localStorage` on first load (multi-device security detection)
 
 ### `SiteConfigProvider` (`lib/context/SiteConfigContext.tsx`)
-**Bootstrap-phase context** — fetches 3 endpoints on app load (parallel, unauthenticated):
+Fetches 3 unauthenticated endpoints in parallel on app load:
 - `GET /api/pub/config/site` → `SiteConfig` (theme, logos, splash)
 - `GET /api/pub/config/nav` → `NavItem[]` + `RightIcons` flags
 - `GET /api/pub/config/ui-strings` → `UiStrings`
 
-Injects theme as CSS custom properties on `document.documentElement`. Manages the splash screen timer.
+Injects theme as CSS custom properties on `document.documentElement`.
 
 **CRITICAL**: Every user-visible string must come from `uiStrings` (or `config`). Zero hardcoded label strings in `(platform)` pages.
 
 ### CSS Custom Properties (theme tokens)
-These are injected at runtime by `SiteConfigProvider`. **Never use hardcoded color values for these; always use the CSS var:**
+Injected at runtime — never hardcode these:
 ```
 --color-accent       # primary CTA / brand color
 --color-alert        # warning/alert
@@ -135,41 +138,37 @@ These are injected at runtime by `SiteConfigProvider`. **Never use hardcoded col
 ```
 Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(--color-accent) 30%, transparent)` for tints.
 
-`--color-locked: #4a4a4a` is the only static design token (gating indicator, not from API).
+`--color-locked: #4a4a4a` is the only static token (not from API).
 
 ### Real-time (User Web)
-`lib/socket/client.ts` exports `getSocket(): Promise<Socket>` (lazy-connects, passes Clerk token from `localStorage`). `lib/socket/useSocket.ts` exports `useSocket()` which returns `{ socket, connected }`. Call `socket.on(event, handler)` inside `useEffect` — the socket ref is stable but may be null on first render.
+`lib/socket/client.ts` exports `getSocket(): Promise<Socket>` (lazy-connects, passes Clerk token from `localStorage`). `lib/socket/useSocket.ts` exports `useSocket()` → `{ socket, connected }`. Call `socket.on()` inside `useEffect`; clean up with `socket.off()`.
 
 ### Hook Files
-- `lib/hooks/useConfig.ts` — content hooks: `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
+- `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
-- `lib/hooks/useCourses.ts`, `lib/hooks/useEvents.ts` — supplementary hooks
 - All hooks are `"use client"` and use TanStack Query v5
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
 Reads `useMe()` and:
-- If `me.status === 'pending'` → renders `PendingApprovalScreen` overlay (full-screen, blocks all content, shows sign-out button)
-- If subscription missing or expired → redirects to `/Products`
-- Paths `["/Products", "/profile"]` are exempt from the subscription check. Runs client-side only.
+- `me.status === 'pending'` → renders `PendingApprovalScreen` overlay (full-screen block, sign-out only)
+- Subscription missing or expired → redirects to `/Products`
+- Paths `["/Products", "/profile"]` are exempt
 
 ### Self-Registration & Pending Approval Flow
-1. **User signs up** at `/signup` (`components/auth/SignupScreen.tsx`) — `POST /api/user-auth/signup` — creates member with `status='pending'`, `membershipPlan='free'`, emits `admin:member_pending` socket event
-2. **User logs in** — can log in immediately with the password they set at signup; `SubscriptionGate` shows `PendingApprovalScreen` until approved
-3. **Admin notified** — socket toast in admin panel; "Pending" tab in `/members` with badge count; stat card shows pending count
-4. **Admin approves** — opens edit modal for the pending member, fills any missing fields, clicks green "Approve Member" button → `POST /api/members/:id/approve` → status set to `active`
+1. User signs up at `/signup` — `POST /api/user-auth/signup` — creates member `status='pending'`, emits `admin:member_pending` socket event
+2. User can log in immediately; `SubscriptionGate` shows `PendingApprovalScreen` until approved
+3. Admin approves in `/members` edit modal → `POST /api/members/:id/approve` → status `active`
 
-`MemberStatus` enum: `active | inactive | paused | suspended | pending`. `pending` is added at DB startup via idempotent `ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'` in `backend/src/plugins/prisma.ts`.
+`MemberStatus` enum: `active | inactive | paused | suspended | pending`. `pending` added at DB startup via idempotent `ALTER TYPE` in `backend/src/plugins/prisma.ts`.
 
 ### Login Flow (`components/auth/LoginScreen.tsx`)
 - Password is **required** — no skip/blank allowed
-- "New to TBT? Sign up" link always visible below the login form
-- Forgot Password → `POST /api/user-auth/forgot-password` → OTP + new password screen (`reset_password` step)
-- Admin-created accounts with no password set are silently routed to the `reset_password` step (backend sends OTP)
-- **Off-limits: never modify** `app/login/page.tsx` or `app/(auth)/`
+- Forgot Password → `POST /api/user-auth/forgot-password` → OTP → new password (`reset_password` step)
+- Admin-created accounts with no password are routed to `reset_password` (backend sends OTP silently)
+- **Off-limits: never modify** `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
 
 ### Video Player Progress Pattern (30s periodic POST)
-Used in any component that embeds video playback:
 ```typescript
 const startRef = useRef<number>(Date.now());
 const completedRef = useRef(false);
@@ -185,19 +184,18 @@ useEffect(() => {
   }, 30_000);
   return () => clearInterval(id);
 }, [playback?.id]);
-// When "Complete" is clicked: set completedRef.current = true before mutation
+// When "Complete" clicked: set completedRef.current = true BEFORE mutation
 ```
-The full-screen player (`(player)/watch/[episodeId]`) AND the embedded `EpisodePlayer` inside the workshop page both implement this.
 
 ### User-Web Pitfalls
-1. **No hardcoded strings** — every user-facing label must come from `uiStrings` or `config`
+1. **No hardcoded strings** — every user-facing label from `uiStrings` or `config`
 2. **No hardcoded colors for theme tokens** — use `var(--color-accent)` etc.
-3. **`getServerNow()`** instead of `Date.now()` for countdowns — avoids client clock skew
-4. **`initApiClient`** is called once in `Providers`; hooks must not attach tokens themselves
-5. **`SubscriptionGate`** is already in the platform layout — don't duplicate the subscription check in individual pages; it also handles `pending` status
+3. **`getServerNow()`** instead of `Date.now()` for countdowns
+4. **`initApiClient` is a no-op** — do not add bearer token logic to user-web hooks
+5. **`SubscriptionGate` is in platform layout** — don't add subscription/pending checks in individual pages
 6. **Login page is permanently off-limits** — never modify `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
-7. **`useRef` requires an initial value** (React 19) — use `useRef<T | undefined>(undefined)`, never `useRef<T>()`
-8. **`refetchQueries` predicate in TanStack Query v5** — use `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
+7. **`useRef` requires an initial value** (React 19) — `useRef<T | undefined>(undefined)`, never `useRef<T>()`
+8. **`refetchQueries` predicate in TanStack Query v5** — `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
 
 ---
 
@@ -240,7 +238,7 @@ const onDrop = (e, dropIdx) => {
 // "Save Order" button visible only when isDirty=true
 // On click: reorderMutation.mutateAsync(localItems.map(i => i.id))
 ```
-Reorder endpoints always use `PUT <prefix>/reorder { ids: string[] }`. Confirm the endpoint exists in the backend before adding the hook.
+Reorder endpoints always use `PUT <prefix>/reorder { ids: string[] }`. Confirm endpoint exists in backend before adding the hook.
 
 ### Slug Auto-Generation
 ```typescript
@@ -263,7 +261,7 @@ const detectDuration = (file: File): Promise<number> =>
 ```
 
 ### Real-time (Admin)
-`lib/socket/client.ts` exports `getAdminSocket()` — call it inside `useEffect` and register `.on()` listeners; clean up with `.off()` on unmount. Currently used in `app/dashboard/page.tsx` and `app/messages/page.tsx`.
+`lib/socket/client.ts` exports `getAdminSocket()` — call inside `useEffect`, register `.on()` listeners, clean up with `.off()` on unmount.
 
 ### Design System Constants
 ```
@@ -277,14 +275,9 @@ Input:       bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-whit
 ```
 
 ### Security Logs (`/api/security-logs`)
-Read-only module — logs suspicious viewing behaviour, no automatic blocking. Event types stored in `SecurityLog.eventType`:
-- `EXCESSIVE_SKIPPING` — user jumped forward more than expected
-- `RAPID_EPISODE_SWITCHING` — many episodes opened in a short window
-- `ABNORMAL_PROGRESS_SPEED` — reported delta far exceeds wall-clock elapsed
-- `MULTIPLE_DEVICES` — same session active on multiple devices simultaneously
+Read-only module — logs suspicious viewing behaviour, no automatic blocking. Event types: `EXCESSIVE_SKIPPING`, `RAPID_EPISODE_SWITCHING`, `ABNORMAL_PROGRESS_SPEED`, `MULTIPLE_DEVICES`.
 
 Admin hooks: `useSecurityLogs(params)` and `useSecurityLogStats()` in `useTbt.ts`.
-Backend endpoints: `GET /api/security-logs` and `GET /api/security-logs/stats`.
 
 ---
 
@@ -299,7 +292,7 @@ Backend endpoints: `GET /api/security-logs` and `GET /api/security-logs/stats`.
 7. **`useGetPresignedUrl`** — from `useAdmin`, not `useTbt`
 8. **apiClient interceptor** unwraps `response.data` — hooks already receive `{ success, data, meta }`, not doubly-nested
 9. **Flow item type values** — `"custom"` (Pre-Req), `"challenge_start"`, `"live_call"` (DB strings differ from PRD labels)
-10. **Workshop detail page is monolithic by design** — all 7 tabs in one `workshops/[id]/page.tsx`: `info`, `flow`, `challenges`, `live-calls`, `assignments`, `qa`, `enrollments`
+10. **Workshop detail page is monolithic by design** — all 7 tabs in one `workshops/[id]/page.tsx`. Tab-specific hooks (`useWorkshopChallenges`, `useWorkshopFlow`, `useWorkshopLiveCalls`, `useWorkshopAssignments`, `useWorkshopQA`, `useWorkshopEnrollments`) accept a second `tabActive: boolean` param — pass `activeTab === 'tab-id'` to defer loading until the tab is clicked.
 11. **Challenge `type` field** — valid values: `"watch"` | `"quiz"` | `"matching"` | `"written"` | `"flashcard"`. Each type has a distinct `quizData` shape stored as JSON:
     - `"quiz"` → `{ questions: [{ id, question, options: [{ id, text, correct }] }] }`
     - `"written"` → `{ prompt, placeholder? }`
@@ -311,7 +304,7 @@ Backend endpoints: `GET /api/security-logs` and `GET /api/security-logs/stats`.
 ## Socket Events
 
 Admin panel uses `getAdminSocket()` from `admin-panel/lib/socket/client.ts` (singleton, lazy-connects).
-User web uses `getSocket()` (async/lazy) from `tbt-user-web/lib/socket/client.ts` and the `useSocket()` hook from `lib/socket/useSocket.ts`.
+User web uses `getSocket()` (async/lazy) from `tbt-user-web/lib/socket/client.ts` and the `useSocket()` hook.
 
 Socket.IO rooms and the events each room receives:
 
@@ -324,7 +317,7 @@ Socket.IO rooms and the events each room receives:
 | `conversation:{id}` | `chat:message`, `chat:typing`, `chat:conversation_closed`, `chat:conversation_reopened` |
 | broadcast | `notification:broadcast` |
 
-Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` and `join:live` / `leave:live`. Admin socket authenticates via Clerk token in `socket.handshake.auth.token`; member socket authenticates via session cookie.
+Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` and `join:live` / `leave:live`.
 
 ## Key Services
 | Service | Purpose |
@@ -333,8 +326,8 @@ Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` 
 | Upstash Redis | BullMQ job queues |
 | Cloudflare R2 | File/image/video storage (presigned URL uploads) |
 | Bunny Stream | Video hosting (HLS + iframe embed) |
-| LiveKit | Workshop live calls (env: `LIVEKIT_API_KEY/SECRET/WS_URL/WEBHOOK_SECRET`) |
-| Clerk | Auth (admin panel + API) |
+| LiveKit | Workshop live calls (`LIVEKIT_API_KEY/SECRET/WS_URL/WEBHOOK_SECRET`) |
+| Clerk | Auth for admin panel only (not user web) |
 | Firebase | Push notifications |
 | Resend / Twilio | Email / SMS |
 | Sentry | Error tracking |
@@ -343,7 +336,7 @@ Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` 
 ## Environment Setup
 
 Copy and fill both env files before starting:
-- `backend/.env.example` → `backend/.env` (required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys, `CLOUDFLARE_R2_*`)
+- `backend/.env.example` → `backend/.env` (required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys, `CLOUDFLARE_R2_*`, `JWT_ACCESS_SECRET`)
 - `admin-panel/.env.example` → `admin-panel/.env.local`
 
 Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STREAM_*`, `LIVEKIT_*`, `FIREBASE_*`, `RESEND_API_KEY`, `TWILIO_*`, `SENTRY_DSN`.
@@ -355,9 +348,14 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## Deployment
 
-- **Backend → Google Cloud Run** — deploy via Google Cloud Run (previously Railway)
-- **Frontend → Vercel** — auto-deploy on push to `main` via GitHub Actions (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; root dir: `admin-panel`)
-- CI runs typecheck + lint + build for both workspaces before deploying
+- **Backend → Google Cloud Run** (`asia-south1`, project `tbt-lms-platform`, service `tbt-backend`)
+  - Production has `--min-instances=1` to eliminate cold starts
+  - CI/CD in `.github/workflows/ci-cd.yml` — deploys on push to `main` when `tbt-admin/backend/**` changes
+- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `admin-panel`
+- **User Web → Vercel** — separate project; custom domain `https://app.tamilbusinesstribe.com`
+- CORS: `USER_WEB_URL` + `ADMIN_WEB_URL` + `CORS_EXTRA_ORIGINS` (comma-separated). Adding a new domain → add to `CORS_EXTRA_ORIGINS` in ci-cd.yml `--set-env-vars`.
+
+**Recommended one-time setup for faster JWT verification:** Add `CLERK_JWT_PUBLIC_KEY` to GCP Secret Manager (`prod-CLERK_JWT_PUBLIC_KEY`) and include it in `--set-secrets` in ci-cd.yml. Without it, Clerk SDK fetches JWKS from the internet on first startup (cached after that, so it's a cold-start cost only). With it, all JWT verification is local crypto.
 
 ## PRD Implementation Status
 
