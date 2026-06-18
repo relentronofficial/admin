@@ -997,3 +997,64 @@ export const useUpdateLiveCallQuestion = () => {
     onSuccess: (_data, { lcid }) => qc.invalidateQueries({ queryKey: ['admin-live-call-questions', lcid] }),
   });
 };
+
+// ── Recording Chapters (admin) ────────────────────────────────────────────────
+
+export type RecordingChapter = { id: string; liveCallId: string; label: string; timestampSeconds: number; order: number };
+
+export const useGetChapters = (lcid: string, enabled = true) =>
+  useQuery({
+    queryKey: ['recording-chapters', lcid],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${lcid}/chapters`);
+      return (res.data ?? []) as RecordingChapter[];
+    },
+    enabled: !!lcid && enabled,
+  });
+
+export const useCreateChapter = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, label, timestampSeconds }: { lcid: string; label: string; timestampSeconds: number }) => {
+      const res: any = await apiClient.post(`/api/workshops/live-calls/${lcid}/chapters`, { label, timestampSeconds });
+      return res.data as RecordingChapter;
+    },
+    onSuccess: (_data, { lcid }) => qc.invalidateQueries({ queryKey: ['recording-chapters', lcid] }),
+  });
+};
+
+export const useDeleteChapter = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, chapterId }: { lcid: string; chapterId: string }) => {
+      await apiClient.delete(`/api/workshops/live-calls/${lcid}/chapters/${chapterId}`);
+    },
+    onSuccess: (_data, { lcid }) => qc.invalidateQueries({ queryKey: ['recording-chapters', lcid] }),
+  });
+};
+
+export const useReorderChapters = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ lcid, ids }: { lcid: string; ids: string[] }) => {
+      await apiClient.put(`/api/workshops/live-calls/${lcid}/chapters/reorder`, { ids });
+    },
+    onSuccess: (_data, { lcid }) => qc.invalidateQueries({ queryKey: ['recording-chapters', lcid] }),
+  });
+};
+
+// ── Live Call Feedback (admin) ────────────────────────────────────────────────
+
+export const useGetLiveCallFeedbackAdmin = (lcid: string, enabled = true) =>
+  useQuery({
+    queryKey: ['live-call-feedback-admin', lcid],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/workshops/live-calls/${lcid}/feedback`);
+      return res.data as {
+        avgRating: number; totalResponses: number;
+        breakdown: Record<string, number>;
+        comments: Array<{ memberName: string; comment: string | null; rating: number; submittedAt: string }>;
+      };
+    },
+    enabled: !!lcid && enabled,
+  });

@@ -7,6 +7,7 @@ import {
   Video, BookOpen, Users, MessageSquare, ClipboardList,
   CheckCircle2, Clock, ChevronRight, Settings, Workflow,
   GripVertical, BarChart2, Save, BookMarked, PhoneCall, FileText, ChevronDown, Search, Upload,
+  Star, BookMarked as Bookmark2,
 } from "lucide-react";
 import { useCreateBunnyVideo } from "@/lib/hooks/useAdmin";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -26,7 +27,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { AdminLiveCall } from "@/components/AdminLiveCall";
 import { useListMembers } from "@/lib/hooks/useMembers";
-import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall, useLiveCallRsvps, useListLiveCallResources, useCreateLiveCallResource, useUpdateLiveCallResource, useDeleteLiveCallResource, useReorderLiveCallResources } from "@/lib/hooks/useTbt";
+import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useLiveCallAnalytics, useSummarizeLiveCall, useLiveCallRsvps, useListLiveCallResources, useCreateLiveCallResource, useUpdateLiveCallResource, useDeleteLiveCallResource, useReorderLiveCallResources, useGetChapters, useCreateChapter, useDeleteChapter, useReorderChapters, useGetLiveCallFeedbackAdmin } from "@/lib/hooks/useTbt";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
@@ -55,6 +56,197 @@ const LIVE_CALL_TYPES = [
 const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm";
 const labelCls = "block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani";
 const selectCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none";
+
+// ── Timestamp helpers ──────────────────────────────────────────────────────────
+
+const parseMmSs = (s: string): number => {
+  const parts = s.split(":").map(Number);
+  if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
+  return parseInt(s) || 0;
+};
+
+const fmtTimestamp = (sec: number): string => {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+};
+
+// ── Chapter Markers Section ────────────────────────────────────────────────────
+
+function ChapterMarkersSection({ lcId }: { lcId: string }) {
+  const { data: serverChapters = [] } = useGetChapters(lcId, true);
+  const createChapter = useCreateChapter();
+  const deleteChapter = useDeleteChapter();
+  const reorderChapters = useReorderChapters();
+  const [localChapters, setLocalChapters] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [label, setLabel] = useState("");
+  const [timestamp, setTimestamp] = useState("");
+  const dragIdx = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  useEffect(() => { setLocalChapters(serverChapters); setIsDirty(false); }, [serverChapters]);
+
+  const handleAdd = async () => {
+    if (!label.trim() || !timestamp.trim()) return;
+    await createChapter.mutateAsync({ lcid: lcId, label: label.trim(), timestampSeconds: parseMmSs(timestamp) });
+    setLabel(""); setTimestamp("");
+  };
+
+  const onDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const next = [...localChapters];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalChapters(next);
+    setIsDirty(true);
+    dragIdx.current = null;
+    setDragOver(null);
+  };
+
+  return (
+    <div className="px-6 pb-5 space-y-3">
+      <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani pt-1">Chapter Markers</p>
+      <div className="flex gap-2">
+        <input
+          className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white text-sm outline-none focus:border-[#dc2626]"
+          placeholder="MM:SS"
+          value={timestamp}
+          onChange={e => setTimestamp(e.target.value)}
+          style={{ width: 80, flex: "0 0 80px" }}
+        />
+        <input
+          className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white text-sm outline-none focus:border-[#dc2626]"
+          placeholder="Chapter label…"
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!label.trim() || !timestamp.trim() || createChapter.isPending}
+          className="h-9 px-4 rounded-lg text-xs font-bold disabled:opacity-40"
+          style={{ background: "#dc2626", color: "#fff" }}
+        >
+          Add
+        </button>
+      </div>
+      {localChapters.length > 0 && (
+        <div className="space-y-1">
+          {localChapters.map((ch, idx) => (
+            <div
+              key={ch.id}
+              draggable
+              onDragStart={() => { dragIdx.current = idx; }}
+              onDragOver={e => { e.preventDefault(); setDragOver(idx); }}
+              onDrop={e => onDrop(e, idx)}
+              onDragLeave={() => setDragOver(null)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-grab"
+              style={{ background: dragOver === idx ? "#2a2a2a" : "#1a1a1a", border: "1px solid #2a2a2a" }}
+            >
+              <GripVertical size={12} style={{ color: "#444" }} />
+              <span className="font-mono text-[11px] font-bold" style={{ color: "#606060" }}>{fmtTimestamp(ch.timestampSeconds)}</span>
+              <span className="flex-1 text-sm text-[#f0f0f0] truncate">{ch.label}</span>
+              <button
+                onClick={() => deleteChapter.mutate({ lcid: lcId, chapterId: ch.id })}
+                className="p-1 rounded hover:text-red-400 text-[#444]"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+          {isDirty && (
+            <button
+              onClick={() => reorderChapters.mutate({ lcid: lcId, ids: localChapters.map(c => c.id) })}
+              disabled={reorderChapters.isPending}
+              className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-40"
+              style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}
+            >
+              <Save size={11} /> Save Order
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Feedback Badge + Modal ─────────────────────────────────────────────────────
+
+function FeedbackModal({ data, onClose }: { data: any; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.8)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl overflow-hidden border" style={{ background: "#141414", borderColor: "#2a2a2a" }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "#2a2a2a", background: "#1a1a1a" }}>
+          <div>
+            <p className="font-rajdhani font-bold uppercase tracking-widest text-sm text-[#f0f0f0]">Session Feedback</p>
+            <p className="text-xs mt-0.5" style={{ color: "#a0a0a0" }}>
+              ★ {data.avgRating.toFixed(1)} · {data.totalResponses} response{data.totalResponses !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-[#606060] hover:text-white"><X size={16} /></button>
+        </div>
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Star breakdown */}
+          <div className="space-y-1.5">
+            {[5, 4, 3, 2, 1].map(star => {
+              const count = data.breakdown[String(star)] ?? 0;
+              const pct = data.totalResponses > 0 ? Math.round((count / data.totalResponses) * 100) : 0;
+              return (
+                <div key={star} className="flex items-center gap-2 text-xs">
+                  <span className="w-4 text-right font-bold" style={{ color: "#f59e0b" }}>{star}★</span>
+                  <div className="flex-1 rounded-full overflow-hidden h-2" style={{ background: "#2a2a2a" }}>
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#f59e0b" }} />
+                  </div>
+                  <span className="w-8 text-right" style={{ color: "#606060" }}>{count}</span>
+                </div>
+              );
+            })}
+          </div>
+          {/* Comments */}
+          {data.comments.length > 0 && (
+            <div className="space-y-2 pt-2 border-t" style={{ borderColor: "#2a2a2a" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest font-rajdhani" style={{ color: "#606060" }}>Comments</p>
+              {data.comments.map((c: any, i: number) => (
+                <div key={i} className="rounded-xl p-3 space-y-1" style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold" style={{ color: "#a0a0a0" }}>{c.memberName}</span>
+                    <span className="text-[10px]" style={{ color: "#f59e0b" }}>{"★".repeat(c.rating)}</span>
+                  </div>
+                  <p className="text-sm text-[#f0f0f0]">{c.comment}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeedbackBadge({ lcId }: { lcId: string }) {
+  const { data: fb } = useGetLiveCallFeedbackAdmin(lcId, true);
+  const [open, setOpen] = useState(false);
+  if (!fb || fb.totalResponses === 0) return null;
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded transition-opacity hover:opacity-80"
+        style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
+      >
+        <Star size={9} fill="currentColor" />
+        {fb.avgRating.toFixed(1)} · {fb.totalResponses}
+      </button>
+      {open && <FeedbackModal data={fb} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
 
 function AttendanceRow({ lcId }: { lcId: string }) {
   const [open, setOpen] = useState(false);
@@ -1397,6 +1589,7 @@ export default function WorkshopDetailPage() {
                   </div>
                   <AttendanceRow lcId={lc.id} />
                   <AnalyticsRow lcId={lc.id} lc={lc} />
+                  <div className="px-4 pb-3 flex items-center gap-2"><FeedbackBadge lcId={lc.id} /></div>
                   </div>
                 ))}
               </div>
@@ -2197,6 +2390,14 @@ export default function WorkshopDetailPage() {
               <>
                 <div style={{ borderTop: "1px solid #2a2a2a" }} />
                 <LiveCallResourcesSection lcId={editingLiveCall.id} />
+              </>
+            )}
+
+            {/* Chapter Markers — only when editing AND recording URL is set */}
+            {editingLiveCall && liveCallForm.recordingUrl && (
+              <>
+                <div style={{ borderTop: "1px solid #2a2a2a" }} />
+                <ChapterMarkersSection lcId={editingLiveCall.id} />
               </>
             )}
 

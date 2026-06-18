@@ -1030,6 +1030,62 @@ Write bullet points only. Be concise and practical.`;
   }
 }
 
+// ── RECORDING CHAPTERS (admin) ────────────────────────────────────────────────
+
+export async function listChaptersHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const chapters = await req.server.prisma.recordingChapter.findMany({
+    where: { liveCallId: lcid },
+    orderBy: { order: 'asc' },
+  });
+  return reply.send({ success: true, data: chapters, error: null });
+}
+
+export async function createChapterHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { label, timestampSeconds } = req.body as any;
+  const count = await req.server.prisma.recordingChapter.count({ where: { liveCallId: lcid } });
+  const chapter = await req.server.prisma.recordingChapter.create({
+    data: { liveCallId: lcid, label, timestampSeconds, order: count },
+  });
+  return reply.status(201).send({ success: true, data: chapter, error: null });
+}
+
+export async function deleteChapterHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { chapterId } = req.params as any;
+  await req.server.prisma.recordingChapter.delete({ where: { id: chapterId } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function reorderChaptersHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const { ids } = req.body as { ids: string[] };
+  await Promise.all(ids.map((id, order) => req.server.prisma.recordingChapter.update({ where: { id }, data: { order } })));
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// ── LIVE CALL FEEDBACK (admin) ────────────────────────────────────────────────
+
+export async function getLiveCallFeedbackAdminHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { lcid } = req.params as any;
+  const feedbacks = await req.server.prisma.liveCallFeedback.findMany({
+    where: { liveCallId: lcid },
+    include: { member: { select: { firstName: true, lastName: true } } },
+    orderBy: { submittedAt: 'desc' },
+  });
+  const total = feedbacks.length;
+  const avgRating = total > 0 ? feedbacks.reduce((s, f) => s + f.rating, 0) / total : 0;
+  const breakdown: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
+  feedbacks.forEach(f => { breakdown[String(f.rating)] = (breakdown[String(f.rating)] ?? 0) + 1; });
+  const comments = feedbacks.filter(f => f.comment).map(f => ({
+    memberName: [f.member.firstName, f.member.lastName].filter(Boolean).join(' ') || 'Member',
+    comment: f.comment,
+    rating: f.rating,
+    submittedAt: f.submittedAt,
+  }));
+  return reply.send({ success: true, data: { avgRating: Math.round(avgRating * 10) / 10, totalResponses: total, breakdown, comments }, error: null });
+}
+
 // ── LIVE CALL Q&A (admin) ──────────────────────────────────────────────────────
 
 export async function listLiveCallQuestionsAdminHandler(req: FastifyRequest, reply: FastifyReply) {

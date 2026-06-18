@@ -1157,6 +1157,47 @@ export async function getRsvpStatusHandler(request: FastifyRequest, reply: Fasti
   return ok(reply, rsvp ?? null);
 }
 
+// ─── Recording Chapters (user) ────────────────────────────────────────────────
+
+export async function getLiveCallChaptersHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const lc = await request.server.prisma.liveCall.findUnique({
+    where: { id: liveCallId },
+    select: { recordingUrl: true },
+  });
+  if (!lc?.recordingUrl) return ok(reply, []);
+  const chapters = await request.server.prisma.recordingChapter.findMany({
+    where: { liveCallId },
+    orderBy: { order: 'asc' },
+    select: { id: true, label: true, timestampSeconds: true, order: true },
+  });
+  return ok(reply, chapters);
+}
+
+// ─── Live Call Feedback (user) ────────────────────────────────────────────────
+
+export async function postLiveCallFeedbackHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const { rating, comment } = request.body as { rating: number; comment?: string };
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return fail(reply, 400, 'rating must be 1–5');
+  }
+  const feedback = await request.server.prisma.liveCallFeedback.upsert({
+    where: { liveCallId_memberId: { liveCallId, memberId: request.memberId } },
+    create: { liveCallId, memberId: request.memberId, rating, comment: comment ?? null },
+    update: { rating, comment: comment ?? null, submittedAt: new Date() },
+  });
+  return ok(reply, feedback);
+}
+
+export async function getMyLiveCallFeedbackHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: liveCallId } = request.params as { id: string };
+  const feedback = await request.server.prisma.liveCallFeedback.findUnique({
+    where: { liveCallId_memberId: { liveCallId, memberId: request.memberId } },
+  });
+  return ok(reply, feedback ?? null);
+}
+
 // ─── Live Call Q&A (user) ─────────────────────────────────────────────────────
 
 export async function postLiveCallQuestionHandler(request: FastifyRequest, reply: FastifyReply) {

@@ -17,6 +17,8 @@ import {
   listRsvpsHandler,
   listResourcesHandler, createResourceHandler, updateResourceHandler, deleteResourceHandler, reorderResourcesHandler,
   listLiveCallQuestionsAdminHandler, updateLiveCallQuestionHandler,
+  listChaptersHandler, createChapterHandler, deleteChapterHandler, reorderChaptersHandler,
+  getLiveCallFeedbackAdminHandler,
   listAssignmentsHandler, createAssignmentHandler, updateAssignmentHandler, deleteAssignmentHandler,
   listSubmissionsHandler,
   listQAHandler, replyQAHandler, deleteQAPostHandler, deleteQAReplyHandler,
@@ -99,6 +101,15 @@ export async function workshopRoutes(fastify: FastifyInstance) {
   // Q&A moderation
   fastify.get('/live-calls/:lcid/questions', listLiveCallQuestionsAdminHandler);
   fastify.put('/live-calls/:lcid/questions/:qid', updateLiveCallQuestionHandler);
+
+  // Recording chapter markers
+  fastify.get('/live-calls/:lcid/chapters', listChaptersHandler);
+  fastify.post('/live-calls/:lcid/chapters', createChapterHandler);
+  fastify.put('/live-calls/:lcid/chapters/reorder', reorderChaptersHandler);
+  fastify.delete('/live-calls/:lcid/chapters/:chapterId', deleteChapterHandler);
+
+  // Session feedback (admin view)
+  fastify.get('/live-calls/:lcid/feedback', getLiveCallFeedbackAdminHandler);
 
   // Reminders
   fastify.post('/live-calls/:lcid/reminders', sendRemindersHandler);

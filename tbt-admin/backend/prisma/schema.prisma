@@ -318,6 +318,7 @@ model Member {
   productInquiries      ProductInquiry[]
   liveCallRsvps         LiveCallRsvp[]
   liveCallQuestions     LiveCallQuestion[]
+  liveCallFeedback      LiveCallFeedback[]
 
   @@map("members")
 }
@@ -1603,6 +1604,8 @@ model LiveCall {
   rsvps                       LiveCallRsvp[]
   resources                   LiveCallResource[]
   questions                   LiveCallQuestion[]
+  chapters                    RecordingChapter[]
+  feedback                    LiveCallFeedback[]
   createdAt                   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1647,6 +1650,32 @@ model LiveCallQuestion {
   member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@map("live_call_questions")
+}
+
+model RecordingChapter {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId       String   @map("live_call_id") @db.Uuid
+  label            String
+  timestampSeconds Int      @map("timestamp_seconds")
+  order            Int      @default(0)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  liveCall         LiveCall @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+
+  @@map("recording_chapters")
+}
+
+model LiveCallFeedback {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  liveCallId  String   @map("live_call_id") @db.Uuid
+  memberId    String   @map("member_id") @db.Uuid
+  rating      Int
+  comment     String?
+  submittedAt DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  liveCall    LiveCall @relation(fields: [liveCallId], references: [id], onDelete: Cascade)
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([liveCallId, memberId])
+  @@map("live_call_feedback")
 }
 
 model LiveCallAttendance {

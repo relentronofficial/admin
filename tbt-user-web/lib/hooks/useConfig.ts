@@ -380,3 +380,41 @@ export const usePostLiveCallQuestion = () => {
     },
   });
 };
+
+// ── Recording Chapters (user) ─────────────────────────────────────────────────
+
+export const useGetLiveCallChapters = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["live-call-chapters", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshop/live-calls/${liveCallId}/chapters`);
+      return (res?.data ?? []) as Array<{ id: string; label: string; timestampSeconds: number; order: number }>;
+    },
+    enabled: !!liveCallId && enabled,
+  });
+
+// ── Session Feedback (user) ───────────────────────────────────────────────────
+
+export const useGetMyLiveCallFeedback = (liveCallId: string, enabled = true) =>
+  useQuery({
+    queryKey: ["my-live-call-feedback", liveCallId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/user/workshop/live-calls/${liveCallId}/feedback`);
+      return res?.data as { id: string; rating: number; comment: string | null } | null;
+    },
+    enabled: !!liveCallId && enabled,
+    retry: false,
+  });
+
+export const usePostLiveCallFeedback = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ liveCallId, rating, comment }: { liveCallId: string; rating: number; comment?: string }) => {
+      const res: any = await apiClient.post(`/api/user/workshop/live-calls/${liveCallId}/feedback`, { rating, comment });
+      return res?.data;
+    },
+    onSuccess: (_data, { liveCallId }) => {
+      qc.invalidateQueries({ queryKey: ["my-live-call-feedback", liveCallId] });
+    },
+  });
+};

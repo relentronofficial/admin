@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { getServerNow } from "@/lib/api/client";
 import { getSocket } from "@/lib/socket/client";
-import { useGetLiveCallQuestions, usePostLiveCallQuestion } from "@/lib/hooks/useConfig";
+import { useGetLiveCallQuestions, usePostLiveCallQuestion, useGetMyLiveCallFeedback, usePostLiveCallFeedback } from "@/lib/hooks/useConfig";
 import { ChatPanel } from "./ChatPanel";
 import { ParticipantListPanel } from "./ParticipantListPanel";
 import { EmojiReactionOverlay } from "./EmojiReactionOverlay";
@@ -62,6 +62,74 @@ function WaitingForHostOverlay() {
       </div>
       <p className="text-white font-semibold text-sm">Waiting for the host to join…</p>
       <p className="text-xs" style={{ color: "#a0a0a0" }}>The session will begin when the host enters the room.</p>
+    </div>
+  );
+}
+
+// ── Post-session feedback overlay ────────────────────────────────────────────
+
+function FeedbackOverlay({ liveCallId, onDone, onLeave }: { liveCallId: string; onDone: () => void; onLeave: () => void }) {
+  const [rating, setRating] = useState(0);
+  const [hover, setHover] = useState(0);
+  const [comment, setComment] = useState("");
+  const postFeedback = usePostLiveCallFeedback();
+
+  const persist = () => {
+    try { localStorage.setItem(`feedback_${liveCallId}`, "1"); } catch {}
+  };
+
+  const handleSubmit = async () => {
+    if (!rating) return;
+    await postFeedback.mutateAsync({ liveCallId, rating, comment: comment.trim() || undefined });
+    persist();
+    onDone();
+  };
+
+  const handleSkip = () => { persist(); onDone(); };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.92)" }}>
+      <div className="rounded-2xl flex flex-col items-center gap-5 text-center p-8 w-80" style={{ background: "#111" }}>
+        <div>
+          <p className="text-white font-bold text-lg">How was the session?</p>
+          <p className="text-sm mt-1" style={{ color: "#a0a0a0" }}>Your feedback helps us improve</p>
+        </div>
+        {/* Star picker */}
+        <div className="flex gap-2">
+          {[1, 2, 3, 4, 5].map(star => (
+            <button
+              key={star}
+              onClick={() => setRating(star)}
+              onMouseEnter={() => setHover(star)}
+              onMouseLeave={() => setHover(0)}
+              className="text-3xl leading-none transition-transform hover:scale-110"
+              style={{ color: star <= (hover || rating) ? "#f59e0b" : "#333" }}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+        {rating > 0 && (
+          <textarea
+            className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none"
+            style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#f0f0f0" }}
+            placeholder="Any comments? (optional)"
+            rows={3}
+            maxLength={300}
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+          />
+        )}
+        <button
+          onClick={handleSubmit}
+          disabled={!rating || postFeedback.isPending}
+          className="w-full py-2.5 rounded-xl text-sm font-bold disabled:opacity-40"
+          style={{ background: "var(--color-accent)", color: "#fff" }}
+        >
+          {postFeedback.isPending ? "Submitting…" : "Submit Feedback"}
+        </button>
+        <button onClick={handleSkip} className="text-xs underline" style={{ color: "#606060" }}>Skip</button>
+      </div>
     </div>
   );
 }
@@ -159,6 +227,16 @@ export function WorkshopLiveCall({
   });
   const leftByChoiceRef = useRef(false);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
+  const [feedbackDone, setFeedbackDone] = useState(() => {
+    if (!liveCallId) return true;
+    try { return !!localStorage.getItem(`feedback_${liveCallId}`); } catch { return false; }
+  });
+
+  // Check if feedback was already submitted server-side (avoids re-prompt after refresh)
+  const { data: existingFeedback } = useGetMyLiveCallFeedback(liveCallId ?? "", !!liveCallId && stage === "ended" && !feedbackDone);
+  useEffect(() => {
+    if (existingFeedback) setFeedbackDone(true);
+  }, [existingFeedback]);
   const [showBgSettings, setShowBgSettings] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -250,6 +328,9 @@ export function WorkshopLiveCall({
 
   // ── Ended ─────────────────────────────────────────────────────────────────────
   if (stage === "ended") {
+    if (liveCallId && !feedbackDone) {
+      return <FeedbackOverlay liveCallId={liveCallId} onDone={() => setFeedbackDone(true)} onLeave={onLeave} />;
+    }
     return (
       <div
         className="fixed inset-0 z-[9999] flex items-center justify-center"

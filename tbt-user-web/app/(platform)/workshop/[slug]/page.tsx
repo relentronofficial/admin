@@ -45,6 +45,7 @@ import {
   useGetMyRsvp,
   useUpsertRsvp,
   useGetLiveCallResources,
+  useGetLiveCallChapters,
 } from "@/lib/hooks/useConfig";
 import { useMe } from "@/lib/hooks/useUser";
 import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
@@ -119,6 +120,14 @@ function Countdown({
 }
 
 // ─── Calendar helpers (pure, client-side only) ───────────────────────────────
+
+function fmtTimestamp(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
 
 function calendarDateLabel(isoString: string): string {
   return new Date(isoString).toLocaleString(undefined, {
@@ -2705,6 +2714,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
 
   const { data: liveStatus } = useLiveCallStatus(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
   const { data: resources = [] } = useGetLiveCallResources(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
+  const { data: chapters = [] } = useGetLiveCallChapters(challenge.liveCallId ?? "", !!challenge.liveCallId && isPast);
 
   useEffect(() => {
     if (!challenge.scheduledAt || isPast) return;
@@ -2820,6 +2830,21 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
               <Play size={14} fill="currentColor" />
               {challenge.recordingLabel ?? "Missed it? View the recording."}
             </a>
+          )}
+          {challenge.recordingUrl && chapters.length > 0 && (
+            <div className="rounded-xl border p-4 space-y-2 text-left" style={{ borderColor: "#2a2a2a", background: "#0d0d0d" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#606060" }}>Jump to section</p>
+              {chapters.map((ch: { id: string; label: string; timestampSeconds: number }) => {
+                const url = `${challenge.recordingUrl}${challenge.recordingUrl.includes("?") ? "&" : "?"}t=${ch.timestampSeconds}`;
+                return (
+                  <a key={ch.id} href={url} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-3 w-full py-1 rounded hover:opacity-80 transition-opacity">
+                    <span className="font-mono text-[11px] font-bold tabular-nums shrink-0" style={{ color: lColor }}>{fmtTimestamp(ch.timestampSeconds)}</span>
+                    <span className="text-sm" style={{ color: "#a0a0a0" }}>{ch.label}</span>
+                  </a>
+                );
+              })}
+            </div>
           )}
           {challenge.aiSummary && (
             <div
