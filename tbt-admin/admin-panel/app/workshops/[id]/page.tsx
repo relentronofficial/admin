@@ -536,15 +536,17 @@ export default function WorkshopDetailPage() {
     isWebinar: false,
     waitingRoomEnabled: false,
     passcode: "",
+    externalMeetingUrl: "",
+    externalMeetingProvider: "",
   });
   const [deletingLiveCall, setDeletingLiveCall] = useState<string | null>(null);
 
   const openCreateLiveCall = () => {
-    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false, waitingRoomEnabled: false, passcode: "" });
+    setLiveCallForm({ title: "", type: "custom", label: "LIVE CALL:", labelColor: "#ff3d8b", scheduledAt: "", liveUrl: "", liveUrlUnlocksMinutesBefore: "30", recordingUrl: "", recordingLabel: "", prerequisiteNote: "", facilitatorName: "", facilitatorTitle: "", facilitatorDescription: "", stayTunedMessage: "Stay tuned — the link will unlock before the session begins", stayTunedColor: "#00c4cc", isWebinar: false, waitingRoomEnabled: false, passcode: "", externalMeetingUrl: "", externalMeetingProvider: "" });
     setEditingLiveCall(null); setShowLiveCallForm(true);
   };
   const openEditLiveCall = (lc: any) => {
-    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc", isWebinar: lc.isWebinar || false, waitingRoomEnabled: lc.waitingRoomEnabled || false, passcode: lc.passcode || "" });
+    setLiveCallForm({ title: lc.title || "", type: lc.type || "custom", label: lc.label || "LIVE CALL:", labelColor: lc.labelColor || "#ff3d8b", scheduledAt: lc.scheduledAt ? new Date(lc.scheduledAt).toISOString().slice(0, 16) : "", liveUrl: lc.liveUrl || "", liveUrlUnlocksMinutesBefore: String(lc.liveUrlUnlocksMinutesBefore ?? 30), recordingUrl: lc.recordingUrl || "", recordingLabel: lc.recordingLabel || "", prerequisiteNote: lc.prerequisiteNote || "", facilitatorName: lc.facilitatorName || "", facilitatorTitle: lc.facilitatorTitle || "", facilitatorDescription: lc.facilitatorDescription || "", stayTunedMessage: lc.stayTunedMessage || "", stayTunedColor: lc.stayTunedColor || "#00c4cc", isWebinar: lc.isWebinar || false, waitingRoomEnabled: lc.waitingRoomEnabled || false, passcode: lc.passcode || "", externalMeetingUrl: lc.externalMeetingUrl || "", externalMeetingProvider: lc.externalMeetingProvider || "" });
     setEditingLiveCall(lc); setShowLiveCallForm(true);
   };
 
@@ -552,7 +554,7 @@ export default function WorkshopDetailPage() {
     if (!liveCallForm.title) return toast.error("Title is required");
     if (!liveCallForm.scheduledAt) return toast.error("Scheduled date is required");
     try {
-      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor, isWebinar: liveCallForm.isWebinar, waitingRoomEnabled: (liveCallForm as any).waitingRoomEnabled || false, passcode: (liveCallForm as any).passcode || null };
+      const lcData: any = { title: liveCallForm.title, type: liveCallForm.type, label: liveCallForm.label, labelColor: liveCallForm.labelColor, scheduledAt: new Date(liveCallForm.scheduledAt).toISOString(), liveUrl: liveCallForm.liveUrl || null, liveUrlUnlocksMinutesBefore: Number(liveCallForm.liveUrlUnlocksMinutesBefore) || 30, recordingUrl: liveCallForm.recordingUrl || null, recordingLabel: liveCallForm.recordingLabel || null, prerequisiteNote: liveCallForm.prerequisiteNote || null, facilitatorName: liveCallForm.facilitatorName || null, facilitatorTitle: liveCallForm.facilitatorTitle || null, facilitatorDescription: liveCallForm.facilitatorDescription || null, stayTunedMessage: liveCallForm.stayTunedMessage || null, stayTunedColor: liveCallForm.stayTunedColor, isWebinar: liveCallForm.isWebinar, waitingRoomEnabled: (liveCallForm as any).waitingRoomEnabled || false, passcode: (liveCallForm as any).passcode || null, externalMeetingUrl: liveCallForm.externalMeetingUrl || null, externalMeetingProvider: liveCallForm.externalMeetingProvider || null };
       if (editingLiveCall) { await updateLiveCall.mutateAsync({ id: editingLiveCall.id, data: lcData }); toast.success("Live call updated"); }
       else { await createLiveCall.mutateAsync(lcData); toast.success("Live call created"); }
       setShowLiveCallForm(false); refetchLiveCalls();
@@ -1103,9 +1105,10 @@ export default function WorkshopDetailPage() {
                       {lc.facilitatorName && <p className="text-[12px] text-[#606060] mt-0.5">{lc.facilitatorName}{lc.facilitatorTitle ? ` · ${lc.facilitatorTitle}` : ""}</p>}
                       {lc.scheduledAt && <p className="text-[12px] text-[#606060] mt-0.5">{format(new Date(lc.scheduledAt), "dd MMM yyyy HH:mm")}</p>}
                       {lc.stayTunedMessage && <p className="text-[11px] text-[#444] mt-1 italic">{lc.stayTunedMessage}</p>}
-                      <div className="flex gap-3 mt-2">
+                      <div className="flex gap-3 mt-2 flex-wrap">
                         {lc.liveUrl && <a href={lc.liveUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-400 hover:underline">Live Link</a>}
                         {lc.recordingUrl && <a href={lc.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-green-400 hover:underline">{lc.recordingLabel || "Recording"}</a>}
+                        {lc.externalMeetingUrl && <a href={lc.externalMeetingUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-purple-400 hover:underline">{lc.externalMeetingProvider || "External Link"}</a>}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -1899,6 +1902,32 @@ export default function WorkshopDetailPage() {
                 />
               </div>
             </div>
+
+            {/* External Meeting Link */}
+            <div className="px-6 pb-5 space-y-3">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani pt-1">External Meeting (optional)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Provider Name</label>
+                  <input
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] mt-1 text-sm"
+                    placeholder="e.g. Zoom, Google Meet"
+                    value={liveCallForm.externalMeetingProvider}
+                    onChange={e => setLiveCallForm(f => ({ ...f, externalMeetingProvider: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Meeting Link</label>
+                  <input
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] mt-1 text-sm"
+                    placeholder="https://zoom.us/j/..."
+                    value={liveCallForm.externalMeetingUrl}
+                    onChange={e => setLiveCallForm(f => ({ ...f, externalMeetingUrl: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
               <button onClick={() => setShowLiveCallForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSaveLiveCall} disabled={createLiveCall.isPending || updateLiveCall.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">

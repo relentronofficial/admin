@@ -423,6 +423,8 @@ export async function createLiveCallHandler(req: FastifyRequest, reply: FastifyR
       stayTunedMessage: body.stayTunedMessage || 'Stay tuned — the link will unlock before the session begins',
       stayTunedColor: body.stayTunedColor || '#00c4cc',
       isWebinar: body.isWebinar === true,
+      externalMeetingUrl: body.externalMeetingUrl || null,
+      externalMeetingProvider: body.externalMeetingProvider || null,
     },
   });
   return reply.status(201).send({ success: true, data: call, error: null });
@@ -435,7 +437,8 @@ export async function updateLiveCallHandler(req: FastifyRequest, reply: FastifyR
   ['order', 'type', 'label', 'labelColor', 'title', 'liveUrl', 'liveUrlUnlocksMinutesBefore',
    'recordingUrl', 'recordingLabel', 'prerequisiteNote', 'facilitatorName',
    'facilitatorTitle', 'facilitatorDescription', 'stayTunedMessage', 'stayTunedColor',
-   'isWebinar', 'waitingRoomEnabled', 'passcode'].forEach(f => {
+   'isWebinar', 'waitingRoomEnabled', 'passcode',
+   'externalMeetingUrl', 'externalMeetingProvider'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   if (body.scheduledAt) data.scheduledAt = new Date(body.scheduledAt);

@@ -23,6 +23,7 @@ import {
   SkipForward,
   ImageIcon,
   Upload,
+  ExternalLink,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -229,7 +230,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
       {/* Join button — unlocked when within unlock window */}
       {item.isUnlocked && item.status !== 'past' && (
-        <div className="space-y-2">
+        <div className="space-y-2 flex flex-col items-center">
           {leftByChoice ? (
             <button
               onClick={handleJoinFromFlow}
@@ -252,6 +253,18 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
                 <><Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}</>
               )}
             </button>
+          )}
+          {item.externalMeetingUrl && (
+            <a
+              href={item.externalMeetingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
+              style={{ borderColor: "rgba(139,92,246,0.4)", color: "#a78bfa", background: "rgba(139,92,246,0.08)" }}
+            >
+              <ExternalLink size={15} />
+              {item.externalMeetingProvider ? `Join via ${item.externalMeetingProvider}` : "Join via External Link"}
+            </a>
           )}
           {joinError && <p className="text-xs text-red-400">{joinError}</p>}
         </div>
@@ -2713,7 +2726,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
           ) : null}
 
           {challenge.isUnlocked && (
-            <div className="space-y-2">
+            <div className="space-y-2 flex flex-col items-center">
               {leftByChoice ? (
                 <button
                   onClick={handleJoin}
@@ -2740,6 +2753,18 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                     <><Video size={15} /> {uiStrings?.liveCallJoinLabel ?? "Join Live Call"}</>
                   )}
                 </button>
+              )}
+              {challenge.externalMeetingUrl && (
+                <a
+                  href={challenge.externalMeetingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
+                  style={{ borderColor: "rgba(139,92,246,0.4)", color: "#a78bfa", background: "rgba(139,92,246,0.08)" }}
+                >
+                  <ExternalLink size={15} />
+                  {challenge.externalMeetingProvider ? `Join via ${challenge.externalMeetingProvider}` : "Join via External Link"}
+                </a>
               )}
               {joinError && (
                 <p className="text-xs text-red-400">{joinError}</p>

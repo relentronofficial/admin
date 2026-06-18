@@ -419,6 +419,8 @@ export interface WorkshopFlowItem {
   facilitatorTitle?: string | null;
   facilitatorDescription?: string | null;
   countdownConfig?: { stayTunedMessage: string; stayTunedColor: string } | null;
+  externalMeetingUrl?: string | null;
+  externalMeetingProvider?: string | null;
 }
 
 // ─── Workshop Detail ──────────────────────────────────────────────────────────

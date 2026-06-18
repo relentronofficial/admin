@@ -1890,6 +1890,8 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
               ? { stayTunedMessage: lc.stayTunedMessage, stayTunedColor: lc.stayTunedColor }
               : null,
           isCompleted: status === 'past',
+          externalMeetingUrl: isUnlocked ? (lc.externalMeetingUrl ?? null) : null,
+          externalMeetingProvider: lc.externalMeetingProvider ?? null,
         };
       }
 
@@ -2920,6 +2922,8 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
         quizData: null,
         episodes: [],
         submission: null,
+        externalMeetingUrl: isUnlocked ? (lc.externalMeetingUrl ?? null) : null,
+        externalMeetingProvider: lc.externalMeetingProvider ?? null,
       };
     }
 

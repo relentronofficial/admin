@@ -1592,6 +1592,8 @@ model LiveCall {
   recordingStartedAt          DateTime?          @map("recording_started_at") @db.Timestamptz(6)
   aiSummary                   String?            @map("ai_summary")
   aiTranscript                String?            @map("ai_transcript")
+  externalMeetingUrl          String?            @map("external_meeting_url")
+  externalMeetingProvider     String?            @map("external_meeting_provider")
   workshop                    Workshop           @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   flowItems                   WorkshopFlowItem[]
   attendance                  LiveCallAttendance[]
