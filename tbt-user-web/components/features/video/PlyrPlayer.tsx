@@ -1,5 +1,6 @@
 "use client";
 
+import "./plyr-theme.css";
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from "react";
 
 // ─── Public handle exposed to parent via ref ──────────────────────────────────

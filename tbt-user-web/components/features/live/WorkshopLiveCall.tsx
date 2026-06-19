@@ -1,5 +1,6 @@
 "use client";
 
+import "@livekit/components-styles";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LiveKitRoom,

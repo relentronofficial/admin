@@ -254,6 +254,110 @@ export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyR
   return reply.send({ success: true });
 }
 
+// ── Public home endpoints (SSR-safe — no auth required) ───────────────────────
+
+export async function pubHomeHeroHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+  const redis = req.server.redis ?? null;
+  const CACHE_KEY = 'home:hero';
+  const cached = await cacheGet<object>(redis, CACHE_KEY);
+  if (cached) return reply.send({ success: true, data: cached, error: null });
+
+  const [slides, siteConfig] = await Promise.all([
+    req.server.prisma.heroSlide.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } }),
+    req.server.prisma.siteConfig.findFirst({ select: { heroAutoPlayIntervalMs: true } }),
+  ]);
+
+  const data = {
+    slides: slides.map((s) => ({
+      id: s.id, order: s.order, title: s.title, description: s.description ?? null,
+      bgVideoUrl: s.bgVideoUrl ?? null, bgImageUrl: s.bgImageUrl ?? null,
+      bgMuteDefault: s.bgMuteDefault, ctaLabel: s.ctaLabel, ctaUrl: s.ctaUrl,
+      ctaType: s.ctaType, badgeText: s.badgeText ?? null, isActive: s.isActive,
+    })),
+    autoPlayIntervalMs: siteConfig?.heroAutoPlayIntervalMs ?? 5000,
+  };
+  await cacheSet(redis, CACHE_KEY, data, 120);
+  return reply.send({ success: true, data, error: null });
+}
+
+export async function pubHomeSectionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
+  const { memberTier } = req.query as { memberTier?: string };
+  const tierNum = parseInt(memberTier || '1', 10);
+
+  const redis = req.server.redis ?? null;
+  const CACHE_KEY = 'home:sections:v1';
+  let sections = await cacheGet<any[]>(redis, CACHE_KEY);
+
+  if (!sections) {
+    sections = await req.server.prisma.contentSection.findMany({
+      where: { isVisible: true },
+      orderBy: { order: 'asc' },
+      include: {
+        items: {
+          where: { isVisible: true },
+          orderBy: { order: 'asc' },
+          include: {
+            course: {
+              select: {
+                id: true, slug: true,
+                _count: { select: { courseEpisodes: { where: { isVisible: true } } } },
+                courseEpisodes: {
+                  where: { isVisible: true }, orderBy: { order: 'asc' }, take: 20,
+                  select: { id: true, order: true, title: true, thumbnailUrl: true, durationSeconds: true },
+                },
+              },
+            },
+            workshop: {
+              select: {
+                id: true, slug: true,
+                challenges: {
+                  orderBy: { order: 'asc' },
+                  select: { episodes: { orderBy: { order: 'asc' }, take: 20, select: { id: true, order: true, title: true, durationSeconds: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    }) as any[];
+    await cacheSet(redis, CACHE_KEY, sections, 60);
+  }
+
+  // Apply tier locks in memory
+  const mapped = (sections as any[]).map((s: any) => {
+    const isLocked = tierNum < s.requiredTier;
+    return {
+      id: s.id, title: s.title, slug: s.slug, order: s.order,
+      isVisible: s.isVisible, requiredTier: s.requiredTier,
+      isLocked, lockLabel: isLocked ? (s.lockBadgeText ?? null) : null,
+      items: s.items.map((item: any) => {
+        const workshopEpisodes = (item.workshop?.challenges ?? []).flatMap((ch: any) => ch.episodes ?? []);
+        const resolvedPlayUrl = item.workshop
+          ? `/workshop/${item.workshop.slug}`
+          : item.course
+          ? `/learning/${item.course.slug}`
+          : (item.externalUrl ?? null);
+        return {
+          id: item.id, title: item.title, thumbnailUrl: item.thumbnailUrl ?? null,
+          categoryTag: item.categoryTag ?? null, isLocked: isLocked || item.isLocked,
+          lockBadgeText: item.lockBadgeText ?? null,
+          episodeCount: item.workshop
+            ? workshopEpisodes.length || null
+            : item.course
+            ? (item.course._count?.courseEpisodes ?? null)
+            : null,
+          playUrl: isLocked ? null : resolvedPlayUrl,
+          contentType: item.contentType ?? null,
+        };
+      }),
+    };
+  });
+
+  return reply.send({ success: true, data: { sections: mapped }, error: null });
+}
+
 // GET /api/pub/session-check
 // Always returns 200 — never 401. Used by the login page to check if the user
 // already has a valid session (avoids a 401 console error on every login page load).

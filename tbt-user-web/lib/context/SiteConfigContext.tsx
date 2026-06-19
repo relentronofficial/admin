@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import type { SiteConfig, NavItem, UiStrings } from "@/types";
 
 export interface RightIcons {
@@ -14,7 +14,6 @@ interface SiteConfigContextValue {
   nav: NavItem[];
   rightIcons: RightIcons;
   uiStrings: UiStrings | null;
-  /** True while the initial bootstrap fetch is in-flight */
   isLoading: boolean;
 }
 
@@ -64,16 +63,35 @@ async function fetchJson<T>(path: string): Promise<T | null> {
   }
 }
 
-export function SiteConfigProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<SiteConfig | null>(null);
-  const [nav, setNav] = useState<NavItem[]>([]);
-  const [rightIcons, setRightIcons] = useState<RightIcons>(DEFAULT_RIGHT_ICONS);
-  const [uiStrings, setUiStrings] = useState<UiStrings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [splashDone, setSplashDone] = useState(false);
-  const bootStart = useRef(Date.now());
+interface SiteConfigProviderProps {
+  children: React.ReactNode;
+  initialConfig?: SiteConfig | null;
+  initialNav?: { items: NavItem[]; rightIcons: RightIcons } | null;
+  initialUiStrings?: UiStrings | null;
+}
+
+export function SiteConfigProvider({
+  children,
+  initialConfig,
+  initialNav,
+  initialUiStrings,
+}: SiteConfigProviderProps) {
+  const [config, setConfig] = useState<SiteConfig | null>(initialConfig ?? null);
+  const [nav, setNav] = useState<NavItem[]>(initialNav?.items ?? []);
+  const [rightIcons, setRightIcons] = useState<RightIcons>(initialNav?.rightIcons ?? DEFAULT_RIGHT_ICONS);
+  const [uiStrings, setUiStrings] = useState<UiStrings | null>(initialUiStrings ?? null);
+  const [isLoading, setIsLoading] = useState(!(initialConfig && initialNav && initialUiStrings));
 
   useEffect(() => {
+    // If server already provided full initial data, just apply theme and stop.
+    if (initialConfig && initialNav && initialUiStrings) {
+      if (initialConfig.theme) applyTheme(initialConfig.theme);
+      if (initialConfig.faviconUrl) setFavicon(initialConfig.faviconUrl);
+      setIsLoading(false);
+      return;
+    }
+
+    // Fallback: client-side bootstrap (used when server data unavailable, e.g. local dev cold start)
     async function bootstrap() {
       const [cfg, navData, strings] = await Promise.all([
         fetchJson<SiteConfig>("/api/pub/config/site"),
@@ -85,110 +103,19 @@ export function SiteConfigProvider({ children }: { children: React.ReactNode }) 
         setConfig(cfg);
         applyTheme(cfg.theme);
         if (cfg.faviconUrl) setFavicon(cfg.faviconUrl);
-
-        const elapsed = Date.now() - bootStart.current;
-        const remaining = Math.max(0, cfg.splashDurationMs - elapsed);
-        setTimeout(() => setSplashDone(true), remaining);
-      } else {
-        setSplashDone(true);
       }
-
       if (navData?.items?.length) setNav(navData.items);
       if (navData?.rightIcons) setRightIcons(navData.rightIcons);
       if (strings) setUiStrings(strings);
-
       setIsLoading(false);
     }
 
     bootstrap();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <SiteConfigContext.Provider value={{ config, nav, rightIcons, uiStrings, isLoading }}>
       {children}
-      <SplashOverlay config={config} splashDone={splashDone} />
     </SiteConfigContext.Provider>
-  );
-}
-
-/** Full-screen overlay with fade/slide-in entrance and fade-out exit. */
-function SplashOverlay({
-  config,
-  splashDone,
-}: {
-  config: SiteConfig | null;
-  splashDone: boolean;
-}) {
-  // `entered` drives the slide-in: false → true on first paint tick
-  const [entered, setEntered] = useState(false);
-  // `dismissed` removes the node after the exit fade completes
-  const [dismissed, setDismissed] = useState(false);
-  // `videoEnded` fires when the logo video finishes playing
-  const [videoEnded, setVideoEnded] = useState(false);
-
-  const logoUrl = config?.splashLogoUrl ?? config?.logoUrl ?? null;
-  const siteName = config?.siteName ?? "TBT";
-
-  // In image mode exit is controlled by splashDone; in video mode by videoEnded
-  const shouldExit = logoUrl ? splashDone : videoEnded;
-
-  // Trigger entrance animation on next paint
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setEntered(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
-  // When exit condition fires, wait for fade-out transition then unmount
-  useEffect(() => {
-    if (!shouldExit) return;
-    const t = setTimeout(() => setDismissed(true), 500);
-    return () => clearTimeout(t);
-  }, [shouldExit]);
-
-  if (dismissed) return null;
-
-  const exiting = shouldExit && !dismissed;
-
-  return (
-    <div
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
-      style={{
-        background: "var(--color-bg-primary, #000)",
-        opacity: exiting ? 0 : entered ? 1 : 0,
-        transition: "opacity 500ms ease",
-        pointerEvents: shouldExit ? "none" : "auto",
-      }}
-    >
-      {/* Logo / wordmark — slides up while fading in */}
-      <div
-        style={{
-          transform: entered && !exiting ? "translateY(0)" : "translateY(24px)",
-          opacity: entered && !exiting ? 1 : 0,
-          transition: "transform 700ms cubic-bezier(0.16,1,0.3,1), opacity 600ms ease",
-        }}
-      >
-        {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logoUrl}
-            alt={siteName}
-            className="object-contain"
-            style={{ width: "min(480px, 85vw)", height: "min(480px, 85vw)" }}
-          />
-        ) : (
-          <video
-            autoPlay
-            muted
-            playsInline
-            onEnded={() => setVideoEnded(true)}
-            className="object-contain"
-            style={{ width: "min(480px, 85vw)", height: "min(480px, 85vw)", background: "transparent" }}
-          >
-            <source src="/tbt-logo.webm" type="video/webm" />
-            <source src="/tbt-logo.mp4" type="video/mp4" />
-          </video>
-        )}
-      </div>
-    </div>
   );
 }
