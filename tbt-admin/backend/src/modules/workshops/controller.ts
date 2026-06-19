@@ -1251,7 +1251,7 @@ Write bullet points only. Be concise and practical.`;
     const Anthropic = (await import('@anthropic-ai/sdk')).default;
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-haiku-4-5',
       max_tokens: 512,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -1658,7 +1658,9 @@ function nextOccurrence(dayOfWeek: number, timeHour: number, timeMinute: number,
   d.setUTCSeconds(0, 0);
   d.setUTCHours(timeHour, timeMinute);
   // dayOfWeek: 0=Sun ... 6=Sat
-  const diff = (dayOfWeek - d.getUTCDay() + 7) % 7 || 7;
+  let diff = (dayOfWeek - d.getUTCDay() + 7) % 7;
+  // Same weekday: use today if the scheduled time is still ahead, else next week
+  if (diff === 0 && d <= after) diff = 7;
   d.setUTCDate(d.getUTCDate() + diff);
   return d;
 }

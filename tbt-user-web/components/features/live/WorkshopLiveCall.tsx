@@ -220,6 +220,7 @@ export function WorkshopLiveCall({
   const [stage, setStage] = useState<"pre" | "live" | "ended">("pre");
   const originalTokenRef = useRef(initialToken);
   const [activeToken, setActiveToken] = useState(initialToken);
+  const [activeWsUrl, setActiveWsUrl] = useState(wsUrl);
   const [userChoices, setUserChoices] = useState<LocalUserChoices>({
     username: defaultName,
     videoEnabled: !isWebinar,
@@ -287,10 +288,12 @@ export function WorkshopLiveCall({
     const onAssigned = (data: { liveCallId: string; token: string; wsUrl: string }) => {
       if (data.liveCallId !== liveCallId) return;
       setActiveToken(data.token);
+      setActiveWsUrl(data.wsUrl);
     };
     const onRecall = (data: { liveCallId: string }) => {
       if (data.liveCallId !== liveCallId) return;
       setActiveToken(originalTokenRef.current);
+      setActiveWsUrl(wsUrl);
     };
     getSocket().then((s) => {
       if (!mounted) return;
@@ -514,7 +517,7 @@ export function WorkshopLiveCall({
       {/* Body — LiveKitRoom fills remaining height */}
       <div className="flex-1 relative min-h-0">
         <LiveKitRoom
-          serverUrl={wsUrl}
+          serverUrl={activeWsUrl}
           token={activeToken}
           connect={true}
           audio={userChoices.audioEnabled}

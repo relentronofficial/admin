@@ -355,8 +355,10 @@ function TemplatesSection({ workshopId }: { workshopId: string }) {
 
   const handleDelete = async (tid: string) => {
     if (!confirm("Delete this template?")) return;
-    await deleteTemplate.mutateAsync({ tid, workshopId });
-    toast.success("Deleted");
+    try {
+      await deleteTemplate.mutateAsync({ tid, workshopId });
+      toast.success("Deleted");
+    } catch (err: any) { toast.error(err.message || "Failed to delete template"); }
   };
 
   const handleGenerate = async (t: LiveCallTemplate) => {

@@ -3220,24 +3220,21 @@ export default function WorkshopDetailPage() {
   useEffect(() => {
     if (!slug) return;
     let mounted = true;
+    const onQaUpdate = () => qc.invalidateQueries({ queryKey: ['workshop-qa', slug] });
 
     getSocket().then((socket) => {
       if (!mounted) return;
       socket.emit('join:workshop', slug);
-      socket.on('qa:new_question', () => {
-        qc.invalidateQueries({ queryKey: ['workshop-qa', slug] });
-      });
-      socket.on('qa:new_reply', () => {
-        qc.invalidateQueries({ queryKey: ['workshop-qa', slug] });
-      });
+      socket.on('qa:new_question', onQaUpdate);
+      socket.on('qa:new_reply', onQaUpdate);
     });
 
     return () => {
       mounted = false;
       getSocket().then((socket) => {
         socket.emit('leave:workshop', slug);
-        socket.off('qa:new_question');
-        socket.off('qa:new_reply');
+        socket.off('qa:new_question', onQaUpdate);
+        socket.off('qa:new_reply', onQaUpdate);
       });
     };
   }, [slug, qc]);

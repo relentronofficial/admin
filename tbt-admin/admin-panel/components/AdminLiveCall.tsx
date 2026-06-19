@@ -17,6 +17,7 @@ import {
   Bell, Plus, X, Send, HelpCircle, Check, EyeOff, Mic2, LayoutGrid, ArrowLeftToLine,
 } from "lucide-react";
 import { getAdminSocket } from "@/lib/socket/client";
+import toast from "react-hot-toast";
 import {
   useEndLiveCall,
   useMuteAll,
@@ -132,11 +133,16 @@ function ParticipantsPanel({ liveCallId, onClose }: { liveCallId: string; onClos
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   {!isPromoted && (
                     <button
+                      disabled={promoteCoHost.isPending}
                       onClick={async () => {
-                        await promoteCoHost.mutateAsync({ lcid: liveCallId, memberId: p.identity });
-                        setPromoted(prev => new Set([...prev, p.identity]));
+                        try {
+                          await promoteCoHost.mutateAsync({ lcid: liveCallId, memberId: p.identity });
+                          setPromoted(prev => new Set([...prev, p.identity]));
+                        } catch (err: any) {
+                          toast.error(err.message || "Failed to promote");
+                        }
                       }}
-                      className="p-1 rounded hover:bg-[#2a2a2a]" title="Promote to presenter"
+                      className="p-1 rounded hover:bg-[#2a2a2a] disabled:opacity-40" title="Promote to presenter"
                     >
                       <Mic2 size={11} style={{ color: "#22c55e" }} />
                     </button>
@@ -480,7 +486,11 @@ function BreakoutPanel({ liveCallId, onClose }: { liveCallId: string; onClose: (
   const [assigning, setAssigning] = useState<string | null>(null); // brid being assigned
 
   const handleCreate = async () => {
-    await createRooms.mutateAsync({ lcid: liveCallId, count });
+    try {
+      await createRooms.mutateAsync({ lcid: liveCallId, count });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create breakout rooms");
+    }
   };
 
   const handleAssign = async (brid: string, identity: string) => {
@@ -531,8 +541,15 @@ function BreakoutPanel({ liveCallId, onClose }: { liveCallId: string; onClose: (
             <div className="flex items-center justify-between">
               <p className="text-sm font-bold" style={{ color: "#f0f0f0" }}>{room.name}</p>
               <button
-                onClick={() => deleteRoom.mutateAsync({ lcid: liveCallId, brid: room.id })}
-                className="p-1 rounded hover:bg-[#2a2a2a]"
+                disabled={deleteRoom.isPending}
+                onClick={async () => {
+                  try {
+                    await deleteRoom.mutateAsync({ lcid: liveCallId, brid: room.id });
+                  } catch (err: any) {
+                    toast.error(err.message || "Failed to delete room");
+                  }
+                }}
+                className="p-1 rounded hover:bg-[#2a2a2a] disabled:opacity-40"
                 title="Delete room"
               >
                 <X size={11} style={{ color: "#606060" }} />
