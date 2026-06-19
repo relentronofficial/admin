@@ -483,7 +483,6 @@ function BreakoutPanel({ liveCallId, onClose }: { liveCallId: string; onClose: (
   const recallAll = useRecallAll();
   const deleteRoom = useDeleteBreakoutRoom();
   const [count, setCount] = useState(2);
-  const [assigning, setAssigning] = useState<string | null>(null); // brid being assigned
 
   const handleCreate = async () => {
     try {
@@ -495,7 +494,6 @@ function BreakoutPanel({ liveCallId, onClose }: { liveCallId: string; onClose: (
 
   const handleAssign = async (brid: string, identity: string) => {
     await assignTo.mutateAsync({ lcid: liveCallId, brid, identity });
-    setAssigning(null);
   };
 
   const activeRooms = rooms.filter(r => r.isActive);
@@ -598,7 +596,6 @@ function BreakoutPanel({ liveCallId, onClose }: { liveCallId: string; onClose: (
 interface AdminLiveCallProps {
   token: string;
   wsUrl: string;
-  roomName: string;
   liveCallId: string;
   hostName?: string;
   onLeave: () => void;

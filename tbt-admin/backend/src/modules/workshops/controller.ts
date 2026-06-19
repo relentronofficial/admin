@@ -616,30 +616,36 @@ export async function promoteCoHostHandler(req: FastifyRequest, reply: FastifyRe
   const lc = await req.server.prisma.liveCall.findUnique({ where: { id: lcid }, select: { id: true } });
   if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
 
-  const member = await req.server.prisma.member.findUnique({
-    where: { id: memberId },
-    select: { firstName: true, lastName: true },
-  });
+  const { RoomServiceClient, AccessToken } = await import('livekit-server-sdk');
+  const httpUrl = env.LIVEKIT_WS_URL.replace(/^wss?:\/\//, 'https://');
+  const svc = new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
 
-  const { AccessToken } = await import('livekit-server-sdk');
-  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
-    identity: memberId,
-    name: [member?.firstName, member?.lastName].filter(Boolean).join(' ') || memberId,
-    ttl: '4h',
-  });
-  at.addGrant({
-    room: `workshop-live-${lcid}`,
-    roomJoin: true,
-    canPublish: true,
-    canPublishData: true,
-    canSubscribe: true,
-  });
-  const jwt = await at.toJwt();
+  let fallbackToken: string | undefined;
+  try {
+    // Grant publish permissions in-room without forcing the participant to reconnect
+    await svc.updateParticipant(`workshop-live-${lcid}`, memberId, undefined, {
+      canPublish: true,
+      canPublishData: true,
+      canSubscribe: true,
+    });
+  } catch {
+    // Participant not in room yet — generate a new token so they can reconnect with publish rights
+    const member = await req.server.prisma.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true },
+    });
+    const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+      identity: memberId,
+      name: [member?.firstName, member?.lastName].filter(Boolean).join(' ') || memberId,
+      ttl: '4h',
+    });
+    at.addGrant({ room: `workshop-live-${lcid}`, roomJoin: true, canPublish: true, canPublishData: true, canSubscribe: true });
+    fallbackToken = await at.toJwt();
+  }
 
   req.server.io.to(`user:${memberId}`).emit('live_call:promoted_co_host', {
     liveCallId: lcid,
-    token: jwt,
-    wsUrl: env.LIVEKIT_WS_URL,
+    ...(fallbackToken ? { token: fallbackToken, wsUrl: env.LIVEKIT_WS_URL } : {}),
   });
 
   return reply.send({ success: true, data: null, error: null });

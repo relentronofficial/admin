@@ -1101,13 +1101,16 @@ export const useCreateBreakoutRooms = () => {
   });
 };
 
-export const useAssignToBreakout = () =>
-  useMutation({
+export const useAssignToBreakout = () => {
+  const qc = useQueryClient();
+  return useMutation({
     mutationFn: async ({ lcid, brid, identity }: { lcid: string; brid: string; identity: string }) => {
       const res: any = await apiClient.post(`/api/workshops/live-calls/${lcid}/breakout-rooms/${brid}/assign`, { identity });
       return res.data;
     },
+    onSuccess: (_d, { lcid }) => qc.invalidateQueries({ queryKey: ['breakout-rooms', lcid] }),
   });
+};
 
 export const useRecallAll = () => {
   const qc = useQueryClient();

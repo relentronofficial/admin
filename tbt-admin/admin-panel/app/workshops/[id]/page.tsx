@@ -469,6 +469,21 @@ function TemplatesSection({ workshopId }: { workshopId: string }) {
                   <span className="text-sm text-[#888] font-mono">{form.labelColor}</span>
                 </div>
               </div>
+              <div>
+                <label className={labelCls}>Recurrence</label>
+                <select value={form.recurrence ?? "weekly"} onChange={e => setForm(f => ({ ...f, recurrence: e.target.value }))} className={selectCls}>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Bi-Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Stay Tuned Color</label>
+                <div className="flex items-center gap-2 h-11">
+                  <input type="color" value={form.stayTunedColor ?? "#00c4cc"} onChange={e => setForm(f => ({ ...f, stayTunedColor: e.target.value }))} className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent" />
+                  <span className="text-sm text-[#888] font-mono">{form.stayTunedColor ?? "#00c4cc"}</span>
+                </div>
+              </div>
               <div className="col-span-2">
                 <label className={labelCls}>Stay Tuned Message</label>
                 <input value={form.stayTunedMessage ?? ""} onChange={e => setForm(f => ({ ...f, stayTunedMessage: e.target.value }))} className={inputCls} />
@@ -1855,7 +1870,6 @@ export default function WorkshopDetailPage() {
               <AdminLiveCall
                 token={hostCallCreds.token}
                 wsUrl={hostCallCreds.wsUrl}
-                roomName={hostCallCreds.roomName}
                 liveCallId={hostCallCreds.liveCallId}
                 hostName={adminName}
                 onLeave={() => setHostCallCreds(null)}

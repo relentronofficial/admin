@@ -427,5 +427,6 @@ export const useGetMyLiveCallCertificate = (liveCallId: string, enabled = true) 
       return res?.data as { certificateUrl: string; attendancePercent: number; issuedAt: string } | null;
     },
     enabled: !!liveCallId && enabled,
+    staleTime: Infinity,
     retry: false,
   });

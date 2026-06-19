@@ -181,7 +181,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const me = (meData as any)?.data;
   const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
   const [diff, setDiff] = useState(0);
-  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null } | null>(null);
+  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null; isWebinar?: boolean } | null>(null);
   const [leftByChoice, setLeftByChoice] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const { data: liveStatus } = useLiveCallStatus(item.liveCallId ?? "", !!item.liveCallId && item.status !== "past");
@@ -421,9 +421,9 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
         <WorkshopLiveCall
           token={callCreds.token}
           wsUrl={callCreds.wsUrl}
-          roomName={callCreds.roomName}
           defaultName={memberName}
           startedAt={callCreds.startedAt ?? liveStatus?.startedAt}
+          isWebinar={callCreds.isWebinar}
           liveCallId={item.liveCallId ?? undefined}
           onLeave={() => setCallCreds(null)}
           onLeaveByChoice={() => setLeftByChoice(true)}
@@ -884,7 +884,7 @@ function CertificateModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 print:p-0"
+      className="certificate-modal-print fixed inset-0 z-[200] flex items-center justify-center p-4 print:p-0"
       style={{ background: "rgba(0,0,0,0.75)" }}
       onClick={onClose}
     >
@@ -2709,14 +2709,14 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   const lColor = challenge.labelColor ?? "#ff3d8b";
   const teal = challenge.stayTunedColor ?? "#2dd4bf";
   const [diff, setDiff] = useState(0);
-  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null } | null>(null);
+  const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null; isWebinar?: boolean } | null>(null);
   const [leftByChoice, setLeftByChoice] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 
   const { data: liveStatus } = useLiveCallStatus(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
   const { data: resources = [] } = useGetLiveCallResources(challenge.liveCallId ?? "", !!challenge.liveCallId && !isPast);
   const { data: chapters = [] } = useGetLiveCallChapters(challenge.liveCallId ?? "", !!challenge.liveCallId && isPast);
-  const { data: certData } = useGetMyLiveCallCertificate(challenge.liveCallId ?? "", !!challenge.liveCallId && isPast);
+  const { data: certData, isError: certError } = useGetMyLiveCallCertificate(challenge.liveCallId ?? "", !!challenge.liveCallId && isPast);
 
   useEffect(() => {
     if (!challenge.scheduledAt || isPast) return;
@@ -2794,9 +2794,9 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
         <WorkshopLiveCall
           token={callCreds.token}
           wsUrl={callCreds.wsUrl}
-          roomName={callCreds.roomName}
           defaultName={memberName}
           startedAt={callCreds.startedAt ?? liveStatus?.startedAt}
+          isWebinar={callCreds.isWebinar}
           liveCallId={challenge.liveCallId ?? undefined}
           onLeave={() => setCallCreds(null)}
           onLeaveByChoice={() => setLeftByChoice(true)}
@@ -2856,6 +2856,9 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
               <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#606060" }}>AI Session Summary</p>
               <p className="text-xs leading-relaxed italic whitespace-pre-line" style={{ color: "#a0a0a0" }}>{challenge.aiSummary}</p>
             </div>
+          )}
+          {certError && (
+            <p className="text-xs text-center" style={{ color: "#ef4444" }}>Could not load certificate. Please try again later.</p>
           )}
           {certData?.certificateUrl && (
             <a

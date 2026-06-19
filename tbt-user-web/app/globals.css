@@ -227,3 +227,11 @@
   border-radius: 0 !important;
   overflow: visible !important;
 }
+
+/* Certificate modal print isolation — hide everything except the open modal */
+@media print {
+  body > * { display: none !important; }
+  #__next > * { display: none !important; }
+  .certificate-modal-print { display: flex !important; position: static !important; background: white !important; }
+  .certificate-modal-print * { color: #000 !important; border-color: #333 !important; }
+}

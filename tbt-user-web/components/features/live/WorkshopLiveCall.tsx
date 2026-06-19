@@ -28,7 +28,6 @@ import { BackgroundSettingsModal } from "./BackgroundSettingsModal";
 interface WorkshopLiveCallProps {
   token: string;
   wsUrl: string;
-  roomName: string;
   defaultName?: string;
   startedAt?: string | null;
   isWebinar?: boolean;
@@ -263,13 +262,15 @@ export function WorkshopLiveCall({
     };
   }, [liveCallId]);
 
-  // Listen for co-host promotion — swap to new token so camera/mic publish
+  // Listen for co-host promotion — update permissions in-room (no reconnect needed)
+  // or swap token if participant wasn't in room when promotion was issued
   useEffect(() => {
     if (!liveCallId) return;
     let mounted = true;
-    const onPromoted = (data: { liveCallId: string; token: string }) => {
+    const onPromoted = (data: { liveCallId: string; token?: string }) => {
       if (data.liveCallId !== liveCallId) return;
-      setActiveToken(data.token);
+      if (data.token) setActiveToken(data.token);
+      // No token → updateParticipant already granted publish rights in LiveKit
     };
     getSocket().then((s) => {
       if (!mounted) return;
