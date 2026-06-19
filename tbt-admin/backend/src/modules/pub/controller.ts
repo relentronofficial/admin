@@ -259,7 +259,7 @@ export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyR
 export async function pubHomeHeroHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
   const redis = req.server.redis ?? null;
-  const CACHE_KEY = 'home:hero';
+  const CACHE_KEY = 'home:hero:v2';
   const cached = await cacheGet<object>(redis, CACHE_KEY);
   if (cached) return reply.send({ success: true, data: cached, error: null });
 
@@ -272,6 +272,7 @@ export async function pubHomeHeroHandler(req: FastifyRequest, reply: FastifyRepl
     slides: slides.map((s) => ({
       id: s.id, order: s.order, title: s.title, description: s.description ?? null,
       bgVideoUrl: s.bgVideoUrl ?? null, bgImageUrl: s.bgImageUrl ?? null,
+      bgMobileImageUrl: (s as any).bgMobileImageUrl ?? null,
       bgMuteDefault: s.bgMuteDefault, ctaLabel: s.ctaLabel, ctaUrl: s.ctaUrl,
       ctaType: s.ctaType, badgeText: s.badgeText ?? null, isActive: s.isActive,
     })),

@@ -311,6 +311,7 @@ export interface HeroSlide {
   description?: string | null;
   bgVideoUrl?: string | null;
   bgImageUrl?: string | null;
+  bgMobileImageUrl?: string | null;
   bgMuteDefault: boolean;
   ctaLabel: string;
   ctaUrl: string;

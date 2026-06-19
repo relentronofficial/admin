@@ -1372,8 +1372,9 @@ model HeroSlide {
   order         Int      @default(0)
   title         String
   description   String?
-  bgVideoUrl    String?  @map("bg_video_url")
-  bgImageUrl    String?  @map("bg_image_url")
+  bgVideoUrl         String?  @map("bg_video_url")
+  bgImageUrl         String?  @map("bg_image_url")
+  bgMobileImageUrl   String?  @map("bg_mobile_image_url")
   bgMuteDefault Boolean  @default(true) @map("bg_mute_default")
   ctaLabel      String   @map("cta_label")
   ctaUrl        String   @map("cta_url")

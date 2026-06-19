@@ -95,9 +95,9 @@ export function HeroCarousel({
             poster={slide.bgImageUrl ?? undefined}
             className="absolute inset-0 w-full h-full object-cover"
           />
-        ) : slide.bgImageUrl ? (
+        ) : (slide.bgMobileImageUrl && isMobileViewport() ? slide.bgMobileImageUrl : slide.bgImageUrl) ? (
           <Image
-            src={slide.bgImageUrl}
+            src={(slide.bgMobileImageUrl && isMobileViewport() ? slide.bgMobileImageUrl : slide.bgImageUrl)!}
             alt={slide.title}
             fill
             className="object-cover"

@@ -38,6 +38,7 @@ const EMPTY_FORM = {
   description: "",
   bgVideoUrl: "",
   bgImageUrl: "",
+  bgMobileImageUrl: "",
   bgMuteDefault: true,
   ctaLabel: "",
   linkType: "custom" as LinkType,
@@ -191,6 +192,7 @@ export default function HeroCarouselPage() {
       description: slide.description || "",
       bgVideoUrl: slide.bgVideoUrl || "",
       bgImageUrl: slide.bgImageUrl || "",
+      bgMobileImageUrl: slide.bgMobileImageUrl || "",
       bgMuteDefault: slide.bgMuteDefault ?? true,
       ctaLabel: slide.ctaLabel || "",
       linkType,
@@ -215,6 +217,7 @@ export default function HeroCarouselPage() {
         description: form.description || null,
         bgVideoUrl: form.bgVideoUrl || null,
         bgImageUrl: form.bgImageUrl || null,
+        bgMobileImageUrl: form.bgMobileImageUrl || null,
         bgMuteDefault: form.bgMuteDefault,
         ctaLabel: form.ctaLabel || "",
         ctaUrl,
@@ -412,9 +415,9 @@ export default function HeroCarouselPage() {
                 onUploaded={setField}
               />
 
-              {/* Background Image */}
+              {/* Background Image — Desktop */}
               <UploadBtn
-                label="Background Image (fallback)"
+                label="Background Image — Desktop"
                 value={form.bgImageUrl}
                 accept="image/png,image/jpeg,image/webp"
                 icon={<ImageIcon size={12} />}
@@ -424,6 +427,22 @@ export default function HeroCarouselPage() {
                 setUploading={setUploadingField}
                 onUploaded={setField}
               />
+
+              {/* Background Image — Mobile */}
+              <UploadBtn
+                label="Background Image — Mobile (optional)"
+                value={form.bgMobileImageUrl}
+                accept="image/png,image/jpeg,image/webp"
+                icon={<ImageIcon size={12} />}
+                uploadKey="bgMobileImageUrl"
+                pathPrefix="hero/image-mobile"
+                uploading={uploadingField}
+                setUploading={setUploadingField}
+                onUploaded={setField}
+              />
+              <p className="text-[10px] text-[#444] -mt-2 font-rajdhani">
+                Upload a portrait-cropped version for phones (&lt;768 px). Falls back to Desktop image if not set.
+              </p>
 
               {/* Mute by Default toggle */}
               <div className="flex items-center gap-3">
