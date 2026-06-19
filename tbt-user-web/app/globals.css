@@ -72,8 +72,10 @@
     font-feature-settings: "rlig" 1, "calt" 1;
     overflow-x: clip;
   }
-  html {
-    scroll-behavior: smooth;
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
   }
 }
 

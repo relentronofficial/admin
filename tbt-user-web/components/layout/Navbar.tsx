@@ -62,9 +62,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
     <div
       className="absolute right-0 top-full mt-2 w-80 rounded-2xl overflow-hidden z-50 flex flex-col"
       style={{
-        background: "rgba(10,10,10,0.97)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
+        background: "rgba(10,10,10,0.98)",
         border: "1px solid rgba(255,255,255,0.09)",
         boxShadow: "0 16px 48px rgba(0,0,0,0.7)",
         maxHeight: "420px",
@@ -228,7 +226,7 @@ function ProfileButton() {
       >
         {(me as any)?.profilePhotoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={(me as any).profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+          <img src={(me as any).profilePhotoUrl} alt="" width={28} height={28} className="w-full h-full object-cover" />
         ) : initials}
       </button>
 
@@ -284,61 +282,67 @@ export function Navbar() {
   // ── Socket: invalidate + toast on new notification ────────────────────────
   useEffect(() => {
     let mounted = true;
-    getSocket().then((socket) => {
-      if (!mounted) return;
+    let timer: ReturnType<typeof setTimeout>;
 
-      function showNotifToast(payload: { title: string; body?: string; type?: string; actionUrl?: string }) {
-        queryClient.invalidateQueries({ queryKey: ["user", "notifications"] });
-        const { Icon, color, bg } = getNotifIcon(payload.type);
-        toast.custom(
-          (t) => (
-            <div
-              className="flex items-start gap-3 px-4 py-3 rounded-2xl cursor-pointer select-none"
-              style={{
-                background: "rgba(12,12,12,0.97)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.65)",
-                minWidth: 280,
-                maxWidth: 340,
-                opacity: t.visible ? 1 : 0,
-                transition: "opacity 0.2s",
-              }}
-              onClick={() => {
-                toast.dismiss(t.id);
-                if (payload.actionUrl) routerRef.current.push(payload.actionUrl);
-                else routerRef.current.push("/notifications");
-              }}
-            >
+    // Defer socket connection — keeps socket.io-client off the critical paint path.
+    timer = setTimeout(() => {
+      getSocket().then((socket) => {
+        if (!mounted) return;
+
+        function showNotifToast(payload: { title: string; body?: string; type?: string; actionUrl?: string }) {
+          queryClient.invalidateQueries({ queryKey: ["user", "notifications"] });
+          const { Icon, color, bg } = getNotifIcon(payload.type);
+          toast.custom(
+            (t) => (
               <div
-                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                style={{ background: bg }}
+                className="flex items-start gap-3 px-4 py-3 rounded-2xl cursor-pointer select-none"
+                style={{
+                  background: "rgba(12,12,12,0.97)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.65)",
+                  minWidth: 280,
+                  maxWidth: 340,
+                  opacity: t.visible ? 1 : 0,
+                  transition: "opacity 0.2s",
+                }}
+                onClick={() => {
+                  toast.dismiss(t.id);
+                  if (payload.actionUrl) routerRef.current.push(payload.actionUrl);
+                  else routerRef.current.push("/notifications");
+                }}
               >
-                <Icon size={14} style={{ color }} />
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                  style={{ background: bg }}
+                >
+                  <Icon size={14} style={{ color }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white leading-tight">{payload.title}</p>
+                  {payload.body && (
+                    <p className="text-xs text-[#a0a0a0] mt-0.5 line-clamp-2">{payload.body}</p>
+                  )}
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); toast.dismiss(t.id); }}
+                  className="p-0.5 text-[#555] hover:text-[#999] flex-shrink-0"
+                >
+                  <X size={12} />
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-white leading-tight">{payload.title}</p>
-                {payload.body && (
-                  <p className="text-xs text-[#a0a0a0] mt-0.5 line-clamp-2">{payload.body}</p>
-                )}
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); toast.dismiss(t.id); }}
-                className="p-0.5 text-[#555] hover:text-[#999] flex-shrink-0"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ),
-          { duration: 5000, position: "bottom-right" }
-        );
-      }
+            ),
+            { duration: 5000, position: "bottom-right" }
+          );
+        }
 
-      socket.on("notification", showNotifToast);
-      socket.on("notification:broadcast", showNotifToast);
-    });
+        socket.on("notification", showNotifToast);
+        socket.on("notification:broadcast", showNotifToast);
+      });
+    }, 4000);
 
     return () => {
       mounted = false;
+      clearTimeout(timer);
       getSocket().then((s) => {
         s.off("notification");
         s.off("notification:broadcast");
@@ -349,14 +353,20 @@ export function Navbar() {
   // ── Socket: messages ──────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
-    getSocket().then((socket) => {
-      if (!mounted) return;
-      socket.on("message:new", () => {
-        queryClient.invalidateQueries({ queryKey: ["user", "conversations"] });
+    let timer: ReturnType<typeof setTimeout>;
+
+    timer = setTimeout(() => {
+      getSocket().then((socket) => {
+        if (!mounted) return;
+        socket.on("message:new", () => {
+          queryClient.invalidateQueries({ queryKey: ["user", "conversations"] });
+        });
       });
-    });
+    }, 4000);
+
     return () => {
       mounted = false;
+      clearTimeout(timer);
       getSocket().then((s) => s.off("message:new"));
     };
   }, [queryClient]);
@@ -387,9 +397,9 @@ export function Navbar() {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{
-          background: "rgba(8, 8, 8, 0.94)",
-          backdropFilter: "blur(24px)",
-          WebkitBackdropFilter: "blur(24px)",
+          // Solid background — drawer slides in from off-screen so blur offers no
+          // readability benefit, and is expensive on mobile GPUs
+          background: "rgba(8, 8, 8, 0.98)",
           borderColor: "rgba(255,255,255,0.07)",
           boxShadow: "4px 0 40px rgba(0,0,0,0.7)",
         }}
@@ -404,7 +414,7 @@ export function Navbar() {
             onClick={() => setSidebarOpen(false)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoUrl || "/tbt_logo.png"} alt={siteName} className="h-7 w-auto object-contain" />
+            <img src={logoUrl || "/tbt_logo.webp"} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" />
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -444,11 +454,11 @@ export function Navbar() {
 
       {/* ── Floating top navbar ───────────────────────────────────────────── */}
       <header
-        className="fixed top-3 left-4 right-4 z-40 h-14 flex items-center px-3 gap-3 rounded-2xl"
+        className="fixed top-3 left-4 right-4 z-40 h-14 flex items-center px-3 gap-3 rounded-2xl supports-[backdrop-filter]:md:backdrop-blur-xl"
         style={{
-          background: "rgba(10, 10, 10, 0.72)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
+          // Mobile: solid — backdrop-filter is GPU-expensive on mobile compositing
+          // Desktop (md+): blur re-enabled via Tailwind supports- class above
+          background: "rgba(10, 10, 10, 0.93)",
           border: "1px solid rgba(255,255,255,0.07)",
           boxShadow: [
             "0 4px 24px rgba(0,0,0,0.55)",
@@ -470,7 +480,7 @@ export function Navbar() {
         {/* Logo */}
         <Link href={homeHref} className="flex-shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoUrl || "/tbt_logo.png"} alt={siteName} className="h-7 w-auto object-contain" />
+          <img src={logoUrl || "/tbt_logo.webp"} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" fetchPriority="high" />
         </Link>
 
         {/* Visual separator (desktop) */}

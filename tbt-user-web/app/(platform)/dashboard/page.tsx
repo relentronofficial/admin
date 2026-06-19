@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { BookOpen, Flame, Trophy, Calendar, Play } from "lucide-react";
 import { StatsCard } from "@/components/features/dashboard/StatsCard";
 import { ProgramCard } from "@/components/features/programs/ProgramCard";
@@ -80,11 +81,12 @@ export default function DashboardPage() {
                 >
                   <div className="aspect-video w-full relative bg-black/50 overflow-hidden">
                     {item.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img 
-                        src={item.thumbnailUrl} 
-                        alt={item.title} 
-                        className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" 
+                      <Image
+                        src={item.thumbnailUrl}
+                        alt={item.title}
+                        fill
+                        className="object-cover opacity-60 group-hover:opacity-80 transition-opacity"
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground/30">

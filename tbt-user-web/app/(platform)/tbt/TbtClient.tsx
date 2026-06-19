@@ -15,6 +15,14 @@ import { getServerNow } from "@/lib/api/client";
 import apiClient from "@/lib/api/client";
 import type { HeroSlide, ContentSection, ContentItem, ContinueLearningItem, WatchHistoryItem } from "@/types";
 
+// Returns true when the viewport is narrower than Tailwind's md breakpoint (768 px).
+// SSR always returns false so the video element is in the server HTML; React reconciles
+// correctly on hydration when the real viewport width is known.
+function isMobileViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.innerWidth < 768;
+}
+
 // ─── Hero Carousel ────────────────────────────────────────────────────────────
 
 export function HeroCarousel({
@@ -75,7 +83,7 @@ export function HeroCarousel({
           transitioning ? "opacity-0" : "opacity-100"
         )}
       >
-        {slide.bgVideoUrl ? (
+        {slide.bgVideoUrl && !isMobileViewport() ? (
           <video
             ref={videoRef}
             key={slide.bgVideoUrl}
@@ -84,6 +92,7 @@ export function HeroCarousel({
             loop
             muted={muted}
             playsInline
+            poster={slide.bgImageUrl ?? undefined}
             className="absolute inset-0 w-full h-full object-cover"
           />
         ) : slide.bgImageUrl ? (
@@ -120,11 +129,17 @@ export function HeroCarousel({
             {slide.badgeText}
           </span>
         )}
-        <h2 className="text-3xl md:text-5xl lg:text-6xl font-black text-white mb-3 leading-tight max-w-2xl lg:max-w-3xl drop-shadow-2xl">
+        <h2
+          className="text-3xl md:text-5xl lg:text-6xl font-black text-white mb-3 leading-tight max-w-2xl lg:max-w-3xl"
+          style={{ textShadow: "0 2px 16px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.7)" }}
+        >
           {slide.title}
         </h2>
         {slide.description && (
-          <p className="text-white/80 text-sm md:text-base mb-7 max-w-lg md:max-w-xl leading-relaxed drop-shadow">
+          <p
+            className="text-white/80 text-sm md:text-base mb-7 max-w-lg md:max-w-xl leading-relaxed"
+            style={{ textShadow: "0 1px 6px rgba(0,0,0,0.8)" }}
+          >
             {slide.description}
           </p>
         )}
@@ -329,10 +344,11 @@ function SectionRow({ section }: { section: ContentSection }) {
     if (!el) return;
     checkScroll();
     el.addEventListener("scroll", checkScroll, { passive: true });
-    window.addEventListener("resize", checkScroll);
+    const ro = new ResizeObserver(() => checkScroll());
+    ro.observe(el);
     return () => {
       el.removeEventListener("scroll", checkScroll);
-      window.removeEventListener("resize", checkScroll);
+      ro.disconnect();
     };
   }, [checkScroll, section.items.length]);
 
@@ -543,10 +559,11 @@ export function ContinueWatchingSection() {
     if (!el) return;
     checkScroll();
     el.addEventListener("scroll", checkScroll, { passive: true });
-    window.addEventListener("resize", checkScroll);
+    const ro = new ResizeObserver(() => checkScroll());
+    ro.observe(el);
     return () => {
       el.removeEventListener("scroll", checkScroll);
-      window.removeEventListener("resize", checkScroll);
+      ro.disconnect();
     };
   }, [checkScroll, data]);
 
@@ -752,10 +769,11 @@ export function RecentlyWatchedSection() {
     if (!el) return;
     checkScroll();
     el.addEventListener("scroll", checkScroll, { passive: true });
-    window.addEventListener("resize", checkScroll);
+    const ro = new ResizeObserver(() => checkScroll());
+    ro.observe(el);
     return () => {
       el.removeEventListener("scroll", checkScroll);
-      window.removeEventListener("resize", checkScroll);
+      ro.disconnect();
     };
   }, [checkScroll, resp]);
 

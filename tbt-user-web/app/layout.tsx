@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 import type { SiteConfig, NavItem, UiStrings } from "@/types";
@@ -12,11 +12,6 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
   title: {
     default: "TBT",
@@ -24,9 +19,12 @@ export const metadata: Metadata = {
   },
   description: "Your learning platform.",
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: [
+      { url: "/favicon.webp", type: "image/webp" },
+      { url: "/favicon.png", type: "image/png" },
+    ],
+    shortcut: "/favicon.webp",
+    apple: "/favicon.webp",
   },
 };
 
@@ -62,6 +60,14 @@ export default async function RootLayout({
     ? `:root{--color-accent:${initialConfig.theme.accentColor};--color-alert:${initialConfig.theme.alertColor};--color-success:${initialConfig.theme.successColor};--color-bg-primary:${initialConfig.theme.bgPrimary};--color-bg-surface:${initialConfig.theme.bgSurface};}`
     : "";
 
+  // Derive CDN origin from the first available media URL — works across all environments
+  // without touching env files. Falls back to null (no preconnect emitted) if config is absent.
+  const cdnOrigin = (() => {
+    const url = initialConfig?.logoUrl || initialConfig?.faviconUrl;
+    if (!url) return null;
+    try { return new URL(url).origin; } catch { return null; }
+  })();
+
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
@@ -70,9 +76,15 @@ export default async function RootLayout({
           <link rel="icon" href={initialConfig.faviconUrl} />
         )}
         <link rel="preconnect" href={API_BASE} />
+        {cdnOrigin && (
+          <>
+            <link rel="preconnect" href={cdnOrigin} crossOrigin="" />
+            <link rel="dns-prefetch" href={cdnOrigin} />
+          </>
+        )}
       </head>
       <body
-        className={`${inter.variable} ${geistMono.variable} antialiased min-h-screen bg-background`}
+        className={`${inter.variable} antialiased min-h-screen bg-background`}
       >
         <Providers
           initialConfig={initialConfig}

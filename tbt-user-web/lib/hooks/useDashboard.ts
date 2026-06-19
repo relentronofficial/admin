@@ -50,7 +50,7 @@ export const useNotificationUnreadCount = () =>
       const res = await dashboardService.getNotificationUnreadCount();
       return res.data?.count ?? 0;
     },
-    staleTime: 30 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
 
 export const useNotifications = (params: { page?: number; limit?: number; unread?: boolean } = {}) =>
@@ -140,7 +140,7 @@ export const useConversationUnreadCount = () =>
       const res = await dashboardService.getConversationUnreadCount();
       return (res as any).data?.count ?? 0;
     },
-    staleTime: 30_000,
+    staleTime: 5 * 60 * 1000,
   });
 
 export const useConversations = () =>
