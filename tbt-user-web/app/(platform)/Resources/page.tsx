@@ -80,12 +80,11 @@ function ResourceRow({ resource }: { resource: Resource }) {
             key={action.type}
             href={
               action.type === "download"
-                ? resource.fileUrl
+                ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
                 : (resource.previewUrl ?? resource.fileUrl)
             }
             target="_blank"
             rel="noopener noreferrer"
-            download={action.type === "download" || undefined}
             title={action.label}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-white transition-opacity hover:opacity-80"
             style={{
@@ -144,12 +143,11 @@ function ResourceGridCard({ resource }: { resource: Resource }) {
             key={action.type}
             href={
               action.type === "download"
-                ? resource.fileUrl
+                ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
                 : (resource.previewUrl ?? resource.fileUrl)
             }
             target="_blank"
             rel="noopener noreferrer"
-            download={action.type === "download" || undefined}
             className="flex items-center gap-1.5 text-xs font-medium transition-opacity hover:opacity-80"
             style={{ color: "var(--color-accent)" }}
           >

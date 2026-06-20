@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
 
@@ -2722,6 +2722,56 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
     })),
     pagination: { total, page: Number(page), limit: Number(limit) },
   });
+}
+
+export async function getResourceDownloadHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+
+  const resource = await request.server.prisma.appResource.findUnique({
+    where: { id, isVisible: true },
+    select: { fileUrl: true, title: true },
+  });
+
+  if (!resource?.fileUrl) {
+    return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Resource not found' } });
+  }
+
+  let downloadUrl = resource.fileUrl;
+
+  // If fileUrl is a private R2 endpoint URL, generate a presigned GET URL so it's accessible
+  const r2PrivatePrefix = env.CLOUDFLARE_R2_ACCOUNT_ID && env.CLOUDFLARE_R2_BUCKET_NAME
+    ? `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/`
+    : null;
+
+  if (
+    r2PrivatePrefix &&
+    resource.fileUrl.startsWith(r2PrivatePrefix) &&
+    env.CLOUDFLARE_R2_ACCESS_KEY_ID &&
+    env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
+  ) {
+    const key = resource.fileUrl.slice(r2PrivatePrefix.length);
+    try {
+      const s3 = new S3Client({
+        region: 'auto',
+        endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
+          secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
+        },
+      });
+      const command = new GetObjectCommand({
+        Bucket: env.CLOUDFLARE_R2_BUCKET_NAME,
+        Key: key,
+        ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(resource.title)}`,
+      });
+      downloadUrl = await getSignedUrl(s3, command, { expiresIn: 600 });
+    } catch (err: any) {
+      request.server.log.error(`R2 presign GET failed: ${err.message}`);
+      // fall through — redirect to original URL
+    }
+  }
+
+  return reply.redirect(302, downloadUrl);
 }
 
 // ─── Conversations (live chat) ────────────────────────────────────────────────

@@ -76,6 +76,7 @@ import {
   postLiveCallFeedbackHandler,
   getMyLiveCallFeedbackHandler,
   getMyLiveCallCertificateHandler,
+  getResourceDownloadHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -176,6 +177,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/products', getUserProductsHandler);
   fastify.post('/products/:id/inquire', submitProductInquiryHandler);
   fastify.get('/resources', getUserResourcesHandler);
+  fastify.get('/resources/:id/download', getResourceDownloadHandler);
 
   // ── Conversations (live chat) ─────────────────────────────────────────────
   fastify.post('/conversations',                      startConversationHandler);
