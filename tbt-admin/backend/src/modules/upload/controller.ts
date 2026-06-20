@@ -9,33 +9,55 @@ export async function uploadImageHandler(req: FastifyRequest, reply: FastifyRepl
   const contentType = (req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim();
   const body = req.body as Buffer;
 
-  if (!env.BUNNY_STORAGE_HOSTNAME || !env.BUNNY_STORAGE_ZONE || !env.BUNNY_STORAGE_ACCESS_KEY || !env.BUNNY_CDN_URL) {
-    return reply.status(503).send({
-      success: false,
-      error: { code: 'SERVICE_UNAVAILABLE', message: 'Bunny Storage not configured' },
-    });
-  }
-
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const key = `${pathPrefix}/${Date.now()}-${safeFilename}`;
-  const uploadUrl = `https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`;
 
-  const res = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
-    body: new Uint8Array(body),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    req.log.error(`Bunny Storage upload failed [${res.status}]: ${text}`);
-    return reply.status(502).send({
-      success: false,
-      error: { code: 'UPLOAD_ERROR', message: 'Bunny Storage upload failed' },
-    });
+  // Primary: R2 server-side upload via AWS SDK (no browser CORS needed)
+  if (env.CLOUDFLARE_R2_ACCOUNT_ID && env.CLOUDFLARE_R2_ACCESS_KEY_ID && env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && env.CLOUDFLARE_R2_BUCKET_NAME) {
+    try {
+      const s3 = getS3Client();
+      await s3.send(new PutObjectCommand({
+        Bucket: env.CLOUDFLARE_R2_BUCKET_NAME,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+      }));
+      const publicUrl = env.BUNNY_CDN_URL
+        ? `https://${env.BUNNY_CDN_URL}/${key}`
+        : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
+      return reply.send({ success: true, data: { publicUrl }, error: null });
+    } catch (err: any) {
+      req.log.error(`R2 upload failed: ${err.message}`);
+      return reply.status(502).send({
+        success: false,
+        error: { code: 'UPLOAD_ERROR', message: 'R2 upload failed' },
+      });
+    }
   }
 
-  return reply.send({ success: true, data: { publicUrl: `https://${env.BUNNY_CDN_URL}/${key}` }, error: null });
+  // Fallback: Bunny Storage
+  if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && env.BUNNY_CDN_URL) {
+    const uploadUrl = `https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`;
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
+      body: new Uint8Array(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      req.log.error(`Bunny Storage upload failed [${res.status}]: ${text}`);
+      return reply.status(502).send({
+        success: false,
+        error: { code: 'UPLOAD_ERROR', message: 'Upload failed' },
+      });
+    }
+    return reply.send({ success: true, data: { publicUrl: `https://${env.BUNNY_CDN_URL}/${key}` }, error: null });
+  }
+
+  return reply.status(503).send({
+    success: false,
+    error: { code: 'SERVICE_UNAVAILABLE', message: 'No storage service configured' },
+  });
 }
 
 function getS3Client(): S3Client {
