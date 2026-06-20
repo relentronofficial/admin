@@ -1132,7 +1132,7 @@ function QaTab({ slug }: { slug: string }) {
                     className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-white disabled:opacity-60 flex-shrink-0"
                     style={{ background: "var(--color-accent)" }}
                   >
-                    {d?.submitLabel}
+                    {post.replyLabel ?? d?.submitLabel}
                   </button>
                   <button
                     onClick={() => setReplyOpen((prev) => ({ ...prev, [post.id]: false }))}
