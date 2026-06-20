@@ -7,11 +7,11 @@ import {
   useListAppResources, useCreateAppResource, useUpdateAppResource, useDeleteAppResource,
   useGetResourcesPageConfig, useUpdateResourcesPageConfig, useReorderAppResources,
 } from "@/lib/hooks/useTbt";
-import { useUploadImage } from "@/lib/hooks/useAdmin";
+import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 
-const FILE_TYPES = ["pdf", "doc", "xlsx", "video", "other"];
+const FILE_TYPES = ["image", "pdf", "doc", "xlsx", "ppt", "video", "audio", "archive", "other"];
 
 const EMPTY_FORM = {
   title: "", author: "", date: "", fileUrl: "", previewUrl: "",
@@ -21,18 +21,26 @@ const EMPTY_FORM = {
 
 const detectFileType = (filename: string): string => {
   const ext = filename.split(".").pop()?.toLowerCase() || "";
+  if (["jpg", "jpeg", "png", "gif", "webp", "svg", "avif"].includes(ext)) return "image";
   if (ext === "pdf") return "pdf";
   if (["doc", "docx"].includes(ext)) return "doc";
-  if (["xls", "xlsx"].includes(ext)) return "xlsx";
-  if (["mp4", "mov", "webm"].includes(ext)) return "video";
+  if (["xls", "xlsx", "csv"].includes(ext)) return "xlsx";
+  if (["ppt", "pptx"].includes(ext)) return "ppt";
+  if (["mp4", "mov", "webm", "avi", "mkv", "m4v"].includes(ext)) return "video";
+  if (["mp3", "wav", "m4a", "aac", "ogg"].includes(ext)) return "audio";
+  if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) return "archive";
   return "other";
 };
 
 const fileTypeColor = (t: string) => {
   if (t === "pdf") return "text-red-400 bg-red-400/10 border-red-400/20";
+  if (t === "image") return "text-pink-400 bg-pink-400/10 border-pink-400/20";
   if (t === "video") return "text-blue-400 bg-blue-400/10 border-blue-400/20";
   if (t === "xlsx") return "text-green-400 bg-green-400/10 border-green-400/20";
   if (t === "doc") return "text-yellow-400 bg-yellow-400/10 border-yellow-400/20";
+  if (t === "ppt") return "text-orange-400 bg-orange-400/10 border-orange-400/20";
+  if (t === "audio") return "text-teal-400 bg-teal-400/10 border-teal-400/20";
+  if (t === "archive") return "text-gray-400 bg-gray-400/10 border-gray-400/20";
   return "text-purple-400 bg-purple-400/10 border-purple-400/20";
 };
 
@@ -46,7 +54,7 @@ export default function AppResourcesPage() {
   const updateResource = useUpdateAppResource();
   const deleteResource = useDeleteAppResource();
   const reorderResources = useReorderAppResources();
-  const uploadImage = useUploadImage();
+  const getPresignedUrl = useGetPresignedUrl();
 
   const { data: pageConfigData } = useGetResourcesPageConfig();
   const updatePageConfig = useUpdateResourcesPageConfig();
@@ -102,9 +110,32 @@ export default function AppResourcesPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadingPreview, setUploadingPreview] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [fileProgress, setFileProgress] = useState<number | null>(null);
+  const [previewProgress, setPreviewProgress] = useState<number | null>(null);
 
-  const uploadToStorage = async (file: File, pathPrefix: string): Promise<string> => {
-    const { publicUrl } = await uploadImage.mutateAsync({ file, pathPrefix });
+  const uploadWithProgress = (url: string, file: File, onProgress: (pct: number) => void): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`)));
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.open("PUT", url);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.send(file);
+    });
+
+  const uploadToStorage = async (file: File, pathPrefix: string, onProgress?: (pct: number) => void): Promise<string> => {
+    const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+      pathPrefix,
+    });
+    if (onProgress) {
+      await uploadWithProgress(uploadUrl, file, onProgress);
+    } else {
+      const res = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    }
     return publicUrl;
   };
 
@@ -112,22 +143,24 @@ export default function AppResourcesPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingFile(true);
+    setFileProgress(0);
     try {
-      const url = await uploadToStorage(file, "resources/files");
+      const url = await uploadToStorage(file, "resources/files", (pct) => setFileProgress(pct));
       setForm((f: any) => ({ ...f, fileUrl: url, fileType: detectFileType(file.name) }));
     } catch (err: any) { toast.error(err.message || "Upload failed"); }
-    finally { setUploadingFile(false); e.target.value = ""; }
+    finally { setUploadingFile(false); setFileProgress(null); e.target.value = ""; }
   };
 
   const handlePreviewFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingPreview(true);
+    setPreviewProgress(0);
     try {
-      const url = await uploadToStorage(file, "resources/previews");
+      const url = await uploadToStorage(file, "resources/previews", (pct) => setPreviewProgress(pct));
       setForm((f: any) => ({ ...f, previewUrl: url }));
     } catch (err: any) { toast.error(err.message || "Upload failed"); }
-    finally { setUploadingPreview(false); e.target.value = ""; }
+    finally { setUploadingPreview(false); setPreviewProgress(null); e.target.value = ""; }
   };
 
   const handleIconFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -324,35 +357,53 @@ export default function AppResourcesPage() {
                 </div>
               </div>
 
-              {/* Main file upload */}
+              {/* Main file upload — any file type */}
               <div>
-                <label className={labelCls}>File * <span className="text-[#666] normal-case font-normal">(type auto-detected from extension)</span></label>
-                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.mp4,.mov,.webm" onChange={handleMainFileChange} />
+                <label className={labelCls}>File * <span className="text-[#666] normal-case font-normal">(image, PDF, video, doc, archive — any type)</span></label>
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleMainFileChange} />
                 {form.fileUrl ? (
                   <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4">
                     <span className="text-[12px] text-[#a0a0a0] flex-1 truncate">{form.fileUrl.split("/").pop()}</span>
                     <button type="button" onClick={() => setForm((f: any) => ({ ...f, fileUrl: "" }))} className="text-[#777] hover:text-red-400 shrink-0"><X size={14} /></button>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingFile} className="w-full bg-[#1a1a1a] border border-dashed border-[#333] hover:border-[#dc2626] rounded-lg h-11 px-4 text-[12px] text-[#888] hover:text-white transition-all flex items-center justify-center gap-2">
-                    {uploadingFile ? <><Loader2 size={14} className="animate-spin" /> Uploading...</> : <><Plus size={14} /> Upload File</>}
-                  </button>
+                  <div className="space-y-1">
+                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingFile} className="w-full bg-[#1a1a1a] border border-dashed border-[#333] hover:border-[#dc2626] rounded-lg h-11 px-4 text-[12px] text-[#888] hover:text-white transition-all flex items-center justify-center gap-2">
+                      {uploadingFile
+                        ? <><Loader2 size={14} className="animate-spin" /> {fileProgress !== null ? `${fileProgress}%` : "Preparing…"}</>
+                        : <><Plus size={14} /> Upload File</>}
+                    </button>
+                    {uploadingFile && fileProgress !== null && (
+                      <div className="w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
+                        <div className="h-full bg-[#dc2626] transition-all duration-150" style={{ width: `${fileProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
               {/* Preview file upload */}
               <div>
-                <label className={labelCls}>Preview File <span className="text-[#666] normal-case font-normal">(optional — lighter in-browser version)</span></label>
-                <input ref={previewInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={handlePreviewFileChange} />
+                <label className={labelCls}>Preview File <span className="text-[#666] normal-case font-normal">(optional — lighter version for in-browser view)</span></label>
+                <input ref={previewInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={handlePreviewFileChange} />
                 {form.previewUrl ? (
                   <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4">
                     <span className="text-[12px] text-[#a0a0a0] flex-1 truncate">{form.previewUrl.split("/").pop()}</span>
                     <button type="button" onClick={() => setForm((f: any) => ({ ...f, previewUrl: "" }))} className="text-[#777] hover:text-red-400 shrink-0"><X size={14} /></button>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => previewInputRef.current?.click()} disabled={uploadingPreview} className="w-full bg-[#1a1a1a] border border-dashed border-[#333] hover:border-[#dc2626] rounded-lg h-11 px-4 text-[12px] text-[#888] hover:text-white transition-all flex items-center justify-center gap-2">
-                    {uploadingPreview ? <><Loader2 size={14} className="animate-spin" /> Uploading...</> : <><Plus size={14} /> Upload Preview File</>}
-                  </button>
+                  <div className="space-y-1">
+                    <button type="button" onClick={() => previewInputRef.current?.click()} disabled={uploadingPreview} className="w-full bg-[#1a1a1a] border border-dashed border-[#333] hover:border-[#dc2626] rounded-lg h-11 px-4 text-[12px] text-[#888] hover:text-white transition-all flex items-center justify-center gap-2">
+                      {uploadingPreview
+                        ? <><Loader2 size={14} className="animate-spin" /> {previewProgress !== null ? `${previewProgress}%` : "Preparing…"}</>
+                        : <><Plus size={14} /> Upload Preview File</>}
+                    </button>
+                    {uploadingPreview && previewProgress !== null && (
+                      <div className="w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
+                        <div className="h-full bg-[#dc2626] transition-all duration-150" style={{ width: `${previewProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
