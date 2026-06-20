@@ -2726,24 +2726,33 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
   const cards: any[] = challenge.quizData?.cards ?? [];
   const isCompleted = challenge.status === "completed";
 
-  const [idx, setIdx] = useState(0);
+  // Queue of card indices still to review. "Got It" removes from queue; "Review Again" moves to end.
+  const [queue, setQueue] = useState<number[]>(() => cards.map((_: any, i: number) => i));
+  const [pos, setPos] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const [known, setKnown] = useState<Set<string>>(new Set());
+  const [knownCount, setKnownCount] = useState(0);
   const [done, setDone] = useState(isCompleted);
 
-  const card = cards[idx];
-  const allKnown = known.size >= cards.length;
+  const cardIdx = queue[pos] ?? 0;
+  const card = cards[cardIdx];
+  const allDone = queue.length === 0;
 
   const handleGotIt = () => {
-    setKnown((k) => new Set([...k, card.id]));
+    if (!card) return;
     setFlipped(false);
-    if (idx < cards.length - 1) setIdx((i) => i + 1);
+    setKnownCount((n) => n + 1);
+    const next = queue.filter((_: number, i: number) => i !== pos);
+    setQueue(next);
+    if (next.length > 0) setPos((p) => Math.min(p, next.length - 1));
   };
 
   const handleReview = () => {
     setFlipped(false);
-    if (idx < cards.length - 1) setIdx((i) => i + 1);
-    else setIdx(0);
+    if (queue.length <= 1) return; // only one card left — stay on it
+    const moved = queue[pos];
+    const next = [...queue.filter((_: number, i: number) => i !== pos), moved];
+    setQueue(next);
+    setPos((p) => Math.min(p, next.length - 1));
   };
 
   const handleComplete = async () => {
@@ -2760,7 +2769,7 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
         <div className="rounded-xl border p-6 text-center space-y-3" style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}>
           <Trophy size={32} className="mx-auto" style={{ color: "#22c55e" }} />
           <p className="font-bold text-foreground">All cards reviewed!</p>
-          <p className="text-sm text-muted-foreground">{known.size}/{cards.length} marked as known</p>
+          <p className="text-sm text-muted-foreground">{knownCount}/{cards.length} marked as known</p>
           <button onClick={onDone} className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>Back to challenges →</button>
         </div>
       </div>
@@ -2773,8 +2782,8 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
 
       {/* Progress */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>Card {idx + 1} of {cards.length}</span>
-        <span style={{ color: "#22c55e" }}>{known.size} known</span>
+        <span>{queue.length} remaining</span>
+        <span style={{ color: "#22c55e" }}>{knownCount} known</span>
       </div>
 
       {/* Flashcard — click to flip */}
@@ -2792,24 +2801,26 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
         <RotateCcw size={13} className="text-muted-foreground mt-1" />
       </button>
 
-      {/* Navigation */}
-      <div className="flex gap-2">
-        <button
-          onClick={handleReview}
-          className="flex-1 py-2.5 rounded-lg text-xs font-bold border border-border text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Review Again
-        </button>
-        <button
-          onClick={handleGotIt}
-          className="flex-1 py-2.5 rounded-lg text-xs font-bold text-white"
-          style={{ background: "#22c55e" }}
-        >
-          Got It ✓
-        </button>
-      </div>
+      {/* Navigation — hidden once all cards are done */}
+      {!allDone && (
+        <div className="flex gap-2">
+          <button
+            onClick={handleReview}
+            className="flex-1 py-2.5 rounded-lg text-xs font-bold border border-border text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Review Again
+          </button>
+          <button
+            onClick={handleGotIt}
+            className="flex-1 py-2.5 rounded-lg text-xs font-bold text-white"
+            style={{ background: "#22c55e" }}
+          >
+            Got It ✓
+          </button>
+        </div>
+      )}
 
-      {allKnown && !done && (
+      {allDone && (
         <button
           onClick={handleComplete}
           disabled={completeChallenge.isPending}
