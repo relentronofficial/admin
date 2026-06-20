@@ -76,8 +76,8 @@ jobs:
       - name: Apply database schema (staging)
         working-directory: tbt-admin/backend
         env:
-          DATABASE_URL: ${{ secrets.STG_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.STG_DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
         run: |
           npm install --ignore-scripts
           npx prisma db push --skip-generate
