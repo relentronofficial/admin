@@ -1933,6 +1933,8 @@ model SiteConfig {
   navShowMessages        Boolean  @default(true) @map("nav_show_messages")
   navShowProfile         Boolean  @default(true) @map("nav_show_profile")
   heroAutoPlayIntervalMs Int      @default(5000) @map("hero_auto_play_interval_ms")
+  loginBgUrl             String?  @map("login_bg_url")
+  loginBgMobileUrl       String?  @map("login_bg_mobile_url")
   createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

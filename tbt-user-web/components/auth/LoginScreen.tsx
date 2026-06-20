@@ -7,11 +7,13 @@ import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import apiClient from "@/lib/api/client";
+import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
 type Step = "credentials" | "otp" | "reset_password" | "set_password";
 type FocusedField = "phone" | "password" | "otp" | "newPassword" | null;
 
 export function LoginScreen() {
+  const { config } = useSiteConfig();
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect_url") || "/tbt";
@@ -154,11 +156,21 @@ export function LoginScreen() {
     <div className="relative w-full h-screen overflow-hidden bg-black">
       {/* ── Static Background ── */}
       <div className="absolute inset-0 z-0">
+        {/* Desktop (md+): loginBgUrl; falls back to local asset */}
         <Image
-          src="/loginfinal.png"
+          src={config?.loginBgUrl ?? "/loginfinal.png"}
           alt="TBT background"
           fill
-          className="object-cover"
+          className="object-cover hidden md:block"
+          priority
+          quality={90}
+        />
+        {/* Mobile (<md): loginBgMobileUrl when set, otherwise same as desktop */}
+        <Image
+          src={config?.loginBgMobileUrl ?? config?.loginBgUrl ?? "/loginfinal.png"}
+          alt="TBT background"
+          fill
+          className="object-cover md:hidden"
           priority
           quality={90}
         />

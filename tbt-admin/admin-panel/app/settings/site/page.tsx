@@ -105,6 +105,8 @@ export default function SiteConfigPage() {
     logoUrl: "",
     faviconUrl: "",
     splashLogoUrl: "",
+    loginBgUrl: "",
+    loginBgMobileUrl: "",
     footerText: "",
     splashDurationMs: 2000,
     accentColor: "#00c4cc",
@@ -195,6 +197,24 @@ export default function SiteConfigPage() {
             label="Splash Logo"
             value={form.splashLogoUrl}
             fieldKey="splashLogoUrl"
+            onUploaded={set}
+            uploading={uploadingField}
+            setUploading={setUploadingField}
+          />
+
+          <ImageUploadField
+            label="Login Background — Desktop"
+            value={form.loginBgUrl}
+            fieldKey="loginBgUrl"
+            onUploaded={set}
+            uploading={uploadingField}
+            setUploading={setUploadingField}
+          />
+
+          <ImageUploadField
+            label="Login Background — Mobile (optional)"
+            value={form.loginBgMobileUrl}
+            fieldKey="loginBgMobileUrl"
             onUploaded={set}
             uploading={uploadingField}
             setUploading={setUploadingField}

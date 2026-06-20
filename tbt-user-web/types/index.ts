@@ -185,6 +185,8 @@ export interface SiteConfig {
   theme: SiteTheme;
   splashLogoUrl?: string | null;
   splashDurationMs: number;
+  loginBgUrl?: string | null;
+  loginBgMobileUrl?: string | null;
 }
 
 export interface NavItem {

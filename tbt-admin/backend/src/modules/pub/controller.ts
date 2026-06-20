@@ -7,7 +7,7 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
 
   const redis = req.server.redis ?? null;
-  const CACHE_KEY = 'pub:site-config';
+  const CACHE_KEY = 'pub:site-config:v2';
   const cached = await cacheGet<object>(redis, CACHE_KEY);
   if (cached) return reply.send({ success: true, data: cached, error: null });
 
@@ -32,6 +32,8 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     },
     splashLogoUrl: config.splashLogoUrl ?? null,
     splashDurationMs: config.splashDurationMs,
+    loginBgUrl: (config as any).loginBgUrl ?? null,
+    loginBgMobileUrl: (config as any).loginBgMobileUrl ?? null,
   };
   await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });
