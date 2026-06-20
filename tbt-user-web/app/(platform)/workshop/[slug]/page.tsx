@@ -25,6 +25,7 @@ import {
   Upload,
   ExternalLink,
   CalendarDays,
+  Pencil,
 } from "lucide-react";
 import {
   useWorkshopDetail,
@@ -35,6 +36,7 @@ import {
   useWorkshopAssignments,
   useSubmitAssignment,
   useAssignmentImagePresign,
+  useAssignmentFilePresign,
   useWorkshopChallenges,
   useCompleteChallenge,
   useCompleteWorkshopEpisode,
@@ -469,10 +471,13 @@ function AssignmentMainView({
   const { data } = useWorkshopAssignments(slug);
   const submit = useSubmitAssignment();
   const presign = useAssignmentImagePresign();
+  const filePresign = useAssignmentFilePresign();
   const [answer, setAnswer] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | undefined>(undefined);
   const [previewUrl, setPreviewUrl] = useState<string | undefined>(undefined);
+  const [selectedGenericFile, setSelectedGenericFile] = useState<File | undefined>(undefined);
   const [uploading, setUploading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const assignment = data?.groups
     .flatMap((g) => g.assignments)
@@ -483,12 +488,34 @@ function AssignmentMainView({
   const sub = assignment.submission;
   const isSubmitted = !!sub?.isSubmitted;
   const isImageType = assignment.assignmentType === "image_upload";
+  const isFileType = assignment.assignmentType === "file_upload";
+  const isVideoType = assignment.assignmentType === "video_upload";
+  const isTextType = !isImageType && !isFileType && !isVideoType;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleGenericFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedGenericFile(file);
+  };
+
+  const startEdit = () => {
+    if (isTextType) setAnswer(sub?.answerText ?? "");
+    setIsEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setAnswer("");
+    setSelectedFile(undefined);
+    setPreviewUrl(undefined);
+    setSelectedGenericFile(undefined);
+    setIsEditing(false);
   };
 
   const handleSubmit = async () => {
@@ -504,11 +531,32 @@ function AssignmentMainView({
         await submit.mutateAsync({ id: assignment.id, imageUrl: publicUrl });
         setSelectedFile(undefined);
         setPreviewUrl(undefined);
+      } else if (isFileType) {
+        if (!selectedGenericFile) return;
+        setUploading(true);
+        const { uploadUrl, publicUrl } = await filePresign.mutateAsync({
+          filename: selectedGenericFile.name,
+          contentType: selectedGenericFile.type,
+        });
+        await fetch(uploadUrl, { method: "PUT", body: selectedGenericFile, headers: { "Content-Type": selectedGenericFile.type } });
+        await submit.mutateAsync({ id: assignment.id, fileUrl: publicUrl });
+        setSelectedGenericFile(undefined);
+      } else if (isVideoType) {
+        if (!selectedGenericFile) return;
+        setUploading(true);
+        const { uploadUrl, publicUrl } = await filePresign.mutateAsync({
+          filename: selectedGenericFile.name,
+          contentType: selectedGenericFile.type,
+        });
+        await fetch(uploadUrl, { method: "PUT", body: selectedGenericFile, headers: { "Content-Type": selectedGenericFile.type } });
+        await submit.mutateAsync({ id: assignment.id, videoUrl: publicUrl });
+        setSelectedGenericFile(undefined);
       } else {
         if (!answer.trim()) return;
         await submit.mutateAsync({ id: assignment.id, answerText: answer });
         setAnswer("");
       }
+      setIsEditing(false);
       qc.invalidateQueries({ queryKey: ["workshop-assignments", slug] });
       qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
     } catch {
@@ -518,11 +566,15 @@ function AssignmentMainView({
     }
   };
 
-  const isLoading = uploading || submit.isPending || presign.isPending;
-  const canSubmit = isImageType ? !!selectedFile : !!answer.trim();
+  const isLoading = uploading || submit.isPending || presign.isPending || filePresign.isPending;
+  const canSubmit = isImageType
+    ? !!selectedFile
+    : isFileType || isVideoType
+    ? !!selectedGenericFile
+    : !!answer.trim();
 
-  // ── Submitted: show answer review ──
-  if (isSubmitted) {
+  // ── Submitted and not editing: show answer review ──
+  if (isSubmitted && !isEditing) {
     return (
       <div className="space-y-4">
         <button
@@ -530,24 +582,49 @@ function AssignmentMainView({
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronLeft size={13} />
-          {sub.backLabel ?? "Back"}
+          {sub?.backLabel ?? "Back"}
         </button>
 
-        <div className="flex items-center gap-2">
-          <CheckCircle2 size={18} style={{ color: "var(--color-success)" }} />
-          <h3 className="font-bold text-sm text-amber-500">{assignment.title}</h3>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={18} style={{ color: "var(--color-success)" }} />
+            <h3 className="font-bold text-sm text-amber-500">{assignment.title}</h3>
+          </div>
+          {assignment.canEdit && (
+            <button
+              onClick={startEdit}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-accent/10 transition-colors"
+            >
+              <Pencil size={12} />
+              Edit
+            </button>
+          )}
         </div>
 
-        {sub.yourAnswerLabel && (
+        {sub?.yourAnswerLabel && (
           <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             {sub.yourAnswerLabel}
           </p>
         )}
 
         <div className="rounded-lg border border-border bg-card p-4">
-          {sub.imageUrl ? (
+          {sub?.imageUrl ? (
             <img src={sub.imageUrl} alt="Submitted" className="max-w-full rounded-lg max-h-80 object-contain" />
-          ) : sub.answerText ? (
+          ) : sub?.fileUrl ? (
+            <a
+              href={sub.fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-medium hover:underline"
+              style={{ color: "var(--color-accent)" }}
+            >
+              <FileText size={14} />
+              View submitted file
+              <ExternalLink size={12} />
+            </a>
+          ) : sub?.videoUrl ? (
+            <video src={sub.videoUrl} controls className="w-full max-h-64 rounded-lg" />
+          ) : sub?.answerText ? (
             renderAnswerText(sub.answerText)
           ) : null}
         </div>
@@ -555,20 +632,22 @@ function AssignmentMainView({
     );
   }
 
-  // ── Not yet submitted: show question + answer/image form ──
+  // ── Not yet submitted or editing: show question + answer/file form ──
   return (
     <div className="space-y-4">
       <button
-        onClick={onBack}
+        onClick={isEditing ? cancelEdit : onBack}
         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronLeft size={13} />
-        {assignment.cancelLabel}
+        {isEditing ? (sub?.backLabel ?? "Back") : assignment.cancelLabel}
       </button>
 
       <div className="flex items-center gap-1.5">
         {isImageType
           ? <ImageIcon size={14} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />
+          : isVideoType
+          ? <Video size={14} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />
           : <FileText size={14} style={{ color: "var(--color-accent)" }} className="flex-shrink-0" />}
         <span
           className="text-[10px] font-bold uppercase tracking-widest"
@@ -596,12 +675,7 @@ function AssignmentMainView({
                 <span className="text-xs text-muted-foreground/60">PNG, JPG, WEBP up to 10MB</span>
               </>
             )}
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
-            />
+            <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
           </label>
           {previewUrl && (
             <button
@@ -609,6 +683,58 @@ function AssignmentMainView({
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               Remove image
+            </button>
+          )}
+        </div>
+      ) : isFileType ? (
+        <div className="space-y-3">
+          <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-card p-6 cursor-pointer hover:border-ring transition-colors">
+            {selectedGenericFile ? (
+              <div className="flex items-center gap-2 text-sm text-foreground">
+                <FileText size={16} className="flex-shrink-0" />
+                <span className="truncate max-w-[200px]">{selectedGenericFile.name}</span>
+              </div>
+            ) : (
+              <>
+                <Upload size={24} className="text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Click to upload a file</span>
+                <span className="text-xs text-muted-foreground/60">PDF, DOC, XLSX up to 50MB</span>
+              </>
+            )}
+            <input type="file" className="hidden" onChange={handleGenericFileChange} />
+          </label>
+          {selectedGenericFile && (
+            <button
+              onClick={() => setSelectedGenericFile(undefined)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Remove file
+            </button>
+          )}
+        </div>
+      ) : isVideoType ? (
+        <div className="space-y-3">
+          <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-card p-6 cursor-pointer hover:border-ring transition-colors">
+            {selectedGenericFile ? (
+              <div className="flex items-center gap-2 text-sm text-foreground">
+                <Video size={16} className="flex-shrink-0" />
+                <span className="truncate max-w-[200px]">{selectedGenericFile.name}</span>
+              </div>
+            ) : (
+              <>
+                <Upload size={24} className="text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Click to upload a video</span>
+                <span className="text-xs text-muted-foreground/60">MP4, MOV, WEBM up to 500MB</span>
+              </>
+            )}
+            <input type="file" accept="video/*" className="hidden" onChange={handleGenericFileChange} />
+          </label>
+          {selectedGenericFile && (
+            <button
+              onClick={() => setSelectedGenericFile(undefined)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Remove video
             </button>
           )}
         </div>
@@ -629,10 +755,12 @@ function AssignmentMainView({
           style={{ background: "var(--color-accent)" }}
         >
           {isLoading && <Loader2 size={14} className="animate-spin" />}
-          {assignment.submitLabel}
+          {isLoading
+            ? isEditing ? "Updating..." : "Submitting..."
+            : isEditing ? "Update" : assignment.submitLabel}
         </button>
         <button
-          onClick={onBack}
+          onClick={isEditing ? cancelEdit : onBack}
           className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-accent/10 transition-colors"
         >
           {assignment.cancelLabel}

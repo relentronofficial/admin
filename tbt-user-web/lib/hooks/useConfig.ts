@@ -112,8 +112,8 @@ export const useWorkshopAssignments = (slug: string) =>
 
 export const useSubmitAssignment = () =>
   useMutation({
-    mutationFn: async ({ id, answerText, imageUrl }: { id: string; answerText?: string; imageUrl?: string }) => {
-      const res: any = await apiClient.post(`/api/user/assignments/${id}/submit`, { answerText, imageUrl });
+    mutationFn: async ({ id, answerText, imageUrl, fileUrl, videoId, videoUrl }: { id: string; answerText?: string; imageUrl?: string; fileUrl?: string; videoId?: string; videoUrl?: string }) => {
+      const res: any = await apiClient.post(`/api/user/assignments/${id}/submit`, { answerText, imageUrl, fileUrl, videoId, videoUrl });
       return res?.data;
     },
   });
@@ -122,6 +122,14 @@ export const useAssignmentImagePresign = () =>
   useMutation({
     mutationFn: async ({ filename, contentType }: { filename: string; contentType: string }) => {
       const res: any = await apiClient.post(`/api/user/assignments/upload/presign`, { filename, contentType });
+      return res?.data as { uploadUrl: string; publicUrl: string };
+    },
+  });
+
+export const useAssignmentFilePresign = () =>
+  useMutation({
+    mutationFn: async ({ filename, contentType }: { filename: string; contentType: string }) => {
+      const res: any = await apiClient.post(`/api/user/assignments/upload/file-presign`, { filename, contentType });
       return res?.data as { uploadUrl: string; publicUrl: string };
     },
   });

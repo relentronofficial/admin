@@ -1290,7 +1290,7 @@ export default function WorkshopDetailPage() {
   const [showAssignmentForm, setShowAssignmentForm] = useState(false);
   const [assignmentChallengeId, setAssignmentChallengeId] = useState<string>("");
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
-  const [assignmentForm, setAssignmentForm] = useState({ title: "", assignmentType: "qa", questionText: "", typeLabel: "", iconType: "document", order: 1 });
+  const [assignmentForm, setAssignmentForm] = useState({ title: "", assignmentType: "qa", questionText: "", typeLabel: "", iconType: "document", order: 1, allowEdit: false, editDeadline: "" });
   const [deletingAssignment, setDeletingAssignment] = useState<string | null>(null);
   const [viewingSubmissionsId, setViewingSubmissionsId] = useState<string | null>(null);
 
@@ -1298,13 +1298,13 @@ export default function WorkshopDetailPage() {
     const group = assignmentGroups.find((g: any) => g.challengeId === challengeId);
     const nextOrder = (group?.assignments?.length || 0) + 1;
     setAssignmentChallengeId(challengeId);
-    setAssignmentForm({ title: "", assignmentType: "qa", questionText: "", typeLabel: "", iconType: "document", order: nextOrder });
+    setAssignmentForm({ title: "", assignmentType: "qa", questionText: "", typeLabel: "", iconType: "document", order: nextOrder, allowEdit: false, editDeadline: "" });
     setEditingAssignment(null);
     setShowAssignmentForm(true);
   };
   const openEditAssignment = (a: any, challengeId: string) => {
     setAssignmentChallengeId(challengeId);
-    setAssignmentForm({ title: a.title, assignmentType: a.assignmentType || "qa", questionText: a.questionText || "", typeLabel: a.typeLabel || "", iconType: a.iconType || "document", order: a.order ?? 1 });
+    setAssignmentForm({ title: a.title, assignmentType: a.assignmentType || "qa", questionText: a.questionText || "", typeLabel: a.typeLabel || "", iconType: a.iconType || "document", order: a.order ?? 1, allowEdit: a.allowEdit ?? false, editDeadline: a.editDeadline ? new Date(a.editDeadline).toISOString().slice(0, 16) : "" });
     setEditingAssignment(a);
     setShowAssignmentForm(true);
   };
@@ -2715,17 +2715,22 @@ export default function WorkshopDetailPage() {
               {/* Assignment type toggle */}
               <div>
                 <label className={labelCls}>Assignment Type</label>
-                <div className="flex gap-2 mt-1">
-                  {[{ value: "qa", label: "Question & Answer" }, { value: "image_upload", label: "Image Upload" }].map(opt => (
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  {[
+                    { value: "qa", label: "Question & Answer" },
+                    { value: "image_upload", label: "Image Upload" },
+                    { value: "file_upload", label: "File Upload" },
+                    { value: "video_upload", label: "Video Upload" },
+                  ].map(opt => (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => setAssignmentForm(f => ({
                         ...f,
                         assignmentType: opt.value,
-                        typeLabel: opt.value === "image_upload" ? "IMAGE" : (f.typeLabel || "QUESTION"),
+                        typeLabel: opt.value === "image_upload" ? "IMAGE" : opt.value === "file_upload" ? "FILE" : opt.value === "video_upload" ? "VIDEO" : (f.typeLabel || "QUESTION"),
                       }))}
-                      className={`flex-1 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${assignmentForm.assignmentType === opt.value ? "bg-[#dc2626] text-white border-[#dc2626]" : "bg-[#1a1a1a] text-[#888] border-[#2a2a2a] hover:text-white"}`}
+                      className={`py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${assignmentForm.assignmentType === opt.value ? "bg-[#dc2626] text-white border-[#dc2626]" : "bg-[#1a1a1a] text-[#888] border-[#2a2a2a] hover:text-white"}`}
                     >
                       {opt.label}
                     </button>
@@ -2733,8 +2738,27 @@ export default function WorkshopDetailPage() {
                 </div>
               </div>
               <div>
-                <label className={labelCls}>{assignmentForm.assignmentType === "image_upload" ? "Instructions (optional)" : "Question Text"}</label>
+                <label className={labelCls}>{assignmentForm.assignmentType === "qa" ? "Question Text" : "Instructions (optional)"}</label>
                 <textarea value={assignmentForm.questionText} onChange={e => setAssignmentForm(f => ({ ...f, questionText: e.target.value }))} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
+              </div>
+              {/* Edit permission */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className={labelCls}>Allow Edit After Submit</label>
+                  <button
+                    type="button"
+                    onClick={() => setAssignmentForm(f => ({ ...f, allowEdit: !f.allowEdit, editDeadline: f.allowEdit ? "" : f.editDeadline }))}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${assignmentForm.allowEdit ? "bg-[#dc2626]" : "bg-[#333]"}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${assignmentForm.allowEdit ? "translate-x-5" : "translate-x-0.5"}`} />
+                  </button>
+                </div>
+                {assignmentForm.allowEdit && (
+                  <div>
+                    <label className={labelCls}>Edit Deadline (optional — leave blank for no deadline)</label>
+                    <input type="datetime-local" value={assignmentForm.editDeadline} onChange={e => setAssignmentForm(f => ({ ...f, editDeadline: e.target.value }))} className={inputCls} />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div><label className={labelCls}>Type Label</label><input value={assignmentForm.typeLabel} onChange={e => setAssignmentForm(f => ({ ...f, typeLabel: e.target.value }))} placeholder="e.g. QUESTION" className={inputCls} /></div>

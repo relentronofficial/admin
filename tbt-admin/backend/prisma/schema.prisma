@@ -1763,6 +1763,8 @@ model Assignment {
   assignmentType String                 @default("qa") @map("assignment_type")
   typeLabel      String                 @default("QUESTION") @map("type_label")
   iconType       String                 @default("document") @map("icon_type")
+  allowEdit      Boolean                @default(false) @map("allow_edit")
+  editDeadline   DateTime?              @map("edit_deadline") @db.Timestamptz(6)
   challenge      Challenge              @relation(fields: [challengeId], references: [id], onDelete: Cascade)
   submissions    AssignmentSubmission[]
   createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1777,6 +1779,9 @@ model AssignmentSubmission {
   memberId          String     @map("member_id") @db.Uuid
   answerText        String?    @map("answer_text")
   imageUrl          String?    @map("image_url")
+  fileUrl           String?    @map("file_url")
+  videoId           String?    @map("video_id")
+  videoUrl          String?    @map("video_url")
   completedIconType String     @default("checkmark_green") @map("completed_icon_type")
   yourAnswerLabel   String     @default("Your Answer:") @map("your_answer_label")
   backLabel         String     @default("Back") @map("back_label")

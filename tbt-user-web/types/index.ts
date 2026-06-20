@@ -510,6 +510,9 @@ export interface AssignmentSubmissionData {
   isSubmitted: boolean;
   answerText?: string | null;
   imageUrl?: string | null;
+  fileUrl?: string | null;
+  videoId?: string | null;
+  videoUrl?: string | null;
   yourAnswerLabel?: string | null;
   backLabel?: string | null;
   completedIcon?: string | null;
@@ -521,6 +524,7 @@ export interface WorkshopAssignment {
   assignmentType: string;
   questionText?: string | null;
   typeLabel: string;
+  canEdit?: boolean;
   ctaLabel: string;
   submitLabel: string;
   cancelLabel: string;

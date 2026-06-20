@@ -5,6 +5,7 @@ import {
   updateAvatarHandler,
   avatarPresignHandler,
   assignmentImagePresignHandler,
+  assignmentFilePresignHandler,
   revokeDeviceHandler,
   getNotificationPrefsHandler,
   updateNotificationPrefsHandler,
@@ -145,6 +146,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/workshops/:slug/assignments', getWorkshopAssignmentsHandler);
   fastify.post('/assignments/:id/submit', submitAssignmentHandler);
   fastify.post('/assignments/upload/presign', assignmentImagePresignHandler);
+  fastify.post('/assignments/upload/file-presign', assignmentFilePresignHandler);
 
   // ── Challenges ────────────────────────────────────────────────────────────
   fastify.get('/workshops/:slug/challenges', getWorkshopChallengesHandler);

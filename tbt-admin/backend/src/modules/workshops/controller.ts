@@ -1361,7 +1361,9 @@ export async function createAssignmentHandler(req: FastifyRequest, reply: Fastif
       title: body.title,
       questionText: body.questionText || null,
       assignmentType: body.assignmentType || 'qa',
-      typeLabel: body.typeLabel || (body.assignmentType === 'image_upload' ? 'IMAGE' : 'QUESTION'),
+      typeLabel: body.typeLabel || (body.assignmentType === 'image_upload' ? 'IMAGE' : body.assignmentType === 'file_upload' ? 'FILE' : body.assignmentType === 'video_upload' ? 'VIDEO' : 'QUESTION'),
+      allowEdit: body.allowEdit ?? false,
+      editDeadline: body.editDeadline ? new Date(body.editDeadline) : null,
     },
   });
   return reply.status(201).send({ success: true, data: assignment, error: null });
@@ -1371,9 +1373,10 @@ export async function updateAssignmentHandler(req: FastifyRequest, reply: Fastif
   const { aid } = req.params as any;
   const body = req.body as any;
   const data: any = {};
-  ['title', 'questionText', 'assignmentType', 'typeLabel', 'order'].forEach(f => {
+  ['title', 'questionText', 'assignmentType', 'typeLabel', 'order', 'allowEdit'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
+  if (body.editDeadline !== undefined) data.editDeadline = body.editDeadline ? new Date(body.editDeadline) : null;
   const assignment = await req.server.prisma.assignment.update({ where: { id: aid }, data });
   return reply.send({ success: true, data: assignment, error: null });
 }
