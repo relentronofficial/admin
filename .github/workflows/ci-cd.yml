@@ -68,6 +68,20 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Apply database schema (staging)
+        working-directory: tbt-admin/backend
+        run: |
+          npm install --ignore-scripts
+          DATABASE_URL=$(gcloud secrets versions access latest --secret="stg-DATABASE_URL" --project=$GCP_PROJECT)
+          DIRECT_URL=$(gcloud secrets versions access latest --secret="stg-DIRECT_URL" --project=$GCP_PROJECT)
+          export DATABASE_URL DIRECT_URL
+          npx prisma db push --skip-generate
+
       - name: Deploy to Cloud Run (staging)
         run: |
           gcloud run deploy tbt-backend-staging \
@@ -95,6 +109,20 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Apply database schema (production)
+        working-directory: tbt-admin/backend
+        run: |
+          npm install --ignore-scripts
+          DATABASE_URL=$(gcloud secrets versions access latest --secret="prod-DATABASE_URL" --project=$GCP_PROJECT)
+          DIRECT_URL=$(gcloud secrets versions access latest --secret="prod-DIRECT_URL" --project=$GCP_PROJECT)
+          export DATABASE_URL DIRECT_URL
+          npx prisma db push --skip-generate
 
       - name: Deploy to Cloud Run (production)
         run: |
