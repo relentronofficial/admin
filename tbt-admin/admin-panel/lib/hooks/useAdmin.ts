@@ -226,11 +226,23 @@ export const useGetPresignedUrl = () => {
 export const useUploadImage = () => {
   return useMutation({
     mutationFn: async ({ file, pathPrefix }: { file: File; pathPrefix: string }) => {
-      const params = new URLSearchParams({ pathPrefix, filename: file.name }).toString();
-      const res: any = await apiClient.post(`/api/upload/image?${params}`, file, {
+      // Step 1: get a presigned PUT URL (R2 or Supabase fallback)
+      const res: any = await apiClient.post('/api/upload/presigned-url', {
+        filename: file.name,
+        contentType: file.type,
+        pathPrefix,
+      });
+      const { uploadUrl, publicUrl } = res.data || res;
+
+      // Step 2: PUT the file directly to storage (no backend proxy)
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
         headers: { 'Content-Type': file.type },
       });
-      return (res.data || res) as { publicUrl: string };
+      if (!uploadRes.ok) throw new Error('Storage upload failed');
+
+      return { publicUrl } as { publicUrl: string };
     },
   });
 };
