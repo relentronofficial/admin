@@ -75,11 +75,11 @@ jobs:
 
       - name: Apply database schema (staging)
         working-directory: tbt-admin/backend
+        env:
+          DATABASE_URL: ${{ secrets.STG_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.STG_DIRECT_URL }}
         run: |
           npm install --ignore-scripts
-          DATABASE_URL=$(gcloud secrets versions access latest --secret="stg-DATABASE_URL" --project=$GCP_PROJECT)
-          DIRECT_URL=$(gcloud secrets versions access latest --secret="stg-DIRECT_URL" --project=$GCP_PROJECT)
-          export DATABASE_URL DIRECT_URL
           npx prisma db push --skip-generate
 
       - name: Deploy to Cloud Run (staging)
@@ -117,11 +117,11 @@ jobs:
 
       - name: Apply database schema (production)
         working-directory: tbt-admin/backend
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
         run: |
           npm install --ignore-scripts
-          DATABASE_URL=$(gcloud secrets versions access latest --secret="prod-DATABASE_URL" --project=$GCP_PROJECT)
-          DIRECT_URL=$(gcloud secrets versions access latest --secret="prod-DIRECT_URL" --project=$GCP_PROJECT)
-          export DATABASE_URL DIRECT_URL
           npx prisma db push --skip-generate
 
       - name: Deploy to Cloud Run (production)
