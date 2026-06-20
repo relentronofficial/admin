@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { UserButton } from "@clerk/nextjs";
 import { Bell, Settings } from "lucide-react";
@@ -17,17 +17,17 @@ export function Topbar() {
     <header className="h-[54px] bg-[#111] border-b border-[#2a2a2a] px-7 flex items-center sticky top-0 z-[50] font-sans">
       <div className="flex items-center gap-1.5">
         <span className="font-rajdhani font-bold text-[17px] text-[#e02020] tracking-tight">TBT</span>
-        <span className="text-[#333] mx-1">|</span>
+        <span className="text-[#666] mx-1">|</span>
         
         <nav className="flex items-center gap-1.5">
           <span className="text-[13px] text-[#a0a0a0] hover:text-[#f0f0f0] cursor-pointer transition-colors font-medium">Dashboard</span>
           {formattedPaths.length > 1 && (
             <>
-              <span className="text-[#333] mx-0.5 text-xs">›</span>
+              <span className="text-[#666] mx-0.5 text-xs">›</span>
               <span className="text-[13px] text-[#a0a0a0] hover:text-[#f0f0f0] cursor-pointer transition-colors font-medium">
                 {formattedPaths[0]}
               </span>
-              <span className="text-[#333] mx-0.5 text-xs">›</span>
+              <span className="text-[#666] mx-0.5 text-xs">›</span>
               <span className="text-[13px] text-[#f0f0f0] font-semibold tracking-tight">
                 {formattedPaths[formattedPaths.length - 1]}
               </span>

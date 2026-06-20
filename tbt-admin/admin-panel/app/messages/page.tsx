@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MessageSquare, Search, Send, Loader2, X, AlertCircle } from "lucide-react";
@@ -154,7 +154,7 @@ export default function AdminMessagesPage() {
     `px-3 py-1 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors ${
       filter === t
         ? "bg-[#dc2626] text-white"
-        : "text-[#606060] hover:text-[#a0a0a0]"
+        : "text-[#888] hover:text-[#a0a0a0]"
     }`;
 
   return (
@@ -168,7 +168,7 @@ export default function AdminMessagesPage() {
             <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">
               Direct Messages
             </h1>
-            <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">
+            <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">
               Live chat with members
             </p>
           </div>
@@ -183,16 +183,16 @@ export default function AdminMessagesPage() {
             {/* Search */}
             <div className="px-3 pt-3 pb-2">
               <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 focus-within:border-[#dc2626] transition-all">
-                <Search size={12} className="text-[#444] shrink-0" />
+                <Search size={12} className="text-[#777] shrink-0" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search name or subject..."
-                  className="flex-1 bg-transparent text-[#f0f0f0] text-xs outline-none placeholder:text-[#444]"
+                  className="flex-1 bg-transparent text-[#f0f0f0] text-xs outline-none placeholder:text-[#777]"
                 />
                 {search && (
                   <button onClick={() => setSearch("")}>
-                    <X size={11} className="text-[#444] hover:text-[#a0a0a0]" />
+                    <X size={11} className="text-[#777] hover:text-[#a0a0a0]" />
                   </button>
                 )}
               </div>
@@ -209,12 +209,12 @@ export default function AdminMessagesPage() {
             <div className="flex-1 overflow-y-auto divide-y divide-[#222]">
               {convoLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 size={18} className="animate-spin text-[#444]" />
+                  <Loader2 size={18} className="animate-spin text-[#777]" />
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="p-4 text-center">
-                  <MessageSquare size={24} className="mx-auto mb-2 text-[#333]" />
-                  <p className="text-[11px] text-[#606060]">No conversations</p>
+                  <MessageSquare size={24} className="mx-auto mb-2 text-[#666]" />
+                  <p className="text-[11px] text-[#888]">No conversations</p>
                 </div>
               ) : (
                 filtered.map((c: any) => (
@@ -235,20 +235,20 @@ export default function AdminMessagesPage() {
                     </div>
                     <p className="text-[11px] text-[#a0a0a0] truncate mt-0.5">{c.subject}</p>
                     {c.lastMessage && (
-                      <p className="text-[11px] text-[#606060] truncate mt-0.5">
+                      <p className="text-[11px] text-[#888] truncate mt-0.5">
                         {c.lastMessage.senderType === "admin" ? "You: " : ""}
                         {c.lastMessage.body}
                       </p>
                     )}
                     <div className="flex items-center justify-between mt-1">
-                      <p className="text-[10px] text-[#444]">
+                      <p className="text-[10px] text-[#777]">
                         {formatDistanceToNow(new Date(c.lastMessageAt), { addSuffix: true })}
                       </p>
                       <span
                         className={`text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded ${
                           c.status === "open"
                             ? "text-[#dc2626] bg-[#dc2626]/10"
-                            : "text-[#444] bg-[#222]"
+                            : "text-[#777] bg-[#222]"
                         }`}
                       >
                         {c.status}
@@ -268,13 +268,13 @@ export default function AdminMessagesPage() {
                 <div className="px-5 py-3 border-b border-[#2a2a2a] bg-[#1a1a1a] flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-[#f0f0f0] truncate">{activeConvo?.member?.name ?? "Member"}</p>
-                    <p className="text-[11px] text-[#606060] truncate">{activeMeta.subject}</p>
+                    <p className="text-[11px] text-[#888] truncate">{activeMeta.subject}</p>
                   </div>
                   {activeMeta.status === "open" && (
                     <button
                       onClick={handleClose}
                       disabled={closeConvo.isPending}
-                      className="flex-shrink-0 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#606060] hover:text-[#dc2626] disabled:opacity-40 transition-colors"
+                      className="flex-shrink-0 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#888] hover:text-[#dc2626] disabled:opacity-40 transition-colors"
                     >
                       {closeConvo.isPending
                         ? <Loader2 size={12} className="animate-spin" />
@@ -283,7 +283,7 @@ export default function AdminMessagesPage() {
                     </button>
                   )}
                   {activeMeta.status === "closed" && (
-                    <span className="flex-shrink-0 text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#444]">
+                    <span className="flex-shrink-0 text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#777]">
                       Closed
                     </span>
                   )}
@@ -309,7 +309,7 @@ export default function AdminMessagesPage() {
                             {isAdmin ? "You" : m.senderName}
                           </p>
                           <p className="text-sm text-[#f0f0f0] leading-relaxed">{m.body}</p>
-                          <p className="text-[10px] text-[#444] mt-1 text-right">
+                          <p className="text-[10px] text-[#777] mt-1 text-right">
                             {format(new Date(m.createdAt), "HH:mm")}
                           </p>
                         </div>
@@ -318,15 +318,15 @@ export default function AdminMessagesPage() {
                   })}
 
                   {isTyping && (
-                    <p className="text-xs text-[#606060] pl-10 italic animate-pulse">
+                    <p className="text-xs text-[#888] pl-10 italic animate-pulse">
                       {typingName} is typing...
                     </p>
                   )}
 
                   {activeMeta.status === "closed" && (
                     <div className="flex items-center justify-center gap-2 py-3">
-                      <AlertCircle size={13} className="text-[#444]" />
-                      <p className="text-[11px] text-[#444] italic">This conversation is closed</p>
+                      <AlertCircle size={13} className="text-[#777]" />
+                      <p className="text-[11px] text-[#777] italic">This conversation is closed</p>
                     </div>
                   )}
 
@@ -347,7 +347,7 @@ export default function AdminMessagesPage() {
                       }}
                       rows={1}
                       placeholder="Type a reply..."
-                      className="flex-1 resize-none bg-transparent text-sm text-[#f0f0f0] outline-none placeholder:text-[#444] leading-relaxed"
+                      className="flex-1 resize-none bg-transparent text-sm text-[#f0f0f0] outline-none placeholder:text-[#777] leading-relaxed"
                     />
                     <button
                       onClick={handleSend}
@@ -361,7 +361,7 @@ export default function AdminMessagesPage() {
                   </div>
                 ) : (
                   <div className="px-4 py-3 border-t border-[#2a2a2a] bg-[#1a1a1a] flex items-center justify-center">
-                    <p className="text-[11px] text-[#444] font-rajdhani uppercase tracking-widest font-bold">
+                    <p className="text-[11px] text-[#777] font-rajdhani uppercase tracking-widest font-bold">
                       Conversation closed — read only
                     </p>
                   </div>
@@ -369,8 +369,8 @@ export default function AdminMessagesPage() {
               </>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center px-8 bg-[#0f0f0f]">
-                <MessageSquare size={36} className="mb-3 text-[#333]" />
-                <p className="text-sm text-[#606060]">Select a conversation to start chatting</p>
+                <MessageSquare size={36} className="mb-3 text-[#666]" />
+                <p className="text-sm text-[#888]">Select a conversation to start chatting</p>
               </div>
             )}
           </div>

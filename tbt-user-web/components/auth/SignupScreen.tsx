@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -81,7 +81,7 @@ export function SignupScreen() {
               <CheckCircle2 size={30} className="text-green-400" />
             </div>
             <h2 className="text-white text-xl font-bold mb-3">Registration Submitted!</h2>
-            <p className="text-white/45 text-sm leading-relaxed mb-7">
+            <p className="text-white/70 text-sm leading-relaxed mb-7">
               Your account is under review. You&apos;ll be able to log in once an admin approves your registration.
             </p>
             <Link
@@ -126,7 +126,7 @@ export function SignupScreen() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-12 w-auto object-contain mb-4" />
               <h1 className="text-[24px] font-bold text-white tracking-tight">Create Account</h1>
-              <p className="text-white/35 text-[13px] mt-1">Join Tamil Business Tribe</p>
+              <p className="text-white/65 text-[13px] mt-1">Join Tamil Business Tribe</p>
             </div>
 
             {/* Error */}
@@ -209,7 +209,7 @@ export function SignupScreen() {
                   style={{ caretColor: "#dc2626" }} />
                 <FieldIcon focused={focused === "password"}><Lock className="w-[14px] h-[14px]" /></FieldIcon>
                 <button type="button" onClick={() => setShowPassword(v => !v)}
-                  className="absolute right-4 text-white/30 hover:text-white/60 transition-colors">
+                  className="absolute right-4 text-white/60 hover:text-white/60 transition-colors">
                   {showPassword ? <EyeOff className="w-[14px] h-[14px]" /> : <Eye className="w-[14px] h-[14px]" />}
                 </button>
               </Field>
@@ -235,7 +235,7 @@ export function SignupScreen() {
               </div>
             </form>
 
-            <p className="text-center text-[12px] text-white/30 mt-5">
+            <p className="text-center text-[12px] text-white/60 mt-5">
               Already have an account?{" "}
               <Link href="/login" className="transition-colors hover:opacity-80" style={{ color: "#dc2626" }}>
                 Sign In

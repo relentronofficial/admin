@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
@@ -42,7 +42,7 @@ function PendingInterceptor() {
           >
             <button
               onClick={() => setShowPopup(false)}
-              className="absolute top-4 right-4 text-white/30 hover:text-white/70 transition-colors"
+              className="absolute top-4 right-4 text-white/60 hover:text-white/70 transition-colors"
             >
               <X size={18} />
             </button>
@@ -57,7 +57,7 @@ function PendingInterceptor() {
             <h2 className="text-white text-[18px] font-bold mb-3 leading-snug">
               Not Approved Yet
             </h2>
-            <p className="text-white/50 text-sm leading-relaxed mb-6">
+            <p className="text-white/75 text-sm leading-relaxed mb-6">
               You are not approved by admin. Contact admin to unlock the full potential.
             </p>
 
@@ -73,7 +73,7 @@ function PendingInterceptor() {
             </button>
             <button
               onClick={handleLogout}
-              className="w-full py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white/60 transition-colors"
+              className="w-full py-2.5 rounded-xl text-sm font-medium text-white/70 hover:text-white/60 transition-colors"
               style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
             >
               Sign Out
@@ -113,7 +113,7 @@ function FreeInterceptor() {
           >
             <button
               onClick={() => setShowPopup(false)}
-              className="absolute top-4 right-4 text-white/30 hover:text-white/70 transition-colors"
+              className="absolute top-4 right-4 text-white/60 hover:text-white/70 transition-colors"
             >
               <X size={18} />
             </button>
@@ -128,7 +128,7 @@ function FreeInterceptor() {
             <h2 className="text-white text-[18px] font-bold mb-3 leading-snug">
               Access Restricted
             </h2>
-            <p className="text-white/50 text-sm leading-relaxed mb-6">
+            <p className="text-white/75 text-sm leading-relaxed mb-6">
               You are not approved by admin. Kindly contact admin to unlock full access.
             </p>
 

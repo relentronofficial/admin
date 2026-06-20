@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Loader2, Save, Upload, X, Image as ImageIcon } from "lucide-react";
@@ -50,13 +50,13 @@ function ImageUploadField({ label, value, fieldKey, onUploaded, uploading, setUp
 
   return (
     <div>
-      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
+      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
       <div className="flex items-center gap-3">
         <div className="w-14 h-14 rounded-lg border border-[#333] bg-[#141414] flex items-center justify-center overflow-hidden flex-shrink-0">
           {value ? (
             <img src={value} alt={label} className="w-full h-full object-contain" />
           ) : (
-            <ImageIcon size={20} className="text-[#444]" />
+            <ImageIcon size={20} className="text-[#777]" />
           )}
         </div>
         <div className="flex-1 space-y-2">
@@ -74,9 +74,9 @@ function ImageUploadField({ label, value, fieldKey, onUploaded, uploading, setUp
               <input
                 readOnly
                 value={value}
-                className="flex-1 bg-[#141414] border border-[#2a2a2a] rounded-lg h-8 px-3 text-[#606060] text-[11px] font-mono truncate outline-none"
+                className="flex-1 bg-[#141414] border border-[#2a2a2a] rounded-lg h-8 px-3 text-[#888] text-[11px] font-mono truncate outline-none"
               />
-              <button type="button" onClick={() => onUploaded(fieldKey, "")} className="text-[#606060] hover:text-red-400 transition-colors">
+              <button type="button" onClick={() => onUploaded(fieldKey, "")} className="text-[#888] hover:text-red-400 transition-colors">
                 <X size={14} />
               </button>
             </div>
@@ -149,7 +149,7 @@ export default function SiteConfigPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Site Config</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Branding, theme colors, logo, footer.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Branding, theme colors, logo, footer.</p>
             </div>
           </div>
           <button
@@ -163,10 +163,10 @@ export default function SiteConfigPage() {
 
         {/* Branding */}
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-5">
-          <p className="text-[10px] text-[#606060] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">Branding</p>
+          <p className="text-[10px] text-[#888] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">Branding</p>
 
           <div>
-            <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Site Name</label>
+            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Site Name</label>
             <input
               value={form.siteName}
               onChange={e => set("siteName", e.target.value)}
@@ -221,7 +221,7 @@ export default function SiteConfigPage() {
           />
 
           <div>
-            <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Splash Duration (ms)</label>
+            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Splash Duration (ms)</label>
             <input
               type="number"
               value={form.splashDurationMs}
@@ -231,7 +231,7 @@ export default function SiteConfigPage() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Footer Text</label>
+            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Footer Text</label>
             <input
               value={form.footerText}
               onChange={e => set("footerText", e.target.value)}
@@ -243,13 +243,13 @@ export default function SiteConfigPage() {
 
         {/* Theme Colors */}
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-5">
-          <p className="text-[10px] text-[#606060] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">Theme Colors</p>
+          <p className="text-[10px] text-[#888] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">Theme Colors</p>
 
           <div className="grid grid-cols-1 gap-4">
             {COLOR_FIELDS.map(({ key, label }) => (
               <div key={key} className="flex items-center gap-4">
                 <div className="flex-1">
-                  <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
                   <input
                     value={(form as any)[key] || ""}
                     onChange={e => set(key, e.target.value)}
@@ -274,7 +274,7 @@ export default function SiteConfigPage() {
           {/* Live Preview */}
           <div className="mt-2 rounded-xl border border-[#2a2a2a] overflow-hidden">
             <div className="px-4 py-2 bg-[#111] border-b border-[#2a2a2a]">
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-widest font-rajdhani">Live Preview</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-widest font-rajdhani">Live Preview</p>
             </div>
             <div className="p-5" style={{ backgroundColor: form.bgPrimary }}>
               {/* Nav bar mockup */}

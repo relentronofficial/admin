@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { Loader2, Save } from "lucide-react";
@@ -87,7 +87,7 @@ export default function UiStringsPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">UI Strings</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">All user-facing text labels and messages.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">All user-facing text labels and messages.</p>
             </div>
           </div>
           <button onClick={handleSave} disabled={updateStrings.isPending}
@@ -98,10 +98,10 @@ export default function UiStringsPage() {
 
         {GROUPS.map(group => (
           <div key={group.title} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-4">
-            <p className="text-[10px] text-[#606060] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">{group.title}</p>
+            <p className="text-[10px] text-[#888] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">{group.title}</p>
             {group.fields.map(({ key, label }) => (
               <div key={key}>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
                 <input value={form[key] || ""} onChange={e => set(key, e.target.value)}
                   placeholder={DEFAULTS[key]}
                   className="w-full bg-[#141414] border border-[#333] rounded-lg h-10 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />

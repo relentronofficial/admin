@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import {
@@ -68,14 +68,14 @@ function EventBadge({ eventType }: { eventType: string }) {
 }
 
 function MetadataSummary({ eventType, metadata }: { eventType: string; metadata: any }) {
-  if (!metadata || typeof metadata !== "object") return <span className="text-[#606060]">—</span>;
+  if (!metadata || typeof metadata !== "object") return <span className="text-[#888]">—</span>;
   const m = metadata as Record<string, any>;
 
   if (eventType === "EXCESSIVE_SKIPPING") {
     return (
       <span className="text-[#a0a0a0] text-xs">
         Skipped from <b className="text-[#f0f0f0]">{m.fromSecs ?? "?"}s</b> → <b className="text-[#f0f0f0]">{m.toSecs ?? "?"}s</b>
-        {m.reportedDelta != null && <span className="ml-1 text-[#606060]">(claimed {m.reportedDelta}s delta)</span>}
+        {m.reportedDelta != null && <span className="ml-1 text-[#888]">(claimed {m.reportedDelta}s delta)</span>}
       </span>
     );
   }
@@ -100,7 +100,7 @@ function MetadataSummary({ eventType, metadata }: { eventType: string; metadata:
       </span>
     );
   }
-  return <span className="text-[#606060] text-xs font-mono">{JSON.stringify(metadata).slice(0, 60)}…</span>;
+  return <span className="text-[#888] text-xs font-mono">{JSON.stringify(metadata).slice(0, 60)}…</span>;
 }
 
 // ─── Stats strip ──────────────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ function StatsStrip() {
         return (
           <div key={b.eventType} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#181818] border border-[#2a2a2a] text-sm">
             <span style={{ color: cfg.color }} className="font-bold">{b.count}</span>
-            <span className="text-[#606060]">{cfg.label}</span>
+            <span className="text-[#888]">{cfg.label}</span>
           </div>
         );
       })}
@@ -160,7 +160,7 @@ export default function SecurityLogsPage() {
               <ShieldAlert size={20} className="text-[#dc2626]" />
               Security Logs
             </h1>
-            <p className="text-xs text-[#606060] mt-0.5">Suspicious activity — logged only, no automatic blocking</p>
+            <p className="text-xs text-[#888] mt-0.5">Suspicious activity — logged only, no automatic blocking</p>
           </div>
         </div>
 
@@ -170,7 +170,7 @@ export default function SecurityLogsPage() {
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
           <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060]" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
             <input
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
@@ -179,7 +179,7 @@ export default function SecurityLogsPage() {
             />
           </div>
           <div className="relative">
-            <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060]" />
+            <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
             <select
               value={eventTypeFilter}
               onChange={(e) => { setEventTypeFilter(e.target.value); setPage(1); }}
@@ -196,18 +196,18 @@ export default function SecurityLogsPage() {
         {/* Table */}
         <div className="bg-[#111] border border-[#2a2a2a] rounded-xl overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-16 text-[#606060] text-sm">Loading…</div>
+            <div className="flex items-center justify-center py-16 text-[#888] text-sm">Loading…</div>
           ) : logs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-2">
-              <ShieldAlert size={32} className="text-[#333]" />
-              <p className="text-[#606060] text-sm">No security events found</p>
+              <ShieldAlert size={32} className="text-[#666]" />
+              <p className="text-[#888] text-sm">No security events found</p>
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#2a2a2a]">
                   {["Event", "Member", "Details", "Time"].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
+                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">
                       {h}
                     </th>
                   ))}
@@ -229,11 +229,11 @@ export default function SecurityLogsPage() {
                       {log.member ? (
                         <div>
                           <p className="text-[#f0f0f0] font-medium text-xs">{log.member.name}</p>
-                          <p className="text-[#606060] text-[11px]">{log.member.email}</p>
-                          <p className="text-[#444] text-[10px] font-mono">{log.member.memberId}</p>
+                          <p className="text-[#888] text-[11px]">{log.member.email}</p>
+                          <p className="text-[#777] text-[10px] font-mono">{log.member.memberId}</p>
                         </div>
                       ) : (
-                        <span className="text-[#444] text-xs">Unknown</span>
+                        <span className="text-[#777] text-xs">Unknown</span>
                       )}
                     </td>
                     <td className="px-4 py-3 max-w-xs">
@@ -243,7 +243,7 @@ export default function SecurityLogsPage() {
                       <p className="text-[#a0a0a0] text-xs">
                         {format(new Date(log.createdAt), "dd MMM yyyy")}
                       </p>
-                      <p className="text-[#606060] text-[11px]">
+                      <p className="text-[#888] text-[11px]">
                         {format(new Date(log.createdAt), "HH:mm:ss")}
                       </p>
                     </td>
@@ -257,7 +257,7 @@ export default function SecurityLogsPage() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between">
-            <p className="text-xs text-[#606060]">{total} events total</p>
+            <p className="text-xs text-[#888]">{total} events total</p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}

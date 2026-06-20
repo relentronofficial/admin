@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -30,7 +30,7 @@ const statusCls = (s: string) => {
     paused: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
     expired: "bg-red-500/10 text-red-400 border-red-500/20",
   };
-  return m[s] || "bg-[#222] text-[#606060] border-[#333]";
+  return m[s] || "bg-[#222] text-[#888] border-[#333]";
 };
 
 const TABS = ["Info", "Enrollments", "Progress", "Analytics"] as const;
@@ -96,7 +96,7 @@ export default function MemberDetailPage() {
     catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
-  const labelCls = "text-[10px] font-bold text-[#444] uppercase tracking-widest font-rajdhani";
+  const labelCls = "text-[10px] font-bold text-[#777] uppercase tracking-widest font-rajdhani";
   const valueCls = "text-sm text-[#f0f0f0] font-medium mt-0.5";
 
   return (
@@ -106,7 +106,7 @@ export default function MemberDetailPage() {
         <div className="flex items-start gap-4">
           <button
             onClick={() => router.push("/members")}
-            className="flex items-center gap-1.5 text-[#606060] hover:text-white text-[12px] font-bold uppercase tracking-widest font-rajdhani transition-colors mt-1"
+            className="flex items-center gap-1.5 text-[#888] hover:text-white text-[12px] font-bold uppercase tracking-widest font-rajdhani transition-colors mt-1"
           >
             <ChevronLeft size={15} /> Members
           </button>
@@ -118,7 +118,7 @@ export default function MemberDetailPage() {
                 <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">
                   {member ? `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email : "Member"}
                 </h1>
-                <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani mt-0.5">
+                <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani mt-0.5">
                   {member?.email}
                 </p>
               </>
@@ -132,7 +132,7 @@ export default function MemberDetailPage() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-6 py-3 font-rajdhani font-bold text-[11px] uppercase tracking-[2px] border-b-2 transition-all ${activeTab === tab ? "border-[#dc2626] text-[#f0f0f0]" : "border-transparent text-[#606060] hover:text-[#a0a0a0]"}`}
+              className={`px-6 py-3 font-rajdhani font-bold text-[11px] uppercase tracking-[2px] border-b-2 transition-all ${activeTab === tab ? "border-[#dc2626] text-[#f0f0f0]" : "border-transparent text-[#888] hover:text-[#a0a0a0]"}`}
             >
               {tab === "Enrollments" && enrollments.length > 0 ? `${tab} (${enrollments.length})` : tab}
             </button>
@@ -207,12 +207,12 @@ export default function MemberDetailPage() {
                   <p className="text-[11px] font-bold text-[#dc2626] uppercase tracking-[2px] font-rajdhani flex items-center gap-2"><Trophy size={13} /> Badges</p>
                   <div className="flex flex-wrap gap-2 min-h-[28px]">
                     {memberBadges.length === 0
-                      ? <p className="text-[#444] text-sm italic">No badges assigned.</p>
+                      ? <p className="text-[#777] text-sm italic">No badges assigned.</p>
                       : memberBadges.map((mb: any) => (
                         <div key={mb.id} className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a1a] border border-[#333] rounded-lg">
                           {mb.badge?.iconUrl && <img src={mb.badge.iconUrl} alt="" className="w-4 h-4 object-contain" />}
                           <span className="text-[12px] font-bold text-[#f0f0f0]">{mb.badge?.label || mb.badge?.name}</span>
-                          <button onClick={() => handleRemoveBadge(mb.badgeId)} className="text-[#444] hover:text-red-400"><X size={12} /></button>
+                          <button onClick={() => handleRemoveBadge(mb.badgeId)} className="text-[#777] hover:text-red-400"><X size={12} /></button>
                         </div>
                       ))}
                   </div>
@@ -248,17 +248,17 @@ export default function MemberDetailPage() {
 
             {enrollments.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16 space-y-3">
-                <Briefcase size={32} className="mx-auto text-[#333]" />
-                <p className="text-[#444] text-sm font-rajdhani font-bold uppercase tracking-widest">Not enrolled in any workshops</p>
+                <Briefcase size={32} className="mx-auto text-[#666]" />
+                <p className="text-[#777] text-sm font-rajdhani font-bold uppercase tracking-widest">Not enrolled in any workshops</p>
               </div>
             ) : (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
-                      <th className="px-5 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Workshop</th>
-                      <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Status</th>
-                      <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Enrolled</th>
+                      <th className="px-5 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Workshop</th>
+                      <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Status</th>
+                      <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Enrolled</th>
                       <th className="px-4 py-4 w-[48px]" />
                     </tr>
                   </thead>
@@ -269,16 +269,16 @@ export default function MemberDetailPage() {
                         <td className="px-4 py-3.5">
                           <span className={`inline-flex px-2 py-0.5 rounded border text-[9px] font-bold uppercase tracking-widest font-rajdhani ${statusCls(e.status)}`}>{e.status}</span>
                         </td>
-                        <td className="px-4 py-3.5 text-[#606060] text-[12px]">{safeDate(e.enrolledAt)}</td>
+                        <td className="px-4 py-3.5 text-[#888] text-[12px]">{safeDate(e.enrolledAt)}</td>
                         <td className="px-4 py-3.5">
                           {removingId === e.workshopId ? (
                             <div className="flex gap-1">
                               <button onClick={() => handleRemoveEnrollment(e.workshopId)} className="text-[10px] text-red-400 font-bold font-rajdhani uppercase">Yes</button>
-                              <span className="text-[#333]">/</span>
-                              <button onClick={() => setRemovingId(null)} className="text-[10px] text-[#606060] font-bold font-rajdhani uppercase">No</button>
+                              <span className="text-[#666]">/</span>
+                              <button onClick={() => setRemovingId(null)} className="text-[10px] text-[#888] font-bold font-rajdhani uppercase">No</button>
                             </div>
                           ) : (
-                            <button onClick={() => setRemovingId(e.workshopId)} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={13} /></button>
+                            <button onClick={() => setRemovingId(e.workshopId)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={13} /></button>
                           )}
                         </td>
                       </tr>
@@ -294,11 +294,11 @@ export default function MemberDetailPage() {
         {activeTab === "Progress" && (
           <div className="space-y-4">
             {progressLoading ? (
-              <div className="flex items-center gap-2 text-[#606060] py-16 justify-center"><Loader2 size={22} className="animate-spin" /> Loading progress...</div>
+              <div className="flex items-center gap-2 text-[#888] py-16 justify-center"><Loader2 size={22} className="animate-spin" /> Loading progress...</div>
             ) : !progress?.workshops?.length ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16 space-y-3">
-                <Target size={32} className="mx-auto text-[#333]" />
-                <p className="text-[#444] text-sm font-rajdhani font-bold uppercase tracking-widest">No progress data available</p>
+                <Target size={32} className="mx-auto text-[#666]" />
+                <p className="text-[#777] text-sm font-rajdhani font-bold uppercase tracking-widest">No progress data available</p>
               </div>
             ) : (
               progress.workshops.map((w: any) => {
@@ -325,17 +325,17 @@ export default function MemberDetailPage() {
                             <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pctColor }} />
                           </div>
                           <span className="text-[12px] font-bold font-rajdhani shrink-0" style={{ color: pctColor }}>{pct}%</span>
-                          <span className="text-[11px] text-[#606060] shrink-0">{w.completedCount}/{w.totalCount} eps</span>
+                          <span className="text-[11px] text-[#888] shrink-0">{w.completedCount}/{w.totalCount} eps</span>
                         </div>
                       </div>
-                      <ChevronLeft size={15} className={`shrink-0 text-[#444] transition-transform ${isExp ? "-rotate-90" : "rotate-180"}`} />
+                      <ChevronLeft size={15} className={`shrink-0 text-[#777] transition-transform ${isExp ? "-rotate-90" : "rotate-180"}`} />
                     </button>
 
                     {/* Expanded details */}
                     {isExp && (
                       <div className="border-t border-[#2a2a2a] px-6 py-5 space-y-6">
                         {w.lastActiveAt && (
-                          <p className="text-[10px] text-[#606060] font-rajdhani uppercase tracking-widest">
+                          <p className="text-[10px] text-[#888] font-rajdhani uppercase tracking-widest">
                             Last active: <span className="text-[#a0a0a0]">{safeDate(w.lastActiveAt)}</span>
                           </p>
                         )}
@@ -343,14 +343,14 @@ export default function MemberDetailPage() {
                         {/* Challenge breakdown */}
                         {w.challenges?.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-[#606060] uppercase tracking-[2px] font-rajdhani mb-3">Challenge Breakdown</p>
+                            <p className="text-[11px] font-bold text-[#888] uppercase tracking-[2px] font-rajdhani mb-3">Challenge Breakdown</p>
                             <div className="bg-[#111] rounded-xl overflow-hidden">
                               <table className="w-full">
                                 <thead>
                                   <tr className="border-b border-[#1f1f1f]">
-                                    <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Challenge</th>
-                                    <th className="px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Episodes</th>
-                                    <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Progress</th>
+                                    <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Challenge</th>
+                                    <th className="px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Episodes</th>
+                                    <th className="px-4 py-3 text-right text-[10px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Progress</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[#1a1a1a]">
@@ -363,7 +363,7 @@ export default function MemberDetailPage() {
                                           {cp >= 100 && <CheckCircle2 size={12} className="inline mr-1.5 text-green-400" />}
                                           {ch.title}
                                         </td>
-                                        <td className="px-4 py-3 text-center text-[#606060] text-[11px]">{ch.completedCount}/{ch.totalCount}</td>
+                                        <td className="px-4 py-3 text-center text-[#888] text-[11px]">{ch.completedCount}/{ch.totalCount}</td>
                                         <td className="px-4 py-3 text-right">
                                           <span className="text-[12px] font-bold font-rajdhani" style={{ color: cpColor }}>{cp}%</span>
                                         </td>
@@ -379,14 +379,14 @@ export default function MemberDetailPage() {
                         {/* Assignment submissions */}
                         {w.assignments?.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-[#606060] uppercase tracking-[2px] font-rajdhani mb-3">Assignment Submissions</p>
+                            <p className="text-[11px] font-bold text-[#888] uppercase tracking-[2px] font-rajdhani mb-3">Assignment Submissions</p>
                             <div className="space-y-2">
                               {w.assignments.map((a: any, i: number) => (
                                 <div key={i} className="flex items-start gap-3 bg-[#111] rounded-lg px-4 py-3">
-                                  <CheckCircle2 size={14} className={`shrink-0 mt-0.5 ${a.isSubmitted ? "text-green-400" : "text-[#333]"}`} />
+                                  <CheckCircle2 size={14} className={`shrink-0 mt-0.5 ${a.isSubmitted ? "text-green-400" : "text-[#666]"}`} />
                                   <div className="flex-1 min-w-0">
                                     <p className="text-[12px] font-medium text-[#a0a0a0] truncate">{a.title}</p>
-                                    {a.submittedAt && <p className="text-[10px] text-[#444] mt-0.5">{safeDate(a.submittedAt)}</p>}
+                                    {a.submittedAt && <p className="text-[10px] text-[#777] mt-0.5">{safeDate(a.submittedAt)}</p>}
                                   </div>
                                 </div>
                               ))}
@@ -405,7 +405,7 @@ export default function MemberDetailPage() {
         {activeTab === "Analytics" && (
           <div className="space-y-6">
             {analyticsLoading ? (
-              <div className="flex items-center gap-2 text-[#606060] py-16 justify-center"><Loader2 size={22} className="animate-spin" /> Loading analytics...</div>
+              <div className="flex items-center gap-2 text-[#888] py-16 justify-center"><Loader2 size={22} className="animate-spin" /> Loading analytics...</div>
             ) : analytics ? (
               <>
                 {/* Stats strip */}
@@ -420,8 +420,8 @@ export default function MemberDetailPage() {
                   ].map(({ label, value, icon: Icon }) => (
                     <div key={label} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
                       <div className="flex items-center gap-2 mb-1.5">
-                        <Icon size={12} className="text-[#606060]" />
-                        <p className="text-[9px] uppercase tracking-widest text-[#606060] font-bold font-rajdhani">{label}</p>
+                        <Icon size={12} className="text-[#888]" />
+                        <p className="text-[9px] uppercase tracking-widest text-[#888] font-bold font-rajdhani">{label}</p>
                       </div>
                       <p className="font-rajdhani text-xl font-bold text-[#f0f0f0]">{value}</p>
                     </div>
@@ -431,20 +431,20 @@ export default function MemberDetailPage() {
                 {/* Watch history */}
                 <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
                   <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
-                    <Activity size={14} className="text-[#606060]" />
+                    <Activity size={14} className="text-[#888]" />
                     <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Watch History</h3>
-                    <span className="ml-auto text-[10px] text-[#444]">Total: {analytics?.historyTotal ?? analytics?.history?.length ?? 0}</span>
+                    <span className="ml-auto text-[10px] text-[#777]">Total: {analytics?.historyTotal ?? analytics?.history?.length ?? 0}</span>
                   </div>
                   {(analytics.history ?? []).length === 0 ? (
-                    <div className="text-center py-10 text-[#444] text-sm italic">No watch history.</div>
+                    <div className="text-center py-10 text-[#777] text-sm italic">No watch history.</div>
                   ) : (
                     <table className="w-full">
                       <thead>
                         <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
-                          <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Episode</th>
-                          <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Workshop</th>
-                          <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Progress</th>
-                          <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Last Watched</th>
+                          <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Episode</th>
+                          <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Workshop</th>
+                          <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Progress</th>
+                          <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Last Watched</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#1f1f1f]">
@@ -456,13 +456,13 @@ export default function MemberDetailPage() {
                                 <span className="text-[12px] text-[#a0a0a0] truncate max-w-[180px]">{h.episodeTitle}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-[11px] text-[#606060] truncate max-w-[160px]">{h.workshopTitle}</td>
+                            <td className="px-4 py-3 text-[11px] text-[#888] truncate max-w-[160px]">{h.workshopTitle}</td>
                             <td className="px-4 py-3 text-right">
                               <span className="text-[12px] font-bold font-rajdhani" style={{ color: h.progressPct >= 100 ? "#22c55e" : h.progressPct > 50 ? "#eab308" : "#dc2626" }}>
                                 {h.progressPct}%
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-right text-[10px] text-[#444]">{safeDate(h.lastWatchedAt)}</td>
+                            <td className="px-4 py-3 text-right text-[10px] text-[#777]">{safeDate(h.lastWatchedAt)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -471,9 +471,9 @@ export default function MemberDetailPage() {
                   {/* Pagination */}
                   {(analytics?.historyTotal ?? 0) > 25 && (
                     <div className="px-6 py-3 border-t border-[#1f1f1f] flex items-center justify-between">
-                      <button onClick={() => setAnalyticsPage(p => Math.max(1, p - 1))} disabled={analyticsPage === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
-                      <span className="text-[10px] text-[#444]">Page {analyticsPage}</span>
-                      <button onClick={() => setAnalyticsPage(p => p + 1)} disabled={(analytics.history ?? []).length < 25} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
+                      <button onClick={() => setAnalyticsPage(p => Math.max(1, p - 1))} disabled={analyticsPage === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#888] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
+                      <span className="text-[10px] text-[#777]">Page {analyticsPage}</span>
+                      <button onClick={() => setAnalyticsPage(p => p + 1)} disabled={(analytics.history ?? []).length < 25} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#888] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
                     </div>
                   )}
                 </div>
@@ -482,16 +482,16 @@ export default function MemberDetailPage() {
                 {(analytics.devices ?? []).length > 0 && (
                   <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
                     <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
-                      <Monitor size={14} className="text-[#606060]" />
+                      <Monitor size={14} className="text-[#888]" />
                       <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Active Devices (30 days)</h3>
                     </div>
                     <div className="divide-y divide-[#1f1f1f]">
                       {(analytics.devices ?? []).map((d: any) => (
                         <div key={d.id} className="px-6 py-3 flex items-center gap-4">
-                          <Monitor size={14} className="text-[#444] shrink-0" />
+                          <Monitor size={14} className="text-[#777] shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] font-bold text-[#a0a0a0]">{d.browser} on {d.os}</p>
-                            <p className="text-[10px] text-[#444]">{d.ipAddress || "—"} · Last active {safeDate(d.lastActiveAt)}</p>
+                            <p className="text-[10px] text-[#777]">{d.ipAddress || "—"} · Last active {safeDate(d.lastActiveAt)}</p>
                           </div>
                         </div>
                       ))}
@@ -512,7 +512,7 @@ export default function MemberDetailPage() {
                           <Shield size={12} className="text-orange-400 mt-0.5 shrink-0" />
                           <div>
                             <p className="text-[12px] font-bold text-orange-400 font-rajdhani uppercase tracking-wide">{ev.eventType.replace(/_/g, " ")}</p>
-                            <p className="text-[10px] text-[#444] mt-0.5">{safeDate(ev.createdAt)}</p>
+                            <p className="text-[10px] text-[#777] mt-0.5">{safeDate(ev.createdAt)}</p>
                           </div>
                         </div>
                       ))}
@@ -524,7 +524,7 @@ export default function MemberDetailPage() {
                 {timeline.length > 0 && (
                   <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
                     <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center gap-2">
-                      <Activity size={14} className="text-[#606060]" />
+                      <Activity size={14} className="text-[#888]" />
                       <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Activity Timeline</h3>
                     </div>
                     <div className="divide-y divide-[#1f1f1f] max-h-[320px] overflow-y-auto">
@@ -533,7 +533,7 @@ export default function MemberDetailPage() {
                           <div className="w-1.5 h-1.5 rounded-full bg-[#dc2626] mt-1.5 shrink-0" />
                           <div>
                             <p className="text-[12px] font-bold text-[#a0a0a0] font-rajdhani uppercase tracking-wide">{entry.action.replace(/_/g, " ")}</p>
-                            <p className="text-[10px] text-[#444] mt-0.5">{safeDate(entry.createdAt)}</p>
+                            <p className="text-[10px] text-[#777] mt-0.5">{safeDate(entry.createdAt)}</p>
                           </div>
                         </div>
                       ))}
@@ -542,7 +542,7 @@ export default function MemberDetailPage() {
                 )}
               </>
             ) : (
-              <div className="text-center py-16 text-[#444] text-sm italic">No analytics data.</div>
+              <div className="text-center py-16 text-[#777] text-sm italic">No analytics data.</div>
             )}
           </div>
         )}

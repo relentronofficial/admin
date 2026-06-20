@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -32,7 +32,7 @@ export default function AnalyticsPage() {
           <div className="w-0.5 bg-[#e02020] rounded-sm min-h-[40px]" />
           <div>
             <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0]">Platform Analytics</h1>
-            <p className="text-[12px] text-[#606060] font-medium uppercase tracking-wider font-rajdhani">Member engagement, completion rates, and health scores.</p>
+            <p className="text-[12px] text-[#888] font-medium uppercase tracking-wider font-rajdhani">Member engagement, completion rates, and health scores.</p>
           </div>
         </div>
 
@@ -42,7 +42,7 @@ export default function AnalyticsPage() {
             {[...Array(8)].map((_, i) => <div key={i} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5 h-[100px] animate-pulse" />)}
           </div>
         ) : overviewError ? (
-          <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 text-center text-[#606060] text-sm font-rajdhani uppercase tracking-widest">Failed to load overview stats.</div>
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 text-center text-[#888] text-sm font-rajdhani uppercase tracking-widest">Failed to load overview stats.</div>
         ) : overview ? (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
@@ -54,7 +54,7 @@ export default function AnalyticsPage() {
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5">
                   <div className={`mb-3 ${color}`}><Icon size={18} /></div>
-                  <p className="text-[10px] uppercase tracking-widest text-[#606060] font-bold font-rajdhani mb-1">{label}</p>
+                  <p className="text-[10px] uppercase tracking-widest text-[#888] font-bold font-rajdhani mb-1">{label}</p>
                   <p className="font-rajdhani text-2xl font-bold text-[#f0f0f0]">{value ?? "—"}</p>
                 </div>
               ))}
@@ -68,7 +68,7 @@ export default function AnalyticsPage() {
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5">
                   <div className={`mb-3 ${color}`}><Icon size={18} /></div>
-                  <p className="text-[10px] uppercase tracking-widest text-[#606060] font-bold font-rajdhani mb-1">{label}</p>
+                  <p className="text-[10px] uppercase tracking-widest text-[#888] font-bold font-rajdhani mb-1">{label}</p>
                   <p className="font-rajdhani text-2xl font-bold text-[#f0f0f0]">{value ?? "—"}</p>
                 </div>
               ))}
@@ -89,12 +89,12 @@ export default function AnalyticsPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-[#606060] font-rajdhani uppercase tracking-widest">Inactive for:</span>
+              <span className="text-[10px] text-[#888] font-rajdhani uppercase tracking-widest">Inactive for:</span>
               {[2, 3, 4, 5, 6].map(d => (
                 <button
                   key={d}
                   onClick={() => { setInactiveDays(d); setAtRiskPage(1); }}
-                  className={`px-3 py-1 rounded text-[10px] font-bold font-rajdhani uppercase tracking-widest transition-all ${inactiveDays === d ? "bg-[#dc2626] text-white" : "bg-[#1a1a1a] text-[#606060] hover:text-white border border-[#2a2a2a]"}`}
+                  className={`px-3 py-1 rounded text-[10px] font-bold font-rajdhani uppercase tracking-widest transition-all ${inactiveDays === d ? "bg-[#dc2626] text-white" : "bg-[#1a1a1a] text-[#888] hover:text-white border border-[#2a2a2a]"}`}
                 >
                   {d}d
                 </button>
@@ -103,9 +103,9 @@ export default function AnalyticsPage() {
           </div>
 
           {atRiskLoading ? (
-            <div className="flex items-center justify-center py-20"><Loader2 size={22} className="animate-spin text-[#444]" /></div>
+            <div className="flex items-center justify-center py-20"><Loader2 size={22} className="animate-spin text-[#777]" /></div>
           ) : atRiskError ? (
-            <div className="text-center py-16 text-[#606060] text-sm font-rajdhani uppercase tracking-widest">Failed to load at-risk members.</div>
+            <div className="text-center py-16 text-[#888] text-sm font-rajdhani uppercase tracking-widest">Failed to load at-risk members.</div>
           ) : atRisk.length === 0 ? (
             <div className="text-center py-16">
               <CheckCircle2 size={32} className="mx-auto text-green-500 mb-3" />
@@ -116,12 +116,12 @@ export default function AnalyticsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
-                    <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Member</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Health</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Points</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Streak</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Enrollments</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Last Active</th>
+                    <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Member</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Health</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Points</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Streak</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Enrollments</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Last Active</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1f1f1f]">
@@ -130,7 +130,7 @@ export default function AnalyticsPage() {
                       <td className="px-5 py-3.5">
                         <Link href={`/members/${m.id}`} className="hover:text-[#e02020] transition-colors">
                           <p className="text-[13px] font-bold text-[#f0f0f0]">{m.firstName} {m.lastName}</p>
-                          <p className="text-[11px] text-[#606060]">{m.email}</p>
+                          <p className="text-[11px] text-[#888]">{m.email}</p>
                         </Link>
                       </td>
                       <td className="px-4 py-3.5">
@@ -142,9 +142,9 @@ export default function AnalyticsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-[12px] font-bold font-rajdhani text-[#a0a0a0]">{(m.totalPoints ?? 0).toLocaleString()}</td>
-                      <td className="px-4 py-3.5 text-[12px] text-[#606060]">{m.currentStreak ?? 0}d</td>
-                      <td className="px-4 py-3.5 text-[12px] text-[#606060]">{m._count?.workshopEnrollments ?? 0}</td>
-                      <td className="px-4 py-3.5 text-[11px] text-[#444]">
+                      <td className="px-4 py-3.5 text-[12px] text-[#888]">{m.currentStreak ?? 0}d</td>
+                      <td className="px-4 py-3.5 text-[12px] text-[#888]">{m._count?.workshopEnrollments ?? 0}</td>
+                      <td className="px-4 py-3.5 text-[11px] text-[#777]">
                         {m.lastActiveAt ? formatDistanceToNow(new Date(m.lastActiveAt), { addSuffix: true }) : "Never"}
                       </td>
                     </tr>
@@ -153,9 +153,9 @@ export default function AnalyticsPage() {
               </table>
               {atRiskTotal > 20 && (
                 <div className="px-6 py-3 border-t border-[#1f1f1f] flex items-center justify-between">
-                  <button onClick={() => setAtRiskPage(p => Math.max(1, p - 1))} disabled={atRiskPage === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
-                  <span className="text-[10px] text-[#444]">Page {atRiskPage} · {atRiskTotal} total</span>
-                  <button onClick={() => setAtRiskPage(p => p + 1)} disabled={atRisk.length < 20} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
+                  <button onClick={() => setAtRiskPage(p => Math.max(1, p - 1))} disabled={atRiskPage === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#888] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
+                  <span className="text-[10px] text-[#777]">Page {atRiskPage} · {atRiskTotal} total</span>
+                  <button onClick={() => setAtRiskPage(p => p + 1)} disabled={atRisk.length < 20} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#888] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
                 </div>
               )}
             </>

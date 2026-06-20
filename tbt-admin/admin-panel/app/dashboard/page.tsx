@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect } from "react";
 import Link from "next/link";
@@ -55,7 +55,7 @@ export default function DashboardPage() {
           <div className="w-0.5 bg-[#e02020] rounded-sm min-h-[40px]" />
           <div>
             <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0]">Dashboard Overview</h1>
-            <p className="text-[12px] text-[#606060] font-medium uppercase tracking-wider font-rajdhani">Platform stats and at-risk member tracking.</p>
+            <p className="text-[12px] text-[#888] font-medium uppercase tracking-wider font-rajdhani">Platform stats and at-risk member tracking.</p>
           </div>
         </div>
 
@@ -74,9 +74,9 @@ export default function DashboardPage() {
                   <div className={cn("p-2 rounded-lg bg-[#1f1f1f] border border-[#333]", stat.color)}>
                     <stat.icon size={20} />
                   </div>
-                  <span className="text-[10px] font-bold text-[#606060] bg-[#1a1a1a] px-2 py-0.5 rounded-full uppercase tracking-tighter">{stat.sub}</span>
+                  <span className="text-[10px] font-bold text-[#888] bg-[#1a1a1a] px-2 py-0.5 rounded-full uppercase tracking-tighter">{stat.sub}</span>
                 </div>
-                <p className="text-[11px] uppercase tracking-widest text-[#606060] font-bold mb-1">{stat.label}</p>
+                <p className="text-[11px] uppercase tracking-widest text-[#888] font-bold mb-1">{stat.label}</p>
                 <h3 className="font-rajdhani text-3xl font-bold text-[#f0f0f0] tracking-tight">{stat.value}</h3>
               </div>
             ))}
@@ -93,12 +93,12 @@ export default function DashboardPage() {
                 <h3 className="font-rajdhani text-lg font-semibold tracking-wide uppercase">At-Risk Members</h3>
                 <span className="text-[9px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Inactive 7+ days</span>
               </div>
-              <Link href="/analytics" className="text-[10px] font-bold text-[#606060] hover:text-[#e02020] font-rajdhani uppercase tracking-widest transition-colors">View All →</Link>
+              <Link href="/analytics" className="text-[10px] font-bold text-[#888] hover:text-[#e02020] font-rajdhani uppercase tracking-widest transition-colors">View All →</Link>
             </div>
             {atRiskLoading ? (
-              <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-[#444]" /></div>
+              <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-[#777]" /></div>
             ) : atRisk.length === 0 ? (
-              <div className="text-center py-16 text-[#444] text-sm italic">No at-risk members found.</div>
+              <div className="text-center py-16 text-[#777] text-sm italic">No at-risk members found.</div>
             ) : (
               <div className="divide-y divide-[#1f1f1f]">
                 {atRisk.map((m: any) => (
@@ -108,14 +108,14 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-bold text-[#f0f0f0] truncate group-hover:text-white">{m.firstName} {m.lastName}</p>
-                      <p className="text-[11px] text-[#606060] truncate">{m.email}</p>
+                      <p className="text-[11px] text-[#888] truncate">{m.email}</p>
                     </div>
                     <div className="text-right shrink-0 space-y-0.5">
                       <div className="flex items-center gap-1.5 justify-end">
                         <AlertTriangle size={10} className="text-orange-400" />
                         <span className="text-[11px] text-orange-400 font-bold font-rajdhani">{m.healthScore ?? 0}% health</span>
                       </div>
-                      <p className="text-[10px] text-[#444]">
+                      <p className="text-[10px] text-[#777]">
                         {m.lastActiveAt ? `Active ${formatDistanceToNow(new Date(m.lastActiveAt), { addSuffix: true })}` : "Never active"}
                       </p>
                     </div>
@@ -142,7 +142,7 @@ export default function DashboardPage() {
               ].map(({ label, value, icon: Icon }) => (
                 <div key={label} className="flex items-center justify-between bg-[#1f1f1f] border border-[#2a2a2a] p-4 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <Icon size={14} className="text-[#606060]" />
+                    <Icon size={14} className="text-[#888]" />
                     <span className="text-[12px] font-medium text-[#a0a0a0]">{label}</span>
                   </div>
                   <span className="font-rajdhani font-bold text-[#f0f0f0] text-[15px]">{value}</span>

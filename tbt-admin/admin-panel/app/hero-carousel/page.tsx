@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Pencil, X, Loader2, Tv2, AlertCircle, GripVertical, Eye, EyeOff, Save, Film, Image as ImageIcon, Volume2, VolumeX, Link2, Search } from "lucide-react";
@@ -82,7 +82,7 @@ function UploadBtn({ label, value, accept, icon, uploadKey, pathPrefix, uploadin
 
   return (
     <div>
-      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
+      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -95,13 +95,13 @@ function UploadBtn({ label, value, accept, icon, uploadKey, pathPrefix, uploadin
         </button>
         {value && (
           <div className="flex-1 flex items-center gap-2 min-w-0">
-            <span className="flex-1 text-[11px] text-[#606060] font-mono truncate">{value.split("/").pop()}</span>
-            <button type="button" onClick={() => onUploaded(uploadKey, "")} className="text-[#444] hover:text-red-400 transition-colors shrink-0">
+            <span className="flex-1 text-[11px] text-[#888] font-mono truncate">{value.split("/").pop()}</span>
+            <button type="button" onClick={() => onUploaded(uploadKey, "")} className="text-[#777] hover:text-red-400 transition-colors shrink-0">
               <X size={13} />
             </button>
           </div>
         )}
-        {!value && <span className="text-[11px] text-[#444]">No file</span>}
+        {!value && <span className="text-[11px] text-[#777]">No file</span>}
       </div>
       <input ref={inputRef} type="file" accept={accept} className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
@@ -266,7 +266,7 @@ export default function HeroCarouselPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Hero Carousel</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Manage hero slides — drag to reorder.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Manage hero slides — drag to reorder.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -295,9 +295,9 @@ export default function HeroCarouselPage() {
           </div>
         ) : localSlides.length === 0 ? (
           <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-20 space-y-3">
-            <Tv2 size={36} className="mx-auto text-[#333]" />
-            <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No hero slides configured</p>
-            <p className="text-[#444] text-xs">Click "Add Slide" to create the first slide.</p>
+            <Tv2 size={36} className="mx-auto text-[#666]" />
+            <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No hero slides configured</p>
+            <p className="text-[#777] text-xs">Click "Add Slide" to create the first slide.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -327,10 +327,10 @@ export default function HeroCarouselPage() {
                 )}
 
                 <div className="flex items-center gap-4 p-4">
-                  <GripVertical size={16} className="text-[#444] cursor-grab active:cursor-grabbing shrink-0" />
+                  <GripVertical size={16} className="text-[#777] cursor-grab active:cursor-grabbing shrink-0" />
 
                   {/* Order badge */}
-                  <div className="w-7 h-7 rounded-md bg-[#1a1a1a] border border-[#333] flex items-center justify-center font-rajdhani font-bold text-[#606060] text-xs shrink-0">
+                  <div className="w-7 h-7 rounded-md bg-[#1a1a1a] border border-[#333] flex items-center justify-center font-rajdhani font-bold text-[#888] text-xs shrink-0">
                     {i + 1}
                   </div>
 
@@ -343,28 +343,28 @@ export default function HeroCarouselPage() {
                       )}
                     </div>
                     {slide.description && (
-                      <p className="text-[11px] text-[#555] truncate mt-0.5">{slide.description}</p>
+                      <p className="text-[11px] text-[#888] truncate mt-0.5">{slide.description}</p>
                     )}
-                    <div className="flex items-center gap-3 mt-1 text-[10px] text-[#444]">
-                      {slide.ctaLabel && <span className="text-[#606060]">CTA: <span className="text-[#888]">{slide.ctaLabel}</span></span>}
+                    <div className="flex items-center gap-3 mt-1 text-[10px] text-[#777]">
+                      {slide.ctaLabel && <span className="text-[#888]">CTA: <span className="text-[#888]">{slide.ctaLabel}</span></span>}
                       {slide.bgVideoUrl && <span className="text-blue-400 flex items-center gap-1"><Film size={10} /> Video</span>}
                       {slide.bgImageUrl && <span className="text-green-400 flex items-center gap-1"><ImageIcon size={10} /> Image</span>}
-                      <span className={`uppercase font-bold ${slide.ctaType === "external" ? "text-yellow-500" : "text-[#555]"}`}>{slide.ctaType}</span>
-                      {slide.bgMuteDefault ? <VolumeX size={10} className="text-[#444]" /> : <Volume2 size={10} className="text-blue-400" />}
+                      <span className={`uppercase font-bold ${slide.ctaType === "external" ? "text-yellow-500" : "text-[#888]"}`}>{slide.ctaType}</span>
+                      {slide.bgMuteDefault ? <VolumeX size={10} className="text-[#777]" /> : <Volume2 size={10} className="text-blue-400" />}
                     </div>
                   </div>
 
                   {/* Actions */}
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button onClick={() => handleToggleActive(slide)}
-                      className={`p-1.5 rounded transition-all ${slide.isActive ? "text-green-400 hover:bg-green-400/10" : "text-[#444] hover:text-white"}`}
+                      className={`p-1.5 rounded transition-all ${slide.isActive ? "text-green-400 hover:bg-green-400/10" : "text-[#777] hover:text-white"}`}
                       title={slide.isActive ? "Active" : "Hidden"}>
                       {slide.isActive ? <Eye size={15} /> : <EyeOff size={15} />}
                     </button>
-                    <button onClick={() => openEdit(slide)} className="p-1.5 text-[#444] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
+                    <button onClick={() => openEdit(slide)} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
                       <Pencil size={15} />
                     </button>
-                    <button onClick={() => setDeleting(slide.id)} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
+                    <button onClick={() => setDeleting(slide.id)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -383,21 +383,21 @@ export default function HeroCarouselPage() {
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">
                 {editing ? "Edit Slide" : "New Slide"}
               </h3>
-              <button onClick={() => setShowForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
 
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
 
               {/* Title */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Title *</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Title *</label>
                 <input value={form.title} onChange={e => setField("title", e.target.value)} placeholder="The TBT Experience"
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
               </div>
 
               {/* Description */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Description</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Description</label>
                 <textarea value={form.description} onChange={e => setField("description", e.target.value)} rows={3} placeholder="Short description shown on the slide..."
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
               </div>
@@ -440,7 +440,7 @@ export default function HeroCarouselPage() {
                 setUploading={setUploadingField}
                 onUploaded={setField}
               />
-              <p className="text-[10px] text-[#444] -mt-2 font-rajdhani">
+              <p className="text-[10px] text-[#777] -mt-2 font-rajdhani">
                 Upload a portrait-cropped version for phones (&lt;768 px). Falls back to Desktop image if not set.
               </p>
 
@@ -458,7 +458,7 @@ export default function HeroCarouselPage() {
 
               {/* CTA */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">CTA Label</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">CTA Label</label>
                 <input value={form.ctaLabel} onChange={e => setField("ctaLabel", e.target.value)} placeholder="Get Started"
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
               </div>
@@ -467,7 +467,7 @@ export default function HeroCarouselPage() {
               <div className="border border-[#2a2a2a] rounded-xl p-4 space-y-3 bg-[#111]">
                 <div className="flex items-center gap-2 mb-1">
                   <Link2 size={12} className="text-[#dc2626]" />
-                  <span className="text-[11px] font-bold text-[#606060] uppercase tracking-widest font-rajdhani">Button Link Target</span>
+                  <span className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Button Link Target</span>
                 </div>
 
                 {/* Link type selector */}
@@ -480,7 +480,7 @@ export default function HeroCarouselPage() {
                       className={`py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest font-rajdhani transition-all ${
                         form.linkType === opt.value
                           ? "bg-[#dc2626] text-white"
-                          : "bg-[#1a1a1a] border border-[#2a2a2a] text-[#606060] hover:text-white hover:border-[#444]"
+                          : "bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white hover:border-[#444]"
                       }`}
                     >
                       {opt.label}
@@ -492,7 +492,7 @@ export default function HeroCarouselPage() {
                 {form.linkType === "course" && (
                   <div className="space-y-2">
                     <div className="relative">
-                      <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+                      <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#777]" />
                       <input
                         value={itemSearch}
                         onChange={e => setItemSearch(e.target.value)}
@@ -517,7 +517,7 @@ export default function HeroCarouselPage() {
                             {c.title}
                           </button>
                         ))}
-                      {courses.length === 0 && <p className="text-[11px] text-[#444] text-center py-2">No courses found</p>}
+                      {courses.length === 0 && <p className="text-[11px] text-[#777] text-center py-2">No courses found</p>}
                     </div>
                     {form.linkedId && (
                       <p className="text-[10px] text-[#dc2626] font-mono">→ /learning/{form.linkedId}</p>
@@ -529,7 +529,7 @@ export default function HeroCarouselPage() {
                 {form.linkType === "workshop" && (
                   <div className="space-y-2">
                     <div className="relative">
-                      <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+                      <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#777]" />
                       <input
                         value={itemSearch}
                         onChange={e => setItemSearch(e.target.value)}
@@ -554,7 +554,7 @@ export default function HeroCarouselPage() {
                             {w.title}
                           </button>
                         ))}
-                      {workshops.length === 0 && <p className="text-[11px] text-[#444] text-center py-2">No workshops found</p>}
+                      {workshops.length === 0 && <p className="text-[11px] text-[#777] text-center py-2">No workshops found</p>}
                     </div>
                     {form.linkedId && (
                       <p className="text-[10px] text-[#dc2626] font-mono">→ /workshop/{form.linkedId}</p>
@@ -564,10 +564,10 @@ export default function HeroCarouselPage() {
 
                 {/* Products / Resources — no picker needed */}
                 {form.linkType === "products" && (
-                  <p className="text-[11px] text-[#606060] font-mono">→ /Products</p>
+                  <p className="text-[11px] text-[#888] font-mono">→ /Products</p>
                 )}
                 {form.linkType === "resources" && (
-                  <p className="text-[11px] text-[#606060] font-mono">→ /Resources</p>
+                  <p className="text-[11px] text-[#888] font-mono">→ /Resources</p>
                 )}
 
                 {/* Custom URL */}
@@ -579,7 +579,7 @@ export default function HeroCarouselPage() {
 
               {/* Badge Text */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Badge Text <span className="text-[#444] normal-case tracking-normal">(optional)</span></label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Badge Text <span className="text-[#777] normal-case tracking-normal">(optional)</span></label>
                 <input value={form.badgeText} onChange={e => setField("badgeText", e.target.value)} placeholder="NEW"
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
               </div>
@@ -595,7 +595,7 @@ export default function HeroCarouselPage() {
             </div>
 
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">
+              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">
                 Cancel
               </button>
               <button onClick={handleSave} disabled={createSlide.isPending || updateSlide.isPending || !!uploadingField}
@@ -614,7 +614,7 @@ export default function HeroCarouselPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={36} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Delete Slide?</h3>
-            <p className="text-[#606060] text-xs mb-6">This action cannot be undone.</p>
+            <p className="text-[#888] text-xs mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleting(null)} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest hover:text-white transition-all">
                 Cancel

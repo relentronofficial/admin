@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { 
@@ -299,7 +299,7 @@ export default function MembersListPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Community Members</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Manage TBT member profiles and business records.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Manage TBT member profiles and business records.</p>
             </div>
           </div>
 
@@ -325,7 +325,7 @@ export default function MembersListPage() {
                  <stat.icon size={20} />
                </div>
                <div>
-                 <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">{stat.label}</p>
+                 <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">{stat.label}</p>
                  <p className="text-xl font-bold text-[#f0f0f0] font-rajdhani">{stat.value}</p>
                </div>
              </div>
@@ -351,7 +351,7 @@ export default function MembersListPage() {
                   "relative px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani border-b-2 transition-all flex items-center gap-1.5",
                   statusFilter === tab.value
                     ? "text-[#dc2626] border-[#dc2626]"
-                    : "text-[#606060] border-transparent hover:text-[#a0a0a0]"
+                    : "text-[#888] border-transparent hover:text-[#a0a0a0]"
                 )}
               >
                 {tab.label}
@@ -371,9 +371,9 @@ export default function MembersListPage() {
                 placeholder="SEARCH MEMBERS..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-[#141414] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[12px] font-rajdhani font-bold tracking-wider outline-none focus:border-[#dc2626] transition-all text-[#f0f0f0] placeholder:text-[#444]"
+                className="w-full bg-[#141414] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[12px] font-rajdhani font-bold tracking-wider outline-none focus:border-[#dc2626] transition-all text-[#f0f0f0] placeholder:text-[#777]"
               />
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#777]" />
             </div>
 
             <div className="flex items-center gap-3 w-full md:w-auto">
@@ -394,18 +394,18 @@ export default function MembersListPage() {
               </div>
             ) : members.length === 0 ? (
                <div className="text-center py-20 space-y-4">
-                <Users size={40} className="mx-auto text-[#333]" />
-                <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest">No Members Found</p>
+                <Users size={40} className="mx-auto text-[#666]" />
+                <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest">No Members Found</p>
               </div>
             ) : (
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
-                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Member Profile</th>
-                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Member ID</th>
-                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani text-center">Status</th>
-                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Plan</th>
-                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani text-right">Joined Date</th>
+                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Member Profile</th>
+                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Member ID</th>
+                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani text-center">Status</th>
+                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Plan</th>
+                    <th className="px-6 py-4 text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani text-right">Joined Date</th>
                     <th className="px-6 py-4 w-[50px]"></th>
                   </tr>
                 </thead>
@@ -418,7 +418,7 @@ export default function MembersListPage() {
                             {member.profilePhotoUrl ? (
                               <img src={member.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center text-[#333]">
+                              <div className="w-full h-full flex items-center justify-center text-[#666]">
                                 <User size={20} />
                               </div>
                             )}
@@ -428,8 +428,8 @@ export default function MembersListPage() {
                               {member.firstName} {member.lastName}
                             </p>
                             <div className="flex items-center gap-2 mt-0.5">
-                               <Mail size={10} className="text-[#444]" />
-                               <p className="text-[11px] text-[#606060] truncate max-w-[150px]">{member.email}</p>
+                               <Mail size={10} className="text-[#777]" />
+                               <p className="text-[11px] text-[#888] truncate max-w-[150px]">{member.email}</p>
                             </div>
                           </div>
                         </div>
@@ -468,7 +468,7 @@ export default function MembersListPage() {
                                 e.stopPropagation();
                                 setActiveMenuId(activeMenuId === member.id ? null : member.id);
                             }}
-                            className="text-[#444] hover:text-white p-1 rounded hover:bg-[#2a2a2a] transition-all"
+                            className="text-[#777] hover:text-white p-1 rounded hover:bg-[#2a2a2a] transition-all"
                           >
                             <MoreVertical size={16} />
                           </button>
@@ -530,7 +530,7 @@ export default function MembersListPage() {
 
           {!isLoading && members.length > 0 && (
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a]/30 flex items-center justify-between">
-              <p className="text-[11px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">
+              <p className="text-[11px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">
                 Showing <span className="text-[#a0a0a0] font-bold">{(page-1)*limit + 1}</span> to <span className="text-[#a0a0a0] font-bold">{Math.min(page*limit, total)}</span> of <span className="text-[#a0a0a0] font-bold">{total}</span> members
               </p>
               
@@ -538,14 +538,14 @@ export default function MembersListPage() {
                 <button 
                   onClick={() => setPage(p => Math.max(1, p-1))}
                   disabled={page === 1}
-                  className="w-8 h-8 flex items-center justify-center bg-[#141414] border border-[#333] rounded text-[#606060] hover:text-white disabled:opacity-20 transition-all"
+                  className="w-8 h-8 flex items-center justify-center bg-[#141414] border border-[#333] rounded text-[#888] hover:text-white disabled:opacity-20 transition-all"
                 >
                   <ChevronLeft size={16} />
                 </button>
                 <button 
                   onClick={() => setPage(p => Math.min(totalPages, p+1))}
                   disabled={page === totalPages || totalPages === 0}
-                  className="w-8 h-8 flex items-center justify-center bg-[#141414] border border-[#333] rounded text-[#606060] hover:text-white disabled:opacity-20 transition-all"
+                  className="w-8 h-8 flex items-center justify-center bg-[#141414] border border-[#333] rounded text-[#888] hover:text-white disabled:opacity-20 transition-all"
                 >
                   <ChevronRight size={16} />
                 </button>
@@ -564,7 +564,7 @@ export default function MembersListPage() {
                 <Eye className="text-blue-500" size={20} />
                 <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest">Complete Member Dossier</h3>
               </div>
-              <button onClick={() => setViewingMember(null)} className="text-[#606060] hover:text-white transition-colors">
+              <button onClick={() => setViewingMember(null)} className="text-[#888] hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -676,7 +676,7 @@ export default function MembersListPage() {
 
                 {viewingMember.notes && (
                   <section className="pt-4 border-t border-[#2a2a2a]">
-                    <label className="block text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 font-rajdhani">Administrative Observations</label>
+                    <label className="block text-[10px] text-[#888] font-bold uppercase tracking-widest mb-2 font-rajdhani">Administrative Observations</label>
                     <p className="text-[13px] text-[#a0a0a0] leading-relaxed italic">&quot;{viewingMember.notes}&quot;</p>
                   </section>
                 )}
@@ -703,7 +703,7 @@ export default function MembersListPage() {
                 <Pencil className="text-green-500" size={20} />
                 <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest">Edit Member</h3>
               </div>
-              <button onClick={() => setEditingMember(null)} className="text-[#606060] hover:text-white transition-colors">
+              <button onClick={() => setEditingMember(null)} className="text-[#888] hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -713,26 +713,26 @@ export default function MembersListPage() {
 
                 {/* ── 01. Basic Info ─────────────────────────────────────── */}
                 <section>
-                  <h4 className="text-[11px] font-bold text-[#444] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">01. Basic Info</h4>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">01. Basic Info</h4>
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">First Name</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">First Name</label>
                         <input {...register("firstName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                         {errors.firstName && <p className="text-[12px] text-red-500 mt-1">{errors.firstName.message}</p>}
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Last Name</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Last Name</label>
                         <input {...register("lastName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">DOB</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">DOB</label>
                         <input type="date" {...register("dob")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm color-scheme-dark" />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Gender</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Gender</label>
                         <select {...register("gender")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="">Select...</option>
                           <option value="male">Male</option>
@@ -744,12 +744,12 @@ export default function MembersListPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Email</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Email</label>
                         <input {...register("email")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                         {errors.email && <p className="text-[12px] text-red-500 mt-1">{errors.email.message}</p>}
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Phone</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Phone</label>
                         <div className="flex items-center bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 overflow-hidden focus-within:border-[#dc2626]">
                           <span className="px-4 text-[#888] font-bold text-sm border-r border-[#2a2a2a]">+91</span>
                           <input {...register("phone")} className="w-full h-full bg-transparent px-4 text-white text-sm outline-none" />
@@ -758,15 +758,15 @@ export default function MembersListPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">City</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">City</label>
                         <input {...register("city")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">State</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">State</label>
                         <input {...register("state")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Pincode</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Pincode</label>
                         <input {...register("pincode")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                     </div>
@@ -775,21 +775,21 @@ export default function MembersListPage() {
 
                 {/* ── 02. Business Info ──────────────────────────────────── */}
                 <section>
-                  <h4 className="text-[11px] font-bold text-[#444] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">02. Business Info</h4>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">02. Business Info</h4>
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Business Name</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Name</label>
                         <input {...register("businessName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Business Established On</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Established On</label>
                         <input type="date" {...register("businessEstablishedOn")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm color-scheme-dark" />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Product/Service Type</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Product/Service Type</label>
                         <select {...register("productServiceType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="">Select...</option>
                           <option value="Product-based">Product-based</option>
@@ -799,7 +799,7 @@ export default function MembersListPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Instagram Link</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Instagram Link</label>
                         <div className="flex items-center bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 overflow-hidden focus-within:border-[#dc2626]">
                           <span className="px-4 text-[#888] font-bold text-sm">@</span>
                           <input {...register("instagramLink")} className="w-full h-full bg-transparent pr-4 text-white text-sm outline-none" />
@@ -808,7 +808,7 @@ export default function MembersListPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Annual Turnover</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Annual Turnover</label>
                         <select {...register("annualTurnover")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="">Select...</option>
                           <option value="Under 10L">Under 10L</option>
@@ -820,13 +820,13 @@ export default function MembersListPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Goal after 90 Days</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Goal after 90 Days</label>
                         <input {...register("goalAfter90Days")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Preferred Session Mode</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Preferred Session Mode</label>
                         <select {...register("preferredSessionMode")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="">Select...</option>
                           <option value="online">Online</option>
@@ -835,12 +835,12 @@ export default function MembersListPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">GST Number</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">GST Number</label>
                         <input {...register("gstNumber")} placeholder="22AAAAA0000A1Z5" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-3 font-rajdhani">Existing Marketing Channel</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-3 font-rajdhani">Existing Marketing Channel</label>
                       <div className="flex flex-wrap gap-3">
                         {MARKETING_CHANNELS.map(ch => (
                           <button
@@ -860,15 +860,15 @@ export default function MembersListPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Name of the Marketing Channel</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Name of the Marketing Channel</label>
                       <input {...register("marketingChannelName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Domain & Hosting Details</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Domain & Hosting Details</label>
                       <input {...register("domainHostingDetails")} placeholder="Provider, expiry dates, etc." className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Business Address</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Address</label>
                       <textarea {...register("businessAddress")} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
                     </div>
                   </div>
@@ -876,18 +876,18 @@ export default function MembersListPage() {
 
                 {/* ── 03. Key Challenges & Support ──────────────────────── */}
                 <section>
-                  <h4 className="text-[11px] font-bold text-[#444] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">03. Key Challenges & Support</h4>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">03. Key Challenges & Support</h4>
                   <div className="space-y-5">
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Challenge 1</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Challenge 1</label>
                       <input {...register("challenge1")} placeholder="Primary business obstacle" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Challenge 2</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Challenge 2</label>
                       <input {...register("challenge2")} placeholder="Secondary concern" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Challenge 3</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Challenge 3</label>
                       <input {...register("challenge3")} placeholder="Other support needed" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                     </div>
                     <div className="grid grid-cols-2 gap-5">
@@ -925,7 +925,7 @@ export default function MembersListPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Notes</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Notes</label>
                       <textarea {...register("notes")} rows={3} placeholder="Administrative observations..." className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
                     </div>
                   </div>
@@ -933,11 +933,11 @@ export default function MembersListPage() {
 
                 {/* ── 04. Account Management ─────────────────────────────── */}
                 <section>
-                  <h4 className="text-[11px] font-bold text-[#444] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">04. Account Management</h4>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">04. Account Management</h4>
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Membership Plan</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Membership Plan</label>
                         <select {...register("membershipPlan")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="free">Free</option>
                           <option value="starter">Starter</option>
@@ -947,7 +947,7 @@ export default function MembersListPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Status</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Status</label>
                         <select {...register("status")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="active">Active</option>
                           <option value="inactive">Inactive</option>
@@ -959,7 +959,7 @@ export default function MembersListPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Verification Status</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Verification Status</label>
                         <select {...register("verificationStatus")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="awaiting_kyc">Awaiting KYC</option>
                           <option value="under_review">Under Review</option>
@@ -968,7 +968,7 @@ export default function MembersListPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Account Manager</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Account Manager</label>
                         <select {...register("accountManagerId")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="">Unassigned</option>
                           {managers?.map((m: any) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
@@ -976,8 +976,8 @@ export default function MembersListPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">
-                        Access Tier <span className="normal-case text-[#444] font-normal">(controls locked content)</span>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">
+                        Access Tier <span className="normal-case text-[#777] font-normal">(controls locked content)</span>
                       </label>
                       <select {...register("currentTier", { valueAsNumber: true })} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                         {tiers.length === 0
@@ -990,8 +990,8 @@ export default function MembersListPage() {
                     </div>
                     {watchPlan && watchPlan !== 'free' && (
                       <div>
-                        <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">
-                          Subscription End Date <span className="normal-case text-[#444] font-normal">(set to create or extend access)</span>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">
+                          Subscription End Date <span className="normal-case text-[#777] font-normal">(set to create or extend access)</span>
                         </label>
                         <input
                           type="date"
@@ -999,12 +999,12 @@ export default function MembersListPage() {
                           min={new Date().toISOString().split('T')[0]}
                           className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm color-scheme-dark"
                         />
-                        <p className="text-[11px] text-[#555] mt-1.5">Leave blank to keep existing subscription unchanged.</p>
+                        <p className="text-[11px] text-[#888] mt-1.5">Leave blank to keep existing subscription unchanged.</p>
                       </div>
                     )}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">
-                        Password <span className="normal-case text-[#444] font-normal">(leave blank to keep unchanged)</span>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">
+                        Password <span className="normal-case text-[#777] font-normal">(leave blank to keep unchanged)</span>
                       </label>
                       <div className="flex items-center bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 overflow-hidden focus-within:border-[#dc2626]">
                         <input
@@ -1016,7 +1016,7 @@ export default function MembersListPage() {
                         <button
                           type="button"
                           onClick={() => setShowEditPassword(p => !p)}
-                          className="px-3 text-[#555] hover:text-white transition-colors"
+                          className="px-3 text-[#888] hover:text-white transition-colors"
                         >
                           {showEditPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
@@ -1024,7 +1024,7 @@ export default function MembersListPage() {
                       {errors.password && <p className="text-[12px] text-red-500 mt-1">{errors.password.message}</p>}
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">KYC Document</label>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">KYC Document</label>
                       <div
                         onClick={() => editKycRef.current?.click()}
                         className="border-2 border-dashed border-[#333] hover:border-[#dc2626]/50 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-[#1a1a1a]"
@@ -1033,7 +1033,7 @@ export default function MembersListPage() {
                         <p className="text-[13px] text-white font-medium mb-1">
                           {editKycDoc ? editKycDoc.name : editingMember?.kycDocumentUrl ? "Replace existing document" : "Click to upload Aadhaar / GST Certificate"}
                         </p>
-                        <p className="text-[11px] text-[#555] uppercase tracking-wider">PDF, JPG up to 10MB</p>
+                        <p className="text-[11px] text-[#888] uppercase tracking-wider">PDF, JPG up to 10MB</p>
                         <input
                           type="file"
                           ref={editKycRef}
@@ -1108,7 +1108,7 @@ export default function MembersListPage() {
                   <button
                     type="button"
                     onClick={() => setEditingMember(null)}
-                    className="px-8 py-2.5 rounded-md font-rajdhani font-bold text-[12px] text-[#606060] hover:text-white uppercase tracking-widest transition-all"
+                    className="px-8 py-2.5 rounded-md font-rajdhani font-bold text-[12px] text-[#888] hover:text-white uppercase tracking-widest transition-all"
                   >
                     Cancel
                   </button>
@@ -1139,7 +1139,7 @@ export default function MembersListPage() {
                 <AlertCircle className="text-red-500" size={32} />
               </div>
               <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest mb-2 text-[#f0f0f0]">Authorize Deletion?</h3>
-              <p className="text-[#606060] text-sm leading-relaxed mb-8">
+              <p className="text-[#888] text-sm leading-relaxed mb-8">
                 This action is permanent. All member data will be purged from the system.
               </p>
               <div className="flex flex-col gap-3">
@@ -1167,7 +1167,7 @@ export default function MembersListPage() {
 function InfoItem({ label, value, valueClassName = "text-white" }: { label: string; value: string | React.ReactNode; valueClassName?: string }) {
   return (
     <div>
-      <label className="block text-[10px] text-[#555] font-bold uppercase tracking-widest mb-1 font-rajdhani">{label}</label>
+      <label className="block text-[10px] text-[#888] font-bold uppercase tracking-widest mb-1 font-rajdhani">{label}</label>
       <div className={cn("text-[14px] font-medium tracking-tight", valueClassName)}>{value}</div>
     </div>
   );
@@ -1223,7 +1223,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
       paused: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
       expired: "bg-red-500/10 text-red-400 border-red-500/20",
     };
-    return map[status] || "bg-[#222] text-[#606060] border-[#333]";
+    return map[status] || "bg-[#222] text-[#888] border-[#333]";
   };
 
   return (
@@ -1234,7 +1234,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
             <Trophy className="text-yellow-500" size={20} />
             <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest">Member Progress & Badges</h3>
           </div>
-          <button onClick={onClose} className="text-[#606060] hover:text-white transition-colors"><X size={20} /></button>
+          <button onClick={onClose} className="text-[#888] hover:text-white transition-colors"><X size={20} /></button>
         </div>
 
         {/* Tabs */}
@@ -1247,7 +1247,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-6 py-3.5 font-rajdhani font-bold text-[11px] uppercase tracking-[2px] border-b-2 transition-all ${activeTab === tab.key ? "border-[#dc2626] text-[#f0f0f0]" : "border-transparent text-[#606060] hover:text-[#a0a0a0]"}`}
+              className={`px-6 py-3.5 font-rajdhani font-bold text-[11px] uppercase tracking-[2px] border-b-2 transition-all ${activeTab === tab.key ? "border-[#dc2626] text-[#f0f0f0]" : "border-transparent text-[#888] hover:text-[#a0a0a0]"}`}
             >
               {tab.label}
             </button>
@@ -1262,12 +1262,12 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                 <h4 className="flex items-center gap-2 text-[#dc2626] font-rajdhani font-bold text-[13px] uppercase tracking-[2px] mb-4"><Trophy size={16} /> Assigned Badges</h4>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {memberBadges.length === 0
-                    ? <p className="text-[#444] text-sm italic">No badges assigned yet.</p>
+                    ? <p className="text-[#777] text-sm italic">No badges assigned yet.</p>
                     : memberBadges.map((mb: any) => (
                       <div key={mb.id} className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a1a] border border-[#333] rounded-lg">
                         {mb.badge?.iconUrl && <img src={mb.badge.iconUrl} alt="" className="w-4 h-4 object-contain" />}
                         <span className="text-[12px] font-bold text-[#f0f0f0]">{mb.badge?.label || mb.badge?.name}</span>
-                        <button onClick={() => handleRemove(mb.badgeId)} className="text-[#444] hover:text-red-400 transition-colors"><X size={12} /></button>
+                        <button onClick={() => handleRemove(mb.badgeId)} className="text-[#777] hover:text-red-400 transition-colors"><X size={12} /></button>
                       </div>
                     ))}
                 </div>
@@ -1313,17 +1313,17 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
               {/* Enrolled workshops list */}
               {memberEnrollments.length === 0 ? (
                 <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-center py-10 space-y-2">
-                  <Briefcase size={28} className="mx-auto text-[#333]" />
-                  <p className="text-[#444] text-sm font-rajdhani font-bold uppercase tracking-widest">Not enrolled in any workshops</p>
+                  <Briefcase size={28} className="mx-auto text-[#666]" />
+                  <p className="text-[#777] text-sm font-rajdhani font-bold uppercase tracking-widest">Not enrolled in any workshops</p>
                 </div>
               ) : (
                 <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl overflow-hidden">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-[#2a2a2a]">
-                        <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Workshop</th>
-                        <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Status</th>
-                        <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Enrolled</th>
+                        <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Workshop</th>
+                        <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Status</th>
+                        <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Enrolled</th>
                         <th className="px-4 py-3 w-[48px]" />
                       </tr>
                     </thead>
@@ -1336,11 +1336,11 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                               {e.status}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-[#606060] text-[12px]">{safeFormatDate(e.enrolledAt)}</td>
+                          <td className="px-4 py-3 text-[#888] text-[12px]">{safeFormatDate(e.enrolledAt)}</td>
                           <td className="px-4 py-3">
                             <button
                               onClick={() => setRemovingEnrollmentId(e.workshopId)}
-                              className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"
+                              className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"
                             >
                               <Trash2 size={13} />
                             </button>
@@ -1358,11 +1358,11 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
           {activeTab === "progress" && (
             <div className="space-y-4">
               {isLoading ? (
-                <div className="flex items-center gap-2 text-[#606060] py-10 justify-center"><Loader2 size={20} className="animate-spin" /> Loading progress...</div>
+                <div className="flex items-center gap-2 text-[#888] py-10 justify-center"><Loader2 size={20} className="animate-spin" /> Loading progress...</div>
               ) : !progress?.workshops?.length ? (
                 <div className="text-center py-12 space-y-3">
-                  <Target size={32} className="mx-auto text-[#333]" />
-                  <p className="text-[#444] text-sm font-rajdhani font-bold uppercase tracking-widest">Not enrolled in any workshops yet.</p>
+                  <Target size={32} className="mx-auto text-[#666]" />
+                  <p className="text-[#777] text-sm font-rajdhani font-bold uppercase tracking-widest">Not enrolled in any workshops yet.</p>
                 </div>
               ) : (
                 progress.workshops.map((w: any) => {
@@ -1390,10 +1390,10 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                               <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pctColor }} />
                             </div>
                             <span className="text-[11px] font-bold font-rajdhani shrink-0" style={{ color: pctColor }}>{pct}%</span>
-                            <span className="text-[10px] text-[#606060] shrink-0">{w.completedCount}/{w.totalCount} eps</span>
+                            <span className="text-[10px] text-[#888] shrink-0">{w.completedCount}/{w.totalCount} eps</span>
                           </div>
                         </div>
-                        <MessageSquare size={14} className={`shrink-0 transition-transform ${isExpanded ? "rotate-180 text-[#dc2626]" : "text-[#444]"}`} />
+                        <MessageSquare size={14} className={`shrink-0 transition-transform ${isExpanded ? "rotate-180 text-[#dc2626]" : "text-[#777]"}`} />
                       </button>
 
                       {/* Expanded details */}
@@ -1401,7 +1401,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                         <div className="border-t border-[#2a2a2a] px-5 py-4 space-y-5">
                           {/* Last active */}
                           {w.lastActiveAt && (
-                            <p className="text-[10px] text-[#606060] font-rajdhani uppercase tracking-widest">
+                            <p className="text-[10px] text-[#888] font-rajdhani uppercase tracking-widest">
                               Last active: <span className="text-[#a0a0a0]">{safeFormatDate(w.lastActiveAt)}</span>
                             </p>
                           )}
@@ -1409,13 +1409,13 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                           {/* Challenge breakdown */}
                           {w.challenges?.length > 0 && (
                             <div>
-                              <p className="text-[11px] font-bold text-[#606060] uppercase tracking-[2px] font-rajdhani mb-2">Challenge Breakdown</p>
+                              <p className="text-[11px] font-bold text-[#888] uppercase tracking-[2px] font-rajdhani mb-2">Challenge Breakdown</p>
                               <table className="w-full text-sm">
                                 <thead>
                                   <tr className="text-left">
-                                    <th className="py-1.5 pr-4 text-[10px] text-[#444] font-bold uppercase tracking-widest font-rajdhani">Challenge</th>
-                                    <th className="py-1.5 pr-4 text-[10px] text-[#444] font-bold uppercase tracking-widest font-rajdhani text-center">Episodes</th>
-                                    <th className="py-1.5 text-[10px] text-[#444] font-bold uppercase tracking-widest font-rajdhani text-right">%</th>
+                                    <th className="py-1.5 pr-4 text-[10px] text-[#777] font-bold uppercase tracking-widest font-rajdhani">Challenge</th>
+                                    <th className="py-1.5 pr-4 text-[10px] text-[#777] font-bold uppercase tracking-widest font-rajdhani text-center">Episodes</th>
+                                    <th className="py-1.5 text-[10px] text-[#777] font-bold uppercase tracking-widest font-rajdhani text-right">%</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[#1f1f1f]">
@@ -1425,7 +1425,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                                       <tr key={i}>
                                         <td className="py-2 pr-4 text-[#a0a0a0] text-[12px] truncate max-w-[200px]">{ch.title}</td>
                                         <td className="py-2 pr-4 text-center">
-                                          <span className="text-[11px] text-[#606060]">{ch.completedCount}/{ch.totalCount}</span>
+                                          <span className="text-[11px] text-[#888]">{ch.completedCount}/{ch.totalCount}</span>
                                         </td>
                                         <td className="py-2 text-right">
                                           <span className="text-[11px] font-bold font-rajdhani" style={{ color: cp >= 100 ? "#22c55e" : cp > 50 ? "#eab308" : "#dc2626" }}>{cp}%</span>
@@ -1441,7 +1441,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                           {/* Assignment submissions */}
                           {w.assignments?.length > 0 && (
                             <div>
-                              <p className="text-[11px] font-bold text-[#606060] uppercase tracking-[2px] font-rajdhani mb-2">Assignment Submissions</p>
+                              <p className="text-[11px] font-bold text-[#888] uppercase tracking-[2px] font-rajdhani mb-2">Assignment Submissions</p>
                               <div className="space-y-1.5">
                                 {w.assignments.map((a: any, i: number) => (
                                   <div key={i} className="flex items-center justify-between bg-[#141414] border border-[#222] rounded-lg px-3 py-2">
@@ -1450,10 +1450,10 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                                       {a.isSubmitted ? (
                                         <>
                                           <CheckCircle2 size={13} className="text-green-400" />
-                                          <span className="text-[10px] text-[#606060]">{a.submittedAt ? safeFormatDate(a.submittedAt) : "Submitted"}</span>
+                                          <span className="text-[10px] text-[#888]">{a.submittedAt ? safeFormatDate(a.submittedAt) : "Submitted"}</span>
                                         </>
                                       ) : (
-                                        <span className="text-[10px] text-[#444] font-rajdhani uppercase tracking-widest">Pending</span>
+                                        <span className="text-[10px] text-[#777] font-rajdhani uppercase tracking-widest">Pending</span>
                                       )}
                                     </div>
                                   </div>
@@ -1482,7 +1482,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={32} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Remove Enrollment?</h3>
-            <p className="text-[#606060] text-sm mb-6">The member will lose access to this workshop.</p>
+            <p className="text-[#888] text-sm mb-6">The member will lose access to this workshop.</p>
             <div className="flex gap-3">
               <button onClick={() => setRemovingEnrollmentId(null)} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest hover:text-white transition-all">Cancel</button>
               <button onClick={() => handleRemoveEnrollment(removingEnrollmentId)} disabled={removeEnrollment.isPending} className="flex-1 py-2.5 bg-[#dc2626] hover:bg-red-700 text-white rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center justify-center gap-2">

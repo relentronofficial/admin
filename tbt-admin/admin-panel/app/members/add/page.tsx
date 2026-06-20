@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import {
@@ -203,7 +203,7 @@ export default function AddMemberPage() {
                   {profilePreview ? (
                     <img src={profilePreview} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
-                    <Camera size={24} className="text-[#555] group-hover:text-white transition-colors" />
+                    <Camera size={24} className="text-[#888] group-hover:text-white transition-colors" />
                   )}
                   <input type="file" ref={profileRef} onChange={handleProfileChange} accept="image/*" className="hidden" />
                 </div>
@@ -501,7 +501,7 @@ export default function AddMemberPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-3 text-[#555] hover:text-white transition-colors"
+                      className="absolute right-3 text-[#888] hover:text-white transition-colors"
                       tabIndex={-1}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

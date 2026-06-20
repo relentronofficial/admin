@@ -36,8 +36,14 @@ npm run typecheck        # Both workspaces
 npm run lint
 npm run format
 
-# TypeScript check (targeted — use before/after any edit)
+# TypeScript check (targeted — Bash syntax; use before/after any edit)
 cd tbt-admin && npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | grep <filename>
+# PowerShell equivalent:
+# npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | Select-String <filename>
+
+# Clean build after auth/routing changes (required to avoid stale .next cache)
+rmdir /s /q .next && npm run dev   # Windows PowerShell
+# rm -rf .next && npm run dev      # Mac/Linux
 
 # Database
 npm run prepare                      # Regenerate Prisma client after schema changes
@@ -65,7 +71,8 @@ npm run format      # prettier --write .
 - `ClerkProvider` wraps root layout. `AuthInterceptor` in `admin-panel/components/Providers.tsx` registers an Axios request interceptor that calls `getToken()` (with 52-second in-memory cache) and attaches `Authorization: Bearer <token>` to every `apiClient` call
 - Admin socket authenticates via Clerk token in `socket.handshake.auth.token`
 
-**User web auth (custom JWT cookies — NO Clerk):**
+**User web auth (custom JWT cookies):**
+- `@clerk/nextjs` IS installed in user-web, but only for: the `app/(auth)/` Clerk-hosted route group and middleware auth-state detection. The main `/login` page and all backend API calls use custom JWT cookies — never Clerk JWTs or bearer tokens.
 - `POST /api/user-auth/login` → phone + password → bcrypt check → OTP sent via WhatsApp → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
 - Axios client has `withCredentials: true`; cookies are sent automatically on every request
 - Auto-refresh: interceptor catches 401, calls `/api/user-auth/refresh`, retries original request (skipped for `/api/user-auth/` paths)
@@ -147,6 +154,8 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
+- `lib/hooks/useCourses.ts` — course catalog hooks (user-facing)
+- `lib/hooks/useEvents.ts` — events hooks
 - All hooks are `"use client"` and use TanStack Query v5
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
@@ -260,6 +269,11 @@ const detectDuration = (file: File): Promise<number> =>
   });
 ```
 
+### Clerk Guards (Admin Panel)
+- Always check `isLoaded` before accessing Clerk state in Client Components: `if (!isLoaded) return null`
+- Only **one layer** should own a given redirect path — stacking redirects across middleware + layout + page causes infinite redirect loops
+- Never use `useUser()`, `useAuth()`, or `useSession()` inside Server Components — these are Client Component-only hooks
+
 ### Real-time (Admin)
 `lib/socket/client.ts` exports `getAdminSocket()` — call inside `useEffect`, register `.on()` listeners, clean up with `.off()` on unmount.
 
@@ -327,7 +341,7 @@ Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` 
 | Cloudflare R2 | File/image/video storage (presigned URL uploads) |
 | Bunny Stream | Video hosting (HLS + iframe embed) |
 | LiveKit | Workshop live calls (`LIVEKIT_API_KEY/SECRET/WS_URL/WEBHOOK_SECRET`) |
-| Clerk | Auth for admin panel only (not user web) |
+| Clerk | Admin panel auth (API + frontend). Also installed in user-web for `(auth)/` pages and middleware auth-state; main user login uses JWT cookies |
 | Firebase | Push notifications |
 | Resend / Twilio | Email / SMS |
 | Sentry | Error tracking |

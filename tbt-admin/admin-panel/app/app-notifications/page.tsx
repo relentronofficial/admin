@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useRef, useState } from "react";
 import { Trash2, Bell, X, Loader2, AlertCircle, Users, Send, BarChart2, Search, CheckCircle2, Image as ImageIcon, Film, Upload } from "lucide-react";
@@ -20,7 +20,7 @@ const RECIPIENT_TYPES = [
   { value: "batch",    label: "By Batch"              },
 ];
 
-const labelCls  = "block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani";
+const labelCls  = "block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani";
 const inputCls  = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm";
 const selectCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none";
 
@@ -184,7 +184,7 @@ export default function AppNotificationsPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">App Notifications</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Send push notifications to TBT members.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Send push notifications to TBT members.</p>
             </div>
           </div>
           <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-2 bg-[#dc2626] text-white px-5 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
@@ -197,14 +197,14 @@ export default function AppNotificationsPage() {
           <div className="bg-[#181818] border border-[#2a2a2a] p-4 rounded-xl flex items-center gap-4">
             <div className="p-2.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-[#dc2626]"><Bell size={20} /></div>
             <div>
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">Total Sent</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">Total Sent</p>
               <p className="text-xl font-bold text-[#f0f0f0] font-rajdhani">{total}</p>
             </div>
           </div>
           <div className="bg-[#181818] border border-[#2a2a2a] p-4 rounded-xl flex items-center gap-4">
             <div className="p-2.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-blue-400"><Users size={20} /></div>
             <div>
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">This Page</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">This Page</p>
               <p className="text-xl font-bold text-[#f0f0f0] font-rajdhani">{notifications.length}</p>
             </div>
           </div>
@@ -216,19 +216,19 @@ export default function AppNotificationsPage() {
             <div className="flex items-center justify-center py-20"><Loader2 size={32} className="animate-spin text-[#dc2626]" /></div>
           ) : notifications.length === 0 ? (
             <div className="text-center py-20 space-y-3">
-              <Bell size={36} className="mx-auto text-[#333]" />
-              <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No notifications sent yet</p>
+              <Bell size={36} className="mx-auto text-[#666]" />
+              <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No notifications sent yet</p>
             </div>
           ) : (
             <table className="w-full">
               <thead>
                 <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
-                  <th className="px-5 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Title</th>
-                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Type</th>
-                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Media</th>
-                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Sent At</th>
-                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Recipients</th>
-                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Read</th>
+                  <th className="px-5 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Title</th>
+                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Type</th>
+                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Media</th>
+                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Sent At</th>
+                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Recipients</th>
+                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Read</th>
                   <th className="px-4 py-4 w-[72px]" />
                 </tr>
               </thead>
@@ -238,7 +238,7 @@ export default function AppNotificationsPage() {
                     <tr className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-5 py-4">
                         <p className="font-bold text-[#f0f0f0] text-sm">{notif.title}</p>
-                        <p className="text-[11px] text-[#606060] mt-0.5 truncate max-w-[260px]">{notif.message}</p>
+                        <p className="text-[11px] text-[#888] mt-0.5 truncate max-w-[260px]">{notif.message}</p>
                       </td>
                       <td className="px-4 py-4">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${typeColor(notif.type)}`}>
@@ -256,9 +256,9 @@ export default function AppNotificationsPage() {
                             <Film size={12} /> Video
                           </span>
                         )}
-                        {!notif.mediaType && <span className="text-[#333]">—</span>}
+                        {!notif.mediaType && <span className="text-[#666]">—</span>}
                       </td>
-                      <td className="px-4 py-4 text-[12px] text-[#606060] whitespace-nowrap">
+                      <td className="px-4 py-4 text-[12px] text-[#888] whitespace-nowrap">
                         {notif.createdAt ? format(new Date(notif.createdAt), "dd MMM yyyy HH:mm") : "—"}
                       </td>
                       <td className="px-4 py-4 text-[13px] font-bold text-[#a0a0a0]">
@@ -272,11 +272,11 @@ export default function AppNotificationsPage() {
                           <button
                             onClick={() => setViewingStatsId(viewingStatsId === notif.id ? null : notif.id)}
                             title="View stats"
-                            className={`p-1.5 rounded transition-all ${viewingStatsId === notif.id ? "text-blue-400 bg-blue-400/10" : "text-[#444] hover:text-blue-400 hover:bg-blue-400/10"}`}
+                            className={`p-1.5 rounded transition-all ${viewingStatsId === notif.id ? "text-blue-400 bg-blue-400/10" : "text-[#777] hover:text-blue-400 hover:bg-blue-400/10"}`}
                           >
                             <BarChart2 size={14} />
                           </button>
-                          <button onClick={() => setDeleting(notif.id)} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
+                          <button onClick={() => setDeleting(notif.id)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -303,7 +303,7 @@ export default function AppNotificationsPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">Compose Notification</h3>
-              <button onClick={() => setShowForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto">
 
@@ -372,8 +372,8 @@ export default function AppNotificationsPage() {
                         onClick={() => fileInputRef.current?.click()}
                         className="w-full border border-dashed border-[#333] rounded-xl py-8 flex flex-col items-center gap-2 hover:border-[#dc2626] hover:bg-[#dc2626]/5 transition-all group"
                       >
-                        <Upload size={22} className="text-[#444] group-hover:text-[#dc2626] transition-colors" />
-                        <p className="text-[12px] text-[#606060] font-rajdhani font-bold uppercase tracking-widest">
+                        <Upload size={22} className="text-[#777] group-hover:text-[#dc2626] transition-colors" />
+                        <p className="text-[12px] text-[#888] font-rajdhani font-bold uppercase tracking-widest">
                           {mediaType === "image" ? "Upload Image (PNG, JPG, WEBP)" : "Upload Video (MP4 · max 40 sec)"}
                         </p>
                       </button>
@@ -431,13 +431,13 @@ export default function AppNotificationsPage() {
                   )}
                   <div className="relative">
                     <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 focus-within:border-[#dc2626] transition-all">
-                      <Search size={13} className="text-[#444] shrink-0" />
+                      <Search size={13} className="text-[#777] shrink-0" />
                       <input
                         value={memberSearch}
                         onChange={e => { setMemberSearch(e.target.value); setMemberDropOpen(true); }}
                         onFocus={() => setMemberDropOpen(true)}
                         placeholder="Search members..."
-                        className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-[#444]"
+                        className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-[#777]"
                       />
                     </div>
                     {memberDropOpen && memberSearch && memberResults.length > 0 && (
@@ -452,7 +452,7 @@ export default function AppNotificationsPage() {
                             >
                               <div>
                                 <p className="text-[13px] font-bold text-[#f0f0f0]">{fullName}</p>
-                                <p className="text-[11px] text-[#444]">{m.email}</p>
+                                <p className="text-[11px] text-[#777]">{m.email}</p>
                               </div>
                               {isSelected && <CheckCircle2 size={14} className="text-[#dc2626] shrink-0" />}
                             </button>
@@ -462,7 +462,7 @@ export default function AppNotificationsPage() {
                     )}
                   </div>
                   {selectedMembers.length > 0 && (
-                    <p className="text-[11px] text-[#444] mt-1">{selectedMembers.length} member{selectedMembers.length !== 1 ? "s" : ""} selected</p>
+                    <p className="text-[11px] text-[#777] mt-1">{selectedMembers.length} member{selectedMembers.length !== 1 ? "s" : ""} selected</p>
                   )}
                 </div>
               )}
@@ -491,7 +491,7 @@ export default function AppNotificationsPage() {
 
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSend} disabled={sendNotif.isPending || mediaUploading} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-60">
                 {sendNotif.isPending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send Now
               </button>
@@ -506,7 +506,7 @@ export default function AppNotificationsPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={36} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Delete Notification?</h3>
-            <p className="text-[#606060] text-sm mb-6">This action cannot be undone.</p>
+            <p className="text-[#888] text-sm mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleting(null)} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest hover:text-white transition-all">Cancel</button>
               <button onClick={() => handleDelete(deleting)} className="flex-1 py-2.5 bg-[#dc2626] hover:bg-red-700 text-white rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Delete</button>
@@ -521,9 +521,9 @@ export default function AppNotificationsPage() {
 function NotifReadCount({ notifId, visible }: { notifId: string; visible: boolean }) {
   const { data, isLoading } = useGetNotificationStats(notifId);
   const stats = (data as any)?.data;
-  if (!visible) return <span className="text-[#333] text-sm">—</span>;
-  if (isLoading) return <Loader2 size={12} className="animate-spin text-[#444]" />;
-  if (!stats) return <span className="text-[#333] text-sm">—</span>;
+  if (!visible) return <span className="text-[#666] text-sm">—</span>;
+  if (isLoading) return <Loader2 size={12} className="animate-spin text-[#777]" />;
+  if (!stats) return <span className="text-[#666] text-sm">—</span>;
   return <span className="text-[13px] font-bold text-green-400">{stats.read ?? stats.readCount ?? 0}</span>;
 }
 
@@ -531,7 +531,7 @@ function NotifStats({ notifId }: { notifId: string }) {
   const { data, isLoading } = useGetNotificationStats(notifId);
   const stats = (data as any)?.data;
   if (isLoading) return (
-    <div className="flex items-center gap-2 py-3 text-[#606060] text-sm">
+    <div className="flex items-center gap-2 py-3 text-[#888] text-sm">
       <Loader2 size={13} className="animate-spin" /> Loading stats...
     </div>
   );
@@ -541,11 +541,11 @@ function NotifStats({ notifId }: { notifId: string }) {
   const readRate = total > 0 ? Math.round((read / total) * 100) : 0;
   return (
     <div className="flex items-center gap-8 py-3">
-      <div><p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Recipients</p><p className="text-lg font-bold text-[#f0f0f0] font-rajdhani">{total}</p></div>
-      <div><p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Read</p><p className="text-lg font-bold text-green-400 font-rajdhani">{read}</p></div>
-      <div><p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani">Unread</p><p className="text-lg font-bold text-[#606060] font-rajdhani">{total - read}</p></div>
+      <div><p className="text-[10px] text-[#777] uppercase font-bold tracking-widest font-rajdhani">Recipients</p><p className="text-lg font-bold text-[#f0f0f0] font-rajdhani">{total}</p></div>
+      <div><p className="text-[10px] text-[#777] uppercase font-bold tracking-widest font-rajdhani">Read</p><p className="text-lg font-bold text-green-400 font-rajdhani">{read}</p></div>
+      <div><p className="text-[10px] text-[#777] uppercase font-bold tracking-widest font-rajdhani">Unread</p><p className="text-lg font-bold text-[#888] font-rajdhani">{total - read}</p></div>
       <div className="flex-1 max-w-[200px]">
-        <p className="text-[10px] text-[#444] uppercase font-bold tracking-widest font-rajdhani mb-1">Read Rate {readRate}%</p>
+        <p className="text-[10px] text-[#777] uppercase font-bold tracking-widest font-rajdhani mb-1">Read Rate {readRate}%</p>
         <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
           <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${readRate}%` }} />
         </div>

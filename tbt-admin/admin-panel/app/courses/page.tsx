@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import {
@@ -46,7 +46,7 @@ function FileUploadBtn({
 
   return (
     <div>
-      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
+      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
       <div className="flex items-center gap-2">
         {value && accept.startsWith("image") && (
           <img src={value} alt="" className="w-14 h-10 rounded object-cover border border-[#333] shrink-0" />
@@ -58,8 +58,8 @@ function FileUploadBtn({
         </button>
         {value && (
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[10px] text-[#555] font-mono truncate max-w-[140px]">{value.split("/").pop()}</span>
-            <button type="button" onClick={() => onUploaded("")} className="text-[#444] hover:text-red-400 shrink-0"><X size={12} /></button>
+            <span className="text-[10px] text-[#888] font-mono truncate max-w-[140px]">{value.split("/").pop()}</span>
+            <button type="button" onClick={() => onUploaded("")} className="text-[#777] hover:text-red-400 shrink-0"><X size={12} /></button>
           </div>
         )}
       </div>
@@ -120,7 +120,7 @@ export default function CoursesPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Courses</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">VOD course library with episodes.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">VOD course library with episodes.</p>
             </div>
           </div>
           <button onClick={openCreateCourse}
@@ -134,14 +134,14 @@ export default function CoursesPage() {
           <div className="bg-[#181818] border border-[#2a2a2a] p-4 rounded-xl flex items-center gap-4">
             <div className="p-2.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-[#dc2626]"><BookOpen size={20} /></div>
             <div>
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">Total Courses</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">Total Courses</p>
               <p className="text-xl font-bold text-[#f0f0f0] font-rajdhani">{total}</p>
             </div>
           </div>
           <div className="bg-[#181818] border border-[#2a2a2a] p-4 rounded-xl flex items-center gap-4">
             <div className="p-2.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-blue-400"><Film size={20} /></div>
             <div>
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">Showing</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">Showing</p>
               <p className="text-xl font-bold text-[#f0f0f0] font-rajdhani">{courses.length}</p>
             </div>
           </div>
@@ -153,8 +153,8 @@ export default function CoursesPage() {
             <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50">
               <div className="relative w-full md:w-72">
                 <input placeholder="Search courses..." value={search} onChange={e => setSearch(e.target.value)}
-                  className="w-full bg-[#141414] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[12px] font-rajdhani font-bold tracking-wider outline-none focus:border-[#dc2626] transition-all text-[#f0f0f0] placeholder:text-[#444]" />
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+                  className="w-full bg-[#141414] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[12px] font-rajdhani font-bold tracking-wider outline-none focus:border-[#dc2626] transition-all text-[#f0f0f0] placeholder:text-[#777]" />
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#777]" />
               </div>
             </div>
 
@@ -162,8 +162,8 @@ export default function CoursesPage() {
               <div className="flex items-center justify-center py-20"><Loader2 size={32} className="animate-spin text-[#dc2626]" /></div>
             ) : courses.length === 0 ? (
               <div className="text-center py-20 space-y-3">
-                <BookOpen size={36} className="mx-auto text-[#333]" />
-                <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No courses found</p>
+                <BookOpen size={36} className="mx-auto text-[#666]" />
+                <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No courses found</p>
               </div>
             ) : (
               <div className="divide-y divide-[#2a2a2a]">
@@ -176,21 +176,21 @@ export default function CoursesPage() {
                       <img src={c.thumbnailUrl} alt="" className="w-14 h-10 object-cover rounded border border-[#333] shrink-0" />
                     ) : (
                       <div className="w-14 h-10 rounded border border-[#333] bg-[#1a1a1a] flex items-center justify-center shrink-0">
-                        <ImageIcon size={14} className="text-[#444]" />
+                        <ImageIcon size={14} className="text-[#777]" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-bold text-[#f0f0f0] text-sm truncate group-hover:text-[#dc2626] transition-colors">{c.title}</p>
                         {!c.isActive && <span className="text-[10px] text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Inactive</span>}
-                        {c.requiredTier > 1 && <span className="text-[10px] text-[#606060] bg-[#1a1a1a] border border-[#333] px-2 py-0.5 rounded font-rajdhani font-bold shrink-0">Tier {c.requiredTier}</span>}
+                        {c.requiredTier > 1 && <span className="text-[10px] text-[#888] bg-[#1a1a1a] border border-[#333] px-2 py-0.5 rounded font-rajdhani font-bold shrink-0">Tier {c.requiredTier}</span>}
                       </div>
-                      <p className="text-[11px] text-[#444] font-mono">/{c.slug}</p>
-                      <p className="text-[11px] text-[#555]">{c._count?.courseEpisodes ?? 0} episode{c._count?.courseEpisodes !== 1 ? "s" : ""}</p>
+                      <p className="text-[11px] text-[#777] font-mono">/{c.slug}</p>
+                      <p className="text-[11px] text-[#888]">{c._count?.courseEpisodes ?? 0} episode{c._count?.courseEpisodes !== 1 ? "s" : ""}</p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={e => { e.stopPropagation(); openEditCourse(c); }} className="p-1.5 text-[#444] hover:text-green-400 hover:bg-green-400/10 rounded transition-all"><Pencil size={14} /></button>
-                      <button onClick={e => { e.stopPropagation(); setDeletingCourse(c.id); }} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={14} /></button>
+                      <button onClick={e => { e.stopPropagation(); openEditCourse(c); }} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all"><Pencil size={14} /></button>
+                      <button onClick={e => { e.stopPropagation(); setDeletingCourse(c.id); }} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={14} /></button>
                     </div>
                   </div>
                 ))}
@@ -213,22 +213,22 @@ export default function CoursesPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingCourse ? "Edit Course" : "New Course"}</h3>
-              <button onClick={() => setShowCourseForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowCourseForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Title *</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Title *</label>
                 <input value={courseForm.title}
                   onChange={e => { setCourseField("title", e.target.value); if (!editingCourse) setCourseField("slug", toSlug(e.target.value)); }}
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Slug (auto-generated)</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Slug (auto-generated)</label>
                 <input value={courseForm.slug} onChange={e => setCourseField("slug", e.target.value)} placeholder="my-course"
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm font-mono" />
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Description</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Description</label>
                 <textarea value={courseForm.description} onChange={e => setCourseField("description", e.target.value)} rows={3}
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
               </div>
@@ -246,7 +246,7 @@ export default function CoursesPage() {
               />
 
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
                 <input type="number" min="1" value={courseForm.requiredTier} onChange={e => setCourseField("requiredTier", e.target.value)}
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
               </div>
@@ -260,7 +260,7 @@ export default function CoursesPage() {
               </div>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowCourseForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest">Cancel</button>
+              <button onClick={() => setShowCourseForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest">Cancel</button>
               <button onClick={handleSaveCourse} disabled={createCourse.isPending || updateCourse.isPending || !!courseUploading}
                 className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest flex items-center gap-2 disabled:opacity-60">
                 {(createCourse.isPending || updateCourse.isPending) && <Loader2 size={14} className="animate-spin" />} Save
@@ -276,7 +276,7 @@ export default function CoursesPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={36} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Delete Course?</h3>
-            <p className="text-[#606060] text-xs mb-6">All episodes will be removed.</p>
+            <p className="text-[#888] text-xs mb-6">All episodes will be removed.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeletingCourse(null)} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest hover:text-white transition-all">Cancel</button>
               <button onClick={() => handleDeleteCourse(deletingCourse)} disabled={deleteCourse.isPending}
@@ -448,7 +448,7 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
       {/* Panel header */}
       <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50 flex items-center justify-between shrink-0">
         <div className="min-w-0">
-          <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">Episodes</p>
+          <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">Episodes</p>
           <p className="text-sm font-bold text-[#f0f0f0] truncate">{course.title}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -462,7 +462,7 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
             className="flex items-center gap-1 bg-[#dc2626] text-white px-3 py-1.5 rounded font-rajdhani font-bold text-[11px] tracking-widest uppercase hover:bg-red-700 transition-all">
             <Plus size={12} /> Add
           </button>
-          <button onClick={onClose} className="text-[#606060] hover:text-white p-1 transition-colors"><X size={16} /></button>
+          <button onClick={onClose} className="text-[#888] hover:text-white p-1 transition-colors"><X size={16} /></button>
         </div>
       </div>
 
@@ -472,8 +472,8 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
           <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-[#dc2626]" /></div>
         ) : localEps.length === 0 ? (
           <div className="text-center py-12 space-y-2">
-            <Film size={28} className="mx-auto text-[#333]" />
-            <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-xs">No episodes yet</p>
+            <Film size={28} className="mx-auto text-[#666]" />
+            <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-xs">No episodes yet</p>
           </div>
         ) : (
           <div className="divide-y divide-[#222]">
@@ -486,19 +486,19 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
                 className={`flex items-center gap-3 px-4 py-3 select-none transition-all group
                   ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
                   ${dragIdx.current === i ? "opacity-30" : ""}`}>
-                <GripVertical size={13} className="text-[#333] cursor-grab shrink-0" />
-                <span className="text-[10px] text-[#444] font-mono w-4 shrink-0">{i + 1}</span>
+                <GripVertical size={13} className="text-[#666] cursor-grab shrink-0" />
+                <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{i + 1}</span>
                 {ep.thumbnailUrl && (
                   <img src={ep.thumbnailUrl} alt="" className="w-10 h-7 object-cover rounded border border-[#333] shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-medium text-[#f0f0f0] truncate">{ep.title}</p>
-                  <p className="text-[10px] text-[#555]">{fmtDuration(ep.durationSeconds)}</p>
+                  <p className="text-[10px] text-[#888]">{fmtDuration(ep.durationSeconds)}</p>
                 </div>
-                {!ep.isVisible && <EyeOff size={11} className="text-[#555] shrink-0" />}
+                {!ep.isVisible && <EyeOff size={11} className="text-[#888] shrink-0" />}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                  <button onClick={() => openEdit(ep)} className="p-1 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={12} /></button>
-                  <button onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={12} /></button>
+                  <button onClick={() => openEdit(ep)} className="p-1 text-[#777] hover:text-green-400 rounded transition-all"><Pencil size={12} /></button>
+                  <button onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={12} /></button>
                 </div>
               </div>
             ))}
@@ -510,20 +510,20 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
       {showForm && (
         <div className="border-t border-[#2a2a2a] p-4 bg-[#141414] space-y-3 shrink-0 overflow-y-auto max-h-[55vh]">
           <div className="flex items-center justify-between">
-            <p className="text-[11px] font-bold text-[#606060] uppercase tracking-widest font-rajdhani">{editingEp ? "Edit Episode" : "New Episode"}</p>
-            <button onClick={() => setShowForm(false)} className="text-[#444] hover:text-white transition-colors"><X size={14} /></button>
+            <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">{editingEp ? "Edit Episode" : "New Episode"}</p>
+            <button onClick={() => setShowForm(false)} className="text-[#777] hover:text-white transition-colors"><X size={14} /></button>
           </div>
 
           {/* Title */}
           <div>
-            <label className="block text-[10px] font-bold text-[#606060] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
             <input value={epForm.title} onChange={e => setEpField("title", e.target.value)}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
           </div>
 
           {/* Video upload */}
           <div>
-            <label className="block text-[10px] font-bold text-[#606060] uppercase tracking-widest mb-1 font-rajdhani">Video *</label>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Video *</label>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => videoInputRef.current?.click()} disabled={epUploading === "video"}
                 className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest font-rajdhani hover:border-[#dc2626] transition-all disabled:opacity-50">
@@ -533,7 +533,7 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
                   : "Upload to Bunny"}
               </button>
               {epForm.videoUrl && (
-                <span className={`text-[10px] font-mono truncate max-w-[160px] ${epForm.videoUrl.includes("iframe.mediadelivery.net") ? "text-green-500" : "text-[#555]"}`}>
+                <span className={`text-[10px] font-mono truncate max-w-[160px] ${epForm.videoUrl.includes("iframe.mediadelivery.net") ? "text-green-500" : "text-[#888]"}`}>
                   {epForm.videoUrl.includes("iframe.mediadelivery.net") ? "Bunny Stream" : epForm.videoUrl.split("/").pop()}
                 </span>
               )}
@@ -544,7 +544,7 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
 
           {/* Thumbnail upload */}
           <div>
-            <label className="block text-[10px] font-bold text-[#606060] uppercase tracking-widest mb-1 font-rajdhani">Thumbnail <span className="text-[#444] normal-case tracking-normal">(optional)</span></label>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Thumbnail <span className="text-[#777] normal-case tracking-normal">(optional)</span></label>
             <div className="flex items-center gap-2">
               {epForm.thumbnailUrl && <img src={epForm.thumbnailUrl} alt="" className="w-10 h-7 object-cover rounded border border-[#333]" />}
               <button type="button" onClick={() => thumbInputRef.current?.click()} disabled={epUploading === "thumb"}
@@ -559,8 +559,8 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
 
           {/* Duration — auto-filled on video upload, manual override */}
           <div>
-            <label className="block text-[10px] font-bold text-[#606060] uppercase tracking-widest mb-1 font-rajdhani">
-              Duration (seconds) <span className="text-[#444] normal-case tracking-normal">— auto-detected on upload</span>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">
+              Duration (seconds) <span className="text-[#777] normal-case tracking-normal">— auto-detected on upload</span>
             </label>
             <input type="number" min="0" value={epForm.durationSeconds} onChange={e => setEpField("durationSeconds", e.target.value)}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
@@ -578,7 +578,7 @@ function EpisodesPanel({ course, onClose }: { course: any; onClose: () => void }
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button onClick={() => setShowForm(false)} className="flex-1 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded transition-all">Cancel</button>
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded transition-all">Cancel</button>
             <button onClick={handleSaveEp} disabled={createEp.isPending || updateEp.isPending || !!epUploading}
               className="flex-1 py-2 bg-[#dc2626] hover:bg-red-700 text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest rounded flex items-center justify-center gap-1 disabled:opacity-60">
               {(createEp.isPending || updateEp.isPending) && <Loader2 size={11} className="animate-spin" />} Save

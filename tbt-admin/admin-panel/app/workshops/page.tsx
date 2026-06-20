@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef } from "react";
 import { Plus, Trash2, Pencil, X, Loader2, Clapperboard, AlertCircle, Search, Users, ChevronRight, Upload, CheckCircle2, XCircle } from "lucide-react";
@@ -53,7 +53,7 @@ function ThumbnailUpload({
 
   return (
     <div>
-      <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Thumbnail</label>
+      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Thumbnail</label>
       <div className="flex items-center gap-3">
         {value ? (
           <div className="relative w-20 h-12 rounded overflow-hidden border border-[#333] shrink-0">
@@ -66,7 +66,7 @@ function ThumbnailUpload({
             </button>
           </div>
         ) : (
-          <div className="w-20 h-12 rounded border border-dashed border-[#333] flex items-center justify-center text-[#444] shrink-0">
+          <div className="w-20 h-12 rounded border border-dashed border-[#333] flex items-center justify-center text-[#777] shrink-0">
             <Clapperboard size={16} />
           </div>
         )}
@@ -89,7 +89,7 @@ const modeColor = (m: string) => {
   if (m === "online") return "text-blue-400 bg-blue-400/10 border-blue-400/20";
   if (m === "offline") return "text-orange-400 bg-orange-400/10 border-orange-400/20";
   if (m === "hybrid") return "text-purple-400 bg-purple-400/10 border-purple-400/20";
-  return "text-[#606060] bg-[#1a1a1a] border-[#333]";
+  return "text-[#888] bg-[#1a1a1a] border-[#333]";
 };
 
 export default function WorkshopsPage() {
@@ -196,7 +196,7 @@ export default function WorkshopsPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Workshops</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Manage TBT cohort workshops with challenges, live calls &amp; assignments.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Manage TBT cohort workshops with challenges, live calls &amp; assignments.</p>
             </div>
           </div>
           <button
@@ -212,14 +212,14 @@ export default function WorkshopsPage() {
           <div className="bg-[#181818] border border-[#2a2a2a] p-4 rounded-xl flex items-center gap-4">
             <div className="p-2.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-[#dc2626]"><Clapperboard size={20} /></div>
             <div>
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">Total Workshops</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">Total Workshops</p>
               <p className="text-xl font-bold text-[#f0f0f0] font-rajdhani">{total}</p>
             </div>
           </div>
           <div className="bg-[#181818] border border-[#2a2a2a] p-4 rounded-xl flex items-center gap-4">
             <div className="p-2.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-blue-400"><Users size={20} /></div>
             <div>
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-wider font-rajdhani">Showing</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-wider font-rajdhani">Showing</p>
               <p className="text-xl font-bold text-[#f0f0f0] font-rajdhani">{workshops.length}</p>
             </div>
           </div>
@@ -234,16 +234,16 @@ export default function WorkshopsPage() {
                 placeholder="SEARCH WORKSHOPS..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="w-full bg-[#141414] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[12px] font-rajdhani font-bold tracking-wider outline-none focus:border-[#dc2626] transition-all text-[#f0f0f0] placeholder:text-[#444]"
+                className="w-full bg-[#141414] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[12px] font-rajdhani font-bold tracking-wider outline-none focus:border-[#dc2626] transition-all text-[#f0f0f0] placeholder:text-[#777]"
               />
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#777]" />
             </div>
           </div>
 
           {/* Column headers */}
           <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_80px_80px_120px] gap-4 px-6 py-2 border-b border-[#2a2a2a] bg-[#141414]">
             {["Title", "Batch", "Mode", "Tier", "Active", "Enrolled", ""].map(h => (
-              <span key={h} className="text-[10px] font-bold text-[#444] uppercase tracking-widest font-rajdhani">{h}</span>
+              <span key={h} className="text-[10px] font-bold text-[#777] uppercase tracking-widest font-rajdhani">{h}</span>
             ))}
           </div>
 
@@ -253,8 +253,8 @@ export default function WorkshopsPage() {
             </div>
           ) : workshops.length === 0 ? (
             <div className="text-center py-20 space-y-3">
-              <Clapperboard size={36} className="mx-auto text-[#333]" />
-              <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No workshops found</p>
+              <Clapperboard size={36} className="mx-auto text-[#666]" />
+              <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No workshops found</p>
             </div>
           ) : (
             <div className="divide-y divide-[#2a2a2a]">
@@ -266,12 +266,12 @@ export default function WorkshopsPage() {
                       <img src={w.thumbnailUrl} alt="" className="w-10 h-7 rounded object-cover shrink-0 border border-[#333]" />
                     ) : (
                       <div className="w-10 h-7 rounded bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center shrink-0">
-                        <Clapperboard size={12} className="text-[#333]" />
+                        <Clapperboard size={12} className="text-[#666]" />
                       </div>
                     )}
                     <div className="min-w-0">
                       <p className="font-bold text-[#f0f0f0] text-sm group-hover:text-[#dc2626] transition-colors truncate">{w.title}</p>
-                      <p className="text-[10px] text-[#444] font-mono truncate">/{w.slug}</p>
+                      <p className="text-[10px] text-[#777] font-mono truncate">/{w.slug}</p>
                     </div>
                   </div>
 
@@ -280,7 +280,7 @@ export default function WorkshopsPage() {
                     {w.batch ? (
                       <span className="text-[11px] text-[#a0a0a0] font-rajdhani">{w.batch.name}</span>
                     ) : (
-                      <span className="text-[11px] text-[#444]">—</span>
+                      <span className="text-[11px] text-[#777]">—</span>
                     )}
                   </div>
 
@@ -296,7 +296,7 @@ export default function WorkshopsPage() {
                     {w.requiredTier != null ? (
                       <span className="text-[11px] text-[#a0a0a0] font-rajdhani font-bold">Tier {w.requiredTier}</span>
                     ) : (
-                      <span className="text-[11px] text-[#444]">—</span>
+                      <span className="text-[11px] text-[#777]">—</span>
                     )}
                   </div>
 
@@ -307,14 +307,14 @@ export default function WorkshopsPage() {
                         <CheckCircle2 size={12} /> Active
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-[10px] font-bold text-[#444] font-rajdhani uppercase">
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-[#777] font-rajdhani uppercase">
                         <XCircle size={12} /> Off
                       </span>
                     )}
                   </div>
 
                   {/* Enrollments */}
-                  <div className="flex items-center gap-1 text-[11px] text-[#555]">
+                  <div className="flex items-center gap-1 text-[11px] text-[#888]">
                     <Users size={10} />
                     <span>{w._count?.enrollments ?? 0}</span>
                   </div>
@@ -327,10 +327,10 @@ export default function WorkshopsPage() {
                     >
                       Manage <ChevronRight size={12} />
                     </button>
-                    <button onClick={() => openEdit(w)} className="p-1.5 text-[#444] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
+                    <button onClick={() => openEdit(w)} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
                       <Pencil size={14} />
                     </button>
-                    <button onClick={() => setDeleting(w.id)} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
+                    <button onClick={() => setDeleting(w.id)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -347,13 +347,13 @@ export default function WorkshopsPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a] shrink-0">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editing ? "Edit Workshop" : "New Workshop"}</h3>
-              <button onClick={() => setShowForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
 
             <div className="p-6 space-y-4 overflow-y-auto">
               {/* Title */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Title *</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Title *</label>
                 <input
                   value={form.title}
                   onChange={e => handleTitleChange(e.target.value)}
@@ -363,7 +363,7 @@ export default function WorkshopsPage() {
 
               {/* Slug */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Slug *</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Slug *</label>
                 <input
                   value={form.slug}
                   onChange={e => handleSlugChange(e.target.value)}
@@ -374,7 +374,7 @@ export default function WorkshopsPage() {
 
               {/* Description */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Description</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Description</label>
                 <textarea
                   value={form.description}
                   onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))}
@@ -394,7 +394,7 @@ export default function WorkshopsPage() {
               {/* Delivery Mode + Tier */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Delivery Mode</label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Delivery Mode</label>
                   <select
                     value={form.deliveryMode}
                     onChange={e => setForm((f: any) => ({ ...f, deliveryMode: e.target.value }))}
@@ -406,7 +406,7 @@ export default function WorkshopsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
                   <input
                     type="number"
                     value={form.requiredTier}
@@ -419,7 +419,7 @@ export default function WorkshopsPage() {
 
               {/* Batch dropdown */}
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Batch</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Batch</label>
                 <select
                   value={form.batchId}
                   onChange={e => setForm((f: any) => ({ ...f, batchId: e.target.value }))}
@@ -446,7 +446,7 @@ export default function WorkshopsPage() {
             </div>
 
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3 shrink-0">
-              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button
                 onClick={handleSave}
                 disabled={createWorkshop.isPending || updateWorkshop.isPending || thumbUploading}
@@ -466,7 +466,7 @@ export default function WorkshopsPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={36} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Delete Workshop?</h3>
-            <p className="text-[#606060] text-sm mb-6">All challenges, episodes, and enrollments will be removed.</p>
+            <p className="text-[#888] text-sm mb-6">All challenges, episodes, and enrollments will be removed.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleting(null)} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest hover:text-white transition-all">Cancel</button>
               <button

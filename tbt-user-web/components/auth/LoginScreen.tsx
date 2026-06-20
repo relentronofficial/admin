@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -223,7 +223,7 @@ export function LoginScreen() {
                     : step === "set_password" ? "Set New Password"
                     : "Verify Identity"}
                 </h1>
-                <p className="text-white/35 text-[13px] mt-1 tracking-wide">
+                <p className="text-white/65 text-[13px] mt-1 tracking-wide">
                   {step === "credentials"
                     ? "Sign in to continue your journey"
                     : step === "reset_password"
@@ -297,7 +297,7 @@ export function LoginScreen() {
                       required
                       suffix={
                         <button type="button" onClick={() => setShowPassword((v) => !v)}
-                          className="text-white/30 hover:text-white/60 transition-colors duration-200 flex-shrink-0">
+                          className="text-white/60 hover:text-white/60 transition-colors duration-200 flex-shrink-0">
                           {showPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
                         </button>
                       }
@@ -344,7 +344,7 @@ export function LoginScreen() {
                   <SubmitButton submitting={submitting} label="Verify & Sign In" loadingLabel="Verifying..." />
                   <div className="flex justify-between items-center pt-1">
                     <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setError(""); }}
-                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+                      className="text-[12px] text-white/65 hover:text-white/60 transition-colors">
                       ← Back
                     </button>
                     <button type="button" onClick={handleResendOtp}
@@ -374,7 +374,7 @@ export function LoginScreen() {
                   <SubmitButton submitting={false} label="Continue" loadingLabel="Verifying..." />
                   <div className="flex justify-between items-center pt-1">
                     <button type="button" onClick={() => { setStep("credentials"); setOtp(""); setError(""); }}
-                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+                      className="text-[12px] text-white/65 hover:text-white/60 transition-colors">
                       ← Back
                     </button>
                     <button type="button" onClick={handleResendOtp}
@@ -401,7 +401,7 @@ export function LoginScreen() {
                     required
                     suffix={
                       <button type="button" onClick={() => setShowNewPassword((v) => !v)}
-                        className="text-white/30 hover:text-white/60 transition-colors flex-shrink-0">
+                        className="text-white/60 hover:text-white/60 transition-colors flex-shrink-0">
                         {showNewPassword ? <EyeOff className="w-[15px] h-[15px]" /> : <Eye className="w-[15px] h-[15px]" />}
                       </button>
                     }
@@ -409,7 +409,7 @@ export function LoginScreen() {
                   <SubmitButton submitting={submitting} label="Reset & Sign In" loadingLabel="Resetting..." />
                   <div className="flex justify-start items-center pt-1">
                     <button type="button" onClick={() => { setStep("reset_password"); setNewPassword(""); setError(""); }}
-                      className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+                      className="text-[12px] text-white/65 hover:text-white/60 transition-colors">
                       ← Back
                     </button>
                   </div>

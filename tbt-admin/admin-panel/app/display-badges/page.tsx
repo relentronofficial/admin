@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Plus, Trash2, Pencil, X, Loader2, Award, AlertCircle } from "lucide-react";
@@ -68,7 +68,7 @@ export default function DisplayBadgesPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Display Badges</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Profile badges shown on member profiles.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Profile badges shown on member profiles.</p>
             </div>
           </div>
           <button onClick={openCreate} className="flex items-center gap-2 bg-[#dc2626] text-white px-5 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
@@ -82,15 +82,15 @@ export default function DisplayBadgesPage() {
           </div>
         ) : badges.length === 0 ? (
           <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-20 space-y-3">
-            <Award size={36} className="mx-auto text-[#333]" />
-            <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No badges created</p>
+            <Award size={36} className="mx-auto text-[#666]" />
+            <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No badges created</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {badges.map((badge: any) => (
               <div key={badge.id} className={`bg-[#181818] border rounded-xl p-5 flex flex-col items-center gap-3 group relative ${badge.isActive ? "border-[#2a2a2a]" : "border-[#222] opacity-50"}`}>
                 {!badge.isActive && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Inactive</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Inactive</span>
                 )}
                 <div
                   className="px-4 py-2 rounded-full text-sm font-bold tracking-widest uppercase"
@@ -98,14 +98,14 @@ export default function DisplayBadgesPage() {
                 >
                   {badge.label}
                 </div>
-                <p className="text-[10px] text-[#555] uppercase tracking-widest text-center">
+                <p className="text-[10px] text-[#888] uppercase tracking-widest text-center">
                   Text: {badge.color}<br />BG: {badge.bgColor}
                 </p>
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openEdit(badge)} className="p-1.5 text-[#444] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
+                  <button onClick={() => openEdit(badge)} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => setDeleting(badge.id)} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
+                  <button onClick={() => setDeleting(badge.id)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -120,23 +120,23 @@ export default function DisplayBadgesPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editing ? "Edit Badge" : "New Badge"}</h3>
-              <button onClick={() => setShowForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Label</label>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Label</label>
                 <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. BIG" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Text Color</label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Text Color</label>
                   <div className="flex gap-2 items-center bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-3">
                     <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent" />
                     <span className="text-sm text-[#888] font-mono">{form.color}</span>
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">Background</label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Background</label>
                   <div className="flex gap-2 items-center bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-3">
                     <input type="color" value={form.bgColor} onChange={e => setForm(f => ({ ...f, bgColor: e.target.value }))} className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent" />
                     <span className="text-sm text-[#888] font-mono">{form.bgColor}</span>
@@ -144,7 +144,7 @@ export default function DisplayBadgesPage() {
                 </div>
               </div>
               <div className="flex items-center justify-between bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 h-11">
-                <span className="text-[11px] font-bold text-[#606060] uppercase tracking-widest font-rajdhani">Active</span>
+                <span className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Active</span>
                 <button
                   type="button"
                   onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))}
@@ -160,7 +160,7 @@ export default function DisplayBadgesPage() {
               </div>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSave} disabled={createBadge.isPending || updateBadge.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">
                 {(createBadge.isPending || updateBadge.isPending) && <Loader2 size={14} className="animate-spin" />}
                 Save
@@ -175,7 +175,7 @@ export default function DisplayBadgesPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={36} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Delete Badge?</h3>
-            <p className="text-[#606060] text-sm mb-6">This action cannot be undone.</p>
+            <p className="text-[#888] text-sm mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleting(null)} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest hover:text-white transition-all">Cancel</button>
               <button onClick={() => handleDelete(deleting)} className="flex-1 py-2.5 bg-[#dc2626] hover:bg-red-700 text-white rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Delete</button>

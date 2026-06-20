@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { Plus, X, Search, Loader2, ChevronDown, User, Check } from "lucide-react";
@@ -127,7 +127,7 @@ export function AccountManagerSelect({ managers, isLoading, value, onChange }: A
           )}
         >
           {isLoading ? (
-            <span className="flex items-center gap-2 text-[#555]">
+            <span className="flex items-center gap-2 text-[#888]">
               <Loader2 size={14} className="animate-spin" /> Loading...
             </span>
           ) : selectedManager ? (
@@ -136,16 +136,16 @@ export function AccountManagerSelect({ managers, isLoading, value, onChange }: A
                 <User size={11} className="text-[#dc2626]" />
               </span>
               <span className="text-white truncate">{selectedManager.fullName}</span>
-              <span className="text-[#555] text-[12px] truncate hidden sm:block">
+              <span className="text-[#888] text-[12px] truncate hidden sm:block">
                 {selectedManager.designation || selectedManager.email}
               </span>
             </span>
           ) : (
-            <span className="text-[#555]">Select account manager...</span>
+            <span className="text-[#888]">Select account manager...</span>
           )}
           <ChevronDown
             size={15}
-            className={cn("text-[#555] flex-shrink-0 transition-transform duration-200", isOpen && "rotate-180")}
+            className={cn("text-[#888] flex-shrink-0 transition-transform duration-200", isOpen && "rotate-180")}
           />
         </button>
 
@@ -155,7 +155,7 @@ export function AccountManagerSelect({ managers, isLoading, value, onChange }: A
             {/* Search bar */}
             <div className="p-3 border-b border-[#252525]">
               <label className="flex items-center gap-2 bg-[#141414] border border-[#2a2a2a] rounded-[7px] px-3 h-[36px] focus-within:border-[#dc2626]/60 transition-colors">
-                <Search size={13} className="text-[#555] flex-shrink-0" />
+                <Search size={13} className="text-[#888] flex-shrink-0" />
                 <input
                   autoFocus
                   type="text"
@@ -166,7 +166,7 @@ export function AccountManagerSelect({ managers, isLoading, value, onChange }: A
                 />
                 {search && (
                   <button type="button" onClick={() => setSearch("")}>
-                    <X size={12} className="text-[#555] hover:text-white" />
+                    <X size={12} className="text-[#888] hover:text-white" />
                   </button>
                 )}
               </label>
@@ -176,12 +176,12 @@ export function AccountManagerSelect({ managers, isLoading, value, onChange }: A
             <div className="max-h-[200px] overflow-y-auto">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 size={20} className="animate-spin text-[#555]" />
+                  <Loader2 size={20} className="animate-spin text-[#888]" />
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 gap-2">
-                  <User size={22} className="text-[#333]" />
-                  <p className="text-[12px] text-[#555] uppercase tracking-widest font-semibold">
+                  <User size={22} className="text-[#666]" />
+                  <p className="text-[12px] text-[#888] uppercase tracking-widest font-semibold">
                     {search ? "No results found" : "No account managers found"}
                   </p>
                 </div>
@@ -200,7 +200,7 @@ export function AccountManagerSelect({ managers, isLoading, value, onChange }: A
                       <span className="block text-[13px] text-white font-medium group-hover:text-[#dc2626] transition-colors truncate">
                         {manager.fullName}
                       </span>
-                      <span className="block text-[11px] text-[#555] truncate">
+                      <span className="block text-[11px] text-[#888] truncate">
                         {manager.email}
                         {manager.designation ? ` · ${manager.designation}` : ""}
                       </span>

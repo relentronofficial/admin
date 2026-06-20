@@ -1,0 +1,410 @@
+You are working on an existing production LMS/OTT application.
+
+TASK:
+Enhance Workshop Video Progress Status Management.
+
+IMPORTANT:
+Before modifying anything, first analyze the existing implementation.
+
+The project already has:
+- Existing database schema
+- Video progress tracking
+- Heartbeat tracking system
+- Watch duration calculation
+- Cheat prevention / seek prevention logic
+- Video duration fetching logic
+- Existing APIs and frontend integration
+
+DO NOT rewrite, replace, remove, or redesign these existing systems.
+
+Keep all existing logic unchanged.
+
+Only modify code if the new status workflow requires it.
+
+If any database schema change, API breaking change, heartbeat change, duration calculation change, or cheat-prevention logic change is required:
+STOP and ask for my permission before making the change.
+
+
+===================================
+FEATURE REQUIREMENT:
+Workshop Video Learning Status Flow
+===================================
+
+Implement professional LMS-style video states:
+
+Available statuses:
+
+1. LOCKED
+2. NOT_STARTED
+3. STARTED
+4. IN_PROGRESS
+5. COMPLETED
+6. REWATCHING
+
+
+Implement these states on workshop videos.
+
+
+===================================
+STATUS DEFINITIONS
+===================================
+
+
+1. LOCKED
+------------
+
+Meaning:
+User cannot access this video yet.
+
+Usage examples:
+- Previous required episode not completed
+- User does not have access permission
+- Sequential learning restriction
+
+Expected behavior:
+
+Frontend:
+- Show lock indicator
+- Disable video playback
+- Do not allow direct play
+
+Backend:
+- Prevent unauthorized playback token generation
+- Do not create progress entry
+
+
+-----------------------------------
+
+
+2. NOT_STARTED
+---------------
+
+Meaning:
+User has access but never started watching.
+
+Condition:
+
+Video available
+AND
+No watch progress exists
+
+Initial state:
+
+progress = 0%
+
+currentPosition = 0
+
+Frontend:
+
+Show:
+"Start Watching"
+
+Do not show resume.
+
+
+-----------------------------------
+
+
+3. STARTED
+-----------
+
+Meaning:
+User clicked play for the first time.
+
+Trigger:
+
+Video play event fired.
+
+Expected:
+
+When user starts video:
+
+Create/update progress record:
+
+status = STARTED
+
+startedAt timestamp saved
+
+Initial watch session begins.
+
+
+Important:
+
+Do not interfere with existing heartbeat logic.
+
+
+-----------------------------------
+
+
+4. IN_PROGRESS
+---------------
+
+Meaning:
+User is actively watching but has not completed.
+
+Conditions:
+
+Video started
+
+AND
+
+Progress > 0%
+
+AND
+
+Completion criteria not reached
+
+
+Use existing:
+- heartbeat system
+- progress calculation
+- watch duration logic
+- anti-cheat validation
+
+
+Expected:
+
+status = IN_PROGRESS
+
+Store:
+- last watched position
+- percentage
+- updated timestamp
+
+
+Resume support:
+
+When user returns:
+
+Continue from last saved position.
+
+
+-----------------------------------
+
+
+5. COMPLETED
+-------------
+
+Meaning:
+User has completed the video.
+
+IMPORTANT:
+
+Use the existing completion calculation.
+
+Do not modify:
+
+- percentage threshold
+- duration checking
+- watched segment validation
+- cheat prevention
+
+
+When existing system decides video completed:
+
+Update:
+
+status = COMPLETED
+
+completedAt timestamp
+
+
+Frontend:
+
+Show:
+Completed badge/checkmark
+
+
+-----------------------------------
+
+
+6. REWATCHING
+--------------
+
+Meaning:
+User already completed the video and opens it again.
+
+Condition:
+
+Existing status = COMPLETED
+
+AND
+
+User plays video again
+
+
+Expected:
+
+Change current viewing state:
+
+status = REWATCHING
+
+
+Important:
+
+Do NOT:
+
+- Remove completedAt
+- Reset progress percentage
+- Reset watch history
+- Affect course completion
+
+
+Completion should remain permanently achieved.
+
+
+===================================
+EXPECTED STATUS FLOW
+===================================
+
+
+Normal first watch:
+
+LOCKED
+
+↓
+
+NOT_STARTED
+
+↓
+
+STARTED
+
+↓
+
+IN_PROGRESS
+
+↓
+
+COMPLETED
+
+
+
+Completed user watching again:
+
+COMPLETED
+
+↓
+
+REWATCHING
+
+
+
+Do not allow:
+
+COMPLETED → IN_PROGRESS
+
+COMPLETED → NOT_STARTED
+
+
+===================================
+FRONTEND REQUIREMENTS
+===================================
+
+
+Workshop video UI should show correct states.
+
+
+LOCKED:
+
+Display:
+- Lock icon
+- Disabled play button
+
+
+NOT_STARTED:
+
+Display:
+- Start Watching
+
+
+STARTED / IN_PROGRESS:
+
+Display:
+- Continue Watching
+- Progress percentage
+- Resume position
+
+
+COMPLETED:
+
+Display:
+- Completed indicator
+
+
+REWATCHING:
+
+Display:
+- Watching again state
+
+
+===================================
+DATABASE REQUIREMENT
+===================================
+
+
+First inspect existing tables/models.
+
+Reuse existing fields if possible.
+
+Do NOT create new tables unnecessarily.
+
+Before adding:
+
+- new enum
+- new column
+- migration
+
+Explain why it is required and ask approval.
+
+
+===================================
+API REQUIREMENT
+===================================
+
+
+Inspect existing progress APIs.
+
+Reuse current endpoints.
+
+Avoid breaking existing response structure.
+
+Add status field only if needed.
+
+Maintain backward compatibility.
+
+
+===================================
+QUALITY CHECK
+===================================
+
+
+After implementation verify:
+
+✓ Existing heartbeat works
+✓ Existing cheat prevention works
+✓ Existing duration fetching works
+✓ Resume playback works
+✓ Completed videos stay completed
+✓ Rewatch does not reset progress
+✓ Locked videos cannot play
+✓ Course progress calculation unaffected
+✓ Existing users/data are safe
+
+
+===================================
+FINAL OUTPUT REQUIRED
+===================================
+
+
+Before coding:
+Provide implementation plan.
+
+Mention:
+- Files affected
+- Database changes needed (if any)
+- Risks
+
+Wait for approval if existing core logic needs changes.
+
+Then implement with minimal changes.

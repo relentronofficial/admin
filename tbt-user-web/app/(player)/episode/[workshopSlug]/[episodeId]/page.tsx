@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -46,7 +46,7 @@ export default function LearningPlayerPage() {
   if (isLoading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center" style={{ background: "#000" }}>
-        <Loader2 size={36} className="animate-spin text-white/50" />
+        <Loader2 size={36} className="animate-spin text-white/75" />
       </div>
     );
   }
@@ -54,10 +54,10 @@ export default function LearningPlayerPage() {
   if (!playback?.videoUrl) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-3" style={{ background: "#000" }}>
-        <p className="text-sm text-white/50">{uiStrings?.errorGeneric}</p>
+        <p className="text-sm text-white/75">{uiStrings?.errorGeneric}</p>
         <button
           onClick={() => router.push(`/workshop/${workshopSlug}`)}
-          className="text-xs text-white/40 hover:text-white/70 transition-colors"
+          className="text-xs text-white/70 hover:text-white/70 transition-colors"
         >
           ← {playback?.playerLabels?.backLabel ?? "Back to workshop"}
         </button>

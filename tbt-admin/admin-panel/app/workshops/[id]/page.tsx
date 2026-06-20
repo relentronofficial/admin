@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -54,7 +54,7 @@ const LIVE_CALL_TYPES = [
 ];
 
 const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm";
-const labelCls = "block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani";
+const labelCls = "block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani";
 const selectCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none";
 
 // ── Timestamp helpers ──────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ function ChapterMarkersSection({ lcId }: { lcId: string }) {
 
   return (
     <div className="px-6 pb-5 space-y-3">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani pt-1">Chapter Markers</p>
+      <p className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani pt-1">Chapter Markers</p>
       <div className="flex gap-2">
         <input
           className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white text-sm outline-none focus:border-[#dc2626]"
@@ -154,7 +154,7 @@ function ChapterMarkersSection({ lcId }: { lcId: string }) {
               <span className="flex-1 text-sm text-[#f0f0f0] truncate">{ch.label}</span>
               <button
                 onClick={() => deleteChapter.mutate({ lcid: lcId, chapterId: ch.id })}
-                className="p-1 rounded hover:text-red-400 text-[#444]"
+                className="p-1 rounded hover:text-red-400 text-[#777]"
               >
                 <Trash2 size={12} />
               </button>
@@ -189,7 +189,7 @@ function FeedbackModal({ data, onClose }: { data: any; onClose: () => void }) {
               ★ {data.avgRating.toFixed(1)} · {data.totalResponses} response{data.totalResponses !== 1 ? "s" : ""}
             </p>
           </div>
-          <button onClick={onClose} className="text-[#606060] hover:text-white"><X size={16} /></button>
+          <button onClick={onClose} className="text-[#888] hover:text-white"><X size={16} /></button>
         </div>
         <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
           {/* Star breakdown */}
@@ -278,7 +278,7 @@ function CertificateButton({ lcId }: { lcId: string }) {
           <div className="rounded-2xl border p-6 w-72 space-y-4" style={{ background: "#141414", borderColor: "#2a2a2a" }}>
             <p className="font-rajdhani font-bold uppercase tracking-widest text-sm text-white">Generate Certificates</p>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Min Attendance %</label>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Min Attendance %</label>
               <input
                 type="number"
                 min={0}
@@ -371,7 +371,7 @@ function TemplatesSection({ workshopId }: { workshopId: string }) {
   return (
     <div className="rounded-xl border border-[#2a2a2a] overflow-hidden mb-4" style={{ background: "#181818" }}>
       <div className="flex items-center justify-between px-6 py-3" style={{ borderBottom: "1px solid #1a1a1a" }}>
-        <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani flex items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani flex items-center gap-2">
           <CalendarClock size={12} /> Recurring Templates
         </span>
         <button
@@ -710,14 +710,14 @@ function LiveCallResourcesSection({ lcId }: { lcId: string }) {
     setDragOver(null);
   };
 
-  const labelCls2 = "block text-[10px] font-bold text-[#606060] uppercase tracking-widest mb-1 font-rajdhani";
+  const labelCls2 = "block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani";
   const inputCls2 = "w-full bg-[#111] border border-[#333] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs";
   const selectCls2 = "bg-[#111] border border-[#333] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs";
 
   return (
     <div className="px-6 pb-5 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Pre-Session Resources</p>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Pre-Session Resources</p>
         {isDirty && (
           <button
             onClick={() => reorderRes.mutate({ lcid: lcId, ids: localItems.map(r => r.id) })}
@@ -731,7 +731,7 @@ function LiveCallResourcesSection({ lcId }: { lcId: string }) {
       </div>
 
       {isLoading ? (
-        <p className="text-xs text-[#444]">Loading…</p>
+        <p className="text-xs text-[#777]">Loading…</p>
       ) : (
         <div className="space-y-2">
           {localItems.map((r, i) => (
@@ -759,7 +759,7 @@ function LiveCallResourcesSection({ lcId }: { lcId: string }) {
                   </div>
                   <input value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} className={inputCls2} placeholder="URL" />
                   <div className="flex gap-2 justify-end">
-                    <button onClick={() => setEditingId(null)} className="text-[10px] text-[#444] hover:text-white">Cancel</button>
+                    <button onClick={() => setEditingId(null)} className="text-[10px] text-[#777] hover:text-white">Cancel</button>
                     <button
                       onClick={async () => {
                         await updateRes.mutateAsync({ lcid: lcId, rid: r.id, title: editForm.title, url: editForm.url, type: editForm.type });
@@ -774,13 +774,13 @@ function LiveCallResourcesSection({ lcId }: { lcId: string }) {
               ) : (
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-[#f0f0f0] truncate">{r.title}</p>
-                  <p className="text-[10px] text-[#444] truncate">{r.url}</p>
+                  <p className="text-[10px] text-[#777] truncate">{r.url}</p>
                 </div>
               )}
               {editingId !== r.id && (
                 <div className="flex gap-1 shrink-0">
-                  <button onClick={() => { setEditingId(r.id); setEditForm({ title: r.title, url: r.url, type: r.type }); }} className="p-1 text-[#444] hover:text-green-400"><Pencil size={11} /></button>
-                  <button onClick={() => deleteRes.mutate({ lcid: lcId, rid: r.id })} className="p-1 text-[#444] hover:text-red-400"><Trash2 size={11} /></button>
+                  <button onClick={() => { setEditingId(r.id); setEditForm({ title: r.title, url: r.url, type: r.type }); }} className="p-1 text-[#777] hover:text-green-400"><Pencil size={11} /></button>
+                  <button onClick={() => deleteRes.mutate({ lcid: lcId, rid: r.id })} className="p-1 text-[#777] hover:text-red-400"><Trash2 size={11} /></button>
                 </div>
               )}
             </div>
@@ -796,7 +796,7 @@ function LiveCallResourcesSection({ lcId }: { lcId: string }) {
           </div>
           <div><label className={labelCls2}>URL</label><input value={addForm.url} onChange={e => setAddForm(f => ({ ...f, url: e.target.value }))} className={inputCls2} placeholder="https://…" /></div>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setShowAdd(false); setAddForm({ title: "", url: "", type: "link" }); }} className="text-[10px] text-[#444] hover:text-white">Cancel</button>
+            <button onClick={() => { setShowAdd(false); setAddForm({ title: "", url: "", type: "link" }); }} className="text-[10px] text-[#777] hover:text-white">Cancel</button>
             <button
               onClick={async () => {
                 if (!addForm.title || !addForm.url) return;
@@ -1388,17 +1388,17 @@ export default function WorkshopDetailPage() {
   const clearDeleting = () => { setDeletingChallenge(null); setDeletingEpisode(null); setDeletingLiveCall(null); setDeletingAssignment(null); setDeletingQAPost(null); setDeletingQAReply(null); setDeletingFlowItem(null); setDeletingEnrollment(null); };
 
   if (workshopLoading) return <DashboardLayout><div className="flex items-center justify-center py-40"><Loader2 size={36} className="animate-spin text-[#dc2626]" /></div></DashboardLayout>;
-  if (!workshop) return <DashboardLayout><div className="text-center py-40"><AlertCircle size={40} className="mx-auto text-[#333] mb-4" /><p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest">Workshop not found</p><button onClick={() => router.push("/workshops")} className="mt-4 text-[#dc2626] hover:underline text-sm">← Back</button></div></DashboardLayout>;
+  if (!workshop) return <DashboardLayout><div className="text-center py-40"><AlertCircle size={40} className="mx-auto text-[#666] mb-4" /><p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest">Workshop not found</p><button onClick={() => router.push("/workshops")} className="mt-4 text-[#dc2626] hover:underline text-sm">← Back</button></div></DashboardLayout>;
 
   return (
     <DashboardLayout>
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start gap-4">
-          <button onClick={() => router.push("/workshops")} className="mt-1 text-[#444] hover:text-white transition-colors"><ArrowLeft size={20} /></button>
+          <button onClick={() => router.push("/workshops")} className="mt-1 text-[#777] hover:text-white transition-colors"><ArrowLeft size={20} /></button>
           <div>
             <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">{workshop.title}</h1>
-            <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">/{workshop.slug} · {workshop.deliveryMode}</p>
+            <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">/{workshop.slug} · {workshop.deliveryMode}</p>
           </div>
         </div>
 
@@ -1408,7 +1408,7 @@ export default function WorkshopDetailPage() {
             const Icon = tab.icon;
             return (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all ${activeTab === tab.id ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-[#a0a0a0] hover:bg-white/[0.03]"}`}>
+                className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all ${activeTab === tab.id ? "bg-[#dc2626] text-white" : "text-[#888] hover:text-[#a0a0a0] hover:bg-white/[0.03]"}`}>
                 <Icon size={13} />
                 <span className="hidden md:inline">{tab.label}</span>
               </button>
@@ -1420,7 +1420,7 @@ export default function WorkshopDetailPage() {
         {activeTab === "info" && (
           <div className="space-y-6">
             <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-4">
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">Workshop Info</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">Workshop Info</p>
               <div className="grid grid-cols-2 gap-4">
                 <div><label className={labelCls}>Title</label><p className="text-[#f0f0f0] text-sm bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">{workshop.title}</p></div>
                 <div><label className={labelCls}>Slug</label><p className="text-[#f0f0f0] text-sm font-mono bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">/{workshop.slug}</p></div>
@@ -1428,12 +1428,12 @@ export default function WorkshopDetailPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div><label className={labelCls}>Delivery Mode</label><p className="text-[#a0a0a0] text-sm uppercase font-rajdhani font-bold bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">{workshop.deliveryMode}</p></div>
                 <div><label className={labelCls}>Required Tier</label><p className="text-[#a0a0a0] text-sm font-rajdhani font-bold bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">{workshop.requiredTier}</p></div>
-                <div><label className={labelCls}>Status</label><p className={`text-sm font-bold uppercase font-rajdhani bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center ${workshop.isActive ? "text-green-400" : "text-[#606060]"}`}>{workshop.isActive ? "Active" : "Inactive"}</p></div>
+                <div><label className={labelCls}>Status</label><p className={`text-sm font-bold uppercase font-rajdhani bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center ${workshop.isActive ? "text-green-400" : "text-[#888]"}`}>{workshop.isActive ? "Active" : "Inactive"}</p></div>
               </div>
             </div>
 
             <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-4">
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">App Label Config</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-widest font-rajdhani border-b border-[#2a2a2a] pb-3">App Label Config</p>
               <div className="grid grid-cols-2 gap-4">
                 {[
                   { key: "tabChallengesLabel", label: "Challenges Tab Label" },
@@ -1511,9 +1511,9 @@ export default function WorkshopDetailPage() {
 
             {localFlowItems.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16">
-                <Workflow size={32} className="mx-auto text-[#333] mb-3" />
-                <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No flow items yet</p>
-                <p className="text-[#444] text-xs mt-2">Add Pre-Requisite, Challenge, or Live Call items above</p>
+                <Workflow size={32} className="mx-auto text-[#666] mb-3" />
+                <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No flow items yet</p>
+                <p className="text-[#777] text-xs mt-2">Add Pre-Requisite, Challenge, or Live Call items above</p>
               </div>
             ) : (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
@@ -1547,8 +1547,8 @@ export default function WorkshopDetailPage() {
                           ${flowDragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
                           ${flowDragIdx.current === i ? "opacity-40" : "opacity-100"}`}
                       >
-                        <GripVertical size={16} className="text-[#444] cursor-grab active:cursor-grabbing group-hover:text-[#666] shrink-0" />
-                        <span className="text-[11px] text-[#444] font-mono w-5 shrink-0 text-center">{i + 1}</span>
+                        <GripVertical size={16} className="text-[#777] cursor-grab active:cursor-grabbing group-hover:text-[#666] shrink-0" />
+                        <span className="text-[11px] text-[#777] font-mono w-5 shrink-0 text-center">{i + 1}</span>
 
                         {/* Type icon */}
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${typeColor.replace(/text-\S+/, "").replace(/border-\S+/, "")}`}
@@ -1562,21 +1562,21 @@ export default function WorkshopDetailPage() {
                             <p className="text-sm font-medium text-[#f0f0f0] truncate">{item.label}</p>
                           </div>
                           {isChallenge && item.challenge && (
-                            <p className="text-[11px] text-[#555] truncate">
+                            <p className="text-[11px] text-[#888] truncate">
                               {item.challenge.numberLabel || item.challenge.title} · {item.challenge.episodes?.length || 0} episode{(item.challenge.episodes?.length || 0) !== 1 ? "s" : ""}
                             </p>
                           )}
                           {isLiveCall && item.liveCall && (
-                            <p className="text-[11px] text-[#555] truncate">{item.liveCall.title}</p>
+                            <p className="text-[11px] text-[#888] truncate">{item.liveCall.title}</p>
                           )}
                           {isPreReq && item.description && (
-                            <p className="text-[11px] text-[#555] truncate">{item.description}</p>
+                            <p className="text-[11px] text-[#888] truncate">{item.description}</p>
                           )}
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <button onClick={() => openEditFlow(item)} className="p-1.5 text-[#444] hover:text-green-400 hover:bg-green-400/10 rounded transition-all"><Pencil size={14} /></button>
-                          <button onClick={() => setDeletingFlowItem(item.id)} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={14} /></button>
+                          <button onClick={() => openEditFlow(item)} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all"><Pencil size={14} /></button>
+                          <button onClick={() => setDeletingFlowItem(item.id)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={14} /></button>
                         </div>
                       </div>
                     );
@@ -1610,8 +1610,8 @@ export default function WorkshopDetailPage() {
             </div>
             {challenges.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16">
-                <BookOpen size={32} className="mx-auto text-[#333] mb-3" />
-                <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No challenges yet</p>
+                <BookOpen size={32} className="mx-auto text-[#666] mb-3" />
+                <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No challenges yet</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1643,9 +1643,9 @@ export default function WorkshopDetailPage() {
                             );
                           })()}
                         </div>
-                        {c.numberLabel && <p className="text-[11px] text-[#444] mt-0.5">{c.numberLabel}</p>}
-                        {c.description && <p className="text-[11px] text-[#555] mt-0.5 truncate">{c.description}</p>}
-                        <p className="text-[11px] text-[#444] mt-0.5">
+                        {c.numberLabel && <p className="text-[11px] text-[#777] mt-0.5">{c.numberLabel}</p>}
+                        {c.description && <p className="text-[11px] text-[#888] mt-0.5 truncate">{c.description}</p>}
+                        <p className="text-[11px] text-[#777] mt-0.5">
                           {(!c.type || c.type === "watch")
                             ? `${c.episodes?.length || 0} episode${(c.episodes?.length || 0) !== 1 ? "s" : ""}`
                             : c.type === "quiz"
@@ -1661,15 +1661,15 @@ export default function WorkshopDetailPage() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {(!c.type || c.type === "watch") && (
-                          <button onClick={() => openCreateEpisode(c.id)} className="flex items-center gap-1 px-2.5 py-1 bg-[#1a1a1a] border border-[#333] rounded text-[10px] font-bold text-[#606060] hover:text-white font-rajdhani uppercase tracking-widest transition-all">
+                          <button onClick={() => openCreateEpisode(c.id)} className="flex items-center gap-1 px-2.5 py-1 bg-[#1a1a1a] border border-[#333] rounded text-[10px] font-bold text-[#888] hover:text-white font-rajdhani uppercase tracking-widest transition-all">
                             <Plus size={10} /> Episode
                           </button>
                         )}
-                        <button onClick={() => setExpandedChallenge(expandedChallenge === c.id ? null : c.id)} className="p-1.5 text-[#444] hover:text-white rounded transition-all">
+                        <button onClick={() => setExpandedChallenge(expandedChallenge === c.id ? null : c.id)} className="p-1.5 text-[#777] hover:text-white rounded transition-all">
                           <ChevronRight size={16} className={`transition-transform ${expandedChallenge === c.id ? "rotate-90" : ""}`} />
                         </button>
-                        <button onClick={() => openEditChallenge(c)} className="p-1.5 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={14} /></button>
-                        <button onClick={() => setDeletingChallenge(c.id)} className="p-1.5 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={14} /></button>
+                        <button onClick={() => openEditChallenge(c)} className="p-1.5 text-[#777] hover:text-green-400 rounded transition-all"><Pencil size={14} /></button>
+                        <button onClick={() => setDeletingChallenge(c.id)} className="p-1.5 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={14} /></button>
                       </div>
                     </div>
                     {expandedChallenge === c.id && (
@@ -1685,7 +1685,7 @@ export default function WorkshopDetailPage() {
                               </div>
                             )}
                             <div className="divide-y divide-[#1e1e1e]">
-                              {localEpisodes.length === 0 && <p className="px-6 py-4 text-[12px] text-[#444] italic">No episodes — click &quot;+ Episode&quot; to add one.</p>}
+                              {localEpisodes.length === 0 && <p className="px-6 py-4 text-[12px] text-[#777] italic">No episodes — click &quot;+ Episode&quot; to add one.</p>}
                               {localEpisodes.map((ep: any, epIdx: number) => (
                                 <div
                                   key={ep.id}
@@ -1698,18 +1698,18 @@ export default function WorkshopDetailPage() {
                                     ${epDragOver === epIdx ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-[#161616]"}
                                     ${epDragIdx.current === epIdx ? "opacity-40" : "opacity-100"}`}
                                 >
-                                  <GripVertical size={14} className="text-[#333] cursor-grab active:cursor-grabbing hover:text-[#555] shrink-0" />
-                                  <div className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-[10px] text-[#444] font-rajdhani font-bold shrink-0">{epIdx + 1}</div>
+                                  <GripVertical size={14} className="text-[#666] cursor-grab active:cursor-grabbing hover:text-[#888] shrink-0" />
+                                  <div className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-[10px] text-[#777] font-rajdhani font-bold shrink-0">{epIdx + 1}</div>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-sm text-[#e0e0e0] truncate">{ep.title}</p>
-                                    <p className="text-[10px] text-[#444] mt-0.5 uppercase">
+                                    <p className="text-[10px] text-[#777] mt-0.5 uppercase">
                                       {ep.typeLabel || ep.type}
                                       {ep.durationSeconds ? ` · ${Math.floor(ep.durationSeconds / 60)}m ${ep.durationSeconds % 60 > 0 ? `${ep.durationSeconds % 60}s` : ""}`.trim() : ""}
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-1.5 shrink-0">
-                                    <button onClick={() => openEditEpisode(ep, c.id)} className="p-1 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={12} /></button>
-                                    <button onClick={() => setDeletingEpisode(ep.id)} className="p-1 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={12} /></button>
+                                    <button onClick={() => openEditEpisode(ep, c.id)} className="p-1 text-[#777] hover:text-green-400 rounded transition-all"><Pencil size={12} /></button>
+                                    <button onClick={() => setDeletingEpisode(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={12} /></button>
                                   </div>
                                 </div>
                               ))}
@@ -1718,13 +1718,13 @@ export default function WorkshopDetailPage() {
                         ) : c.type === "quiz" ? (
                           <div className="px-6 py-4 space-y-2">
                             {(c.quizData?.questions ?? []).length === 0
-                              ? <p className="text-[12px] text-[#444] italic">No questions — click edit to add.</p>
+                              ? <p className="text-[12px] text-[#777] italic">No questions — click edit to add.</p>
                               : (c.quizData.questions as any[]).map((q: any, qi: number) => (
                                 <div key={q.id ?? qi} className="bg-[#141414] rounded-lg px-4 py-3">
-                                  <p className="text-[12px] text-[#e0e0e0] font-medium">{qi + 1}. {q.question || <span className="text-[#444] italic">No question text</span>}</p>
+                                  <p className="text-[12px] text-[#e0e0e0] font-medium">{qi + 1}. {q.question || <span className="text-[#777] italic">No question text</span>}</p>
                                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                                     {(q.options ?? []).map((opt: any) => (
-                                      <span key={opt.id} className={`text-[10px] px-2 py-0.5 rounded font-rajdhani font-bold uppercase tracking-wide ${opt.correct ? "bg-green-500/15 text-green-400 border border-green-500/30" : "bg-[#1a1a1a] text-[#555] border border-[#2a2a2a]"}`}>
+                                      <span key={opt.id} className={`text-[10px] px-2 py-0.5 rounded font-rajdhani font-bold uppercase tracking-wide ${opt.correct ? "bg-green-500/15 text-green-400 border border-green-500/30" : "bg-[#1a1a1a] text-[#888] border border-[#2a2a2a]"}`}>
                                         {opt.text || "—"}
                                       </span>
                                     ))}
@@ -1737,21 +1737,21 @@ export default function WorkshopDetailPage() {
                           <div className="px-6 py-4">
                             {c.quizData?.prompt
                               ? <p className="text-[12px] text-[#a0a0a0] italic">&quot;{c.quizData.prompt}&quot;</p>
-                              : <p className="text-[12px] text-[#444] italic">No prompt set — click edit to add.</p>
+                              : <p className="text-[12px] text-[#777] italic">No prompt set — click edit to add.</p>
                             }
                             {c.quizData?.placeholder && (
-                              <p className="text-[11px] text-[#444] mt-1">Placeholder: {c.quizData.placeholder}</p>
+                              <p className="text-[11px] text-[#777] mt-1">Placeholder: {c.quizData.placeholder}</p>
                             )}
                           </div>
                         ) : c.type === "matching" ? (
                           <div className="px-6 py-4 space-y-2">
                             {(c.quizData?.pairs ?? []).length === 0
-                              ? <p className="text-[12px] text-[#444] italic">No pairs — click edit to add.</p>
+                              ? <p className="text-[12px] text-[#777] italic">No pairs — click edit to add.</p>
                               : (c.quizData.pairs as any[]).map((p: any, pi: number) => (
                                 <div key={p.id ?? pi} className="flex items-center gap-3 bg-[#141414] rounded-lg px-4 py-2.5">
-                                  <span className="text-[12px] text-[#e0e0e0] flex-1">{p.left || <span className="text-[#444] italic">Term</span>}</span>
-                                  <span className="text-[#333] text-[10px]">→</span>
-                                  <span className="text-[12px] text-[#a0a0a0] flex-1 text-right">{p.right || <span className="text-[#444] italic">Definition</span>}</span>
+                                  <span className="text-[12px] text-[#e0e0e0] flex-1">{p.left || <span className="text-[#777] italic">Term</span>}</span>
+                                  <span className="text-[#666] text-[10px]">→</span>
+                                  <span className="text-[12px] text-[#a0a0a0] flex-1 text-right">{p.right || <span className="text-[#777] italic">Definition</span>}</span>
                                 </div>
                               ))
                             }
@@ -1759,17 +1759,17 @@ export default function WorkshopDetailPage() {
                         ) : c.type === "flashcard" ? (
                           <div className="px-6 py-4 space-y-2">
                             {(c.quizData?.cards ?? []).length === 0
-                              ? <p className="text-[12px] text-[#444] italic">No cards — click edit to add.</p>
+                              ? <p className="text-[12px] text-[#777] italic">No cards — click edit to add.</p>
                               : (c.quizData.cards as any[]).map((card: any, ci: number) => (
                                 <div key={card.id ?? ci} className="flex gap-3 bg-[#141414] rounded-lg px-4 py-2.5">
                                   <div className="flex-1">
-                                    <p className="text-[9px] uppercase tracking-widest text-[#444] font-rajdhani font-bold mb-0.5">Front</p>
-                                    <p className="text-[12px] text-[#e0e0e0]">{card.front || <span className="text-[#444] italic">—</span>}</p>
+                                    <p className="text-[9px] uppercase tracking-widest text-[#777] font-rajdhani font-bold mb-0.5">Front</p>
+                                    <p className="text-[12px] text-[#e0e0e0]">{card.front || <span className="text-[#777] italic">—</span>}</p>
                                   </div>
                                   <div className="w-px bg-[#2a2a2a]" />
                                   <div className="flex-1">
-                                    <p className="text-[9px] uppercase tracking-widest text-[#444] font-rajdhani font-bold mb-0.5">Back</p>
-                                    <p className="text-[12px] text-[#a0a0a0]">{card.back || <span className="text-[#444] italic">—</span>}</p>
+                                    <p className="text-[9px] uppercase tracking-widest text-[#777] font-rajdhani font-bold mb-0.5">Back</p>
+                                    <p className="text-[12px] text-[#a0a0a0]">{card.back || <span className="text-[#777] italic">—</span>}</p>
                                   </div>
                                 </div>
                               ))
@@ -1796,8 +1796,8 @@ export default function WorkshopDetailPage() {
             </div>
             {liveCalls.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16">
-                <Video size={32} className="mx-auto text-[#333] mb-3" />
-                <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No live calls scheduled</p>
+                <Video size={32} className="mx-auto text-[#666] mb-3" />
+                <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No live calls scheduled</p>
               </div>
             ) : (
               <div className="divide-y divide-[#2a2a2a] bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
@@ -1811,7 +1811,7 @@ export default function WorkshopDetailPage() {
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani px-2 py-0.5 rounded" style={{ color: lc.labelColor || "#ff3d8b", backgroundColor: `${lc.labelColor || "#ff3d8b"}18` }}>{lc.label}</span>
                         {lc.type && (
-                          <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[#555]">
+                          <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[#888]">
                             {LIVE_CALL_TYPES.find(t => t.value === lc.type)?.label ?? lc.type}
                           </span>
                         )}
@@ -1824,9 +1824,9 @@ export default function WorkshopDetailPage() {
                         <RsvpBadge lcId={lc.id} onClick={() => setRsvpModalLcId(lc.id)} />
                         <p className="font-bold text-[#f0f0f0] text-sm">{lc.title}</p>
                       </div>
-                      {lc.facilitatorName && <p className="text-[12px] text-[#606060] mt-0.5">{lc.facilitatorName}{lc.facilitatorTitle ? ` · ${lc.facilitatorTitle}` : ""}</p>}
-                      {lc.scheduledAt && <p className="text-[12px] text-[#606060] mt-0.5">{format(new Date(lc.scheduledAt), "dd MMM yyyy HH:mm")}</p>}
-                      {lc.stayTunedMessage && <p className="text-[11px] text-[#444] mt-1 italic">{lc.stayTunedMessage}</p>}
+                      {lc.facilitatorName && <p className="text-[12px] text-[#888] mt-0.5">{lc.facilitatorName}{lc.facilitatorTitle ? ` · ${lc.facilitatorTitle}` : ""}</p>}
+                      {lc.scheduledAt && <p className="text-[12px] text-[#888] mt-0.5">{format(new Date(lc.scheduledAt), "dd MMM yyyy HH:mm")}</p>}
+                      {lc.stayTunedMessage && <p className="text-[11px] text-[#777] mt-1 italic">{lc.stayTunedMessage}</p>}
                       <div className="flex gap-3 mt-2 flex-wrap">
                         {lc.liveUrl && <a href={lc.liveUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-400 hover:underline">Live Link</a>}
                         {lc.recordingUrl && <a href={lc.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-green-400 hover:underline">{lc.recordingLabel || "Recording"}</a>}
@@ -1850,8 +1850,8 @@ export default function WorkshopDetailPage() {
                         <Video size={12} />
                         {getHostToken.isPending && getHostToken.variables === lc.id ? "Joining…" : "Join as Host"}
                       </button>
-                      <button onClick={() => openEditLiveCall(lc)} className="p-1.5 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={14} /></button>
-                      <button onClick={() => setDeletingLiveCall(lc.id)} className="p-1.5 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={14} /></button>
+                      <button onClick={() => openEditLiveCall(lc)} className="p-1.5 text-[#777] hover:text-green-400 rounded transition-all"><Pencil size={14} /></button>
+                      <button onClick={() => setDeletingLiveCall(lc.id)} className="p-1.5 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={14} /></button>
                     </div>
                   </div>
                   <AttendanceRow lcId={lc.id} />
@@ -1891,8 +1891,8 @@ export default function WorkshopDetailPage() {
             )}
             {assignmentGroups.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16">
-                <ClipboardList size={32} className="mx-auto text-[#333] mb-3" />
-                <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No assignments yet</p>
+                <ClipboardList size={32} className="mx-auto text-[#666] mb-3" />
+                <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No assignments yet</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -1908,12 +1908,12 @@ export default function WorkshopDetailPage() {
                           <div className="flex items-start gap-4 px-5 py-3 hover:bg-white/[0.02] transition-colors">
                             <div className="flex-1 min-w-0">
                               <p className="font-bold text-[#f0f0f0] text-sm">{a.title}</p>
-                              {a.questionText && <p className="text-[12px] text-[#606060] mt-1">{a.questionText}</p>}
+                              {a.questionText && <p className="text-[12px] text-[#888] mt-1">{a.questionText}</p>}
                               <div className="flex items-center gap-3 mt-1">
                                 {a.assignmentType === "image_upload"
                                   ? <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded" style={{ color: "#06b6d4", background: "#06b6d420", border: "1px solid #06b6d440" }}>Image Upload</span>
                                   : <span className="text-[9px] font-bold uppercase tracking-widest font-rajdhani px-1.5 py-0.5 rounded" style={{ color: "#a78bfa", background: "#a78bfa20", border: "1px solid #a78bfa40" }}>Q &amp; A</span>}
-                                {a.typeLabel && <span className="text-[10px] text-[#444] uppercase font-rajdhani font-bold tracking-widest">{a.typeLabel}</span>}
+                                {a.typeLabel && <span className="text-[10px] text-[#777] uppercase font-rajdhani font-bold tracking-widest">{a.typeLabel}</span>}
                                 {a._count?.submissions != null && (
                                   <button onClick={() => setViewingSubmissionsId(viewingSubmissionsId === a.id ? null : a.id)} className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-rajdhani font-bold uppercase tracking-widest transition-colors">
                                     <BarChart2 size={11} /> {a._count.submissions} submission{a._count.submissions !== 1 ? "s" : ""}
@@ -1922,8 +1922,8 @@ export default function WorkshopDetailPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <button onClick={() => openEditAssignment(a, group.challengeId)} className="p-1.5 text-[#444] hover:text-green-400 rounded transition-all"><Pencil size={13} /></button>
-                              <button onClick={() => setDeletingAssignment(a.id)} className="p-1.5 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={13} /></button>
+                              <button onClick={() => openEditAssignment(a, group.challengeId)} className="p-1.5 text-[#777] hover:text-green-400 rounded transition-all"><Pencil size={13} /></button>
+                              <button onClick={() => setDeletingAssignment(a.id)} className="p-1.5 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={13} /></button>
                             </div>
                           </div>
                           {viewingSubmissionsId === a.id && <SubmissionsList assignmentId={a.id} />}
@@ -1942,17 +1942,17 @@ export default function WorkshopDetailPage() {
           <div className="space-y-3">
             {qaPosts.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16">
-                <MessageSquare size={32} className="mx-auto text-[#333] mb-3" />
-                <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No questions posted yet</p>
+                <MessageSquare size={32} className="mx-auto text-[#666] mb-3" />
+                <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No questions posted yet</p>
               </div>
             ) : (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
                 {/* Table header */}
                 <div className="grid grid-cols-[1fr_2fr_auto_auto_auto] gap-4 px-5 py-2 border-b border-[#222] bg-[#1a1a1a]">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Member</span>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Question</span>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Time</span>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Replies</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Member</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Question</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Time</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Replies</span>
                   <span />
                 </div>
                 <div className="divide-y divide-[#1e1e1e]">
@@ -1972,11 +1972,11 @@ export default function WorkshopDetailPage() {
                             <span className="text-[12px] font-bold text-[#e0e0e0] truncate">{post.member?.firstName} {post.member?.lastName}</span>
                           </div>
                           <p className="text-[12px] text-[#a0a0a0] truncate">{post.questionText}</p>
-                          <span className="text-[11px] text-[#444] whitespace-nowrap">{post.createdAt ? format(new Date(post.createdAt), "dd MMM HH:mm") : ""}</span>
-                          <span className="text-[11px] font-bold text-[#606060] font-rajdhani">{post._count?.replies ?? post.replies?.length ?? 0}</span>
+                          <span className="text-[11px] text-[#777] whitespace-nowrap">{post.createdAt ? format(new Date(post.createdAt), "dd MMM HH:mm") : ""}</span>
+                          <span className="text-[11px] font-bold text-[#888] font-rajdhani">{post._count?.replies ?? post.replies?.length ?? 0}</span>
                           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                            <ChevronRight size={13} className={`text-[#444] transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                            <button onClick={e => { e.stopPropagation(); setDeletingQAPost(post.id); }} className="p-1 text-[#333] hover:text-red-400 rounded transition-all ml-1"><Trash2 size={13} /></button>
+                            <ChevronRight size={13} className={`text-[#777] transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                            <button onClick={e => { e.stopPropagation(); setDeletingQAPost(post.id); }} className="p-1 text-[#666] hover:text-red-400 rounded transition-all ml-1"><Trash2 size={13} /></button>
                           </div>
                         </div>
                         {/* Expanded panel */}
@@ -1990,9 +1990,9 @@ export default function WorkshopDetailPage() {
                                     <div className="flex-1 text-[12px]">
                                       <span className="font-bold text-[#dc2626] mr-2">{reply.admin ? `${reply.admin.fullName} (Admin)` : reply.member?.firstName}</span>
                                       <span className="text-[#a0a0a0]">{reply.replyText}</span>
-                                      {reply.createdAt && <span className="text-[10px] text-[#444] ml-2">{format(new Date(reply.createdAt), "dd MMM HH:mm")}</span>}
+                                      {reply.createdAt && <span className="text-[10px] text-[#777] ml-2">{format(new Date(reply.createdAt), "dd MMM HH:mm")}</span>}
                                     </div>
-                                    <button onClick={() => setDeletingQAReply(reply.id)} className="p-1 text-[#333] hover:text-red-400 rounded transition-all shrink-0 mt-0.5"><Trash2 size={11} /></button>
+                                    <button onClick={() => setDeletingQAReply(reply.id)} className="p-1 text-[#666] hover:text-red-400 rounded transition-all shrink-0 mt-0.5"><Trash2 size={11} /></button>
                                   </div>
                                 ))}
                               </div>
@@ -2003,10 +2003,10 @@ export default function WorkshopDetailPage() {
                                 <button onClick={() => handleReplyQA(post.id)} disabled={replyQA.isPending} className="px-4 py-1.5 bg-[#dc2626] text-white rounded-lg text-[12px] font-bold hover:bg-red-700 transition-all">
                                   {replyQA.isPending ? <Loader2 size={14} className="animate-spin" /> : "Reply"}
                                 </button>
-                                <button onClick={() => { setReplyingQA(null); setReplyText(""); }} className="px-3 py-1.5 bg-[#1a1a1a] border border-[#333] text-[#606060] rounded-lg text-[12px] hover:text-white transition-all">Cancel</button>
+                                <button onClick={() => { setReplyingQA(null); setReplyText(""); }} className="px-3 py-1.5 bg-[#1a1a1a] border border-[#333] text-[#888] rounded-lg text-[12px] hover:text-white transition-all">Cancel</button>
                               </div>
                             ) : (
-                              <button onClick={() => setReplyingQA(post.id)} className="text-[11px] text-[#606060] hover:text-[#dc2626] font-rajdhani font-bold uppercase tracking-widest transition-colors">+ Reply</button>
+                              <button onClick={() => setReplyingQA(post.id)} className="text-[11px] text-[#888] hover:text-[#dc2626] font-rajdhani font-bold uppercase tracking-widest transition-colors">+ Reply</button>
                             )}
                           </div>
                         )}
@@ -2017,7 +2017,7 @@ export default function WorkshopDetailPage() {
                 {/* Pagination */}
                 {qaMeta && qaMeta.total > qaMeta.limit && (
                   <div className="flex items-center justify-between px-5 py-3 border-t border-[#222] bg-[#1a1a1a]">
-                    <span className="text-[11px] text-[#444]">
+                    <span className="text-[11px] text-[#777]">
                       {((qaPage - 1) * (qaMeta.limit || 20)) + 1}–{Math.min(qaPage * (qaMeta.limit || 20), qaMeta.total)} of {qaMeta.total}
                     </span>
                     <div className="flex gap-2">
@@ -2035,7 +2035,7 @@ export default function WorkshopDetailPage() {
         {activeTab === "enrollments" && (
           <div className="space-y-4">
             <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 space-y-3">
-              <p className="text-[10px] text-[#606060] uppercase font-bold tracking-widest font-rajdhani">Enroll Members</p>
+              <p className="text-[10px] text-[#888] uppercase font-bold tracking-widest font-rajdhani">Enroll Members</p>
               {/* Selected chips */}
               {selectedEnrollMembers.length > 0 && (
                 <div className="flex flex-wrap gap-2">
@@ -2050,7 +2050,7 @@ export default function WorkshopDetailPage() {
               {/* Search + enroll button */}
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#444]" />
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#777]" />
                   <input
                     value={enrollSearch}
                     onChange={e => { setEnrollSearch(e.target.value); setEnrollDropOpen(true); }}
@@ -2072,7 +2072,7 @@ export default function WorkshopDetailPage() {
                           >
                             <div>
                               <p className="text-[12px] font-bold text-[#f0f0f0]">{m.firstName} {m.lastName}</p>
-                              <p className="text-[10px] text-[#606060]">{m.email}</p>
+                              <p className="text-[10px] text-[#888]">{m.email}</p>
                             </div>
                             {isEnrolled
                               ? <span className="text-[9px] text-green-400 font-rajdhani font-bold uppercase tracking-widest">Enrolled</span>
@@ -2094,16 +2094,16 @@ export default function WorkshopDetailPage() {
             <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
               {enrollments.length === 0 ? (
                 <div className="text-center py-16">
-                  <Users size={32} className="mx-auto text-[#333] mb-3" />
-                  <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No enrollments yet</p>
+                  <Users size={32} className="mx-auto text-[#666] mb-3" />
+                  <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No enrollments yet</p>
                 </div>
               ) : (
                 <table className="w-full">
                   <thead>
                     <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
-                      <th className="px-6 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Member</th>
-                      <th className="px-6 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Status</th>
-                      <th className="px-6 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#606060] font-bold font-rajdhani">Enrolled</th>
+                      <th className="px-6 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Member</th>
+                      <th className="px-6 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Status</th>
+                      <th className="px-6 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Enrolled</th>
                       <th className="px-6 py-4 w-[80px]" />
                     </tr>
                   </thead>
@@ -2112,19 +2112,19 @@ export default function WorkshopDetailPage() {
                       <tr key={e.id} className="hover:bg-white/[0.02] transition-colors">
                         <td className="px-6 py-4">
                           <p className="font-bold text-[#f0f0f0] text-sm">{e.member?.firstName} {e.member?.lastName}</p>
-                          <p className="text-[11px] text-[#444]">{e.member?.email}</p>
+                          <p className="text-[11px] text-[#777]">{e.member?.email}</p>
                         </td>
                         <td className="px-6 py-4">
                           <select value={e.status} onChange={ev => handleUpdateEnrollment(e.id, ev.target.value)} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded h-8 px-2 text-white text-[11px] outline-none focus:border-[#dc2626] transition-all appearance-none">
                             {["active", "completed", "paused", "dropped"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
                           </select>
                         </td>
-                        <td className="px-6 py-4 text-[#606060] text-sm">{e.createdAt ? format(new Date(e.createdAt), "dd MMM yyyy") : "—"}</td>
+                        <td className="px-6 py-4 text-[#888] text-sm">{e.createdAt ? format(new Date(e.createdAt), "dd MMM yyyy") : "—"}</td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-1.5">
                             {e.status === "completed" && <span className="flex items-center gap-1 text-[11px] text-green-400 font-bold"><CheckCircle2 size={12} /></span>}
                             {e.status === "active" && <span className="flex items-center gap-1 text-[11px] text-blue-400 font-bold"><Clock size={12} /></span>}
-                            <button onClick={() => setDeletingEnrollment(e.id)} className="p-1.5 text-[#444] hover:text-red-400 rounded transition-all"><Trash2 size={13} /></button>
+                            <button onClick={() => setDeletingEnrollment(e.id)} className="p-1.5 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={13} /></button>
                           </div>
                         </td>
                       </tr>
@@ -2148,7 +2148,7 @@ export default function WorkshopDetailPage() {
                   {flowForm.type === "challenge_start" ? "Challenge" : flowForm.type === "live_call" ? "Live Call" : "Pre-Requisite"}
                 </h3>
               </div>
-              <button onClick={() => setShowFlowForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowFlowForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {/* Pre-Requisite fields */}
@@ -2169,7 +2169,7 @@ export default function WorkshopDetailPage() {
                 <>
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-bold text-[#606060] uppercase tracking-widest font-rajdhani">Challenge *</span>
+                      <span className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Challenge *</span>
                       {!editingFlowItem && (
                         <button type="button" onClick={() => setFlowInlineCreate(v => !v)} className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#dc2626] hover:text-red-400 transition-colors">
                           {flowInlineCreate ? "← Select existing" : "+ Create new"}
@@ -2206,7 +2206,7 @@ export default function WorkshopDetailPage() {
                 <>
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-bold text-[#606060] uppercase tracking-widest font-rajdhani">Live Call *</span>
+                      <span className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Live Call *</span>
                       {!editingFlowItem && (
                         <button type="button" onClick={() => setFlowInlineCreate(v => !v)} className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#dc2626] hover:text-red-400 transition-colors">
                           {flowInlineCreate ? "← Select existing" : "+ Create new"}
@@ -2243,7 +2243,7 @@ export default function WorkshopDetailPage() {
               )}
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowFlowForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowFlowForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSaveFlow} disabled={addFlowItem.isPending || updateFlowItem.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">
                 {(addFlowItem.isPending || updateFlowItem.isPending) && <Loader2 size={14} className="animate-spin" />} Save
               </button>
@@ -2258,7 +2258,7 @@ export default function WorkshopDetailPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a] flex-shrink-0">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingChallenge ? "Edit Challenge" : "New Challenge"}</h3>
-              <button onClick={() => setShowChallengeForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowChallengeForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Basic fields */}
@@ -2286,10 +2286,10 @@ export default function WorkshopDetailPage() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-bold text-[#606060] uppercase tracking-widest font-rajdhani">Number Label</span>
+                  <span className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Number Label</span>
                   {numberLabelManual && !editingChallenge && (
                     <button type="button" onClick={() => { setNumberLabelManual(false); setChallengeForm(f => ({ ...f, numberLabel: `Challenge ${String(f.challengeNumber).padStart(2, "0")}:` })); }}
-                      className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#606060] hover:text-[#a0a0a0] transition-colors">↺ Auto</button>
+                      className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#888] hover:text-[#a0a0a0] transition-colors">↺ Auto</button>
                   )}
                 </div>
                 <input value={challengeForm.numberLabel} onChange={e => { setNumberLabelManual(true); setChallengeForm(f => ({ ...f, numberLabel: e.target.value })); }} placeholder="e.g. Challenge 01:" className={inputCls} />
@@ -2342,26 +2342,26 @@ export default function WorkshopDetailPage() {
                   {quizQuestions.map((q, qi) => (
                     <div key={q.id} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 space-y-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#606060]">Q{qi + 1}</span>
+                        <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#888]">Q{qi + 1}</span>
                         <input
                           value={q.question} placeholder="Question text"
                           onChange={e => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, question: e.target.value } : x))}
                           className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm"
                         />
-                        <button type="button" onClick={() => setQuizQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-[#606060] hover:text-red-400 transition-colors flex-shrink-0"><Trash2 size={14} /></button>
+                        <button type="button" onClick={() => setQuizQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-[#888] hover:text-red-400 transition-colors flex-shrink-0"><Trash2 size={14} /></button>
                       </div>
                       <div className="space-y-2 pl-6">
                         {q.options.map((opt: any, oi: number) => (
                           <div key={opt.id} className="flex items-center gap-2">
                             <input type="radio" checked={opt.correct} onChange={() => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: x.options.map((o: any) => ({ ...o, correct: o.id === opt.id })) } : x))}
                               className="accent-[#dc2626] flex-shrink-0" title="Mark as correct" />
-                            <span className="text-[10px] font-mono text-[#555] w-4">{opt.id}</span>
+                            <span className="text-[10px] font-mono text-[#888] w-4">{opt.id}</span>
                             <input value={opt.text} placeholder={`Option ${opt.id.toUpperCase()}`}
                               onChange={e => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: x.options.map((o: any) => o.id === opt.id ? { ...o, text: e.target.value } : o) } : x))}
                               className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-8 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
                             {q.options.length > 2 && (
                               <button type="button" onClick={() => setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: x.options.filter((o: any) => o.id !== opt.id) } : x))}
-                                className="text-[#444] hover:text-red-400 transition-colors flex-shrink-0"><X size={12} /></button>
+                                className="text-[#777] hover:text-red-400 transition-colors flex-shrink-0"><X size={12} /></button>
                             )}
                           </div>
                         ))}
@@ -2370,7 +2370,7 @@ export default function WorkshopDetailPage() {
                             const ids = ["a","b","c","d","e"];
                             const nextId = ids.find(id => !q.options.some((o: any) => o.id === id)) ?? mkId();
                             setQuizQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: [...x.options, { id: nextId, text: "", correct: false }] } : x));
-                          }} className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#444] hover:text-[#a0a0a0] transition-colors flex items-center gap-1">
+                          }} className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#777] hover:text-[#a0a0a0] transition-colors flex items-center gap-1">
                             <Plus size={10} /> Add Option
                           </button>
                         )}
@@ -2378,7 +2378,7 @@ export default function WorkshopDetailPage() {
                     </div>
                   ))}
                   {quizQuestions.length === 0 && (
-                    <p className="text-[#444] text-xs text-center py-4">No questions yet. Click "Add Question" to start.</p>
+                    <p className="text-[#777] text-xs text-center py-4">No questions yet. Click "Add Question" to start.</p>
                   )}
                 </div>
               )}
@@ -2410,8 +2410,8 @@ export default function WorkshopDetailPage() {
                     </button>
                   </div>
                   <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
-                    <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#444] text-center">Term</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#444] text-center">Definition</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#777] text-center">Term</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#777] text-center">Definition</span>
                     <span />
                   </div>
                   {matchingPairs.map((p, pi) => (
@@ -2421,11 +2421,11 @@ export default function WorkshopDetailPage() {
                       <input value={p.right} placeholder="Definition" onChange={e => setMatchingPairs(ps => ps.map((x, i) => i === pi ? { ...x, right: e.target.value } : x))}
                         className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
                       <button type="button" onClick={() => setMatchingPairs(ps => ps.filter((_, i) => i !== pi))} disabled={matchingPairs.length <= 1}
-                        className="text-[#606060] hover:text-red-400 transition-colors disabled:opacity-30"><Trash2 size={14} /></button>
+                        className="text-[#888] hover:text-red-400 transition-colors disabled:opacity-30"><Trash2 size={14} /></button>
                     </div>
                   ))}
                   {matchingPairs.length === 0 && (
-                    <p className="text-[#444] text-xs text-center py-4">No pairs yet. Click "Add Pair" to start.</p>
+                    <p className="text-[#777] text-xs text-center py-4">No pairs yet. Click "Add Pair" to start.</p>
                   )}
                 </div>
               )}
@@ -2443,9 +2443,9 @@ export default function WorkshopDetailPage() {
                   {flashCards.map((c, ci) => (
                     <div key={c.id} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 space-y-2">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#606060]">Card {ci + 1}</span>
+                        <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#888]">Card {ci + 1}</span>
                         <button type="button" onClick={() => setFlashCards(cs => cs.filter((_, i) => i !== ci))} disabled={flashCards.length <= 1}
-                          className="text-[#444] hover:text-red-400 transition-colors disabled:opacity-30"><Trash2 size={13} /></button>
+                          className="text-[#777] hover:text-red-400 transition-colors disabled:opacity-30"><Trash2 size={13} /></button>
                       </div>
                       <input value={c.front} placeholder="Front (question / term)" onChange={e => setFlashCards(cs => cs.map((x, i) => i === ci ? { ...x, front: e.target.value } : x))}
                         className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
@@ -2454,13 +2454,13 @@ export default function WorkshopDetailPage() {
                     </div>
                   ))}
                   {flashCards.length === 0 && (
-                    <p className="text-[#444] text-xs text-center py-4">No cards yet. Click "Add Card" to start.</p>
+                    <p className="text-[#777] text-xs text-center py-4">No cards yet. Click "Add Card" to start.</p>
                   )}
                 </div>
               )}
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3 flex-shrink-0">
-              <button onClick={() => setShowChallengeForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowChallengeForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSaveChallenge} disabled={createChallenge.isPending || updateChallenge.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">
                 {(createChallenge.isPending || updateChallenge.isPending) && <Loader2 size={14} className="animate-spin" />} Save
               </button>
@@ -2475,7 +2475,7 @@ export default function WorkshopDetailPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingEpisode ? "Edit Episode" : "New Episode"}</h3>
-              <button onClick={() => setShowEpisodeForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowEpisodeForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               <div><label className={labelCls}>Title *</label><input value={episodeForm.title} onChange={e => setEpisodeForm(f => ({ ...f, title: e.target.value }))} className={inputCls} /></div>
@@ -2490,7 +2490,7 @@ export default function WorkshopDetailPage() {
                   <label className={labelCls}>Duration (sec)</label>
                   <input type="number" value={episodeForm.durationSeconds} onChange={e => setEpisodeForm(f => ({ ...f, durationSeconds: e.target.value }))} className={inputCls} />
                   {episodeForm.durationSeconds && Number(episodeForm.durationSeconds) > 0 && (
-                    <p className="text-[10px] text-[#555] mt-1 font-mono">
+                    <p className="text-[10px] text-[#888] mt-1 font-mono">
                       ≈ {Math.floor(Number(episodeForm.durationSeconds) / 60)}m {Number(episodeForm.durationSeconds) % 60 > 0 ? `${Number(episodeForm.durationSeconds) % 60}s` : ""}
                     </p>
                   )}
@@ -2531,7 +2531,7 @@ export default function WorkshopDetailPage() {
               </div>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowEpisodeForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowEpisodeForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSaveEpisode} disabled={createEpisode.isPending || updateEpisode.isPending || epVideoUploading} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-60">
                 {(createEpisode.isPending || updateEpisode.isPending) && <Loader2 size={14} className="animate-spin" />} Save
               </button>
@@ -2546,7 +2546,7 @@ export default function WorkshopDetailPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingLiveCall ? "Edit Live Call" : "New Live Call"}</h3>
-              <button onClick={() => setShowLiveCallForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowLiveCallForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
               <div><label className={labelCls}>Title *</label><input value={liveCallForm.title} onChange={e => setLiveCallForm(f => ({ ...f, title: e.target.value }))} placeholder="Session title" className={inputCls} /></div>
@@ -2590,7 +2590,7 @@ export default function WorkshopDetailPage() {
                       <option key={c.id} value={c.id}>{c.numberLabel} — {c.title}</option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-[#606060] mt-1">Member must complete this challenge to join</p>
+                  <p className="text-[10px] text-[#888] mt-1">Member must complete this challenge to join</p>
                 </div>
                 <div>
                   <label className={labelCls}>Auto-unlock after session (optional)</label>
@@ -2600,7 +2600,7 @@ export default function WorkshopDetailPage() {
                       <option key={c.id} value={c.id}>{c.numberLabel} — {c.title}</option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-[#606060] mt-1">Unlocked for all enrollees when session ends</p>
+                  <p className="text-[10px] text-[#888] mt-1">Unlocked for all enrollees when session ends</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -2641,7 +2641,7 @@ export default function WorkshopDetailPage() {
                 </div>
               </label>
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Passcode (optional)</label>
+                <label className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Passcode (optional)</label>
                 <input
                   className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] mt-1 text-sm font-mono"
                   placeholder="Leave blank for no passcode"
@@ -2653,10 +2653,10 @@ export default function WorkshopDetailPage() {
 
             {/* External Meeting Link */}
             <div className="px-6 pb-5 space-y-3">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani pt-1">External Meeting (optional)</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani pt-1">External Meeting (optional)</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Provider Name</label>
+                  <label className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Provider Name</label>
                   <input
                     className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] mt-1 text-sm"
                     placeholder="e.g. Zoom, Google Meet"
@@ -2665,7 +2665,7 @@ export default function WorkshopDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Meeting Link</label>
+                  <label className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Meeting Link</label>
                   <input
                     className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] mt-1 text-sm"
                     placeholder="https://zoom.us/j/..."
@@ -2693,7 +2693,7 @@ export default function WorkshopDetailPage() {
             )}
 
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowLiveCallForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowLiveCallForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSaveLiveCall} disabled={createLiveCall.isPending || updateLiveCall.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">
                 {(createLiveCall.isPending || updateLiveCall.isPending) && <Loader2 size={14} className="animate-spin" />} Save
               </button>
@@ -2708,7 +2708,7 @@ export default function WorkshopDetailPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingAssignment ? "Edit Assignment" : "New Assignment"}</h3>
-              <button onClick={() => setShowAssignmentForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowAssignmentForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               <div><label className={labelCls}>Title *</label><input value={assignmentForm.title} onChange={e => setAssignmentForm(f => ({ ...f, title: e.target.value }))} className={inputCls} /></div>
@@ -2725,7 +2725,7 @@ export default function WorkshopDetailPage() {
                         assignmentType: opt.value,
                         typeLabel: opt.value === "image_upload" ? "IMAGE" : (f.typeLabel || "QUESTION"),
                       }))}
-                      className={`flex-1 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${assignmentForm.assignmentType === opt.value ? "bg-[#dc2626] text-white border-[#dc2626]" : "bg-[#1a1a1a] text-[#606060] border-[#2a2a2a] hover:text-white"}`}
+                      className={`flex-1 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${assignmentForm.assignmentType === opt.value ? "bg-[#dc2626] text-white border-[#dc2626]" : "bg-[#1a1a1a] text-[#888] border-[#2a2a2a] hover:text-white"}`}
                     >
                       {opt.label}
                     </button>
@@ -2748,7 +2748,7 @@ export default function WorkshopDetailPage() {
               </div>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowAssignmentForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
+              <button onClick={() => setShowAssignmentForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all">Cancel</button>
               <button onClick={handleSaveAssignment} disabled={createAssignment.isPending || updateAssignment.isPending} className="bg-[#dc2626] hover:bg-red-700 text-white px-8 py-2 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2">
                 {(createAssignment.isPending || updateAssignment.isPending) && <Loader2 size={14} className="animate-spin" />} Save
               </button>
@@ -2766,7 +2766,7 @@ export default function WorkshopDetailPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={36} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Confirm Delete?</h3>
-            <p className="text-[#606060] text-sm mb-6">This action cannot be undone.</p>
+            <p className="text-[#888] text-sm mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={clearDeleting} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest hover:text-white transition-all">Cancel</button>
               <button
@@ -2809,13 +2809,13 @@ function RsvpModal({ lcId, onClose }: { lcId: string; onClose: () => void }) {
               </p>
             )}
           </div>
-          <button onClick={onClose} className="p-1 text-[#444] hover:text-white transition-colors"><X size={16} /></button>
+          <button onClick={onClose} className="p-1 text-[#777] hover:text-white transition-colors"><X size={16} /></button>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {isLoading ? (
-            <p className="px-6 py-4 text-xs text-[#444]">Loading…</p>
+            <p className="px-6 py-4 text-xs text-[#777]">Loading…</p>
           ) : !data || data.members.length === 0 ? (
-            <p className="px-6 py-4 text-xs text-[#444]">No RSVPs yet.</p>
+            <p className="px-6 py-4 text-xs text-[#777]">No RSVPs yet.</p>
           ) : (
             <table className="w-full text-xs">
               <thead>
@@ -2830,14 +2830,14 @@ function RsvpModal({ lcId, onClose }: { lcId: string; onClose: () => void }) {
                   <tr key={r.id} style={{ borderBottom: "1px solid #111" }}>
                     <td className="px-6 py-2 text-[#a0a0a0]">
                       {r.member.firstName} {r.member.lastName || ""}
-                      <span className="text-[#444] ml-1">({r.member.memberId})</span>
+                      <span className="text-[#777] ml-1">({r.member.memberId})</span>
                     </td>
                     <td className="px-6 py-2">
                       <span className="font-bold" style={{ color: r.status === "confirmed" ? "#22c55e" : "#f87171" }}>
                         {r.status === "confirmed" ? "✓ Confirmed" : "✗ Declined"}
                       </span>
                     </td>
-                    <td className="px-6 py-2 text-[#444]">{new Date(r.confirmedAt).toLocaleString()}</td>
+                    <td className="px-6 py-2 text-[#777]">{new Date(r.confirmedAt).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2855,16 +2855,16 @@ function SubmissionsList({ assignmentId }: { assignmentId: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (isLoading) return <div className="px-5 py-4 bg-[#111]"><Loader2 size={16} className="animate-spin text-[#dc2626]" /></div>;
-  if (!submissions.length) return <div className="px-5 py-4 bg-[#111] text-[12px] text-[#444] italic">No submissions yet.</div>;
+  if (!submissions.length) return <div className="px-5 py-4 bg-[#111] text-[12px] text-[#777] italic">No submissions yet.</div>;
 
   return (
     <div className="bg-[#111] border-t border-[#1a1a1a]">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[#1a1a1a]">
-            <th className="text-left px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Member</th>
-            <th className="text-left px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Submitted At</th>
-            <th className="text-left px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-[#444] font-rajdhani">Answer</th>
+            <th className="text-left px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Member</th>
+            <th className="text-left px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Submitted At</th>
+            <th className="text-left px-5 py-2 text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Answer</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#1a1a1a]">
@@ -2879,7 +2879,7 @@ function SubmissionsList({ assignmentId }: { assignmentId: string }) {
                     <span className="text-[12px] font-bold text-[#e0e0e0]">{s.member?.firstName} {s.member?.lastName}</span>
                   </div>
                 </td>
-                <td className="px-5 py-3 text-[12px] text-[#606060] whitespace-nowrap">
+                <td className="px-5 py-3 text-[12px] text-[#888] whitespace-nowrap">
                   {s.submittedAt ? format(new Date(s.submittedAt), "dd MMM yyyy HH:mm") : "—"}
                 </td>
                 <td className="px-5 py-3">
@@ -2891,7 +2891,7 @@ function SubmissionsList({ assignmentId }: { assignmentId: string }) {
                       {expandedId === s.id ? "Hide" : "View"} <ChevronRight size={11} className={`transition-transform ${expandedId === s.id ? "rotate-90" : ""}`} />
                     </button>
                   ) : (
-                    <span className="text-[11px] text-[#444] italic">empty</span>
+                    <span className="text-[11px] text-[#777] italic">empty</span>
                   )}
                 </td>
               </tr>

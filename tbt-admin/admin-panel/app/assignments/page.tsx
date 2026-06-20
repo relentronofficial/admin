@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Fragment, useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -51,7 +51,7 @@ export default function AssignmentsPage() {
           <div className="w-0.5 bg-[#e02020] rounded-sm min-h-[40px]" />
           <div>
             <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0]">Assignment Submissions</h1>
-            <p className="text-[12px] text-[#606060] font-medium uppercase tracking-wider font-rajdhani">Review and respond to member assignment answers.</p>
+            <p className="text-[12px] text-[#888] font-medium uppercase tracking-wider font-rajdhani">Review and respond to member assignment answers.</p>
           </div>
         </div>
 
@@ -70,34 +70,34 @@ export default function AssignmentsPage() {
               <button
                 key={val}
                 onClick={() => { setReviewed(val as any); setPage(1); }}
-                className={`px-4 py-2 rounded text-[10px] font-bold font-rajdhani uppercase tracking-widest transition-all ${reviewed === val ? "bg-[#dc2626] text-white" : "bg-[#1a1a1a] text-[#606060] border border-[#2a2a2a] hover:text-white"}`}
+                className={`px-4 py-2 rounded text-[10px] font-bold font-rajdhani uppercase tracking-widest transition-all ${reviewed === val ? "bg-[#dc2626] text-white" : "bg-[#1a1a1a] text-[#888] border border-[#2a2a2a] hover:text-white"}`}
               >
                 {label}
               </button>
             ))}
           </div>
-          <span className="text-[10px] text-[#444] ml-auto">{total} submissions</span>
+          <span className="text-[10px] text-[#777] ml-auto">{total} submissions</span>
         </div>
 
         {/* Table */}
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-20"><Loader2 size={22} className="animate-spin text-[#444]" /></div>
+            <div className="flex items-center justify-center py-20"><Loader2 size={22} className="animate-spin text-[#777]" /></div>
           ) : submissions.length === 0 ? (
             <div className="text-center py-20 space-y-3">
-              <ClipboardCheck size={32} className="mx-auto text-[#333]" />
-              <p className="text-[#444] text-sm font-rajdhani font-bold uppercase tracking-widest">No submissions found</p>
+              <ClipboardCheck size={32} className="mx-auto text-[#666]" />
+              <p className="text-[#777] text-sm font-rajdhani font-bold uppercase tracking-widest">No submissions found</p>
             </div>
           ) : (
             <>
               <table className="w-full">
                 <thead>
                   <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
-                    <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Member</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Assignment</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Answer</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Submitted</th>
-                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#444] font-bold font-rajdhani">Status</th>
+                    <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Member</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Assignment</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Answer</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Submitted</th>
+                    <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Status</th>
                     <th className="px-4 py-3 w-[90px]" />
                   </tr>
                 </thead>
@@ -107,16 +107,16 @@ export default function AssignmentsPage() {
                       <tr className="hover:bg-white/[0.02] transition-colors">
                         <td className="px-5 py-3.5">
                           <p className="text-[12px] font-bold text-[#f0f0f0]">{s.member?.firstName} {s.member?.lastName}</p>
-                          <p className="text-[10px] text-[#444]">{s.member?.email}</p>
+                          <p className="text-[10px] text-[#777]">{s.member?.email}</p>
                         </td>
                         <td className="px-4 py-3.5">
                           <p className="text-[12px] text-[#a0a0a0] truncate max-w-[200px]">{s.assignment?.title}</p>
-                          <p className="text-[10px] text-[#444] truncate max-w-[200px]">{s.assignment?.challenge?.workshop?.title}</p>
+                          <p className="text-[10px] text-[#777] truncate max-w-[200px]">{s.assignment?.challenge?.workshop?.title}</p>
                         </td>
                         <td className="px-4 py-3.5">
-                          <p className="text-[11px] text-[#606060] max-w-[220px] line-clamp-2">{s.answerText}</p>
+                          <p className="text-[11px] text-[#888] max-w-[220px] line-clamp-2">{s.answerText}</p>
                         </td>
-                        <td className="px-4 py-3.5 text-[11px] text-[#444]">{safeDate(s.submittedAt)}</td>
+                        <td className="px-4 py-3.5 text-[11px] text-[#777]">{safeDate(s.submittedAt)}</td>
                         <td className="px-4 py-3.5">
                           {s.reviewedAt ? (
                             <div className="flex items-center gap-1.5">
@@ -134,7 +134,7 @@ export default function AssignmentsPage() {
                           {!s.reviewedAt && (
                             <button
                               onClick={() => { setReviewingId(reviewingId === s.id ? null : s.id); setReviewNote(s.reviewNote || ""); }}
-                              className="px-3 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded text-[10px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:border-[#dc2626] hover:text-[#dc2626] transition-all"
+                              className="px-3 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded text-[10px] font-bold font-rajdhani uppercase tracking-widest text-[#888] hover:border-[#dc2626] hover:text-[#dc2626] transition-all"
                             >
                               Review
                             </button>
@@ -163,7 +163,7 @@ export default function AssignmentsPage() {
                                 </button>
                                 <button
                                   onClick={() => { setReviewingId(null); setReviewNote(""); }}
-                                  className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] text-[#606060] hover:text-white rounded-lg font-rajdhani font-bold text-[11px] uppercase tracking-widest transition-all"
+                                  className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white rounded-lg font-rajdhani font-bold text-[11px] uppercase tracking-widest transition-all"
                                 >
                                   Cancel
                                 </button>
@@ -178,9 +178,9 @@ export default function AssignmentsPage() {
               </table>
               {total > 20 && (
                 <div className="px-6 py-3 border-t border-[#1f1f1f] flex items-center justify-between">
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
-                  <span className="text-[10px] text-[#444]">Page {page} · {total} total</span>
-                  <button onClick={() => setPage(p => p + 1)} disabled={submissions.length < 20} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#606060] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#888] hover:text-white disabled:opacity-30 transition-colors">← Prev</button>
+                  <span className="text-[10px] text-[#777]">Page {page} · {total} total</span>
+                  <button onClick={() => setPage(p => p + 1)} disabled={submissions.length < 20} className="text-[11px] font-bold font-rajdhani uppercase tracking-widest text-[#888] hover:text-white disabled:opacity-30 transition-colors">Next →</button>
                 </div>
               )}
             </>

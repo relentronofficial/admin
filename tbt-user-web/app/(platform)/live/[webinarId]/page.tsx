@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { use, useState, useEffect } from "react";
 import { Video, Users } from "lucide-react";
@@ -91,7 +91,7 @@ export default function LiveSessionPage({ params }: { params: Promise<{ webinarI
         ) : hasRecording ? (
           <video src={effectiveRecordingUrl!} controls className="w-full h-full object-contain" />
         ) : (
-          <div className="text-center text-white/50 space-y-3">
+          <div className="text-center text-white/75 space-y-3">
             <Video size={48} className="mx-auto opacity-40" />
             <p className="text-sm">
               {effectiveStatus === "scheduled"

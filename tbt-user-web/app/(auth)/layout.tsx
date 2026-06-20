@@ -1,4 +1,4 @@
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+﻿export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* Branding panel */}
@@ -19,7 +19,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </footer>
         </blockquote>
 
-        <p className="text-white/50 text-sm">
+        <p className="text-white/75 text-sm">
           &copy; {new Date().getFullYear()} Tamil Business Tribe. All rights reserved.
         </p>
       </div>

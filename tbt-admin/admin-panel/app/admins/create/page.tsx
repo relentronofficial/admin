@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { 
@@ -304,7 +304,7 @@ export default function CreateAdminPage() {
           <div className="w-1 bg-[#e02020] rounded-full h-10" />
           <div>
             <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Create Admin Account</h1>
-            <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Register a new system operator and define security protocols.</p>
+            <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Register a new system operator and define security protocols.</p>
           </div>
         </div>
 
@@ -326,9 +326,9 @@ export default function CreateAdminPage() {
                     readOnly
                     className="w-full bg-[#141414] border border-[#333] rounded-md py-3 px-4 text-[14px] font-mono font-bold text-[#e02020] outline-none cursor-default" 
                   />
-                  {isLoadingId && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] animate-spin" />}
+                  {isLoadingId && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] animate-spin" />}
                 </div>
-                <div className="text-[10px] text-[#444] uppercase font-bold tracking-wider font-rajdhani">Immutable Protocol</div>
+                <div className="text-[10px] text-[#777] uppercase font-bold tracking-wider font-rajdhani">Immutable Protocol</div>
               </div>
             </div>
 
@@ -340,7 +340,7 @@ export default function CreateAdminPage() {
                 {profileImage ? (
                   <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
-                  <User size={32} className="text-[#333]" />
+                  <User size={32} className="text-[#666]" />
                 )}
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera size={20} className="text-white" />
@@ -355,7 +355,7 @@ export default function CreateAdminPage() {
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/jpeg,image/png,image/webp" className="hidden" />
                 <button type="button" onClick={triggerUpload} className="px-4 py-2 bg-[#1f1f1f] border border-[#333] rounded text-[11px] font-bold text-[#a0a0a0] hover:text-[#f0f0f0] transition-colors uppercase tracking-wider font-rajdhani">Choose Identity Image</button>
                 {profileImage && <button type="button" onClick={removePhoto} className="ml-3 text-[10px] text-red-500 uppercase font-bold tracking-wider hover:underline">Remove</button>}
-                <p className="text-[10px] text-[#444] uppercase font-medium tracking-[0.5px]">Allowed: JPG, PNG, WEBP (Max 2MB)</p>
+                <p className="text-[10px] text-[#777] uppercase font-medium tracking-[0.5px]">Allowed: JPG, PNG, WEBP (Max 2MB)</p>
               </div>
             </div>
 
@@ -385,7 +385,7 @@ export default function CreateAdminPage() {
                     className={cn("w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 px-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0] pr-10", errors.email && "border-red-500/50")} 
                     placeholder="admin@tamilbusinesstribe.com" 
                   />
-                  {checkEmail.isPending && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] animate-spin" />}
+                  {checkEmail.isPending && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] animate-spin" />}
                   {!checkEmail.isPending && watchEmail && !errors.email && <CheckCircle2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500" />}
                 </div>
                 {errors.email && <p className="text-[10px] text-red-500 mt-1 font-medium">{errors.email.message}</p>}
@@ -427,7 +427,7 @@ export default function CreateAdminPage() {
                       <option key={bg} value={bg}>{bg}</option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
             </div>
@@ -453,7 +453,7 @@ export default function CreateAdminPage() {
                     <option value="mentor">Mentor</option>
                     <option value="moderator">Moderator</option>
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
 
@@ -467,7 +467,7 @@ export default function CreateAdminPage() {
                     <option>Finance</option>
                     <option>Operations</option>
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
 
@@ -486,17 +486,17 @@ export default function CreateAdminPage() {
                       setShowManagerDropdown(true);
                     }}
                     onFocus={() => setShowManagerDropdown(true)}
-                    className="w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0] placeholder:text-[#444]" 
+                    className="w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 pl-10 pr-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0] placeholder:text-[#777]" 
                     placeholder="Search managers..." 
                   />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060] opacity-40">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888] opacity-40">
                     <Search size={14} />
                   </div>
 
                   {showManagerDropdown && (managerSearch.length > 2 || isLoadingManagers) && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1a] border border-[#333] rounded-md shadow-2xl z-[110] overflow-hidden">
                       {isLoadingManagers ? (
-                        <div className="p-4 flex items-center justify-center gap-2 text-[#606060] text-[12px]">
+                        <div className="p-4 flex items-center justify-center gap-2 text-[#888] text-[12px]">
                           <Loader2 size={14} className="animate-spin" /> Searching...
                         </div>
                       ) : managers?.length > 0 ? (
@@ -513,12 +513,12 @@ export default function CreateAdminPage() {
                               className="w-full px-4 py-3 text-left hover:bg-[#e02020]/10 border-b border-[#333]/30 last:border-0 group transition-colors"
                             >
                               <p className="text-[13px] text-[#f0f0f0] font-medium group-hover:text-[#e02020]">{m.fullName}</p>
-                              <p className="text-[11px] text-[#606060]">{m.designation} &middot; {m.employeeId}</p>
+                              <p className="text-[11px] text-[#888]">{m.designation} &middot; {m.employeeId}</p>
                             </button>
                           ))}
                         </div>
                       ) : (
-                        <div className="p-4 text-center text-[#606060] text-[12px]">No managers found</div>
+                        <div className="p-4 text-center text-[#888] text-[12px]">No managers found</div>
                       )}
                     </div>
                   )}
@@ -551,7 +551,7 @@ export default function CreateAdminPage() {
                 >
                   {isLoadingCountries ? <option>Loading...</option> : countries?.map((c: any) => <option key={c.isoCode} value={c.name}>{c.name}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
               </div>
             </div>
 
@@ -564,7 +564,7 @@ export default function CreateAdminPage() {
                 >
                   {isLoadingStates ? <option>Loading...</option> : states?.map((s: any) => <option key={s.isoCode} value={s.name}>{s.name}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
               </div>
             </div>
 
@@ -574,7 +574,7 @@ export default function CreateAdminPage() {
                 <select {...register("district")} className="w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 px-4 text-[13.5px] outline-none appearance-none text-[#f0f0f0] cursor-pointer">
                   {isLoadingDistricts ? <option>Loading...</option> : districts?.map((d: string) => <option key={d} value={d}>{d}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
               </div>
             </div>
 
@@ -584,7 +584,7 @@ export default function CreateAdminPage() {
                 <select {...register("city")} className="w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 px-4 text-[13.5px] outline-none appearance-none text-[#f0f0f0] cursor-pointer">
                    {isLoadingCities ? <option>Loading...</option> : cities?.map((c: string) => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
               </div>
             </div>
 
@@ -618,11 +618,11 @@ export default function CreateAdminPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-[#141414] border-b border-[#2a2a2a]">
-                  <th className="px-6 py-4 text-[10px] uppercase tracking-[1.5px] text-[#606060] font-bold font-rajdhani w-[40%]">System Module</th>
-                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#606060] font-bold text-center font-rajdhani">View</th>
-                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#606060] font-bold text-center font-rajdhani">Create</th>
-                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#606060] font-bold text-center font-rajdhani">Edit</th>
-                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#606060] font-bold text-center font-rajdhani">Delete</th>
+                  <th className="px-6 py-4 text-[10px] uppercase tracking-[1.5px] text-[#888] font-bold font-rajdhani w-[40%]">System Module</th>
+                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#888] font-bold text-center font-rajdhani">View</th>
+                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#888] font-bold text-center font-rajdhani">Create</th>
+                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#888] font-bold text-center font-rajdhani">Edit</th>
+                  <th className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#888] font-bold text-center font-rajdhani">Delete</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2a2a2a]">
@@ -673,7 +673,7 @@ export default function CreateAdminPage() {
                     className={cn("w-full bg-[#1f1f1f] border border-[#333] rounded-md py-2.5 px-4 text-[13.5px] outline-none focus:border-[#e02020] transition-all text-[#f0f0f0] pr-10", errors.username && "border-red-500/50")} 
                     placeholder="Enter unique username" 
                   />
-                  {checkUsername.isPending && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] animate-spin" />}
+                  {checkUsername.isPending && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] animate-spin" />}
                   {!checkUsername.isPending && watchUsername && !errors.username && <CheckCircle2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500" />}
                 </div>
                 {errors.username && <p className="text-[10px] text-red-500 mt-1 font-medium">{errors.username.message}</p>}
@@ -688,7 +688,7 @@ export default function CreateAdminPage() {
                     <option value="suspended">Suspended</option>
                     <option value="pending_approval">Pending Approval</option>
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
             </div>
@@ -721,7 +721,7 @@ export default function CreateAdminPage() {
                 <Shield size={20} className="text-[#e02020]/60" />
                 <div>
                   <p className="text-[13px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">Multi-Factor Authentication (2FA)</p>
-                  <p className="text-[10px] text-[#444] uppercase font-bold tracking-tight">Enable biometric or OTP verification for this entity.</p>
+                  <p className="text-[10px] text-[#777] uppercase font-bold tracking-tight">Enable biometric or OTP verification for this entity.</p>
                 </div>
               </div>
               <button 
@@ -770,7 +770,7 @@ export default function CreateAdminPage() {
                     className="bg-transparent border-none outline-none text-[12px] font-bold font-rajdhani text-[#f0f0f0] w-24"
                   />
                 ) : (
-                  <button type="button" onClick={() => setShowTagInput(true)} className="text-[#444] hover:text-[#666] flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider font-rajdhani">
+                  <button type="button" onClick={() => setShowTagInput(true)} className="text-[#777] hover:text-[#666] flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider font-rajdhani">
                     <Plus size={12} /> Add Tag
                   </button>
                 )}
@@ -802,7 +802,7 @@ export default function CreateAdminPage() {
                 router.push("/admins");
               }
             }}
-            className="px-8 py-2.5 bg-transparent border border-[#333] rounded text-[13px] font-bold font-rajdhani tracking-[2px] uppercase text-[#606060] hover:text-[#f0f0f0] hover:border-[#606060] transition-all"
+            className="px-8 py-2.5 bg-transparent border border-[#333] rounded text-[13px] font-bold font-rajdhani tracking-[2px] uppercase text-[#888] hover:text-[#f0f0f0] hover:border-[#606060] transition-all"
           >
             Cancel
           </button>

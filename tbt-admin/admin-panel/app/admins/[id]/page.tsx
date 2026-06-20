@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -80,7 +80,7 @@ function SectionHeader({
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1.5">
+    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani mb-1.5">
       {children}
     </label>
   );
@@ -90,7 +90,7 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <Label>{label}</Label>
-      <div className="w-full bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center text-[#606060] text-[13px] font-mono">
+      <div className="w-full bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center text-[#888] text-[13px] font-mono">
         {value || "—"}
       </div>
     </div>
@@ -98,7 +98,7 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
 }
 
 const inputCls =
-  "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white text-[13px] outline-none focus:border-[#dc2626] transition-colors placeholder:text-[#444]";
+  "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white text-[13px] outline-none focus:border-[#dc2626] transition-colors placeholder:text-[#777]";
 const selectCls =
   "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white text-[13px] outline-none focus:border-[#dc2626] transition-colors appearance-none cursor-pointer";
 
@@ -253,8 +253,8 @@ export default function EditAdminPage() {
     return (
       <DashboardLayout>
         <div className="flex flex-col items-center justify-center py-40 gap-4">
-          <Shield size={40} className="text-[#333]" />
-          <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest">Admin not found</p>
+          <Shield size={40} className="text-[#666]" />
+          <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest">Admin not found</p>
           <button
             onClick={() => router.push("/admins")}
             className="text-[#dc2626] text-[13px] font-bold font-rajdhani uppercase tracking-widest hover:underline"
@@ -274,7 +274,7 @@ export default function EditAdminPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push("/admins")}
-              className="p-2 rounded-lg border border-[#2a2a2a] text-[#606060] hover:text-white hover:border-[#444] transition-all"
+              className="p-2 rounded-lg border border-[#2a2a2a] text-[#888] hover:text-white hover:border-[#444] transition-all"
             >
               <ArrowLeft size={16} />
             </button>
@@ -282,7 +282,7 @@ export default function EditAdminPage() {
               <div className="w-1 bg-[#dc2626] rounded-full min-h-[40px]" />
               <div>
                 <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Edit Admin</h1>
-                <p className="text-[11px] text-[#606060] font-rajdhani font-bold uppercase tracking-widest">
+                <p className="text-[11px] text-[#888] font-rajdhani font-bold uppercase tracking-widest">
                   {admin.employeeId} · {admin.email}
                 </p>
               </div>
@@ -316,7 +316,7 @@ export default function EditAdminPage() {
                   {form.profilePhotoUrl ? (
                     <img src={form.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <User size={28} className="text-[#333]" />
+                    <User size={28} className="text-[#666]" />
                   )}
                 </div>
                 {form.profilePhotoUrl && (
@@ -333,7 +333,7 @@ export default function EditAdminPage() {
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-lg border border-[#333] text-[11px] font-bold font-rajdhani uppercase tracking-widest cursor-pointer transition-all",
                     isUploadingPhoto
-                      ? "text-[#444] pointer-events-none"
+                      ? "text-[#777] pointer-events-none"
                       : "text-[#a0a0a0] hover:border-[#606060] hover:text-white"
                   )}
                 >
@@ -341,7 +341,7 @@ export default function EditAdminPage() {
                   {isUploadingPhoto ? "Uploading..." : "Change Photo"}
                   <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} disabled={isUploadingPhoto} />
                 </label>
-                <p className="text-[10px] text-[#444] uppercase tracking-wider font-rajdhani font-bold">JPG, PNG, WEBP · Max 2MB</p>
+                <p className="text-[10px] text-[#777] uppercase tracking-wider font-rajdhani font-bold">JPG, PNG, WEBP · Max 2MB</p>
               </div>
             </div>
 
@@ -396,7 +396,7 @@ export default function EditAdminPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
             </div>
@@ -422,7 +422,7 @@ export default function EditAdminPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
               <div>
@@ -439,7 +439,7 @@ export default function EditAdminPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
               <div>
@@ -464,11 +464,11 @@ export default function EditAdminPage() {
                     className={cn(inputCls, "pl-10")}
                     placeholder="Search managers..."
                   />
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060]" />
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
                   {showManagerDropdown && managerSearch.length > 2 && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-2xl z-50 overflow-hidden">
                       {isLoadingManagers ? (
-                        <div className="p-4 flex items-center justify-center gap-2 text-[#606060] text-[12px]">
+                        <div className="p-4 flex items-center justify-center gap-2 text-[#888] text-[12px]">
                           <Loader2 size={14} className="animate-spin" /> Searching...
                         </div>
                       ) : managers?.length > 0 ? (
@@ -485,14 +485,14 @@ export default function EditAdminPage() {
                               className="w-full px-4 py-3 text-left hover:bg-[#dc2626]/10 border-b border-[#333]/30 last:border-0 transition-colors"
                             >
                               <p className="text-[13px] text-[#f0f0f0] font-medium">{m.fullName}</p>
-                              <p className="text-[11px] text-[#606060]">
+                              <p className="text-[11px] text-[#888]">
                                 {m.designation} · {m.employeeId}
                               </p>
                             </button>
                           ))}
                         </div>
                       ) : (
-                        <div className="p-4 text-center text-[#606060] text-[12px]">No managers found</div>
+                        <div className="p-4 text-center text-[#888] text-[12px]">No managers found</div>
                       )}
                     </div>
                   )}
@@ -521,7 +521,7 @@ export default function EditAdminPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
               <div>
@@ -538,7 +538,7 @@ export default function EditAdminPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
               <div>
@@ -556,7 +556,7 @@ export default function EditAdminPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
               <div>
@@ -574,7 +574,7 @@ export default function EditAdminPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none" />
                 </div>
               </div>
               <div className="md:col-span-2">
@@ -583,7 +583,7 @@ export default function EditAdminPage() {
                   rows={3}
                   value={form.address}
                   onChange={(e) => set("address", e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white text-[13px] outline-none focus:border-[#dc2626] transition-colors placeholder:text-[#444] resize-none"
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white text-[13px] outline-none focus:border-[#dc2626] transition-colors placeholder:text-[#777] resize-none"
                   placeholder="Street address"
                 />
               </div>
@@ -613,11 +613,11 @@ export default function EditAdminPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-[#141414] border-b border-[#2a2a2a]">
-                  <th className="px-6 py-4 text-[10px] uppercase tracking-[1.5px] text-[#606060] font-bold font-rajdhani w-[40%]">
+                  <th className="px-6 py-4 text-[10px] uppercase tracking-[1.5px] text-[#888] font-bold font-rajdhani w-[40%]">
                     System Module
                   </th>
                   {(["View", "Create", "Edit", "Delete"] as const).map((col) => (
-                    <th key={col} className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#606060] font-bold text-center font-rajdhani">
+                    <th key={col} className="px-4 py-4 text-[10px] uppercase tracking-[1.5px] text-[#888] font-bold text-center font-rajdhani">
                       {col}
                     </th>
                   ))}
@@ -657,7 +657,7 @@ export default function EditAdminPage() {
                     "py-2.5 px-3 rounded-lg border text-[11px] font-bold font-rajdhani uppercase tracking-wider transition-all",
                     form.status === s
                       ? "border-[#dc2626] bg-[#dc2626]/10 text-[#dc2626]"
-                      : "border-[#2a2a2a] text-[#606060] hover:border-[#444] hover:text-[#a0a0a0]"
+                      : "border-[#2a2a2a] text-[#888] hover:border-[#444] hover:text-[#a0a0a0]"
                   )}
                 >
                   {formatLabel(s)}
@@ -714,7 +714,7 @@ export default function EditAdminPage() {
                   <button
                     type="button"
                     onClick={() => setShowTagInput(true)}
-                    className="text-[#444] hover:text-[#666] flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider font-rajdhani"
+                    className="text-[#777] hover:text-[#666] flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider font-rajdhani"
                   >
                     <Plus size={12} /> Add Tag
                   </button>
@@ -727,7 +727,7 @@ export default function EditAdminPage() {
                 rows={4}
                 value={form.notes}
                 onChange={(e) => set("notes", e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white text-[13px] outline-none focus:border-[#dc2626] transition-colors placeholder:text-[#444] resize-none"
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white text-[13px] outline-none focus:border-[#dc2626] transition-colors placeholder:text-[#777] resize-none"
                 placeholder="Internal notes about this admin..."
               />
             </div>

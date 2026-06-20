@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -20,7 +20,7 @@ body {
   }
   
   .field label {
-    @apply block text-[10px] font-bold text-[#606060] tracking-[1.5px] uppercase font-rajdhani mb-2;
+    @apply block text-[10px] font-bold text-[#888] tracking-[1.5px] uppercase font-rajdhani mb-2;
   }
 }
 

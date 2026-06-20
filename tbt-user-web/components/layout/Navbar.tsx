@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -325,7 +325,7 @@ export function Navbar() {
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); toast.dismiss(t.id); }}
-                  className="p-0.5 text-[#555] hover:text-[#999] flex-shrink-0"
+                  className="p-0.5 text-[#888] hover:text-[#999] flex-shrink-0"
                 >
                   <X size={12} />
                 </button>
@@ -447,7 +447,7 @@ export function Navbar() {
 
         {config?.footerText && (
           <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-            <p className="text-[11px] text-[#444] text-center">{config.footerText}</p>
+            <p className="text-[11px] text-[#777] text-center">{config.footerText}</p>
           </div>
         )}
       </div>

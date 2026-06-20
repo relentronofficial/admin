@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -1865,7 +1865,7 @@ function WatchChallengeView({
               Watch Next <SkipForward size={13} />
             </button>
             {episodes[activeEpIdx + 1]?.title && (
-              <p className="text-[9px] text-white/50 max-w-[160px] truncate text-right pr-0.5">
+              <p className="text-[9px] text-white/75 max-w-[160px] truncate text-right pr-0.5">
                 {episodes[activeEpIdx + 1].title}
               </p>
             )}

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useSignIn } from "@clerk/nextjs";
@@ -137,7 +137,7 @@ export default function SignInPage() {
                   Username or Email
                 </label>
                 <div className="relative flex items-center group">
-                  <span className="absolute left-[14px] text-[#555] group-focus-within:text-[#e02020] transition-colors duration-200">
+                  <span className="absolute left-[14px] text-[#888] group-focus-within:text-[#e02020] transition-colors duration-200">
                     <User size={16} strokeWidth={2} />
                   </span>
                   <input
@@ -145,7 +145,7 @@ export default function SignInPage() {
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder="Username or email address"
-                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-[8px] text-[#e0e0e0] text-[14px] py-[13px] pl-[42px] pr-[14px] outline-none transition-all duration-200 focus:border-[#e02020] focus:ring-[3px] focus:ring-[#e02020]/12 placeholder:text-[#444]"
+                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-[8px] text-[#e0e0e0] text-[14px] py-[13px] pl-[42px] pr-[14px] outline-none transition-all duration-200 focus:border-[#e02020] focus:ring-[3px] focus:ring-[#e02020]/12 placeholder:text-[#777]"
                     required
                   />
                 </div>
@@ -156,7 +156,7 @@ export default function SignInPage() {
                   Password
                 </label>
                 <div className="relative flex items-center group">
-                  <span className="absolute left-[14px] text-[#555] group-focus-within:text-[#e02020] transition-colors duration-200">
+                  <span className="absolute left-[14px] text-[#888] group-focus-within:text-[#e02020] transition-colors duration-200">
                     <Lock size={16} strokeWidth={2} />
                   </span>
                   <input
@@ -164,13 +164,13 @@ export default function SignInPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter password"
-                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-[8px] text-[#e0e0e0] text-[14px] py-[13px] pl-[42px] pr-[42px] outline-none transition-all duration-200 focus:border-[#e02020] focus:ring-[3px] focus:ring-[#e02020]/12 placeholder:text-[#444]"
+                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-[8px] text-[#e0e0e0] text-[14px] py-[13px] pl-[42px] pr-[42px] outline-none transition-all duration-200 focus:border-[#e02020] focus:ring-[3px] focus:ring-[#e02020]/12 placeholder:text-[#777]"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-[14px] text-[#555] hover:text-[#aaa] transition-colors duration-200"
+                    className="absolute right-[14px] text-[#888] hover:text-[#aaa] transition-colors duration-200"
                   >
                     {showPassword ? <EyeOff size={17} strokeWidth={2} /> : <Eye size={17} strokeWidth={2} />}
                   </button>
@@ -192,7 +192,7 @@ export default function SignInPage() {
                 Verification Code
               </label>
               <div className="relative flex items-center group">
-                <span className="absolute left-[14px] text-[#555] group-focus-within:text-[#e02020] transition-colors duration-200">
+                <span className="absolute left-[14px] text-[#888] group-focus-within:text-[#e02020] transition-colors duration-200">
                   <ShieldCheck size={16} strokeWidth={2} />
                 </span>
                 <input
@@ -200,7 +200,7 @@ export default function SignInPage() {
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   placeholder="Enter 6-digit code"
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-[8px] text-[#e0e0e0] text-[14px] py-[13px] pl-[42px] pr-[14px] outline-none transition-all duration-200 focus:border-[#e02020] focus:ring-[3px] focus:ring-[#e02020]/12 placeholder:text-[#444] tracking-[4px] font-bold text-center"
+                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-[8px] text-[#e0e0e0] text-[14px] py-[13px] pl-[42px] pr-[14px] outline-none transition-all duration-200 focus:border-[#e02020] focus:ring-[3px] focus:ring-[#e02020]/12 placeholder:text-[#777] tracking-[4px] font-bold text-center"
                   required
                   autoFocus
                 />

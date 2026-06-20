@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Pencil, X, Loader2, GripVertical, Eye, EyeOff, AlertCircle, Navigation, Save } from "lucide-react";
@@ -125,7 +125,7 @@ export default function NavigationPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Navigation</h1>
-              <p className="text-[12px] text-[#606060] font-medium uppercase tracking-[1px] font-rajdhani">Manage navbar items — drag to reorder.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Manage navbar items — drag to reorder.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -150,7 +150,7 @@ export default function NavigationPage() {
         {/* List */}
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
           <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[#606060]">
+            <div className="flex items-center gap-2 text-[#888]">
               <Navigation size={14} />
               <span className="text-[11px] font-bold uppercase tracking-widest font-rajdhani">{localItems.length} items</span>
             </div>
@@ -167,9 +167,9 @@ export default function NavigationPage() {
             </div>
           ) : localItems.length === 0 ? (
             <div className="text-center py-20 space-y-3">
-              <Navigation size={36} className="mx-auto text-[#333]" />
-              <p className="text-[#606060] font-rajdhani font-bold uppercase tracking-widest text-sm">No nav items yet</p>
-              <p className="text-[#444] text-xs">Click "Add Item" to create the first nav link.</p>
+              <Navigation size={36} className="mx-auto text-[#666]" />
+              <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-sm">No nav items yet</p>
+              <p className="text-[#777] text-xs">Click "Add Item" to create the first nav link.</p>
             </div>
           ) : (
             <div className="divide-y divide-[#2a2a2a]">
@@ -185,24 +185,24 @@ export default function NavigationPage() {
                     ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
                     ${dragIndex.current === i ? "opacity-40" : "opacity-100"}`}
                 >
-                  <GripVertical size={16} className="text-[#444] cursor-grab active:cursor-grabbing group-hover:text-[#666] transition-colors shrink-0" />
-                  <span className="text-[11px] text-[#444] font-mono w-5 shrink-0">{i + 1}</span>
+                  <GripVertical size={16} className="text-[#777] cursor-grab active:cursor-grabbing group-hover:text-[#666] transition-colors shrink-0" />
+                  <span className="text-[11px] text-[#777] font-mono w-5 shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[#f0f0f0]">{item.label}</p>
-                    <p className="text-[11px] text-[#444] font-mono truncate">{item.href}</p>
+                    <p className="text-[11px] text-[#777] font-mono truncate">{item.href}</p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => toggleVisible(item)}
-                      className={`p-1.5 rounded transition-all ${item.isVisible ? "text-blue-400 hover:bg-blue-400/10" : "text-[#444] hover:text-[#888]"}`}
+                      className={`p-1.5 rounded transition-all ${item.isVisible ? "text-blue-400 hover:bg-blue-400/10" : "text-[#777] hover:text-[#888]"}`}
                       title={item.isVisible ? "Visible" : "Hidden"}
                     >
                       {item.isVisible ? <Eye size={14} /> : <EyeOff size={14} />}
                     </button>
-                    <button onClick={() => openEdit(item)} className="p-1.5 text-[#444] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
+                    <button onClick={() => openEdit(item)} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
                       <Pencil size={14} />
                     </button>
-                    <button onClick={() => setDeleting(item.id)} className="p-1.5 text-[#444] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
+                    <button onClick={() => setDeleting(item.id)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -221,7 +221,7 @@ export default function NavigationPage() {
               <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">
                 {editing ? "Edit Nav Item" : "New Nav Item"}
               </h3>
-              <button onClick={() => setShowForm(false)} className="text-[#606060] hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {[
@@ -229,7 +229,7 @@ export default function NavigationPage() {
                 { key: "href", label: "URL / Path *", placeholder: "/home", mono: true },
               ].map(({ key, label, placeholder, mono }) => (
                 <div key={key}>
-                  <label className="block text-[11px] font-bold text-[#606060] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">{label}</label>
                   <input
                     value={form[key]}
                     onChange={e => setForm((f: any) => ({ ...f, [key]: e.target.value }))}
@@ -250,7 +250,7 @@ export default function NavigationPage() {
               </div>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#606060] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest">
+              <button onClick={() => setShowForm(false)} className="px-6 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[12px] uppercase tracking-widest">
                 Cancel
               </button>
               <button
@@ -271,7 +271,7 @@ export default function NavigationPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-2xl p-8 text-center shadow-2xl">
             <AlertCircle className="text-red-500 mx-auto mb-4" size={36} />
             <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0] mb-2">Delete Nav Item?</h3>
-            <p className="text-[#606060] text-xs mb-6">This action cannot be undone.</p>
+            <p className="text-[#888] text-xs mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleting(null)} className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#a0a0a0] font-rajdhani font-bold text-[12px] uppercase tracking-widest">
                 Cancel

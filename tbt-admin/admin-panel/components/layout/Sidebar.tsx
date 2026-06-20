@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -106,7 +106,7 @@ export function Sidebar() {
         {navGroups.map((group, gi) => (
           <div key={gi} className="mb-1">
             {group.label && (
-              <p className="px-5 py-1.5 text-[9px] font-bold uppercase tracking-[2px] text-[#444]">
+              <p className="px-5 py-1.5 text-[9px] font-bold uppercase tracking-[2px] text-[#777]">
                 {group.label}
               </p>
             )}
@@ -143,7 +143,7 @@ export function Sidebar() {
         </div>
         <div className="leading-tight min-w-0">
           <div className="text-[13px] font-medium text-[#f0f0f0] truncate">{displayName}</div>
-          <div className="text-[11px] text-[#606060] mt-0.5 uppercase tracking-tighter truncate">{roleLabel}</div>
+          <div className="text-[11px] text-[#888] mt-0.5 uppercase tracking-tighter truncate">{roleLabel}</div>
         </div>
       </div>
     </aside>
