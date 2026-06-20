@@ -1,19 +1,14 @@
-FROM node:20
+﻿FROM node:20-bullseye-slim
 
 WORKDIR /app
 
-COPY package*.json ./
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
+COPY package*.json ./
 RUN npm install
 
 COPY . .
+RUN npx prisma generate && npx tsc
 
-RUN chmod +x ./node_modules/.bin/prisma
-
-RUN npx prisma generate
-
-RUN npm run build
-
-EXPOSE 8080
-
-CMD ["npm","start"]
+EXPOSE 8000
+CMD ["node", "dist/server.js"]
