@@ -152,7 +152,7 @@ function googleCalendarUrl(title: string, isoString: string): string {
 }
 
 function downloadIcs(title: string, isoString: string): void {
-  const fmt = (d: Date) => d.toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
+  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
   const start = new Date(isoString);
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   const ics = [
@@ -216,7 +216,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
   if (!item.scheduledAt || !item.countdownConfig) return null;
 
-  const teal = "rgba(255,255,255,0.6)";
+  const teal = "rgba(0,0,0,0.55)";
 
   const units = [
     [Math.floor(diff / 86400000), uiStrings?.countdownDays ?? "DAYS"],
@@ -230,7 +230,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const inner = (
     <div
       className="rounded-xl overflow-hidden flex flex-col items-center justify-center text-center py-12 px-6 space-y-6"
-      style={{ background: "#000", minHeight: 300 }}
+      style={{ background: "#f8f8f8", border: "1px solid rgba(0,0,0,0.08)", minHeight: 300 }}
     >
       {/* LIVE CALL label */}
       {item.label && (
@@ -244,7 +244,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
       {/* Call title */}
       {item.title && (
-        <h2 className="text-xl md:text-2xl font-bold text-white leading-snug max-w-md -mt-3">
+        <h2 className="text-xl md:text-2xl font-bold leading-snug max-w-md -mt-3" style={{ color: "#111111" }}>
           {item.title}
         </h2>
       )}
@@ -253,7 +253,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
       <div className="flex gap-5 md:gap-8">
         {units.map(([val, label], i) => (
           <div key={i} className="flex flex-col items-center">
-            <span className="text-4xl md:text-5xl font-bold tabular-nums text-white font-mono leading-none">
+            <span className="text-4xl md:text-5xl font-bold tabular-nums font-mono leading-none" style={{ color: "#111111" }}>
               {String(val).padStart(2, "0")}
             </span>
             <span
@@ -356,7 +356,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
                   onClick={() => upsertRsvp.mutate({ liveCallId: item.liveCallId!, status: "declined" })}
                   disabled={upsertRsvp.isPending}
                   className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
-                  style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.45)", background: "transparent" }}
+                  style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.5)", background: "transparent" }}
                 >
                   ✗ Can&apos;t make it
                 </button>
@@ -406,7 +406,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
-              style={{ borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.06)" }}
+              style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.7)", background: "rgba(0,0,0,0.04)" }}
             >
               <ExternalLink size={15} />
               {item.externalMeetingProvider ? `Join via ${item.externalMeetingProvider}` : "Join via External Link"}
@@ -1404,12 +1404,12 @@ function LiveCallUnlockWatcher({
 // ─── Challenge type metadata ──────────────────────────────────────────────────
 
 const CHALLENGE_TYPE_META: Record<string, { label: string; color: string }> = {
-  watch:     { label: "WATCH",     color: "rgba(255,255,255,0.55)" },
-  quiz:      { label: "QUIZ",      color: "rgba(255,255,255,0.55)" },
-  written:   { label: "WRITTEN",   color: "rgba(255,255,255,0.55)" },
-  matching:  { label: "MATCH",     color: "rgba(255,255,255,0.55)" },
-  flashcard: { label: "FLASHCARD", color: "rgba(255,255,255,0.55)" },
-  live_call: { label: "LIVE",      color: "rgba(255,255,255,0.55)" },
+  watch:     { label: "WATCH",     color: "#888888" },
+  quiz:      { label: "QUIZ",      color: "#888888" },
+  written:   { label: "WRITTEN",   color: "#888888" },
+  matching:  { label: "MATCH",     color: "#888888" },
+  flashcard: { label: "FLASHCARD", color: "#888888" },
+  live_call: { label: "LIVE",      color: "#888888" },
 };
 
 function statusStyle(status: string) {
@@ -1418,7 +1418,7 @@ function statusStyle(status: string) {
     case "in_progress":return { bg: "rgba(220,38,38,0.08)",   border: "rgba(220,38,38,0.45)",  text: "#dc2626" };
     case "locked":     return { bg: "rgba(60,60,60,0.05)",    border: "rgba(80,80,80,0.2)",    text: "#606060" };
     case "past":       return { bg: "rgba(34,197,94,0.08)",   border: "rgba(34,197,94,0.5)",   text: "#22c55e" };
-    case "upcoming":   return { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.15)", text: "rgba(255,255,255,0.45)" };
+    case "upcoming":   return { bg: "rgba(120,120,120,0.08)", border: "rgba(120,120,120,0.3)", text: "#888888" };
     default:           return { bg: "rgba(120,120,120,0.08)", border: "rgba(120,120,120,0.3)", text: "#888888" };
   }
 }
@@ -2030,7 +2030,7 @@ function WatchChallengeView({
               <CheckCircle2 size={13} /> Completed
             </span>
           ) : watchState === "rewatching" ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.55)" }}>
               <RotateCcw size={12} /> Rewatching
             </span>
           ) : watchState === "watching" ? (
@@ -2038,7 +2038,7 @@ function WatchChallengeView({
               <Play size={13} fill="currentColor" /> Watching {activeProgressPct}%
             </span>
           ) : watchState === "paused" ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.55)" }}>
               <Pause size={13} /> Paused at {formatTime(currentPlayhead)}
             </span>
           ) : watchState === "resume" ? (
@@ -2046,7 +2046,7 @@ function WatchChallengeView({
               <Play size={11} fill="currentColor" className="ml-0.5" /> Continue Watching {savedProgressPct}%
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.55)" }}>
               <Play size={11} fill="currentColor" className="ml-0.5 opacity-50" /> Start Watching
             </span>
           )}
@@ -2090,7 +2090,7 @@ function WatchChallengeView({
             </div>
           </div>
           <div className="flex items-center gap-2.5">
-            <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
               <div
                 className="h-full rounded-full transition-all duration-300"
                 style={{ width: `${savedProgressPct}%`, background: "var(--color-accent)" }}
@@ -2146,14 +2146,14 @@ function WatchChallengeView({
         ).length;
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;
         return total > 0 ? (
-          <div className="space-y-1.5 pt-2 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+          <div className="space-y-1.5 pt-2 border-t" style={{ borderColor: "rgba(0,0,0,0.08)" }}>
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Videos</span>
-              <span className="text-[11px] font-bold tabular-nums" style={{ color: done === total ? "#22c55e" : "rgba(232,221,208,0.6)" }}>
+              <span className="text-[11px] font-bold tabular-nums" style={{ color: done === total ? "#22c55e" : "rgba(0,0,0,0.55)" }}>
                 {done} / {total} completed
               </span>
             </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.04)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
@@ -2173,7 +2173,7 @@ function WatchChallengeView({
       })()}
 
       {/* Dynamic Episode list */}
-      <div className="rounded-xl overflow-hidden divide-y divide-white/5" style={{ border: "1px solid rgba(255,255,255,0.05)", boxShadow: "inset 2px 2px 8px rgba(0,0,0,0.7), inset -1px -1px 4px rgba(255,255,255,0.03)", background: "rgba(6,3,12,0.85)" }}>
+      <div className="rounded-xl overflow-hidden divide-y" style={{ border: "1px solid rgba(0,0,0,0.08)", boxShadow: "inset 1px 1px 4px rgba(0,0,0,0.04)", background: "#f8f8f8", borderColor: "rgba(0,0,0,0.08)" }}>
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
@@ -2195,7 +2195,7 @@ function WatchChallengeView({
             : isWatching
               ? "var(--color-accent)"
               : isPausedState
-                ? "rgba(255,255,255,0.15)"
+                ? "rgba(0,0,0,0.15)"
                 : "transparent";
 
           const bgColor = isDone
@@ -2203,7 +2203,7 @@ function WatchChallengeView({
             : isWatching
               ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
               : isPausedState || isResumeState
-                ? "rgba(255,255,255,0.03)"
+                ? "rgba(0,0,0,0.03)"
                 : "transparent";
 
           return (
@@ -2224,10 +2224,10 @@ function WatchChallengeView({
                       : isWatching
                         ? { background: "var(--color-accent)", color: "#fff" }
                         : isPausedState
-                          ? { background: "rgba(255,255,255,0.08)", color: "#fff" }
+                          ? { background: "rgba(0,0,0,0.08)", color: "#111111" }
                           : isResumeState || hasPartialProgress
                             ? { background: "color-mix(in srgb, var(--color-accent) 18%, transparent)", color: "var(--color-accent)" }
-                            : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.3)" }
+                            : { background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.35)" }
                   }
                 >
                   {isDone ? (
@@ -2250,10 +2250,10 @@ function WatchChallengeView({
                     color: isDone
                       ? "#22c55e"
                       : isWatching || isPausedState || isResumeState
-                        ? "#fff"
+                        ? "#111111"
                         : hasPartialProgress
-                          ? "rgba(255,255,255,0.7)"
-                          : "rgba(255,255,255,0.4)",
+                          ? "rgba(0,0,0,0.7)"
+                          : "rgba(0,0,0,0.45)",
                   }}
                 >
                   {e.title}
@@ -2264,19 +2264,19 @@ function WatchChallengeView({
                   {isDone ? (
                     <CheckCircle2 size={15} style={{ color: "#22c55e", flexShrink: 0 }} />
                   ) : isRewatching ? (
-                    <span className="text-[11px] font-bold" style={{ color: "rgba(255,255,255,0.55)" }}>Rewatching...</span>
+                    <span className="text-[11px] font-bold" style={{ color: "rgba(0,0,0,0.5)" }}>Rewatching...</span>
                   ) : isWatching ? (
                     <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>Watching...</span>
                   ) : isPausedState ? (
-                    <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+                    <span className="text-[11px] font-medium whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>
                       Paused at {formatTime(currentPlayhead)}
                     </span>
                   ) : isResumeState ? (
-                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(255,255,255,0.55)" }}>
+                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>
                       Resume {progressPct}%
                     </span>
                   ) : hasPartialProgress ? (
-                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(255,255,255,0.55)" }}>
+                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>
                       Resume {progressPct}%
                     </span>
                   ) : isActive && liveRealDuration > 0 ? (
@@ -2292,14 +2292,14 @@ function WatchChallengeView({
               {/* Row 2: progress bar — only for in-progress states, never for completed */}
               {showBar && (
                 <div className="mt-2.5 pl-10 flex items-center gap-2.5">
-                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
+                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
                     <div
                       className="h-full rounded-full transition-all duration-300"
                       style={{
                         width: `${progressPct}%`,
                         background: isWatching || isResumeState || hasPartialProgress
                           ? "var(--color-accent)"
-                          : "rgba(255,255,255,0.3)",
+                          : "rgba(0,0,0,0.2)",
                         boxShadow: (isWatching || isResumeState || hasPartialProgress)
                           ? "0 0 6px rgba(220,38,38,0.65), 0 0 14px rgba(220,38,38,0.3)"
                           : "none",
@@ -2446,11 +2446,11 @@ function QuizChallengeView({
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {Object.keys(answers).length} / {questions.length} answered
             </span>
-            <span className="text-[11px] font-bold tabular-nums" style={{ color: allAnswered ? "#22c55e" : "rgba(232,221,208,0.5)" }}>
+            <span className="text-[11px] font-bold tabular-nums" style={{ color: allAnswered ? "#22c55e" : "rgba(0,0,0,0.45)" }}>
               {Math.round((Object.keys(answers).length / questions.length) * 100)}%
             </span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+          <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
             <div
               className="h-full rounded-full transition-all duration-300"
               style={{
@@ -2495,12 +2495,12 @@ function QuizChallengeView({
                     bg = "rgba(34,197,94,0.06)";
                     circleColor = "#22c55e";
                   } else {
-                    borderColor = "rgba(255,255,255,0.06)";
+                    borderColor = "rgba(0,0,0,0.08)";
                     bg = "transparent";
-                    circleColor = "rgba(255,255,255,0.2)";
+                    circleColor = "rgba(0,0,0,0.25)";
                   }
                 } else {
-                  borderColor = isSelected ? "var(--color-accent)" : "var(--color-border, rgba(255,255,255,0.1))";
+                  borderColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.12)";
                   bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent";
                   circleColor = isSelected ? "var(--color-accent)" : "var(--color-muted)";
                 }
@@ -2700,9 +2700,9 @@ function MatchingChallengeView({ challenge, slug, onDone }: { challenge: any; sl
                     onClick={() => !isMatchedLeft && setLeftSelected(isSel ? null : p.id)}
                     className="w-full px-3 py-2 rounded-lg border text-left text-xs font-medium transition-all"
                     style={{
-                      borderColor: isMatchedLeft ? "#22c55e88" : isWrong ? "#ef4444" : isSel ? "var(--color-accent)" : "rgba(255,255,255,0.1)",
-                      background: isMatchedLeft ? "#22c55e0a" : isWrong ? "#ef44440a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
-                      color: isMatchedLeft ? "#22c55e" : "inherit",
+                      borderColor: isMatchedLeft ? "#22c55e88" : isWrong ? "#ef4444" : isSel ? "var(--color-accent)" : "rgba(0,0,0,0.12)",
+                      background: isMatchedLeft ? "#22c55e0a" : isWrong ? "#ef44440a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "white",
+                      color: isMatchedLeft ? "#22c55e" : "#111111",
                     }}
                   >
                     {p.left}
@@ -2725,9 +2725,9 @@ function MatchingChallengeView({ challenge, slug, onDone }: { challenge: any; sl
                     onClick={() => leftSelected && !isMatchedRight && setRightSelected(isSel ? null : p.id)}
                     className="w-full px-3 py-2 rounded-lg border text-left text-xs transition-all"
                     style={{
-                      borderColor: isMatchedRight ? "#22c55e88" : isSel ? "var(--color-accent)" : "rgba(255,255,255,0.1)",
-                      background: isMatchedRight ? "#22c55e0a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
-                      color: isMatchedRight ? "#22c55e" : !leftSelected ? "var(--color-muted-foreground, #888)" : "inherit",
+                      borderColor: isMatchedRight ? "#22c55e88" : isSel ? "var(--color-accent)" : "rgba(0,0,0,0.12)",
+                      background: isMatchedRight ? "#22c55e0a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "white",
+                      color: isMatchedRight ? "#22c55e" : !leftSelected ? "rgba(0,0,0,0.45)" : "#111111",
                       opacity: !leftSelected && !isMatchedRight ? 0.6 : 1,
                     }}
                   >
@@ -2830,7 +2830,7 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
       <button
         onClick={() => setFlipped((f) => !f)}
         className="w-full rounded-2xl border p-8 text-center transition-all min-h-[180px] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-accent/50"
-        style={{ borderColor: "rgba(255,255,255,0.12)", background: flipped ? "color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-surface))" : "var(--color-bg-surface)" }}
+        style={{ borderColor: "rgba(0,0,0,0.1)", background: flipped ? "color-mix(in srgb, var(--color-accent) 6%, #f8f8f8)" : "#f8f8f8" }}
       >
         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           {flipped ? "Answer" : "Question — tap to flip"}
@@ -2886,7 +2886,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
   const isPast = challenge.status === "past";
   const lColor = challenge.labelColor ?? "#ff3d8b";
-  const teal = "rgba(255,255,255,0.6)";
+  const teal = "rgba(0,0,0,0.55)";
   const [diff, setDiff] = useState(0);
   const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null; isWebinar?: boolean } | null>(null);
   const [leftByChoice, setLeftByChoice] = useState(false);
@@ -2947,7 +2947,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
         )}
         <span
           className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-          style={isPast ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" } : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.45)" }}
+          style={isPast ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" } : { background: "rgba(120,120,120,0.08)", color: "#888888" }}
         >
           {isPast ? "Ended" : "Upcoming"}
         </span>
@@ -3052,29 +3052,29 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
       ) : (
         <div
           className="rounded-xl border p-8 text-center space-y-5"
-          style={{ background: "#000", borderColor: `${lColor}44` }}
+          style={{ background: "#f8f8f8", borderColor: `${lColor}44` }}
         >
           <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: lColor }}>
             {challenge.label ?? "LIVE CALL:"}
           </p>
-          <h3 className="text-lg font-bold text-white leading-snug -mt-2">{challenge.title}</h3>
+          <h3 className="text-lg font-bold leading-snug -mt-2" style={{ color: "#111111" }}>{challenge.title}</h3>
 
           {diff > 0 ? (
             <>
               <div className="flex gap-5 md:gap-8 justify-center">
                 {units.map(([val, label], i) => (
                   <div key={i} className="flex flex-col items-center">
-                    <span className="text-4xl font-bold tabular-nums text-white font-mono leading-none">
+                    <span className="text-4xl font-bold tabular-nums font-mono leading-none" style={{ color: "#111111" }}>
                       {String(val).padStart(2, "0")}
                     </span>
-                    <span className="text-[11px] font-bold tracking-[0.15em] mt-2 uppercase" style={{ color: teal }}>
+                    <span className="text-[11px] font-bold tracking-[0.15em] mt-2 uppercase" style={{ color: "rgba(0,0,0,0.55)" }}>
                       {label}
                     </span>
                   </div>
                 ))}
               </div>
               {dateLabel && (
-                <p className="text-xs font-semibold tracking-wide" style={{ color: teal }}>
+                <p className="text-xs font-semibold tracking-wide" style={{ color: "rgba(0,0,0,0.55)" }}>
                   {dateLabel}
                 </p>
               )}
@@ -3086,7 +3086,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
-                    style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+                    style={{ borderColor: "rgba(0,0,0,0.15)", color: "rgba(0,0,0,0.6)", background: "rgba(0,0,0,0.05)" }}
                   >
                     <CalendarDays size={12} />
                     Google Calendar
@@ -3094,7 +3094,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                   <button
                     onClick={() => downloadIcs(challenge.title!, challenge.scheduledAt!)}
                     className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
-                    style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+                    style={{ borderColor: "rgba(0,0,0,0.15)", color: "rgba(0,0,0,0.6)", background: "rgba(0,0,0,0.05)" }}
                   >
                     <CalendarDays size={12} />
                     Download .ics
@@ -3102,18 +3102,18 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                 </div>
               )}
               {challenge.stayTunedMessage && (
-                <p className="text-sm italic max-w-sm mx-auto" style={{ color: teal }}>
+                <p className="text-sm italic max-w-sm mx-auto" style={{ color: "rgba(0,0,0,0.55)" }}>
                   {challenge.stayTunedMessage}
                 </p>
               )}
               {/* Pre-session resources */}
               {!isPast && resources.length > 0 && (
                 <div className="w-full max-w-sm space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: teal }}>Prepare for this session</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: "rgba(0,0,0,0.55)" }}>Prepare for this session</p>
                   {resources.map((r: { id: string; title: string; url: string; type: string }) => (
                     <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-                       style={{ background: `${teal}10`, border: `1px solid ${teal}30`, color: teal }}>
+                       style={{ background: "rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.1)", color: "rgba(0,0,0,0.65)" }}>
                       <span>{r.type === "pdf" ? "📄" : r.type === "video" ? "🎬" : "🔗"}</span>
                       <span className="flex-1 truncate">{r.title}</span>
                       <ExternalLink size={10} />
@@ -3133,7 +3133,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                         onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: rsvpData.status === "confirmed" ? "declined" : "confirmed" })}
                         disabled={upsertRsvp.isPending}
                         className="text-[11px] underline disabled:opacity-40"
-                        style={{ color: teal }}
+                        style={{ color: "rgba(0,0,0,0.6)" }}
                       >
                         Change
                       </button>
@@ -3154,7 +3154,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                           onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: "declined" })}
                           disabled={upsertRsvp.isPending}
                           className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
-                          style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.45)", background: "transparent" }}
+                          style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.5)", background: "transparent" }}
                         >
                           ✗ Can&apos;t make it
                         </button>
@@ -3201,7 +3201,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
-                  style={{ borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.06)" }}
+                  style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.7)", background: "rgba(0,0,0,0.04)" }}
                 >
                   <ExternalLink size={15} />
                   {challenge.externalMeetingProvider ? `Join via ${challenge.externalMeetingProvider}` : "Join via External Link"}
@@ -3440,7 +3440,7 @@ export default function WorkshopDetailPage() {
   const currentTabId = activeTab || tabs[0]?.id;
 
   return (
-    <div className="-mx-4 md:-mx-6 px-3 md:px-4 space-y-3">
+    <div className="-mx-4 md:-mx-6 -mt-6 px-4 md:px-6 pt-6 pb-8 min-h-screen space-y-3" style={{ background: "#ffffff" }}>
       {flowData?.flowItems && (
         <LiveCallUnlockWatcher
           flowItems={flowData.flowItems}
@@ -3450,14 +3450,14 @@ export default function WorkshopDetailPage() {
       {detail.backUrl && (
         <Link
           href={detail.backUrl}
-          className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest transition-colors hover:text-white"
-          style={{ color: "rgba(232,221,208,0.45)" }}
+          className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest transition-colors hover:text-gray-900"
+          style={{ color: "rgba(0,0,0,0.45)" }}
         >
           <ChevronLeft size={13} />
           {detail.backLabel ?? "Back"}
         </Link>
       )}
-      <h1 className="text-2xl md:text-3xl font-bold leading-tight" style={{ color: "#e8ddd0", textShadow: "0 0 20px rgba(220,38,38,0.15)" }}>{detail.title}</h1>
+      <h1 className="text-2xl md:text-3xl font-bold leading-tight" style={{ color: "#111111" }}>{detail.title}</h1>
 
       {/* Two-column body */}
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 items-start">
@@ -3484,7 +3484,7 @@ export default function WorkshopDetailPage() {
           ) : (
             <div
               className="rounded-2xl flex flex-col items-center justify-center gap-5 text-center px-6 py-20 md:px-10 md:py-24 min-h-[260px]"
-              style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}
+              style={{ background: "#f8f8f8", border: "1px solid rgba(0,0,0,0.08)" }}
             >
               <div
                 className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -3493,13 +3493,13 @@ export default function WorkshopDetailPage() {
                 <Play size={24} style={{ color: "var(--color-accent)" }} />
               </div>
               <div className="space-y-1.5">
-                <p className="text-sm font-semibold" style={{ color: "rgba(232,221,208,0.85)" }}>
+                <p className="text-sm font-semibold" style={{ color: "#111111" }}>
                   Ready to start?
                 </p>
-                <p className="text-xs lg:hidden" style={{ color: "rgba(232,221,208,0.40)" }}>
+                <p className="text-xs lg:hidden" style={{ color: "rgba(0,0,0,0.5)" }}>
                   Pick a challenge from the list below to begin your learning journey.
                 </p>
-                <p className="text-xs hidden lg:block" style={{ color: "rgba(232,221,208,0.40)" }}>
+                <p className="text-xs hidden lg:block" style={{ color: "rgba(0,0,0,0.5)" }}>
                   Pick a challenge from the list on the right to begin your learning journey.
                 </p>
               </div>
@@ -3515,7 +3515,7 @@ export default function WorkshopDetailPage() {
         </div>
 
         {/* ── Right: Sidebar ── */}
-        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
+        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3" style={{ background: "#111111", borderRadius: "16px", padding: "12px" }}>
           {/* Challenge progress + certificate — always visible above tabs */}
           <LearningProgressWidget progress={progress} />
           {detail.certificate && (
@@ -3524,7 +3524,7 @@ export default function WorkshopDetailPage() {
 
           {/* Tab buttons */}
           {tabs.length > 0 && (
-            <div className="flex gap-1.5 p-1.5 rounded-xl overflow-x-auto scrollbar-none" style={{ background: "rgba(0,0,0,0.55)", boxShadow: "inset 2px 2px 6px rgba(0,0,0,0.8), inset -1px -1px 3px rgba(255,255,255,0.04)" }}>
+            <div className="flex gap-1.5 p-1.5 rounded-xl overflow-x-auto" style={{ background: "rgba(0,0,0,0.55)", boxShadow: "inset 2px 2px 6px rgba(0,0,0,0.8), inset -1px -1px 3px rgba(255,255,255,0.04)", scrollbarWidth: "none" }}>
               {tabs
                 .slice()
                 .sort((a: WorkshopTab, b: WorkshopTab) => a.order - b.order)
