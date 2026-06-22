@@ -3396,15 +3396,19 @@ export default function WorkshopDetailPage() {
     }
   }, [tabs.length]);
 
-  // Override body background to white for this page only; restore on unmount
+  // Override root CSS vars so the platform layout's bg-background resolves to white.
+  // This page is white-themed; restore the dark theme vars on unmount.
   useEffect(() => {
-    const prevBg = document.body.style.backgroundColor;
-    const prevHtmlBg = document.documentElement.style.backgroundColor;
-    document.body.style.backgroundColor = "#ffffff";
-    document.documentElement.style.backgroundColor = "#ffffff";
+    const root = document.documentElement;
+    const prevBg = root.style.getPropertyValue("--background");
+    const prevColorBgPrimary = root.style.getPropertyValue("--color-bg-primary");
+    root.style.setProperty("--background", "0 0% 100%");
+    root.style.setProperty("--color-bg-primary", "#ffffff");
     return () => {
-      document.body.style.backgroundColor = prevBg;
-      document.documentElement.style.backgroundColor = prevHtmlBg;
+      if (prevBg) root.style.setProperty("--background", prevBg);
+      else root.style.removeProperty("--background");
+      if (prevColorBgPrimary) root.style.setProperty("--color-bg-primary", prevColorBgPrimary);
+      else root.style.removeProperty("--color-bg-primary");
     };
   }, []);
 
