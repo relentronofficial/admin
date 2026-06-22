@@ -115,10 +115,9 @@
   overflow: visible !important;
 }
 
-/* Workshop page: force full white background — overrides dark theme on body and platform layout */
+/* Workshop page: force full white background — overrides dark theme on html and body */
 html.workshop-white-page,
-html.workshop-white-page body,
-html.workshop-white-page .bg-background {
+html.workshop-white-page body {
   background-color: #ffffff !important;
 }
 
