@@ -431,7 +431,10 @@ export function Navbar() {
         {/* Drawer nav items */}
         <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
           {nav.map(({ id, href, label }) => {
-            const active = pathname === href || pathname.startsWith(`${href}/`);
+            const active =
+              pathname === href ||
+              pathname.startsWith(`${href}/`) ||
+              (href === "/workshops" && pathname.startsWith("/workshop"));
             return (
               <Link
                 key={id}
@@ -488,7 +491,10 @@ export function Navbar() {
         {/* Desktop: inline nav */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
           {nav.map(({ id, href, label }) => {
-            const active = pathname === href || pathname.startsWith(`${href}/`);
+            const active =
+              pathname === href ||
+              pathname.startsWith(`${href}/`) ||
+              (href === "/workshops" && pathname.startsWith("/workshop"));
             return (
               <Link
                 key={id}
