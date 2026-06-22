@@ -577,7 +577,7 @@ function AssignmentMainView({
   // ── Submitted and not editing: show answer review ──
   if (isSubmitted && !isEditing) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 px-5 py-5">
         <button
           onClick={onBack}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -589,7 +589,7 @@ function AssignmentMainView({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={18} style={{ color: "var(--color-success)" }} />
-            <h3 className="font-bold text-sm text-white">{assignment.title}</h3>
+            <h3 className="font-bold text-sm text-foreground">{assignment.title}</h3>
           </div>
           {assignment.canEdit && (
             <button
@@ -635,7 +635,7 @@ function AssignmentMainView({
 
   // ── Not yet submitted or editing: show question + answer/file form ──
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-5 py-5">
       <button
         onClick={isEditing ? cancelEdit : onBack}
         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -2992,7 +2992,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   // Active call view
   if (callCreds) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 px-5 py-5">
         <Header />
         <WorkshopLiveCall
           token={callCreds.token}
@@ -3009,7 +3009,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-5 py-5">
       <Header />
 
       {isPast ? (
