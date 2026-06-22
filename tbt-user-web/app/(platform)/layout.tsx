@@ -8,7 +8,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       <Navbar />
       <main className="flex-1 pt-20">
         <SubscriptionGate>
-          <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
+          <div className="max-w-[1440px] mx-auto px-4 md:px-6 py-6">
             {children}
           </div>
         </SubscriptionGate>

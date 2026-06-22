@@ -213,7 +213,11 @@ function ProfileButton() {
   };
 
   const initials = me
-    ? `${me.firstName?.[0] ?? ""}${me.lastName?.[0] ?? ""}`.toUpperCase() || "?"
+    ? (
+        `${me.firstName?.[0] ?? ""}${me.lastName?.[0] ?? ""}`.toUpperCase() ||
+        (me as any).name?.[0]?.toUpperCase() ||
+        "?"
+      )
     : "?";
 
   return (
@@ -445,11 +449,6 @@ export function Navbar() {
           })}
         </nav>
 
-        {config?.footerText && (
-          <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-            <p className="text-[11px] text-[#777] text-center">{config.footerText}</p>
-          </div>
-        )}
       </div>
 
       {/* ── Floating top navbar ───────────────────────────────────────────── */}

@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   CheckCircle2,
   Lock,
   Star,
@@ -815,15 +816,18 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
             {milestones.map((filled, i) => (
               <Star
                 key={i}
-                size={14}
-                className={filled ? "" : "text-muted-foreground"}
-                style={filled ? { color: "var(--color-accent)", fill: "var(--color-accent)", filter: "drop-shadow(0 0 5px rgba(220,38,38,0.8))" } : {}}
+                size={16}
+                style={
+                  filled
+                    ? { color: "#f59e0b", fill: "#f59e0b", filter: "drop-shadow(0 0 6px rgba(245,158,11,0.7))" }
+                    : { color: "rgba(255,255,255,0.15)", fill: "rgba(255,255,255,0.05)" }
+                }
               />
             ))}
           </div>
 
           {/* Progress bar */}
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{ width: `${pct}%`, background: "var(--color-accent)", boxShadow: "0 0 8px rgba(220,38,38,0.6), 0 0 16px rgba(220,38,38,0.3)" }}
@@ -832,8 +836,7 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
 
           {/* Count */}
           <p className="text-xs tabular-nums" style={{ color: "rgba(232,221,208,0.55)" }}>
-            {progress.completedCount} / {progress.totalCount}{" "}
-            {progress.completedLabel ?? "Completed"}
+            {progress.completedLabel ?? `${progress.completedCount} / ${progress.totalCount} Completed`}
           </p>
         </div>
       )}
@@ -879,7 +882,7 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
                 {cert.videosWatchPct ?? cert.videosCompletedPct}%
               </span>
             </div>
-            <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
@@ -901,7 +904,7 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
                 {cert.challengesCompletedPct}%
               </span>
             </div>
-            <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
@@ -1473,6 +1476,11 @@ function ChallengeList({
               }}
             >
               <div className="flex items-center gap-2">
+                {ch.numberLabel && (
+                  <span className="text-[10px] font-black flex-shrink-0" style={{ color: lColor }}>
+                    {ch.numberLabel}
+                  </span>
+                )}
                 <Video size={10} className="flex-shrink-0" style={{ color: lColor }} />
                 <span className="flex-1 text-xs font-semibold text-foreground line-clamp-1">{ch.title}</span>
                 {ch.status === "past" && (
@@ -1559,7 +1567,7 @@ function ChallengeList({
               )}
               <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                 {totalMins && (
-                  <span className="text-[9px] text-muted-foreground">~{totalMins}m</span>
+                  <span className="text-[9px] text-muted-foreground">{totalMins} min</span>
                 )}
                 {!ch.isLocked && !isCompleted && !isInProgress && (
                   <span className="text-[9px] font-bold" style={{ color: ss.text }}>Not Started</span>
@@ -3436,18 +3444,36 @@ export default function WorkshopDetailPage() {
             <MainAreaCountdown item={upcomingLiveCall} />
           ) : (
             <div
-              className="rounded-xl flex items-center justify-center"
-              style={{ minHeight: 180, background: "rgba(6,3,12,0.7)", border: "1px dashed rgba(220,38,38,0.2)", boxShadow: "inset 2px 2px 8px rgba(0,0,0,0.6), inset -1px -1px 4px rgba(255,255,255,0.02), 0 0 20px rgba(220,38,38,0.05)" }}
+              className="rounded-2xl flex flex-col items-center justify-center gap-5 text-center px-8 py-16"
+              style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}
             >
-              <p className="text-sm text-center px-4" style={{ color: "rgba(232,221,208,0.35)" }}>
-                Select a challenge from the sidebar to begin
-              </p>
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                style={{ background: "rgba(220,38,38,0.10)", border: "1px solid rgba(220,38,38,0.18)" }}
+              >
+                <Play size={24} style={{ color: "var(--color-accent)" }} />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-sm font-semibold" style={{ color: "rgba(232,221,208,0.85)" }}>
+                  Ready to start?
+                </p>
+                <p className="text-xs" style={{ color: "rgba(232,221,208,0.40)" }}>
+                  Pick a challenge from the list on the right to begin your learning journey.
+                </p>
+              </div>
+              <div
+                className="hidden lg:flex items-center gap-2 text-[11px] font-medium px-4 py-2 rounded-full"
+                style={{ background: "rgba(220,38,38,0.08)", color: "var(--color-accent)", border: "1px solid rgba(220,38,38,0.2)" }}
+              >
+                <span>Select a challenge</span>
+                <ChevronRight size={13} />
+              </div>
             </div>
           )}
         </div>
 
         {/* ── Right: Sidebar ── */}
-        <div className="w-full lg:w-80 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
+        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3">
           {/* Challenge progress + certificate — always visible above tabs */}
           <LearningProgressWidget progress={progress} />
           {detail.certificate && (
@@ -3465,8 +3491,10 @@ export default function WorkshopDetailPage() {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={cn(
-                      "flex-1 px-3 py-2 text-xs font-bold rounded-lg transition-all",
-                      currentTabId === tab.id ? "" : "hover:text-white/70"
+                      "flex-1 px-3 py-2 text-xs font-bold rounded-lg transition-all duration-200",
+                      currentTabId === tab.id
+                        ? ""
+                        : "text-white/45 hover:text-white/80 hover:bg-white/[0.05] cursor-pointer"
                     )}
                     style={
                       currentTabId === tab.id
@@ -3476,7 +3504,7 @@ export default function WorkshopDetailPage() {
                             border: "1px solid rgba(220,38,38,0.5)",
                             boxShadow: "3px 3px 8px rgba(0,0,0,0.7), -1px -1px 4px rgba(255,255,255,0.04), 0 0 10px rgba(220,38,38,0.4), 0 0 22px rgba(220,38,38,0.18)",
                           }
-                        : { color: "rgba(232,221,208,0.4)" }
+                        : {}
                     }
                   >
                     {tab.label}
