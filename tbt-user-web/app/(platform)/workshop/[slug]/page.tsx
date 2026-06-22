@@ -1946,7 +1946,7 @@ function WatchChallengeView({
   const showWatchNext = hasNextEp && watchState === "watching" && activeDuration > 0 && currentPlayhead >= activeDuration - 20;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-0">
       {/* Video player — full-width 16:9, YouTube-style: video first */}
       <VideoWatermark
         className="w-full rounded-xl bg-black relative overflow-hidden"
@@ -2006,6 +2006,21 @@ function WatchChallengeView({
           </div>
         )}
       </VideoWatermark>
+
+      {/* Thin red progress bar directly under the video — YouTube-style */}
+      <div className="w-full h-0.5" style={{ background: "rgba(0,0,0,0.06)" }}>
+        <div
+          className="h-full transition-all duration-300"
+          style={{
+            width: activeDuration > 0 ? `${activeProgressPct}%` : "0%",
+            background: "var(--color-accent)",
+            boxShadow: "0 0 6px rgba(220,38,38,0.5)",
+          }}
+        />
+      </div>
+
+      {/* Padded content area: meta + progress + episode list */}
+      <div className="px-4 pt-3 pb-4 space-y-3">
 
       {/* YouTube-style meta: episode title + challenge context + watch state */}
       <div className="flex items-start justify-between gap-3">
@@ -2173,7 +2188,17 @@ function WatchChallengeView({
       })()}
 
       {/* Dynamic Episode list */}
-      <div className="rounded-xl overflow-hidden divide-y" style={{ border: "1px solid rgba(0,0,0,0.08)", boxShadow: "inset 1px 1px 4px rgba(0,0,0,0.04)", background: "#f8f8f8", borderColor: "rgba(0,0,0,0.08)" }}>
+      {episodes.length > 0 && (
+        <div className="flex items-center justify-between pb-1">
+          <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "rgba(0,0,0,0.4)" }}>
+            In this challenge
+          </span>
+          <span className="text-[11px] font-bold tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>
+            {episodes.filter((e: any, i: number) => !!e.isCompleted || (i === activeEpIdx && watchState === "completed")).length} / {episodes.length}
+          </span>
+        </div>
+      )}
+      <div className="rounded-xl overflow-hidden divide-y" style={{ border: "1px solid rgba(0,0,0,0.1)", background: "#ffffff" }}>
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
@@ -2210,7 +2235,7 @@ function WatchChallengeView({
             <button
               key={e.id}
               onClick={() => setActiveEpIdx(i)}
-              className="w-full flex flex-col px-3 py-3.5 text-left transition-all"
+              className="w-full flex flex-col px-3 py-3.5 text-left transition-all hover:bg-black/[0.02]"
               style={{ borderLeft: `3px solid ${borderColor}`, background: bgColor }}
             >
               {/* Row 1: icon + title + right label */}
@@ -2252,8 +2277,8 @@ function WatchChallengeView({
                       : isWatching || isPausedState || isResumeState
                         ? "#111111"
                         : hasPartialProgress
-                          ? "rgba(0,0,0,0.7)"
-                          : "rgba(0,0,0,0.45)",
+                          ? "rgba(0,0,0,0.75)"
+                          : "rgba(0,0,0,0.65)",
                   }}
                 >
                   {e.title}
@@ -2315,6 +2340,8 @@ function WatchChallengeView({
           );
         })}
       </div>
+
+      </div>{/* end padded content area */}
     </div>
   );
 }
@@ -2426,7 +2453,7 @@ function QuizChallengeView({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 px-5 py-5">
       {showModal && (
         <QuizScoreModal
           score={score}
@@ -2467,7 +2494,7 @@ function QuizChallengeView({
         const selected = answers[q.id];
         const isAnswered = selected !== undefined;
         return (
-          <div key={q.id} className="space-y-2.5">
+          <div key={q.id} className="space-y-2.5 rounded-xl p-4" style={{ background: "#fafafa", border: "1px solid rgba(0,0,0,0.07)" }}>
             <p className="text-sm font-semibold text-foreground">
               <span className="text-muted-foreground mr-1">Q{qi + 1}.</span>{q.question}
             </p>
@@ -2500,9 +2527,9 @@ function QuizChallengeView({
                     circleColor = "rgba(0,0,0,0.25)";
                   }
                 } else {
-                  borderColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.12)";
-                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent";
-                  circleColor = isSelected ? "var(--color-accent)" : "var(--color-muted)";
+                  borderColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.15)";
+                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "#fafafa";
+                  circleColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.3)";
                 }
 
                 return (
@@ -2575,10 +2602,10 @@ function WrittenChallengeView({ challenge, slug, onDone }: { challenge: any; slu
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-5 py-5">
       <ChallengeHeader challenge={challenge} />
-      <div className="rounded-xl border border-border p-4 space-y-1">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Your Challenge</p>
+      <div className="rounded-xl p-4 space-y-1.5" style={{ background: "#fafafa", border: "1px solid rgba(0,0,0,0.1)", borderLeft: "3px solid var(--color-accent)" }}>
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Your Challenge</p>
         <p className="text-sm text-foreground leading-relaxed">{prompt}</p>
       </div>
 
@@ -2662,7 +2689,7 @@ function MatchingChallengeView({ challenge, slug, onDone }: { challenge: any; sl
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-5 py-5">
       <ChallengeHeader challenge={challenge} />
       <p className="text-xs text-muted-foreground">Match each term on the left with its correct pair on the right.</p>
 
@@ -2804,7 +2831,7 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
 
   if (done) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 px-5 py-5">
         <ChallengeHeader challenge={challenge} />
         <div className="rounded-xl border p-6 text-center space-y-3" style={{ borderColor: "#22c55e44", background: "#22c55e0a" }}>
           <Trophy size={32} className="mx-auto" style={{ color: "#22c55e" }} />
@@ -2817,7 +2844,7 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-5 py-5">
       <ChallengeHeader challenge={challenge} />
 
       {/* Progress */}
@@ -3226,14 +3253,16 @@ function ChallengeHeader({ challenge }: { challenge: any }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] font-black" style={{ color: challenge.numberColor }}>{challenge.numberLabel}</span>
-        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${typeMeta.color}22`, color: typeMeta.color }}>{typeMeta.label}</span>
-        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: ss.bg, color: ss.text }}>
-          {challenge.status === "completed" ? "Completed" : challenge.status === "in_progress" ? "In Progress" : "Not Started"}
+        {challenge.numberLabel && (
+          <span className="text-[11px] font-black" style={{ color: challenge.numberColor ?? "var(--color-accent)" }}>{challenge.numberLabel}</span>
+        )}
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${typeMeta.color}18`, color: typeMeta.color, border: `1px solid ${typeMeta.color}30` }}>{typeMeta.label}</span>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: ss.bg, color: ss.text, border: `1px solid ${ss.border}` }}>
+          {challenge.status === "completed" ? "✓ Completed" : challenge.status === "in_progress" ? "In Progress" : "Not Started"}
         </span>
       </div>
-      <h3 className="font-bold text-foreground text-base">{challenge.title}</h3>
-      {challenge.description && <p className="text-xs text-muted-foreground leading-relaxed">{challenge.description}</p>}
+      <h3 className="font-bold text-foreground text-lg leading-snug">{challenge.title}</h3>
+      {challenge.description && <p className="text-sm text-muted-foreground leading-relaxed">{challenge.description}</p>}
     </div>
   );
 }
