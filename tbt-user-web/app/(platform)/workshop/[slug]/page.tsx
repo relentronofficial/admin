@@ -216,7 +216,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
   if (!item.scheduledAt || !item.countdownConfig) return null;
 
-  const teal = item.countdownConfig.stayTunedColor || "#2dd4bf";
+  const teal = "rgba(255,255,255,0.6)";
 
   const units = [
     [Math.floor(diff / 86400000), uiStrings?.countdownDays ?? "DAYS"],
@@ -406,7 +406,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
-              style={{ borderColor: "rgba(139,92,246,0.4)", color: "#a78bfa", background: "rgba(139,92,246,0.08)" }}
+              style={{ borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.06)" }}
             >
               <ExternalLink size={15} />
               {item.externalMeetingProvider ? `Join via ${item.externalMeetingProvider}` : "Join via External Link"}
@@ -589,7 +589,7 @@ function AssignmentMainView({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={18} style={{ color: "var(--color-success)" }} />
-            <h3 className="font-bold text-sm text-amber-500">{assignment.title}</h3>
+            <h3 className="font-bold text-sm text-white">{assignment.title}</h3>
           </div>
           {assignment.canEdit && (
             <button
@@ -819,8 +819,8 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
                 size={16}
                 style={
                   filled
-                    ? { color: "#f59e0b", fill: "#f59e0b", filter: "drop-shadow(0 0 6px rgba(245,158,11,0.7))" }
-                    : { color: "rgba(255,255,255,0.28)", fill: "rgba(255,255,255,0.1)" }
+                    ? { color: "#ffffff", fill: "#ffffff", filter: "drop-shadow(0 0 5px rgba(255,255,255,0.6))" }
+                    : { color: "rgba(255,255,255,0.2)", fill: "rgba(255,255,255,0.08)" }
                 }
               />
             ))}
@@ -874,8 +874,8 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
           {/* Videos bar */}
           {(() => {
             const vp = cert.videosWatchPct ?? cert.videosCompletedPct;
-            const vColor = vp === 100 ? "#22c55e" : vp >= 50 ? "#f59e0b" : "var(--color-accent)";
-            const vGlow = vp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : vp >= 50 ? "0 0 8px rgba(245,158,11,0.55)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
+            const vColor = vp === 100 ? "#22c55e" : vp >= 50 ? "rgba(255,255,255,0.75)" : "var(--color-accent)";
+            const vGlow = vp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : vp >= 50 ? "0 0 6px rgba(255,255,255,0.2)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
             return (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -891,8 +891,8 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
           {/* Challenges bar */}
           {(() => {
             const cp = cert.challengesCompletedPct;
-            const cColor = cp === 100 ? "#22c55e" : cp >= 50 ? "#f59e0b" : "var(--color-accent)";
-            const cGlow = cp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : cp >= 50 ? "0 0 8px rgba(245,158,11,0.55)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
+            const cColor = cp === 100 ? "#22c55e" : cp >= 50 ? "rgba(255,255,255,0.75)" : "var(--color-accent)";
+            const cGlow = cp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : cp >= 50 ? "0 0 6px rgba(255,255,255,0.2)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
             return (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -1404,21 +1404,21 @@ function LiveCallUnlockWatcher({
 // ─── Challenge type metadata ──────────────────────────────────────────────────
 
 const CHALLENGE_TYPE_META: Record<string, { label: string; color: string }> = {
-  watch:     { label: "WATCH",     color: "#3b82f6" },
-  quiz:      { label: "QUIZ",      color: "#f59e0b" },
-  written:   { label: "WRITTEN",   color: "#8b5cf6" },
-  matching:  { label: "MATCH",     color: "#ec4899" },
-  flashcard: { label: "FLASHCARD", color: "#06b6d4" },
-  live_call: { label: "LIVE",      color: "#ff3d8b" },
+  watch:     { label: "WATCH",     color: "rgba(255,255,255,0.55)" },
+  quiz:      { label: "QUIZ",      color: "rgba(255,255,255,0.55)" },
+  written:   { label: "WRITTEN",   color: "rgba(255,255,255,0.55)" },
+  matching:  { label: "MATCH",     color: "rgba(255,255,255,0.55)" },
+  flashcard: { label: "FLASHCARD", color: "rgba(255,255,255,0.55)" },
+  live_call: { label: "LIVE",      color: "rgba(255,255,255,0.55)" },
 };
 
 function statusStyle(status: string) {
   switch (status) {
-    case "completed":  return { bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.5)",  text: "#22c55e" };
-    case "in_progress":return { bg: "rgba(236,72,153,0.08)", border: "rgba(236,72,153,0.5)", text: "#ec4899" };
-    case "locked":     return { bg: "rgba(60,60,60,0.05)",   border: "rgba(80,80,80,0.2)",   text: "#606060" };
-    case "past":       return { bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.5)",  text: "#22c55e" };
-    case "upcoming":   return { bg: "rgba(99,102,241,0.08)",  border: "rgba(99,102,241,0.45)", text: "#818cf8" };
+    case "completed":  return { bg: "rgba(34,197,94,0.08)",   border: "rgba(34,197,94,0.5)",   text: "#22c55e" };
+    case "in_progress":return { bg: "rgba(220,38,38,0.08)",   border: "rgba(220,38,38,0.45)",  text: "#dc2626" };
+    case "locked":     return { bg: "rgba(60,60,60,0.05)",    border: "rgba(80,80,80,0.2)",    text: "#606060" };
+    case "past":       return { bg: "rgba(34,197,94,0.08)",   border: "rgba(34,197,94,0.5)",   text: "#22c55e" };
+    case "upcoming":   return { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.15)", text: "rgba(255,255,255,0.45)" };
     default:           return { bg: "rgba(120,120,120,0.08)", border: "rgba(120,120,120,0.3)", text: "#888888" };
   }
 }
@@ -1553,7 +1553,7 @@ function ChallengeList({
               {isInProgress && !isSelected && (
                 <span
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                  style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}
+                  style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.55)" }}
                 >
                   Resume
                 </span>
@@ -2030,7 +2030,7 @@ function WatchChallengeView({
               <CheckCircle2 size={13} /> Completed
             </span>
           ) : watchState === "rewatching" ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}>
               <RotateCcw size={12} /> Rewatching
             </span>
           ) : watchState === "watching" ? (
@@ -2264,7 +2264,7 @@ function WatchChallengeView({
                   {isDone ? (
                     <CheckCircle2 size={15} style={{ color: "#22c55e", flexShrink: 0 }} />
                   ) : isRewatching ? (
-                    <span className="text-[11px] font-bold" style={{ color: "#a78bfa" }}>Rewatching...</span>
+                    <span className="text-[11px] font-bold" style={{ color: "rgba(255,255,255,0.55)" }}>Rewatching...</span>
                   ) : isWatching ? (
                     <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>Watching...</span>
                   ) : isPausedState ? (
@@ -2272,11 +2272,11 @@ function WatchChallengeView({
                       Paused at {formatTime(currentPlayhead)}
                     </span>
                   ) : isResumeState ? (
-                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "#a78bfa" }}>
+                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(255,255,255,0.55)" }}>
                       Resume {progressPct}%
                     </span>
                   ) : hasPartialProgress ? (
-                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "#a78bfa" }}>
+                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(255,255,255,0.55)" }}>
                       Resume {progressPct}%
                     </span>
                   ) : isActive && liveRealDuration > 0 ? (
@@ -2886,7 +2886,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
   const isPast = challenge.status === "past";
   const lColor = challenge.labelColor ?? "#ff3d8b";
-  const teal = challenge.stayTunedColor ?? "#2dd4bf";
+  const teal = "rgba(255,255,255,0.6)";
   const [diff, setDiff] = useState(0);
   const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null; isWebinar?: boolean } | null>(null);
   const [leftByChoice, setLeftByChoice] = useState(false);
@@ -2947,7 +2947,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
         )}
         <span
           className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-          style={isPast ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" } : { background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}
+          style={isPast ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" } : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.45)" }}
         >
           {isPast ? "Ended" : "Upcoming"}
         </span>
@@ -3201,7 +3201,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
-                  style={{ borderColor: "rgba(139,92,246,0.4)", color: "#a78bfa", background: "rgba(139,92,246,0.08)" }}
+                  style={{ borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.06)" }}
                 >
                   <ExternalLink size={15} />
                   {challenge.externalMeetingProvider ? `Join via ${challenge.externalMeetingProvider}` : "Join via External Link"}
