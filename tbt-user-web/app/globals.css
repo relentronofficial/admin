@@ -115,6 +115,13 @@
   overflow: visible !important;
 }
 
+/* Workshop page: force full white background — overrides dark theme on body and platform layout */
+html.workshop-white-page,
+html.workshop-white-page body,
+html.workshop-white-page .bg-background {
+  background-color: #ffffff !important;
+}
+
 /* Certificate modal print isolation — hide everything except the open modal */
 @media print {
   body > * { display: none !important; }

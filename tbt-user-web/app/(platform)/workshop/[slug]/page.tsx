@@ -3396,20 +3396,12 @@ export default function WorkshopDetailPage() {
     }
   }, [tabs.length]);
 
-  // Override root CSS vars so the platform layout's bg-background resolves to white.
-  // This page is white-themed; restore the dark theme vars on unmount.
+  // Force full white background on this page — class in globals.css applies
+  // background-color: #ffffff !important to html, body, and any .bg-background divs,
+  // overriding the platform dark theme regardless of CSS var timing.
   useEffect(() => {
-    const root = document.documentElement;
-    const prevBg = root.style.getPropertyValue("--background");
-    const prevColorBgPrimary = root.style.getPropertyValue("--color-bg-primary");
-    root.style.setProperty("--background", "0 0% 100%");
-    root.style.setProperty("--color-bg-primary", "#ffffff");
-    return () => {
-      if (prevBg) root.style.setProperty("--background", prevBg);
-      else root.style.removeProperty("--background");
-      if (prevColorBgPrimary) root.style.setProperty("--color-bg-primary", prevColorBgPrimary);
-      else root.style.removeProperty("--color-bg-primary");
-    };
+    document.documentElement.classList.add("workshop-white-page");
+    return () => document.documentElement.classList.remove("workshop-white-page");
   }, []);
 
   useEffect(() => {
