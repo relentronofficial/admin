@@ -1014,7 +1014,7 @@ function CertificateModal({
     >
       <div
         className="relative w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl print:rounded-none print:shadow-none print:max-w-none"
-        style={{ background: "var(--color-bg-surface)" }}
+        style={{ background: "var(--color-bg-surface, #1a1a1a)", ["--foreground" as string]: "#f0f0f0", ["--muted-foreground" as string]: "rgba(255,255,255,0.5)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button (hidden on print) */}
@@ -2337,7 +2337,7 @@ function QuizScoreModal({
   const isPerfect = score === total;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}>
-      <div className="w-full max-w-sm rounded-2xl p-6 space-y-5 text-center shadow-2xl" style={{ background: "var(--color-bg-surface, #1a1a1a)", border: "1px solid rgba(255,255,255,0.08)" }}>
+      <div className="w-full max-w-sm rounded-2xl p-6 space-y-5 text-center shadow-2xl" style={{ background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.08)", ["--foreground" as string]: "#f0f0f0", ["--muted-foreground" as string]: "rgba(255,255,255,0.5)" }}>
         <div className="flex flex-col items-center gap-2">
           <div
             className="w-14 h-14 rounded-full flex items-center justify-center"
@@ -3396,6 +3396,18 @@ export default function WorkshopDetailPage() {
     }
   }, [tabs.length]);
 
+  // Override body background to white for this page only; restore on unmount
+  useEffect(() => {
+    const prevBg = document.body.style.backgroundColor;
+    const prevHtmlBg = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = "#ffffff";
+    document.documentElement.style.backgroundColor = "#ffffff";
+    return () => {
+      document.body.style.backgroundColor = prevBg;
+      document.documentElement.style.backgroundColor = prevHtmlBg;
+    };
+  }, []);
+
   useEffect(() => {
     if (!slug) return;
     let mounted = true;
@@ -3440,30 +3452,57 @@ export default function WorkshopDetailPage() {
   const currentTabId = activeTab || tabs[0]?.id;
 
   return (
-    <div className="-mx-4 md:-mx-6 -mt-6 px-4 md:px-6 pt-6 pb-8 min-h-screen space-y-3" style={{ background: "#ffffff" }}>
+    <div className="-mx-4 md:-mx-6 -mt-6 px-4 md:px-6 pt-6 pb-8 min-h-screen space-y-3" style={{
+      background: "#ffffff",
+      /* Redefine shadcn CSS vars for this light-bg page so text-foreground / text-muted-foreground are readable */
+      ["--foreground" as string]: "#111111",
+      ["--muted-foreground" as string]: "rgba(0,0,0,0.5)",
+      ["--card" as string]: "#f5f5f5",
+      ["--card-foreground" as string]: "#111111",
+      ["--border" as string]: "rgba(0,0,0,0.1)",
+      ["--ring" as string]: "rgba(220,38,38,0.45)",
+      ["--accent" as string]: "rgba(0,0,0,0.05)",
+      ["--background" as string]: "#ffffff",
+    }}>
       {flowData?.flowItems && (
         <LiveCallUnlockWatcher
           flowItems={flowData.flowItems}
           onUnlock={handleLiveUrlUnlock}
         />
       )}
-      {detail.backUrl && (
-        <Link
-          href={detail.backUrl}
-          className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest transition-colors hover:text-gray-900"
-          style={{ color: "rgba(0,0,0,0.45)" }}
-        >
-          <ChevronLeft size={13} />
-          {detail.backLabel ?? "Back"}
-        </Link>
-      )}
-      <h1 className="text-2xl md:text-3xl font-bold leading-tight" style={{ color: "#111111" }}>{detail.title}</h1>
+      {/* Page header */}
+      <div className="pb-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
+        {detail.backUrl && (
+          <Link
+            href={detail.backUrl}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest transition-colors hover:text-gray-900 mb-3"
+            style={{ color: "rgba(0,0,0,0.4)" }}
+          >
+            <ChevronLeft size={13} />
+            {detail.backLabel ?? "Back"}
+          </Link>
+        )}
+        <h1 className="text-2xl md:text-3xl font-bold leading-tight" style={{ color: "#111111" }}>{detail.title}</h1>
+        {progress && (
+          <div className="mt-3 flex items-center gap-3">
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${progress.percentage ?? 0}%`, background: "var(--color-accent)" }}
+              />
+            </div>
+            <span className="text-[11px] font-bold tabular-nums" style={{ color: "rgba(0,0,0,0.45)", minWidth: 36 }}>
+              {progress.percentage ?? 0}%
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Two-column body */}
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 items-start pt-1">
 
         {/* ── Left: Main Area ── */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 rounded-2xl overflow-hidden" style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.07)" }}>
           {mainView.kind === "assignment" ? (
             <AssignmentMainView
               assignmentId={mainView.assignmentId}
@@ -3483,29 +3522,29 @@ export default function WorkshopDetailPage() {
             <MainAreaCountdown item={upcomingLiveCall} />
           ) : (
             <div
-              className="rounded-2xl flex flex-col items-center justify-center gap-5 text-center px-6 py-20 md:px-10 md:py-24 min-h-[260px]"
-              style={{ background: "#f8f8f8", border: "1px solid rgba(0,0,0,0.08)" }}
+              className="flex flex-col items-center justify-center gap-5 text-center px-6 py-20 md:px-10 md:py-24 min-h-[260px]"
+              style={{ background: "#fafafa" }}
             >
               <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                style={{ background: "rgba(220,38,38,0.10)", border: "1px solid rgba(220,38,38,0.18)" }}
+                className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.15)" }}
               >
-                <Play size={24} style={{ color: "var(--color-accent)" }} />
+                <Play size={26} style={{ color: "var(--color-accent)" }} />
               </div>
-              <div className="space-y-1.5">
-                <p className="text-sm font-semibold" style={{ color: "#111111" }}>
-                  Ready to start?
+              <div className="space-y-2">
+                <p className="text-base font-bold" style={{ color: "#111111" }}>
+                  Ready to start learning?
                 </p>
-                <p className="text-xs lg:hidden" style={{ color: "rgba(0,0,0,0.5)" }}>
+                <p className="text-xs lg:hidden max-w-xs mx-auto" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.6 }}>
                   Pick a challenge from the list below to begin your learning journey.
                 </p>
-                <p className="text-xs hidden lg:block" style={{ color: "rgba(0,0,0,0.5)" }}>
-                  Pick a challenge from the list on the right to begin your learning journey.
+                <p className="text-xs hidden lg:block max-w-xs mx-auto" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.6 }}>
+                  Pick a challenge from the sidebar to begin your learning journey.
                 </p>
               </div>
               <div
-                className="hidden lg:flex items-center gap-2 text-[11px] font-medium px-4 py-2 rounded-full"
-                style={{ background: "rgba(220,38,38,0.08)", color: "var(--color-accent)", border: "1px solid rgba(220,38,38,0.2)" }}
+                className="hidden lg:flex items-center gap-2 text-[11px] font-semibold px-5 py-2.5 rounded-full"
+                style={{ background: "rgba(220,38,38,0.06)", color: "var(--color-accent)", border: "1px solid rgba(220,38,38,0.18)" }}
               >
                 <span>Select a challenge</span>
                 <ChevronRight size={13} />
@@ -3515,7 +3554,21 @@ export default function WorkshopDetailPage() {
         </div>
 
         {/* ── Right: Sidebar ── */}
-        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3" style={{ background: "#111111", borderRadius: "16px", padding: "12px" }}>
+        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3" style={{
+          background: "#111111",
+          borderRadius: "16px",
+          padding: "12px",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.12)",
+          /* Reset CSS vars for dark sidebar so text-foreground stays white */
+          ["--foreground" as string]: "#f0f0f0",
+          ["--muted-foreground" as string]: "rgba(255,255,255,0.4)",
+          ["--card" as string]: "rgba(255,255,255,0.04)",
+          ["--card-foreground" as string]: "#f0f0f0",
+          ["--border" as string]: "rgba(255,255,255,0.08)",
+          ["--ring" as string]: "rgba(220,38,38,0.5)",
+          ["--accent" as string]: "rgba(255,255,255,0.05)",
+          ["--background" as string]: "#111111",
+        }}>
           {/* Challenge progress + certificate — always visible above tabs */}
           <LearningProgressWidget progress={progress} />
           {detail.certificate && (
