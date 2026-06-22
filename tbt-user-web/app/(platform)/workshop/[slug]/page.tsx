@@ -1949,7 +1949,7 @@ function WatchChallengeView({
     <div className="space-y-3">
       {/* Video player — full-width 16:9, YouTube-style: video first */}
       <VideoWatermark
-        className="w-full rounded-xl bg-black relative"
+        className="w-full rounded-xl bg-black relative overflow-hidden"
         style={{ aspectRatio: "16/9" }}
         containerId="workshop-video-root"
         showFullscreenButton={!!(ep.hlsUrl || ep.videoUrl)}
@@ -3498,7 +3498,7 @@ export default function WorkshopDetailPage() {
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 items-start pt-1">
 
         {/* ── Left: Main Area ── */}
-        <div className="flex-1 min-w-0 rounded-2xl overflow-hidden" style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.07)" }}>
+        <div className="flex-1 min-w-0 rounded-2xl" style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.07)" }}>
           {mainView.kind === "assignment" ? (
             <AssignmentMainView
               assignmentId={mainView.assignmentId}
