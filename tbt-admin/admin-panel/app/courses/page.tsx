@@ -9,7 +9,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListVodCourses, useCreateVodCourse, useUpdateVodCourse, useDeleteVodCourse,
   useListCourseEpisodes, useCreateCourseEpisode, useUpdateCourseEpisode,
-  useDeleteCourseEpisode, useReorderCourseEpisodes,
+  useDeleteCourseEpisode, useReorderCourseEpisodes, useListTiers,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
@@ -73,6 +73,8 @@ function FileUploadBtn({
 export default function CoursesPage() {
   const [search, setSearch] = useState("");
   const { data, isLoading } = useListVodCourses({ search });
+  const { data: tiersData } = useListTiers();
+  const tiers: any[] = (tiersData as any)?.data || [];
   const createCourse = useCreateVodCourse();
   const updateCourse = useUpdateVodCourse();
   const deleteCourse = useDeleteVodCourse();
@@ -247,8 +249,13 @@ export default function CoursesPage() {
 
               <div>
                 <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
-                <input type="number" min="1" value={courseForm.requiredTier} onChange={e => setCourseField("requiredTier", e.target.value)}
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                <select value={courseForm.requiredTier} onChange={e => setCourseField("requiredTier", e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
+                  <option value="">— Any tier —</option>
+                  {tiers.map((t: any) => (
+                    <option key={t.tierNumber} value={t.tierNumber}>Tier {t.tierNumber} — {t.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center gap-3">
