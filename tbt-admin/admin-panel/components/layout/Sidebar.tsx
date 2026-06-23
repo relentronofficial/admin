@@ -23,6 +23,7 @@ import {
   BarChart2,
   Target,
   ClipboardCheck,
+  GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -34,6 +35,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Admins", href: "/admins", icon: UserCog },
       { name: "Members", href: "/members", icon: Users },
+      { name: "Batches", href: "/batches", icon: GraduationCap },
     ],
   },
   {

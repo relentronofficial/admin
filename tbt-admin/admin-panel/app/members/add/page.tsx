@@ -21,6 +21,7 @@ import { toast } from "react-hot-toast";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { useCreateMember, useGetManagers } from "@/lib/hooks/useMembers";
 import { AccountManagerSelect } from "@/components/members/AccountManagerSelect";
+import { useListBatches } from "@/lib/hooks/useTbt";
 import { useClerk } from "@clerk/nextjs";
 
 const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline"];
@@ -60,6 +61,7 @@ const memberSchema = z.object({
   status: z.string().default("active"),
   verificationStatus: z.string().default("awaiting_kyc"),
   accountManagerId: z.string().optional(),
+  batchId: z.string().optional(),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
@@ -80,6 +82,8 @@ export default function AddMemberPage() {
   const kycRef = useRef<HTMLInputElement>(null);
 
   const { data: managers, isLoading: isLoadingManagers } = useGetManagers();
+  const { data: batchesData } = useListBatches();
+  const batches = (batchesData as any)?.data || [];
   const createMember = useCreateMember();
   const uploadImage = useUploadImage();
 
@@ -534,7 +538,7 @@ export default function AddMemberPage() {
                 </div>
               </div>
 
-              {/* Row 3: Assign Account Manager */}
+              {/* Row 3: Account Manager + Batch */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Assign Account Manager</label>
@@ -544,6 +548,21 @@ export default function AddMemberPage() {
                     value={watchAccountManagerId || ""}
                     onChange={(id) => setValue("accountManagerId", id, { shouldDirty: true })}
                   />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Assign Batch</label>
+                  <select
+                    {...register("batchId")}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white text-[14px] outline-none focus:border-[#dc2626] appearance-none cursor-pointer"
+                  >
+                    <option value="">No batch</option>
+                    {batches.map((b: any) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                        {b.startsAt ? ` · ${new Date(b.startsAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

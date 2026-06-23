@@ -606,6 +606,36 @@ export const useUpdateResourcesPageConfig = () => {
 export const useListBatches = () =>
   useQuery({ queryKey: ['batches'], queryFn: async () => { const res: any = await apiClient.get('/api/batches'); return res; } });
 
+export const useGetBatch = (id: string) =>
+  useQuery({ queryKey: ['batch', id], queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${id}`); return res; }, enabled: !!id });
+
+export const useCreateBatch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: any) => { const res: any = await apiClient.post('/api/batches', data); return res.data; },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batches'] }),
+  });
+};
+
+export const useUpdateBatch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: any) => { const res: any = await apiClient.put(`/api/batches/${id}`, data); return res.data; },
+    onSuccess: (_: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['batches'] });
+      qc.invalidateQueries({ queryKey: ['batch', vars.id] });
+    },
+  });
+};
+
+export const useDeleteBatch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { const res: any = await apiClient.delete(`/api/batches/${id}`); return res.data; },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batches'] }),
+  });
+};
+
 // ── MEMBER ENROLLMENTS ────────────────────────────────────────────────
 
 export const useMemberEnrollments = (memberId: string) =>

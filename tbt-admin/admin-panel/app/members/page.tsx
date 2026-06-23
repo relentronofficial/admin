@@ -37,7 +37,7 @@ import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers, useApproveMember } from "@/lib/hooks/useMembers";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
-import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment } from "@/lib/hooks/useTbt";
+import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment, useListBatches } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
 import { format, isValid } from "date-fns";
 import { toast } from "react-hot-toast";
@@ -91,6 +91,7 @@ const memberUpdateSchema = z.object({
   status: z.string().default("active"),
   verificationStatus: z.string().default("awaiting_kyc"),
   accountManagerId: z.string().optional().or(z.literal("")),
+  batchId: z.string().optional().or(z.literal("")),
   currentTier: z.number().int().min(1).default(1),
   password: z.string().min(8, "Password must be at least 8 characters").optional().or(z.literal("")),
   subscriptionEndsAt: z.string().optional().or(z.literal("")).nullable(),
@@ -129,6 +130,8 @@ export default function MembersListPage() {
   const tiers = (tiersData as any)?.data || [];
   const { data: workshopsData } = useListWorkshops();
   const allWorkshops = (workshopsData as any)?.data || [];
+  const { data: batchesData } = useListBatches();
+  const batches = (batchesData as any)?.data || [];
 
   const members = data?.data || [];
   const total = data?.meta?.total || 0;
@@ -210,6 +213,7 @@ export default function MembersListPage() {
         membershipPlan: editingMember.membershipPlan || "free",
         verificationStatus: editingMember.verificationStatus || "awaiting_kyc",
         accountManagerId: editingMember.accountManagerId || "",
+        batchId: editingMember.batchId || "",
         currentTier: editingMember.currentTier ?? 1,
         subscriptionEndsAt: "",
       });
@@ -972,6 +976,17 @@ export default function MembersListPage() {
                         <select {...register("accountManagerId")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="">Unassigned</option>
                           {managers?.map((m: any) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Batch</label>
+                        <select {...register("batchId")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
+                          <option value="">No batch</option>
+                          {batches.map((b: any) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name}{b.startsAt ? ` · ${new Date(b.startsAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     </div>
