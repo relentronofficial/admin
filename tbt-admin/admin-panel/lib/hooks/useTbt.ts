@@ -702,6 +702,44 @@ export const useUpsertMemberProgress = () => {
   });
 };
 
+export const useApproveBatchDay = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, memberId, dayNumber }: { batchId: string; memberId: string; dayNumber: number }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/progress/${memberId}/${dayNumber}/approve`);
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['batch-progress', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['batch-pending', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['member-day-progress', vars.batchId, vars.memberId] });
+    },
+  });
+};
+
+export const useRejectBatchDay = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, memberId, dayNumber, reviewNote }: { batchId: string; memberId: string; dayNumber: number; reviewNote: string }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/progress/${memberId}/${dayNumber}/reject`, { reviewNote });
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['batch-progress', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['batch-pending', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['member-day-progress', vars.batchId, vars.memberId] });
+    },
+  });
+};
+
+export const useGetBatchPending = (batchId: string) =>
+  useQuery({
+    queryKey: ['batch-pending', batchId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/pending`); return res; },
+    enabled: !!batchId,
+    staleTime: 10_000,
+  });
+
 // ── MEMBER ENROLLMENTS ────────────────────────────────────────────────
 
 export const useMemberEnrollments = (memberId: string) =>

@@ -960,11 +960,16 @@ model MemberDayProgress {
   batchId          String    @map("batch_id") @db.Uuid
   memberId         String    @map("member_id") @db.Uuid
   dayNumber        Int       @map("day_number")
+  status           String    @default("not_started")
   isCompleted      Boolean   @default(false) @map("is_completed")
   completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
   journalEntry     String?   @map("journal_entry")
   journalFileUrl   String?   @map("journal_file_url")
   completedTaskIds String[]  @map("completed_task_ids")
+  submittedAt      DateTime? @map("submitted_at") @db.Timestamptz(6)
+  reviewedBy       String?   @map("reviewed_by") @db.Uuid
+  reviewedAt       DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote       String?   @map("review_note")
   batch            Batch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
   member           Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

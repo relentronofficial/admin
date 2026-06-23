@@ -24,6 +24,11 @@ import {
   FileText,
   Link,
   NotebookPen,
+  AlertCircle,
+  XCircle,
+  ThumbsUp,
+  ThumbsDown,
+  Bell,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -33,6 +38,9 @@ import {
   useGetBatchProgress,
   useGetMemberProgress,
   useUpsertMemberProgress,
+  useApproveBatchDay,
+  useRejectBatchDay,
+  useGetBatchPending,
 } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import { format, differenceInDays, isValid } from "date-fns";
@@ -181,7 +189,15 @@ function DayEditModal({
   );
 }
 
-// ─── Cell Modal (mark progress + journal) ─────────────────────────────────────
+// ─── Cell Modal (progress + approve/reject) ────────────────────────────────────
+
+const STATUS_COLORS: Record<string, { label: string; color: string; bg: string }> = {
+  not_started:      { label: "Not started",     color: "#606060", bg: "#1f1f1f" },
+  in_progress:      { label: "In progress",      color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+  pending_approval: { label: "Pending review",   color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+  approved:         { label: "Approved",         color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
+  rejected:         { label: "Needs revision",   color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
+};
 
 function CellModal({
   batchId,
@@ -198,23 +214,50 @@ function CellModal({
   dayContent: any;
   onClose: () => void;
 }) {
-  const [isCompleted, setIsCompleted] = useState(progress?.isCompleted ?? false);
   const [journalEntry, setJournalEntry] = useState(progress?.journalEntry ?? "");
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>(progress?.completedTaskIds ?? []);
+  const [rejectNote, setRejectNote] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
   const upsert = useUpsertMemberProgress();
+  const approve = useApproveBatchDay();
+  const reject = useRejectBatchDay();
 
   const tasks: TaskItem[] = Array.isArray(dayContent?.tasks) ? dayContent.tasks : [];
+  const status: string = progress?.status ?? "not_started";
+  const statusCfg = STATUS_COLORS[status] ?? STATUS_COLORS.not_started;
+  const isPending = status === "pending_approval";
 
   const toggleTask = (id: string) =>
     setCompletedTaskIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
 
   const save = async () => {
     try {
-      await upsert.mutateAsync({ batchId, memberId: member.id, dayNumber, isCompleted, journalEntry: journalEntry || undefined, completedTaskIds });
+      await upsert.mutateAsync({ batchId, memberId: member.id, dayNumber, journalEntry: journalEntry || undefined, completedTaskIds });
       toast.success("Progress saved");
       onClose();
     } catch {
       toast.error("Failed to save progress");
+    }
+  };
+
+  const handleApprove = async () => {
+    try {
+      await approve.mutateAsync({ batchId, memberId: member.id, dayNumber });
+      toast.success("Day approved");
+      onClose();
+    } catch {
+      toast.error("Failed to approve");
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectNote.trim()) { toast.error("Please add a review note"); return; }
+    try {
+      await reject.mutateAsync({ batchId, memberId: member.id, dayNumber, reviewNote: rejectNote.trim() });
+      toast.success("Sent back for revision");
+      onClose();
+    } catch {
+      toast.error("Failed to reject");
     }
   };
 
@@ -223,40 +266,84 @@ function CellModal({
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-6 py-5 border-b border-[#1f1f1f] flex-shrink-0">
           <div>
-            <h2 className="text-[15px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">
-              Day {dayNumber}
-            </h2>
-            <p className="text-[12px] text-[#606060] mt-0.5">
+            <div className="flex items-center gap-2 mb-0.5">
+              <h2 className="text-[15px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">Day {dayNumber}</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider" style={{ color: statusCfg.color, background: statusCfg.bg }}>
+                {statusCfg.label}
+              </span>
+            </div>
+            <p className="text-[12px] text-[#606060]">
               {member.firstName} {member.lastName}
-              {dayContent?.title && <span className="text-[#888] ml-2">— {dayContent.title}</span>}
+              {dayContent?.title && <span className="ml-2">— {dayContent.title}</span>}
             </p>
           </div>
-          <button onClick={onClose} className="text-[#606060] hover:text-white transition-colors">
-            <X size={20} />
-          </button>
+          <button onClick={onClose} className="text-[#606060] hover:text-white transition-colors"><X size={20} /></button>
         </div>
 
         <div className="overflow-y-auto flex-1 p-6 space-y-5">
-          {/* Completion toggle */}
-          <button
-            onClick={() => setIsCompleted((v: boolean) => !v)}
-            className={cn(
-              "w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 transition-all text-left",
-              isCompleted
-                ? "border-green-500/50 bg-green-500/10"
-                : "border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#444]"
-            )}
-          >
-            {isCompleted
-              ? <CheckCircle2 size={20} className="text-green-400 flex-shrink-0" />
-              : <Circle size={20} className="text-[#444] flex-shrink-0" />}
-            <div>
-              <p className={cn("text-[13px] font-semibold", isCompleted ? "text-green-400" : "text-[#a0a0a0]")}>
-                {isCompleted ? "Completed" : "Not completed"}
-              </p>
-              <p className="text-[11px] text-[#606060]">Click to toggle</p>
+          {/* Pending approval — approve/reject actions */}
+          {isPending && (
+            <div className="rounded-xl border border-[#a78bfa]/30 bg-[#a78bfa]/08 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={14} style={{ color: "#a78bfa" }} />
+                <p className="text-[13px] font-semibold" style={{ color: "#a78bfa" }}>Submitted for review</p>
+              </div>
+              {!showRejectForm ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleApprove}
+                    disabled={approve.isPending}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                    style={{ background: "#22c55e" }}
+                  >
+                    {approve.isPending ? <Loader2 size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setShowRejectForm(true)}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all"
+                    style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444" }}
+                  >
+                    <ThumbsDown size={14} />
+                    Request Revision
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <textarea
+                    value={rejectNote}
+                    onChange={e => setRejectNote(e.target.value)}
+                    rows={3}
+                    placeholder="Explain what needs to be revised…"
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#dc2626] resize-none"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowRejectForm(false)} className="flex-1 py-2 rounded-lg text-sm text-[#606060] hover:text-white transition-colors">Cancel</button>
+                    <button
+                      onClick={handleReject}
+                      disabled={reject.isPending}
+                      className="flex-1 py-2 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                      style={{ background: "#ef4444" }}
+                    >
+                      {reject.isPending ? <Loader2 size={13} className="animate-spin inline mr-1" /> : null}
+                      Send Revision
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          </button>
+          )}
+
+          {/* Rejection note (if previously rejected) */}
+          {status === "rejected" && progress?.reviewNote && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/08 p-3 flex items-start gap-2">
+              <XCircle size={14} className="flex-shrink-0 mt-0.5 text-red-400" />
+              <div>
+                <p className="text-[11px] font-bold text-red-400 mb-0.5">Revision note</p>
+                <p className="text-sm text-[#d0d0d0]">{progress.reviewNote}</p>
+              </div>
+            </div>
+          )}
 
           {/* Checklist tasks */}
           {tasks.length > 0 && (
@@ -276,9 +363,7 @@ function CellModal({
                         done ? "border-green-500/30 bg-green-500/08" : "border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#333]"
                       )}
                     >
-                      {done
-                        ? <CheckCircle2 size={14} className="text-green-400 flex-shrink-0" />
-                        : <Circle size={14} className="text-[#444] flex-shrink-0" />}
+                      {done ? <CheckCircle2 size={14} className="text-green-400 flex-shrink-0" /> : <Circle size={14} className="text-[#444] flex-shrink-0" />}
                       <span className={cn("text-sm", done ? "text-green-300 line-through decoration-green-500/50" : "text-[#d0d0d0]")}>
                         {task.title}
                       </span>
@@ -385,8 +470,8 @@ function MemberTimelineDrawer({
                   <div
                     className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[11px] font-bold"
                     style={{
-                      background: prog?.isCompleted ? "#22c55e" : prog?.journalEntry ? "rgba(245,158,11,0.2)" : "#1f1f1f",
-                      color: prog?.isCompleted ? "#fff" : prog?.journalEntry ? "#f59e0b" : "#606060",
+                      background: prog?.status === "approved" ? "#22c55e" : prog?.status === "pending_approval" ? "#a78bfa" : prog?.status === "rejected" ? "#ef4444" : prog?.status === "in_progress" ? "rgba(245,158,11,0.25)" : "#1f1f1f",
+                      color: ["approved","pending_approval","rejected"].includes(prog?.status) ? "#fff" : prog?.status === "in_progress" ? "#f59e0b" : "#606060",
                     }}
                   >
                     {dayNum}
@@ -399,15 +484,14 @@ function MemberTimelineDrawer({
                       <p className="text-[11px] text-[#606060] truncate mt-0.5">{prog.journalEntry}</p>
                     )}
                   </div>
-                  <span className={cn(
-                    "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider flex-shrink-0",
-                    prog?.isCompleted
-                      ? "bg-green-500/15 text-green-400"
-                      : prog?.journalEntry
-                        ? "bg-amber-500/15 text-amber-400"
-                        : "bg-[#1f1f1f] text-[#444]"
-                  )}>
-                    {prog?.isCompleted ? "Done" : prog?.journalEntry ? "In Progress" : "—"}
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider flex-shrink-0"
+                    style={{
+                      background: prog?.status === "approved" ? "rgba(34,197,94,0.15)" : prog?.status === "pending_approval" ? "rgba(167,139,250,0.15)" : prog?.status === "rejected" ? "rgba(239,68,68,0.15)" : prog?.status === "in_progress" ? "rgba(245,158,11,0.15)" : "rgba(255,255,255,0.05)",
+                      color: prog?.status === "approved" ? "#22c55e" : prog?.status === "pending_approval" ? "#a78bfa" : prog?.status === "rejected" ? "#ef4444" : prog?.status === "in_progress" ? "#f59e0b" : "#444",
+                    }}
+                  >
+                    {prog?.status === "approved" ? "Approved" : prog?.status === "pending_approval" ? "Pending" : prog?.status === "rejected" ? "Rejected" : prog?.status === "in_progress" ? "Draft" : "—"}
                   </span>
                 </button>
               );
@@ -707,15 +791,17 @@ export default function BatchDetailPage() {
             ) : (
               <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl overflow-hidden">
                 {/* Legend */}
-                <div className="flex items-center gap-4 px-5 py-3 border-b border-[#1f1f1f]">
+                <div className="flex items-center gap-4 px-5 py-3 border-b border-[#1f1f1f] flex-wrap">
                   <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mr-2">Legend</p>
                   {[
-                    { color: "#22c55e", label: "Completed" },
-                    { color: "rgba(245,158,11,0.7)", label: "In Progress" },
-                    { color: "#2a2a2a", label: "Not started" },
+                    { color: "#22c55e", label: "Approved" },
+                    { color: "#a78bfa", label: "Pending" },
+                    { color: "#ef4444", label: "Rejected" },
+                    { color: "#f59e0b", label: "In Progress" },
+                    { color: "#1f1f1f", label: "Not started" },
                   ].map(l => (
                     <div key={l.label} className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 rounded-sm" style={{ background: l.color }} />
+                      <div className="w-3 h-3 rounded-sm border border-[#333]" style={{ background: l.color }} />
                       <span className="text-[11px] text-[#606060]">{l.label}</span>
                     </div>
                   ))}
@@ -762,11 +848,12 @@ export default function BatchDetailPage() {
                           </button>
                           {DAYS.map(dayNum => {
                             const prog = memberProgress[dayNum];
-                            const bg = prog?.isCompleted
-                              ? "#22c55e"
-                              : prog?.journalEntry
-                                ? "rgba(245,158,11,0.6)"
-                                : "#1f1f1f";
+                            const s = prog?.status;
+                            const bg = s === "approved" ? "#22c55e"
+                              : s === "pending_approval" ? "#a78bfa"
+                              : s === "rejected" ? "#ef4444"
+                              : s === "in_progress" ? "#f59e0b"
+                              : "#1f1f1f";
                             return (
                               <div
                                 key={dayNum}

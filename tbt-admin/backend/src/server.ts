@@ -41,6 +41,7 @@ import { messagesRoutes } from './modules/messages/routes.js';
 import { conversationsRoutes } from './modules/conversations/routes.js';
 import { securityRoutes } from './modules/security/routes.js';
 import { userAuthRoutes } from './modules/user-auth/routes.js';
+import { userBatchRoutes } from './modules/user-batch/routes.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 
 async function bootstrap() {
@@ -127,6 +128,7 @@ async function bootstrap() {
     await fastify.register(conversationsRoutes, { prefix: '/api/conversations' });
     await fastify.register(securityRoutes, { prefix: '/api/security-logs' });
     await fastify.register(userAuthRoutes, { prefix: '/api/user-auth' });
+    await fastify.register(userBatchRoutes, { prefix: '/api/user-batch' });
 
     // Cron endpoint (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
