@@ -1650,7 +1650,7 @@ export async function getHomeSectionsHandler(request: FastifyRequest, reply: Fas
 // ─── Workshops (user-facing) ──────────────────────────────────────────────────
 
 export async function listWorkshopsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const [member, allWorkshops, enrollments] = await Promise.all([
+  const [member, workshops, enrollments] = await Promise.all([
     request.server.prisma.member.findUnique({
       where: { id: request.memberId },
       select: { batchId: true },
@@ -1677,16 +1677,14 @@ export async function listWorkshopsHandler(request: FastifyRequest, reply: Fasti
   ]);
 
   const memberBatchId = member?.batchId ?? null;
-  const workshops = allWorkshops.filter((w) => {
-    const ids = w.batchIds as string[] | null;
-    if (!ids || ids.length === 0) return true;
-    return memberBatchId ? ids.includes(memberBatchId) : false;
-  });
-
   const enrollmentMap = new Map(enrollments.map((e) => [e.workshopId, e.status]));
 
   const data = workshops.map((w) => {
     const enrollStatus = enrollmentMap.get(w.id) ?? null;
+    const batchIds = w.batchIds as string[] | null;
+    const locked = batchIds && batchIds.length > 0
+      ? !memberBatchId || !batchIds.includes(memberBatchId)
+      : false;
     return {
       id: w.id,
       title: w.title,
@@ -1703,6 +1701,7 @@ export async function listWorkshopsHandler(request: FastifyRequest, reply: Fasti
       enrollmentStatus: enrollStatus,
       enrolledBadge: enrollStatus === 'active' ? { label: 'Enrolled', color: '#22c55e' } : null,
       completedBadgeIconType: enrollStatus === 'completed' ? 'checkmark' : null,
+      locked,
     };
   });
 
@@ -1787,6 +1786,18 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   });
 
   if (!workshop) return fail(reply, 404, 'Workshop not found');
+
+  const batchIds = (workshop as any).batchIds as string[] | null;
+  if (batchIds && batchIds.length > 0) {
+    const member = await request.server.prisma.member.findUnique({
+      where: { id: request.memberId },
+      select: { batchId: true },
+    });
+    const memberBatchId = member?.batchId ?? null;
+    if (!memberBatchId || !batchIds.includes(memberBatchId)) {
+      return fail(reply, 403, 'This workshop is not available for your batch');
+    }
+  }
 
   const enrollment = (workshop as any).enrollments?.[0];
 
@@ -2686,32 +2697,25 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
     limit?: number;
   };
 
-  const member = await request.server.prisma.member.findUnique({
-    where: { id: request.memberId },
-    select: { batchId: true },
-  });
-  const memberBatchId = member?.batchId ?? null;
-
   const searchWhere = search?.trim()
     ? { title: { contains: search.trim(), mode: 'insensitive' as const } }
     : {};
 
-  const [pageConfig, allResources] = await Promise.all([
-    request.server.prisma.resourcesPageConfig.findFirst(),
+  const [member, allResources, pageConfig] = await Promise.all([
+    request.server.prisma.member.findUnique({
+      where: { id: request.memberId },
+      select: { batchId: true },
+    }),
     request.server.prisma.appResource.findMany({
       where: { isVisible: true, ...searchWhere },
       orderBy: { order: 'asc' },
     }),
+    request.server.prisma.resourcesPageConfig.findFirst(),
   ]);
 
-  const resources = allResources.filter((r) => {
-    const vis = r.visibility as { batchIds?: string[] } | null;
-    if (!vis || !vis.batchIds || vis.batchIds.length === 0) return true;
-    return memberBatchId ? vis.batchIds.includes(memberBatchId) : false;
-  });
-
-  const total = resources.length;
-  const paged = resources.slice((Number(page) - 1) * Number(limit), Number(page) * Number(limit));
+  const memberBatchId = member?.batchId ?? null;
+  const total = allResources.length;
+  const paged = allResources.slice((Number(page) - 1) * Number(limit), Number(page) * Number(limit));
 
   return ok(reply, {
     pageTitle: pageConfig?.pageTitle ?? 'Resources',
@@ -2719,23 +2723,30 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
     totalCount: total,
     totalLabel: 'resources',
     viewOptions: ['list', 'grid'],
-    resources: paged.map((r) => ({
-      id: r.id,
-      title: r.title,
-      author: r.author ?? null,
-      date: r.date ? r.date.toISOString().split('T')[0] : null,
-      fileUrl: r.fileUrl,
-      previewUrl: r.previewUrl ?? null,
-      fileType: r.fileType,
-      fileTypeIconUrl: r.fileTypeIconUrl ?? null,
-      fileCount: r.fileCount,
-      order: r.order,
-      isVisible: r.isVisible,
-      hoverActions: [
-        { type: 'preview', iconType: 'eye', label: r.previewLabel },
-        { type: 'download', iconType: 'download', label: r.downloadLabel },
-      ],
-    })),
+    resources: paged.map((r) => {
+      const vis = r.visibility as { batchIds?: string[] } | null;
+      const locked = vis?.batchIds && vis.batchIds.length > 0
+        ? !memberBatchId || !vis.batchIds.includes(memberBatchId)
+        : false;
+      return {
+        id: r.id,
+        title: r.title,
+        author: r.author ?? null,
+        date: r.date ? r.date.toISOString().split('T')[0] : null,
+        fileUrl: r.fileUrl,
+        previewUrl: r.previewUrl ?? null,
+        fileType: r.fileType,
+        fileTypeIconUrl: r.fileTypeIconUrl ?? null,
+        fileCount: r.fileCount,
+        order: r.order,
+        isVisible: r.isVisible,
+        locked,
+        hoverActions: [
+          { type: 'preview', iconType: 'eye', label: r.previewLabel },
+          { type: 'download', iconType: 'download', label: r.downloadLabel },
+        ],
+      };
+    }),
     pagination: { total, page: Number(page), limit: Number(limit) },
   });
 }
@@ -2743,13 +2754,27 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
 export async function getResourceDownloadHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
 
-  const resource = await request.server.prisma.appResource.findUnique({
-    where: { id, isVisible: true },
-    select: { fileUrl: true, title: true },
-  });
+  const [resource, member] = await Promise.all([
+    request.server.prisma.appResource.findUnique({
+      where: { id, isVisible: true },
+      select: { fileUrl: true, title: true, visibility: true },
+    }),
+    request.server.prisma.member.findUnique({
+      where: { id: request.memberId },
+      select: { batchId: true },
+    }),
+  ]);
 
   if (!resource?.fileUrl) {
     return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Resource not found' } });
+  }
+
+  const vis = resource.visibility as { batchIds?: string[] } | null;
+  if (vis?.batchIds && vis.batchIds.length > 0) {
+    const memberBatchId = member?.batchId ?? null;
+    if (!memberBatchId || !vis.batchIds.includes(memberBatchId)) {
+      return reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'This resource is not available for your batch' } });
+    }
   }
 
   let downloadUrl = resource.fileUrl;

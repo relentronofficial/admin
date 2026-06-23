@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, Download, LayoutList, LayoutGrid } from "lucide-react";
+import { Eye, Download, LayoutList, LayoutGrid, Lock } from "lucide-react";
 import { useUserResources } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
@@ -73,31 +73,37 @@ function ResourceRow({ resource }: { resource: Resource }) {
         </div>
       </div>
 
-      {/* Hover actions — icon buttons appear on hover */}
-      <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        {resource.hoverActions.map((action) => (
-          <a
-            key={action.type}
-            href={
-              action.type === "download"
-                ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
-                : (resource.previewUrl ?? resource.fileUrl)
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            title={action.label}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white transition-opacity hover:opacity-80"
-            style={{
-              background:
-                action.type === "preview"
-                  ? "var(--color-bg-surface)"
-                  : "var(--color-accent)",
-            }}
-          >
-            {resolveHoverIcon(action.iconType)}
-          </a>
-        ))}
-      </div>
+      {/* Actions */}
+      {resource.locked ? (
+        <div className="flex items-center gap-1.5 text-[#4a4a4a]" title="Not available for your batch">
+          <Lock size={14} />
+        </div>
+      ) : (
+        <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {resource.hoverActions.map((action) => (
+            <a
+              key={action.type}
+              href={
+                action.type === "download"
+                  ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
+                  : (resource.previewUrl ?? resource.fileUrl)
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              title={action.label}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-white transition-opacity hover:opacity-80"
+              style={{
+                background:
+                  action.type === "preview"
+                    ? "var(--color-bg-surface)"
+                    : "var(--color-accent)",
+              }}
+            >
+              {resolveHoverIcon(action.iconType)}
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -136,26 +142,33 @@ function ResourceGridCard({ resource }: { resource: Resource }) {
         )}
       </div>
 
-      {/* Actions — always visible on grid (no hover-only) */}
-      <div className="flex gap-2">
-        {resource.hoverActions.map((action) => (
-          <a
-            key={action.type}
-            href={
-              action.type === "download"
-                ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
-                : (resource.previewUrl ?? resource.fileUrl)
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs font-medium transition-opacity hover:opacity-80"
-            style={{ color: "var(--color-accent)" }}
-          >
-            {resolveHoverIcon(action.iconType)}
-            {action.label}
-          </a>
-        ))}
-      </div>
+      {/* Actions */}
+      {resource.locked ? (
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--color-locked, #4a4a4a)" }}>
+          <Lock size={13} />
+          <span>Restricted</span>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          {resource.hoverActions.map((action) => (
+            <a
+              key={action.type}
+              href={
+                action.type === "download"
+                  ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
+                  : (resource.previewUrl ?? resource.fileUrl)
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs font-medium transition-opacity hover:opacity-80"
+              style={{ color: "var(--color-accent)" }}
+            >
+              {resolveHoverIcon(action.iconType)}
+              {action.label}
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Lock } from "lucide-react";
 import { useAllWorkshops } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WorkshopListItem } from "@/types";
@@ -10,13 +10,17 @@ import type { WorkshopListItem } from "@/types";
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
 function WorkshopCard({ item }: { item: WorkshopListItem }) {
+  const Wrapper = item.locked ? "div" : Link;
+  const wrapperProps = item.locked ? {} : { href: `/workshop/${item.slug}` };
+
   return (
-    <Link
-      href={`/workshop/${item.slug}`}
-      className="group block rounded-xl overflow-hidden border transition-colors"
+    <Wrapper
+      {...(wrapperProps as any)}
+      className={`group block rounded-xl overflow-hidden border transition-colors ${item.locked ? "cursor-default" : ""}`}
       style={{
         background: "var(--color-bg-surface)",
         borderColor: "rgba(255,255,255,0.08)",
+        opacity: item.locked ? 0.65 : 1,
       }}
     >
       {/* Thumbnail */}
@@ -26,14 +30,23 @@ function WorkshopCard({ item }: { item: WorkshopListItem }) {
             src={item.thumbnailUrl}
             alt={item.title}
             fill
-            className="object-cover group-hover:scale-[1.03] transition-transform duration-300"
+            className={`object-cover transition-transform duration-300 ${!item.locked ? "group-hover:scale-[1.03]" : ""}`}
           />
         ) : (
           <div className="w-full h-full" style={{ background: "var(--color-bg-surface)" }} />
         )}
 
+        {/* Lock overlay */}
+        {item.locked && (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
+            <div className="flex flex-col items-center gap-1.5">
+              <Lock size={22} style={{ color: "var(--color-locked, #4a4a4a)" }} />
+            </div>
+          </div>
+        )}
+
         {/* Enrolled badge */}
-        {item.enrolledBadge && !item.completedBadgeIconType && (
+        {!item.locked && item.enrolledBadge && !item.completedBadgeIconType && (
           <span
             className="absolute top-2 right-2 text-[11px] font-bold px-2 py-0.5 rounded-full text-white"
             style={{ background: item.enrolledBadge.color }}
@@ -43,7 +56,7 @@ function WorkshopCard({ item }: { item: WorkshopListItem }) {
         )}
 
         {/* Completed badge */}
-        {item.completedBadgeIconType && (
+        {!item.locked && item.completedBadgeIconType && (
           <span
             className="absolute top-2 right-2 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full text-white"
             style={{ background: "var(--color-success)" }}
@@ -73,13 +86,18 @@ function WorkshopCard({ item }: { item: WorkshopListItem }) {
       {/* Body */}
       <div className="p-4">
         <h3
-          className="font-semibold text-sm line-clamp-2 leading-snug group-hover:opacity-80 transition-opacity"
+          className={`font-semibold text-sm line-clamp-2 leading-snug transition-opacity ${!item.locked ? "group-hover:opacity-80" : ""}`}
           style={{ color: "rgba(255,255,255,0.9)" }}
         >
           {item.title}
         </h3>
+        {item.locked && (
+          <p className="text-[11px] mt-1" style={{ color: "var(--color-locked, #4a4a4a)" }}>
+            Not available for your batch
+          </p>
+        )}
       </div>
-    </Link>
+    </Wrapper>
   );
 }
 

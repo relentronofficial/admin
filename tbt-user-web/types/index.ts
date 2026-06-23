@@ -370,6 +370,7 @@ export interface WorkshopListItem {
   completedBadgeIconType?: string | null;
   deliveryMode: string;
   deliveryModeLabel: string;
+  locked?: boolean;
 }
 
 export interface WorkshopSection {
@@ -575,6 +576,7 @@ export interface Resource {
   fileTypeIconUrl?: string | null;
   fileCount: number;
   order: number;
+  locked?: boolean;
   hoverActions: { type: string; iconType: string; label: string }[];
 }
 
