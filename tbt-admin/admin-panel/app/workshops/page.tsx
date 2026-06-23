@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { Plus, Trash2, Pencil, X, Loader2, Clapperboard, AlertCircle, Search, Users, ChevronRight, Upload, CheckCircle2, XCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useListWorkshops, useCreateWorkshop, useUpdateWorkshop, useDeleteWorkshop, useListBatches } from "@/lib/hooks/useTbt";
+import { useListWorkshops, useCreateWorkshop, useUpdateWorkshop, useDeleteWorkshop, useListBatches, useListTiers } from "@/lib/hooks/useTbt";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
 import { useRouter } from "next/navigation";
@@ -97,6 +97,7 @@ export default function WorkshopsPage() {
   const [search, setSearch] = useState("");
   const { data, isLoading, refetch } = useListWorkshops({ search });
   const { data: batchesData } = useListBatches();
+  const { data: tiersData } = useListTiers();
   const createWorkshop = useCreateWorkshop();
   const updateWorkshop = useUpdateWorkshop();
   const deleteWorkshop = useDeleteWorkshop();
@@ -104,6 +105,7 @@ export default function WorkshopsPage() {
   const workshops = (data as any)?.data || [];
   const total = (data as any)?.meta?.total || 0;
   const batches: any[] = (batchesData as any)?.data || [];
+  const tiers: any[] = (tiersData as any)?.data || [];
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
@@ -407,13 +409,18 @@ export default function WorkshopsPage() {
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
-                  <input
-                    type="number"
+                  <select
                     value={form.requiredTier}
                     onChange={e => setForm((f: any) => ({ ...f, requiredTier: e.target.value }))}
-                    placeholder="e.g. 1"
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
-                  />
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none"
+                  >
+                    <option value="">— Any tier —</option>
+                    {tiers.map((t: any) => (
+                      <option key={t.tierNumber} value={t.tierNumber}>
+                        Tier {t.tierNumber} — {t.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
