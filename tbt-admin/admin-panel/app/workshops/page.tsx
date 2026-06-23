@@ -20,7 +20,7 @@ const EMPTY_FORM = {
   thumbnailUrl: "",
   deliveryMode: "online",
   requiredTier: "",
-  batchId: "",
+  batchIds: [] as string[],
   isActive: true,
 };
 
@@ -129,7 +129,7 @@ export default function WorkshopsPage() {
       thumbnailUrl: w.thumbnailUrl || "",
       deliveryMode: w.deliveryMode || "online",
       requiredTier: w.requiredTier != null ? String(w.requiredTier) : "",
-      batchId: w.batchId || "",
+      batchIds: (w.batchIds as string[]) || [],
       isActive: w.isActive ?? true,
     });
     setEditing(w);
@@ -162,7 +162,7 @@ export default function WorkshopsPage() {
         isActive: form.isActive,
       };
       if (form.requiredTier) payload.requiredTier = Number(form.requiredTier);
-      if (form.batchId) payload.batchId = form.batchId;
+      payload.batchIds = form.batchIds || [];
 
       if (editing) {
         await updateWorkshop.mutateAsync({ id: editing.id, data: payload });
@@ -277,13 +277,13 @@ export default function WorkshopsPage() {
                     </div>
                   </div>
 
-                  {/* Batch */}
+                  {/* Batch access */}
                   <div className="w-full md:w-auto">
-                    {w.batch ? (
-                      <span className="text-[11px] text-[#a0a0a0] font-rajdhani">{w.batch.name}</span>
-                    ) : (
-                      <span className="text-[11px] text-[#777]">—</span>
-                    )}
+                    {(() => {
+                      const bIds = w.batchIds as string[] | null;
+                      if (!bIds || bIds.length === 0) return <span className="text-[10px] text-[#666] font-rajdhani uppercase tracking-wider">All batches</span>;
+                      return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border text-amber-400 bg-amber-400/10 border-amber-400/20">{bIds.length} batch{bIds.length > 1 ? "es" : ""}</span>;
+                    })()}
                   </div>
 
                   {/* Mode */}
@@ -424,19 +424,38 @@ export default function WorkshopsPage() {
                 </div>
               </div>
 
-              {/* Batch dropdown */}
+              {/* Batch Access */}
               <div>
-                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Batch</label>
-                <select
-                  value={form.batchId}
-                  onChange={e => setForm((f: any) => ({ ...f, batchId: e.target.value }))}
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none"
-                >
-                  <option value="">— No batch —</option>
-                  {batches.map((b: any) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Batch Access <span className="text-[#666] normal-case font-normal">(leave empty = all members)</span></label>
+                {batches.length === 0 ? (
+                  <p className="text-[#666] text-xs">No batches found.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {batches.map((b: any) => {
+                      const checked = (form.batchIds as string[])?.includes(b.id);
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            const curr: string[] = form.batchIds || [];
+                            setForm((f: any) => ({
+                              ...f,
+                              batchIds: checked ? curr.filter((id: string) => id !== b.id) : [...curr, b.id],
+                            }));
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all text-sm ${checked ? "bg-[#dc2626]/10 border-[#dc2626]/40 text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#a0a0a0] hover:border-[#444]"}`}
+                        >
+                          <span className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center ${checked ? "bg-[#dc2626] border-[#dc2626]" : "border-[#555]"}`}>
+                            {checked && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                          </span>
+                          <span className="font-medium">{b.name}</span>
+                          {!b.isActive && <span className="ml-auto text-[10px] text-[#666] uppercase tracking-wider">Inactive</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Active toggle */}

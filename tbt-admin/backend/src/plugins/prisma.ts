@@ -49,6 +49,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    // Batch-based access control columns
+    await prisma.$executeRawUnsafe(`ALTER TABLE workshops ADD COLUMN IF NOT EXISTS batch_ids JSONB`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS visibility JSONB`);
     // Batch program nav item — insert only if /batch-program link doesn't exist yet
     await prisma.$executeRawUnsafe(`
       INSERT INTO nav_items (id, label, href, "order", is_visible, created_at, updated_at)

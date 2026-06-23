@@ -44,6 +44,7 @@ export async function listWorkshopsHandler(req: FastifyRequest, reply: FastifyRe
 export async function createWorkshopHandler(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as any;
   const slug = body.slug || body.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const batchIds: string[] = Array.isArray(body.batchIds) ? body.batchIds : [];
   const workshop = await req.server.prisma.workshop.create({
     data: {
       title: body.title,
@@ -53,7 +54,7 @@ export async function createWorkshopHandler(req: FastifyRequest, reply: FastifyR
       isActive: body.isActive ?? true,
       deliveryMode: body.deliveryMode || 'online',
       requiredTier: Number(body.requiredTier) || 1,
-      ...(body.batchId ? { batchId: body.batchId } : {}),
+      batchIds: batchIds.length > 0 ? (batchIds as any) : null,
     },
   });
   return reply.status(201).send({ success: true, data: workshop, error: null });
@@ -94,7 +95,10 @@ export async function updateWorkshopHandler(req: FastifyRequest, reply: FastifyR
     'progressMilestoneCount', 'workshopFlowLabel', 'backLabel', 'backUrl',
   ];
   allowedFields.forEach(f => { if (body[f] !== undefined) data[f] = body[f]; });
-  if (body.batchId !== undefined) data.batchId = body.batchId || null;
+  if (body.batchIds !== undefined) {
+    const batchIds: string[] = Array.isArray(body.batchIds) ? body.batchIds : [];
+    data.batchIds = batchIds.length > 0 ? (batchIds as any) : null;
+  }
   const workshop = await req.server.prisma.workshop.update({ where: { id }, data });
   return reply.send({ success: true, data: workshop, error: null });
 }

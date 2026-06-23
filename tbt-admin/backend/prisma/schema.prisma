@@ -1478,6 +1478,7 @@ model Workshop {
   deliveryMode           String               @default("online") @map("delivery_mode")
   requiredTier           Int                  @default(1) @map("required_tier")
   batchId                String?              @map("batch_id") @db.Uuid
+  batchIds               Json?                @map("batch_ids")
   tabChallengesLabel     String               @default("Challenges") @map("tab_challenges_label")
   tabQaLabel             String               @default("Q & A") @map("tab_qa_label")
   tabAssignmentLabel     String               @default("Assignment") @map("tab_assignment_label")
@@ -1929,6 +1930,7 @@ model AppResource {
   isVisible       Boolean   @default(true) @map("is_visible")
   previewLabel    String    @default("Preview") @map("preview_label")
   downloadLabel   String    @default("Download") @map("download_label")
+  visibility      Json?
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

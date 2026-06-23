@@ -18,6 +18,7 @@ export async function listResourcesHandler(req: FastifyRequest, reply: FastifyRe
 export async function createResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as any;
   const count = await req.server.prisma.appResource.count();
+  const batchIds: string[] = Array.isArray(body.batchIds) ? body.batchIds : [];
   const resource = await req.server.prisma.appResource.create({
     data: {
       title: body.title,
@@ -32,6 +33,7 @@ export async function createResourceHandler(req: FastifyRequest, reply: FastifyR
       isVisible: body.isVisible ?? true,
       previewLabel: body.previewLabel || 'Preview',
       downloadLabel: body.downloadLabel || 'Download',
+      visibility: batchIds.length > 0 ? ({ batchIds } as any) : null,
     },
   });
   return reply.status(201).send({ success: true, data: resource, error: null });
@@ -47,6 +49,10 @@ export async function updateResourceHandler(req: FastifyRequest, reply: FastifyR
   if (body.date !== undefined) data.date = body.date ? new Date(body.date) : null;
   if (body.fileCount !== undefined) data.fileCount = Number(body.fileCount);
   if (body.order !== undefined) data.order = Number(body.order);
+  if (body.batchIds !== undefined) {
+    const batchIds: string[] = Array.isArray(body.batchIds) ? body.batchIds : [];
+    data.visibility = batchIds.length > 0 ? ({ batchIds } as any) : null;
+  }
   const resource = await req.server.prisma.appResource.update({ where: { id }, data });
   return reply.send({ success: true, data: resource, error: null });
 }

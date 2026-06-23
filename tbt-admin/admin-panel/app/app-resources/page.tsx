@@ -5,7 +5,7 @@ import { Plus, Trash2, Pencil, X, Loader2, FileText, AlertCircle, Eye, EyeOff, S
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListAppResources, useCreateAppResource, useUpdateAppResource, useDeleteAppResource,
-  useGetResourcesPageConfig, useUpdateResourcesPageConfig, useReorderAppResources,
+  useGetResourcesPageConfig, useUpdateResourcesPageConfig, useReorderAppResources, useListBatches,
 } from "@/lib/hooks/useTbt";
 import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
@@ -17,6 +17,7 @@ const EMPTY_FORM = {
   title: "", author: "", date: "", fileUrl: "", previewUrl: "",
   fileType: "pdf", fileTypeIconUrl: "", fileCount: "1",
   isVisible: true, previewLabel: "Preview", downloadLabel: "Download",
+  batchIds: [] as string[],
 };
 
 const detectFileType = (filename: string): string => {
@@ -55,6 +56,9 @@ export default function AppResourcesPage() {
   const deleteResource = useDeleteAppResource();
   const reorderResources = useReorderAppResources();
   const getPresignedUrl = useGetPresignedUrl();
+
+  const { data: batchesData } = useListBatches();
+  const batches: any[] = (batchesData as any)?.data || [];
 
   const { data: pageConfigData } = useGetResourcesPageConfig();
   const updatePageConfig = useUpdateResourcesPageConfig();
@@ -190,6 +194,7 @@ export default function AppResourcesPage() {
       fileType: r.fileType || "pdf", fileTypeIconUrl: r.fileTypeIconUrl || "",
       fileCount: String(r.fileCount ?? 1), isVisible: r.isVisible ?? true,
       previewLabel: r.previewLabel || "Preview", downloadLabel: r.downloadLabel || "Download",
+      batchIds: (r.visibility as any)?.batchIds || [],
     });
     setEditing(r);
     setShowForm(true);
@@ -204,6 +209,7 @@ export default function AppResourcesPage() {
         fileType: form.fileType, fileTypeIconUrl: form.fileTypeIconUrl || null,
         fileCount: Number(form.fileCount) || 1, isVisible: form.isVisible,
         previewLabel: form.previewLabel || "Preview", downloadLabel: form.downloadLabel || "Download",
+        batchIds: form.batchIds || [],
       };
       if (editing) { await updateResource.mutateAsync({ id: editing.id, data: payload }); toast.success("Resource updated"); }
       else { await createResource.mutateAsync(payload); toast.success("Resource created"); }
@@ -286,6 +292,7 @@ export default function AppResourcesPage() {
                   <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Type</th>
                   <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Author</th>
                   <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Date</th>
+                  <th className="px-4 py-4 text-left text-[10px] uppercase tracking-[2px] text-[#888] font-bold font-rajdhani">Access</th>
                   <th className="px-4 py-4 w-[110px]" />
                 </tr>
               </thead>
@@ -314,6 +321,13 @@ export default function AppResourcesPage() {
                     </td>
                     <td className="px-4 py-4 text-[#888] text-sm">{r.author || "—"}</td>
                     <td className="px-4 py-4 text-[#888] text-sm">{r.date ? format(new Date(r.date), "dd MMM yyyy") : "—"}</td>
+                    <td className="px-4 py-4">
+                      {(() => {
+                        const bIds = (r.visibility as any)?.batchIds;
+                        if (!bIds || bIds.length === 0) return <span className="text-[10px] text-[#666] font-rajdhani uppercase tracking-wider">All</span>;
+                        return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border text-amber-400 bg-amber-400/10 border-amber-400/20">{bIds.length} batch{bIds.length > 1 ? "es" : ""}</span>;
+                      })()}
+                    </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => handleToggleVisible(r)} className={`p-1.5 rounded transition-all ${r.isVisible ? "text-green-400 hover:bg-green-400/10" : "text-[#777] hover:text-white hover:bg-[#2a2a2a]"}`}>
@@ -435,6 +449,40 @@ export default function AppResourcesPage() {
                   <button type="button" onClick={() => iconInputRef.current?.click()} disabled={uploadingIcon} className="w-full bg-[#1a1a1a] border border-dashed border-[#333] hover:border-[#dc2626] rounded-lg h-11 px-4 text-[12px] text-[#888] hover:text-white transition-all flex items-center justify-center gap-2">
                     {uploadingIcon ? <><Loader2 size={14} className="animate-spin" /> Uploading...</> : <><Plus size={14} /> Upload Icon Image</>}
                   </button>
+                )}
+              </div>
+
+              {/* Batch Access Restriction */}
+              <div>
+                <label className={labelCls}>Batch Access <span className="text-[#666] normal-case font-normal">(leave empty = all members)</span></label>
+                {batches.length === 0 ? (
+                  <p className="text-[#666] text-xs">No batches found.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {batches.map((b: any) => {
+                      const checked = form.batchIds?.includes(b.id);
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            const curr: string[] = form.batchIds || [];
+                            setForm((f: any) => ({
+                              ...f,
+                              batchIds: checked ? curr.filter((id: string) => id !== b.id) : [...curr, b.id],
+                            }));
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all text-sm ${checked ? "bg-[#dc2626]/10 border-[#dc2626]/40 text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#a0a0a0] hover:border-[#444]"}`}
+                        >
+                          <span className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center ${checked ? "bg-[#dc2626] border-[#dc2626]" : "border-[#555]"}`}>
+                            {checked && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                          </span>
+                          <span className="font-medium">{b.name}</span>
+                          {!b.isActive && <span className="ml-auto text-[10px] text-[#666] uppercase tracking-wider">Inactive</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 

@@ -1650,7 +1650,11 @@ export async function getHomeSectionsHandler(request: FastifyRequest, reply: Fas
 // ─── Workshops (user-facing) ──────────────────────────────────────────────────
 
 export async function listWorkshopsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const [workshops, enrollments] = await Promise.all([
+  const [member, allWorkshops, enrollments] = await Promise.all([
+    request.server.prisma.member.findUnique({
+      where: { id: request.memberId },
+      select: { batchId: true },
+    }),
     request.server.prisma.workshop.findMany({
       where: { isActive: true },
       select: {
@@ -1661,6 +1665,7 @@ export async function listWorkshopsHandler(request: FastifyRequest, reply: Fasti
         thumbnailUrl: true,
         deliveryMode: true,
         requiredTier: true,
+        batchIds: true,
         _count: { select: { challenges: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -1670,6 +1675,13 @@ export async function listWorkshopsHandler(request: FastifyRequest, reply: Fasti
       select: { workshopId: true, status: true },
     }),
   ]);
+
+  const memberBatchId = member?.batchId ?? null;
+  const workshops = allWorkshops.filter((w) => {
+    const ids = w.batchIds as string[] | null;
+    if (!ids || ids.length === 0) return true;
+    return memberBatchId ? ids.includes(memberBatchId) : false;
+  });
 
   const enrollmentMap = new Map(enrollments.map((e) => [e.workshopId, e.status]));
 
@@ -2674,28 +2686,32 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
     limit?: number;
   };
 
-  const [pageConfig, resources, total] = await Promise.all([
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: request.memberId },
+    select: { batchId: true },
+  });
+  const memberBatchId = member?.batchId ?? null;
+
+  const searchWhere = search?.trim()
+    ? { title: { contains: search.trim(), mode: 'insensitive' as const } }
+    : {};
+
+  const [pageConfig, allResources] = await Promise.all([
     request.server.prisma.resourcesPageConfig.findFirst(),
     request.server.prisma.appResource.findMany({
-      where: {
-        isVisible: true,
-        ...(search?.trim()
-          ? { title: { contains: search.trim(), mode: 'insensitive' } }
-          : {}),
-      },
+      where: { isVisible: true, ...searchWhere },
       orderBy: { order: 'asc' },
-      take: Number(limit),
-      skip: (Number(page) - 1) * Number(limit),
-    }),
-    request.server.prisma.appResource.count({
-      where: {
-        isVisible: true,
-        ...(search?.trim()
-          ? { title: { contains: search.trim(), mode: 'insensitive' } }
-          : {}),
-      },
     }),
   ]);
+
+  const resources = allResources.filter((r) => {
+    const vis = r.visibility as { batchIds?: string[] } | null;
+    if (!vis || !vis.batchIds || vis.batchIds.length === 0) return true;
+    return memberBatchId ? vis.batchIds.includes(memberBatchId) : false;
+  });
+
+  const total = resources.length;
+  const paged = resources.slice((Number(page) - 1) * Number(limit), Number(page) * Number(limit));
 
   return ok(reply, {
     pageTitle: pageConfig?.pageTitle ?? 'Resources',
@@ -2703,7 +2719,7 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
     totalCount: total,
     totalLabel: 'resources',
     viewOptions: ['list', 'grid'],
-    resources: resources.map((r) => ({
+    resources: paged.map((r) => ({
       id: r.id,
       title: r.title,
       author: r.author ?? null,
