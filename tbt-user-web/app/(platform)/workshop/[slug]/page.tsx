@@ -2299,7 +2299,7 @@ function WatchChallengeView({
           </span>
         </div>
       )}
-      <div className="rounded-xl overflow-hidden divide-y" style={{ border: "1px solid rgba(0,0,0,0.1)", background: "#ffffff" }}>
+      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(0,0,0,0.1)", background: "#ffffff" }}>
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
@@ -2317,7 +2317,7 @@ function WatchChallengeView({
           const showBar = !isDone && (isWatching || isPausedState || isResumeState || hasPartialProgress);
 
           const borderColor = isDone
-            ? "#22c55e"
+            ? "#16a34a"
             : isWatching
               ? "var(--color-accent)"
               : isPausedState
@@ -2325,19 +2325,36 @@ function WatchChallengeView({
                 : "transparent";
 
           const bgColor = isDone
-            ? "rgba(34,197,94,0.06)"
+            ? "#22c55e"
             : isWatching
               ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
               : isPausedState || isResumeState
                 ? "rgba(0,0,0,0.03)"
                 : "transparent";
 
+          const prevIsDone = i > 0 && (!!episodes[i - 1]?.isCompleted);
+          const dividerColor = i === 0
+            ? "none"
+            : isDone && prevIsDone
+              ? "1px solid rgba(255,255,255,0.18)"   /* white-on-green divider between two completed */
+              : isDone
+                ? "1px solid rgba(0,0,0,0.07)"       /* entering green row from white */
+                : prevIsDone
+                  ? "1px solid rgba(255,255,255,0.18)" /* leaving green row to white — still green bg above */
+                  : "1px solid rgba(0,0,0,0.07)";      /* white-to-white */
+
           return (
             <button
               key={e.id}
               onClick={() => setActiveEpIdx(i)}
-              className="w-full flex flex-col px-3 py-3.5 text-left transition-all hover:bg-black/[0.02]"
-              style={{ borderLeft: `3px solid ${borderColor}`, background: bgColor }}
+              className="w-full flex flex-col px-3 py-3.5 text-left transition-all"
+              style={{
+                borderLeft: `3px solid ${borderColor}`,
+                borderTop: dividerColor,
+                background: bgColor,
+              }}
+              onMouseEnter={(ev) => { ev.currentTarget.style.background = isDone ? "#1baa4d" : bgColor || "rgba(0,0,0,0.02)"; }}
+              onMouseLeave={(ev) => { ev.currentTarget.style.background = bgColor; }}
             >
               {/* Row 1: icon + title + right label */}
               <div className="flex items-center gap-3">
@@ -2346,7 +2363,7 @@ function WatchChallengeView({
                   className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full text-[11px] font-bold transition-colors"
                   style={
                     isDone
-                      ? { background: "#22c55e22", color: "#22c55e" }
+                      ? { background: "rgba(255,255,255,0.22)", color: "#ffffff" }
                       : isWatching
                         ? { background: "var(--color-accent)", color: "#fff" }
                         : isPausedState
@@ -2374,7 +2391,7 @@ function WatchChallengeView({
                   className="flex-1 min-w-0 text-sm font-medium truncate transition-colors"
                   style={{
                     color: isDone
-                      ? "#22c55e"
+                      ? "#ffffff"
                       : isWatching || isPausedState || isResumeState
                         ? "#111111"
                         : hasPartialProgress
@@ -2388,7 +2405,7 @@ function WatchChallengeView({
                 {/* Right label */}
                 <span className="flex-shrink-0 min-w-0">
                   {isDone ? (
-                    <CheckCircle2 size={15} style={{ color: "#22c55e", flexShrink: 0 }} />
+                    <CheckCircle2 size={15} style={{ color: "#ffffff", flexShrink: 0 }} />
                   ) : isRewatching ? (
                     <span className="text-[11px] font-bold" style={{ color: "rgba(0,0,0,0.5)" }}>Rewatching...</span>
                   ) : isWatching ? (
@@ -2416,11 +2433,11 @@ function WatchChallengeView({
                       )}
                     </div>
                   ) : isActive && liveRealDuration > 0 ? (
-                    <span className="text-[11px] text-muted-foreground">{formatDuration(liveRealDuration)}</span>
+                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.45)" }}>{formatDuration(liveRealDuration)}</span>
                   ) : e.durationSeconds > 0 ? (
-                    <span className="text-[11px] text-muted-foreground">{formatDuration(e.durationSeconds)}</span>
+                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.45)" }}>{formatDuration(e.durationSeconds)}</span>
                   ) : e.durationLabel ? (
-                    <span className="text-[11px] text-muted-foreground">{e.durationLabel}</span>
+                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.45)" }}>{e.durationLabel}</span>
                   ) : null}
                 </span>
               </div>
