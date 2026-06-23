@@ -49,6 +49,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    // Batch program nav item — insert only if /batch-program link doesn't exist yet
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO nav_items (id, label, href, "order", is_visible, created_at, updated_at)
+      SELECT gen_random_uuid(), 'Task', '/batch-program',
+             COALESCE((SELECT MAX("order") FROM nav_items), 0) + 1,
+             true, NOW(), NOW()
+      WHERE NOT EXISTS (SELECT 1 FROM nav_items WHERE href = '/batch-program')
+    `);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

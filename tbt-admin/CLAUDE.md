@@ -57,7 +57,7 @@ Clerk is the auth provider for both frontend and backend.
 
 ### Frontend Structure
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). Response interceptor unwraps `response.data`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks for workshops, hero, content sections, courses, config, nav, tiers, badges, notifications, products, resources, batches
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks for workshops, hero, content sections, courses, config, nav, tiers, badges, notifications, products, resources, batches, live calls, analytics (`useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics`), and community. Add new hooks to the bottom.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `{ status }` filter for pending/active/etc.), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`), and related mutations
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related mutations
@@ -161,7 +161,7 @@ Pages access: `data?.data || []` and `data?.meta?.total`
 | Cloudflare R2 | File/image/video storage |
 | Upstash Redis | BullMQ job queues |
 | Bunny Stream | Video hosting |
-| Agora.io | Live webinars |
+| LiveKit | Workshop live calls (rooms, breakout rooms, egress) |
 | Clerk | Auth (admin panel + API) |
 | Firebase | Push notifications |
 | Resend / Twilio | Email / SMS |

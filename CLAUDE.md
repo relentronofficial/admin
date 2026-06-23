@@ -46,7 +46,7 @@ rmdir /s /q .next && npm run dev   # Windows PowerShell
 # rm -rf .next && npm run dev      # Mac/Linux
 
 # Database
-npm run prepare                      # Regenerate Prisma client after schema changes
+npm run prisma:generate -w backend   # Regenerate Prisma client after schema changes
 npm run prisma:migrate -w backend
 npm run prisma:studio -w backend
 npx prisma db seed                   # Run from backend/ — creates super admin
@@ -88,10 +88,11 @@ npm run format      # prettier --write .
 - **Route prefix convention:** `/api/<module>` (e.g. `/api/courses`, `/api/members`)
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
+- **Backend modules present:** `admins`, `auth`, `batches`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `hero`, `location`, `members`, `messages`, `notifications`, `products`, `pub`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `webinar`, `workshops`, `app-notifications`, `app-resources`
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~700+ lines). Add new hooks to the bottom.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~1200+ lines). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), and community/batch/tier/badge/notification/product/resource hooks.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts`
@@ -120,9 +121,16 @@ app/
 ### API Client (`lib/api/client.ts`)
 - Axios instance pointing to `NEXT_PUBLIC_API_URL`, **`withCredentials: true`** — auth via HttpOnly cookies
 - Response interceptor unwraps `response.data`; also captures HTTP `Date` header to sync `_serverTimeOffset`
-- `initApiClient(getToken)` is a NO-OP stub — never attaches a bearer token; cookie is sent automatically
+- `initApiClient(getToken)` is a **no-op stub** (empty body) — user web never attaches bearer tokens; auth is entirely cookie-based
 - `getServerNow()` — use instead of `Date.now()` for countdowns to avoid client clock skew
 - A stable `tbt_device_id` is generated in `localStorage` on first load (multi-device security detection)
+
+**Critical env vars for user-web Clerk** (values override `ClerkProvider` props — wrong values silently redirect logins to the wrong page):
+```
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/tbt
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/tbt
+```
 
 ### `SiteConfigProvider` (`lib/context/SiteConfigContext.tsx`)
 Fetches 3 unauthenticated endpoints in parallel on app load:
@@ -157,6 +165,9 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 - `lib/hooks/useCourses.ts` — course catalog hooks (user-facing)
 - `lib/hooks/useEvents.ts` — events hooks
 - All hooks are `"use client"` and use TanStack Query v5
+
+### Zustand Stores (User Web)
+`lib/stores/` contains three stores: `useAuthStore` (login state, OTP flow step), `usePlayerStore` (episode playback state), `useUIStore` (global UI toggles). Import from `@/lib/stores/<name>`.
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
 Reads `useMe()` and:
@@ -344,6 +355,8 @@ Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` 
 | Clerk | Admin panel auth (API + frontend). Also installed in user-web for `(auth)/` pages and middleware auth-state; main user login uses JWT cookies |
 | Firebase | Push notifications |
 | Resend / Twilio | Email / SMS |
+| Anthropic Claude | AI quiz generation in workshops (`claude-haiku-4-5`, requires `ANTHROPIC_API_KEY`) |
+| pdfkit | Server-side PDF generation |
 | Sentry | Error tracking |
 | Better Stack | Log aggregation |
 
@@ -353,7 +366,7 @@ Copy and fill both env files before starting:
 - `backend/.env.example` → `backend/.env` (required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys, `CLOUDFLARE_R2_*`, `JWT_ACCESS_SECRET`)
 - `admin-panel/.env.example` → `admin-panel/.env.local`
 
-Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STREAM_*`, `LIVEKIT_*`, `FIREBASE_*`, `RESEND_API_KEY`, `TWILIO_*`, `SENTRY_DSN`.
+Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STREAM_*`, `LIVEKIT_*`, `FIREBASE_*`, `RESEND_API_KEY`, `TWILIO_*`, `SENTRY_DSN`, `ANTHROPIC_API_KEY` (required only for AI quiz generation in workshops).
 
 ## Initial Super Admin Seed
 
