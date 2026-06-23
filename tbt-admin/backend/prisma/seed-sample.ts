@@ -12,6 +12,7 @@ const IMG = {
   scale:      `${CDN}/business-scalability.png`,
   screenshot: `${CDN}/screenshot-2026.png`,
 };
+const LOGO_URL = 'https://tamil-business-tribe-cdn.b-cdn.net/thumbnails/screenshot-2026.png';
 const VIDEO_URL   = 'https://iframe.mediadelivery.net/embed/674791/6bc82f7c-bb64-492b-8439-8549fd53787b';
 const BUNNY_ID    = '6bc82f7c-bb64-492b-8439-8549fd53787b';
 
@@ -24,17 +25,42 @@ async function main() {
   const adminId = admin.id;
   console.log(`✅ Using admin: ${admin.fullName}`);
 
+  // ── SiteConfig ───────────────────────────────────────────────────────────────
+  console.log('⚙️  SiteConfig...');
+  await prisma.siteConfig.deleteMany();
+  await prisma.siteConfig.create({ data: {
+    siteName: 'Tamil Business Tribe',
+    logoUrl: LOGO_URL,
+    faviconUrl: LOGO_URL,
+    footerText: '© 2026 Tamil Business Tribe. All rights reserved.',
+    splashLogoUrl: LOGO_URL,
+    splashDurationMs: 2000,
+    accentColor: '#00c4cc',
+    alertColor: '#ff3d8b',
+    successColor: '#22c55e',
+    bgPrimary: '#000000',
+    bgSurface: '#111111',
+    navShowNotifications: true,
+    navShowMessages: true,
+    navShowProfile: true,
+    heroAutoPlayIntervalMs: 5000,
+    loginBgUrl: IMG.drip,
+    loginBgMobileUrl: IMG.drip,
+  }});
+  console.log('   ✅ SiteConfig');
+
   // ── NavItems ─────────────────────────────────────────────────────────────────
   console.log('📌 NavItems...');
   await prisma.navItem.deleteMany();
   const navDefs = [
-    { label: 'Home',          href: '/tbt',          order: 1 },
-    { label: 'Workshops',     href: '/workshops',    order: 2 },
-    { label: 'Products',      href: '/Products',     order: 3 },
-    { label: 'Resources',     href: '/Resources',    order: 4 },
-    { label: 'Notifications', href: '/notifications',order: 5 },
-    { label: 'Messages',      href: '/messages',     order: 6 },
-    { label: 'Profile',       href: '/profile',      order: 7 },
+    { label: 'Home',          href: '/tbt',            order: 1 },
+    { label: 'Workshops',     href: '/workshops',      order: 2 },
+    { label: 'Task',          href: '/batch-program',  order: 3 },
+    { label: 'Products',      href: '/Products',       order: 4 },
+    { label: 'Resources',     href: '/Resources',      order: 5 },
+    { label: 'Notifications', href: '/notifications',  order: 6 },
+    { label: 'Messages',      href: '/messages',       order: 7 },
+    { label: 'Profile',       href: '/profile',        order: 8 },
   ];
   for (const n of navDefs) await prisma.navItem.create({ data: { ...n, isVisible: true } });
   console.log(`   ✅ ${navDefs.length} nav items`);
@@ -112,6 +138,117 @@ async function main() {
     members.push(member);
   }
   console.log(`   ✅ ${members.length} members`);
+
+  // ── BatchDays (Days 1-30 with full content) ──────────────────────────────────
+  console.log('📅 BatchDays...');
+  await prisma.memberDayProgress.deleteMany({ where: { batchId: batch.id } });
+  await prisma.batchDay.deleteMany({ where: { batchId: batch.id } });
+
+  const BATCH_DAYS = [
+    { day: 1,  title: 'Define Your Vision',          notes: 'Start by writing a clear vision statement for your business. Where do you want to be in 90 days?', tasks: [{ id: 't1-1', title: 'Write your 90-day vision statement', order: 1 }, { id: 't1-2', title: 'List your top 3 business goals', order: 2 }, { id: 't1-3', title: 'Share your vision in the community', order: 3 }] },
+    { day: 2,  title: 'Know Your Customer',           notes: 'Deep research on your ideal customer. The better you know them, the better you can serve them.', tasks: [{ id: 't2-1', title: 'Create a customer avatar document', order: 1 }, { id: 't2-2', title: 'Interview 2 existing customers', order: 2 }, { id: 't2-3', title: 'Identify their top 3 pain points', order: 3 }] },
+    { day: 3,  title: 'Competitive Analysis',         notes: 'Understand your market landscape. Find the gaps where you can win.', tasks: [{ id: 't3-1', title: 'List 5 top competitors', order: 1 }, { id: 't3-2', title: 'Analyse their strengths and weaknesses', order: 2 }, { id: 't3-3', title: 'Identify your differentiation', order: 3 }] },
+    { day: 4,  title: 'Craft Your USP',               notes: 'Your Unique Selling Proposition is the reason customers choose you over everyone else.', tasks: [{ id: 't4-1', title: 'Write your USP in one sentence', order: 1 }, { id: 't4-2', title: 'Test it on 3 people outside your business', order: 2 }] },
+    { day: 5,  title: 'Revenue Goals',                notes: 'Set specific, measurable revenue targets for the next 30, 60 and 90 days.', tasks: [{ id: 't5-1', title: 'Set your 30-day revenue target', order: 1 }, { id: 't5-2', title: 'Set your 60-day revenue target', order: 2 }, { id: 't5-3', title: 'Set your 90-day revenue target', order: 3 }, { id: 't5-4', title: 'Calculate what you need to sell to hit each target', order: 4 }] },
+    { day: 6,  title: 'Product/Service Audit',        notes: 'Review everything you currently offer. Keep what works, eliminate what doesn\'t.', tasks: [{ id: 't6-1', title: 'List all your current offerings', order: 1 }, { id: 't6-2', title: 'Identify your most profitable product/service', order: 2 }, { id: 't6-3', title: 'Remove or improve your lowest performer', order: 3 }] },
+    { day: 7,  title: 'Weekly Review & Plan',         notes: 'First weekly review! Reflect on week 1 and plan week 2 with intention.', tasks: [{ id: 't7-1', title: 'Write your Week 1 wins and lessons', order: 1 }, { id: 't7-2', title: 'Plan your top 3 priorities for Week 2', order: 2 }, { id: 't7-3', title: 'Update your accountability tracker', order: 3 }] },
+    { day: 8,  title: 'Social Media Strategy',        notes: 'Choose your platforms strategically. Focus beats presence everywhere.', tasks: [{ id: 't8-1', title: 'Choose 2 primary social platforms', order: 1 }, { id: 't8-2', title: 'Optimise your bio/profile on both', order: 2 }, { id: 't8-3', title: 'Post one piece of value content', order: 3 }] },
+    { day: 9,  title: 'Content Pillars',              notes: 'Define the 3-5 core topics you will consistently create content about.', tasks: [{ id: 't9-1', title: 'Define your 3 content pillars', order: 1 }, { id: 't9-2', title: 'Create 5 content ideas for each pillar', order: 2 }] },
+    { day: 10, title: 'Lead Generation',              notes: 'Build a consistent system for attracting new potential customers every day.', tasks: [{ id: 't10-1', title: 'Identify your top 3 lead sources', order: 1 }, { id: 't10-2', title: 'Set a daily lead outreach target', order: 2 }, { id: 't10-3', title: 'Send 5 personalised outreach messages today', order: 3 }] },
+    { day: 11, title: 'Email List Building',          notes: 'Your email list is your most valuable asset. Start building it today.', tasks: [{ id: 't11-1', title: 'Set up a free lead magnet', order: 1 }, { id: 't11-2', title: 'Create a simple opt-in landing page', order: 2 }, { id: 't11-3', title: 'Share the link in your social profiles', order: 3 }] },
+    { day: 12, title: 'Sales Conversation Skills',    notes: 'Learn how to convert a prospect into a customer with confidence.', tasks: [{ id: 't12-1', title: 'Write your core sales script', order: 1 }, { id: 't12-2', title: 'Role-play the script with a partner', order: 2 }, { id: 't12-3', title: 'Handle 5 objections in writing', order: 3 }] },
+    { day: 13, title: 'Pricing Strategy',             notes: 'Price for value, not just cost. Understand your pricing psychology.', tasks: [{ id: 't13-1', title: 'Review your current pricing', order: 1 }, { id: 't13-2', title: 'Research competitor pricing', order: 2 }, { id: 't13-3', title: 'Adjust one price based on your findings', order: 3 }] },
+    { day: 14, title: 'Weekly Review & Plan',         notes: 'Week 2 review. Celebrate your wins and course-correct where needed.', tasks: [{ id: 't14-1', title: 'Write your Week 2 wins and lessons', order: 1 }, { id: 't14-2', title: 'Plan your top 3 priorities for Week 3', order: 2 }] },
+    { day: 15, title: 'Customer Retention System',    notes: 'Keeping a customer costs 5x less than acquiring a new one. Build your retention system.', tasks: [{ id: 't15-1', title: 'Map your current customer journey', order: 1 }, { id: 't15-2', title: 'Identify 3 drop-off points', order: 2 }, { id: 't15-3', title: 'Create one follow-up sequence for new customers', order: 3 }] },
+    { day: 16, title: 'Referral Programme',           notes: 'Turn happy customers into your best sales team.', tasks: [{ id: 't16-1', title: 'Design a simple referral incentive', order: 1 }, { id: 't16-2', title: 'Reach out to 10 existing customers for referrals', order: 2 }] },
+    { day: 17, title: 'Business Systems Audit',       notes: 'Identify what processes can be systematised or delegated.', tasks: [{ id: 't17-1', title: 'List every recurring task in your business', order: 1 }, { id: 't17-2', title: 'Mark which can be systematised', order: 2 }, { id: 't17-3', title: 'Document one process as an SOP', order: 3 }] },
+    { day: 18, title: 'Financial Hygiene',            notes: 'Know your numbers. A business that doesn\'t track cash is flying blind.', tasks: [{ id: 't18-1', title: 'Update your income and expenses tracker', order: 1 }, { id: 't18-2', title: 'Calculate your net profit for the month so far', order: 2 }, { id: 't18-3', title: 'Identify one unnecessary expense to cut', order: 3 }] },
+    { day: 19, title: 'Brand Identity',               notes: 'Consistent branding builds trust and recognition. Audit your brand today.', tasks: [{ id: 't19-1', title: 'Audit your logo, colours, and fonts', order: 1 }, { id: 't19-2', title: 'Ensure consistency across all platforms', order: 2 }] },
+    { day: 20, title: 'Community Engagement',         notes: 'The Tamil Business Tribe community is your growth engine. Use it actively.', tasks: [{ id: 't20-1', title: 'Comment on 5 posts in the community', order: 1 }, { id: 't20-2', title: 'Share one insight or win in the community', order: 2 }, { id: 't20-3', title: 'Connect with 2 new members', order: 3 }] },
+    { day: 21, title: 'Weekly Review & Plan',         notes: 'Week 3 review. You are 21 days in — a new habit is forming!', tasks: [{ id: 't21-1', title: 'Write your Week 3 wins and lessons', order: 1 }, { id: 't21-2', title: 'Plan Week 4 priorities', order: 2 }, { id: 't21-3', title: 'Reflect: what habit has changed in 3 weeks?', order: 3 }] },
+    { day: 22, title: 'Video Marketing',              notes: 'Video builds trust faster than any other medium. Start with one short video today.', tasks: [{ id: 't22-1', title: 'Record one 60-second value video', order: 1 }, { id: 't22-2', title: 'Post it to your primary platform', order: 2 }] },
+    { day: 23, title: 'Networking Strategy',          notes: 'Your network is your net worth. Be intentional about who you connect with.', tasks: [{ id: 't23-1', title: 'Identify 10 people you want to connect with this month', order: 1 }, { id: 't23-2', title: 'Reach out to 3 of them with a genuine message', order: 2 }] },
+    { day: 24, title: 'Partnership Opportunities',   notes: 'Find businesses that serve your customer without competing with you.', tasks: [{ id: 't24-1', title: 'List 5 potential business partners', order: 1 }, { id: 't24-2', title: 'Draft a collaboration proposal for one of them', order: 2 }] },
+    { day: 25, title: 'Customer Feedback System',    notes: 'Feedback is the fastest path to product improvement.', tasks: [{ id: 't25-1', title: 'Create a 3-question customer survey', order: 1 }, { id: 't25-2', title: 'Send it to 20 customers', order: 2 }, { id: 't25-3', title: 'Summarise the top 3 insights from responses', order: 3 }] },
+    { day: 26, title: 'Google Business Profile',     notes: 'If you have a local business, your Google profile is free real estate. Optimise it.', tasks: [{ id: 't26-1', title: 'Claim or update your Google Business Profile', order: 1 }, { id: 't26-2', title: 'Add photos, hours, and services', order: 2 }, { id: 't26-3', title: 'Request 3 reviews from customers', order: 3 }] },
+    { day: 27, title: 'WhatsApp Marketing',          notes: 'WhatsApp is the most powerful direct marketing tool for Indian businesses.', tasks: [{ id: 't27-1', title: 'Create a WhatsApp broadcast list', order: 1 }, { id: 't27-2', title: 'Write and send a value message to your list', order: 2 }] },
+    { day: 28, title: 'Weekly Review & Plan',         notes: 'Week 4 complete — 1 month in! Celebrate and recalibrate.', tasks: [{ id: 't28-1', title: 'Write your Week 4 and Month 1 reflection', order: 1 }, { id: 't28-2', title: 'Compare actual vs planned revenue', order: 2 }, { id: 't28-3', title: 'Set Month 2 targets', order: 3 }] },
+    { day: 29, title: 'Upsell Strategy',             notes: 'The easiest sale is to a customer who already trusts you. Build your upsell path.', tasks: [{ id: 't29-1', title: 'Design a premium version of your best offer', order: 1 }, { id: 't29-2', title: 'Write the upsell pitch for existing customers', order: 2 }] },
+    { day: 30, title: '30-Day Milestone Review',     notes: 'Congratulations on completing Day 30! This is a major milestone. Review everything.', tasks: [{ id: 't30-1', title: 'Write your 30-day achievement summary', order: 1 }, { id: 't30-2', title: 'Share a win in the community', order: 2 }, { id: 't30-3', title: 'Set your top 3 focus areas for Days 31-60', order: 3 }] },
+  ];
+
+  for (const bd of BATCH_DAYS) {
+    await prisma.batchDay.create({ data: {
+      batchId: batch.id,
+      dayNumber: bd.day,
+      title: bd.title,
+      notes: bd.notes,
+      resourceUrl: bd.day % 5 === 0 ? VIDEO_URL : null,
+      tasks: bd.tasks,
+    }});
+  }
+  // Seed remaining days 31-90 with generic titles
+  for (let d = 31; d <= 90; d++) {
+    const week = Math.ceil(d / 7);
+    const isReview = d % 7 === 0;
+    await prisma.batchDay.create({ data: {
+      batchId: batch.id,
+      dayNumber: d,
+      title: isReview ? `Week ${week} Review & Plan` : `Day ${d} — Growth Activity`,
+      notes: isReview ? `Review your progress from Week ${week} and plan next week\'s priorities.` : `Focus on consistent execution of your daily habits and growth activities.`,
+      tasks: isReview
+        ? [{ id: `t${d}-1`, title: `Write your Week ${week} wins`, order: 1 }, { id: `t${d}-2`, title: 'Plan next week\'s priorities', order: 2 }]
+        : [{ id: `t${d}-1`, title: 'Complete today\'s growth task', order: 1 }, { id: `t${d}-2`, title: 'Update your accountability tracker', order: 2 }],
+    }});
+  }
+  console.log('   ✅ 90 batch days seeded');
+
+  // Seed some MemberDayProgress for first 3 members
+  const today = new Date();
+  const batchStart = new Date(batch.startsAt);
+  const daysSinceStart = Math.floor((today.getTime() - batchStart.getTime()) / 86_400_000);
+  const completedUpTo = Math.min(daysSinceStart, 30);
+
+  const progressStatuses = ['approved', 'approved', 'approved', 'pending_approval', 'approved', 'approved', 'approved', 'rejected', 'approved', 'in_progress'] as const;
+
+  for (let di = 0; di < Math.min(completedUpTo, 10); di++) {
+    const dayNum = di + 1;
+    const dayData = BATCH_DAYS.find(b => b.day === dayNum);
+    const taskIds = dayData?.tasks.map(t => t.id) ?? [];
+    const status = progressStatuses[di % progressStatuses.length];
+
+    // Member 0 has most progress
+    await prisma.memberDayProgress.upsert({
+      where: { batchId_memberId_dayNumber: { batchId: batch.id, memberId: members[0].id, dayNumber: dayNum } },
+      create: {
+        batchId: batch.id, memberId: members[0].id, dayNumber: dayNum,
+        status, isCompleted: status === 'approved',
+        completedTaskIds: taskIds,
+        journalEntry: `Day ${dayNum} was productive. I completed all tasks and learned a lot about ${dayData?.title ?? 'the topic'}.`,
+        submittedAt: status !== 'in_progress' && status !== 'not_started' ? new Date(batchStart.getTime() + dayNum * 86_400_000) : null,
+        reviewedAt: status === 'approved' || status === 'rejected' ? new Date() : null,
+        reviewNote: status === 'rejected' ? 'Please add more detail to your journal entry and complete all tasks before resubmitting.' : null,
+      },
+      update: {},
+    });
+
+    // Member 1 has partial progress (first 5 days approved)
+    if (di < 5) {
+      await prisma.memberDayProgress.upsert({
+        where: { batchId_memberId_dayNumber: { batchId: batch.id, memberId: members[1].id, dayNumber: dayNum } },
+        create: {
+          batchId: batch.id, memberId: members[1].id, dayNumber: dayNum,
+          status: 'approved', isCompleted: true,
+          completedTaskIds: taskIds,
+          journalEntry: `Completed day ${dayNum} tasks successfully.`,
+          submittedAt: new Date(batchStart.getTime() + dayNum * 86_400_000),
+          reviewedAt: new Date(),
+        },
+        update: {},
+      });
+    }
+  }
+  console.log(`   ✅ Member day progress seeded for first ${Math.min(completedUpTo, 10)} days`);
 
   // ── Subscriptions ────────────────────────────────────────────────────────────
   console.log('💳 Subscriptions...');
@@ -462,12 +599,14 @@ async function main() {
   // ── Summary ──────────────────────────────────────────────────────────────────
   console.log('\n🎉 Sample data seeded successfully!\n');
   console.log('─────────────────────────────────────────');
-  console.log('  NavItems:             7');
+  console.log('  SiteConfig:           1');
+  console.log('  NavItems:             8  (incl. Task → /batch-program)');
   console.log('  Tiers:                3');
   console.log('  DisplayBadges:        4');
   console.log('  HeroSlides:           3');
   console.log('  Program + Batch:      1 each');
-  console.log('  Members:              5  (with subscriptions)');
+  console.log('  BatchDays:            90 (days 1-30 fully configured)');
+  console.log('  Members:              5  (with subscriptions + day progress)');
   console.log('  Workshops:            3  (with episodes, flow, Q&A, assignments)');
   console.log('  Courses:              3  (with episodes + enrollments)');
   console.log('  ContentSections:      3  (with items)');
@@ -477,6 +616,8 @@ async function main() {
   console.log('  Conversations:        3  (with messages)');
   console.log('  Webinar:              1');
   console.log('─────────────────────────────────────────\n');
+  console.log('Run next: npx tsx backend/prisma/seed-workshop-data.ts');
+  console.log('  → Adds 5 challenges per workshop (watch/quiz/written/matching/flashcard)\n');
 }
 
 main()
