@@ -11,7 +11,7 @@ import {
   useDeleteContentSection, useReorderContentSections,
   useContentSectionItems, useCreateContentItem, useUpdateContentItem,
   useDeleteContentItem, useReorderContentItems,
-  useListVodCourses, useListWorkshops,
+  useListVodCourses, useListWorkshops, useListTiers,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
@@ -176,6 +176,8 @@ export default function ContentSectionsPage() {
   const courses: any[] = (coursesData as any)?.data || [];
   const { data: workshopsData } = useListWorkshops({ limit: 200 });
   const workshops: any[] = (workshopsData as any)?.data || [];
+  const { data: tiersData } = useListTiers();
+  const tiers: any[] = (tiersData as any)?.data || [];
 
   // Item DnD
   const itemDragIdx = useRef<number | null>(null);
@@ -437,8 +439,13 @@ export default function ContentSectionsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
-                  <input type="number" min="0" value={sectionForm.requiredTier} onChange={e => setSectionField("requiredTier", e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                  <select value={sectionForm.requiredTier} onChange={e => setSectionField("requiredTier", e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
+                    <option value="">— Any tier —</option>
+                    {tiers.map((t: any) => (
+                      <option key={t.tierNumber} value={t.tierNumber}>Tier {t.tierNumber} — {t.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Lock Badge Text</label>
@@ -507,8 +514,13 @@ export default function ContentSectionsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
-                  <input type="number" min="0" value={itemForm.requiredTier} onChange={e => setItemField("requiredTier", e.target.value)}
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                  <select value={itemForm.requiredTier} onChange={e => setItemField("requiredTier", e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
+                    <option value="">— Any tier —</option>
+                    {tiers.map((t: any) => (
+                      <option key={t.tierNumber} value={t.tierNumber}>Tier {t.tierNumber} — {t.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Lock Badge Text</label>
