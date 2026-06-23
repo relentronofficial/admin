@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
+import { invalidateCache } from '../../lib/cache.js';
 
 export async function listMembersHandler(request: FastifyRequest, reply: FastifyReply) {
   const { page = 1, limit = 10, search, status } = request.query as any;
@@ -1037,6 +1038,7 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       });
     }
 
+    void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_approved', { memberId: id });
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {

@@ -178,9 +178,11 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Free-plan users (active status, no subscription): page content visible,
-  // but every click outside exempt paths opens the "contact admin" popup
-  if (!isLoading && !isFetching && me && (me as any).status !== "pending" && !(me as any).subscription && !isExempt) {
+  // Free-plan users with no active subscription: block with upgrade prompt.
+  // Members with any paid membershipPlan assigned by admin pass through even
+  // if no Subscription row exists yet (admin sets plan directly on the member).
+  const hasPaidPlan = (me as any)?.membershipPlan && (me as any).membershipPlan !== "free";
+  if (!isLoading && !isFetching && me && (me as any).status !== "pending" && !(me as any).subscription && !hasPaidPlan && !isExempt) {
     return (
       <>
         {children}
