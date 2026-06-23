@@ -1014,7 +1014,7 @@ function CertificateModal({
     >
       <div
         className="relative w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl print:rounded-none print:shadow-none print:max-w-none"
-        style={{ background: "var(--color-bg-surface, #1a1a1a)", ["--foreground" as string]: "#f0f0f0", ["--muted-foreground" as string]: "rgba(255,255,255,0.5)" }}
+        style={{ background: "var(--color-bg-surface, #1a1a1a)", ["--foreground" as string]: "0 0% 94.1%", ["--muted-foreground" as string]: "0 0% 60%" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button (hidden on print) */}
@@ -2068,8 +2068,38 @@ function WatchChallengeView({
         </div>
       </div>
 
-      {/* Resume card — only when there's saved progress */}
-      {(watchState === "resume" || watchState === "paused") && (ep.lastWatchedSecs ?? 0) > 3 && (
+      {/* Speed control + time info strip — only for HLS (PlyrPlayer) */}
+      {ep.hlsUrl && !hlsFailed && (watchState === "watching" || watchState === "paused" || watchState === "rewatching") && (
+        <div className="flex items-center justify-between gap-3 pt-0.5 pb-1" style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "rgba(0,0,0,0.35)" }}>Speed</span>
+            <div className="flex items-center gap-0.5">
+              {[0.75, 1, 1.25, 1.5, 1.75, 2].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleSpeedChange(s)}
+                  className="text-[11px] font-bold px-1.5 py-0.5 rounded transition-all"
+                  style={
+                    speed === s
+                      ? { background: "var(--color-accent)", color: "#fff" }
+                      : { background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.5)" }
+                  }
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
+          </div>
+          {activeDuration > 0 && currentPlayhead > 0 && (
+            <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "rgba(0,0,0,0.4)" }}>
+              {formatTime(Math.max(0, activeDuration - currentPlayhead))} left
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Pre-play resume card — shows saved server position before playback starts */}
+      {watchState === "resume" && (ep.lastWatchedSecs ?? 0) > 3 && (
         <div
           className="rounded-xl border px-4 py-3 space-y-2"
           style={{
@@ -2087,20 +2117,20 @@ function WatchChallengeView({
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold leading-tight" style={{ color: "var(--color-accent)" }}>
-                  Resume from {formatTime(ep.lastWatchedSecs ?? 0)}
+                  Continue from {formatTime(ep.lastWatchedSecs ?? 0)}
                 </p>
                 <p className="text-[11px] text-muted-foreground truncate">{ep.title}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-sm font-bold" style={{ color: "var(--color-accent)" }}>
+              <span className="text-sm font-bold tabular-nums" style={{ color: "var(--color-accent)" }}>
                 {savedProgressPct}%
               </span>
               <button
                 onClick={() => { setForceStartFrom(0); setWatchState("not_started"); }}
                 className="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border"
               >
-                Start over
+                Restart
               </button>
             </div>
           </div>
@@ -2116,6 +2146,77 @@ function WatchChallengeView({
                 {formatTime(ep.lastWatchedSecs ?? 0)} / {formatTime(activeDuration)}
               </span>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Live pause card — shows exact currentPlayhead position (live, not server-saved) */}
+      {watchState === "paused" && (
+        <div
+          className="rounded-xl border px-4 py-3 space-y-2.5"
+          style={{ background: "rgba(0,0,0,0.025)", borderColor: "rgba(0,0,0,0.09)" }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
+                style={{ background: "rgba(0,0,0,0.07)" }}
+              >
+                <Pause size={13} style={{ color: "rgba(0,0,0,0.55)" }} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold leading-snug" style={{ color: "#111111" }}>
+                  Paused — Resume from {formatTime(currentPlayhead)}
+                </p>
+                <p className="text-[11px] truncate" style={{ color: "rgba(0,0,0,0.45)" }}>{ep.title}</p>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <span className="text-xs font-bold tabular-nums" style={{ color: "rgba(0,0,0,0.5)" }}>
+                {formatTime(currentPlayhead)}
+              </span>
+              {activeDuration > 0 && (
+                <p className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>
+                  / {formatTime(activeDuration)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Scrubber showing exact pause position */}
+          <div className="space-y-1">
+            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.07)" }}>
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{
+                  width: activeDuration > 0 ? `${Math.min(100, (currentPlayhead / activeDuration) * 100)}%` : "0%",
+                  background: "var(--color-accent)",
+                  boxShadow: "0 0 6px rgba(220,38,38,0.4)",
+                }}
+              />
+            </div>
+            {activeDuration > 0 && (
+              <div className="flex justify-between">
+                <span className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>0:00</span>
+                <span className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>
+                  {formatTime(activeDuration - currentPlayhead)} remaining
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Restart option */}
+          <div className="flex items-center justify-between pt-0.5">
+            <p className="text-[11px]" style={{ color: "rgba(0,0,0,0.4)" }}>
+              Click the video to resume
+            </p>
+            <button
+              onClick={() => { setForceStartFrom(0); setWatchState("not_started"); }}
+              className="text-[11px] font-medium transition-colors"
+              style={{ color: "rgba(0,0,0,0.45)" }}
+            >
+              Watch from beginning
+            </button>
           </div>
         </div>
       )}
@@ -2297,13 +2398,23 @@ function WatchChallengeView({
                       Paused at {formatTime(currentPlayhead)}
                     </span>
                   ) : isResumeState ? (
-                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>
-                      Resume {progressPct}%
-                    </span>
+                    <div className="text-right">
+                      <span className="text-[11px] font-bold block whitespace-nowrap" style={{ color: "var(--color-accent)" }}>{progressPct}%</span>
+                      {epDuration > 0 && (
+                        <span className="text-[10px] block whitespace-nowrap" style={{ color: "rgba(0,0,0,0.38)" }}>
+                          {formatDuration(Math.max(0, epDuration - (e.lastWatchedSecs ?? 0)))} left
+                        </span>
+                      )}
+                    </div>
                   ) : hasPartialProgress ? (
-                    <span className="text-[11px] font-bold whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>
-                      Resume {progressPct}%
-                    </span>
+                    <div className="text-right">
+                      <span className="text-[11px] font-bold block whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>{progressPct}%</span>
+                      {epDuration > 0 && (
+                        <span className="text-[10px] block whitespace-nowrap" style={{ color: "rgba(0,0,0,0.35)" }}>
+                          {formatDuration(Math.max(0, epDuration - (e.actualWatchedSecs ?? 0)))} left
+                        </span>
+                      )}
+                    </div>
                   ) : isActive && liveRealDuration > 0 ? (
                     <span className="text-[11px] text-muted-foreground">{formatDuration(liveRealDuration)}</span>
                   ) : e.durationSeconds > 0 ? (
@@ -2316,24 +2427,33 @@ function WatchChallengeView({
 
               {/* Row 2: progress bar — only for in-progress states, never for completed */}
               {showBar && (
-                <div className="mt-2.5 pl-10 flex items-center gap-2.5">
-                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{
-                        width: `${progressPct}%`,
-                        background: isWatching || isResumeState || hasPartialProgress
-                          ? "var(--color-accent)"
-                          : "rgba(0,0,0,0.2)",
-                        boxShadow: (isWatching || isResumeState || hasPartialProgress)
-                          ? "0 0 6px rgba(220,38,38,0.65), 0 0 14px rgba(220,38,38,0.3)"
-                          : "none",
-                      }}
-                    />
+                <div className="mt-2.5 pl-10 space-y-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${progressPct}%`,
+                          background: isWatching || isResumeState || hasPartialProgress
+                            ? "var(--color-accent)"
+                            : isPausedState
+                              ? "rgba(0,0,0,0.25)"
+                              : "rgba(0,0,0,0.2)",
+                          boxShadow: (isWatching || isResumeState || hasPartialProgress)
+                            ? "0 0 6px rgba(220,38,38,0.65), 0 0 14px rgba(220,38,38,0.3)"
+                            : "none",
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-muted-foreground w-7 text-right whitespace-nowrap">
+                      {progressPct}%
+                    </span>
                   </div>
-                  <span className="text-[10px] font-bold text-muted-foreground w-7 text-right whitespace-nowrap">
-                    {progressPct}%
-                  </span>
+                  {isActive && activeDuration > 0 && currentPlayhead > 0 && (
+                    <p className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.38)" }}>
+                      {formatTime(currentPlayhead)} watched · {formatDuration(Math.max(0, activeDuration - currentPlayhead))} left
+                    </p>
+                  )}
                 </div>
               )}
             </button>
@@ -2364,7 +2484,7 @@ function QuizScoreModal({
   const isPerfect = score === total;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}>
-      <div className="w-full max-w-sm rounded-2xl p-6 space-y-5 text-center shadow-2xl" style={{ background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.08)", ["--foreground" as string]: "#f0f0f0", ["--muted-foreground" as string]: "rgba(255,255,255,0.5)" }}>
+      <div className="w-full max-w-sm rounded-2xl p-6 space-y-5 text-center shadow-2xl" style={{ background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.08)", ["--foreground" as string]: "0 0% 94.1%", ["--muted-foreground" as string]: "0 0% 60%" }}>
         <div className="flex flex-col items-center gap-2">
           <div
             className="w-14 h-14 rounded-full flex items-center justify-center"
@@ -3479,15 +3599,20 @@ export default function WorkshopDetailPage() {
   return (
     <div className="-mx-4 md:-mx-6 -mt-6 px-4 md:px-6 pt-6 pb-8 min-h-screen space-y-3" style={{
       background: "#ffffff",
-      /* Redefine shadcn CSS vars for this light-bg page so text-foreground / text-muted-foreground are readable */
-      ["--foreground" as string]: "#111111",
-      ["--muted-foreground" as string]: "rgba(0,0,0,0.5)",
-      ["--card" as string]: "#f5f5f5",
-      ["--card-foreground" as string]: "#111111",
-      ["--border" as string]: "rgba(0,0,0,0.1)",
-      ["--ring" as string]: "rgba(220,38,38,0.45)",
-      ["--accent" as string]: "rgba(0,0,0,0.05)",
-      ["--background" as string]: "#ffffff",
+      /* Redefine shadcn CSS vars in HSL-triplet format (no hsl() wrapper) so Tailwind's
+         hsl(var(--foreground)) expansion produces valid CSS on this light-bg page */
+      ["--foreground" as string]: "0 0% 6.7%",       /* #111111 */
+      ["--muted-foreground" as string]: "0 0% 50%",   /* ~rgba(0,0,0,0.5) on white */
+      ["--card" as string]: "0 0% 96.1%",             /* #f5f5f5 */
+      ["--card-foreground" as string]: "0 0% 6.7%",   /* #111111 */
+      ["--border" as string]: "0 0% 90.2%",           /* ~rgba(0,0,0,0.1) on white */
+      ["--ring" as string]: "0 72.2% 50.6%",          /* accent red */
+      ["--accent" as string]: "0 0% 94.9%",           /* ~rgba(0,0,0,0.05) on white */
+      ["--background" as string]: "0 0% 100%",        /* #ffffff */
+      ["--input" as string]: "0 0% 90.2%",
+      ["--secondary" as string]: "0 0% 94.9%",
+      ["--secondary-foreground" as string]: "0 0% 6.7%",
+      ["--muted" as string]: "0 0% 94.9%",
     }}>
       {flowData?.flowItems && (
         <LiveCallUnlockWatcher
@@ -3584,15 +3709,19 @@ export default function WorkshopDetailPage() {
           borderRadius: "16px",
           padding: "12px",
           boxShadow: "0 4px 24px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.12)",
-          /* Reset CSS vars for dark sidebar so text-foreground stays white */
-          ["--foreground" as string]: "#f0f0f0",
-          ["--muted-foreground" as string]: "rgba(255,255,255,0.4)",
-          ["--card" as string]: "rgba(255,255,255,0.04)",
-          ["--card-foreground" as string]: "#f0f0f0",
-          ["--border" as string]: "rgba(255,255,255,0.08)",
-          ["--ring" as string]: "rgba(220,38,38,0.5)",
-          ["--accent" as string]: "rgba(255,255,255,0.05)",
-          ["--background" as string]: "#111111",
+          /* HSL triplets so Tailwind's hsl(var(--...)) produces valid CSS on dark sidebar */
+          ["--foreground" as string]: "0 0% 94.1%",        /* #f0f0f0 */
+          ["--muted-foreground" as string]: "0 0% 60%",    /* ~rgba(255,255,255,0.4) on #111 */
+          ["--card" as string]: "0 0% 10.6%",              /* ~rgba(255,255,255,0.04) on #111 */
+          ["--card-foreground" as string]: "0 0% 94.1%",   /* #f0f0f0 */
+          ["--border" as string]: "0 0% 14.5%",            /* ~rgba(255,255,255,0.08) on #111 */
+          ["--ring" as string]: "0 72.2% 50.6%",
+          ["--accent" as string]: "0 0% 12%",              /* ~rgba(255,255,255,0.05) on #111 */
+          ["--background" as string]: "0 0% 6.7%",         /* #111111 */
+          ["--muted" as string]: "0 0% 10.2%",
+          ["--secondary" as string]: "0 0% 10.2%",
+          ["--secondary-foreground" as string]: "0 0% 94.1%",
+          ["--input" as string]: "0 0% 14.5%",
         }}>
           {/* Challenge progress + certificate — always visible above tabs */}
           <LearningProgressWidget progress={progress} />
