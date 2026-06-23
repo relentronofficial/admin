@@ -13,7 +13,7 @@ const rejectSchema = z.object({
 
 // GET /api/user-batch — member's batch + day content + their progress
 export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply) {
-  const memberId = (req as any).member.id;
+  const memberId = req.memberId!;
 
   const member = await req.server.prisma.member.findUnique({
     where: { id: memberId },
@@ -27,7 +27,11 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
   const [batch, days, progress] = await Promise.all([
     req.server.prisma.batch.findUnique({
       where: { id: member.batchId },
-      select: { id: true, name: true, description: true, startsAt: true, endsAt: true, isActive: true },
+      select: {
+        id: true, name: true, description: true,
+        startsAt: true, endsAt: true, isActive: true,
+        program: { select: { name: true } },
+      },
     }),
     req.server.prisma.batchDay.findMany({
       where: { batchId: member.batchId },
@@ -39,7 +43,16 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     }),
   ]);
 
-  return reply.send({ success: true, data: { batch, days, progress }, error: null });
+  return reply.send({
+    success: true,
+    data: {
+      batch,
+      programName: (batch as any)?.program?.name ?? null,
+      days,
+      progress,
+    },
+    error: null,
+  });
 }
 
 // PUT /api/user-batch/:dayNumber — save draft
@@ -47,7 +60,7 @@ export async function saveDraftHandler(
   req: FastifyRequest<{ Params: { dayNumber: string } }>,
   reply: FastifyReply,
 ) {
-  const memberId = (req as any).member.id;
+  const memberId = req.memberId!;
   const dayNum = parseInt(req.params.dayNumber, 10);
   if (dayNum < 1 || dayNum > 90) {
     return reply.status(400).send({ success: false, data: null, error: 'Day number must be 1-90' });
@@ -92,7 +105,7 @@ export async function submitDayHandler(
   req: FastifyRequest<{ Params: { dayNumber: string } }>,
   reply: FastifyReply,
 ) {
-  const memberId = (req as any).member.id;
+  const memberId = req.memberId!;
   const dayNum = parseInt(req.params.dayNumber, 10);
 
   const member = await req.server.prisma.member.findUnique({

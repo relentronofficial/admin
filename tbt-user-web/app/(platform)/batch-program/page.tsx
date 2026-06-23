@@ -72,7 +72,7 @@ export default function BatchProgramPage() {
   if (!program?.batch) {
     return (
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold tracking-tight">90-Day Program</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Program</h2>
         <div className="rounded-2xl border p-12 text-center" style={{ borderColor: "var(--color-border, rgba(255,255,255,0.08))", background: "var(--color-bg-surface)" }}>
           <GraduationCap size={40} className="mx-auto mb-4 opacity-30" />
           <p className="text-muted-foreground">You haven&apos;t been assigned to a batch yet.</p>
@@ -89,8 +89,10 @@ export default function BatchProgramPage() {
     <div className="space-y-6 pb-10">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">90-Day Program</h2>
-        <p className="text-muted-foreground text-sm mt-1">{program.batch.name}</p>
+        <h2 className="text-2xl font-bold tracking-tight">{(program as any).programName ?? program.batch.name}</h2>
+        {(program as any).programName && (
+          <p className="text-muted-foreground text-sm mt-1">{program.batch.name}</p>
+        )}
       </div>
 
       {/* Batch info + stats */}
