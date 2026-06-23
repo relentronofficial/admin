@@ -636,6 +636,72 @@ export const useDeleteBatch = () => {
   });
 };
 
+// ── BATCH PROGRAM (DAYS + PROGRESS) ──────────────────────────────────
+
+export const useListBatchDays = (batchId: string) =>
+  useQuery({
+    queryKey: ['batch-days', batchId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/days`); return res; },
+    enabled: !!batchId,
+    staleTime: 30_000,
+  });
+
+export const useGetBatchDayDetail = (batchId: string, dayNumber: number | null) =>
+  useQuery({
+    queryKey: ['batch-day-detail', batchId, dayNumber],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/days/${dayNumber}`); return res; },
+    enabled: !!batchId && dayNumber !== null,
+    staleTime: 10_000,
+  });
+
+export const useUpsertBatchDay = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, dayNumber, ...data }: { batchId: string; dayNumber: number; title?: string; notes?: string; resourceUrl?: string; tasks?: any[] }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/days/${dayNumber}`, data);
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['batch-days', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['batch-day-detail', vars.batchId, vars.dayNumber] });
+    },
+  });
+};
+
+export const useGetBatchProgress = (batchId: string) =>
+  useQuery({
+    queryKey: ['batch-progress', batchId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/progress`); return res; },
+    enabled: !!batchId,
+    staleTime: 15_000,
+  });
+
+export const useGetMemberProgress = (batchId: string, memberId: string | null) =>
+  useQuery({
+    queryKey: ['member-day-progress', batchId, memberId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/progress/${memberId}`); return res; },
+    enabled: !!batchId && !!memberId,
+    staleTime: 10_000,
+  });
+
+export const useUpsertMemberProgress = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, memberId, dayNumber, ...data }: {
+      batchId: string; memberId: string; dayNumber: number;
+      isCompleted?: boolean; journalEntry?: string; journalFileUrl?: string; completedTaskIds?: string[];
+    }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/progress/${memberId}/${dayNumber}`, data);
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['batch-progress', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['member-day-progress', vars.batchId, vars.memberId] });
+      qc.invalidateQueries({ queryKey: ['batch-day-detail', vars.batchId, vars.dayNumber] });
+    },
+  });
+};
+
 // ── MEMBER ENROLLMENTS ────────────────────────────────────────────────
 
 export const useMemberEnrollments = (memberId: string) =>

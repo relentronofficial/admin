@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   GraduationCap,
   Plus,
@@ -17,6 +18,7 @@ import {
   ToggleLeft,
   ToggleRight,
   ChevronRight,
+  BarChart2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -53,6 +55,7 @@ const emptyForm: BatchForm = {
 };
 
 export default function BatchesPage() {
+  const router = useRouter();
   const { data: batchesRes, isLoading } = useListBatches();
   const batches: any[] = (batchesRes as any)?.data || [];
 
@@ -305,11 +308,17 @@ export default function BatchesPage() {
                 {/* Actions */}
                 <div className="flex items-center gap-2 mt-auto pt-2 border-t border-[#1f1f1f]">
                   <button
-                    onClick={() => setManagingBatch(batch)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold bg-[#1f1f1f] hover:bg-[#262626] text-[#a0a0a0] hover:text-[#f0f0f0] transition-all"
+                    onClick={() => router.push(`/batches/${batch.id}`)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold bg-[#dc2626]/10 hover:bg-[#dc2626]/20 text-[#dc2626] transition-all"
                   >
-                    <Users size={13} /> Members
-                    <ChevronRight size={12} className="ml-auto opacity-50" />
+                    <BarChart2 size={13} /> View Program
+                  </button>
+                  <button
+                    onClick={() => setManagingBatch(batch)}
+                    className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#f0f0f0] transition-all"
+                    title="Manage members"
+                  >
+                    <Users size={14} />
                   </button>
                   <button
                     onClick={() => { setEditingBatch(batch); }}

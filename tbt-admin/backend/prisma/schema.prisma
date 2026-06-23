@@ -320,6 +320,7 @@ model Member {
   liveCallQuestions     LiveCallQuestion[]
   liveCallFeedback      LiveCallFeedback[]
   liveCallCertificates  LiveCallCertificate[]
+  dayProgress           MemberDayProgress[]
 
   @@map("members")
 }
@@ -932,8 +933,45 @@ model Batch {
   program   Program?   @relation(fields: [programId], references: [id], onDelete: Restrict)
   members   Member[]
   workshops Workshop[]
+  days      BatchDay[]
+  progress  MemberDayProgress[]
 
   @@map("batches")
+}
+
+model BatchDay {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId     String   @map("batch_id") @db.Uuid
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  dayNumber   Int      @map("day_number")
+  title       String?
+  notes       String?
+  resourceUrl String?  @map("resource_url")
+  tasks       Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([batchId, dayNumber])
+  @@map("batch_days")
+}
+
+model MemberDayProgress {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId          String    @map("batch_id") @db.Uuid
+  memberId         String    @map("member_id") @db.Uuid
+  dayNumber        Int       @map("day_number")
+  isCompleted      Boolean   @default(false) @map("is_completed")
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+  journalEntry     String?   @map("journal_entry")
+  journalFileUrl   String?   @map("journal_file_url")
+  completedTaskIds String[]  @map("completed_task_ids")
+  batch            Batch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  member           Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([batchId, memberId, dayNumber])
+  @@map("member_day_progress")
 }
 
 model Category {
