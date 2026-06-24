@@ -31,4 +31,22 @@ export const coursesService = {
       deltaSeconds,
       isCompleted,
     }),
+
+  submitQuiz: (courseId: string, episodeId: string, answers: Record<string, string>) =>
+    apiClient.post<never, ApiResponse<any>>(`/api/user/courses/${courseId}/episodes/${episodeId}/quiz`, { answers }),
+
+  getCourseXp: (courseId: string) =>
+    apiClient.get<never, ApiResponse<any>>(`/api/user/courses/${courseId}/xp`),
+
+  getCourseLeaderboard: (courseId: string) =>
+    apiClient.get<never, ApiResponse<any>>(`/api/user/courses/${courseId}/leaderboard`),
+
+  getUserBadges: () =>
+    apiClient.get<never, ApiResponse<any[]>>("/api/user/badges"),
+
+  getCertificateEligibility: (courseId: string) =>
+    apiClient.get<never, ApiResponse<any>>(`/api/user/courses/${courseId}/certificate-eligibility`),
+
+  requestAccess: (courseId: string) =>
+    apiClient.post<never, ApiResponse<{ paymentId: string; paymentUrl: string }>>(`/api/user/courses/${courseId}/request-access`),
 };

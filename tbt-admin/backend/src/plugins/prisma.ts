@@ -25,6 +25,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Idempotent enum migration — adds 'pending' to MemberStatus if not already present.
     // Safe to run on every startup; PostgreSQL ignores it when the value already exists.
     await prisma.$executeRawUnsafe(`ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'`);
+    await prisma.$executeRawUnsafe(`ALTER TYPE "CoursePaymentMethod" ADD VALUE IF NOT EXISTS 'external'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS payment_link_url TEXT`);
     // Idempotent column additions for Product e-commerce fields
     await prisma.$executeRawUnsafe(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price DECIMAL(10,2)`);
     await prisma.$executeRawUnsafe(`ALTER TABLE products ADD COLUMN IF NOT EXISTS currency VARCHAR(10) NOT NULL DEFAULT 'INR'`);
@@ -60,6 +62,19 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
              true, NOW(), NOW()
       WHERE NOT EXISTS (SELECT 1 FROM nav_items WHERE href = '/batch-program')
     `);
+    // Course platform — new columns on courses table (§2.5)
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS access_duration_days INTEGER`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS max_enrollments INTEGER`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS upsell_course_ids TEXT[] DEFAULT '{}'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS cross_sell_course_ids TEXT[] DEFAULT '{}'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS xp_per_episode INTEGER NOT NULL DEFAULT 10`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS passing_score_percent INTEGER NOT NULL DEFAULT 70`);
+    // Course platform — new columns on course_episodes table (§2.6)
+    await prisma.$executeRawUnsafe(`ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS quiz_data JSONB`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS quiz_unlock_percent INTEGER NOT NULL DEFAULT 80`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS drm_enabled BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS bunny_drm_token TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS payment_link_url TEXT`);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

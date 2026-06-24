@@ -2,12 +2,13 @@
 
 import { use, useState, useRef, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, CheckCircle2, Play, Loader2 } from "lucide-react";
+import { ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
-import { useCourse, useLessonProgress, useMarkLessonComplete } from "@/lib/hooks/useCourses";
+import { useCourse, useLessonProgress, useMarkLessonComplete, useSubmitCourseQuiz, useCourseXp, useCertificateEligibility } from "@/lib/hooks/useCourses";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
+import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import type { Lesson } from "@/types";
@@ -47,6 +48,16 @@ export default function CourseDetailPage({
   const [watchedSeconds, setWatchedSeconds] = useState(0);
   const topRef = useRef<HTMLDivElement>(null);
 
+  // Quiz modal state
+  const [quizModal, setQuizModal] = useState<{ episodeId: string; quizData: any } | null>(null);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+  const [quizResult, setQuizResult] = useState<any>(null);
+  const [xpFlash, setXpFlash] = useState<number | null>(null);
+  const [downloadingCert, setDownloadingCert] = useState(false);
+  const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
+  const { data: xpData } = useCourseXp(courseId);
+  const { data: certData } = useCertificateEligibility(courseId);
+
   // Auto-select lesson from URL parameter once course data loads
   useEffect(() => {
     if (course?.lessons && targetLessonId && !selectedLesson) {
@@ -64,6 +75,23 @@ export default function CourseDetailPage({
       }
     }
   }, [course, targetLessonId, selectedLesson]);
+
+  // Show quiz modal on first episode completion
+  const quizTriggeredForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (watchState === "completed" && selectedLesson && !quizTriggeredForRef.current) {
+      const lesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id);
+      if (lesson?.hasQuiz) {
+        quizTriggeredForRef.current = selectedLesson.id;
+        setQuizModal({ episodeId: selectedLesson.id, quizData: lesson });
+        setQuizAnswers({});
+        setQuizResult(null);
+      }
+    }
+    if (!selectedLesson || watchState !== "completed") {
+      quizTriggeredForRef.current = null;
+    }
+  }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refs so closure callbacks always see current values
   const markCalledRef = useRef(false);
@@ -438,6 +466,181 @@ export default function CourseDetailPage({
           )}
         </div>
       </div>
+
+      {/* Certificate CTA — shown when all lessons are complete */}
+      {certData?.eligible && (
+        <div className="rounded-xl p-5 flex items-center gap-4"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-surface))", border: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)" }}>
+          <div className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center"
+            style={{ background: "color-mix(in srgb, var(--color-accent) 20%, transparent)" }}>
+            <Award size={24} style={{ color: "var(--color-accent)" }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white text-sm">You completed this course!</p>
+            <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.55)" }}>
+              Your certificate of completion is ready.
+            </p>
+          </div>
+          <button
+            disabled={downloadingCert}
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 flex items-center gap-1.5 disabled:opacity-60"
+            style={{ background: "var(--color-accent)" }}
+            onClick={async () => {
+              setDownloadingCert(true);
+              try {
+                const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+                const res = await fetch(`${apiBase}/api/user/courses/${courseId}/certificate`, { credentials: "include" });
+                if (!res.ok) { toast.error("Certificate not ready yet."); return; }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `certificate-${courseId}.pdf`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch {
+                toast.error("Failed to download certificate.");
+              } finally {
+                setDownloadingCert(false);
+              }
+            }}
+          >
+            {downloadingCert ? <Loader2 size={14} className="animate-spin" /> : <Award size={14} />}
+            {downloadingCert ? "Preparing..." : "Get Certificate"}
+          </button>
+        </div>
+      )}
+
+      {/* XP flash */}
+      {xpFlash !== null && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl font-bold text-white text-sm animate-bounce"
+          style={{ background: "var(--color-accent)" }}>
+          <Zap size={16} /> +{xpFlash} XP earned!
+        </div>
+      )}
+
+      {/* Quiz modal */}
+      {quizModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
+            style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}>
+            <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Episode Quiz</p>
+                <p className="text-sm font-semibold text-white mt-0.5">{quizModal.quizData?.title ?? "Quiz"}</p>
+              </div>
+              {!quizResult && (
+                <button onClick={() => setQuizModal(null)} className="text-white/40 hover:text-white/70 transition-colors"><X size={18} /></button>
+              )}
+            </div>
+
+            {quizResult ? (
+              /* Results view */
+              <div className="p-6 text-center space-y-4">
+                <div className={`text-5xl font-bold ${quizResult.passed ? "text-green-400" : "text-red-400"}`}>
+                  {quizResult.score}%
+                </div>
+                <p className="text-white font-semibold">{quizResult.passed ? "🎉 Passed!" : "Not quite — try again"}</p>
+                <p className="text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
+                  {quizResult.correct} / {quizResult.total} correct
+                </p>
+                {quizResult.passed && xpFlash !== null && (
+                  <div className="flex items-center justify-center gap-1.5 text-sm font-bold" style={{ color: "var(--color-accent)" }}>
+                    <Zap size={14} /> +{xpFlash} XP awarded
+                  </div>
+                )}
+                <div className="flex gap-3 pt-2">
+                  {!quizResult.passed && (
+                    <button onClick={() => { setQuizAnswers({}); setQuizResult(null); }}
+                      className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-colors"
+                      style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>
+                      Try Again
+                    </button>
+                  )}
+                  <button onClick={() => { setQuizModal(null); setQuizResult(null); }}
+                    className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white transition-colors"
+                    style={{ background: "var(--color-accent)" }}>
+                    {quizResult.passed ? "Continue" : "Skip"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Question view */
+              <QuizQuestions
+                quizData={quizModal.quizData}
+                courseId={courseId}
+                episodeId={quizModal.episodeId}
+                answers={quizAnswers}
+                setAnswers={setQuizAnswers}
+                onSubmit={async (answers) => {
+                  try {
+                    const res = await submitQuiz.mutateAsync(answers);
+                    const result = (res as any).data ?? res;
+                    setQuizResult(result);
+                    if (result.passed && (course as any).xpPerEpisode) {
+                      setXpFlash((course as any).xpPerEpisode);
+                      setTimeout(() => setXpFlash(null), 3000);
+                    }
+                  } catch (e: any) {
+                    toast.error(e.message || "Failed to submit quiz");
+                  }
+                }}
+                isSubmitting={submitQuiz.isPending}
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Quiz questions component ──────────────────────────────────────────
+function QuizQuestions({
+  quizData, courseId, episodeId, answers, setAnswers, onSubmit, isSubmitting,
+}: {
+  quizData: any; courseId: string; episodeId: string;
+  answers: Record<string, string>; setAnswers: (a: Record<string, string>) => void;
+  onSubmit: (a: Record<string, string>) => void; isSubmitting: boolean;
+}) {
+  const questions: any[] = quizData?.quizData?.questions ?? quizData?.lessons?.find?.((l: any) => l.id === episodeId)?.quizData?.questions ?? [];
+
+  if (!questions.length) {
+    return (
+      <div className="p-6 text-center text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+        No quiz questions configured.
+      </div>
+    );
+  }
+
+  const allAnswered = questions.every((q: any) => answers[q.id]);
+
+  return (
+    <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+      {questions.map((q: any, qi: number) => (
+        <div key={q.id}>
+          <p className="text-sm font-medium text-white mb-3">{qi + 1}. {q.question}</p>
+          <div className="space-y-2">
+            {q.options?.map((opt: any) => (
+              <button key={opt.id} type="button"
+                onClick={() => setAnswers({ ...answers, [q.id]: opt.id })}
+                className="w-full text-left px-4 py-2.5 rounded-lg text-sm transition-all border"
+                style={{
+                  borderColor: answers[q.id] === opt.id ? "var(--color-accent)" : "rgba(255,255,255,0.1)",
+                  background: answers[q.id] === opt.id ? "color-mix(in srgb, var(--color-accent) 15%, transparent)" : "transparent",
+                  color: answers[q.id] === opt.id ? "#fff" : "rgba(255,255,255,0.6)",
+                }}>
+                {opt.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <button onClick={() => onSubmit(answers)} disabled={!allAnswered || isSubmitting}
+        className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+        style={{ background: "var(--color-accent)" }}>
+        {isSubmitting ? "Submitting..." : "Submit Answers"}
+      </button>
     </div>
   );
 }

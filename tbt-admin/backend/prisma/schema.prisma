@@ -152,6 +152,34 @@ enum ChurnRisk {
   high
 }
 
+enum CoursePaymentMethod {
+  razorpay
+  bank_transfer
+  upi
+  manual
+  free
+  external
+}
+
+enum CoursePaymentStatus {
+  pending
+  completed
+  refunded
+  failed
+}
+
+enum CourseAccessDuration {
+  lifetime
+  duration
+}
+
+enum XPSource {
+  episode_complete
+  quiz_pass
+  streak_bonus
+  daily_login
+}
+
 // --- MODELS ---
 
 model AdminIdSequence {
@@ -321,6 +349,12 @@ model Member {
   liveCallFeedback      LiveCallFeedback[]
   liveCallCertificates  LiveCallCertificate[]
   dayProgress           MemberDayProgress[]
+  courseAccesses        CourseAccess[]
+  coursePayments        CoursePayment[]
+  xpRecords             MemberXP[]
+  courseStreaks          CourseStreak[]
+  courseBadges          MemberCourseBadge[]
+  courseQuizAttempts    CourseQuizAttempt[]
 
   @@map("members")
 }
@@ -343,8 +377,15 @@ model Course {
   isPublished   Boolean      @default(false) @map("is_published")
   isFeatured    Boolean      @default(false) @map("is_featured")
   status        CourseStatus @default(draft)
-  requiredTier  Int          @default(1) @map("required_tier")
-  isActive      Boolean      @default(true) @map("is_active")
+  requiredTier        Int      @default(1) @map("required_tier")
+  isActive            Boolean  @default(true) @map("is_active")
+  accessDurationDays  Int?     @map("access_duration_days")
+  maxEnrollments      Int?     @map("max_enrollments")
+  upsellCourseIds     String[] @default([]) @map("upsell_course_ids")
+  crossSellCourseIds  String[] @default([]) @map("cross_sell_course_ids")
+  xpPerEpisode        Int      @default(10) @map("xp_per_episode")
+  passingScorePercent Int      @default(70) @map("passing_score_percent")
+  paymentLinkUrl      String?  @map("payment_link_url")
 
   createdBy String?   @map("created_by") @db.Uuid
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -358,6 +399,11 @@ model Course {
   enrollments    CourseEnrollment[]
   contentItems   ContentItem[]
   courseEpisodes CourseEpisode[]
+  accesses       CourseAccess[]
+  payments       CoursePayment[]
+  xpRecords      MemberXP[]
+  streaks        CourseStreak[]
+  badges         CourseBadge[]
 
   @@map("courses")
 }
@@ -2075,11 +2121,16 @@ model CourseEpisode {
   thumbnailUrl    String?                 @map("thumbnail_url")
   videoUrl        String                  @map("video_url")
   bunnyVideoId    String?                 @map("bunny_video_id")
-  durationSeconds Int                     @default(0) @map("duration_seconds")
-  order           Int                     @default(0)
-  isVisible       Boolean                 @default(true) @map("is_visible")
-  course          Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  durationSeconds   Int      @default(0) @map("duration_seconds")
+  order             Int      @default(0)
+  isVisible         Boolean  @default(true) @map("is_visible")
+  quizData          Json?    @map("quiz_data")
+  quizUnlockPercent Int      @default(80) @map("quiz_unlock_percent")
+  drmEnabled        Boolean  @default(false) @map("drm_enabled")
+  bunnyDrmToken     String?  @map("bunny_drm_token")
+  course            Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   progress        CourseEpisodeProgress[]
+  quizAttempts    CourseQuizAttempt[]
   createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -2102,6 +2153,123 @@ model CourseEpisodeProgress {
 
   @@unique([memberId, episodeId])
   @@map("course_episode_progress")
+}
+
+model CoursePayment {
+  id        String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String              @map("member_id") @db.Uuid
+  courseId  String              @map("course_id") @db.Uuid
+  amount    Decimal             @db.Decimal(10, 2)
+  currency  String              @default("INR")
+  method    CoursePaymentMethod
+  reference String?
+  status    CoursePaymentStatus @default(pending)
+  paidAt    DateTime?           @map("paid_at") @db.Timestamptz(6)
+  notes     String?
+  grantedBy String?             @map("granted_by") @db.Uuid
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  course   Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  accesses CourseAccess[]
+
+  @@map("course_payments")
+}
+
+model CourseAccess {
+  id         String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId   String               @map("member_id") @db.Uuid
+  courseId   String               @map("course_id") @db.Uuid
+  grantedBy  String?              @map("granted_by") @db.Uuid
+  paymentId  String?              @map("payment_id") @db.Uuid
+  accessType CourseAccessDuration @map("access_type")
+  expiresAt  DateTime?            @map("expires_at") @db.Timestamptz(6)
+  isActive   Boolean              @default(true) @map("is_active")
+  grantedAt  DateTime             @default(now()) @map("granted_at") @db.Timestamptz(6)
+  revokedAt  DateTime?            @map("revoked_at") @db.Timestamptz(6)
+  revokedBy  String?              @map("revoked_by") @db.Uuid
+  notes      String?
+
+  member  Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  course  Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  payment CoursePayment? @relation(fields: [paymentId], references: [id])
+
+  @@unique([memberId, courseId])
+  @@map("course_access")
+}
+
+model MemberXP {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String   @map("member_id") @db.Uuid
+  courseId String?  @map("course_id") @db.Uuid
+  source   XPSource
+  amount   Int
+  earnedAt DateTime @default(now()) @map("earned_at") @db.Timestamptz(6)
+
+  member Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, earnedAt])
+  @@map("member_xp")
+}
+
+model CourseStreak {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId       String    @map("member_id") @db.Uuid
+  courseId       String    @map("course_id") @db.Uuid
+  currentStreak  Int       @default(0) @map("current_streak")
+  longestStreak  Int       @default(0) @map("longest_streak")
+  lastActivityAt DateTime? @map("last_activity_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, courseId])
+  @@map("course_streaks")
+}
+
+model CourseBadge {
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug     String  @unique
+  label    String
+  iconUrl  String? @map("icon_url")
+  courseId String? @map("course_id") @db.Uuid
+  criteria Json
+
+  course  Course?             @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  members MemberCourseBadge[]
+
+  @@map("course_badges")
+}
+
+model MemberCourseBadge {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String   @map("member_id") @db.Uuid
+  badgeId  String   @map("badge_id") @db.Uuid
+  earnedAt DateTime @default(now()) @map("earned_at") @db.Timestamptz(6)
+
+  member Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  badge  CourseBadge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, badgeId])
+  @@map("member_course_badges")
+}
+
+model CourseQuizAttempt {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId    String   @map("member_id") @db.Uuid
+  episodeId   String   @map("episode_id") @db.Uuid
+  answers     Json
+  score       Int
+  passed      Boolean
+  attemptedAt DateTime @default(now()) @map("attempted_at") @db.Timestamptz(6)
+
+  member  Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  episode CourseEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, episodeId])
+  @@map("course_quiz_attempts")
 }
 
 model ProductsPageConfig {

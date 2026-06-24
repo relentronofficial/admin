@@ -88,7 +88,8 @@ npm run format      # prettier --write .
 - **Route prefix convention:** `/api/<module>` (e.g. `/api/courses`, `/api/members`)
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
-- **Backend modules present:** `admins`, `auth`, `batches`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `hero`, `location`, `members`, `messages`, `notifications`, `products`, `pub`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `webinar`, `workshops`, `app-notifications`, `app-resources`
+- **Backend modules present:** `admins`, `auth`, `batches`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `hero`, `location`, `members`, `messages`, `notifications`, `products`, `pub`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`, `app-notifications`, `app-resources`
+- **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
@@ -162,6 +163,7 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
+- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`)
 - `lib/hooks/useCourses.ts` — course catalog hooks (user-facing)
 - `lib/hooks/useEvents.ts` — events hooks
 - All hooks are `"use client"` and use TanStack Query v5
@@ -170,10 +172,12 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 `lib/stores/` contains three stores: `useAuthStore` (login state, OTP flow step), `usePlayerStore` (episode playback state), `useUIStore` (global UI toggles). Import from `@/lib/stores/<name>`.
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
-Reads `useMe()` and:
-- `me.status === 'pending'` → renders `PendingApprovalScreen` overlay (full-screen block, sign-out only)
-- Subscription missing or expired → redirects to `/Products`
-- Paths `["/Products", "/profile"]` are exempt
+Reads `useMe()` and applies three tiers:
+1. `me.status === 'pending'` → `PendingInterceptor` overlay (click-blocker, sign-out only)
+2. No active subscription AND `membershipPlan === 'free'` → `FreeInterceptor` overlay (click-blocker, upgrade prompt)
+3. Active subscription OR paid `membershipPlan` (admin-assigned, e.g. `"premium"`) → pass through
+
+Members with a paid `membershipPlan` set by admin bypass the `FreeInterceptor` even if no `Subscription` DB row exists. Paths `["/Products", "/profile"]` are exempt from the redirect/interceptors.
 
 ### Self-Registration & Pending Approval Flow
 1. User signs up at `/signup` — `POST /api/user-auth/signup` — creates member `status='pending'`, emits `admin:member_pending` socket event
@@ -306,6 +310,18 @@ Admin hooks: `useSecurityLogs(params)` and `useSecurityLogStats()` in `useTbt.ts
 
 ---
 
+### Batch Access Control Pattern
+Workshops and resources support per-batch access restriction via a `batchIds Json?` column (null = available to all; array of batch IDs = restricted).
+
+- **Schema:** `batchIds Json? @map("batch_ids")` on `Workshop`; `visibility Json?` on `AppResource` (stored as `{ batchIds: string[] }`)
+- **Startup migration:** `prisma.$executeRawUnsafe('ALTER TABLE workshops ADD COLUMN IF NOT EXISTS batch_ids JSONB')` — idempotent, in `backend/src/plugins/prisma.ts`
+- **List endpoints** — return ALL items with a `locked: boolean` computed from the member's `batchId`. Never filter the list.
+- **Access endpoints** (workshop detail, resource download) — return 403 if `batchIds` is set and member's `batchId` is not in the array
+- **Admin UI** — multi-select checkbox (not a dropdown). Members and notifications stay single-select (one batch per member is the business model)
+- **Prisma Json cast** — `(batchIds as any)` when writing; `(record.batchIds as string[] | null)` when reading
+
+---
+
 ## Common Pitfalls
 
 1. **Delivery modes** — `["online", "offline", "hybrid"]` only; never add `"recorded"`
@@ -325,6 +341,8 @@ Admin hooks: `useSecurityLogs(params)` and `useSecurityLogStats()` in `useTbt.ts
     - `"flashcard"` → `{ cards: [{ id, front, back }] }`
     - `"watch"` → `quizData: null`
 12. **Episode `type` field** — valid values: `["video", "assignment", "offer"]` only
+13. **`req.memberId` not `req.member`** — `fastify.authenticateUser` (JWT cookie middleware) sets `request.memberId: string`. There is NO `request.member` object. Writing `(req as any).member.id` will throw a TypeError at runtime in all user-batch and user-web routes. Always use `req.memberId!`.
+14. **Adding DB columns without migrations** — use `prisma.$executeRawUnsafe('ALTER TABLE foo ADD COLUMN IF NOT EXISTS bar JSONB')` inside the `prisma.ts` plugin startup block. This is idempotent and avoids needing a migration file for `Json?` columns added post-initial-schema.
 
 ## Socket Events
 

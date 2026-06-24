@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen } from "lucide-react";
+import { BookOpen, Award } from "lucide-react";
 import { ProgramCard } from "@/components/features/programs/ProgramCard";
 import { CardSkeleton } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -12,9 +12,16 @@ export default function LearningPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">My Learning</h2>
-        <p className="text-muted-foreground text-sm mt-1">All your enrolled courses in one place.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">My Learning</h2>
+          <p className="text-muted-foreground text-sm mt-1">All your enrolled courses in one place.</p>
+        </div>
+        <Link href="/learning/badges"
+          className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-border hover:bg-muted/50 transition-colors shrink-0"
+          style={{ color: "var(--color-accent)" }}>
+          <Award size={14} /> My Badges
+        </Link>
       </div>
 
       {isLoading ? (

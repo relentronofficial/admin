@@ -5,10 +5,19 @@ import {
   listEnrollmentsHandler, updateCurriculumHandler,
   listCourseEpisodesHandler, createCourseEpisodeHandler,
   updateCourseEpisodeHandler, deleteCourseEpisodeHandler, reorderCourseEpisodesHandler,
+  listCoursePaymentsHandler,
+  listCourseAccessHandler, grantCourseAccessHandler, revokeCourseAccessHandler,
+  approveCoursePaymentHandler,
+  getCourseAnalyticsHandler, getCourseLeaderboardAdminHandler,
+  listCourseBadgesHandler, createCourseBadgeHandler, updateCourseBadgeHandler,
+  deleteCourseBadgeHandler, awardCourseBadgeHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
+
+  // Static paths before /:id to prevent param capture
+  fastify.get('/payments', listCoursePaymentsHandler);
 
   fastify.get('/', listCoursesHandler);
   fastify.post('/', createCourseHandler);
@@ -19,6 +28,24 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/enrollments', listEnrollmentsHandler);
   fastify.post('/:id/curriculum', updateCurriculumHandler);
 
+  // Access management
+  fastify.get('/:id/access', listCourseAccessHandler);
+  fastify.post('/:id/grant-access', grantCourseAccessHandler);
+  fastify.delete('/:id/access/:accessId', revokeCourseAccessHandler);
+  fastify.post('/:id/payments/:paymentId/approve', approveCoursePaymentHandler);
+
+  // Analytics & leaderboard
+  fastify.get('/:id/analytics', getCourseAnalyticsHandler);
+  fastify.get('/:id/leaderboard', getCourseLeaderboardAdminHandler);
+
+  // Badges
+  fastify.get('/:id/badges', listCourseBadgesHandler);
+  fastify.post('/:id/badges', createCourseBadgeHandler);
+  fastify.put('/:id/badges/:badgeId', updateCourseBadgeHandler);
+  fastify.delete('/:id/badges/:badgeId', deleteCourseBadgeHandler);
+  fastify.post('/:id/badges/:badgeId/award', awardCourseBadgeHandler);
+
+  // Episodes
   fastify.get('/:id/episodes', listCourseEpisodesHandler);
   fastify.post('/:id/episodes', createCourseEpisodeHandler);
   fastify.put('/:id/episodes/reorder', reorderCourseEpisodesHandler);

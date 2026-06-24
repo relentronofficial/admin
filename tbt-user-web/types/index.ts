@@ -62,6 +62,13 @@ export interface Course {
   isPublished: boolean;
   isFeatured: boolean;
   createdAt: string;
+  price?: number | null;
+  hasAccess?: boolean;
+  accessType?: string | null;
+  accessExpiresAt?: string | null;
+  xpPerEpisode?: number;
+  passingScorePercent?: number;
+  lessons?: Lesson[];
   instructor?: {
     id: string;
     fullName: string;
@@ -83,6 +90,11 @@ export interface Lesson {
   durationSeconds?: number | null;
   order: number;
   isFree: boolean;
+  resumeAtSeconds?: number;
+  actualWatchedSecs?: number;
+  isCompleted?: boolean;
+  hasQuiz?: boolean;
+  quizUnlockPercent?: number;
 }
 
 export interface CourseEnrollment {

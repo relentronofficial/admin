@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Clock, Users, BookOpen } from "lucide-react";
+import { Clock, Users, BookOpen, Lock } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import type { Course } from "@/types";
 
@@ -39,6 +39,14 @@ export function ProgramCard({ course, enrolled = false, progress }: ProgramCardP
               {course.level}
             </span>
           </div>
+          {(course as any).hasAccess === false && (
+            <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-md">
+              <Lock size={10} className="text-white/70" />
+              {(course as any).price > 0 && (
+                <span className="text-[11px] font-bold text-white">₹{(course as any).price}</span>
+              )}
+            </div>
+          )}
           {enrolled && typeof progress === "number" && (
             <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/30">
               <div

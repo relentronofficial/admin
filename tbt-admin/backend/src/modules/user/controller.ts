@@ -3,6 +3,12 @@ import { env } from '../../config/env.js';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
+import {
+  notifyCourseEnrolled,
+  notifyEpisodeCompleted,
+  notifyCourseCompleted,
+  notifyQuizPassed,
+} from '../../lib/courseNotifications.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -334,6 +340,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         level: true,
         durationHours: true,
         totalLessons: true,
+        price: true,
         isPublished: true,
         isFeatured: true,
         createdAt: true,
@@ -349,20 +356,35 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     request.server.prisma.course.count({ where: where as any }),
   ]);
 
-  const data = (courses as any[]).map((c: any) => ({
-    id: c.id,
-    title: c.title,
-    slug: c.slug,
-    description: c.description,
-    thumbnailUrl: c.thumbnailUrl,
-    level: c.level,
-    durationHours: c.durationHours ? Number(c.durationHours) : null,
-    isPublished: c.isPublished,
-    isFeatured: c.isFeatured,
-    createdAt: c.createdAt,
-    instructor: c.creator ?? null,
-    _count: { lessons: c.totalLessons, enrollments: c._count?.enrollments ?? 0 },
-  }));
+  // Batch-check course access for this member
+  const courseIds = (courses as any[]).map((c: any) => c.id);
+  const accessRecords = courseIds.length > 0
+    ? await (request.server.prisma as any).courseAccess.findMany({
+        where: { memberId: request.memberId, courseId: { in: courseIds } },
+        select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
+      }).catch(() => [] as any[])
+    : [];
+  const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
+
+  const data = (courses as any[]).map((c: any) => {
+    const access = accessMap.get(c.id) ?? null;
+    return {
+      id: c.id,
+      title: c.title,
+      slug: c.slug,
+      description: c.description,
+      thumbnailUrl: c.thumbnailUrl,
+      level: c.level,
+      durationHours: c.durationHours ? Number(c.durationHours) : null,
+      price: c.price ? Number(c.price) : null,
+      isPublished: c.isPublished,
+      isFeatured: c.isFeatured,
+      createdAt: c.createdAt,
+      instructor: c.creator ?? null,
+      hasAccess: isAccessValid(access),
+      _count: { lessons: c.totalLessons, enrollments: c._count?.enrollments ?? 0 },
+    };
+  });
 
   return ok(reply, data, { total, page: Number(page), limit: Number(limit) });
 }
@@ -392,13 +414,44 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   if (!course) return fail(reply, 404, 'Course not found');
 
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, id);
+  const hasAccess = isAccessValid(accessRecord);
+
+  // Check for a pending external payment request from this member
+  const pendingPayment = await (request.server.prisma as any).coursePayment.findFirst({
+    where: { memberId: request.memberId, courseId: id, status: 'pending' },
+    select: { id: true, status: true },
+  }).catch(() => null);
+
+  // Resolve upsell / cross-sell course IDs to lightweight course objects
+  const upsellIds: string[] = (course as any).upsellCourseIds ?? [];
+  const crossSellIds: string[] = (course as any).crossSellCourseIds ?? [];
+  let upsellCourses: any[] = [];
+  let crossSellCourses: any[] = [];
+  const allRelatedIds = [...new Set([...upsellIds, ...crossSellIds])];
+  if (allRelatedIds.length > 0) {
+    const related = await request.server.prisma.course.findMany({
+      where: { id: { in: allRelatedIds }, isPublished: true },
+      select: { id: true, title: true, slug: true, thumbnailUrl: true, level: true, totalLessons: true },
+    });
+    const relatedMap = new Map(related.map((c) => [c.id, c]));
+    upsellCourses = upsellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
+    crossSellCourses = crossSellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
+  }
+
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
+    let videoUrl = hasAccess ? ep.videoUrl : null;
+    // 5.1 DRM: append Bunny signed token so the iframe validates playback server-side
+    if (videoUrl && (ep as any).drmEnabled && (ep as any).bunnyDrmToken) {
+      const sep = videoUrl.includes('?') ? '&' : '?';
+      videoUrl = `${videoUrl}${sep}token=${(ep as any).bunnyDrmToken}`;
+    }
     return {
       id: ep.id,
       title: ep.title,
       description: null as string | null,
-      videoUrl: ep.videoUrl,
+      videoUrl,
       duration: ep.durationSeconds ? Math.round(ep.durationSeconds / 60) : null,
       durationSeconds: ep.durationSeconds ?? null,
       order: ep.order,
@@ -406,6 +459,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       resumeAtSeconds: prog?.lastWatchedSecs ?? 0,
       actualWatchedSecs: prog?.actualWatchedSecs ?? 0,
       isCompleted: prog?.completed ?? false,
+      hasQuiz: !!(ep as any).quizData,
+      quizUnlockPercent: (ep as any).quizUnlockPercent ?? 80,
     };
   });
 
@@ -417,13 +472,63 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     thumbnailUrl: course.thumbnailUrl,
     level: course.level,
     durationHours: course.durationHours ? Number(course.durationHours) : null,
+    price: (course as any).price ? Number((course as any).price) : null,
     isPublished: course.isPublished,
     isFeatured: course.isFeatured,
     createdAt: course.createdAt,
     instructor: course.creator ?? null,
+    hasAccess,
+    accessType: accessRecord?.accessType ?? null,
+    accessExpiresAt: accessRecord?.expiresAt ?? null,
+    paymentLinkUrl: course.paymentLinkUrl ?? null,
+    pendingPayment: pendingPayment ? { id: pendingPayment.id } : null,
     lessons,
     _count: { lessons: lessons.length, enrollments: course._count?.enrollments ?? 0 },
+    upsellCourses,
+    crossSellCourses,
   });
+}
+
+export async function requestCourseAccessHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+
+  const existingAccess = await getCourseAccessRecord(request.server.prisma as any, memberId, courseId);
+  if (isAccessValid(existingAccess)) {
+    return fail(reply, 409, 'You already have access to this course');
+  }
+
+  const course = await request.server.prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, price: true, isPublished: true, paymentLinkUrl: true },
+  });
+  if (!course || !course.isPublished) return fail(reply, 404, 'Course not found');
+
+  // Idempotent — return existing pending payment if already requested
+  const existing = await (request.server.prisma as any).coursePayment.findFirst({
+    where: { memberId, courseId, status: 'pending' },
+    select: { id: true },
+  }).catch(() => null);
+
+  let paymentId: string;
+  if (existing) {
+    paymentId = existing.id;
+  } else {
+    const payment = await (request.server.prisma as any).coursePayment.create({
+      data: {
+        memberId,
+        courseId,
+        amount: course.price != null ? Number(course.price) : 0,
+        currency: 'INR',
+        method: 'external',
+        status: 'pending',
+      },
+    });
+    paymentId = payment.id;
+  }
+
+  const paymentUrl = course.paymentLinkUrl ?? 'https://tamilbusinesstribe.com';
+  return ok(reply, { paymentId, paymentUrl });
 }
 
 export async function enrollCourseHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -434,6 +539,12 @@ export async function enrollCourseHandler(request: FastifyRequest, reply: Fastif
     select: { id: true, isPublished: true },
   });
   if (!course || !course.isPublished) return fail(reply, 404, 'Course not found');
+
+  // Check paid access
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  if (!isAccessValid(accessRecord)) {
+    return fail(reply, 403, 'Purchase is required to enroll in this course. Contact support or purchase access.');
+  }
 
   const existing = await request.server.prisma.courseEnrollment.findUnique({
     where: { memberId_courseId: { memberId: request.memberId, courseId } },
@@ -448,6 +559,14 @@ export async function enrollCourseHandler(request: FastifyRequest, reply: Fastif
       },
     },
   }) as any;
+
+  void notifyCourseEnrolled({
+    prisma: request.server.prisma as any,
+    io: request.server.io,
+    memberId: request.memberId!,
+    courseId,
+    courseTitle: enrollment.course?.title ?? '',
+  }).catch(() => {});
 
   return reply.status(201).send({
     success: true,
@@ -519,6 +638,116 @@ export async function getCertificateEligibilityHandler(request: FastifyRequest, 
     remainingLessons,
     securityStatus: securityLogs ? 'flagged' : 'clear',
   });
+}
+
+async function buildCourseCertificatePdf(
+  memberName: string,
+  courseTitle: string,
+  completedAt: string,
+  certId: string,
+): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit');
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 60 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const W = doc.page.width;
+
+    // Dark background
+    doc.rect(0, 0, W, doc.page.height).fill('#0d0d0d');
+    // Red border
+    doc.rect(24, 24, W - 48, doc.page.height - 48).lineWidth(2).stroke('#dc2626');
+    // Accent rule lines
+    doc.moveTo(60, 80).lineTo(W - 60, 80).lineWidth(0.5).stroke('#444');
+    doc.moveTo(60, doc.page.height - 80).lineTo(W - 60, doc.page.height - 80).lineWidth(0.5).stroke('#444');
+
+    // Header
+    doc.fillColor('#dc2626').fontSize(10).font('Helvetica-Bold').text('TAMIL BUSINESS TRIBE', { align: 'center' });
+    doc.fillColor('#ffffff').fontSize(32).font('Helvetica-Bold').text('CERTIFICATE OF COMPLETION', { align: 'center' });
+
+    // Divider
+    doc.fillColor('#333').rect(W / 2 - 40, 180, 80, 1).fill();
+
+    // Body
+    doc.moveDown(0.5);
+    doc.fillColor('#a0a0a0').fontSize(12).font('Helvetica').text('This certifies that', { align: 'center' });
+    doc.fillColor('#ffffff').fontSize(28).font('Helvetica-Bold').text(memberName, { align: 'center' });
+    doc.fillColor('#a0a0a0').fontSize(12).font('Helvetica').text('has successfully completed', { align: 'center' });
+    doc.fillColor('#dc2626').fontSize(18).font('Helvetica-Bold').text(courseTitle, { align: 'center' });
+
+    // Details
+    doc.moveDown(0.5);
+    const completedLabel = new Date(completedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    const details = `Completed: ${completedLabel}   ·   Certificate ID: ${certId}`;
+    doc.fillColor('#a0a0a0').fontSize(10).font('Helvetica').text(details, { align: 'center' });
+
+    doc.end();
+  });
+}
+
+export async function getCourseCertificateHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { courseId } = request.params as { courseId: string };
+
+  const [course, member] = await Promise.all([
+    request.server.prisma.course.findUnique({ where: { id: courseId }, select: { id: true, title: true } }),
+    request.server.prisma.member.findUnique({ where: { id: request.memberId }, select: { id: true, firstName: true, lastName: true } }),
+  ]);
+
+  if (!course) return fail(reply, 404, 'Course not found');
+  if (!member) return fail(reply, 404, 'Member not found');
+
+  const episodes = await request.server.prisma.courseEpisode.findMany({
+    where: { courseId, isVisible: true },
+    select: { id: true },
+  });
+
+  if (episodes.length === 0) return fail(reply, 403, 'No episodes in this course');
+
+  const progress = await (request.server.prisma as any).courseEpisodeProgress.findMany({
+    where: { memberId: request.memberId, episodeId: { in: episodes.map((e: any) => e.id) }, completed: true },
+    select: { episodeId: true, completedAt: true },
+  });
+
+  if (progress.length < episodes.length) {
+    return fail(reply, 403, 'Certificate not earned — complete all lessons first');
+  }
+
+  const completedDates = (progress as any[]).map((p: any) => p.completedAt?.getTime?.() ?? 0);
+  const latestMs = Math.max(0, ...completedDates);
+  const completedAt = latestMs > 0 ? new Date(latestMs).toISOString() : new Date().toISOString();
+
+  const memberName = `${member.firstName}${member.lastName ? ' ' + member.lastName : ''}`;
+  // Full base64url — decodeable by the /api/pub/certificates/course/:certId verification endpoint
+  const certId = Buffer.from(`${member.id}:${course.id}`).toString('base64url');
+  // Short fingerprint for PDF footer display only
+  const displayCertId = certId.slice(0, 16).toUpperCase();
+
+  const pdfBuffer = await buildCourseCertificatePdf(memberName, course.title, completedAt, displayCertId);
+
+  // Background: upload to R2 for persistent URL (non-blocking)
+  void (async () => {
+    const { CLOUDFLARE_R2_ACCOUNT_ID: accountId, CLOUDFLARE_R2_ACCESS_KEY_ID: keyId, CLOUDFLARE_R2_SECRET_ACCESS_KEY: secret, CLOUDFLARE_R2_BUCKET_NAME: bucket } = env;
+    if (!accountId || !keyId || !secret || !bucket) return;
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: keyId, secretAccessKey: secret },
+    });
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: `certificates/courses/${courseId}/${request.memberId}.pdf`,
+      Body: pdfBuffer,
+      ContentType: 'application/pdf',
+    }));
+  })().catch(() => {});
+
+  reply.header('Content-Type', 'application/pdf');
+  reply.header('Content-Disposition', `attachment; filename="certificate-${displayCertId}.pdf"`);
+  return reply.send(pdfBuffer);
 }
 
 // ─── Enrollments ─────────────────────────────────────────────────────────────
@@ -599,7 +828,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   const episode = await request.server.prisma.courseEpisode.findFirst({
     where: { id: episodeId, courseId },
-    select: { id: true, durationSeconds: true },
+    select: { id: true, title: true, durationSeconds: true },
   });
   if (!episode) return fail(reply, 404, 'Episode not found in this course');
 
@@ -615,7 +844,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   const existingProgress = await (request.server.prisma as any).courseEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    select: { completed: true, actualWatchedSecs: true, lastWatchedSecs: true }
+    select: { completed: true, actualWatchedSecs: true, lastWatchedSecs: true, updatedAt: true }
   });
 
   // Log excessive skipping if the playhead jumped forward significantly without actual watch time
@@ -676,8 +905,75 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     },
   });
 
+  // 5.3 — fire-and-forget anomaly detection for course progress
+  void (async () => {
+    const prisma = request.server.prisma;
+    const mId = request.memberId!;
+
+    // Rapid episode switching: ≥5 distinct course episodes touched in 5 minutes
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const recentCount = await (prisma as any).courseEpisodeProgress.count({
+      where: { memberId: mId, updatedAt: { gt: fiveMinAgo } },
+    }).catch(() => 0);
+    if (recentCount >= 5) {
+      await (prisma.securityLog.create as any)({
+        data: {
+          memberId: mId,
+          eventType: 'RAPID_EPISODE_SWITCHING',
+          metadata: { episodeCount: recentCount, windowMinutes: 5, episodeId, courseId, deviceId: deviceId ?? null },
+        },
+      }).catch(() => {});
+    }
+
+    // Abnormal progress speed: claimed ≥15s credit but wall clock says <5s since last heartbeat
+    const wallClockElapsed = existingProgress?.updatedAt
+      ? Math.floor((now.getTime() - (existingProgress.updatedAt as Date).getTime()) / 1000)
+      : null;
+    if (wallClockElapsed !== null && wallClockElapsed < 5 && safeDelta >= 15) {
+      await (prisma.securityLog.create as any)({
+        data: {
+          memberId: mId,
+          eventType: 'ABNORMAL_PROGRESS_SPEED',
+          metadata: { episodeId, courseId, reportedDelta: deltaSeconds, safeDelta, wallClockElapsed, deviceId: deviceId ?? null },
+        },
+      }).catch(() => {});
+    }
+  })().catch(() => {});
+
   if (finalIsCompleted && !existingProgress?.completed) {
-    await recalculateCourseProgress(request, courseId);
+    const pct = await recalculateCourseProgress(request, courseId);
+
+    const courseForXp = await request.server.prisma.course.findUnique({
+      where: { id: courseId },
+      select: { xpPerEpisode: true, title: true },
+    });
+    void awardEpisodeXp(
+      request.server.prisma as any,
+      request.memberId,
+      courseId,
+      episodeId,
+      (courseForXp as any)?.xpPerEpisode ?? 10,
+    );
+
+    // 7.1 — episode complete notification
+    void notifyEpisodeCompleted({
+      prisma: request.server.prisma as any,
+      io: request.server.io,
+      memberId: request.memberId!,
+      courseId,
+      episodeTitle: (episode as any).title ?? 'Episode',
+    }).catch(() => {});
+
+    // 7.1 — course 100% complete notification
+    if (pct === 100) {
+      void notifyCourseCompleted({
+        prisma: request.server.prisma as any,
+        io: request.server.io,
+        memberId: request.memberId!,
+        courseId,
+        courseTitle: (courseForXp as any)?.title ?? 'the course',
+      }).catch(() => {});
+    }
   }
 
   return ok(reply, {
@@ -689,7 +985,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   });
 }
 
-async function recalculateCourseProgress(request: FastifyRequest, courseId: string) {
+async function recalculateCourseProgress(request: FastifyRequest, courseId: string): Promise<number> {
   const [total, completed] = await Promise.all([
     request.server.prisma.courseEpisode.count({ where: { courseId } }),
     (request.server.prisma as any).courseEpisodeProgress.count({
@@ -706,6 +1002,176 @@ async function recalculateCourseProgress(request: FastifyRequest, courseId: stri
       completedAt: pct === 100 ? new Date() : null,
     },
   });
+
+  return pct;
+}
+
+// ─── Course access helpers ────────────────────────────────────────────────────
+
+async function getCourseAccessRecord(prisma: any, memberId: string, courseId: string) {
+  return prisma.courseAccess.findUnique({
+    where: { memberId_courseId: { memberId, courseId } },
+    select: { id: true, isActive: true, accessType: true, expiresAt: true },
+  }).catch(() => null);
+}
+
+function isAccessValid(access: { isActive: boolean; accessType: string; expiresAt: Date | null } | null): boolean {
+  if (!access || !access.isActive) return false;
+  if (access.accessType === 'lifetime') return true;
+  if (!access.expiresAt) return false;
+  return access.expiresAt > new Date();
+}
+
+async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, episodeId: string, xpAmount: number) {
+  try {
+    await prisma.memberXP.create({
+      data: { memberId, courseId, episodeId, source: 'episode_complete', amount: xpAmount },
+    });
+
+    // Update course streak
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const streak = await prisma.courseStreak.findUnique({
+      where: { memberId_courseId: { memberId, courseId } },
+    });
+    if (!streak) {
+      await prisma.courseStreak.create({
+        data: { memberId, courseId, currentStreak: 1, longestStreak: 1, lastActivityAt: now },
+      });
+    } else {
+      const lastDay = new Date((streak.lastActivityAt as Date).getTime());
+      lastDay.setHours(0, 0, 0, 0);
+      const daysDiff = Math.floor((today.getTime() - lastDay.getTime()) / 86_400_000);
+      let newStreak = streak.currentStreak;
+      if (daysDiff === 1) newStreak += 1;
+      else if (daysDiff > 1) newStreak = 1;
+      await prisma.courseStreak.update({
+        where: { memberId_courseId: { memberId, courseId } },
+        data: { currentStreak: newStreak, longestStreak: Math.max(newStreak, streak.longestStreak), lastActivityAt: now },
+      });
+    }
+  } catch { /* fire-and-forget */ }
+}
+
+// ─── Course quiz submission ───────────────────────────────────────────────────
+
+export async function submitCourseQuizHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId, epId } = request.params as { id: string; epId: string };
+  const { answers } = request.body as { answers: Record<string, string> };
+
+  const episode = await request.server.prisma.courseEpisode.findFirst({
+    where: { id: epId, courseId },
+    select: { id: true, title: true, quizData: true, courseId: true },
+  });
+  if (!episode) return fail(reply, 404, 'Episode not found in this course');
+
+  const quizData = episode.quizData as any;
+  if (!quizData?.questions?.length) return fail(reply, 400, 'This episode has no quiz');
+
+  const questions: any[] = quizData.questions;
+  let correct = 0;
+  for (const q of questions) {
+    const chosen = answers[q.id];
+    const correctOpt = q.options?.find((o: any) => o.correct);
+    if (correctOpt && chosen === correctOpt.id) correct++;
+  }
+
+  const score = Math.round((correct / questions.length) * 100);
+  const course = await request.server.prisma.course.findUnique({
+    where: { id: courseId },
+    select: { passingScorePercent: true, xpPerEpisode: true },
+  });
+  const passing = (course as any)?.passingScorePercent ?? 70;
+  const passed = score >= passing;
+
+  const attempt = await (request.server.prisma as any).courseQuizAttempt.create({
+    data: { memberId: request.memberId, episodeId: epId, answers, score, passed },
+  });
+
+  const xp = (course as any)?.xpPerEpisode ?? 10;
+  if (passed) {
+    void awardEpisodeXp(request.server.prisma as any, request.memberId, courseId, epId, xp);
+
+    // 7.1 — quiz passed notification
+    void notifyQuizPassed({
+      prisma: request.server.prisma as any,
+      io: request.server.io,
+      memberId: request.memberId!,
+      courseId,
+      episodeTitle: (episode as any).title ?? 'Episode',
+      score,
+      xp,
+    }).catch(() => {});
+  }
+
+  return ok(reply, { attemptId: attempt.id, score, passed, correct, total: questions.length });
+}
+
+// ─── Course XP & leaderboard ─────────────────────────────────────────────────
+
+export async function getCourseXpHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+
+  const rows = await (request.server.prisma as any).memberXP.findMany({
+    where: { memberId: request.memberId, courseId },
+    select: { id: true, source: true, amount: true, earnedAt: true, episodeId: true },
+    orderBy: { earnedAt: 'desc' },
+  });
+
+  const total = (rows as any[]).reduce((sum: number, r: any) => sum + r.amount, 0);
+  const streak = await (request.server.prisma as any).courseStreak.findUnique({
+    where: { memberId_courseId: { memberId: request.memberId, courseId } },
+    select: { currentStreak: true, longestStreak: true },
+  });
+
+  return ok(reply, { totalXp: total, currentStreak: streak?.currentStreak ?? 0, longestStreak: streak?.longestStreak ?? 0, history: rows });
+}
+
+export async function getUserCourseLeaderboardHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const { limit = 20 } = request.query as any;
+
+  const rows = await (request.server.prisma as any).memberXP.groupBy({
+    by: ['memberId'],
+    _sum: { amount: true },
+    where: { courseId },
+    orderBy: { _sum: { amount: 'desc' } },
+    take: Number(limit),
+  });
+
+  const memberIds = (rows as any[]).map((r: any) => r.memberId);
+  const members = await request.server.prisma.member.findMany({
+    where: { id: { in: memberIds } },
+    select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+  });
+
+  const memberMap = new Map(members.map((m) => [m.id, m]));
+  const myEntry = (rows as any[]).find((r: any) => r.memberId === request.memberId);
+  const myRank = myEntry ? (rows as any[]).indexOf(myEntry) + 1 : null;
+
+  const data = (rows as any[]).map((r: any, i: number) => ({
+    rank: i + 1,
+    memberId: r.memberId,
+    member: memberMap.get(r.memberId) ?? null,
+    totalXp: r._sum?.amount ?? 0,
+    isMe: r.memberId === request.memberId,
+  }));
+
+  return ok(reply, { leaderboard: data, myRank });
+}
+
+export async function getUserBadgesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const badges = await (request.server.prisma as any).memberCourseBadge.findMany({
+    where: { memberId: request.memberId },
+    include: { badge: true },
+    orderBy: { earnedAt: 'desc' },
+  });
+
+  return ok(reply, (badges as any[]).map((b: any) => ({
+    id: b.id,
+    earnedAt: b.earnedAt,
+    badge: b.badge,
+  })));
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

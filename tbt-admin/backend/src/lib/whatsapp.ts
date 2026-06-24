@@ -60,3 +60,23 @@ export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boole
     return false;
   }
 }
+
+export async function sendWhatsappMessage(phone: string, message: string): Promise<boolean> {
+  if (!env.WABA_ACCESS_TOKEN || !env.WABA_FROM_NUMBER || !env.WABA_TEMPLATE_NAME) return false;
+  const to = normalizePhone(phone);
+  try {
+    const res = await fetch(`${env.WABA_API_BASE_URL}/message/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.WABA_ACCESS_TOKEN}` },
+      body: JSON.stringify({
+        wabaNumber: env.WABA_FROM_NUMBER,
+        recipient: { phoneNumber: to },
+        type: 'template',
+        template: { name: env.WABA_TEMPLATE_NAME, language: env.WABA_TEMPLATE_LANGUAGE, body: [message] },
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

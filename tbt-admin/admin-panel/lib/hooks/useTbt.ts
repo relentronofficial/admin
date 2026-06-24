@@ -531,6 +531,63 @@ export const useReorderCourseEpisodes = (courseId: string) => {
   return useMutation({ mutationFn: async (ids: string[]) => { await apiClient.put(`/api/courses/${courseId}/episodes/reorder`, { ids }); }, onSuccess: () => qc.invalidateQueries({ queryKey: ['course-episodes', courseId] }) });
 };
 
+// ── COURSE ACCESS & PAYMENTS (admin) ──────────────────────────────────
+
+export const useListCourseAccess = (courseId: string) =>
+  useQuery({ queryKey: ['course-access', courseId], queryFn: async () => { const res: any = await apiClient.get(`/api/courses/${courseId}/access`); return res; }, enabled: !!courseId });
+
+export const useGrantCourseAccess = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async (data: any) => { const res: any = await apiClient.post(`/api/courses/${courseId}/grant-access`, data); return res.data; }, onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-access', courseId] }); qc.invalidateQueries({ queryKey: ['vod-courses'] }); } });
+};
+
+export const useRevokeCourseAccess = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async (accessId: string) => { await apiClient.delete(`/api/courses/${courseId}/access/${accessId}`); }, onSuccess: () => qc.invalidateQueries({ queryKey: ['course-access', courseId] }) });
+};
+
+export const useCourseAnalyticsAdmin = (courseId: string) =>
+  useQuery({ queryKey: ['course-analytics', courseId], queryFn: async () => { const res: any = await apiClient.get(`/api/courses/${courseId}/analytics`); return res; }, enabled: !!courseId });
+
+export const useListCoursePayments = (params: any = {}) =>
+  useQuery({ queryKey: ['course-payments', params], queryFn: async () => { const res: any = await apiClient.get('/api/courses/payments', { params }); return res; } });
+
+export const useApproveCoursePayment = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (paymentId: string) => { await apiClient.post(`/api/courses/${courseId}/payments/${paymentId}/approve`); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['course-payments'] });
+      qc.invalidateQueries({ queryKey: ['course-access', courseId] });
+    },
+  });
+};
+
+// ── COURSE BADGES (admin) ─────────────────────────────────────────────
+
+export const useListCourseBadges = (courseId: string) =>
+  useQuery({ queryKey: ['course-badges', courseId], queryFn: async () => { const res: any = await apiClient.get(`/api/courses/${courseId}/badges`); return res; }, enabled: !!courseId });
+
+export const useCreateCourseBadge = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async (data: any) => { const res: any = await apiClient.post(`/api/courses/${courseId}/badges`, data); return res.data; }, onSuccess: () => qc.invalidateQueries({ queryKey: ['course-badges', courseId] }) });
+};
+
+export const useUpdateCourseBadge = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async ({ badgeId, data }: { badgeId: string; data: any }) => { const res: any = await apiClient.put(`/api/courses/${courseId}/badges/${badgeId}`, data); return res.data; }, onSuccess: () => qc.invalidateQueries({ queryKey: ['course-badges', courseId] }) });
+};
+
+export const useDeleteCourseBadge = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async (badgeId: string) => { await apiClient.delete(`/api/courses/${courseId}/badges/${badgeId}`); }, onSuccess: () => qc.invalidateQueries({ queryKey: ['course-badges', courseId] }) });
+};
+
+export const useAwardCourseBadge = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async ({ badgeId, memberId }: { badgeId: string; memberId: string }) => { const res: any = await apiClient.post(`/api/courses/${courseId}/badges/${badgeId}/award`, { memberId }); return res.data; }, onSuccess: () => qc.invalidateQueries({ queryKey: ['course-badges', courseId] }) });
+};
+
 // ── MISSING WORKSHOP HOOKS ────────────────────────────────────────────
 
 export const useDeleteEnrollment = (workshopId: string) => {
@@ -1351,3 +1408,11 @@ export const useGenerateNow = () => {
     },
   });
 };
+
+export const useCourseLeaderboardAdmin = (courseId: string, limit = 20) =>
+  useQuery({
+    queryKey: ['course-leaderboard', courseId, limit],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/courses/${courseId}/leaderboard`, { params: { limit } }); return res; },
+    enabled: !!courseId,
+    staleTime: 60_000,
+  });

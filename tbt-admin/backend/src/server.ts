@@ -43,6 +43,7 @@ import { securityRoutes } from './modules/security/routes.js';
 import { userAuthRoutes } from './modules/user-auth/routes.js';
 import { userBatchRoutes } from './modules/user-batch/routes.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
+import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
 
 async function bootstrap() {
   const fastify = Fastify({
@@ -130,8 +131,21 @@ async function bootstrap() {
     await fastify.register(userAuthRoutes, { prefix: '/api/user-auth' });
     await fastify.register(userBatchRoutes, { prefix: '/api/user-batch' });
 
-    // Cron endpoint (no auth — protected by CRON_SECRET header)
+    // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
+    fastify.post('/api/cron/course-expiry-reminder', async (req, reply) => {
+      const secret = req.headers['x-cron-secret'];
+      if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+      }
+      try {
+        await runCourseExpiryReminder(fastify.prisma);
+        return reply.send({ success: true });
+      } catch (err: any) {
+        fastify.log.error({ err }, '[cron] course-expiry-reminder failed');
+        return reply.status(500).send({ error: err.message });
+      }
+    });
 
     // Root + Health Check
     fastify.get('/', async () => ({ name: 'TBT Admin API', status: 'ok' }));
@@ -192,6 +206,13 @@ async function bootstrap() {
       } catch (err) {
         fastify.log.warn({ err }, '[bunny-sync] Failed — will retry on next startup');
       }
+
+      // Start BullMQ course-expiry reminder (daily at 08:00 IST)
+      startCourseExpiryReminderJob(fastify.prisma, {
+        info: (msg) => fastify.log.info(msg),
+        warn: (msg) => fastify.log.warn(msg),
+        error: (obj, msg) => fastify.log.error(obj, msg),
+      });
     });
 
     // Graceful Shutdown

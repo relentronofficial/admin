@@ -13,6 +13,7 @@ import {
   getUserCourseHandler,
   enrollCourseHandler,
   getCertificateEligibilityHandler,
+  getCourseCertificateHandler,
   getEnrollmentsHandler,
   getLessonProgressHandler,
   markLessonCompleteHandler,
@@ -77,6 +78,11 @@ import {
   getMyLiveCallFeedbackHandler,
   getMyLiveCallCertificateHandler,
   getResourceDownloadHandler,
+  submitCourseQuizHandler,
+  getCourseXpHandler,
+  getUserCourseLeaderboardHandler,
+  getUserBadgesHandler,
+  requestCourseAccessHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -93,12 +99,20 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/courses', listUserCoursesHandler);
   fastify.get('/courses/:id', getUserCourseHandler);
   fastify.post('/courses/:id/enroll', enrollCourseHandler);
+  fastify.post('/courses/:id/request-access', requestCourseAccessHandler);
   fastify.get('/courses/:courseId/certificate-eligibility', getCertificateEligibilityHandler);
+  fastify.get('/courses/:courseId/certificate', getCourseCertificateHandler);
 
   // ── Enrollments & lesson progress ─────────────────────────────────────────
   fastify.get('/enrollments', getEnrollmentsHandler);
   fastify.get('/enrollments/:courseId/progress', getLessonProgressHandler);
   fastify.post('/enrollments/:courseId/progress/:lessonId', markLessonCompleteHandler);
+
+  // ── Course gamification ────────────────────────────────────────────────────
+  fastify.post('/courses/:id/episodes/:epId/quiz', submitCourseQuizHandler);
+  fastify.get('/courses/:id/xp', getCourseXpHandler);
+  fastify.get('/courses/:id/leaderboard', getUserCourseLeaderboardHandler);
+  fastify.get('/badges', getUserBadgesHandler);
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   fastify.get('/dashboard/stats', getDashboardStatsHandler);

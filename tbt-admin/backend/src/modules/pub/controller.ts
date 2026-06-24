@@ -377,3 +377,47 @@ export async function pubSessionCheckHandler(req: FastifyRequest, reply: Fastify
     return reply.send({ success: true, data: { loggedIn: false } });
   }
 }
+
+// ── Certificate verification (public) ─────────────────────────────────────────
+
+export async function pubCourseCertVerifyHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { certId } = req.params as { certId: string };
+
+  let memberId: string;
+  let courseId: string;
+  try {
+    const decoded = Buffer.from(certId, 'base64url').toString('utf8');
+    const colon = decoded.indexOf(':');
+    if (colon === -1) throw new Error('bad format');
+    memberId = decoded.slice(0, colon);
+    courseId = decoded.slice(colon + 1);
+    if (!memberId || !courseId) throw new Error('empty parts');
+  } catch {
+    return reply.status(400).send({ success: false, data: null, error: 'Invalid certificate ID' });
+  }
+
+  const [enrollment, course, member] = await Promise.all([
+    req.server.prisma.courseEnrollment.findUnique({
+      where: { memberId_courseId: { memberId, courseId } },
+      select: { completedAt: true },
+    }),
+    req.server.prisma.course.findUnique({ where: { id: courseId }, select: { title: true } }),
+    req.server.prisma.member.findUnique({ where: { id: memberId }, select: { firstName: true, lastName: true } }),
+  ]);
+
+  if (!enrollment?.completedAt || !course || !member) {
+    return reply.status(404).send({ success: false, data: null, error: 'Certificate not found' });
+  }
+
+  reply.header('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  return reply.send({
+    success: true,
+    data: {
+      memberName: `${member.firstName}${member.lastName ? ' ' + member.lastName : ''}`,
+      courseTitle: course.title,
+      completedAt: (enrollment.completedAt as Date).toISOString(),
+      issuedAt: (enrollment.completedAt as Date).toISOString(),
+    },
+    error: null,
+  });
+}

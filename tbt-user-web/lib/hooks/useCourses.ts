@@ -65,3 +65,67 @@ export const useMarkLessonComplete = (courseId: string) => {
     },
   });
 };
+
+export const useSubmitCourseQuiz = (courseId: string, episodeId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (answers: Record<string, string>) => coursesService.submitQuiz(courseId, episodeId, answers),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["course-xp", courseId] });
+      queryClient.invalidateQueries({ queryKey: ["course-leaderboard", courseId] });
+    },
+  });
+};
+
+export const useCourseXp = (courseId: string) =>
+  useQuery({
+    queryKey: ["course-xp", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getCourseXp(courseId);
+      return res.data;
+    },
+    enabled: !!courseId,
+    staleTime: 30 * 1000,
+  });
+
+export const useCourseLeaderboard = (courseId: string) =>
+  useQuery({
+    queryKey: ["course-leaderboard", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getCourseLeaderboard(courseId);
+      return res.data;
+    },
+    enabled: !!courseId,
+    staleTime: 60 * 1000,
+  });
+
+export const useUserBadges = () =>
+  useQuery({
+    queryKey: ["user", "badges"],
+    queryFn: async () => {
+      const res = await coursesService.getUserBadges();
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useCertificateEligibility = (courseId: string) =>
+  useQuery({
+    queryKey: ["certificate-eligibility", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getCertificateEligibility(courseId);
+      return res.data;
+    },
+    enabled: !!courseId,
+    staleTime: 30 * 1000,
+  });
+
+export const useRequestCourseAccess = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (courseId: string) => coursesService.requestAccess(courseId),
+    onSuccess: (_data, courseId) => {
+      queryClient.invalidateQueries({ queryKey: ["courses", courseId] });
+    },
+  });
+};
