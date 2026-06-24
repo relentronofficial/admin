@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const createBatchSchema = z.object({
   name: z.string().min(1, 'Batch name is required'),
   description: z.string().optional(),
+  programId: z.string().uuid().optional().nullable(),
   startsAt: z.string().min(1, 'Start date is required'),
   endsAt: z.string().optional(),
   isActive: z.boolean().default(true),

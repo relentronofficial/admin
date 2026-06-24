@@ -27,8 +27,10 @@ import {
   useCreateBatch,
   useUpdateBatch,
   useDeleteBatch,
+  useListPrograms,
 } from "@/lib/hooks/useTbt";
 import { useListMembers, useUpdateMember } from "@/lib/hooks/useMembers";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 import { format, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -41,6 +43,7 @@ const fmtDate = (d: any) => {
 type BatchForm = {
   name: string;
   description: string;
+  programId: string;
   startsAt: string;
   endsAt: string;
   isActive: boolean;
@@ -49,6 +52,7 @@ type BatchForm = {
 const emptyForm: BatchForm = {
   name: "",
   description: "",
+  programId: "",
   startsAt: "",
   endsAt: "",
   isActive: true,
@@ -56,8 +60,12 @@ const emptyForm: BatchForm = {
 
 export default function BatchesPage() {
   const router = useRouter();
+  const qc = useQueryClient();
   const { data: batchesRes, isLoading } = useListBatches();
   const batches: any[] = (batchesRes as any)?.data || [];
+
+  const { data: programsRes } = useListPrograms();
+  const programs: any[] = (programsRes as any)?.data || [];
 
   const createBatch = useCreateBatch();
   const updateBatch = useUpdateBatch();
@@ -92,6 +100,7 @@ export default function BatchesPage() {
       setForm({
         name: editingBatch.name || "",
         description: editingBatch.description || "",
+        programId: editingBatch.programId || "",
         startsAt: editingBatch.startsAt ? new Date(editingBatch.startsAt).toISOString().split("T")[0] : "",
         endsAt: editingBatch.endsAt ? new Date(editingBatch.endsAt).toISOString().split("T")[0] : "",
         isActive: editingBatch.isActive ?? true,
@@ -113,6 +122,7 @@ export default function BatchesPage() {
       await createBatch.mutateAsync({
         name: form.name.trim(),
         description: form.description.trim() || undefined,
+        programId: form.programId || undefined,
         startsAt: form.startsAt,
         endsAt: form.endsAt || undefined,
         isActive: form.isActive,
@@ -132,6 +142,7 @@ export default function BatchesPage() {
         id: editingBatch.id,
         name: form.name.trim(),
         description: form.description.trim() || undefined,
+        programId: form.programId || null,
         startsAt: form.startsAt,
         endsAt: form.endsAt || undefined,
         isActive: form.isActive,
@@ -159,6 +170,7 @@ export default function BatchesPage() {
       await updateMember.mutateAsync({ id: member.id, data: { batchId: managingBatch.id } });
       toast.success(`${member.firstName} added to batch`);
       refetchDetail();
+      qc.invalidateQueries({ queryKey: ['batches'] });
     } catch {
       toast.error("Failed to assign member");
     }
@@ -169,6 +181,7 @@ export default function BatchesPage() {
       await updateMember.mutateAsync({ id: member.id, data: { batchId: "" } });
       toast.success(`${member.firstName} removed from batch`);
       refetchDetail();
+      qc.invalidateQueries({ queryKey: ['batches'] });
     } catch {
       toast.error("Failed to remove member");
     }
@@ -200,6 +213,19 @@ export default function BatchesPage() {
           rows={2}
           className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white text-sm outline-none focus:border-[#dc2626] transition-all resize-none"
         />
+      </div>
+      <div>
+        <label className={labelCls}>Program <span className="text-[#666]">(optional)</span></label>
+        <select
+          value={form.programId}
+          onChange={(e) => setForm(f => ({ ...f, programId: e.target.value }))}
+          className={cn(inputCls, "cursor-pointer")}
+        >
+          <option value="">No program linked</option>
+          {programs.map((p: any) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div>

@@ -254,6 +254,16 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
 
     if (batchId !== undefined) {
       if (batchId && batchId.trim() !== '') {
+        // Clear orphaned progress if moving to a different batch
+        const prev = await request.server.prisma.member.findUnique({
+          where: { id },
+          select: { batchId: true },
+        });
+        if (prev?.batchId && prev.batchId !== batchId) {
+          await request.server.prisma.memberDayProgress.deleteMany({
+            where: { batchId: prev.batchId, memberId: id },
+          });
+        }
         data.batch = { connect: { id: batchId } };
       } else {
         data.batch = { disconnect: true };

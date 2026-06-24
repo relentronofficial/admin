@@ -55,16 +55,25 @@ export async function getBatchHandler(req: FastifyRequest<{ Params: { id: string
   return reply.send({ success: true, data: batch, error: null });
 }
 
+export async function listProgramsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const programs = await req.server.prisma.program.findMany({
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, name: true, description: true },
+  });
+  return reply.send({ success: true, data: programs, error: null });
+}
+
 export async function createBatchHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = createBatchSchema.safeParse(req.body);
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
-  const { startsAt, endsAt, ...rest } = parsed.data;
+  const { startsAt, endsAt, programId, ...rest } = parsed.data;
   const batch = await req.server.prisma.batch.create({
     data: {
       ...rest,
       startsAt: new Date(startsAt),
       endsAt: endsAt ? new Date(endsAt) : null,
+      ...(programId ? { program: { connect: { id: programId } } } : {}),
     },
     select: {
       id: true,
@@ -74,6 +83,8 @@ export async function createBatchHandler(req: FastifyRequest, reply: FastifyRepl
       startsAt: true,
       endsAt: true,
       createdAt: true,
+      programId: true,
+      program: { select: { id: true, name: true } },
       _count: { select: { members: true } },
     },
   });
@@ -84,13 +95,16 @@ export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: str
   const parsed = updateBatchSchema.safeParse(req.body);
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
-  const { startsAt, endsAt, ...rest } = parsed.data;
+  const { startsAt, endsAt, programId, ...rest } = parsed.data;
   const batch = await req.server.prisma.batch.update({
     where: { id: req.params.id },
     data: {
       ...rest,
       ...(startsAt ? { startsAt: new Date(startsAt) } : {}),
       ...(endsAt !== undefined ? { endsAt: endsAt ? new Date(endsAt) : null } : {}),
+      ...(programId !== undefined
+        ? (programId ? { program: { connect: { id: programId } } } : { program: { disconnect: true } })
+        : {}),
     },
     select: {
       id: true,
@@ -100,6 +114,8 @@ export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: str
       startsAt: true,
       endsAt: true,
       createdAt: true,
+      programId: true,
+      program: { select: { id: true, name: true } },
       _count: { select: { members: true } },
     },
   });
@@ -198,11 +214,14 @@ export async function getBatchProgressHandler(
       select: {
         memberId: true,
         dayNumber: true,
+        status: true,
         isCompleted: true,
         completedAt: true,
+        submittedAt: true,
         journalEntry: true,
         journalFileUrl: true,
         completedTaskIds: true,
+        reviewNote: true,
         updatedAt: true,
       },
     }),
@@ -242,6 +261,7 @@ export async function upsertMemberProgressHandler(
   const { isCompleted, ...rest } = parsed.data;
 
   const completedAt = isCompleted === true ? new Date() : isCompleted === false ? null : undefined;
+  const statusFromCompleted = isCompleted === true ? 'approved' : isCompleted === false ? 'in_progress' : undefined;
 
   const record = await req.server.prisma.memberDayProgress.upsert({
     where: {
@@ -256,11 +276,12 @@ export async function upsertMemberProgressHandler(
       memberId: req.params.memberId,
       dayNumber: dayNum,
       isCompleted: isCompleted ?? false,
+      status: isCompleted ? 'approved' : 'in_progress',
       completedAt: isCompleted ? new Date() : null,
       ...rest,
     },
     update: {
-      ...(isCompleted !== undefined ? { isCompleted, completedAt } : {}),
+      ...(isCompleted !== undefined ? { isCompleted, completedAt, status: statusFromCompleted } : {}),
       ...rest,
     },
   });

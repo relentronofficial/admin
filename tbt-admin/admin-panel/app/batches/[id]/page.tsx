@@ -51,7 +51,7 @@ const fmtDate = (d: any) => {
   try { const dt = new Date(d); return isValid(dt) ? format(dt, "dd MMM yyyy") : "—"; } catch { return "—"; }
 };
 
-type Tab = "overview" | "program" | "progress";
+type Tab = "overview" | "program" | "progress" | "pending";
 
 // ─── Day Edit Modal ────────────────────────────────────────────────────────────
 
@@ -524,10 +524,18 @@ export default function BatchDetailPage() {
   const members: any[] = progressData.members ?? [];
   const progressArr: any[] = progressData.progress ?? [];
 
+  // Pending approvals
+  const { data: pendingRes, isLoading: pendingLoading } = useGetBatchPending(id);
+  const pendingRecords: any[] = (pendingRes as any)?.data ?? [];
+  const approveDay = useApproveBatchDay();
+  const rejectDay = useRejectBatchDay();
+
   // Modals
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [cellModal, setCellModal] = useState<{ member: any; dayNumber: number; progress: any; dayContent: any } | null>(null);
   const [timelineMember, setTimelineMember] = useState<any | null>(null);
+  const [pendingRejectId, setPendingRejectId] = useState<string | null>(null);
+  const [pendingRejectNote, setPendingRejectNote] = useState("");
 
   const configuredDaysMap = useMemo(() => {
     const m: Record<number, any> = {};
@@ -625,7 +633,8 @@ export default function BatchDetailPage() {
             { id: "overview", label: "Overview", icon: BarChart2 },
             { id: "program", label: "Program (90 Days)", icon: BookOpen },
             { id: "progress", label: "Progress Grid", icon: Users },
-          ] as { id: Tab; label: string; icon: any }[]).map(({ id: tid, label, icon: Icon }) => (
+            { id: "pending", label: "Pending", icon: Bell, badge: pendingRecords.length },
+          ] as { id: Tab; label: string; icon: any; badge?: number }[]).map(({ id: tid, label, icon: Icon, badge }) => (
             <button
               key={tid}
               onClick={() => setActiveTab(tid)}
@@ -638,6 +647,12 @@ export default function BatchDetailPage() {
             >
               <Icon size={14} />
               {label}
+              {badge !== undefined && badge > 0 && (
+                <span className="ml-0.5 min-w-[18px] h-[18px] rounded-full text-[10px] font-bold flex items-center justify-center px-1"
+                  style={{ background: activeTab === tid ? "rgba(255,255,255,0.25)" : "#dc2626", color: "#fff" }}>
+                  {badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -875,6 +890,117 @@ export default function BatchDetailPage() {
                   </div>
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Pending Tab ── */}
+        {activeTab === "pending" && (
+          <div className="space-y-3">
+            {pendingLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 size={28} className="animate-spin text-[#dc2626]" />
+              </div>
+            ) : pendingRecords.length === 0 ? (
+              <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-16 text-center">
+                <CheckCircle2 size={36} className="text-green-500/40 mx-auto mb-3" />
+                <p className="text-[#606060] text-sm">No submissions pending review.</p>
+              </div>
+            ) : (
+              pendingRecords.map((rec: any) => {
+                const isRejecting = pendingRejectId === rec.id;
+                return (
+                  <div key={rec.id} className="bg-[#141414] border border-[#a78bfa]/25 rounded-xl p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[#1f1f1f] flex items-center justify-center text-xs font-bold text-[#dc2626] flex-shrink-0">
+                          {rec.member?.firstName?.[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-[13px] font-semibold text-[#f0f0f0]">
+                            {rec.member?.firstName} {rec.member?.lastName}
+                          </p>
+                          <p className="text-[11px] text-[#606060]">{rec.member?.memberId}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}>
+                          Day {rec.dayNumber}
+                        </span>
+                        {rec.submittedAt && (
+                          <span className="text-[11px] text-[#606060]">
+                            {format(new Date(rec.submittedAt), "dd MMM, HH:mm")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {rec.journalEntry && (
+                      <p className="text-[13px] text-[#a0a0a0] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 line-clamp-3">
+                        {rec.journalEntry}
+                      </p>
+                    )}
+
+                    {!isRejecting ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              await approveDay.mutateAsync({ batchId: id, memberId: rec.memberId, dayNumber: rec.dayNumber });
+                              toast.success(`Day ${rec.dayNumber} approved`);
+                            } catch { toast.error("Failed to approve"); }
+                          }}
+                          disabled={approveDay.isPending}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                          style={{ background: "#22c55e" }}
+                        >
+                          {approveDay.isPending ? <Loader2 size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => { setPendingRejectId(rec.id); setPendingRejectNote(""); }}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all"
+                          style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}
+                        >
+                          <ThumbsDown size={14} /> Request Revision
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <textarea
+                          value={pendingRejectNote}
+                          onChange={e => setPendingRejectNote(e.target.value)}
+                          rows={2}
+                          placeholder="Explain what needs to be revised…"
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#dc2626] resize-none"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={() => setPendingRejectId(null)} className="flex-1 py-2 rounded-lg text-sm text-[#606060] hover:text-white transition-colors bg-[#1f1f1f]">
+                            Cancel
+                          </button>
+                          <button
+                            disabled={rejectDay.isPending}
+                            onClick={async () => {
+                              if (!pendingRejectNote.trim()) { toast.error("Add a review note"); return; }
+                              try {
+                                await rejectDay.mutateAsync({ batchId: id, memberId: rec.memberId, dayNumber: rec.dayNumber, reviewNote: pendingRejectNote.trim() });
+                                toast.success("Sent back for revision");
+                                setPendingRejectId(null);
+                              } catch { toast.error("Failed to reject"); }
+                            }}
+                            className="flex-1 py-2 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                            style={{ background: "#ef4444" }}
+                          >
+                            {rejectDay.isPending ? <Loader2 size={13} className="animate-spin inline mr-1" /> : null}
+                            Send Revision
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         )}

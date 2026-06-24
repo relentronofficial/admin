@@ -110,7 +110,7 @@ export async function submitDayHandler(
 
   const member = await req.server.prisma.member.findUnique({
     where: { id: memberId },
-    select: { batchId: true },
+    select: { batchId: true, firstName: true, lastName: true, memberId: true },
   });
   if (!member?.batchId) return reply.status(400).send({ success: false, data: null, error: 'You are not in a batch' });
 
@@ -139,6 +139,16 @@ export async function submitDayHandler(
       reviewNote: null,
     },
   });
+
+  // Notify admin room so they can review without polling
+  req.server.io.to('admin').emit('admin:day_submitted', {
+    memberId,
+    memberName: `${member.firstName} ${member.lastName ?? ''}`.trim(),
+    memberCode: member.memberId,
+    batchId: member.batchId,
+    dayNumber: dayNum,
+  });
+
   return reply.send({ success: true, data: record, error: null });
 }
 

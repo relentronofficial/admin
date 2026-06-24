@@ -740,6 +740,13 @@ export const useGetBatchPending = (batchId: string) =>
     staleTime: 10_000,
   });
 
+export const useListPrograms = () =>
+  useQuery({
+    queryKey: ['programs'],
+    queryFn: async () => { const res: any = await apiClient.get('/api/batches/programs'); return res; },
+    staleTime: 60_000,
+  });
+
 // ── MEMBER ENROLLMENTS ────────────────────────────────────────────────
 
 export const useMemberEnrollments = (memberId: string) =>

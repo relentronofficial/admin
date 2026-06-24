@@ -59,6 +59,12 @@ export default function BatchDayPage() {
 
   const status: DayStatus = (progress?.status ?? "not_started") as DayStatus;
   const isLocked = status === "approved";
+
+  const daysElapsed = program?.batch
+    ? Math.min(90, Math.max(0, Math.floor((Date.now() - new Date(program.batch.startsAt).getTime()) / 86_400_000)))
+    : 0;
+  const isFutureDay = dayNumber > daysElapsed + 1;
+
   const tasks: { id: string; title: string; order: number }[] =
     Array.isArray(dayContent?.tasks) ? dayContent.tasks : [];
 
@@ -125,8 +131,8 @@ export default function BatchDayPage() {
     );
   }
 
-  const canEdit = !isLocked && status !== "pending_approval";
-  const canSubmit = !isLocked && status !== "pending_approval";
+  const canEdit = !isLocked && !isFutureDay && status !== "pending_approval";
+  const canSubmit = !isLocked && !isFutureDay && status !== "pending_approval";
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
@@ -178,6 +184,14 @@ export default function BatchDayPage() {
               <p className="text-xs font-bold" style={{ color: "#ef4444" }}>Revision requested</p>
               <p className="text-sm mt-0.5">{progress.reviewNote}</p>
             </div>
+          </div>
+        )}
+
+        {/* Future day note */}
+        {isFutureDay && (
+          <div className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <Clock size={14} className="opacity-40" />
+            <p className="text-sm text-muted-foreground">This day hasn&apos;t started yet. You can view but not submit.</p>
           </div>
         )}
 
