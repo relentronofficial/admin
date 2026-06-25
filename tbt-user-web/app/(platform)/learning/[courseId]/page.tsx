@@ -1,11 +1,11 @@
 "use client";
 
-import { use, useState, useRef, useEffect } from "react";
+import { use, useState, useRef, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award,
   Lock, Trophy, ChevronDown, ChevronUp, Copy, Check,
-  AlertTriangle, ExternalLink, Clock, TrendingUp,
+  AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
@@ -427,6 +427,10 @@ export default function CourseDetailPage({
   const [selectedLesson, setSelectedLesson] = useState<SelectedLesson | null>(null);
   const [watchState, setWatchState] = useState<WatchState>("not_started");
   const [watchedSeconds, setWatchedSeconds] = useState(0);
+  const [liveWatched, setLiveWatched] = useState<number>(0);
+  const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
+  const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
+  const [videoKey, setVideoKey] = useState(0);
   const topRef = useRef<HTMLDivElement | null>(null);
   const [certCopied, setCertCopied] = useState(false);
 
@@ -474,80 +478,147 @@ export default function CourseDetailPage({
     }
   }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refs so closure callbacks always see current values
+  // ── Tracking refs ────────────────────────────────────────────────────────────
   const markCalledRef = useRef(false);
-  const elapsedRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  const iframeFocusedRef = useRef(false);
   const selectedLessonRef = useRef<SelectedLesson | null>(null);
   selectedLessonRef.current = selectedLesson;
+  const courseRef = useRef<any>(null);
+  courseRef.current = course;
+
+  const realDurationRef = useRef<number>(0);
+  const liveWatchedRef = useRef<number>(0);
+  const lastHeartbeatWatchedRef = useRef<number>(0);
+  const isPlayingRef = useRef<boolean>(false);
+  const isHiddenRef = useRef<boolean>(false);
+  const isSeekingRef = useRef<boolean>(false);
+  const seekClearRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastPlayheadRef = useRef<number>(0);
+  const speedRef = useRef<number>(1);
+  const doMarkCompleteRef = useRef<boolean>(false);
+  const upNextTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+
+  // Stable up-next trigger via ref to avoid stale closures inside intervals
+  const triggerUpNextRef = useRef<() => void>(() => {});
+  triggerUpNextRef.current = useCallback(() => {
+    clearInterval(upNextTimerRef.current);
+    const lessons = courseRef.current?.lessons ?? [];
+    const currentIdx = lessons.findIndex((l: any) => l.id === selectedLessonRef.current?.id);
+    if (currentIdx < 0 || currentIdx >= lessons.length - 1) return;
+    let n = 5;
+    setUpNextCountdown(n);
+    upNextTimerRef.current = setInterval(() => {
+      n--;
+      if (n <= 0) {
+        clearInterval(upNextTimerRef.current);
+        setUpNextCountdown(null);
+        const next = lessons[currentIdx + 1];
+        if (next?.videoUrl) {
+          setSelectedLesson({
+            id: next.id,
+            title: next.title,
+            videoUrl: next.videoUrl,
+            durationSeconds: next.durationSeconds ?? 0,
+            resumeAtSeconds: (next as any).resumeAtSeconds ?? 0,
+            actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
+            isCompleted: (next as any).isCompleted ?? false,
+          });
+          topRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+      } else {
+        setUpNextCountdown(n);
+      }
+    }, 1000);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const completedIds = new Set(
     progressList?.filter((p) => p.completed).map((p) => p.lessonId) ?? []
   );
 
-  // Reset state whenever lesson changes
+  // Reset all tracking state on lesson change
   useEffect(() => {
-    clearInterval(timerRef.current);
-    iframeFocusedRef.current = false;
-    elapsedRef.current = 0;
+    realDurationRef.current = 0;
+    liveWatchedRef.current = 0;
+    lastHeartbeatWatchedRef.current = 0;
+    isPlayingRef.current = false;
+    isSeekingRef.current = false;
+    speedRef.current = 1;
+    doMarkCompleteRef.current = false;
+    clearTimeout(seekClearRef.current);
+    clearInterval(upNextTimerRef.current);
+    setLiveWatched(0);
+    setLiveRealDuration(0);
+    setUpNextCountdown(null);
 
     if (!selectedLesson) return;
+    lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
     const alreadyDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted;
     setWatchState(alreadyDone ? "completed" : "not_started");
     setWatchedSeconds(selectedLesson.resumeAtSeconds ?? 0);
     markCalledRef.current = alreadyDone;
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Native VideoPlayer callbacks
-  const handleNativeProgress = (s: number) => {
-    setWatchedSeconds(s);
+  // ── Native VideoPlayer callbacks ─────────────────────────────────────────────
+  const handleVideoReady = (duration: number) => {
+    realDurationRef.current = duration;
+    setLiveRealDuration(duration);
+  };
+
+  const handleVideoPlay = () => {
+    isPlayingRef.current = true;
     setWatchState((prev) => (prev === "completed" ? "completed" : "watching"));
   };
 
-  const handleNativeHeartbeat = (currentTime: number) => {
-    const lesson = selectedLessonRef.current;
-    if (!lesson || markCalledRef.current) return;
-    elapsedRef.current += 15;
-    const threshold = lesson.durationSeconds > 0 ? lesson.durationSeconds * 0.85 : 90;
-    const isCompleted = (lesson.actualWatchedSecs ?? 0) + elapsedRef.current >= threshold;
-    markComplete.mutate({
-      lessonId: lesson.id,
-      watchedSeconds: Math.floor(currentTime),
-      deltaSeconds: 15,
-      isCompleted: isCompleted ? true : undefined,
-    });
-    if (isCompleted) {
-      markCalledRef.current = true;
-      setWatchState("completed");
-    }
+  const handleVideoPause = () => {
+    isPlayingRef.current = false;
+    setWatchState((prev) => (prev === "completed" ? "completed" : "paused"));
   };
 
-  const handleNativeEnded = () => {
+  const handleVideoSeeked = () => {
+    isSeekingRef.current = true;
+    clearTimeout(seekClearRef.current);
+    seekClearRef.current = setTimeout(() => { isSeekingRef.current = false; }, 800);
+  };
+
+  const handleVideoProgress = (s: number) => {
+    lastPlayheadRef.current = s;
+    setWatchedSeconds(s);
+  };
+
+  const handleVideoSpeedChange = (s: number) => {
+    speedRef.current = s;
+  };
+
+  const handleVideoEnded = () => {
+    isPlayingRef.current = false;
     const lesson = selectedLessonRef.current;
     if (!lesson || markCalledRef.current) return;
     markCalledRef.current = true;
+    doMarkCompleteRef.current = false;
     setWatchState("completed");
-    markComplete.mutate({ lessonId: lesson.id, watchedSeconds, isCompleted: true });
+    markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true });
+    triggerUpNextRef.current();
   };
 
-  // Heartbeat & complete logic for Bunny iframe
+  // ── Bunny iframe message handler ─────────────────────────────────────────────
   useEffect(() => {
     if (!selectedLesson || !isBunnyEmbed(selectedLesson.videoUrl)) return;
 
-    let localElapsed = 0;
-    let lastPlayhead = selectedLesson.resumeAtSeconds ?? 0;
+    const BUNNY_ORIGIN = "https://iframe.mediadelivery.net";
 
     const doMarkComplete = () => {
       const lesson = selectedLessonRef.current;
       if (!lesson || markCalledRef.current) return;
       markCalledRef.current = true;
-      clearInterval(timerRef.current);
+      isPlayingRef.current = false;
+      doMarkCompleteRef.current = false;
       setWatchState("completed");
       markComplete.mutate({ lessonId: lesson.id, isCompleted: true });
+      triggerUpNextRef.current();
     };
 
     const handler = (e: MessageEvent) => {
+      if (e.origin && !e.origin.includes("mediadelivery.net")) return;
+
       let data = e.data;
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch { return; }
@@ -570,10 +641,10 @@ export default function CourseDetailPage({
 
       if (evt === "ready" && e.source) {
         const win = e.source as Window;
-        ["play", "pause", "timeupdate", "ended"].forEach((eventName) => {
+        ["play", "pause", "timeupdate", "ended", "seeked"].forEach((eventName) => {
           win.postMessage(
             JSON.stringify({ context: "player.js", method: "addEventListener", value: eventName }),
-            "*"
+            BUNNY_ORIGIN
           );
         });
         return;
@@ -583,39 +654,28 @@ export default function CourseDetailPage({
       const isEnd = evt === "ended" || evt === "end" || evt === "finish" || evt === "onfinish" || evt === "complete" || evt === "onended";
       const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
+      const isSeeked = evt === "seeked";
 
       if (isTimeUpdate && payloadValue !== undefined) {
         const currentTime = typeof payloadValue === "number" ? payloadValue : payloadValue.seconds;
-        if (currentTime !== undefined) lastPlayhead = currentTime;
+        if (currentTime !== undefined) {
+          lastPlayheadRef.current = currentTime;
+          setWatchedSeconds(Math.floor(currentTime));
+        }
+      }
+
+      if (isSeeked) {
+        isSeekingRef.current = true;
+        clearTimeout(seekClearRef.current);
+        seekClearRef.current = setTimeout(() => { isSeekingRef.current = false; }, 800);
       }
 
       if (isPlay && !isEnd) {
+        isPlayingRef.current = true;
         setWatchState((s) => (s === "completed" ? "completed" : "watching"));
-        if (!iframeFocusedRef.current) {
-          iframeFocusedRef.current = true;
-          clearInterval(timerRef.current);
-          timerRef.current = setInterval(() => {
-            localElapsed += 15;
-            const lesson = selectedLessonRef.current;
-            if (!lesson) return;
-            const threshold = lesson.durationSeconds > 0 ? lesson.durationSeconds * 0.85 : 90;
-            const isCompleted = (lesson.actualWatchedSecs ?? 0) + localElapsed >= threshold;
-            if (isCompleted) {
-              doMarkComplete();
-            } else {
-              markComplete.mutate({
-                lessonId: lesson.id,
-                watchedSeconds: Math.floor(lastPlayhead),
-                deltaSeconds: 15,
-                isCompleted: false,
-              });
-            }
-          }, 15000);
-        }
       } else if (isPause && !isEnd) {
+        isPlayingRef.current = false;
         setWatchState((s) => (s === "completed" ? "completed" : "paused"));
-        iframeFocusedRef.current = false;
-        clearInterval(timerRef.current);
       }
 
       if (isEnd) doMarkComplete();
@@ -624,8 +684,99 @@ export default function CourseDetailPage({
     window.addEventListener("message", handler);
     return () => {
       window.removeEventListener("message", handler);
-      clearInterval(timerRef.current);
+      isPlayingRef.current = false;
     };
+  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 1-second tick + tab visibility + beforeunload ────────────────────────────
+  useEffect(() => {
+    if (!selectedLesson) return;
+
+    const handleVisibility = () => { isHiddenRef.current = document.hidden; };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    const handleBeforeUnload = () => {
+      const lesson = selectedLessonRef.current;
+      if (!lesson || !isPlayingRef.current) return;
+      const delta = Math.min(liveWatchedRef.current - lastHeartbeatWatchedRef.current, 30);
+      if (delta <= 0) return;
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      fetch(`${apiBase}/api/user/enrollments/${courseId}/progress/${lesson.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        keepalive: true,
+        body: JSON.stringify({
+          watchedSeconds: Math.floor(lastPlayheadRef.current),
+          deltaSeconds: delta,
+        }),
+      });
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    const tick = setInterval(() => {
+      if (!isPlayingRef.current || isHiddenRef.current || isSeekingRef.current) return;
+      liveWatchedRef.current += speedRef.current;
+      setLiveWatched(Math.floor(liveWatchedRef.current));
+    }, 1000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      clearInterval(tick);
+    };
+  }, [selectedLesson?.id, courseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 5-second heartbeat ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedLesson) return;
+
+    const hb = setInterval(() => {
+      if (!isPlayingRef.current) return;
+      const lesson = selectedLessonRef.current;
+      if (!lesson || markCalledRef.current) return;
+
+      const delta = Math.min(liveWatchedRef.current - lastHeartbeatWatchedRef.current, 30);
+      if (delta <= 0) return;
+      lastHeartbeatWatchedRef.current = liveWatchedRef.current;
+
+      const activeDuration = realDurationRef.current > 0 ? realDurationRef.current : lesson.durationSeconds;
+      const threshold = activeDuration > 0 ? activeDuration * 0.85 : 90;
+      const knownSecs = lesson.actualWatchedSecs ?? 0;
+      const shouldComplete = doMarkCompleteRef.current || (knownSecs + liveWatchedRef.current) >= threshold;
+
+      markComplete.mutate(
+        {
+          lessonId: lesson.id,
+          watchedSeconds: Math.floor(lastPlayheadRef.current),
+          deltaSeconds: delta,
+          isCompleted: shouldComplete || undefined,
+        },
+        {
+          onSuccess: (res: any) => {
+            const d = res?.data ?? res;
+            if (d?.isCompleted && !markCalledRef.current) {
+              markCalledRef.current = true;
+              setWatchState("completed");
+              triggerUpNextRef.current();
+            }
+            if (typeof d?.actualWatchedSecs === "number" && d.actualWatchedSecs > liveWatchedRef.current) {
+              liveWatchedRef.current = d.actualWatchedSecs;
+              lastHeartbeatWatchedRef.current = d.actualWatchedSecs;
+              setLiveWatched(Math.floor(d.actualWatchedSecs));
+            }
+          },
+        }
+      );
+
+      if (shouldComplete && !markCalledRef.current) {
+        doMarkCompleteRef.current = false;
+        markCalledRef.current = true;
+        setWatchState("completed");
+      }
+    }, 5000);
+
+    return () => clearInterval(hb);
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) return <PageLoader />;
@@ -644,8 +795,15 @@ export default function CourseDetailPage({
 
   const lessons: Lesson[] = course.lessons ?? [];
 
+  // Next lesson for up-next UI
+  const currentLessonIdx = lessons.findIndex((l: any) => l.id === selectedLesson?.id);
+  const nextLesson = currentLessonIdx >= 0 && currentLessonIdx < lessons.length - 1
+    ? lessons[currentLessonIdx + 1]
+    : null;
+
   const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
+    setVideoKey(0);
     setSelectedLesson({
       id: lesson.id,
       title: lesson.title,
@@ -656,6 +814,18 @@ export default function CourseDetailPage({
       isCompleted: lesson.isCompleted ?? false,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleRewatch = () => {
+    if (!selectedLesson) return;
+    clearInterval(upNextTimerRef.current);
+    setUpNextCountdown(null);
+    liveWatchedRef.current = 0;
+    lastHeartbeatWatchedRef.current = 0;
+    setLiveWatched(0);
+    setWatchState("not_started");
+    // markCalledRef stays true so we don't re-trigger completion
+    setVideoKey((k) => k + 1);
   };
 
   const handleShareCert = async () => {
@@ -671,10 +841,12 @@ export default function CourseDetailPage({
     }
   };
 
+  const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
+
   const statusBadge = (() => {
     if (!selectedLesson) return null;
-    const progressPct = selectedLesson.durationSeconds > 0
-      ? Math.min(100, Math.round(((selectedLesson.actualWatchedSecs ?? 0) / selectedLesson.durationSeconds) * 100))
+    const progressPct = activeDuration > 0
+      ? Math.min(100, Math.round((liveWatched / activeDuration) * 100))
       : 0;
 
     if (watchState === "completed" || selectedLesson.isCompleted) return {
@@ -725,20 +897,25 @@ export default function CourseDetailPage({
             >
               {isBunnyEmbed(selectedLesson.videoUrl) ? (
                 <iframe
-                  key={selectedLesson.id}
-                  src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl), selectedLesson.resumeAtSeconds ?? 0)}
+                  key={`${selectedLesson.id}-${videoKey}`}
+                  src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl), videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0))}
                   className="w-full h-full border-0"
                   allow="accelerometer; gyroscope; autoplay; encrypted-media"
                   title={selectedLesson.title}
                 />
               ) : (
                 <VideoPlayer
+                  key={`${selectedLesson.id}-${videoKey}`}
                   src={selectedLesson.videoUrl}
                   lessonId={selectedLesson.id}
-                  resumeAtSeconds={selectedLesson.resumeAtSeconds ?? 0}
-                  onProgress={handleNativeProgress}
-                  onHeartbeat={handleNativeHeartbeat}
-                  onEnded={handleNativeEnded}
+                  resumeAtSeconds={videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0)}
+                  onReady={handleVideoReady}
+                  onPlay={handleVideoPlay}
+                  onPause={handleVideoPause}
+                  onSeeked={handleVideoSeeked}
+                  onProgress={handleVideoProgress}
+                  onSpeedChange={handleVideoSpeedChange}
+                  onEnded={handleVideoEnded}
                 />
               )}
             </VideoWatermark>
@@ -756,6 +933,47 @@ export default function CourseDetailPage({
                 </div>
               )}
             </div>
+
+            {/* Up-next countdown */}
+            {upNextCountdown !== null && nextLesson && (
+              <div
+                className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl text-sm"
+                style={{
+                  background: "color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-surface))",
+                  border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
+                }}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <SkipForward size={14} style={{ color: "var(--color-accent)", flexShrink: 0 }} />
+                  <span className="truncate" style={{ color: "rgba(255,255,255,0.7)" }}>
+                    Next: <span className="text-white font-medium">{nextLesson.title}</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>
+                    {upNextCountdown}s
+                  </span>
+                  <button
+                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextCountdown(null); }}
+                    className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
+                    style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.5)" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Rewatch button (only when completed and not counting down) */}
+            {watchState === "completed" && upNextCountdown === null && (
+              <button
+                onClick={handleRewatch}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+                style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.45)" }}
+              >
+                <RotateCcw size={11} /> Rewatch from start
+              </button>
+            )}
           </div>
         ) : (
           /* Course banner */
@@ -817,6 +1035,10 @@ export default function CourseDetailPage({
               const isActive = selectedLesson?.id === lesson.id;
               const hasVideo = !!lesson.videoUrl;
               const duration = lesson.durationSeconds;
+              const activeLessonDuration = (isActive && activeDuration > 0 ? activeDuration : duration) ?? 0;
+              const livePct = isActive && liveWatched > 0 && activeLessonDuration > 0
+                ? Math.min(100, Math.round((liveWatched / activeLessonDuration) * 100))
+                : 0;
 
               return (
                 <button
@@ -857,6 +1079,15 @@ export default function CourseDetailPage({
                         {lesson.description}
                       </p>
                     ) : null}
+                    {/* Live progress bar for active lesson */}
+                    {isActive && livePct > 0 && livePct < 100 && (
+                      <div className="h-0.5 rounded-full overflow-hidden mt-1.5" style={{ background: "rgba(255,255,255,0.1)" }}>
+                        <div
+                          className="h-full rounded-full transition-all duration-1000"
+                          style={{ width: `${livePct}%`, background: "var(--color-accent)" }}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {isActive ? (
