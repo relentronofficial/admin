@@ -62,6 +62,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
              true, NOW(), NOW()
       WHERE NOT EXISTS (SELECT 1 FROM nav_items WHERE href = '/batch-program')
     `);
+    // Courses nav item — insert only if /courses link doesn't exist yet
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO nav_items (id, label, href, "order", is_visible, created_at, updated_at)
+      SELECT gen_random_uuid(), 'Courses', '/courses',
+             COALESCE((SELECT MAX("order") FROM nav_items), 0) + 1,
+             true, NOW(), NOW()
+      WHERE NOT EXISTS (SELECT 1 FROM nav_items WHERE href = '/courses')
+    `);
     // Course platform — new columns on courses table (§2.5)
     await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS access_duration_days INTEGER`);
     await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS max_enrollments INTEGER`);
