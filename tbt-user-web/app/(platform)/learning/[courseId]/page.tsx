@@ -647,6 +647,11 @@ export default function CourseDetailPage({
             BUNNY_ORIGIN
           );
         });
+        // Request actual video duration from Bunny Player.js API
+        win.postMessage(
+          JSON.stringify({ context: "player.js", method: "getDuration" }),
+          BUNNY_ORIGIN
+        );
         return;
       }
 
@@ -656,11 +661,25 @@ export default function CourseDetailPage({
       const isTimeUpdate = evt === "timeupdate";
       const isSeeked = evt === "seeked";
 
+      // Handle getDuration response from Bunny Player.js API
+      if (evt === "getduration" && payloadValue !== undefined) {
+        const dur = typeof payloadValue === "number" ? payloadValue : Number(payloadValue);
+        if (dur > 0 && realDurationRef.current === 0) {
+          realDurationRef.current = dur;
+          setLiveRealDuration(dur);
+        }
+      }
+
       if (isTimeUpdate && payloadValue !== undefined) {
         const currentTime = typeof payloadValue === "number" ? payloadValue : payloadValue.seconds;
         if (currentTime !== undefined) {
           lastPlayheadRef.current = currentTime;
           setWatchedSeconds(Math.floor(currentTime));
+        }
+        // Fallback: some Bunny versions include duration in the timeupdate payload
+        if (typeof payloadValue === "object" && payloadValue.duration > 0 && realDurationRef.current === 0) {
+          realDurationRef.current = payloadValue.duration;
+          setLiveRealDuration(payloadValue.duration);
         }
       }
 
