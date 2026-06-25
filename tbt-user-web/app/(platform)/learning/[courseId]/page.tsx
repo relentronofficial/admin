@@ -1,11 +1,20 @@
 "use client";
 
 import { use, useState, useRef, useEffect } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award,
+  Lock, Trophy, ChevronDown, ChevronUp, Copy, Check,
+  AlertTriangle, ExternalLink, Clock, TrendingUp,
+} from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
-import { useCourse, useLessonProgress, useMarkLessonComplete, useSubmitCourseQuiz, useCourseXp, useCertificateEligibility } from "@/lib/hooks/useCourses";
+import {
+  useCourse, useLessonProgress, useMarkLessonComplete,
+  useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
+  useCourseLeaderboard, useRequestCourseAccess,
+} from "@/lib/hooks/useCourses";
+import { useMe } from "@/lib/hooks/useUser";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { toast } from "react-hot-toast";
@@ -19,6 +28,14 @@ function isBunnyEmbed(url: string) {
   return url.includes("mediadelivery.net");
 }
 
+function fmtDuration(seconds: number): string {
+  if (!seconds) return "";
+  const m = Math.floor(seconds / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  return `${m}m`;
+}
+
 interface SelectedLesson {
   id: string;
   title: string;
@@ -29,6 +46,369 @@ interface SelectedLesson {
   isCompleted?: boolean;
 }
 
+// ── Instructor Card ───────────────────────────────────────────────────────────
+function InstructorCard({ instructor }: { instructor: { fullName: string; designation?: string | null; profilePhotoUrl?: string | null } }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-3 rounded-xl"
+      style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+    >
+      {instructor.profilePhotoUrl ? (
+        <img src={instructor.profilePhotoUrl} alt={instructor.fullName} className="w-10 h-10 rounded-full object-cover shrink-0" />
+      ) : (
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 25%, rgba(255,255,255,0.1))" }}
+        >
+          {instructor.fullName[0]}
+        </div>
+      )}
+      <div className="min-w-0">
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>Instructor</p>
+        <p className="text-sm font-semibold text-white truncate">{instructor.fullName}</p>
+        {instructor.designation && (
+          <p className="text-xs truncate" style={{ color: "rgba(255,255,255,0.45)" }}>{instructor.designation}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Access Expiry Warning ─────────────────────────────────────────────────────
+function ExpiryWarning({ expiresAt }: { expiresAt: string }) {
+  const daysLeft = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  if (daysLeft > 7) return null;
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm"
+      style={{
+        background: "color-mix(in srgb, var(--color-alert) 12%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--color-alert) 30%, transparent)",
+      }}
+    >
+      <AlertTriangle size={16} style={{ color: "var(--color-alert)", flexShrink: 0 }} />
+      <p className="text-white">
+        Your access expires in{" "}
+        <strong>{daysLeft <= 0 ? "less than a day" : `${daysLeft} day${daysLeft === 1 ? "" : "s"}`}</strong>. Complete it before it expires!
+      </p>
+    </div>
+  );
+}
+
+// ── XP + Streak Widget ────────────────────────────────────────────────────────
+function XpStreakWidget({ courseId }: { courseId: string }) {
+  const { data: xp } = useCourseXp(courseId);
+  if (!xp || (!xp.totalXp && !xp.currentStreak)) return null;
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {[
+        { label: "Total XP", value: xp.totalXp ?? 0, icon: <Zap size={16} />, accent: true },
+        { label: "Current Streak", value: `${xp.currentStreak ?? 0}d`, icon: <TrendingUp size={16} />, accent: false },
+        { label: "Best Streak", value: `${xp.longestStreak ?? 0}d`, icon: <Trophy size={16} />, accent: false },
+      ].map(({ label, value, icon, accent }) => (
+        <div
+          key={label}
+          className="rounded-xl p-3 text-center"
+          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+        >
+          <div className="flex justify-center mb-1" style={{ color: accent ? "var(--color-accent)" : "rgba(255,255,255,0.4)" }}>
+            {icon}
+          </div>
+          <p className="text-base font-bold text-white">{value}</p>
+          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{label}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Leaderboard Widget ────────────────────────────────────────────────────────
+function LeaderboardWidget({ courseId }: { courseId: string }) {
+  const { data: lb } = useCourseLeaderboard(courseId);
+  const [open, setOpen] = useState(false);
+  if (!lb?.leaderboard?.length) return null;
+  const top5 = lb.leaderboard.slice(0, 5);
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
+      >
+        <div className="flex items-center gap-2">
+          <Trophy size={15} style={{ color: "var(--color-accent)" }} />
+          Leaderboard
+          {lb.myRank && (
+            <span
+              className="text-xs px-2 py-0.5 rounded-full font-bold"
+              style={{
+                background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
+                color: "var(--color-accent)",
+              }}
+            >
+              #{lb.myRank}
+            </span>
+          )}
+        </div>
+        {open
+          ? <ChevronUp size={14} style={{ color: "rgba(255,255,255,0.4)" }} />
+          : <ChevronDown size={14} style={{ color: "rgba(255,255,255,0.4)" }} />}
+      </button>
+      {open && (
+        <div className="border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+          {top5.map((entry: any, i: number) => {
+            const isMe = lb.myRank === i + 1;
+            return (
+              <div
+                key={entry.memberId ?? i}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm border-b last:border-b-0"
+                style={{
+                  borderColor: "rgba(255,255,255,0.05)",
+                  background: isMe ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
+                }}
+              >
+                <span
+                  className="w-5 text-xs font-bold text-center shrink-0"
+                  style={{ color: i < 3 ? "var(--color-accent)" : "rgba(255,255,255,0.35)" }}
+                >
+                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
+                </span>
+                <span className="flex-1 truncate" style={{ color: isMe ? "#fff" : "rgba(255,255,255,0.7)" }}>
+                  {entry.name ?? "Member"}
+                </span>
+                <span className="text-xs font-bold flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
+                  <Zap size={11} />{entry.xp ?? 0}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Related Courses ───────────────────────────────────────────────────────────
+function RelatedCourses({ courses, title }: { courses: any[]; title: string }) {
+  if (!courses?.length) return null;
+  return (
+    <div>
+      <p className="text-sm font-semibold text-white mb-3">{title}</p>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+        {courses.map((c: any) => (
+          <a
+            key={c.id}
+            href={`/learning/${c.id}`}
+            className="shrink-0 w-48 rounded-xl overflow-hidden group"
+            style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+          >
+            <div className="aspect-video relative overflow-hidden">
+              {c.thumbnailUrl ? (
+                <img
+                  src={c.thumbnailUrl}
+                  alt={c.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.04)" }}>
+                  <Play size={20} style={{ color: "var(--color-accent)" }} />
+                </div>
+              )}
+            </div>
+            <div className="p-2.5">
+              <p className="text-xs font-medium text-white line-clamp-2 leading-snug">{c.title}</p>
+              {c.price != null && Number(c.price) > 0 && (
+                <p className="text-xs mt-1 font-semibold" style={{ color: "var(--color-accent)" }}>
+                  ₹{Number(c.price).toLocaleString("en-IN")}
+                </p>
+              )}
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Paywall View ──────────────────────────────────────────────────────────────
+function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: string }) {
+  const course = courseRaw as any;
+  const requestAccess = useRequestCourseAccess();
+  const lessons = course.lessons ?? [];
+
+  const handleGetAccess = async () => {
+    if (course.paymentLinkUrl) {
+      window.open(course.paymentLinkUrl, "_blank");
+      return;
+    }
+    try {
+      const res = await requestAccess.mutateAsync(courseId);
+      const { paymentUrl } = (res as any).data ?? res;
+      if (paymentUrl) window.open(paymentUrl, "_blank");
+      else toast.success("Access request sent! We'll notify you shortly.");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to request access.");
+    }
+  };
+
+  return (
+    <div className="space-y-6 pb-12">
+      {/* Banner */}
+      <div
+        className="relative w-full aspect-video rounded-xl overflow-hidden"
+        style={{ background: "var(--color-bg-surface)" }}
+      >
+        {course.thumbnailUrl ? (
+          <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Lock size={48} style={{ color: "rgba(255,255,255,0.2)" }} />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-6">
+          <h1 className="text-2xl font-bold text-white leading-tight">{course.title}</h1>
+          {course.description && (
+            <p className="text-sm mt-1 line-clamp-2" style={{ color: "rgba(255,255,255,0.65)" }}>
+              {course.description}
+            </p>
+          )}
+          <div className="flex items-center gap-3 mt-3">
+            {course.level && (
+              <span
+                className="text-xs capitalize px-2.5 py-1 rounded-full font-medium"
+                style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.7)" }}
+              >
+                {course.level}
+              </span>
+            )}
+            {lessons.length > 0 && (
+              <span className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
+                {lessons.length} lesson{lessons.length !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Instructor */}
+      {course.instructor && <InstructorCard instructor={course.instructor} />}
+
+      {/* Purchase CTA */}
+      <div
+        className="rounded-xl p-5 space-y-4"
+        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.09)" }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Get Access
+            </p>
+            {course.price != null && Number(course.price) > 0 ? (
+              <p className="text-3xl font-bold text-white mt-1">
+                ₹{Number(course.price).toLocaleString("en-IN")}
+              </p>
+            ) : (
+              <p className="text-lg font-semibold text-white mt-1">Contact us for pricing</p>
+            )}
+            {course.accessType === "lifetime" ? (
+              <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.40)" }}>Lifetime access</p>
+            ) : course.accessDurationDays ? (
+              <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.40)" }}>
+                {course.accessDurationDays}-day access
+              </p>
+            ) : null}
+          </div>
+          <Lock size={32} style={{ color: "rgba(255,255,255,0.15)", flexShrink: 0 }} />
+        </div>
+
+        {course.pendingPayment ? (
+          <div className="space-y-3">
+            <div
+              className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm"
+              style={{
+                background: "color-mix(in srgb, var(--color-alert) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--color-alert) 25%, transparent)",
+              }}
+            >
+              <Loader2 size={14} style={{ color: "var(--color-alert)" }} className="animate-spin" />
+              <span style={{ color: "rgba(255,255,255,0.75)" }}>Payment pending — awaiting confirmation</span>
+            </div>
+            {course.pendingPayment.paymentUrl && (
+              <button
+                onClick={() => window.open(course.pendingPayment.paymentUrl, "_blank")}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+                style={{ border: "1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)", color: "var(--color-accent)" }}
+              >
+                <ExternalLink size={14} /> Complete Payment
+              </button>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={handleGetAccess}
+            disabled={requestAccess.isPending}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {requestAccess.isPending ? (
+              <><Loader2 size={14} className="animate-spin" /> Processing...</>
+            ) : (
+              <>{course.paymentLinkUrl ? <ExternalLink size={14} /> : <Lock size={14} />} Get Access</>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Locked lesson preview */}
+      {lessons.length > 0 && (
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div
+            className="px-4 py-3 border-b text-sm font-semibold"
+            style={{ borderColor: "rgba(255,255,255,0.08)", background: "var(--color-bg-surface)", color: "rgba(255,255,255,0.7)" }}
+          >
+            {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"} — Preview
+          </div>
+          <div>
+            {lessons.map((lesson: any, idx: number) => (
+              <div
+                key={lesson.id}
+                className="flex items-center gap-4 px-4 py-4 border-b last:border-b-0"
+                style={{ borderColor: "rgba(255,255,255,0.06)", background: "var(--color-bg-surface)" }}
+              >
+                <span
+                  className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.3)" }}
+                >
+                  {idx + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: "rgba(255,255,255,0.55)" }}>
+                    {lesson.title}
+                  </p>
+                  {lesson.durationSeconds > 0 && (
+                    <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "rgba(255,255,255,0.28)" }}>
+                      <Clock size={10} /> {fmtDuration(lesson.durationSeconds)}
+                    </p>
+                  )}
+                </div>
+                <Lock size={13} style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Upsell */}
+      {course.upsellCourses?.length > 0 && (
+        <RelatedCourses courses={course.upsellCourses} title="You might also like" />
+      )}
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function CourseDetailPage({
   params,
 }: {
@@ -42,11 +422,13 @@ export default function CourseDetailPage({
   const { data: course, isLoading } = useCourse(courseId);
   const { data: progressList } = useLessonProgress(courseId);
   const markComplete = useMarkLessonComplete(courseId);
+  const { data: me } = useMe();
 
   const [selectedLesson, setSelectedLesson] = useState<SelectedLesson | null>(null);
   const [watchState, setWatchState] = useState<WatchState>("not_started");
   const [watchedSeconds, setWatchedSeconds] = useState(0);
-  const topRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const [certCopied, setCertCopied] = useState(false);
 
   // Quiz modal state
   const [quizModal, setQuizModal] = useState<{ episodeId: string; quizData: any } | null>(null);
@@ -55,7 +437,6 @@ export default function CourseDetailPage({
   const [xpFlash, setXpFlash] = useState<number | null>(null);
   const [downloadingCert, setDownloadingCert] = useState(false);
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
-  const { data: xpData } = useCourseXp(courseId);
   const { data: certData } = useCertificateEligibility(courseId);
 
   // Auto-select lesson from URL parameter once course data loads
@@ -95,7 +476,7 @@ export default function CourseDetailPage({
 
   // Refs so closure callbacks always see current values
   const markCalledRef = useRef(false);
-  const elapsedRef = useRef(0); // Time spent watching in this session
+  const elapsedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const iframeFocusedRef = useRef(false);
   const selectedLessonRef = useRef<SelectedLesson | null>(null);
@@ -105,7 +486,7 @@ export default function CourseDetailPage({
     progressList?.filter((p) => p.completed).map((p) => p.lessonId) ?? []
   );
 
-  // ── Reset state whenever lesson changes ──────────────────────────────────
+  // Reset state whenever lesson changes
   useEffect(() => {
     clearInterval(timerRef.current);
     iframeFocusedRef.current = false;
@@ -118,7 +499,7 @@ export default function CourseDetailPage({
     markCalledRef.current = alreadyDone;
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Native VideoPlayer callbacks ─────────────────────────────────────────
+  // Native VideoPlayer callbacks
   const handleNativeProgress = (s: number) => {
     setWatchedSeconds(s);
     setWatchState((prev) => (prev === "completed" ? "completed" : "watching"));
@@ -127,18 +508,15 @@ export default function CourseDetailPage({
   const handleNativeHeartbeat = (currentTime: number) => {
     const lesson = selectedLessonRef.current;
     if (!lesson || markCalledRef.current) return;
-    
     elapsedRef.current += 15;
     const threshold = lesson.durationSeconds > 0 ? lesson.durationSeconds * 0.85 : 90;
     const isCompleted = (lesson.actualWatchedSecs ?? 0) + elapsedRef.current >= threshold;
-    
     markComplete.mutate({
       lessonId: lesson.id,
       watchedSeconds: Math.floor(currentTime),
       deltaSeconds: 15,
       isCompleted: isCompleted ? true : undefined,
     });
-
     if (isCompleted) {
       markCalledRef.current = true;
       setWatchState("completed");
@@ -153,7 +531,7 @@ export default function CourseDetailPage({
     markComplete.mutate({ lessonId: lesson.id, watchedSeconds, isCompleted: true });
   };
 
-  // ── Heartbeat & Complete logic for Bunny Iframe ──────────────────────────
+  // Heartbeat & complete logic for Bunny iframe
   useEffect(() => {
     if (!selectedLesson || !isBunnyEmbed(selectedLesson.videoUrl)) return;
 
@@ -192,8 +570,7 @@ export default function CourseDetailPage({
 
       if (evt === "ready" && e.source) {
         const win = e.source as Window;
-        const eventsToSubscribe = ["play", "pause", "timeupdate", "ended"];
-        eventsToSubscribe.forEach((eventName) => {
+        ["play", "pause", "timeupdate", "ended"].forEach((eventName) => {
           win.postMessage(
             JSON.stringify({ context: "player.js", method: "addEventListener", value: eventName }),
             "*"
@@ -203,16 +580,13 @@ export default function CourseDetailPage({
       }
 
       const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
-      const isEnd = evt === "ended" || evt === "end" || evt === "finish" ||
-                    evt === "onfinish" || evt === "complete" || evt === "onended";
+      const isEnd = evt === "ended" || evt === "end" || evt === "finish" || evt === "onfinish" || evt === "complete" || evt === "onended";
       const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
 
       if (isTimeUpdate && payloadValue !== undefined) {
-        const currentTime = typeof payloadValue === 'number' ? payloadValue : payloadValue.seconds;
-        if (currentTime !== undefined) {
-          lastPlayhead = currentTime;
-        }
+        const currentTime = typeof payloadValue === "number" ? payloadValue : payloadValue.seconds;
+        if (currentTime !== undefined) lastPlayhead = currentTime;
       }
 
       if (isPlay && !isEnd) {
@@ -224,10 +598,8 @@ export default function CourseDetailPage({
             localElapsed += 15;
             const lesson = selectedLessonRef.current;
             if (!lesson) return;
-            
             const threshold = lesson.durationSeconds > 0 ? lesson.durationSeconds * 0.85 : 90;
             const isCompleted = (lesson.actualWatchedSecs ?? 0) + localElapsed >= threshold;
-
             if (isCompleted) {
               doMarkComplete();
             } else {
@@ -265,6 +637,11 @@ export default function CourseDetailPage({
     );
   }
 
+  // Paywall — course not purchased
+  if (!course.hasAccess) {
+    return <PaywallView course={course} courseId={courseId} />;
+  }
+
   const lessons: Lesson[] = course.lessons ?? [];
 
   const handleSelectLesson = (lesson: any) => {
@@ -281,10 +658,22 @@ export default function CourseDetailPage({
     topRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Status badge
+  const handleShareCert = async () => {
+    if (!me?.id) return;
+    const certId = btoa(`${me.id}:${courseId}`).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const url = `${window.location.origin}/verify/course/${certId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCertCopied(true);
+      setTimeout(() => setCertCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy link");
+    }
+  };
+
   const statusBadge = (() => {
     if (!selectedLesson) return null;
-    const progressPct = selectedLesson.durationSeconds > 0 
+    const progressPct = selectedLesson.durationSeconds > 0
       ? Math.min(100, Math.round(((selectedLesson.actualWatchedSecs ?? 0) / selectedLesson.durationSeconds) * 100))
       : 0;
 
@@ -292,19 +681,19 @@ export default function CourseDetailPage({
       label: uiStrings?.episodeCompleteLabel ?? "Completed",
       icon: <CheckCircle2 size={15} />,
       bg: "var(--color-success)",
-      pct: 100
+      pct: 100,
     };
     if (watchState === "watching") return {
       label: "Watching...",
       icon: <Loader2 size={15} className="animate-spin" />,
       bg: "var(--color-alert)",
-      pct: progressPct
+      pct: progressPct,
     };
     return {
       label: "Not Started",
       icon: <Play size={15} fill="currentColor" />,
       bg: "rgba(255,255,255,0.10)",
-      pct: progressPct
+      pct: progressPct,
     };
   })();
 
@@ -319,6 +708,11 @@ export default function CourseDetailPage({
         <ChevronLeft size={16} />
         {selectedLesson ? course.title : "Back"}
       </button>
+
+      {/* Access expiry warning */}
+      {course.accessExpiresAt && course.accessType !== "lifetime" && (
+        <ExpiryWarning expiresAt={course.accessExpiresAt} />
+      )}
 
       {/* Top area */}
       <div ref={topRef}>
@@ -350,12 +744,10 @@ export default function CourseDetailPage({
             </VideoWatermark>
 
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-lg font-semibold text-white leading-snug">
-                {selectedLesson.title}
-              </h2>
+              <h2 className="text-lg font-semibold text-white leading-snug">{selectedLesson.title}</h2>
               {statusBadge && (
                 <div
-                  className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors"
+                  className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
                   style={{ background: statusBadge.bg, color: "#fff" }}
                 >
                   {statusBadge.icon}
@@ -367,28 +759,35 @@ export default function CourseDetailPage({
           </div>
         ) : (
           /* Course banner */
-          <div
-            className="relative w-full aspect-video rounded-xl overflow-hidden"
-            style={{ background: "var(--color-bg-surface)" }}
-          >
-            {course.thumbnailUrl ? (
-              <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Play size={48} style={{ color: "var(--color-accent)" }} />
+          <div>
+            <div
+              className="relative w-full aspect-video rounded-xl overflow-hidden"
+              style={{ background: "var(--color-bg-surface)" }}
+            >
+              {course.thumbnailUrl ? (
+                <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Play size={48} style={{ color: "var(--color-accent)" }} />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-6">
+                <h1 className="text-2xl font-bold text-white leading-tight">{course.title}</h1>
+                {course.description && (
+                  <p className="text-sm mt-1 line-clamp-2" style={{ color: "rgba(255,255,255,0.65)" }}>
+                    {course.description}
+                  </p>
+                )}
+                <p className="text-xs mt-2" style={{ color: "rgba(255,255,255,0.45)" }}>
+                  {completedIds.size} / {lessons.length} completed
+                </p>
+              </div>
+            </div>
+            {course.instructor && (
+              <div className="mt-3">
+                <InstructorCard instructor={course.instructor} />
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-6">
-              <h1 className="text-2xl font-bold text-white leading-tight">{course.title}</h1>
-              {course.description && (
-                <p className="text-sm mt-1 line-clamp-2" style={{ color: "rgba(255,255,255,0.65)" }}>
-                  {course.description}
-                </p>
-              )}
-              <p className="text-xs mt-2" style={{ color: "rgba(255,255,255,0.45)" }}>
-                {completedIds.size} / {lessons.length} completed
-              </p>
-            </div>
           </div>
         )}
       </div>
@@ -417,6 +816,7 @@ export default function CourseDetailPage({
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
               const hasVideo = !!lesson.videoUrl;
+              const duration = lesson.durationSeconds;
 
               return (
                 <button
@@ -448,11 +848,15 @@ export default function CourseDetailPage({
                     <p className="text-sm font-medium truncate" style={{ color: isActive ? "#fff" : "rgba(255,255,255,0.85)" }}>
                       {lesson.title}
                     </p>
-                    {lesson.description && (
+                    {duration && duration > 0 ? (
+                      <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+                        <Clock size={10} /> {fmtDuration(duration)}
+                      </p>
+                    ) : lesson.description ? (
                       <p className="text-xs truncate mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>
                         {lesson.description}
                       </p>
-                    )}
+                    ) : null}
                   </div>
 
                   {isActive ? (
@@ -467,12 +871,25 @@ export default function CourseDetailPage({
         </div>
       </div>
 
-      {/* Certificate CTA — shown when all lessons are complete */}
+      {/* XP + Streak */}
+      <XpStreakWidget courseId={courseId} />
+
+      {/* Leaderboard */}
+      <LeaderboardWidget courseId={courseId} />
+
+      {/* Certificate CTA */}
       {certData?.eligible && (
-        <div className="rounded-xl p-5 flex items-center gap-4"
-          style={{ background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-surface))", border: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)" }}>
-          <div className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center"
-            style={{ background: "color-mix(in srgb, var(--color-accent) 20%, transparent)" }}>
+        <div
+          className="rounded-xl p-5 flex items-center gap-4"
+          style={{
+            background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-surface))",
+            border: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)",
+          }}
+        >
+          <div
+            className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center"
+            style={{ background: "color-mix(in srgb, var(--color-accent) 20%, transparent)" }}
+          >
             <Award size={24} style={{ color: "var(--color-accent)" }} />
           </div>
           <div className="flex-1 min-w-0">
@@ -481,40 +898,66 @@ export default function CourseDetailPage({
               Your certificate of completion is ready.
             </p>
           </div>
-          <button
-            disabled={downloadingCert}
-            className="shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 flex items-center gap-1.5 disabled:opacity-60"
-            style={{ background: "var(--color-accent)" }}
-            onClick={async () => {
-              setDownloadingCert(true);
-              try {
-                const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-                const res = await fetch(`${apiBase}/api/user/courses/${courseId}/certificate`, { credentials: "include" });
-                if (!res.ok) { toast.error("Certificate not ready yet."); return; }
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `certificate-${courseId}.pdf`;
-                a.click();
-                URL.revokeObjectURL(url);
-              } catch {
-                toast.error("Failed to download certificate.");
-              } finally {
-                setDownloadingCert(false);
-              }
-            }}
-          >
-            {downloadingCert ? <Loader2 size={14} className="animate-spin" /> : <Award size={14} />}
-            {downloadingCert ? "Preparing..." : "Get Certificate"}
-          </button>
+          <div className="flex gap-2 shrink-0">
+            {me?.id && (
+              <button
+                onClick={handleShareCert}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                style={{
+                  border: "1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)",
+                  color: "var(--color-accent)",
+                }}
+                title="Copy shareable link"
+              >
+                {certCopied ? <Check size={13} /> : <Copy size={13} />}
+                {certCopied ? "Copied!" : "Share"}
+              </button>
+            )}
+            <button
+              disabled={downloadingCert}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              style={{ background: "var(--color-accent)" }}
+              onClick={async () => {
+                setDownloadingCert(true);
+                try {
+                  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+                  const res = await fetch(`${apiBase}/api/user/courses/${courseId}/certificate`, { credentials: "include" });
+                  if (!res.ok) { toast.error("Certificate not ready yet."); return; }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `certificate-${courseId}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  toast.error("Failed to download certificate.");
+                } finally {
+                  setDownloadingCert(false);
+                }
+              }}
+            >
+              {downloadingCert ? <Loader2 size={13} className="animate-spin" /> : <Award size={13} />}
+              {downloadingCert ? "Preparing..." : "Download"}
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Related courses */}
+      {(course as any).upsellCourses?.length > 0 && (
+        <RelatedCourses courses={(course as any).upsellCourses} title="You might also like" />
+      )}
+      {(course as any).crossSellCourses?.length > 0 && (
+        <RelatedCourses courses={(course as any).crossSellCourses} title="Related Courses" />
       )}
 
       {/* XP flash */}
       {xpFlash !== null && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl font-bold text-white text-sm animate-bounce"
-          style={{ background: "var(--color-accent)" }}>
+        <div
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl font-bold text-white text-sm animate-bounce"
+          style={{ background: "var(--color-accent)" }}
+        >
           <Zap size={16} /> +{xpFlash} XP earned!
         </div>
       )}
@@ -522,20 +965,23 @@ export default function CourseDetailPage({
       {/* Quiz modal */}
       {quizModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
-            style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div
+            className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
+            style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+          >
             <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Episode Quiz</p>
                 <p className="text-sm font-semibold text-white mt-0.5">{quizModal.quizData?.title ?? "Quiz"}</p>
               </div>
               {!quizResult && (
-                <button onClick={() => setQuizModal(null)} className="text-white/40 hover:text-white/70 transition-colors"><X size={18} /></button>
+                <button onClick={() => setQuizModal(null)} className="text-white/40 hover:text-white/70 transition-colors">
+                  <X size={18} />
+                </button>
               )}
             </div>
 
             {quizResult ? (
-              /* Results view */
               <div className="p-6 text-center space-y-4">
                 <div className={`text-5xl font-bold ${quizResult.passed ? "text-green-400" : "text-red-400"}`}>
                   {quizResult.score}%
@@ -551,21 +997,24 @@ export default function CourseDetailPage({
                 )}
                 <div className="flex gap-3 pt-2">
                   {!quizResult.passed && (
-                    <button onClick={() => { setQuizAnswers({}); setQuizResult(null); }}
+                    <button
+                      onClick={() => { setQuizAnswers({}); setQuizResult(null); }}
                       className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-colors"
-                      style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>
+                      style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}
+                    >
                       Try Again
                     </button>
                   )}
-                  <button onClick={() => { setQuizModal(null); setQuizResult(null); }}
+                  <button
+                    onClick={() => { setQuizModal(null); setQuizResult(null); }}
                     className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white transition-colors"
-                    style={{ background: "var(--color-accent)" }}>
+                    style={{ background: "var(--color-accent)" }}
+                  >
                     {quizResult.passed ? "Continue" : "Skip"}
                   </button>
                 </div>
               </div>
             ) : (
-              /* Question view */
               <QuizQuestions
                 quizData={quizModal.quizData}
                 courseId={courseId}
@@ -595,7 +1044,7 @@ export default function CourseDetailPage({
   );
 }
 
-// ── Quiz questions component ──────────────────────────────────────────
+// ── Quiz questions component ──────────────────────────────────────────────────
 function QuizQuestions({
   quizData, courseId, episodeId, answers, setAnswers, onSubmit, isSubmitting,
 }: {
@@ -603,7 +1052,10 @@ function QuizQuestions({
   answers: Record<string, string>; setAnswers: (a: Record<string, string>) => void;
   onSubmit: (a: Record<string, string>) => void; isSubmitting: boolean;
 }) {
-  const questions: any[] = quizData?.quizData?.questions ?? quizData?.lessons?.find?.((l: any) => l.id === episodeId)?.quizData?.questions ?? [];
+  const questions: any[] =
+    quizData?.quizData?.questions ??
+    quizData?.lessons?.find?.((l: any) => l.id === episodeId)?.quizData?.questions ??
+    [];
 
   if (!questions.length) {
     return (
@@ -622,23 +1074,29 @@ function QuizQuestions({
           <p className="text-sm font-medium text-white mb-3">{qi + 1}. {q.question}</p>
           <div className="space-y-2">
             {q.options?.map((opt: any) => (
-              <button key={opt.id} type="button"
+              <button
+                key={opt.id}
+                type="button"
                 onClick={() => setAnswers({ ...answers, [q.id]: opt.id })}
                 className="w-full text-left px-4 py-2.5 rounded-lg text-sm transition-all border"
                 style={{
                   borderColor: answers[q.id] === opt.id ? "var(--color-accent)" : "rgba(255,255,255,0.1)",
                   background: answers[q.id] === opt.id ? "color-mix(in srgb, var(--color-accent) 15%, transparent)" : "transparent",
                   color: answers[q.id] === opt.id ? "#fff" : "rgba(255,255,255,0.6)",
-                }}>
+                }}
+              >
                 {opt.text}
               </button>
             ))}
           </div>
         </div>
       ))}
-      <button onClick={() => onSubmit(answers)} disabled={!allAnswered || isSubmitting}
+      <button
+        onClick={() => onSubmit(answers)}
+        disabled={!allAnswered || isSubmitting}
         className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-40"
-        style={{ background: "var(--color-accent)" }}>
+        style={{ background: "var(--color-accent)" }}
+      >
         {isSubmitting ? "Submitting..." : "Submit Answers"}
       </button>
     </div>
