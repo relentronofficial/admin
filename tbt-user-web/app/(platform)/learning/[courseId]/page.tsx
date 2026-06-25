@@ -1067,7 +1067,7 @@ export default function CourseDetailPage({
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
               const hasVideo = !!lesson.videoUrl;
-              const duration = lesson.durationSeconds;
+              const duration = isActive && liveRealDuration > 0 ? liveRealDuration : (lesson.durationSeconds ?? 0);
               const activeLessonDuration = (isActive && activeDuration > 0 ? activeDuration : duration) ?? 0;
               const livePct = isActive && liveWatched > 0 && activeLessonDuration > 0
                 ? Math.min(100, Math.round((liveWatched / activeLessonDuration) * 100))
