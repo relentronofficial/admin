@@ -896,7 +896,7 @@ export default function CourseDetailPage({
       : 0;
 
     if (watchState === "completed" || selectedLesson.isCompleted) return {
-      label: uiStrings?.episodeCompleteLabel ?? "Completed",
+      label: "Completed",
       icon: <CheckCircle2 size={15} />,
       bg: "var(--color-success)",
       pct: 100,
