@@ -647,15 +647,15 @@ export default function CourseDetailPage({
             BUNNY_ORIGIN
           );
         });
-        // Request actual video duration from Bunny Player.js API
-        win.postMessage(
-          JSON.stringify({ context: "player.js", method: "getDuration" }),
-          BUNNY_ORIGIN
-        );
+        // Request actual video duration and current time (to detect auto-play already in progress)
+        win.postMessage(JSON.stringify({ context: "player.js", method: "getDuration" }), BUNNY_ORIGIN);
+        win.postMessage(JSON.stringify({ context: "player.js", method: "getCurrentTime" }), BUNNY_ORIGIN);
+        win.postMessage(JSON.stringify({ context: "player.js", method: "isPaused" }), BUNNY_ORIGIN);
         return;
       }
 
-      const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start";
+      const isPlay = evt === "play" || evt === "playing" || evt === "onplay" || evt === "start"
+        || evt === "autoplay" || evt === "autoplaystart";
       const isEnd = evt === "ended" || evt === "end" || evt === "finish" || evt === "onfinish" || evt === "complete" || evt === "onended";
       const isPause = evt === "pause" || evt === "paused" || evt === "onpause";
       const isTimeUpdate = evt === "timeupdate";
@@ -668,6 +668,20 @@ export default function CourseDetailPage({
           realDurationRef.current = dur;
           setLiveRealDuration(dur);
         }
+      }
+
+      // Detect if player was already playing when our handler registered (e.g. autoplay)
+      if (evt === "getcurrenttime" && payloadValue !== undefined) {
+        const ct = typeof payloadValue === "number" ? payloadValue : Number(payloadValue);
+        if (ct > 0) {
+          lastPlayheadRef.current = ct;
+          isPlayingRef.current = true;
+          setWatchState((s) => (s === "completed" ? "completed" : "watching"));
+        }
+      }
+      if (evt === "ispaused" && payloadValue === false) {
+        isPlayingRef.current = true;
+        setWatchState((s) => (s === "completed" ? "completed" : "watching"));
       }
 
       if (isTimeUpdate && payloadValue !== undefined) {
