@@ -129,7 +129,7 @@ function CourseCard({ course, isEnrolled, progress }: { course: any; isEnrolled:
 
   return (
     <Link
-      href={`/programs/${course.id}`}
+      href={`/learning/${course.id}`}
       className="group flex flex-col rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5"
       style={{
         background: "var(--color-bg-surface, #181818)",
