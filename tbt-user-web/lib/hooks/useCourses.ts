@@ -59,7 +59,15 @@ export const useMarkLessonComplete = (courseId: string) => {
   return useMutation({
     mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean }) =>
       coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted),
-    onSuccess: () => {
+    onSuccess: (_data, { lessonId, isCompleted }) => {
+      if (isCompleted) {
+        queryClient.setQueryData(["user", "progress", courseId], (old: any) => {
+          if (!Array.isArray(old)) return old;
+          const exists = old.some((p: any) => p.lessonId === lessonId);
+          if (exists) return old.map((p: any) => p.lessonId === lessonId ? { ...p, completed: true } : p);
+          return [...old, { lessonId, completed: true, completedAt: new Date().toISOString() }];
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["user", "progress", courseId] });
       queryClient.invalidateQueries({ queryKey: ["user", "dashboard"] });
     },

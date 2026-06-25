@@ -1121,52 +1121,60 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
 export async function getCourseXpHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: courseId } = request.params as { id: string };
 
-  const rows = await (request.server.prisma as any).memberXP.findMany({
-    where: { memberId: request.memberId, courseId },
-    select: { id: true, source: true, amount: true, earnedAt: true, episodeId: true },
-    orderBy: { earnedAt: 'desc' },
-  });
+  try {
+    const rows = await (request.server.prisma as any).memberXP.findMany({
+      where: { memberId: request.memberId, courseId },
+      select: { id: true, source: true, amount: true, earnedAt: true, episodeId: true },
+      orderBy: { earnedAt: 'desc' },
+    });
 
-  const total = (rows as any[]).reduce((sum: number, r: any) => sum + r.amount, 0);
-  const streak = await (request.server.prisma as any).courseStreak.findUnique({
-    where: { memberId_courseId: { memberId: request.memberId, courseId } },
-    select: { currentStreak: true, longestStreak: true },
-  });
+    const total = (rows as any[]).reduce((sum: number, r: any) => sum + r.amount, 0);
+    const streak = await (request.server.prisma as any).courseStreak.findUnique({
+      where: { memberId_courseId: { memberId: request.memberId, courseId } },
+      select: { currentStreak: true, longestStreak: true },
+    }).catch(() => null);
 
-  return ok(reply, { totalXp: total, currentStreak: streak?.currentStreak ?? 0, longestStreak: streak?.longestStreak ?? 0, history: rows });
+    return ok(reply, { totalXp: total, currentStreak: streak?.currentStreak ?? 0, longestStreak: streak?.longestStreak ?? 0, history: rows });
+  } catch {
+    return ok(reply, { totalXp: 0, currentStreak: 0, longestStreak: 0, history: [] });
+  }
 }
 
 export async function getUserCourseLeaderboardHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: courseId } = request.params as { id: string };
   const { limit = 20 } = request.query as any;
 
-  const rows = await (request.server.prisma as any).memberXP.groupBy({
-    by: ['memberId'],
-    _sum: { amount: true },
-    where: { courseId },
-    orderBy: { _sum: { amount: 'desc' } },
-    take: Number(limit),
-  });
+  try {
+    const rows = await (request.server.prisma as any).memberXP.groupBy({
+      by: ['memberId'],
+      _sum: { amount: true },
+      where: { courseId },
+      orderBy: { _sum: { amount: 'desc' } },
+      take: Number(limit),
+    });
 
-  const memberIds = (rows as any[]).map((r: any) => r.memberId);
-  const members = await request.server.prisma.member.findMany({
-    where: { id: { in: memberIds } },
-    select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
-  });
+    const memberIds = (rows as any[]).map((r: any) => r.memberId);
+    const members = await request.server.prisma.member.findMany({
+      where: { id: { in: memberIds } },
+      select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+    });
 
-  const memberMap = new Map(members.map((m) => [m.id, m]));
-  const myEntry = (rows as any[]).find((r: any) => r.memberId === request.memberId);
-  const myRank = myEntry ? (rows as any[]).indexOf(myEntry) + 1 : null;
+    const memberMap = new Map(members.map((m) => [m.id, m]));
+    const myEntry = (rows as any[]).find((r: any) => r.memberId === request.memberId);
+    const myRank = myEntry ? (rows as any[]).indexOf(myEntry) + 1 : null;
 
-  const data = (rows as any[]).map((r: any, i: number) => ({
-    rank: i + 1,
-    memberId: r.memberId,
-    member: memberMap.get(r.memberId) ?? null,
-    totalXp: r._sum?.amount ?? 0,
-    isMe: r.memberId === request.memberId,
-  }));
+    const data = (rows as any[]).map((r: any, i: number) => ({
+      rank: i + 1,
+      memberId: r.memberId,
+      member: memberMap.get(r.memberId) ?? null,
+      totalXp: r._sum?.amount ?? 0,
+      isMe: r.memberId === request.memberId,
+    }));
 
-  return ok(reply, { leaderboard: data, myRank });
+    return ok(reply, { leaderboard: data, myRank });
+  } catch {
+    return ok(reply, { leaderboard: [], myRank: null });
+  }
 }
 
 export async function getUserBadgesHandler(request: FastifyRequest, reply: FastifyReply) {
