@@ -1,5 +1,4 @@
 import { Queue, Worker } from 'bullmq';
-import { Redis } from 'ioredis';
 import type { PrismaClient } from '@prisma/client';
 import { sendWhatsappMessage } from '../lib/whatsapp.js';
 import { env } from '../config/env.js';
@@ -54,13 +53,12 @@ export function startCourseExpiryReminderJob(prisma: PrismaClient, log: { info: 
     return;
   }
 
-  const connection = new Redis(redisUrl, {
-    maxRetriesPerRequest: null,
+  const connection = {
+    url: redisUrl,
+    maxRetriesPerRequest: null as null,
     enableReadyCheck: false,
     ...(redisUrl.startsWith('rediss://') ? { tls: {} } : {}),
-  });
-
-  connection.on('error', (err) => log.error({ err }, '[course-expiry-job] Redis connection error'));
+  };
 
   const queue = new Queue(QUEUE_NAME, { connection });
 
