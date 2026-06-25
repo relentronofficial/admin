@@ -439,6 +439,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     crossSellCourses = crossSellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
   }
 
+  const LESSON_BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
+
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
     let videoUrl = hasAccess ? ep.videoUrl : null;
@@ -447,11 +449,18 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       const sep = videoUrl.includes('?') ? '&' : '?';
       videoUrl = `${videoUrl}${sep}token=${(ep as any).bunnyDrmToken}`;
     }
+    // Derive HLS URL from bunnyVideoId or the embed URL — used by PlyrPlayer for reliable duration detection
+    const urlMatch = ep.videoUrl?.match(LESSON_BUNNY_URL_RE);
+    const bunnyId = (ep as any).bunnyVideoId ?? urlMatch?.[1] ?? null;
+    const hlsUrl = hasAccess && bunnyId && env.BUNNY_CDN_URL
+      ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
+      : null;
     return {
       id: ep.id,
       title: ep.title,
       description: null as string | null,
       videoUrl,
+      hlsUrl,
       duration: ep.durationSeconds ? Math.round(ep.durationSeconds / 60) : null,
       durationSeconds: ep.durationSeconds ?? null,
       order: ep.order,

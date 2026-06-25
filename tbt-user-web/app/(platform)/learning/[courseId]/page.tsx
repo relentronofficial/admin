@@ -8,6 +8,8 @@ import {
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
+import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
+import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import {
   useCourse, useLessonProgress, useMarkLessonComplete,
@@ -40,6 +42,7 @@ interface SelectedLesson {
   id: string;
   title: string;
   videoUrl: string;
+  hlsUrl?: string | null;
   durationSeconds: number;
   resumeAtSeconds?: number;
   actualWatchedSecs?: number;
@@ -429,9 +432,11 @@ export default function CourseDetailPage({
   const [watchedSeconds, setWatchedSeconds] = useState(0);
   const [liveWatched, setLiveWatched] = useState<number>(0);
   const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
+  const [hlsFailed, setHlsFailed] = useState(false);
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
   const [videoKey, setVideoKey] = useState(0);
   const topRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<PlyrPlayerHandle | null>(null);
   const [certCopied, setCertCopied] = useState(false);
 
   // Quiz modal state
@@ -452,6 +457,7 @@ export default function CourseDetailPage({
           id: target.id,
           title: target.title,
           videoUrl: target.videoUrl,
+          hlsUrl: (target as any).hlsUrl ?? null,
           durationSeconds: target.durationSeconds ?? 0,
           resumeAtSeconds: (target as any).resumeAtSeconds ?? 0,
           actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
@@ -517,6 +523,7 @@ export default function CourseDetailPage({
             id: next.id,
             title: next.title,
             videoUrl: next.videoUrl,
+            hlsUrl: (next as any).hlsUrl ?? null,
             durationSeconds: next.durationSeconds ?? 0,
             resumeAtSeconds: (next as any).resumeAtSeconds ?? 0,
             actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
@@ -547,6 +554,7 @@ export default function CourseDetailPage({
     clearInterval(upNextTimerRef.current);
     setLiveWatched(0);
     setLiveRealDuration(0);
+    setHlsFailed(false);
     setUpNextCountdown(null);
 
     if (!selectedLesson) return;
@@ -599,9 +607,10 @@ export default function CourseDetailPage({
     triggerUpNextRef.current();
   };
 
-  // ── Bunny iframe message handler ─────────────────────────────────────────────
+  // ── Bunny iframe message handler — only runs when HLS is unavailable or failed ──
   useEffect(() => {
     if (!selectedLesson || !isBunnyEmbed(selectedLesson.videoUrl)) return;
+    if (selectedLesson.hlsUrl && !hlsFailed) return;
 
     const BUNNY_ORIGIN = "https://iframe.mediadelivery.net";
 
@@ -719,7 +728,7 @@ export default function CourseDetailPage({
       window.removeEventListener("message", handler);
       isPlayingRef.current = false;
     };
-  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedLesson?.id, hlsFailed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 1-second tick + tab visibility + beforeunload ────────────────────────────
   useEffect(() => {
@@ -841,6 +850,7 @@ export default function CourseDetailPage({
       id: lesson.id,
       title: lesson.title,
       videoUrl: lesson.videoUrl,
+      hlsUrl: lesson.hlsUrl ?? null,
       durationSeconds: lesson.durationSeconds ?? 0,
       resumeAtSeconds: lesson.resumeAtSeconds ?? 0,
       actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
@@ -926,11 +936,27 @@ export default function CourseDetailPage({
             <VideoWatermark
               className="w-full aspect-video rounded-xl overflow-hidden relative bg-black"
               containerId="course-video-root"
-              showFullscreenButton={isBunnyEmbed(selectedLesson.videoUrl)}
+              showFullscreenButton={!!(selectedLesson.hlsUrl || isBunnyEmbed(selectedLesson.videoUrl))}
             >
-              {isBunnyEmbed(selectedLesson.videoUrl) ? (
-                <iframe
+              {selectedLesson.hlsUrl && !hlsFailed ? (
+                <PlyrPlayer
+                  ref={playerRef}
                   key={`${selectedLesson.id}-${videoKey}`}
+                  hlsUrl={selectedLesson.hlsUrl}
+                  startAt={videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0)}
+                  autoplay={true}
+                  className="absolute inset-0 w-full h-full bg-black"
+                  onReady={handleVideoReady}
+                  onTimeUpdate={handleVideoProgress}
+                  onPlay={handleVideoPlay}
+                  onPause={handleVideoPause}
+                  onEnded={handleVideoEnded}
+                  onSpeedChange={handleVideoSpeedChange}
+                  onError={() => setHlsFailed(true)}
+                />
+              ) : isBunnyEmbed(selectedLesson.videoUrl) ? (
+                <iframe
+                  key={`${selectedLesson.id}-${videoKey}-iframe`}
                   src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl), videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0))}
                   className="w-full h-full border-0"
                   allow="accelerometer; gyroscope; autoplay; encrypted-media"
