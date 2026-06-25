@@ -31,11 +31,14 @@ function isBunnyEmbed(url: string) {
 }
 
 function fmtDuration(seconds: number): string {
-  if (!seconds) return "";
-  const m = Math.floor(seconds / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m`;
-  return `${m}m`;
+  if (!seconds || seconds <= 0) return "";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m === 0) return `${s}s`;
+  if (s === 0) return `${m}m`;
+  return `${m}m ${s}s`;
 }
 
 interface SelectedLesson {
