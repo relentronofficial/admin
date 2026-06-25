@@ -90,6 +90,7 @@ npm run format      # prettier --write .
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
 - **Backend modules present:** `admins`, `auth`, `batches`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `hero`, `location`, `members`, `messages`, `notifications`, `products`, `pub`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`, `app-notifications`, `app-resources`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
+- **Cron endpoints** — `/api/workshops/cron/generate-recurring` and `/api/cron/course-expiry-reminder` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
@@ -108,11 +109,29 @@ npm run format      # prettier --write .
 ```
 app/
   (auth)/           # Clerk-hosted sign-in/sign-up pages — DO NOT MODIFY
-  (marketing)/      # Public landing page (unauthenticated)
+  (marketing)/      # Public unauthenticated pages: landing, /events, /programs
   (platform)/       # All member pages — wrapped by Navbar + SubscriptionGate
+    dashboard/      # Member home
+    tbt/            # Content catalog
+    workshops/      # Workshop list
+    workshop/[id]/  # Workshop detail + flow + Q&A + live calls
+    learning/       # Course progress; /learning/badges, /learning/[courseId]
+    courses/        # Course catalog
+    events/         # Events list; /events/[id]
+    programs/       # Programs list; /programs/[id]
+    batch-program/  # Batch program; /batch-program/[day]
+    live/[webinarId]# In-session webinar page
+    search/         # Global search
+    notifications/  # Notification center
+    messages/       # Chat messages
+    Products/       # Products/upgrade page (exempt from SubscriptionGate)
+    Resources/      # Downloadable resources
+    history/        # Watch history
+    profile/        # Member profile (exempt from SubscriptionGate)
   (player)/         # Full-screen video player — bare layout (no Navbar/Footer)
   login/            # Custom LoginScreen — DO NOT MODIFY
   signup/           # Self-registration form (SignupScreen) — DO NOT MODIFY
+  verify/           # Phone/OTP verification step (post-signup)
   loading/          # Standalone loading page
 ```
 `(platform)/layout.tsx` renders `<Navbar>`, `<SubscriptionGate>`, and `<Footer>`. All platform pages sit inside `max-w-7xl mx-auto`.
@@ -164,9 +183,11 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
 - `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`)
-- `lib/hooks/useCourses.ts` — course catalog hooks (user-facing)
-- `lib/hooks/useEvents.ts` — events hooks
+- `lib/hooks/useCourses.ts` — course catalog hooks (user-facing); backed by `lib/api/services/courses.service.ts`
+- `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
 - All hooks are `"use client"` and use TanStack Query v5
+
+**Service layer:** User-web hooks delegate HTTP calls to `lib/api/services/*.service.ts` (thin wrappers over `apiClient`). When adding new user-web hooks, create or extend the relevant service file rather than calling `apiClient` directly from the hook.
 
 ### Zustand Stores (User Web)
 `lib/stores/` contains three stores: `useAuthStore` (login state, OTP flow step), `usePlayerStore` (episode playback state), `useUIStore` (global UI toggles). Import from `@/lib/stores/<name>`.

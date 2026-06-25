@@ -140,9 +140,10 @@ export default function CoursesPage() {
       xpPerEpisode: Number(courseForm.xpPerEpisode) || 10,
       passingScorePercent: Number(courseForm.passingScorePercent) || 70,
     };
-    if (courseForm.price !== "") payload.price = Number(courseForm.price);
-    if (courseForm.accessDurationDays !== "") payload.accessDurationDays = Number(courseForm.accessDurationDays);
-    if (courseForm.maxEnrollments !== "") payload.maxEnrollments = Number(courseForm.maxEnrollments);
+    payload.price = courseForm.price !== "" ? Number(courseForm.price) : null;
+    payload.accessDurationDays = courseForm.accessDurationDays !== "" ? Number(courseForm.accessDurationDays) : null;
+    payload.maxEnrollments = courseForm.maxEnrollments !== "" ? Number(courseForm.maxEnrollments) : null;
+    payload.paymentLinkUrl = courseForm.paymentLinkUrl.trim() || null;
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     try {
