@@ -453,7 +453,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     const urlMatch = ep.videoUrl?.match(LESSON_BUNNY_URL_RE);
     const bunnyId = (ep as any).bunnyVideoId ?? urlMatch?.[1] ?? null;
     const hlsUrl = hasAccess && bunnyId && env.BUNNY_CDN_URL
-      ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
+      ? `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
       : null;
     return {
       id: ep.id,
@@ -2902,7 +2902,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
   }
 
   const hlsUrl = (bunnyId && env.BUNNY_CDN_URL)
-    ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
+    ? `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
     : null;
 
   const prog = (episode as any).progress?.[0];
@@ -3752,7 +3752,7 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
         typeLabel: ep.typeLabel,
         videoUrl: ep.videoUrl ?? null,
         hlsUrl: (bunnyId && env.BUNNY_CDN_URL)
-          ? `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
+          ? `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
           : null,
         durationLabel: ep.durationLabel ?? null,
         durationSeconds: ep.durationSeconds ?? null,
