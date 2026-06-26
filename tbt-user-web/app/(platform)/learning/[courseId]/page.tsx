@@ -49,8 +49,6 @@ function lessonAlreadyDone(
   const watched = actualWatchedSecs ?? 0;
   const resume = resumeAtSeconds ?? 0;
   if (dur > 0 && watched >= dur * 0.85) return true;
-  // If the playhead is within 5 s of the furthest-watched mark, user is at the end of what they've seen.
-  if (watched > 5 && Math.abs(resume - watched) < 5) return true;
   return false;
 }
 
