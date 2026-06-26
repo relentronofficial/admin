@@ -30,6 +30,30 @@ function isBunnyEmbed(url: string) {
   return url.includes("mediadelivery.net");
 }
 
+// Unified "lesson already done" check used in every place resumeAtSeconds is decided.
+// Four signals, any one is sufficient:
+//   1. completedIds (from progress query) — authoritative DB state
+//   2. lesson.isCompleted (from course query) — may be stale but usually correct
+//   3. durationSeconds threshold — 85% of stored duration (fails if duration is wrong in DB)
+//   4. Position heuristic — resume position ≈ total accumulated watch time (handles wrong duration metadata)
+function lessonAlreadyDone(
+  lessonId: string,
+  completedIds: Set<string>,
+  isCompleted: boolean | null | undefined,
+  durationSeconds: number | null | undefined,
+  actualWatchedSecs: number | null | undefined,
+  resumeAtSeconds: number | null | undefined,
+): boolean {
+  if (completedIds.has(lessonId) || !!isCompleted) return true;
+  const dur = durationSeconds ?? 0;
+  const watched = actualWatchedSecs ?? 0;
+  const resume = resumeAtSeconds ?? 0;
+  if (dur > 0 && watched >= dur * 0.85) return true;
+  // If the playhead is within 5 s of the furthest-watched mark, user is at the end of what they've seen.
+  if (watched > 5 && Math.abs(resume - watched) < 5) return true;
+  return false;
+}
+
 function fmtDuration(seconds: number): string {
   if (!seconds || seconds <= 0) return "";
   const h = Math.floor(seconds / 3600);
@@ -456,7 +480,10 @@ export default function CourseDetailPage({
     if (course?.lessons && targetLessonId && !selectedLesson) {
       const target = course.lessons.find((l: any) => l.id === targetLessonId);
       if (target && target.videoUrl) {
-        const alreadyDone = !!(target as any).isCompleted;
+        const alreadyDone = lessonAlreadyDone(
+          target.id, completedIds, (target as any).isCompleted,
+          target.durationSeconds, (target as any).actualWatchedSecs, (target as any).resumeAtSeconds,
+        );
         setSelectedLesson({
           id: target.id,
           title: target.title,
@@ -523,7 +550,10 @@ export default function CourseDetailPage({
         setUpNextCountdown(null);
         const next = lessons[currentIdx + 1];
         if (next?.videoUrl) {
-          const nextDone = !!(next as any).isCompleted;
+          const nextDone = lessonAlreadyDone(
+            next.id, completedIdsRef.current, (next as any).isCompleted,
+            next.durationSeconds, (next as any).actualWatchedSecs, (next as any).resumeAtSeconds,
+          );
           setSelectedLesson({
             id: next.id,
             title: next.title,
@@ -545,16 +575,18 @@ export default function CourseDetailPage({
   const completedIds = new Set(
     progressList?.filter((p) => p.completed).map((p) => p.lessonId) ?? []
   );
+  const completedIdsRef = useRef<Set<string>>(new Set());
+  completedIdsRef.current = completedIds;
 
   // When server data arrives and contradicts a stale-cache "completed" state,
   // correct watchState so the user can actually re-watch the lesson.
-  // Must use the same alreadyDone logic as the reset effect — including the 85% threshold.
   useEffect(() => {
     if (!selectedLesson || watchState === "watching" || watchState === "not_started") return;
-    const dur = selectedLesson.durationSeconds ?? 0;
-    const serverSaysDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted
-      || (dur > 0 && (selectedLesson.actualWatchedSecs ?? 0) >= dur * 0.85);
-    if (!serverSaysDone && watchState === "completed" && !doMarkCompleteRef.current) {
+    const done = lessonAlreadyDone(
+      selectedLesson.id, completedIds, selectedLesson.isCompleted,
+      selectedLesson.durationSeconds, selectedLesson.actualWatchedSecs, selectedLesson.resumeAtSeconds,
+    );
+    if (!done && watchState === "completed" && !doMarkCompleteRef.current) {
       setWatchState("not_started");
       markCalledRef.current = false;
     }
@@ -578,24 +610,27 @@ export default function CourseDetailPage({
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
-    const dur = selectedLesson.durationSeconds ?? 0;
-    const alreadyDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted
-      || (dur > 0 && (selectedLesson.actualWatchedSecs ?? 0) >= dur * 0.85);
+    const alreadyDone = lessonAlreadyDone(
+      selectedLesson.id, completedIdsRef.current, selectedLesson.isCompleted,
+      selectedLesson.durationSeconds, selectedLesson.actualWatchedSecs, selectedLesson.resumeAtSeconds,
+    );
     setWatchState(alreadyDone ? "completed" : "not_started");
     setWatchedSeconds(selectedLesson.resumeAtSeconds ?? 0);
     markCalledRef.current = alreadyDone;
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync completion to backend when a prior session accumulated enough watch time
-  // but isCompleted was never persisted (e.g. session ended before heartbeat threshold fired)
+  // Once the player reports the real video duration, re-evaluate completion using
+  // accurate duration (overrides wrong durationSeconds stored in DB).
   useEffect(() => {
-    if (!selectedLesson || selectedLesson.isCompleted || completedIds.has(selectedLesson.id)) return;
-    const dur = selectedLesson.durationSeconds ?? 0;
-    if (dur <= 0) return;
+    if (!selectedLesson || liveRealDuration <= 0) return;
+    if (selectedLesson.isCompleted || completedIds.has(selectedLesson.id)) return;
+    if (markCalledRef.current) return;
     const watched = selectedLesson.actualWatchedSecs ?? 0;
-    if (watched < dur * 0.85) return;
+    if (watched < liveRealDuration * 0.85) return;
+    setWatchState("completed");
+    markCalledRef.current = true;
     markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: Math.floor(watched), isCompleted: true });
-  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveRealDuration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Native VideoPlayer callbacks ─────────────────────────────────────────────
   const handleVideoReady = (duration: number) => {
@@ -880,15 +915,16 @@ export default function CourseDetailPage({
   const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
     setVideoKey(0);
-    const dur = lesson.durationSeconds ?? 0;
-    const alreadyDone = completedIds.has(lesson.id) || !!lesson.isCompleted
-      || (dur > 0 && (lesson.actualWatchedSecs ?? 0) >= dur * 0.85);
+    const alreadyDone = lessonAlreadyDone(
+      lesson.id, completedIds, lesson.isCompleted,
+      lesson.durationSeconds, lesson.actualWatchedSecs, lesson.resumeAtSeconds,
+    );
     setSelectedLesson({
       id: lesson.id,
       title: lesson.title,
       videoUrl: lesson.videoUrl,
       hlsUrl: lesson.hlsUrl ?? null,
-      durationSeconds: dur,
+      durationSeconds: lesson.durationSeconds ?? 0,
       resumeAtSeconds: alreadyDone ? 0 : (lesson.resumeAtSeconds ?? 0),
       actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
       isCompleted: alreadyDone,
