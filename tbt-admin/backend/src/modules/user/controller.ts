@@ -888,27 +888,15 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   const cumulativeActualSecs = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
 
-  // Use client-reported real video duration (from the player) when it is smaller than the
-  // stored durationSeconds — this handles stale/wrong metadata in the DB (e.g. a 37-second
-  // video stored as 1500s). We trust the smaller value because the player cannot report a
-  // duration shorter than what it actually played.
-  const storedDuration = episode.durationSeconds ?? 0;
-  const clientDuration = videoDuration && videoDuration > 0 ? Math.floor(videoDuration) : 0;
-  const effectiveDuration = clientDuration > 0 && clientDuration < storedDuration
-    ? clientDuration
-    : storedDuration;
-  const threshold = effectiveDuration > 0 ? effectiveDuration * 0.85 : 90;
-
-  // Secondary check: playhead position meets threshold (handles ended-event calls with no deltaSeconds)
-  const playheadMeetsThreshold = watchedSeconds !== undefined && effectiveDuration > 0
-    ? watchedSeconds >= effectiveDuration * 0.85
-    : false;
-
   if (existingProgress?.completed) {
-    // Already completed previously
     finalIsCompleted = true;
-  } else if (requestedCompletion && (cumulativeActualSecs >= threshold || playheadMeetsThreshold)) {
-    // Reached threshold legitimately (by accumulated watch time OR playhead position)
+  } else if (requestedCompletion === true && (cumulativeActualSecs >= 5 || (watchedSeconds ?? 0) > 0)) {
+    // Trust the client's explicit completion flag when there is any evidence of watching.
+    // The frontend only sends isCompleted=true on the player's ended event or after its own
+    // 85%-of-real-duration threshold — it never sends it for fresh page loads or seek events.
+    // Requiring at least 5 cumulative seconds OR a non-zero playhead prevents bare API calls
+    // with no watch data from triggering completion. Stored durationSeconds is intentionally
+    // NOT used here — it can be stale/wrong and would silently block legitimate completions.
     finalIsCompleted = true;
   }
 
