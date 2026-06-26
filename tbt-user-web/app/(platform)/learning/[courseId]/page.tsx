@@ -629,7 +629,7 @@ export default function CourseDetailPage({
     if (watched < liveRealDuration * 0.85) return;
     setWatchState("completed");
     markCalledRef.current = true;
-    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: Math.floor(watched), isCompleted: true });
+    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: Math.floor(watched), isCompleted: true, videoDuration: liveRealDuration });
   }, [liveRealDuration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Native VideoPlayer callbacks ─────────────────────────────────────────────
@@ -674,7 +674,7 @@ export default function CourseDetailPage({
     if (!markCalledRef.current) {
       markCalledRef.current = true;
       doMarkCompleteRef.current = false;
-      markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true });
+      markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true, videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
     }
   };
 
@@ -694,7 +694,7 @@ export default function CourseDetailPage({
       triggerUpNextRef.current();
       if (!markCalledRef.current) {
         markCalledRef.current = true;
-        markComplete.mutate({ lessonId: lesson.id, isCompleted: true });
+        markComplete.mutate({ lessonId: lesson.id, isCompleted: true, watchedSeconds: Math.floor(lastPlayheadRef.current), videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
       }
     };
 
@@ -866,6 +866,7 @@ export default function CourseDetailPage({
           watchedSeconds: Math.floor(lastPlayheadRef.current),
           deltaSeconds: delta,
           isCompleted: shouldComplete || undefined,
+          videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
         },
         {
           onSuccess: (res: any) => {

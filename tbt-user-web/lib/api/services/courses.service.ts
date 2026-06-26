@@ -25,11 +25,12 @@ export const coursesService = {
   getLessonProgress: (courseId: string) =>
     apiClient.get<never, ApiResponse<LessonProgress[]>>(`/api/user/enrollments/${courseId}/progress`),
 
-  markLessonComplete: (courseId: string, lessonId: string, watchedSeconds?: number, deltaSeconds?: number, isCompleted?: boolean) =>
+  markLessonComplete: (courseId: string, lessonId: string, watchedSeconds?: number, deltaSeconds?: number, isCompleted?: boolean, videoDuration?: number) =>
     apiClient.post<never, ApiResponse<LessonProgress>>(`/api/user/enrollments/${courseId}/progress/${lessonId}`, {
       watchedSeconds,
       deltaSeconds,
       isCompleted,
+      videoDuration,
     }),
 
   submitQuiz: (courseId: string, episodeId: string, answers: Record<string, string>) =>

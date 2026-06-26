@@ -829,10 +829,11 @@ export async function getLessonProgressHandler(request: FastifyRequest, reply: F
 
 export async function markLessonCompleteHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId, lessonId: episodeId } = request.params as { courseId: string; lessonId: string };
-  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion } = request.body as {
+  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion, videoDuration } = request.body as {
     watchedSeconds?: number;
     deltaSeconds?: number;
     isCompleted?: boolean;
+    videoDuration?: number;
   };
 
   const episode = await request.server.prisma.courseEpisode.findFirst({
@@ -886,13 +887,28 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   }
 
   const cumulativeActualSecs = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
-  const threshold = episode.durationSeconds ? episode.durationSeconds * 0.85 : 90;
+
+  // Use client-reported real video duration (from the player) when it is smaller than the
+  // stored durationSeconds — this handles stale/wrong metadata in the DB (e.g. a 37-second
+  // video stored as 1500s). We trust the smaller value because the player cannot report a
+  // duration shorter than what it actually played.
+  const storedDuration = episode.durationSeconds ?? 0;
+  const clientDuration = videoDuration && videoDuration > 0 ? Math.floor(videoDuration) : 0;
+  const effectiveDuration = clientDuration > 0 && clientDuration < storedDuration
+    ? clientDuration
+    : storedDuration;
+  const threshold = effectiveDuration > 0 ? effectiveDuration * 0.85 : 90;
+
+  // Secondary check: playhead position meets threshold (handles ended-event calls with no deltaSeconds)
+  const playheadMeetsThreshold = watchedSeconds !== undefined && effectiveDuration > 0
+    ? watchedSeconds >= effectiveDuration * 0.85
+    : false;
 
   if (existingProgress?.completed) {
     // Already completed previously
     finalIsCompleted = true;
-  } else if (requestedCompletion && cumulativeActualSecs >= threshold) {
-    // Reached threshold legitimately
+  } else if (requestedCompletion && (cumulativeActualSecs >= threshold || playheadMeetsThreshold)) {
+    // Reached threshold legitimately (by accumulated watch time OR playhead position)
     finalIsCompleted = true;
   }
 
