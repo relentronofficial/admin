@@ -989,6 +989,8 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     }
   }
 
+  void invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId!}`);
+
   return ok(reply, {
     lessonId: episodeId,
     completed: progress.completed,
@@ -4210,6 +4212,7 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
   void Promise.all([
     recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, 'episode_completed', { episodeId: id }),
+    invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId!}`),
   ]).catch(() => {});
 
   return ok(reply, { episodeId: id, isCompleted: true });
