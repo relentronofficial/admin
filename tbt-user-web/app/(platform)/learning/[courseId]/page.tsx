@@ -616,7 +616,10 @@ export default function CourseDetailPage({
     );
     setWatchState(alreadyDone ? "completed" : "not_started");
     setWatchedSeconds(selectedLesson.resumeAtSeconds ?? 0);
-    markCalledRef.current = alreadyDone;
+    // Only suppress future API calls when the server has authoritatively confirmed completion.
+    // Heuristic signals (threshold / position) show the right UI but still need a backend sync.
+    const serverConfirmed = completedIdsRef.current.has(selectedLesson.id) || !!selectedLesson.isCompleted;
+    markCalledRef.current = serverConfirmed;
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once the player reports the real video duration, re-evaluate completion using
