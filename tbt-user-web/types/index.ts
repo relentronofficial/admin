@@ -261,6 +261,15 @@ export interface UiStrings {
   paginationPrevLabel: string;
   paginationNextLabel: string;
   continueWatchingLabel?: string;
+  dashboardWelcome?: string;
+  dashboardSubtitle?: string;
+  statCoursesEnrolled?: string;
+  statCompleted?: string;
+  statStreak?: string;
+  statUpcomingEvents?: string;
+  recentlyWatched?: string;
+  recentlyWatchedEmpty?: string;
+  recentlyWatchedEmptyDesc?: string;
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────

@@ -1250,15 +1250,17 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
   const cachedCl = await cacheGet<unknown[]>(redis, clKey);
   if (cachedCl) return ok(reply, cachedCl);
 
-  // Fetch more than needed so deduplication still yields up to 6 unique items
+  // Fetch recent activity across both types — no completion filter so recently-finished
+  // items stay visible. Fetch more than needed so deduplication still yields up to 6.
   const [courseProgress, workshopProgress] = await Promise.all([
     request.server.prisma.courseEpisodeProgress.findMany({
-      where: { memberId: request.memberId, completed: false },
+      where: { memberId: request.memberId },
       orderBy: { updatedAt: 'desc' },
       take: 20,
       select: {
         episodeId: true,
         lastWatchedSecs: true,
+        completed: true,
         updatedAt: true,
         episode: {
           select: {
@@ -1278,12 +1280,13 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       },
     }),
     request.server.prisma.memberEpisodeProgress.findMany({
-      where: { memberId: request.memberId, isCompleted: false },
+      where: { memberId: request.memberId },
       orderBy: { updatedAt: 'desc' },
       take: 20,
       select: {
         episodeId: true,
         lastWatchedSecs: true,
+        isCompleted: true,
         updatedAt: true,
         episode: {
           select: {
@@ -1303,11 +1306,11 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     }),
   ]);
 
-  // Progress % based on playhead position (lastWatchedSecs) — shows where the user is in the video
+  // Progress % based on playhead position
   const pct = (lastWatched: number, duration: number | null | undefined) =>
     duration && duration > 0 ? Math.min(100, Math.round((lastWatched / duration) * 100)) : 0;
 
-  // Deduplicate courses — keep only the most-recently-watched episode per course
+  // Deduplicate — keep only the most-recently-watched episode per course / workshop
   const seenCourseIds = new Set<string>();
   const dedupedCourses = courseProgress.filter(p => {
     const key = p.episode.courseId;
@@ -1316,7 +1319,6 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     return true;
   });
 
-  // Deduplicate workshops — keep only the most-recently-watched episode per workshop
   const seenWorkshopSlugs = new Set<string>();
   const dedupedWorkshops = workshopProgress.filter(p => {
     const key = p.episode.challenge.workshop.slug;
@@ -1340,6 +1342,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       episodeOrder: p.episode.order,
       episodeCount: p.episode.course._count.courseEpisodes,
       progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
+      isCompleted: p.completed,
       updatedAt: p.updatedAt.getTime(),
     })),
     ...dedupedWorkshops.map(p => ({
@@ -1356,6 +1359,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       episodeOrder: p.episode.order,
       episodeCount: p.episode.challenge._count.episodes,
       progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
+      isCompleted: p.isCompleted,
       updatedAt: p.updatedAt.getTime(),
     })),
   ].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
