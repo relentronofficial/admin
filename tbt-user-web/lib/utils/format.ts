@@ -32,11 +32,13 @@ export const normalizeBunnyUrl = (url: string): string => {
   return `${normalized}${sep}fullscreen=false`;
 };
 
-// Appends ?t=N (or &t=N) to a Bunny Stream iframe embed URL for resume-from-position.
+// Appends ?t=N (or &t=N) to a Bunny Stream iframe embed URL.
+// Always sets an explicit start time — including t=0 — so Bunny's own smart-resume
+// (which stores position in the iframe's localStorage) is always overridden.
 export const withResumeTime = (url: string, seconds: number): string => {
-  if (!seconds || seconds <= 0) return url;
+  const t = Math.max(0, Math.floor(seconds ?? 0));
   const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}t=${Math.floor(seconds)}`;
+  return `${url}${sep}t=${t}`;
 };
 
 export const planLabel: Record<string, string> = {

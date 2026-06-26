@@ -877,14 +877,15 @@ export default function CourseDetailPage({
   const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
     setVideoKey(0);
-    const alreadyDone = completedIds.has(lesson.id) || !!lesson.isCompleted;
+    const dur = lesson.durationSeconds ?? 0;
+    const alreadyDone = completedIds.has(lesson.id) || !!lesson.isCompleted
+      || (dur > 0 && (lesson.actualWatchedSecs ?? 0) >= dur * 0.85);
     setSelectedLesson({
       id: lesson.id,
       title: lesson.title,
       videoUrl: lesson.videoUrl,
       hlsUrl: lesson.hlsUrl ?? null,
-      durationSeconds: lesson.durationSeconds ?? 0,
-      // Completed lessons restart from the beginning; in-progress lessons resume.
+      durationSeconds: dur,
       resumeAtSeconds: alreadyDone ? 0 : (lesson.resumeAtSeconds ?? 0),
       actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
       isCompleted: alreadyDone,
