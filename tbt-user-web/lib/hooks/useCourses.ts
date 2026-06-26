@@ -59,17 +59,28 @@ export const useMarkLessonComplete = (courseId: string) => {
   return useMutation({
     mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean }) =>
       coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted),
-    onSuccess: (_data, { lessonId, isCompleted }) => {
-      if (isCompleted) {
-        queryClient.setQueryData(["user", "progress", courseId], (old: any) => {
-          if (!Array.isArray(old)) return old;
-          const exists = old.some((p: any) => p.lessonId === lessonId);
-          if (exists) return old.map((p: any) => p.lessonId === lessonId ? { ...p, completed: true } : p);
-          return [...old, { lessonId, completed: true, completedAt: new Date().toISOString() }];
-        });
+    onMutate: async ({ lessonId, isCompleted }) => {
+      if (!isCompleted) return;
+      await queryClient.cancelQueries({ queryKey: ["user", "progress", courseId] });
+      const previous = queryClient.getQueryData(["user", "progress", courseId]);
+      queryClient.setQueryData(["user", "progress", courseId], (old: any) => {
+        if (!Array.isArray(old)) return old;
+        const exists = old.some((p: any) => p.lessonId === lessonId);
+        if (exists) return old.map((p: any) => p.lessonId === lessonId ? { ...p, completed: true } : p);
+        return [...old, { lessonId, completed: true, completedAt: new Date().toISOString() }];
+      });
+      return { previous };
+    },
+    onError: (_err, { isCompleted }, context: any) => {
+      if (isCompleted && context?.previous !== undefined) {
+        queryClient.setQueryData(["user", "progress", courseId], context.previous);
       }
+    },
+    onSuccess: (_data, { isCompleted }) => {
       queryClient.invalidateQueries({ queryKey: ["user", "progress", courseId] });
-      queryClient.invalidateQueries({ queryKey: ["user", "dashboard"] });
+      if (isCompleted) {
+        queryClient.invalidateQueries({ queryKey: ["user", "dashboard"] });
+      }
     },
   });
 };

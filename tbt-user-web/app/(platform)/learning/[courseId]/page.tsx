@@ -544,6 +544,17 @@ export default function CourseDetailPage({
     progressList?.filter((p) => p.completed).map((p) => p.lessonId) ?? []
   );
 
+  // When server data arrives and contradicts a stale-cache "completed" state,
+  // correct watchState so the user can actually re-watch the lesson.
+  useEffect(() => {
+    if (!selectedLesson || watchState === "watching" || watchState === "not_started") return;
+    const serverSaysDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted;
+    if (!serverSaysDone && watchState === "completed" && !doMarkCompleteRef.current) {
+      setWatchState("not_started");
+      markCalledRef.current = false;
+    }
+  }, [completedIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reset all tracking state on lesson change
   useEffect(() => {
     realDurationRef.current = 0;
