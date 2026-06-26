@@ -586,7 +586,7 @@ export function ContinueWatchingSection() {
     );
   }
 
-  const items: ContinueLearningItem[] = Array.isArray(data) ? data : [];
+  const items: ContinueLearningItem[] = Array.isArray(data) ? data.filter((item) => !item.isCompleted) : [];
   if (!items.length) return null;
 
   return (
@@ -656,7 +656,10 @@ function WatchHistoryCard({
   item: WatchHistoryItem;
   onRemove: (id: string) => void;
 }) {
-  const href = `/workshop/${item.workshopSlug}?ep=${item.episodeId}`;
+  const href = item.type === "course"
+    ? `/learning/${item.courseId ?? ""}?lesson=${item.episodeId}`
+    : `/workshop/${item.workshopSlug ?? ""}?ep=${item.episodeId}`;
+  const parentTitle = item.type === "course" ? item.courseTitle : item.workshopTitle;
   const isCompleted = item.isCompleted;
 
   return (
@@ -668,7 +671,7 @@ function WatchHistoryCard({
       <div className="flex gap-3 p-3">
         <div className="relative w-20 h-14 flex-shrink-0 rounded-lg overflow-hidden">
           {item.thumbnailUrl ? (
-            <Image src={item.thumbnailUrl} alt={item.workshopTitle} fill className="object-cover" sizes="80px" />
+            <Image src={item.thumbnailUrl} alt={parentTitle ?? item.episodeTitle} fill className="object-cover" sizes="80px" />
           ) : (
             <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
               <PlayCircle size={20} className="text-muted-foreground" />
@@ -688,7 +691,7 @@ function WatchHistoryCard({
           )}
         </div>
         <div className="flex-1 min-w-0 flex flex-col gap-0.5 py-0.5">
-          <p className="text-[10px] text-muted-foreground truncate leading-tight">{item.workshopTitle}</p>
+          <p className="text-[10px] text-muted-foreground truncate leading-tight">{parentTitle}</p>
           {item.challengeTitle && (
             <p className="text-[10px] font-semibold truncate" style={{ color: "var(--color-accent)" }}>
               {item.challengeTitle}

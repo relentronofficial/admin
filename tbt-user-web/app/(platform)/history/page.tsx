@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, CheckCircle2, Clock, Play, X, ArrowRight } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Play, X, ArrowRight, BookOpen } from "lucide-react";
 import { useWatchHistory, useRemoveFromHistory } from "@/lib/hooks/useDashboard";
 import { cn } from "@/lib/utils/cn";
 import type { WatchHistoryItem } from "@/types";
@@ -30,29 +30,34 @@ function fmtSecs(s: number): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-interface WorkshopGroup {
-  slug: string;
+interface ItemGroup {
+  key: string;
   title: string;
   thumbnailUrl: string | null;
+  href: string;
+  type: "workshop" | "course";
   items: WatchHistoryItem[];
   allCompleted: boolean;
   progressPercent: number;
 }
 
-function groupByWorkshop(items: WatchHistoryItem[]): WorkshopGroup[] {
-  const map = new Map<string, WorkshopGroup>();
+function groupItems(items: WatchHistoryItem[]): ItemGroup[] {
+  const map = new Map<string, ItemGroup>();
   for (const item of items) {
-    if (!map.has(item.workshopSlug)) {
-      map.set(item.workshopSlug, {
-        slug: item.workshopSlug,
-        title: item.workshopTitle,
+    const key = item.type === "course" ? `course:${item.courseId}` : `ws:${item.workshopSlug}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        type: item.type,
+        title: item.type === "course" ? (item.courseTitle ?? "") : (item.workshopTitle ?? ""),
         thumbnailUrl: item.thumbnailUrl,
+        href: item.type === "course" ? `/learning/${item.courseId}` : `/workshop/${item.workshopSlug}`,
         items: [],
         allCompleted: true,
         progressPercent: 0,
       });
     }
-    const g = map.get(item.workshopSlug)!;
+    const g = map.get(key)!;
     g.items.push(item);
     if (!item.isCompleted) g.allCompleted = false;
   }
@@ -70,7 +75,9 @@ function EpisodeRow({
   item: WatchHistoryItem;
   onRemove: (id: string) => void;
 }) {
-  const href = `/workshop/${item.workshopSlug}?ep=${item.episodeId}`;
+  const href = item.type === "course"
+    ? `/learning/${item.courseId ?? ""}?lesson=${item.episodeId}`
+    : `/workshop/${item.workshopSlug ?? ""}?ep=${item.episodeId}`;
   const isCompleted = item.isCompleted;
 
   return (
@@ -84,9 +91,9 @@ function EpisodeRow({
       style={isCompleted ? { borderLeftColor: "#22c55e", borderLeftWidth: 2 } : {}}
     >
       {/* Thumbnail */}
-      <Link href={href} className="relative w-20 h-13 flex-shrink-0 rounded-lg overflow-hidden block" style={{ height: "52px", width: "80px" }}>
+      <Link href={href} className="relative w-20 flex-shrink-0 rounded-lg overflow-hidden block" style={{ height: "52px", width: "80px" }}>
         {item.thumbnailUrl ? (
-          <Image src={item.thumbnailUrl} alt={item.workshopTitle} fill className="object-cover" />
+          <Image src={item.thumbnailUrl} alt={item.episodeTitle} fill className="object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
             <Clock size={16} className="text-muted-foreground" />
@@ -195,7 +202,7 @@ export default function HistoryPage() {
   const items: WatchHistoryItem[] = Array.isArray(resp?.data) ? resp.data : [];
   const total = resp?.meta?.total ?? 0;
   const totalPages = Math.ceil(total / LIMIT);
-  const groups = groupByWorkshop(items);
+  const groups = groupItems(items);
 
   const handleFilterChange = (f: HistoryFilter) => {
     setFilter(f);
@@ -263,21 +270,31 @@ export default function HistoryPage() {
       ) : (
         <div className="space-y-7">
           {groups.map((group) => (
-            <div key={group.slug} className="space-y-2">
-              {/* Workshop group header */}
+            <div key={group.key} className="space-y-2">
+              {/* Group header */}
               <div className="flex items-center justify-between gap-3 pb-1 border-b border-border">
                 <div className="flex items-center gap-2 min-w-0">
+                  {group.type === "course" && !group.thumbnailUrl && (
+                    <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: "rgba(255,255,255,0.07)" }}>
+                      <BookOpen size={14} className="text-muted-foreground" />
+                    </div>
+                  )}
                   {group.thumbnailUrl && (
                     <div className="relative w-8 h-8 rounded-md overflow-hidden flex-shrink-0">
                       <Image src={group.thumbnailUrl} alt={group.title} fill className="object-cover" />
                     </div>
                   )}
                   <Link
-                    href={`/workshop/${group.slug}`}
+                    href={group.href}
                     className="text-sm font-bold text-foreground truncate hover:underline"
                   >
                     {group.title}
                   </Link>
+                  {group.type === "course" && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest flex-shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
+                      Course
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span
@@ -293,11 +310,11 @@ export default function HistoryPage() {
                   </span>
                   {group.allCompleted && (
                     <Link
-                      href={`/workshop/${group.slug}`}
+                      href={group.href}
                       className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
                       style={{ background: "var(--color-accent)", color: "#fff" }}
                     >
-                      Watch Next <ArrowRight size={10} />
+                      {group.type === "course" ? "View Course" : "Watch Next"} <ArrowRight size={10} />
                     </Link>
                   )}
                 </div>

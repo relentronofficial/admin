@@ -652,8 +652,13 @@ export interface DashboardStats {
 export interface WatchHistoryItem {
   type: "workshop" | "course";
   episodeId: string;
-  workshopSlug: string;
-  workshopTitle: string;
+  // Workshop-specific
+  workshopSlug?: string;
+  workshopTitle?: string;
+  // Course-specific
+  courseId?: string;
+  courseTitle?: string;
+  // Common
   episodeTitle: string;
   challengeTitle: string | null;
   episodeOrder: number;
@@ -682,5 +687,6 @@ export interface ContinueLearningItem {
   episodeOrder: number;
   episodeCount: number;
   progressPercent: number;
+  isCompleted?: boolean;
   updatedAt: number;
 }

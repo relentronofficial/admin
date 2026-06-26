@@ -4225,19 +4225,28 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
     page?: number; limit?: number; filter?: 'all' | 'in_progress' | 'completed';
   };
 
-  const where = {
+  const take = Number(limit);
+  const skip = (Number(page) - 1) * take;
+
+  const workshopWhere = {
     memberId: request.memberId,
     actualWatchedSecs: { gt: 0 },
     ...(filter === 'in_progress' ? { isCompleted: false } : {}),
     ...(filter === 'completed' ? { isCompleted: true } : {}),
   };
 
-  const [history, total] = await Promise.all([
+  const courseWhere = {
+    memberId: request.memberId,
+    lastWatchedSecs: { gt: 0 },
+    ...(filter === 'in_progress' ? { completed: false } : {}),
+    ...(filter === 'completed' ? { completed: true } : {}),
+  };
+
+  const [workshopHistory, courseHistory] = await Promise.all([
     request.server.prisma.memberEpisodeProgress.findMany({
-      where,
+      where: workshopWhere,
       orderBy: { updatedAt: 'desc' },
-      take: Number(limit),
-      skip: (Number(page) - 1) * Number(limit),
+      take: take + skip,
       select: {
         episodeId: true,
         lastWatchedSecs: true,
@@ -4261,32 +4270,85 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
         },
       },
     }),
-    request.server.prisma.memberEpisodeProgress.count({ where }),
+    (request.server.prisma as any).courseEpisodeProgress.findMany({
+      where: courseWhere,
+      orderBy: { updatedAt: 'desc' },
+      take: take + skip,
+      select: {
+        episodeId: true,
+        lastWatchedSecs: true,
+        actualWatchedSecs: true,
+        completed: true,
+        completedAt: true,
+        updatedAt: true,
+        episode: {
+          select: {
+            title: true,
+            order: true,
+            durationSeconds: true,
+            courseId: true,
+            course: {
+              select: {
+                title: true,
+                thumbnailUrl: true,
+                _count: { select: { courseEpisodes: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
   ]);
 
   const pct = (actual: number, duration: number | null | undefined) =>
     duration && duration > 0 ? Math.min(100, Math.round((actual / duration) * 100)) : 0;
 
-  const items = history.map(p => ({
+  const workshopItems = (workshopHistory as any[]).map((p: any) => ({
     type: 'workshop' as const,
     episodeId: p.episodeId,
-    workshopSlug: p.episode.challenge.workshop.slug,
-    workshopTitle: p.episode.challenge.workshop.title,
-    challengeTitle: p.episode.challenge.title,
-    episodeTitle: p.episode.title,
+    workshopSlug: p.episode.challenge.workshop.slug as string,
+    workshopTitle: p.episode.challenge.workshop.title as string,
+    challengeTitle: p.episode.challenge.title as string | null,
+    episodeTitle: p.episode.title as string,
     thumbnailUrl: p.episode.challenge.workshop.thumbnailUrl ?? null,
     lastWatchedSecs: p.lastWatchedSecs,
     actualWatchedSecs: p.actualWatchedSecs,
     durationSeconds: p.episode.durationSeconds ?? 0,
-    isCompleted: p.isCompleted,
+    isCompleted: p.isCompleted as boolean,
     completedAt: p.completedAt?.toISOString() ?? null,
     updatedAt: p.updatedAt.toISOString(),
     progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
     episodeOrder: p.episode.order,
     episodeCount: p.episode.challenge._count.episodes,
+    _ms: p.updatedAt.getTime() as number,
   }));
 
-  return ok(reply, items, { total: Number(total), page: Number(page), limit: Number(limit) });
+  const courseItems = (courseHistory as any[]).map((p: any) => ({
+    type: 'course' as const,
+    episodeId: p.episodeId,
+    courseId: p.episode.courseId as string,
+    courseTitle: p.episode.course.title as string,
+    challengeTitle: null as string | null,
+    episodeTitle: p.episode.title as string,
+    thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
+    lastWatchedSecs: p.lastWatchedSecs,
+    actualWatchedSecs: p.actualWatchedSecs,
+    durationSeconds: p.episode.durationSeconds ?? 0,
+    isCompleted: p.completed as boolean,
+    completedAt: p.completedAt?.toISOString() ?? null,
+    updatedAt: p.updatedAt.toISOString(),
+    progressPercent: pct(p.actualWatchedSecs, p.episode.durationSeconds),
+    episodeOrder: p.episode.order,
+    episodeCount: p.episode.course._count.courseEpisodes,
+    _ms: p.updatedAt.getTime() as number,
+  }));
+
+  // Merge across types, sort by most recent, paginate
+  const merged = [...workshopItems, ...courseItems].sort((a, b) => b._ms - a._ms);
+  const total = merged.length;
+  const items = merged.slice(skip, skip + take).map(({ _ms: _ignored, ...rest }) => rest);
+
+  return ok(reply, items, { total, page: Number(page), limit: take });
 }
 
 export async function removeFromHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
