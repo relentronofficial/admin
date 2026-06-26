@@ -456,15 +456,16 @@ export default function CourseDetailPage({
     if (course?.lessons && targetLessonId && !selectedLesson) {
       const target = course.lessons.find((l: any) => l.id === targetLessonId);
       if (target && target.videoUrl) {
+        const alreadyDone = !!(target as any).isCompleted;
         setSelectedLesson({
           id: target.id,
           title: target.title,
           videoUrl: target.videoUrl,
           hlsUrl: (target as any).hlsUrl ?? null,
           durationSeconds: target.durationSeconds ?? 0,
-          resumeAtSeconds: (target as any).resumeAtSeconds ?? 0,
+          resumeAtSeconds: alreadyDone ? 0 : ((target as any).resumeAtSeconds ?? 0),
           actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
-          isCompleted: (target as any).isCompleted ?? false,
+          isCompleted: alreadyDone,
         });
       }
     }
@@ -522,15 +523,16 @@ export default function CourseDetailPage({
         setUpNextCountdown(null);
         const next = lessons[currentIdx + 1];
         if (next?.videoUrl) {
+          const nextDone = !!(next as any).isCompleted;
           setSelectedLesson({
             id: next.id,
             title: next.title,
             videoUrl: next.videoUrl,
             hlsUrl: (next as any).hlsUrl ?? null,
             durationSeconds: next.durationSeconds ?? 0,
-            resumeAtSeconds: (next as any).resumeAtSeconds ?? 0,
+            resumeAtSeconds: nextDone ? 0 : ((next as any).resumeAtSeconds ?? 0),
             actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
-            isCompleted: (next as any).isCompleted ?? false,
+            isCompleted: nextDone,
           });
           topRef.current?.scrollIntoView({ behavior: "smooth" });
         }
@@ -613,12 +615,16 @@ export default function CourseDetailPage({
   const handleVideoEnded = () => {
     isPlayingRef.current = false;
     const lesson = selectedLessonRef.current;
-    if (!lesson || markCalledRef.current) return;
-    markCalledRef.current = true;
-    doMarkCompleteRef.current = false;
+    if (!lesson) return;
+    // Always update UI when video ends — regardless of whether heartbeat already called the API.
     setWatchState("completed");
-    markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true });
     triggerUpNextRef.current();
+    // Only send the API call if the heartbeat hasn't already done so.
+    if (!markCalledRef.current) {
+      markCalledRef.current = true;
+      doMarkCompleteRef.current = false;
+      markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true });
+    }
   };
 
   // ── Bunny iframe message handler — only runs when HLS is unavailable or failed ──
@@ -630,13 +636,15 @@ export default function CourseDetailPage({
 
     const doMarkComplete = () => {
       const lesson = selectedLessonRef.current;
-      if (!lesson || markCalledRef.current) return;
-      markCalledRef.current = true;
+      if (!lesson) return;
       isPlayingRef.current = false;
       doMarkCompleteRef.current = false;
       setWatchState("completed");
-      markComplete.mutate({ lessonId: lesson.id, isCompleted: true });
       triggerUpNextRef.current();
+      if (!markCalledRef.current) {
+        markCalledRef.current = true;
+        markComplete.mutate({ lessonId: lesson.id, isCompleted: true });
+      }
     };
 
     const handler = (e: MessageEvent) => {
@@ -811,11 +819,7 @@ export default function CourseDetailPage({
         {
           onSuccess: (res: any) => {
             const d = res?.data ?? res;
-            if (d?.isCompleted && !markCalledRef.current) {
-              markCalledRef.current = true;
-              setWatchState("completed");
-              triggerUpNextRef.current();
-            }
+            // Only sync the server-reported watch count; UI completion is driven by handleVideoEnded.
             if (typeof d?.actualWatchedSecs === "number" && d.actualWatchedSecs > liveWatchedRef.current) {
               liveWatchedRef.current = d.actualWatchedSecs;
               lastHeartbeatWatchedRef.current = d.actualWatchedSecs;
@@ -828,7 +832,7 @@ export default function CourseDetailPage({
       if (shouldComplete && !markCalledRef.current) {
         doMarkCompleteRef.current = false;
         markCalledRef.current = true;
-        setWatchState("completed");
+        // Backend now knows it's complete; UI will transition when the video actually ends.
       }
     }, 5000);
 
@@ -860,15 +864,17 @@ export default function CourseDetailPage({
   const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
     setVideoKey(0);
+    const alreadyDone = completedIds.has(lesson.id) || !!lesson.isCompleted;
     setSelectedLesson({
       id: lesson.id,
       title: lesson.title,
       videoUrl: lesson.videoUrl,
       hlsUrl: lesson.hlsUrl ?? null,
       durationSeconds: lesson.durationSeconds ?? 0,
-      resumeAtSeconds: lesson.resumeAtSeconds ?? 0,
+      // Completed lessons restart from the beginning; in-progress lessons resume.
+      resumeAtSeconds: alreadyDone ? 0 : (lesson.resumeAtSeconds ?? 0),
       actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
-      isCompleted: lesson.isCompleted ?? false,
+      isCompleted: alreadyDone,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
   };

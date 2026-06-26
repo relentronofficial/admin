@@ -94,8 +94,8 @@ npm run format      # prettier --write .
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (~1200+ lines). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), and community/batch/tier/badge/notification/product/resource hooks.
-- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB)
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (183+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below).
+- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB), `useCreateBunnyVideo` (`POST /api/upload/bunny-video-create`), `useDeleteBunnyVideo` (`DELETE /api/upload/bunny-video/:videoId`)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts`
 - **State:** TanStack Query (server state, `staleTime: 5min`), Zustand (client state)
@@ -183,7 +183,7 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
 - `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`)
-- `lib/hooks/useCourses.ts` — course catalog hooks (user-facing); backed by `lib/api/services/courses.service.ts`
+- `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`; backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
 - All hooks are `"use client"` and use TanStack Query v5
 
@@ -343,6 +343,70 @@ Workshops and resources support per-batch access restriction via a `batchIds Jso
 
 ---
 
+## Course Platform (`TBT_Course_Platform_Spec.md` — completed 2026-06-24)
+
+### Data Model — Key Distinctions
+- **`CourseAccess`** — authorization record (who is allowed). Separate from `CourseEnrollment` (progress tracking). A member needs a valid `CourseAccess` row to access a course; `CourseEnrollment` is created automatically on first lesson view.
+  - `accessType`: `"lifetime"` (valid while `isActive=true`) or `"duration"` (valid while `isActive=true` AND `expiresAt > now()`)
+  - Unique constraint: `(memberId, courseId)`
+- **`CoursePayment`** — payment ledger record. `method`: `"manual" | "razorpay" | "bank_transfer" | "upi" | "free"`. Approved by admin via `POST /api/courses/:id/payments/:paymentId/approve`.
+- **`MemberXP`** — XP ledger. `source`: `"episode_complete" | "quiz_pass"`. Amount comes from `course.xpPerEpisode`.
+- **`CourseBadge`** — manually awardable badge per course. Admin awards via `POST /api/courses/:id/badges/:badgeId/award`.
+
+### Extended Course Fields (via startup `ALTER TABLE`)
+```
+courses:
+  price DECIMAL(10,2)          -- null = free
+  access_duration_days INT     -- null = lifetime access
+  max_enrollments INT          -- null = unlimited
+  xp_per_episode INT DEFAULT 10
+  passing_score_percent INT DEFAULT 70
+  payment_link_url TEXT        -- external payment URL (paymentMethod='external')
+  upsell_course_ids TEXT[]     -- array of course IDs
+  cross_sell_course_ids TEXT[]
+
+course_episodes:
+  quiz_data JSONB              -- { questions: [{ id, question, options: [{ id, text, correct }] }] }
+  quiz_unlock_percent INT DEFAULT 80  -- % of episode watched before quiz unlocks
+  drm_enabled BOOLEAN DEFAULT false
+  bunny_drm_token TEXT
+```
+
+### Admin Hooks (`useTbt.ts`)
+`useListVodCourses`, `useCreateVodCourse`, `useUpdateVodCourse`, `useDeleteVodCourse`, `useListCourseEpisodes`, `useCreateCourseEpisode`, `useUpdateCourseEpisode`, `useDeleteCourseEpisode`, `useReorderCourseEpisodes`, `useListCourseAccess`, `useGrantCourseAccess`, `useRevokeCourseAccess`, `useListCoursePayments`, `useApproveCoursePayment`, `useCourseAnalyticsAdmin`, `useCourseLeaderboardAdmin`, `useListCourseBadges`, `useCreateCourseBadge`, `useUpdateCourseBadge`, `useDeleteCourseBadge`, `useAwardCourseBadge`
+
+The admin courses UI lives in a single monolithic `admin-panel/app/courses/page.tsx` (same pattern as workshops). Uses `useCreateBunnyVideo` from `useAdmin` for Bunny Stream video creation.
+
+### Admin API Routes (`/api/courses` — Clerk-protected)
+```
+GET/POST /api/courses
+GET/PUT/DELETE /api/courses/:id
+POST /api/courses/:id/publish
+GET /api/courses/:id/enrollments
+GET /api/courses/:id/episodes
+POST /api/courses/:id/episodes
+PUT /api/courses/episodes/reorder
+PUT /api/courses/episodes/:eid
+DELETE /api/courses/episodes/:eid
+GET/POST /api/courses/:id/access
+DELETE /api/courses/:id/access/:accessId
+GET /api/courses/payments
+POST /api/courses/:id/payments/:paymentId/approve
+GET /api/courses/:id/analytics
+GET /api/courses/:id/leaderboard
+GET/POST /api/courses/:id/badges
+PUT/DELETE /api/courses/:id/badges/:badgeId
+POST /api/courses/:id/badges/:badgeId/award
+```
+
+### User-Web Course Routes
+- `/courses` — catalog listing
+- `/learning` — enrolled courses / progress overview; `/learning/badges` — earned badges
+- `/learning/[courseId]` — course detail + lesson list
+- `/learning/[courseId]/[lessonId]` — lesson video player with quiz, XP, progress
+
+---
+
 ## Common Pitfalls
 
 1. **Delivery modes** — `["online", "offline", "hybrid"]` only; never add `"recorded"`
@@ -364,6 +428,9 @@ Workshops and resources support per-batch access restriction via a `batchIds Jso
 12. **Episode `type` field** — valid values: `["video", "assignment", "offer"]` only
 13. **`req.memberId` not `req.member`** — `fastify.authenticateUser` (JWT cookie middleware) sets `request.memberId: string`. There is NO `request.member` object. Writing `(req as any).member.id` will throw a TypeError at runtime in all user-batch and user-web routes. Always use `req.memberId!`.
 14. **Adding DB columns without migrations** — use `prisma.$executeRawUnsafe('ALTER TABLE foo ADD COLUMN IF NOT EXISTS bar JSONB')` inside the `prisma.ts` plugin startup block. This is idempotent and avoids needing a migration file for `Json?` columns added post-initial-schema.
+15. **`CourseAccess` ≠ `CourseEnrollment`** — access grants permission; enrollment tracks progress. Always check/create `CourseAccess` before allowing lesson playback. Never conflate the two.
+16. **Course episode `quizData`** — lives on `course_episodes.quiz_data`, same JSON shape as workshop challenge `"quiz"` type (`{ questions: [{ id, question, options: [{ id, text, correct }] }] }`), but is gated by `quizUnlockPercent` (% of video watched). Not the same as `quizData` on a workshop `Challenge` row.
+17. **`useMarkLessonComplete` uses optimistic updates** — it updates the TanStack Query cache in `onMutate` when `isCompleted=true`. If you call it from a new context, ensure `courseId` is in scope for the correct `queryKey: ["user", "progress", courseId]`.
 
 ## Socket Events
 
@@ -425,9 +492,12 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## PRD Implementation Status
 
-### Admin PRD (`TBT_Admin_PRD.md`) — All 18 sections ✅ Complete + Security Logs
+### Admin PRD (`TBT_Admin_PRD.md`) — All 18 sections ✅ Complete + Security Logs + Course Platform
 See `tbt-admin/PROJECT_STATUS.md` for section-by-section detail.
 See `tbt-admin/ARCHITECTURE.md` for full directory/route/hook/DB map.
 
 ### User Web PRD (`TBT_PRD.md` / `TBT_PRD_Dynamic.md`) — All sections ✅ Complete
 Sections 1–12 implemented in `tbt-user-web/`. Includes: marketing landing, platform dashboard, TBT (content catalog), workshops (detail + flow + Q&A + assignments + live calls), products, resources, notifications, messages, profile, full-screen + embedded video player.
+
+### Course Platform (`TBT_Course_Platform_Spec.md`) — ✅ Complete (2026-06-24)
+VOD course platform with pricing/access control, XP gamification, episode quizzes, DRM, badges, certificates, upsell/cross-sell, leaderboards, and analytics. See `TBT_Course_Platform_Spec.md` for the full spec.
