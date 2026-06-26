@@ -548,9 +548,12 @@ export default function CourseDetailPage({
 
   // When server data arrives and contradicts a stale-cache "completed" state,
   // correct watchState so the user can actually re-watch the lesson.
+  // Must use the same alreadyDone logic as the reset effect — including the 85% threshold.
   useEffect(() => {
     if (!selectedLesson || watchState === "watching" || watchState === "not_started") return;
-    const serverSaysDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted;
+    const dur = selectedLesson.durationSeconds ?? 0;
+    const serverSaysDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted
+      || (dur > 0 && (selectedLesson.actualWatchedSecs ?? 0) >= dur * 0.85);
     if (!serverSaysDone && watchState === "completed" && !doMarkCompleteRef.current) {
       setWatchState("not_started");
       markCalledRef.current = false;
