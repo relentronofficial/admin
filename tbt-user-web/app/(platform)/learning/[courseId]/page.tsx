@@ -575,10 +575,23 @@ export default function CourseDetailPage({
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
-    const alreadyDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted;
+    const dur = selectedLesson.durationSeconds ?? 0;
+    const alreadyDone = completedIds.has(selectedLesson.id) || !!selectedLesson.isCompleted
+      || (dur > 0 && (selectedLesson.actualWatchedSecs ?? 0) >= dur * 0.85);
     setWatchState(alreadyDone ? "completed" : "not_started");
     setWatchedSeconds(selectedLesson.resumeAtSeconds ?? 0);
     markCalledRef.current = alreadyDone;
+  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync completion to backend when a prior session accumulated enough watch time
+  // but isCompleted was never persisted (e.g. session ended before heartbeat threshold fired)
+  useEffect(() => {
+    if (!selectedLesson || selectedLesson.isCompleted || completedIds.has(selectedLesson.id)) return;
+    const dur = selectedLesson.durationSeconds ?? 0;
+    if (dur <= 0) return;
+    const watched = selectedLesson.actualWatchedSecs ?? 0;
+    if (watched < dur * 0.85) return;
+    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: Math.floor(watched), isCompleted: true });
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Native VideoPlayer callbacks ─────────────────────────────────────────────
@@ -908,8 +921,9 @@ export default function CourseDetailPage({
 
   const statusBadge = (() => {
     if (!selectedLesson) return null;
+    const cumulativeWatched = Math.max(liveWatched, selectedLesson.actualWatchedSecs ?? 0);
     const progressPct = activeDuration > 0
-      ? Math.min(100, Math.round((liveWatched / activeDuration) * 100))
+      ? Math.min(100, Math.round((cumulativeWatched / activeDuration) * 100))
       : 0;
 
     if (watchState === "completed" || selectedLesson.isCompleted) return {
@@ -977,7 +991,7 @@ export default function CourseDetailPage({
               ) : isBunnyEmbed(selectedLesson.videoUrl) ? (
                 <iframe
                   key={`${selectedLesson.id}-${videoKey}-iframe`}
-                  src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl), videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0))}
+                  src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl) + "&autoplay=true", videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0))}
                   className="w-full h-full border-0"
                   allow="accelerometer; gyroscope; autoplay; encrypted-media"
                   title={selectedLesson.title}
