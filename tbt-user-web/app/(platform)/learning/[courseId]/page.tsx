@@ -525,6 +525,7 @@ export default function CourseDetailPage({
   const realDurationRef = useRef<number>(0);
   const liveWatchedRef = useRef<number>(0);
   const lastHeartbeatWatchedRef = useRef<number>(0);
+  const startRef = useRef<number>(0);
   const isPlayingRef = useRef<boolean>(false);
   const isHiddenRef = useRef<boolean>(false);
   const isSeekingRef = useRef<boolean>(false);
@@ -594,6 +595,7 @@ export default function CourseDetailPage({
 
   // Reset all tracking state on lesson change
   useEffect(() => {
+    startRef.current = Date.now();
     realDurationRef.current = 0;
     liveWatchedRef.current = 0;
     lastHeartbeatWatchedRef.current = 0;
@@ -679,6 +681,20 @@ export default function CourseDetailPage({
       doMarkCompleteRef.current = false;
       markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true, videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
     }
+  };
+
+  const handleMarkComplete = () => {
+    if (!selectedLesson || markCalledRef.current) return;
+    markCalledRef.current = true;
+    setWatchState("completed");
+    triggerUpNextRef.current();
+    const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
+    markComplete.mutate({
+      lessonId: selectedLesson.id,
+      watchedSeconds: Math.floor(lastPlayheadRef.current > 0 ? lastPlayheadRef.current : (selectedLesson.resumeAtSeconds ?? 0) + elapsed),
+      isCompleted: true,
+      videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
+    });
   };
 
   // ── Bunny iframe message handler — only runs when HLS is unavailable or failed ──
@@ -845,51 +861,25 @@ export default function CourseDetailPage({
     };
   }, [selectedLesson?.id, courseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 5-second heartbeat ───────────────────────────────────────────────────────
+  // ── 30-second heartbeat (wall-clock elapsed — no player-event dependency) ──────
+  // Same approach as the workshop episode player: uses Date.now() elapsed time so
+  // progress is saved regardless of whether the Bunny iframe sends JS messages.
   useEffect(() => {
     if (!selectedLesson) return;
 
     const hb = setInterval(() => {
-      if (!isPlayingRef.current) return;
       const lesson = selectedLessonRef.current;
       if (!lesson || markCalledRef.current) return;
-
-      const delta = Math.min(liveWatchedRef.current - lastHeartbeatWatchedRef.current, 30);
+      const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
+      const delta = Math.min(30, elapsed - lastHeartbeatWatchedRef.current);
       if (delta <= 0) return;
-      lastHeartbeatWatchedRef.current = liveWatchedRef.current;
-
-      const activeDuration = realDurationRef.current > 0 ? realDurationRef.current : lesson.durationSeconds;
-      const threshold = activeDuration > 0 ? activeDuration * 0.85 : 90;
-      const knownSecs = lesson.actualWatchedSecs ?? 0;
-      const shouldComplete = doMarkCompleteRef.current || (knownSecs + liveWatchedRef.current) >= threshold;
-
-      markComplete.mutate(
-        {
-          lessonId: lesson.id,
-          watchedSeconds: Math.floor(lastPlayheadRef.current),
-          deltaSeconds: delta,
-          isCompleted: shouldComplete || undefined,
-          videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
-        },
-        {
-          onSuccess: (res: any) => {
-            const d = res?.data ?? res;
-            // Only sync the server-reported watch count; UI completion is driven by handleVideoEnded.
-            if (typeof d?.actualWatchedSecs === "number" && d.actualWatchedSecs > liveWatchedRef.current) {
-              liveWatchedRef.current = d.actualWatchedSecs;
-              lastHeartbeatWatchedRef.current = d.actualWatchedSecs;
-              setLiveWatched(Math.floor(d.actualWatchedSecs));
-            }
-          },
-        }
-      );
-
-      if (shouldComplete && !markCalledRef.current) {
-        doMarkCompleteRef.current = false;
-        markCalledRef.current = true;
-        // Backend now knows it's complete; UI will transition when the video actually ends.
-      }
-    }, 5000);
+      lastHeartbeatWatchedRef.current = elapsed;
+      markComplete.mutate({
+        lessonId: lesson.id,
+        watchedSeconds: Math.floor((lesson.resumeAtSeconds ?? 0) + elapsed),
+        deltaSeconds: delta,
+      });
+    }, 30_000);
 
     return () => clearInterval(hb);
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -963,33 +953,6 @@ export default function CourseDetailPage({
 
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
 
-  const statusBadge = (() => {
-    if (!selectedLesson) return null;
-    const cumulativeWatched = Math.max(liveWatched, selectedLesson.actualWatchedSecs ?? 0);
-    const progressPct = activeDuration > 0
-      ? Math.min(100, Math.round((cumulativeWatched / activeDuration) * 100))
-      : 0;
-
-    if (watchState === "completed" || selectedLesson.isCompleted) return {
-      label: "Completed",
-      icon: <CheckCircle2 size={15} />,
-      bg: "var(--color-success)",
-      pct: 100,
-    };
-    if (watchState === "watching") return {
-      label: "Watching...",
-      icon: <Loader2 size={15} className="animate-spin" />,
-      bg: "var(--color-alert)",
-      pct: progressPct,
-    };
-    return {
-      label: "Not Started",
-      icon: <Play size={15} fill="currentColor" />,
-      bg: "rgba(255,255,255,0.10)",
-      pct: progressPct,
-    };
-  })();
-
   return (
     <div className="space-y-6 pb-12">
       {/* Back */}
@@ -1059,15 +1022,23 @@ export default function CourseDetailPage({
 
             <div className="flex items-start justify-between gap-4">
               <h2 className="text-lg font-semibold text-white leading-snug">{selectedLesson.title}</h2>
-              {statusBadge && (
-                <div
-                  className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
-                  style={{ background: statusBadge.bg, color: "#fff" }}
+              {(watchState === "completed" || !!selectedLesson.isCompleted) ? (
+                <span
+                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
+                  style={{ background: "var(--color-success)", color: "#fff" }}
                 >
-                  {statusBadge.icon}
-                  {statusBadge.label}
-                  {statusBadge.pct < 100 && statusBadge.pct > 0 && ` (${statusBadge.pct}%)`}
-                </div>
+                  <CheckCircle2 size={13} /> Completed
+                </span>
+              ) : (
+                <button
+                  onClick={handleMarkComplete}
+                  disabled={markComplete.isPending}
+                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-90 disabled:opacity-60"
+                  style={{ background: "var(--color-success)", color: "#fff" }}
+                >
+                  {markComplete.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                  Mark Complete
+                </button>
               )}
             </div>
 
