@@ -338,16 +338,19 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         description: true,
         thumbnailUrl: true,
         level: true,
-        durationHours: true,
-        totalLessons: true,
         price: true,
         isPublished: true,
         isFeatured: true,
         createdAt: true,
+        xpPerEpisode: true,
         creator: {
           select: { id: true, fullName: true, profilePhotoUrl: true, designation: true },
         },
         _count: { select: { enrollments: true } },
+        courseEpisodes: {
+          where: { isVisible: true },
+          select: { durationSeconds: true },
+        },
       },
       orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
       take: Number(limit),
@@ -368,6 +371,10 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
 
   const data = (courses as any[]).map((c: any) => {
     const access = accessMap.get(c.id) ?? null;
+    const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
+    const episodeCount = episodes.length;
+    const totalSecs = episodes.reduce((sum, ep) => sum + (ep.durationSeconds || 0), 0);
+    const durationHours = totalSecs > 0 ? Math.round(totalSecs / 360) / 10 : null;
     return {
       id: c.id,
       title: c.title,
@@ -375,14 +382,15 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       description: c.description,
       thumbnailUrl: c.thumbnailUrl,
       level: c.level,
-      durationHours: c.durationHours ? Number(c.durationHours) : null,
+      durationHours,
       price: c.price ? Number(c.price) : null,
       isPublished: c.isPublished,
       isFeatured: c.isFeatured,
       createdAt: c.createdAt,
+      xpPerEpisode: c.xpPerEpisode ?? 10,
       instructor: c.creator ?? null,
       hasAccess: isAccessValid(access),
-      _count: { lessons: c.totalLessons, enrollments: c._count?.enrollments ?? 0 },
+      _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
     };
   });
 
