@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 import { env } from '../../config/env.js';
 
 
+
 export async function uploadImageHandler(req: FastifyRequest, reply: FastifyReply) {
   const { pathPrefix = 'uploads', filename = 'file' } = req.query as { pathPrefix?: string; filename?: string };
   const contentType = (req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim();
