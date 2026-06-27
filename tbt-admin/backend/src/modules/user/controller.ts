@@ -4237,7 +4237,7 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
 
   const courseWhere = {
     memberId: request.memberId,
-    lastWatchedSecs: { gt: 0 },
+    OR: [{ actualWatchedSecs: { gt: 0 } }, { completed: true }],
     ...(filter === 'in_progress' ? { completed: false } : {}),
     ...(filter === 'completed' ? { completed: true } : {}),
   };
