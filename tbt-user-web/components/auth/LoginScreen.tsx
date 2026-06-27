@@ -18,6 +18,19 @@ export function LoginScreen() {
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect_url") || "/tbt";
 
+  const slides: string[] = (() => {
+    const imgs = config?.loginBgImages;
+    if (Array.isArray(imgs) && imgs.length >= 2) return imgs;
+    return [];
+  })();
+  const [slideIdx, setSlideIdx] = useState(0);
+
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const id = setInterval(() => setSlideIdx(i => (i + 1) % slides.length), 5000);
+    return () => clearInterval(id);
+  }, [slides.length]);
+
   const [step, setStep] = useState<Step>("credentials");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -154,26 +167,45 @@ export function LoginScreen() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black">
-      {/* ── Static Background ── */}
+      {/* ── Background (slideshow when loginBgImages has 2+, static otherwise) ── */}
       <div className="absolute inset-0 z-0">
-        {/* Desktop (md+): loginBgUrl; falls back to local asset */}
-        <Image
-          src={config?.loginBgUrl ?? "/loginfinal.png"}
-          alt="TBT background"
-          fill
-          className="object-cover hidden md:block"
-          priority
-          quality={90}
-        />
-        {/* Mobile (<md): loginBgMobileUrl when set, otherwise same as desktop */}
-        <Image
-          src={config?.loginBgMobileUrl ?? config?.loginBgUrl ?? "/loginfinal.png"}
-          alt="TBT background"
-          fill
-          className="object-cover md:hidden"
-          priority
-          quality={90}
-        />
+        {slides.length >= 2 ? (
+          slides.map((src, i) => (
+            <Image
+              key={src}
+              src={src}
+              alt="TBT background"
+              fill
+              className="object-cover"
+              priority={i === 0}
+              quality={90}
+              style={{
+                opacity: i === slideIdx ? 1 : 0,
+                transition: "opacity 1.2s ease-in-out",
+                zIndex: i === slideIdx ? 1 : 0,
+              }}
+            />
+          ))
+        ) : (
+          <>
+            <Image
+              src={config?.loginBgUrl ?? "/loginfinal.png"}
+              alt="TBT background"
+              fill
+              className="object-cover hidden md:block"
+              priority
+              quality={90}
+            />
+            <Image
+              src={config?.loginBgMobileUrl ?? config?.loginBgUrl ?? "/loginfinal.png"}
+              alt="TBT background"
+              fill
+              className="object-cover md:hidden"
+              priority
+              quality={90}
+            />
+          </>
+        )}
       </div>
 
       <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/70 via-black/30 to-black/80" />

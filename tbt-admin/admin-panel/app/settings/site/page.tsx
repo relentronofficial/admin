@@ -115,18 +115,39 @@ export default function SiteConfigPage() {
     bgPrimary: "#000000",
     bgSurface: "#111111",
   });
+  const [loginBgImages, setLoginBgImages] = useState<string[]>([]);
 
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  const [uploadingSlide, setUploadingSlide] = useState(false);
+  const slideInputRef = useRef<HTMLInputElement>(null);
+  const uploadImage = useUploadImage();
 
   useEffect(() => {
-    if (config) setForm(f => ({ ...f, ...config }));
+    if (config) {
+      setForm(f => ({ ...f, ...config }));
+      if (Array.isArray(config.loginBgImages)) setLoginBgImages(config.loginBgImages);
+    }
   }, [config]);
 
   const set = (key: string, value: any) => setForm(f => ({ ...f, [key]: value }));
 
+  const handleAddSlide = async (file: File) => {
+    if (!file.type.startsWith("image/")) { toast.error("Please upload an image"); return; }
+    try {
+      setUploadingSlide(true);
+      const { publicUrl } = await uploadImage.mutateAsync({ file, pathPrefix: "site/login-slides" });
+      setLoginBgImages(prev => [...prev, publicUrl]);
+      toast.success("Slide added");
+    } catch (e: any) {
+      toast.error(e.message || "Upload failed");
+    } finally {
+      setUploadingSlide(false);
+    }
+  };
+
   const handleSave = async () => {
     try {
-      await updateConfig.mutateAsync(form);
+      await updateConfig.mutateAsync({ ...form, loginBgImages });
       toast.success("Site config saved");
     } catch (e: any) {
       toast.error(e.message || "Failed to save");
@@ -219,6 +240,41 @@ export default function SiteConfigPage() {
             uploading={uploadingField}
             setUploading={setUploadingField}
           />
+
+          {/* Login Background Slideshow */}
+          <div>
+            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Login Background — Slideshow</label>
+            <p className="text-[10px] text-[#666] mb-3">Add multiple images to cycle as an auto-rotating background on the login page. Overrides the single image above when 2+ slides are set.</p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {loginBgImages.map((url, i) => (
+                <div key={i} className="relative group rounded-lg overflow-hidden border border-[#333] bg-[#141414]" style={{ aspectRatio: "16/9" }}>
+                  <img src={url} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setLoginBgImages(prev => prev.filter((_, j) => j !== i))}
+                      className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center hover:bg-red-700 transition-colors"
+                    >
+                      <X size={13} className="text-white" />
+                    </button>
+                  </div>
+                  <span className="absolute bottom-1 left-1.5 text-[9px] font-bold text-white/70 bg-black/40 px-1.5 rounded">#{i + 1}</span>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => slideInputRef.current?.click()}
+                disabled={uploadingSlide}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#444] bg-[#141414] hover:border-[#dc2626] transition-colors disabled:opacity-50"
+                style={{ aspectRatio: "16/9" }}
+              >
+                {uploadingSlide ? <Loader2 size={16} className="animate-spin text-[#dc2626]" /> : <Upload size={16} className="text-[#666]" />}
+                <span className="text-[9px] text-[#666] font-bold uppercase tracking-widest font-rajdhani">{uploadingSlide ? "Uploading…" : "Add Slide"}</span>
+              </button>
+            </div>
+            <input ref={slideInputRef} type="file" accept={ACCEPTED_TYPES} className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleAddSlide(f); e.target.value = ""; }} />
+          </div>
 
           <div>
             <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Splash Duration (ms)</label>

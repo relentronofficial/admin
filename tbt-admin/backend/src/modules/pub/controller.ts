@@ -32,8 +32,9 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     },
     splashLogoUrl: config.splashLogoUrl ?? null,
     splashDurationMs: config.splashDurationMs,
-    loginBgUrl: (config as any).loginBgUrl ?? null,
-    loginBgMobileUrl: (config as any).loginBgMobileUrl ?? null,
+    loginBgUrl: config.loginBgUrl ?? null,
+    loginBgMobileUrl: config.loginBgMobileUrl ?? null,
+    loginBgImages: Array.isArray((config as any).loginBgImages) ? (config as any).loginBgImages as string[] : null,
   };
   await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });

@@ -199,6 +199,7 @@ export interface SiteConfig {
   splashDurationMs: number;
   loginBgUrl?: string | null;
   loginBgMobileUrl?: string | null;
+  loginBgImages?: string[] | null;
 }
 
 export interface NavItem {
