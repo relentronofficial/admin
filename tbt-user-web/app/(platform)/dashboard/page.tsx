@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { BookOpen, Flame, Trophy, Calendar, Play, CheckCircle2, Video } from "lucide-react";
+import { BookOpen, Flame, Trophy, Calendar, Play, CheckCircle2, Video, ArrowRight } from "lucide-react";
 import { StatsCard } from "@/components/features/dashboard/StatsCard";
 import { PageLoader, CardSkeleton } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -160,11 +160,29 @@ export default function DashboardPage() {
             })}
           </div>
         ) : (
-          <EmptyState
-            icon={BookOpen}
-            title={uiStrings?.recentlyWatchedEmpty ?? "Nothing watched yet"}
-            description={uiStrings?.recentlyWatchedEmptyDesc ?? "Start a course or workshop to see your progress here."}
-          />
+          <div className="space-y-4">
+            <EmptyState
+              icon={BookOpen}
+              title={uiStrings?.recentlyWatchedEmpty ?? "Nothing watched yet"}
+              description={uiStrings?.recentlyWatchedEmptyDesc ?? "Start a course or workshop to see your progress here."}
+            />
+            <div className="flex flex-wrap gap-3 justify-center">
+              <Link
+                href="/workshops"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: "var(--color-accent)" }}
+              >
+                Explore Workshops <ArrowRight size={15} />
+              </Link>
+              <Link
+                href="/courses"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+                style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.75)" }}
+              >
+                Browse Courses <ArrowRight size={15} />
+              </Link>
+            </div>
+          </div>
         )}
       </section>
     </div>

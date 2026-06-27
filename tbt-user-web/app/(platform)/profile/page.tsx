@@ -101,16 +101,35 @@ function BadgeChip({ badge }: { badge: ProfileBadge }) {
 
 function StatsStrip({ profile }: { profile: MemberProfile }) {
   const stats = [
-    { label: "Points", value: (profile.totalPoints ?? 0).toLocaleString(), Icon: Trophy, color: "#eab308" },
-    { label: "Streak", value: `${profile.currentStreak ?? 0}d`, Icon: Flame, color: "#f97316" },
-    { label: "Health", value: `${profile.healthScore ?? 0}%`, Icon: Heart, color: "#ef4444" },
+    {
+      label: "Points",
+      value: (profile.totalPoints ?? 0).toLocaleString(),
+      Icon: Trophy,
+      color: "#eab308",
+      tooltip: "XP earned by completing lessons and passing quizzes",
+    },
+    {
+      label: "Streak",
+      value: `${profile.currentStreak ?? 0}d`,
+      Icon: Flame,
+      color: "#f97316",
+      tooltip: "Consecutive days with at least one lesson completed",
+    },
+    {
+      label: "Health",
+      value: `${profile.healthScore ?? 0}%`,
+      Icon: Heart,
+      color: "#ef4444",
+      tooltip: "Your overall activity score based on consistency and course completion",
+    },
   ];
   return (
     <div className="grid grid-cols-3 gap-3">
-      {stats.map(({ label, value, Icon, color }) => (
+      {stats.map(({ label, value, Icon, color, tooltip }) => (
         <div
           key={label}
-          className="flex flex-col items-center gap-1.5 py-4 rounded-2xl border border-border bg-card"
+          title={tooltip}
+          className="flex flex-col items-center gap-1.5 py-4 rounded-2xl border border-border bg-card cursor-help"
         >
           <div className="p-2 rounded-xl" style={{ background: `color-mix(in srgb, ${color} 12%, transparent)` }}>
             <Icon size={16} style={{ color }} />
@@ -268,7 +287,22 @@ function PersonalSection({ section, profile }: { section: ProfileSection; profil
 function SubscriptionSection({ section, profile }: { section: ProfileSection; profile: MemberProfile }) {
   const fl = section.fieldLabels;
   const sub = profile.subscription;
-  if (!sub) return <p className="text-sm text-muted-foreground">—</p>;
+  if (!sub) {
+    return (
+      <div className="space-y-2">
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Plan</p>
+          <div className="flex items-center gap-2">
+            {profile.membershipPlan ? (
+              <PlanBadge plan={profile.membershipPlan} />
+            ) : (
+              <p className="text-sm text-muted-foreground">—</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const valueOf = (field: string) => {
     if (field === "startDate") return sub.startDate;

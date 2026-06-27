@@ -460,6 +460,14 @@ export default function CourseDetailPage({
   const [hlsFailed, setHlsFailed] = useState(false);
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
   const [videoKey, setVideoKey] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = parseFloat(localStorage.getItem("tbt_speed") ?? "1");
+      return [0.5, 0.75, 1, 1.25, 1.5, 2].includes(saved) ? saved : 1;
+    }
+    return 1;
+  });
+  const [quizHintShown, setQuizHintShown] = useState(false);
   const topRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<PlyrPlayerHandle | null>(null);
   const [certCopied, setCertCopied] = useState(false);
@@ -599,8 +607,11 @@ export default function CourseDetailPage({
     lastHeartbeatWatchedRef.current = 0;
     isPlayingRef.current = false;
     isSeekingRef.current = false;
-    speedRef.current = 1;
+    speedRef.current = typeof window !== "undefined"
+      ? (parseFloat(localStorage.getItem("tbt_speed") ?? "1") || 1)
+      : 1;
     doMarkCompleteRef.current = false;
+    setQuizHintShown(false);
     clearTimeout(seekClearRef.current);
     clearInterval(upNextTimerRef.current);
     setLiveWatched(0);
@@ -664,16 +675,22 @@ export default function CourseDetailPage({
 
   const handleVideoSpeedChange = (s: number) => {
     speedRef.current = s;
+    setPlaybackSpeed(s);
+    try { localStorage.setItem("tbt_speed", String(s)); } catch {}
   };
 
   const handleVideoEnded = () => {
     isPlayingRef.current = false;
     const lesson = selectedLessonRef.current;
     if (!lesson) return;
-    // Always update UI when video ends — regardless of whether heartbeat already called the API.
     setWatchState("completed");
     triggerUpNextRef.current();
-    // Only send the API call if the heartbeat hasn't already done so.
+    const allLessons = courseRef.current?.lessons ?? [];
+    const willBeAllDone = allLessons.length > 0 &&
+      allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === lesson.id);
+    if (willBeAllDone && !markCalledRef.current) {
+      setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+    }
     if (!markCalledRef.current) {
       markCalledRef.current = true;
       doMarkCompleteRef.current = false;
@@ -687,6 +704,12 @@ export default function CourseDetailPage({
     setWatchState("completed");
     triggerUpNextRef.current();
     const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
+    const allLessons = courseRef.current?.lessons ?? [];
+    const willBeAllDone = allLessons.length > 0 &&
+      allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
+    if (willBeAllDone) {
+      setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+    }
     markComplete.mutate({
       lessonId: selectedLesson.id,
       watchedSeconds: Math.floor(lastPlayheadRef.current > 0 ? lastPlayheadRef.current : (selectedLesson.resumeAtSeconds ?? 0) + elapsed),
@@ -983,6 +1006,7 @@ export default function CourseDetailPage({
                   key={`${selectedLesson.id}-${videoKey}`}
                   hlsUrl={selectedLesson.hlsUrl}
                   startAt={videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0)}
+                  speed={playbackSpeed}
                   autoplay={true}
                   className="absolute inset-0 w-full h-full bg-black"
                   onReady={handleVideoReady}
@@ -1039,6 +1063,45 @@ export default function CourseDetailPage({
                 </button>
               )}
             </div>
+
+            {/* 85% completion progress indicator */}
+            {watchState !== "completed" && !selectedLesson.isCompleted && activeDuration > 0 && liveWatched > 0 && (() => {
+              const pct = Math.min(100, Math.round((liveWatched / activeDuration) * 100));
+              const toComplete = Math.max(0, Math.ceil(activeDuration * 0.85 - liveWatched));
+              const hasQuiz = !!(course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any)?.hasQuiz;
+              const quizApproaching = hasQuiz && pct >= 78 && pct < 85 && !quizHintShown;
+              if (quizApproaching && !quizHintShown) setQuizHintShown(true);
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    <span>{pct}% watched</span>
+                    {pct < 85 ? (
+                      <span>
+                        {toComplete > 60
+                          ? `${Math.ceil(toComplete / 60)}m to complete`
+                          : `${toComplete}s to complete`}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--color-success)" }}>✓ Eligible to complete</span>
+                    )}
+                  </div>
+                  <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-1000"
+                      style={{
+                        width: `${Math.min(100, Math.round((pct / 85) * 100))}%`,
+                        background: pct >= 85 ? "var(--color-success)" : "var(--color-accent)",
+                      }}
+                    />
+                  </div>
+                  {hasQuiz && pct >= 78 && pct < 100 && (
+                    <p className="text-xs flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
+                      <Zap size={11} /> Quiz unlocking soon — keep watching!
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Up-next countdown */}
             {upNextCountdown !== null && nextLesson && (

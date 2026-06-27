@@ -120,7 +120,7 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
       const player = new Plyr(el, {
         controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "pip", "settings", "fullscreen"],
         settings: ["speed", "quality"],
-        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        speed: { selected: speed ?? 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         quality: {
           default: 0,
           options: qualityOptions,
