@@ -1976,6 +1976,7 @@ model AppResource {
   isVisible       Boolean   @default(true) @map("is_visible")
   previewLabel    String    @default("Preview") @map("preview_label")
   downloadLabel   String    @default("Download") @map("download_label")
+  description     String?
   visibility      Json?
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)

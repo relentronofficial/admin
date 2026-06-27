@@ -598,6 +598,7 @@ export interface Resource {
   fileTypeIconUrl?: string | null;
   fileCount: number;
   order: number;
+  description?: string | null;
   locked?: boolean;
   hoverActions: { type: string; iconType: string; label: string }[];
 }

@@ -3233,6 +3233,7 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
         fileCount: r.fileCount,
         order: r.order,
         isVisible: r.isVisible,
+        description: (r as any).description ?? null,
         locked,
         hoverActions: [
           { type: 'preview', iconType: 'eye', label: r.previewLabel },

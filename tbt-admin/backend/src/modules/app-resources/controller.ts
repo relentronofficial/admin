@@ -33,6 +33,7 @@ export async function createResourceHandler(req: FastifyRequest, reply: FastifyR
       isVisible: body.isVisible ?? true,
       previewLabel: body.previewLabel || 'Preview',
       downloadLabel: body.downloadLabel || 'Download',
+      description: body.description || null,
       visibility: batchIds.length > 0 ? ({ batchIds } as any) : null,
     },
   });
@@ -43,7 +44,7 @@ export async function updateResourceHandler(req: FastifyRequest, reply: FastifyR
   const { id } = req.params as any;
   const body = req.body as any;
   const data: any = {};
-  ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'isVisible', 'previewLabel', 'downloadLabel'].forEach(f => {
+  ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'isVisible', 'previewLabel', 'downloadLabel', 'description'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   if (body.date !== undefined) data.date = body.date ? new Date(body.date) : null;

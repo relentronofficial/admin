@@ -286,7 +286,7 @@ export async function pubHomeHeroHandler(req: FastifyRequest, reply: FastifyRepl
 }
 
 export async function pubHomeSectionsHandler(req: FastifyRequest, reply: FastifyReply) {
-  reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=30');
+  reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
   const { memberTier } = req.query as { memberTier?: string };
   const tierNum = parseInt(memberTier || '1', 10);
 
@@ -326,7 +326,7 @@ export async function pubHomeSectionsHandler(req: FastifyRequest, reply: Fastify
         },
       },
     }) as any[];
-    await cacheSet(redis, CACHE_KEY, sections, 60);
+    await cacheSet(redis, CACHE_KEY, sections, 300);
   }
 
   // Apply tier locks in memory

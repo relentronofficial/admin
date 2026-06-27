@@ -14,7 +14,7 @@ import { format } from "date-fns";
 const FILE_TYPES = ["image", "pdf", "doc", "xlsx", "ppt", "video", "audio", "archive", "other"];
 
 const EMPTY_FORM = {
-  title: "", author: "", date: "", fileUrl: "", previewUrl: "",
+  title: "", author: "", date: "", description: "", fileUrl: "", previewUrl: "",
   fileType: "pdf", fileTypeIconUrl: "", fileCount: "1",
   isVisible: true, previewLabel: "Preview", downloadLabel: "Download",
   batchIds: [] as string[],
@@ -160,6 +160,7 @@ export default function AppResourcesPage() {
     setForm({
       title: r.title || "", author: r.author || "",
       date: r.date ? new Date(r.date).toISOString().split("T")[0] : "",
+      description: r.description || "",
       fileUrl: r.fileUrl || "", previewUrl: r.previewUrl || "",
       fileType: r.fileType || "pdf", fileTypeIconUrl: r.fileTypeIconUrl || "",
       fileCount: String(r.fileCount ?? 1), isVisible: r.isVisible ?? true,
@@ -175,6 +176,7 @@ export default function AppResourcesPage() {
     try {
       const payload: any = {
         title: form.title, author: form.author || null, date: form.date || null,
+        description: form.description || null,
         fileUrl: form.fileUrl, previewUrl: form.previewUrl || null,
         fileType: form.fileType, fileTypeIconUrl: form.fileTypeIconUrl || null,
         fileCount: Number(form.fileCount) || 1, isVisible: form.isVisible,
@@ -328,6 +330,11 @@ export default function AppResourcesPage() {
               <div>
                 <label className={labelCls}>Title *</label>
                 <input value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} className={inputCls} />
+              </div>
+
+              <div>
+                <label className={labelCls}>Description <span className="text-[#666] normal-case font-normal">(optional — shown to members)</span></label>
+                <textarea value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} rows={2} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

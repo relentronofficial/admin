@@ -60,6 +60,9 @@ function ResourceRow({ resource }: { resource: Resource }) {
             </span>
           )}
         </div>
+        {resource.description && (
+          <p className="text-xs text-muted-foreground/70 line-clamp-1 mt-0.5">{resource.description}</p>
+        )}
         <div className="flex items-center gap-2 mt-0.5">
           {resource.author && (
             <p className="text-xs text-muted-foreground">{resource.author}</p>
@@ -134,6 +137,9 @@ function ResourceGridCard({ resource }: { resource: Resource }) {
             </span>
           )}
         </div>
+        {resource.description && (
+          <p className="text-xs text-muted-foreground/70 line-clamp-2">{resource.description}</p>
+        )}
         {resource.author && (
           <p className="text-xs text-muted-foreground">{resource.author}</p>
         )}
