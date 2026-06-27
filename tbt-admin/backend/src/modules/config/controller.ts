@@ -1,4 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { invalidateCache } from '../../lib/cache.js';
+
+const PUB_SITE_CONFIG_CACHE_KEY = 'pub:site-config:v2';
 
 // ── SITE CONFIG ───────────────────────────────────────────────────────
 
@@ -14,21 +17,14 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
 
 export async function updateSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as any;
-  const { loginBgImages, ...prismaBody } = body;
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
-    config = await req.server.prisma.siteConfig.create({ data: prismaBody });
+    config = await req.server.prisma.siteConfig.create({ data: body });
   } else {
-    config = await req.server.prisma.siteConfig.update({ where: { id: config.id }, data: prismaBody });
+    config = await req.server.prisma.siteConfig.update({ where: { id: config.id }, data: body });
   }
-  if (loginBgImages !== undefined) {
-    await req.server.prisma.$executeRawUnsafe(
-      `UPDATE site_configs SET login_bg_images = $1::jsonb WHERE id = $2`,
-      JSON.stringify(Array.isArray(loginBgImages) ? loginBgImages : null),
-      config.id,
-    );
-  }
-  return reply.send({ success: true, data: { ...config, loginBgImages: loginBgImages ?? (config as any).loginBgImages ?? null }, error: null });
+  void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
+  return reply.send({ success: true, data: config, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────
