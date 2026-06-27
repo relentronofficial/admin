@@ -527,13 +527,14 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
       >
         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
           <Clock size={10} />
-          {remainingMins != null ? `~${remainingMins} min left` : `${item.progressPercent}% watched`}
+          {item.isCompleted ? "Completed" : remainingMins != null ? `~${remainingMins} min left` : `${item.progressPercent}% watched`}
         </span>
         <span
           className="flex items-center gap-1.5 text-[11px] font-bold transition-all group-hover:gap-2.5"
-          style={{ color: "var(--color-accent)" }}
+          style={{ color: item.isCompleted ? "var(--color-success)" : "var(--color-accent)" }}
         >
-          <Play size={9} fill="currentColor" /> Continue
+          {item.isCompleted ? <CheckCircle2 size={11} /> : <Play size={9} fill="currentColor" />}
+          {item.isCompleted ? "Done" : "Continue"}
         </span>
       </div>
     </Link>
@@ -586,7 +587,7 @@ export function ContinueWatchingSection() {
     );
   }
 
-  const items: ContinueLearningItem[] = Array.isArray(data) ? data.filter((item) => !item.isCompleted) : [];
+  const items: ContinueLearningItem[] = Array.isArray(data) ? data : [];
   if (!items.length) return null;
 
   return (

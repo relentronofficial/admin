@@ -14,47 +14,73 @@ npm run format      # prettier --write .
 
 ## Architecture
 
+**NEVER use the word "EiFlix"** in user-facing code or string literals. Use "TBT".
+
 ### Route Groups
 ```
 app/
   (auth)/           # Clerk-hosted sign-in/sign-up pages — DO NOT MODIFY
-  (marketing)/      # Public landing page
+  (marketing)/      # Public unauthenticated pages: landing, /events, /programs
   (platform)/       # All member pages — Navbar + SubscriptionGate in layout
-  (player)/         # Full-screen video player — bare layout, no Navbar
-  login/            # Custom login page (LoginScreen) — DO NOT MODIFY
+    dashboard/      # Member home
+    tbt/            # Content catalog
+    workshops/      # Workshop list
+    workshop/[id]/  # Workshop detail + flow + Q&A + live calls (monolithic page)
+    learning/       # Course progress overview; /learning/badges
+    learning/[courseId]/           # Course lesson list + player
+    learning/[courseId]/[lessonId] # (unused — lesson player is inline in [courseId])
+    courses/        # Course catalog
+    events/         # Events; /events/[id]
+    programs/       # Programs; /programs/[id]
+    batch-program/  # /batch-program/[day]
+    live/[webinarId]# In-session webinar
+    search/         # Global search
+    notifications/  # Notification center
+    messages/       # Chat messages
+    Products/       # Exempt from SubscriptionGate
+    Resources/      # Downloadable resources
+    history/        # Watch history
+    profile/        # Exempt from SubscriptionGate
+  (player)/         # Full-screen video player — bare layout, no Navbar/Footer
+  login/            # Custom LoginScreen — DO NOT MODIFY
   signup/           # Self-registration (SignupScreen) — DO NOT MODIFY
-  loading/          # Splash screen — auto-redirects to /tbt
+  verify/           # Phone/OTP verification step
+  loading/          # Standalone splash
 ```
 
 `/eiflix` and `/eiflix/:path*` permanently redirect to `/tbt` and `/tbt/:path*` (see `next.config.ts`).
 
-### Auth Flow
-1. Unauthenticated users hitting protected routes → middleware redirects to `/login?redirect_url=<path>`
-2. `LoginScreen` reads `?redirect_url` and navigates there after `setActive`
-3. If already signed in on `/login`, auto-redirects to `redirect_url` immediately
+### Auth (custom JWT cookies)
+- `POST /api/user-auth/login` → phone + password → OTP (WhatsApp) → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
+- Axios instance uses `withCredentials: true` — cookies sent automatically
+- 401 interceptor calls `/api/user-auth/refresh` and retries (skipped for `/api/user-auth/` paths)
+- `initApiClient()` in `lib/api/client.ts` is a **no-op stub** — do not add bearer token logic
+- `@clerk/nextjs` is only used for the `(auth)/` route group and middleware auth-state detection; all actual login uses cookies
 
-**Critical env vars** (must match `Providers.tsx` config):
+**Critical Clerk env vars** (wrong values silently redirect logins to the wrong page):
 ```
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login
 NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/tbt
 NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/tbt
 ```
-Clerk **env vars override `ClerkProvider` props** — if these are wrong, logins silently redirect to the wrong page.
 
 ### API Client (`lib/api/client.ts`)
-- Axios instance pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)
-- Response interceptor **unwraps** `response.data` — hooks receive `{ success, data, meta, error }` directly
-- `initApiClient(getToken)` is called once in `Providers.tsx`'s `AuthInterceptor` when `isSignedIn` becomes true. Hooks must NOT call `getToken` themselves.
-- `getCachedToken()` polls up to 600 ms for `initApiClient` to be called — handles the React render-cycle race between `SubscriptionGate`'s first query and `AuthInterceptor`'s `useEffect`.
-- `getServerNow()` — use instead of `Date.now()` for any countdown or time display (avoids client clock skew).
+- Axios instance → `NEXT_PUBLIC_API_URL`, `withCredentials: true`
+- Response interceptor unwraps `response.data` — hooks receive `{ success, data, meta, error }` directly
+- `getServerNow()` — use instead of `Date.now()` for countdowns (avoids client clock skew)
+- `tbt_device_id` generated in `localStorage` on first load (multi-device security detection)
 
 ### `SiteConfigProvider` (`lib/context/SiteConfigContext.tsx`)
-Fetches 3 unauthenticated endpoints on app load: `/api/pub/config/site`, `/api/pub/config/nav`, `/api/pub/config/ui-strings`. Injects CSS custom properties on `document.documentElement`.
+Fetches 3 unauthenticated endpoints in parallel on app load:
+- `GET /api/pub/config/site` → `SiteConfig` (theme, logos, splash)
+- `GET /api/pub/config/nav` → `NavItem[]` + `RightIcons` flags
+- `GET /api/pub/config/ui-strings` → `UiStrings`
 
-**CRITICAL**: Every user-visible string must come from `uiStrings`. Zero hardcoded label strings in `(platform)` pages.
+Injects theme as CSS custom properties on `document.documentElement`.
 
-### CSS Theme Tokens
-Injected at runtime — never use hardcoded color values for these:
+**CRITICAL**: Every user-visible string must come from `uiStrings` (or `config`). Zero hardcoded label strings in `(platform)` pages.
+
+### CSS Theme Tokens (injected at runtime — never hardcode)
 ```
 --color-accent        # primary CTA / brand
 --color-alert         # warning
@@ -62,35 +88,39 @@ Injected at runtime — never use hardcoded color values for these:
 --color-bg-primary    # page background
 --color-bg-surface    # card / surface
 ```
-Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(--color-accent) 30%, transparent)` for tints.
-
-`--color-locked: #4a4a4a` is the only static token (not from API).
+Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(--color-accent) 30%, transparent)` for tints. `--color-locked: #4a4a4a` is the only static token.
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
-Wraps all `(platform)` children. Reads `useMe()` and:
-- `me.status === 'pending'` → renders `PendingApprovalScreen` overlay (full-screen block, sign-out only — account awaiting admin approval)
-- Subscription missing or expired → redirects to `/Products`
-- `/Products` and `/profile` are exempt from the subscription redirect
+Reads `useMe()`:
+1. `me.status === 'pending'` → `PendingInterceptor` overlay (click-blocker, sign-out only)
+2. No active subscription AND `membershipPlan === 'free'` → `FreeInterceptor` overlay (upgrade prompt)
+3. Paid `membershipPlan` (admin-assigned) bypasses interceptors even without a `Subscription` DB row
 
-### Self-Registration Flow
-- `POST /api/user-auth/signup` (public) — creates member with `status='pending'`, `membershipPlan='free'`
-- `SignupScreen` (`components/auth/SignupScreen.tsx`) posts to this endpoint; on success shows "Registration Submitted" confirmation
-- Pending members can log in immediately but see `PendingApprovalScreen` until an admin approves them via the admin panel
-
-### Login Flow (`components/auth/LoginScreen.tsx`)
-- **Password is required** — no blank/skip allowed
-- "New to TBT? Sign up" link is always visible below the credentials form
-- Forgot Password → OTP → set new password (`reset_password` step) — this is also the path for admin-created accounts with no password
-- **DO NOT MODIFY** `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
+Paths `["/Products", "/profile"]` are exempt.
 
 ### Hook Files
-- `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa`, `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
-- `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
+- `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
+- `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
-- `lib/hooks/useCourses.ts`, `lib/hooks/useEvents.ts` — supplementary hooks
+- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`)
+- `lib/hooks/useCourses.ts` — `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`
+- `lib/hooks/useEvents.ts` — events hooks
 
-### Video Progress Pattern
-Used in any component that embeds video playback (30 s periodic POST):
+New hooks: create or extend a `lib/api/services/*.service.ts` file rather than calling `apiClient` directly from the hook.
+
+### Zustand Stores (`lib/stores/`)
+- `useAuthStore` — login state, OTP flow step
+- `usePlayerStore` — episode playback state
+- `useUIStore` — global UI toggles
+
+### Video Player (HLS-first, iframe fallback)
+Both workshop (`workshop/[slug]/page.tsx`) and course (`learning/[courseId]/page.tsx`) use:
+- **`PlyrPlayer`** (`components/features/video/PlyrPlayer.tsx`) when `episode.hlsUrl` is set and HLS hasn't errored. Ref type: `PlyrPlayerHandle` (`{ currentTime: number; duration: number }`). Props: `hlsUrl`, `startAt`, `speed`, `autoplay`, `onReady(duration)`, `onTimeUpdate(currentTime)`, `onPlay`, `onPause`, `onEnded`, `onSpeedChange`, `onError`. Set `hlsFailed=true` in `onError` to fall through to iframe.
+- **Bunny iframe fallback** when `hlsUrl` is null or HLS failed. `timeupdate`, `pause`, `ended` fire automatically without subscribing. `play` does NOT fire on autoplay — detect via `getCurrentTime`/`isPaused` after `ready`. `value.seconds` = playhead; `value.duration` = real duration (use on first message).
+
+Backend sets `videoType: 'hls' | 'iframe'` alongside `hlsUrl` to indicate the expected player.
+
+### Video Progress Pattern (30s periodic POST)
 ```typescript
 const startRef = useRef<number>(Date.now());
 const completedRef = useRef(false);
@@ -110,10 +140,15 @@ useEffect(() => {
 ```
 
 ### Key Pitfalls
-1. **`useRef` requires an initial value** (React 19) — use `useRef<T | undefined>(undefined)`, never `useRef<T>()`
-2. **`refetchQueries` in TanStack Query v5** — use `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
-3. **No hardcoded strings** — every user-facing label from `uiStrings`
-4. **No hardcoded colors for theme tokens** — use `var(--color-accent)` etc.
-5. **Login/signup pages are off-limits** — never modify `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
-6. **`SubscriptionGate` is already in the platform layout** — don't add subscription or pending checks in individual pages
-7. **NEVER use the word "EiFlix"** in user-facing code or strings — use "TBT"
+1. **No hardcoded strings** — every user-facing label from `uiStrings` or `config`
+2. **No hardcoded colors for theme tokens** — use `var(--color-accent)` etc.
+3. **`getServerNow()`** instead of `Date.now()` for countdowns
+4. **`initApiClient` is a no-op** — do not add bearer token logic to user-web hooks
+5. **`SubscriptionGate` is in platform layout** — don't add subscription/pending checks in individual pages
+6. **Login/signup pages are permanently off-limits** — never modify `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
+7. **`useRef` requires an initial value** (React 19) — `useRef<T | undefined>(undefined)`, never `useRef<T>()`
+8. **`refetchQueries` predicate in TanStack Query v5** — `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
+9. **`req.memberId` not `req.member`** — `fastify.authenticateUser` sets `request.memberId: string`; there is NO `request.member` object
+10. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both carry `type: "workshop" | "course"` as a discriminator. Don't fork the hook calls or filter by content type.
+11. **`lessonAlreadyDone` uses exactly 3 signals** — `completedIds.has(lessonId)`, `!!isCompleted`, `actualWatchedSecs >= durationSeconds * 0.85`. No position proximity heuristic. If it returns `true`, `markCalledRef.current` is pre-set, silently blocking all completion POSTs for the session.
+12. **`BUNNY_CDN_URL` env var lacks `https://`** — normalize with `` `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8` ``

@@ -103,6 +103,12 @@ export async function cacheNxSet(
 }
 
 export async function invalidateCache(redis: RedisLike | null, pattern: string): Promise<void> {
+  // Always clear L1 first — cacheGet checks L1 before Redis, so stale L1 wins even after
+  // Redis is cleared. The prefix strip handles both exact keys and glob patterns like "pub:*".
+  const prefix = pattern.replace(/\*$/, '');
+  for (const key of memCache.keys()) {
+    if (key.startsWith(prefix)) memCache.delete(key);
+  }
   if (redis) {
     try {
       const keys = await redis.keys(pattern);
@@ -110,11 +116,5 @@ export async function invalidateCache(redis: RedisLike | null, pattern: string):
         for (const key of keys) await redis.del(key);
       }
     } catch {}
-    return;
-  }
-  // In-process: delete keys matching the prefix (pattern is a prefix glob like "pub:*")
-  const prefix = pattern.replace(/\*$/, '');
-  for (const key of memCache.keys()) {
-    if (key.startsWith(prefix)) memCache.delete(key);
   }
 }
