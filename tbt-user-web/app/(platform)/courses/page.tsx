@@ -231,9 +231,9 @@ function CourseCard({ course, isEnrolled, progress }: { course: any; isEnrolled:
               <Layers size={11} /> {course._count.lessons} episodes
             </span>
           )}
-          {course.durationHours && (
+          {course.durationDisplay && (
             <span className="flex items-center gap-1">
-              <Clock size={11} /> {course.durationHours}h
+              <Clock size={11} /> {course.durationDisplay}
             </span>
           )}
           {course.xpPerEpisode && (

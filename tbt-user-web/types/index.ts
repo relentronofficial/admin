@@ -59,6 +59,7 @@ export interface Course {
   thumbnailUrl?: string | null;
   level: CourseLevel;
   durationHours?: number | null;
+  durationDisplay?: string | null;
   isPublished: boolean;
   isFeatured: boolean;
   createdAt: string;

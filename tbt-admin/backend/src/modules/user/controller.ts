@@ -375,10 +375,18 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
     const episodeCount = episodes.length;
     const totalSecs = episodes.reduce((sum, ep) => sum + (ep.durationSeconds || 0), 0);
-    // Use computed duration from episodes if available; fall back to admin-stored value
+    const storedHours = c.durationHours ? Number(c.durationHours) : null;
     const durationHours = totalSecs > 0
       ? Math.round(totalSecs / 360) / 10
-      : (c.durationHours ? Number(c.durationHours) : null);
+      : storedHours;
+    // Human-readable display: "2m", "45m", "1.3h"
+    let durationDisplay: string | null = null;
+    if (totalSecs > 0) {
+      const mins = Math.ceil(totalSecs / 60);
+      durationDisplay = mins < 60 ? `${mins}m` : `${Math.round(mins / 6) / 10}h`;
+    } else if (storedHours && storedHours > 0) {
+      durationDisplay = `${storedHours}h`;
+    }
     return {
       id: c.id,
       title: c.title,
@@ -387,6 +395,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       thumbnailUrl: c.thumbnailUrl,
       level: c.level,
       durationHours,
+      durationDisplay,
       price: c.price ? Number(c.price) : null,
       isPublished: c.isPublished,
       isFeatured: c.isFeatured,
