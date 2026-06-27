@@ -7,7 +7,7 @@ import {
   useListAppResources, useCreateAppResource, useUpdateAppResource, useDeleteAppResource,
   useGetResourcesPageConfig, useUpdateResourcesPageConfig, useReorderAppResources, useListBatches,
 } from "@/lib/hooks/useTbt";
-import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 
@@ -55,7 +55,7 @@ export default function AppResourcesPage() {
   const updateResource = useUpdateAppResource();
   const deleteResource = useDeleteAppResource();
   const reorderResources = useReorderAppResources();
-  const getPresignedUrl = useGetPresignedUrl();
+  const uploadImage = useUploadImage();
 
   const { data: batchesData } = useListBatches();
   const batches: any[] = (batchesData as any)?.data || [];
@@ -114,57 +114,27 @@ export default function AppResourcesPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadingPreview, setUploadingPreview] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
-  const [fileProgress, setFileProgress] = useState<number | null>(null);
-  const [previewProgress, setPreviewProgress] = useState<number | null>(null);
-
-  const uploadWithProgress = (url: string, file: File, onProgress: (pct: number) => void): Promise<void> =>
-    new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
-      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`)));
-      xhr.onerror = () => reject(new Error("Network error during upload"));
-      xhr.open("PUT", url);
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-      xhr.send(file);
-    });
-
-  const uploadToStorage = async (file: File, pathPrefix: string, onProgress?: (pct: number) => void): Promise<string> => {
-    const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
-      filename: file.name,
-      contentType: file.type || "application/octet-stream",
-      pathPrefix,
-    });
-    if (onProgress) {
-      await uploadWithProgress(uploadUrl, file, onProgress);
-    } else {
-      const res = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
-      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-    }
-    return publicUrl;
-  };
 
   const handleMainFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingFile(true);
-    setFileProgress(0);
     try {
-      const url = await uploadToStorage(file, "resources/files", (pct) => setFileProgress(pct));
-      setForm((f: any) => ({ ...f, fileUrl: url, fileType: detectFileType(file.name) }));
+      const { publicUrl } = await uploadImage.mutateAsync({ file, pathPrefix: "resources/files" });
+      setForm((f: any) => ({ ...f, fileUrl: publicUrl, fileType: detectFileType(file.name) }));
     } catch (err: any) { toast.error(err.message || "Upload failed"); }
-    finally { setUploadingFile(false); setFileProgress(null); e.target.value = ""; }
+    finally { setUploadingFile(false); e.target.value = ""; }
   };
 
   const handlePreviewFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingPreview(true);
-    setPreviewProgress(0);
     try {
-      const url = await uploadToStorage(file, "resources/previews", (pct) => setPreviewProgress(pct));
-      setForm((f: any) => ({ ...f, previewUrl: url }));
+      const { publicUrl } = await uploadImage.mutateAsync({ file, pathPrefix: "resources/previews" });
+      setForm((f: any) => ({ ...f, previewUrl: publicUrl }));
     } catch (err: any) { toast.error(err.message || "Upload failed"); }
-    finally { setUploadingPreview(false); setPreviewProgress(null); e.target.value = ""; }
+    finally { setUploadingPreview(false); e.target.value = ""; }
   };
 
   const handleIconFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,8 +142,8 @@ export default function AppResourcesPage() {
     if (!file) return;
     setUploadingIcon(true);
     try {
-      const url = await uploadToStorage(file, "resources/icons");
-      setForm((f: any) => ({ ...f, fileTypeIconUrl: url }));
+      const { publicUrl } = await uploadImage.mutateAsync({ file, pathPrefix: "resources/icons" });
+      setForm((f: any) => ({ ...f, fileTypeIconUrl: publicUrl }));
     } catch (err: any) { toast.error(err.message || "Upload failed"); }
     finally { setUploadingIcon(false); e.target.value = ""; }
   };
@@ -384,14 +354,9 @@ export default function AppResourcesPage() {
                   <div className="space-y-1">
                     <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingFile} className="w-full bg-[#1a1a1a] border border-dashed border-[#333] hover:border-[#dc2626] rounded-lg h-11 px-4 text-[12px] text-[#888] hover:text-white transition-all flex items-center justify-center gap-2">
                       {uploadingFile
-                        ? <><Loader2 size={14} className="animate-spin" /> {fileProgress !== null ? `${fileProgress}%` : "Preparing…"}</>
+                        ? <><Loader2 size={14} className="animate-spin" /> Uploading…</>
                         : <><Plus size={14} /> Upload File</>}
                     </button>
-                    {uploadingFile && fileProgress !== null && (
-                      <div className="w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
-                        <div className="h-full bg-[#dc2626] transition-all duration-150" style={{ width: `${fileProgress}%` }} />
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -409,14 +374,9 @@ export default function AppResourcesPage() {
                   <div className="space-y-1">
                     <button type="button" onClick={() => previewInputRef.current?.click()} disabled={uploadingPreview} className="w-full bg-[#1a1a1a] border border-dashed border-[#333] hover:border-[#dc2626] rounded-lg h-11 px-4 text-[12px] text-[#888] hover:text-white transition-all flex items-center justify-center gap-2">
                       {uploadingPreview
-                        ? <><Loader2 size={14} className="animate-spin" /> {previewProgress !== null ? `${previewProgress}%` : "Preparing…"}</>
+                        ? <><Loader2 size={14} className="animate-spin" /> Uploading…</>
                         : <><Plus size={14} /> Upload Preview File</>}
                     </button>
-                    {uploadingPreview && previewProgress !== null && (
-                      <div className="w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
-                        <div className="h-full bg-[#dc2626] transition-all duration-150" style={{ width: `${previewProgress}%` }} />
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
