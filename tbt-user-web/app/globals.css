@@ -118,7 +118,7 @@
 /* Workshop page: force full white background — overrides dark theme on html and body */
 html.workshop-white-page,
 html.workshop-white-page body {
-  background-color: #ffffff !important;
+  background-color: #f8f6f2 !important;
 }
 
 /* Certificate modal print isolation — hide everything except the open modal */

@@ -230,7 +230,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
   const inner = (
     <div
       className="rounded-xl overflow-hidden flex flex-col items-center justify-center text-center py-12 px-6 space-y-6"
-      style={{ background: "#f8f8f8", border: "1px solid rgba(0,0,0,0.08)", minHeight: 300 }}
+      style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.08)", minHeight: 300 }}
     >
       {/* LIVE CALL label */}
       {item.label && (
@@ -2631,7 +2631,7 @@ function QuizChallengeView({
         const selected = answers[q.id];
         const isAnswered = selected !== undefined;
         return (
-          <div key={q.id} className="space-y-2.5 rounded-xl p-4" style={{ background: "#fafafa", border: "1px solid rgba(0,0,0,0.07)" }}>
+          <div key={q.id} className="space-y-2.5 rounded-xl p-4" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.07)" }}>
             <p className="text-sm font-semibold text-foreground">
               <span className="text-muted-foreground mr-1">Q{qi + 1}.</span>{q.question}
             </p>
@@ -2665,7 +2665,7 @@ function QuizChallengeView({
                   }
                 } else {
                   borderColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.15)";
-                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "#fafafa";
+                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "#ffffff";
                   circleColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.3)";
                 }
 
@@ -2741,7 +2741,7 @@ function WrittenChallengeView({ challenge, slug, onDone }: { challenge: any; slu
   return (
     <div className="space-y-4 px-5 py-5">
       <ChallengeHeader challenge={challenge} />
-      <div className="rounded-xl p-4 space-y-1.5" style={{ background: "#fafafa", border: "1px solid rgba(0,0,0,0.1)", borderLeft: "3px solid var(--color-accent)" }}>
+      <div className="rounded-xl p-4 space-y-1.5" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.1)", borderLeft: "3px solid var(--color-accent)" }}>
         <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Your Challenge</p>
         <p className="text-sm text-foreground leading-relaxed">{prompt}</p>
       </div>
@@ -2994,7 +2994,7 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
       <button
         onClick={() => setFlipped((f) => !f)}
         className="w-full rounded-2xl border p-8 text-center transition-all min-h-[180px] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-accent/50"
-        style={{ borderColor: "rgba(0,0,0,0.1)", background: flipped ? "color-mix(in srgb, var(--color-accent) 6%, #f8f8f8)" : "#f8f8f8" }}
+        style={{ borderColor: "rgba(0,0,0,0.1)", background: flipped ? "color-mix(in srgb, var(--color-accent) 6%, #ffffff)" : "#ffffff" }}
       >
         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           {flipped ? "Answer" : "Question — tap to flip"}
@@ -3216,7 +3216,7 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
       ) : (
         <div
           className="rounded-xl border p-8 text-center space-y-5"
-          style={{ background: "#f8f8f8", borderColor: `${lColor}44` }}
+          style={{ background: "#ffffff", borderColor: `${lColor}44` }}
         >
           <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: lColor }}>
             {challenge.label ?? "LIVE CALL:"}
@@ -3615,21 +3615,23 @@ export default function WorkshopDetailPage() {
 
   return (
     <div className="-mx-4 md:-mx-6 -mt-6 px-4 md:px-6 pt-6 pb-8 min-h-screen space-y-3" style={{
-      background: "#ffffff",
+      backgroundColor: "#f8f6f2",
+      backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.055) 1px, transparent 1px)",
+      backgroundSize: "22px 22px",
       /* Redefine shadcn CSS vars in HSL-triplet format (no hsl() wrapper) so Tailwind's
          hsl(var(--foreground)) expansion produces valid CSS on this light-bg page */
       ["--foreground" as string]: "0 0% 6.7%",       /* #111111 */
-      ["--muted-foreground" as string]: "0 0% 50%",   /* ~rgba(0,0,0,0.5) on white */
-      ["--card" as string]: "0 0% 96.1%",             /* #f5f5f5 */
+      ["--muted-foreground" as string]: "0 0% 50%",   /* ~rgba(0,0,0,0.5) on pearl */
+      ["--card" as string]: "0 0% 100%",              /* #ffffff — pure white cards on pearl bg */
       ["--card-foreground" as string]: "0 0% 6.7%",   /* #111111 */
-      ["--border" as string]: "0 0% 90.2%",           /* ~rgba(0,0,0,0.1) on white */
+      ["--border" as string]: "0 0% 90.2%",           /* ~rgba(0,0,0,0.1) on pearl */
       ["--ring" as string]: "0 72.2% 50.6%",          /* accent red */
-      ["--accent" as string]: "0 0% 94.9%",           /* ~rgba(0,0,0,0.05) on white */
-      ["--background" as string]: "0 0% 100%",        /* #ffffff */
+      ["--accent" as string]: "0 0% 96.1%",           /* ~rgba(0,0,0,0.04) hover on pearl */
+      ["--background" as string]: "40 31% 96.1%",     /* #f8f6f2 pearl white */
       ["--input" as string]: "0 0% 90.2%",
-      ["--secondary" as string]: "0 0% 94.9%",
+      ["--secondary" as string]: "0 0% 96.1%",
       ["--secondary-foreground" as string]: "0 0% 6.7%",
-      ["--muted" as string]: "0 0% 94.9%",
+      ["--muted" as string]: "0 0% 96.1%",
     }}>
       {flowData?.flowItems && (
         <LiveCallUnlockWatcher
@@ -3690,7 +3692,7 @@ export default function WorkshopDetailPage() {
           ) : (
             <div
               className="flex flex-col items-center justify-center gap-5 text-center px-6 py-20 md:px-10 md:py-24 min-h-[260px]"
-              style={{ background: "#fafafa" }}
+              style={{ background: "#ffffff" }}
             >
               <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center"
