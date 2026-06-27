@@ -338,6 +338,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         description: true,
         thumbnailUrl: true,
         level: true,
+        durationHours: true,
         price: true,
         isPublished: true,
         isFeatured: true,
@@ -374,7 +375,10 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
     const episodeCount = episodes.length;
     const totalSecs = episodes.reduce((sum, ep) => sum + (ep.durationSeconds || 0), 0);
-    const durationHours = totalSecs > 0 ? Math.round(totalSecs / 360) / 10 : null;
+    // Use computed duration from episodes if available; fall back to admin-stored value
+    const durationHours = totalSecs > 0
+      ? Math.round(totalSecs / 360) / 10
+      : (c.durationHours ? Number(c.durationHours) : null);
     return {
       id: c.id,
       title: c.title,
