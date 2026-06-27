@@ -16,18 +16,26 @@ export async function uploadImageHandler(req: FastifyRequest, reply: FastifyRepl
 
   // Primary: Bunny Storage — natively served by BUNNY_CDN_URL (no extra CDN wiring needed)
   if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && env.BUNNY_CDN_URL) {
-    const uploadUrl = `https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`;
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
-      body: new Uint8Array(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      req.log.error(`Bunny Storage upload failed [${res.status}]: ${text}`);
+    try {
+      const uploadUrl = `https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`;
+      req.log.info(`Bunny Storage upload start: ${uploadUrl} (${body?.length ?? 0} bytes, ${contentType})`);
+      const bunnyRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
+        body: new Uint8Array(body),
+      });
+      if (!bunnyRes.ok) {
+        const text = await bunnyRes.text().catch(() => '');
+        req.log.error(`Bunny Storage upload failed [${bunnyRes.status}]: ${text}`);
+        // fall through to R2
+      } else {
+        const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+        req.log.info(`Bunny Storage upload success: ${publicUrl}`);
+        return reply.send({ success: true, data: { publicUrl }, error: null });
+      }
+    } catch (bunnyErr: any) {
+      req.log.error(`Bunny Storage fetch threw: ${bunnyErr.message}`);
       // fall through to R2
-    } else {
-      return reply.send({ success: true, data: { publicUrl: `https://${env.BUNNY_CDN_URL}/${key}` }, error: null });
     }
   }
 
