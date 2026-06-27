@@ -13,7 +13,24 @@ export async function uploadImageHandler(req: FastifyRequest, reply: FastifyRepl
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const key = `${pathPrefix}/${Date.now()}-${safeFilename}`;
 
-  // Primary: R2 server-side upload via AWS SDK (no browser CORS needed)
+  // Primary: Bunny Storage — natively served by BUNNY_CDN_URL (no extra CDN wiring needed)
+  if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && env.BUNNY_CDN_URL) {
+    const uploadUrl = `https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`;
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
+      body: new Uint8Array(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      req.log.error(`Bunny Storage upload failed [${res.status}]: ${text}`);
+      // fall through to R2
+    } else {
+      return reply.send({ success: true, data: { publicUrl: `https://${env.BUNNY_CDN_URL}/${key}` }, error: null });
+    }
+  }
+
+  // Fallback: R2 (requires Bunny CDN pull zone or R2 public bucket to be set up)
   if (env.CLOUDFLARE_R2_ACCOUNT_ID && env.CLOUDFLARE_R2_ACCESS_KEY_ID && env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && env.CLOUDFLARE_R2_BUCKET_NAME) {
     try {
       const s3 = getS3Client();
@@ -31,28 +48,9 @@ export async function uploadImageHandler(req: FastifyRequest, reply: FastifyRepl
       req.log.error(`R2 upload failed: ${err.message}`);
       return reply.status(502).send({
         success: false,
-        error: { code: 'UPLOAD_ERROR', message: 'R2 upload failed' },
-      });
-    }
-  }
-
-  // Fallback: Bunny Storage
-  if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && env.BUNNY_CDN_URL) {
-    const uploadUrl = `https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`;
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
-      body: new Uint8Array(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      req.log.error(`Bunny Storage upload failed [${res.status}]: ${text}`);
-      return reply.status(502).send({
-        success: false,
         error: { code: 'UPLOAD_ERROR', message: 'Upload failed' },
       });
     }
-    return reply.send({ success: true, data: { publicUrl: `https://${env.BUNNY_CDN_URL}/${key}` }, error: null });
   }
 
   return reply.status(503).send({
