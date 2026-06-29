@@ -490,6 +490,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       actualWatchedSecs: prog?.actualWatchedSecs ?? 0,
       isCompleted: prog?.completed ?? false,
       hasQuiz: !!(ep as any).quizData,
+      quizData: hasAccess ? ((ep as any).quizData ?? null) : null,
       quizUnlockPercent: (ep as any).quizUnlockPercent ?? 80,
     };
   });
@@ -512,6 +513,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     accessExpiresAt: accessRecord?.expiresAt ?? null,
     paymentLinkUrl: course.paymentLinkUrl ?? null,
     pendingPayment: pendingPayment ? { id: pendingPayment.id } : null,
+    xpPerEpisode: (course as any).xpPerEpisode ?? 10,
+    passingScorePercent: (course as any).passingScorePercent ?? 70,
     lessons,
     _count: { lessons: lessons.length, enrollments: course._count?.enrollments ?? 0 },
     upsellCourses,
