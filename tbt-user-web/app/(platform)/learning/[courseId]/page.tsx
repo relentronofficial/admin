@@ -1255,6 +1255,20 @@ export default function CourseDetailPage({
     return () => clearInterval(hb);
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Must be declared before any early returns — useCallback is a hook and must run
+  // unconditionally every render regardless of access/loading state.
+  const handleCloseQuiz = useCallback((fromResult: boolean) => {
+    setQuizModal(null);
+    setQuizResult(null);
+    if (fromResult) {
+      const lesson = selectedLessonRef.current;
+      if (lesson && !reflectedRef.current.has(lesson.id)) {
+        reflectedRef.current.add(lesson.id);
+        setPendingReflection({ lessonId: lesson.id, title: lesson.title });
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (isLoading) return <PageLoader />;
   if (!course) {
     return (
@@ -1308,18 +1322,6 @@ export default function CourseDetailPage({
     // markCalledRef stays true so we don't re-trigger completion
     setVideoKey((k) => k + 1);
   };
-
-  const handleCloseQuiz = useCallback((fromResult: boolean) => {
-    setQuizModal(null);
-    setQuizResult(null);
-    if (fromResult) {
-      const lesson = selectedLessonRef.current;
-      if (lesson && !reflectedRef.current.has(lesson.id)) {
-        reflectedRef.current.add(lesson.id);
-        setPendingReflection({ lessonId: lesson.id, title: lesson.title });
-      }
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleShareCert = async () => {
     if (!me?.id) return;
