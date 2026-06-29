@@ -1084,7 +1084,7 @@ function isAccessValid(access: { isActive: boolean; accessType: string; expiresA
 async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, episodeId: string, xpAmount: number) {
   try {
     await prisma.memberXP.create({
-      data: { memberId, courseId, episodeId, source: 'episode_complete', amount: xpAmount },
+      data: { memberId, courseId, source: 'episode_complete', amount: xpAmount },
     });
 
     // Update course streak
