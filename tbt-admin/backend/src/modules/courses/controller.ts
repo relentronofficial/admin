@@ -96,6 +96,10 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
       durationSeconds: Number(body.durationSeconds) || 0,
       order: body.order ?? count,
       isVisible: body.isVisible ?? true,
+      ...(body.quizData !== undefined && { quizData: body.quizData }),
+      ...(body.quizUnlockPercent !== undefined && { quizUnlockPercent: Number(body.quizUnlockPercent) }),
+      ...(body.drmEnabled !== undefined && { drmEnabled: Boolean(body.drmEnabled) }),
+      ...(body.bunnyDrmToken !== undefined && { bunnyDrmToken: body.bunnyDrmToken || null }),
     },
   });
   return reply.status(201).send({ success: true, data: episode, error: null });
