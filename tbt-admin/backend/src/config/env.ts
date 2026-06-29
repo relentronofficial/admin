@@ -29,6 +29,8 @@ const envSchema = z.object({
   BUNNY_STORAGE_ACCESS_KEY: z.string().optional().or(z.literal('')),
   BUNNY_STREAM_API_KEY: z.string().optional().or(z.literal('')),
   BUNNY_STREAM_LIBRARY_ID: z.string().optional().or(z.literal('')),
+  // Bunny Stream token auth key — Video Library → Security → Token Authentication Key
+  BUNNY_TOKEN_AUTH_KEY: z.string().optional().or(z.literal('')),
   LIVEKIT_API_KEY: z.string().optional().or(z.literal('')),
   LIVEKIT_API_SECRET: z.string().optional().or(z.literal('')),
   LIVEKIT_WS_URL: z.string().optional().or(z.literal('')),

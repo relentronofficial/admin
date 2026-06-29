@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
+import { generateBunnyToken } from '../../lib/bunnyToken.js';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
@@ -465,16 +466,35 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
     let videoUrl = hasAccess ? ep.videoUrl : null;
-    // 5.1 DRM: append Bunny signed token so the iframe validates playback server-side
-    if (videoUrl && (ep as any).drmEnabled && (ep as any).bunnyDrmToken) {
-      const sep = videoUrl.includes('?') ? '&' : '?';
-      videoUrl = `${videoUrl}${sep}token=${(ep as any).bunnyDrmToken}`;
-    }
-    // Derive HLS URL from bunnyVideoId or the embed URL — used by PlyrPlayer for reliable duration detection
+    const isDrmEnabled = !!(ep as any).drmEnabled;
+
+    // Derive bunnyId from explicit field or embedded URL
     const urlMatch = ep.videoUrl?.match(LESSON_BUNNY_URL_RE);
     const bunnyId = (ep as any).bunnyVideoId ?? urlMatch?.[1] ?? null;
-    const hlsUrl = hasAccess && bunnyId && env.BUNNY_CDN_URL
-      ? `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8`
+
+    // DRM episodes: sign the iframe URL with a time-limited token and suppress hlsUrl.
+    // Suppressing hlsUrl forces the frontend to use the Bunny iframe embed, which handles
+    // Widevine/FairPlay DRM internally. Sending hlsUrl for DRM videos would expose the
+    // unencrypted HLS stream to PlyrPlayer, defeating DRM entirely.
+    if (videoUrl && isDrmEnabled) {
+      const tokenKey = env.BUNNY_TOKEN_AUTH_KEY;
+      if (tokenKey && bunnyId) {
+        const { token, expires } = generateBunnyToken(tokenKey, bunnyId);
+        const sep = videoUrl.includes('?') ? '&' : '?';
+        videoUrl = `${videoUrl}${sep}token=${token}&expires=${expires}`;
+      } else if ((ep as any).bunnyDrmToken) {
+        // Legacy fallback: static token stored in DB (no expiry — replace with BUNNY_TOKEN_AUTH_KEY)
+        const sep = videoUrl.includes('?') ? '&' : '?';
+        videoUrl = `${videoUrl}${sep}token=${(ep as any).bunnyDrmToken}`;
+      }
+    }
+
+    // HLS URL: only for non-DRM episodes. DRM episodes use the signed iframe URL above.
+    const cdn = env.BUNNY_CDN_URL
+      ? (env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')
+      : null;
+    const hlsUrl = hasAccess && !isDrmEnabled && bunnyId && cdn
+      ? `${cdn}/${bunnyId}/playlist.m3u8`
       : null;
     return {
       id: ep.id,
