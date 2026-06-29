@@ -1,11 +1,12 @@
 "use client";
 
-import { use, useState, useRef, useEffect, useCallback } from "react";
+import { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award,
   Lock, Trophy, ChevronDown, ChevronUp, Copy, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
+  Brain, RefreshCw, PenLine,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
@@ -74,6 +75,284 @@ interface SelectedLesson {
   isCompleted?: boolean;
 }
 
+// ── Practice Arena Modal (Retrieval Practice + Interleaving) ─────────────────
+// Science: Testing yourself on mixed material from all lessons is more effective
+// than re-watching. Each retrieval attempt strengthens the memory trace.
+// (Roediger & Karpicke, 2006; Kornell & Bjork, 2008)
+function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => void }) {
+  const questions = useMemo<Array<{ q: any; lessonTitle: string }>>(() => {
+    const qs: Array<{ q: any; lessonTitle: string }> = [];
+    for (const lesson of course?.lessons ?? []) {
+      const qd = (lesson as any).quizData;
+      if (!qd?.questions?.length) continue;
+      for (const q of qd.questions) {
+        qs.push({ q, lessonTitle: lesson.title });
+      }
+    }
+    const arr = [...qs];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [course]);
+
+  const [idx, setIdx] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [score, setScore] = useState(0);
+  const [done, setDone] = useState(false);
+
+  if (questions.length === 0) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="w-full max-w-md rounded-2xl p-8 text-center space-y-4 shadow-2xl"
+          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+        >
+          <Brain size={40} className="mx-auto" style={{ color: "rgba(255,255,255,0.2)" }} />
+          <p className="text-white font-semibold">No quiz questions yet</p>
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+            Complete lessons that have quizzes to unlock the Practice Arena. The more lessons you finish, the richer the practice session.
+          </p>
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 rounded-lg text-sm font-semibold text-white"
+            style={{ background: "var(--color-accent)" }}
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const current = questions[idx];
+  const correctOption = current.q.options?.find((o: any) => o.correct);
+
+  const handleSelect = (optId: string) => { if (!revealed) setSelected(optId); };
+
+  const handleReveal = () => {
+    if (!selected) return;
+    setRevealed(true);
+    if (selected === correctOption?.id) setScore((s) => s + 1);
+  };
+
+  const handleNext = () => {
+    if (idx + 1 >= questions.length) { setDone(true); }
+    else { setIdx((i) => i + 1); setSelected(null); setRevealed(false); }
+  };
+
+  const pct = Math.round((score / questions.length) * 100);
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+        >
+          <div className="px-6 py-5 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Practice Complete</p>
+          </div>
+          <div className="p-6 text-center space-y-4">
+            <div className="text-5xl font-bold" style={{ color: pct >= (course?.passingScorePercent ?? 70) ? "var(--color-success)" : "var(--color-accent)" }}>
+              {pct}%
+            </div>
+            <p className="font-semibold text-white">{score} / {questions.length} correct</p>
+            <div
+              className="flex items-start gap-2 px-3 py-3 rounded-lg text-xs text-left"
+              style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }}
+            >
+              <Brain size={13} className="shrink-0 mt-0.5" />
+              <span>Each retrieval attempt strengthens the memory trace — even getting an answer wrong helps. Come back tomorrow for another round. <em>(Roediger & Karpicke, 2006)</em></span>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { setIdx(0); setScore(0); setSelected(null); setRevealed(false); setDone(false); }}
+                className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-opacity hover:opacity-80"
+                style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}
+              >
+                Practice Again
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white"
+                style={{ background: "var(--color-accent)" }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+      <div
+        className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+      >
+        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div>
+            <div className="flex items-center gap-2">
+              <Brain size={13} style={{ color: "var(--color-accent)" }} />
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>
+                Practice Arena
+              </p>
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)" }}>
+                Retrieval Practice
+              </span>
+            </div>
+            <p className="text-[11px] mt-0.5 truncate max-w-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+              {current.lessonTitle}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-xs font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>{idx + 1}/{questions.length}</span>
+            <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={18} /></button>
+          </div>
+        </div>
+
+        <div className="h-1" style={{ background: "rgba(255,255,255,0.06)" }}>
+          <div
+            className="h-full transition-all duration-300"
+            style={{ width: `${((idx) / questions.length) * 100}%`, background: "var(--color-accent)" }}
+          />
+        </div>
+
+        <div className="p-6 space-y-4">
+          <p className="text-sm font-semibold text-white leading-snug">{current.q.question}</p>
+          <div className="space-y-2">
+            {current.q.options?.map((opt: any) => {
+              let bg = "transparent";
+              let borderColor = "rgba(255,255,255,0.1)";
+              let color = "rgba(255,255,255,0.7)";
+              if (revealed) {
+                if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 18%, transparent)"; borderColor = "var(--color-success)"; color = "#fff"; }
+                else if (opt.id === selected) { bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; borderColor = "var(--color-accent)"; color = "rgba(255,255,255,0.6)"; }
+              } else if (selected === opt.id) {
+                borderColor = "var(--color-accent)"; bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; color = "#fff";
+              }
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => handleSelect(opt.id)}
+                  className="w-full text-left px-4 py-2.5 rounded-lg text-sm transition-all border"
+                  style={{ background: bg, borderColor, color }}
+                >
+                  {opt.text}
+                </button>
+              );
+            })}
+          </div>
+          {!revealed ? (
+            <button
+              onClick={handleReveal}
+              disabled={!selected}
+              className="w-full py-3 rounded-lg text-sm font-semibold text-white disabled:opacity-40 transition-opacity"
+              style={{ background: "var(--color-accent)" }}
+            >
+              Check Answer
+            </button>
+          ) : (
+            <button
+              onClick={handleNext}
+              className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: "var(--color-accent)" }}
+            >
+              {idx + 1 >= questions.length ? "See Results" : "Next →"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reflection Modal (Elaborative Interrogation) ──────────────────────────────
+// Science: Generating explanations in your own words improves comprehension and
+// long-term retention by ~40% vs. passive review.
+// (Pressley, McDaniel, Turnure, Wood & Ahmad, 1987)
+function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
+  lessonId: string; lessonTitle: string; courseId: string; onClose: (saved?: boolean) => void;
+}) {
+  const [text, setText] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    try {
+      const all = JSON.parse(localStorage.getItem("tbt_reflections") || "{}");
+      all[`${courseId}:${lessonId}`] = { text, savedAt: Date.now(), lessonTitle };
+      localStorage.setItem("tbt_reflections", JSON.stringify(all));
+    } catch {}
+    setSaved(true);
+    setTimeout(() => onClose(true), 900);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div
+        className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+      >
+        <div className="px-6 py-5 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div className="flex items-center gap-2 mb-1">
+            <PenLine size={13} style={{ color: "var(--color-accent)" }} />
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Reflect & Retain</p>
+          </div>
+          <p className="text-sm font-semibold text-white leading-snug">
+            What's one thing from <span className="italic" style={{ color: "rgba(255,255,255,0.65)" }}>"{lessonTitle}"</span> you'll actually apply?
+          </p>
+        </div>
+        <div className="p-5 space-y-4">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Write in your own words — 2-3 sentences is enough…"
+            autoFocus
+            rows={4}
+            className="w-full rounded-xl p-3.5 text-sm text-white resize-none outline-none placeholder:opacity-40"
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.12)",
+            }}
+          />
+          <div
+            className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs"
+            style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.38)" }}
+          >
+            <Brain size={13} className="shrink-0 mt-0.5" />
+            <span>
+              Explaining concepts in your own words (Elaborative Interrogation) boosts retention by ~40% compared to re-watching.{" "}
+              <em>Pressley et al., 1992</em>
+            </span>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => onClose(false)}
+              className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-opacity hover:opacity-80"
+              style={{ borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.5)" }}
+            >
+              Skip
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!text.trim() || saved}
+              className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+              style={{ background: saved ? "var(--color-success)" : "var(--color-accent)" }}
+            >
+              {saved ? "✓ Saved!" : "Save Reflection"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Instructor Card ───────────────────────────────────────────────────────────
 function InstructorCard({ instructor }: { instructor: { fullName: string; designation?: string | null; profilePhotoUrl?: string | null } }) {
   return (
@@ -125,27 +404,41 @@ function ExpiryWarning({ expiresAt }: { expiresAt: string }) {
 
 // ── XP + Streak Widget ────────────────────────────────────────────────────────
 function XpStreakWidget({ courseId }: { courseId: string }) {
-  const { data: xp } = useCourseXp(courseId);
-  if (!xp || (!xp.totalXp && !xp.currentStreak)) return null;
+  const { data: xp, isLoading } = useCourseXp(courseId);
+  const hasActivity = xp && (xp.totalXp > 0 || xp.currentStreak > 0);
   return (
-    <div className="grid grid-cols-3 gap-3">
-      {[
-        { label: "Total XP", value: xp.totalXp ?? 0, icon: <Zap size={16} />, accent: true },
-        { label: "Current Streak", value: `${xp.currentStreak ?? 0}d`, icon: <TrendingUp size={16} />, accent: false },
-        { label: "Best Streak", value: `${xp.longestStreak ?? 0}d`, icon: <Trophy size={16} />, accent: false },
-      ].map(({ label, value, icon, accent }) => (
-        <div
-          key={label}
-          className="rounded-xl p-3 text-center"
-          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
-        >
-          <div className="flex justify-center mb-1" style={{ color: accent ? "var(--color-accent)" : "rgba(255,255,255,0.4)" }}>
-            {icon}
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+    >
+      <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+        <Zap size={13} style={{ color: "var(--color-accent)" }} />
+        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.45)" }}>Your Stats</span>
+      </div>
+      <div className="p-3 grid grid-cols-3 gap-3">
+        {[
+          { label: "Total XP", value: isLoading ? "—" : (xp?.totalXp ?? 0), icon: <Zap size={16} />, accent: true },
+          { label: "Streak", value: isLoading ? "—" : `${xp?.currentStreak ?? 0}d`, icon: <TrendingUp size={16} />, accent: false },
+          { label: "Best", value: isLoading ? "—" : `${xp?.longestStreak ?? 0}d`, icon: <Trophy size={16} />, accent: false },
+        ].map(({ label, value, icon, accent }) => (
+          <div
+            key={label}
+            className="rounded-xl p-3 text-center"
+            style={{ background: "rgba(255,255,255,0.04)" }}
+          >
+            <div className="flex justify-center mb-1" style={{ color: accent ? "var(--color-accent)" : "rgba(255,255,255,0.4)" }}>
+              {icon}
+            </div>
+            <p className="text-base font-bold text-white">{value}</p>
+            <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{label}</p>
           </div>
-          <p className="text-base font-bold text-white">{value}</p>
-          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{label}</p>
-        </div>
-      ))}
+        ))}
+      </div>
+      {!hasActivity && !isLoading && (
+        <p className="text-xs text-center pb-3 px-4" style={{ color: "rgba(255,255,255,0.3)" }}>
+          Complete lessons to start earning XP and building your streak!
+        </p>
+      )}
     </div>
   );
 }
@@ -153,9 +446,8 @@ function XpStreakWidget({ courseId }: { courseId: string }) {
 // ── Leaderboard Widget ────────────────────────────────────────────────────────
 function LeaderboardWidget({ courseId }: { courseId: string }) {
   const { data: lb } = useCourseLeaderboard(courseId);
-  const [open, setOpen] = useState(false);
-  if (!lb?.leaderboard?.length) return null;
-  const top5 = lb.leaderboard.slice(0, 5);
+  const [open, setOpen] = useState(true);
+  const top5 = lb?.leaderboard?.slice(0, 5) ?? [];
   return (
     <div
       className="rounded-xl overflow-hidden"
@@ -168,7 +460,7 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
         <div className="flex items-center gap-2">
           <Trophy size={15} style={{ color: "var(--color-accent)" }} />
           Leaderboard
-          {lb.myRank && (
+          {lb?.myRank && (
             <span
               className="text-xs px-2 py-0.5 rounded-full font-bold"
               style={{
@@ -186,32 +478,42 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
       </button>
       {open && (
         <div className="border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-          {top5.map((entry: any, i: number) => {
-            const isMe = lb.myRank === i + 1;
-            return (
-              <div
-                key={entry.memberId ?? i}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm border-b last:border-b-0"
-                style={{
-                  borderColor: "rgba(255,255,255,0.05)",
-                  background: isMe ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
-                }}
-              >
-                <span
-                  className="w-5 text-xs font-bold text-center shrink-0"
-                  style={{ color: i < 3 ? "var(--color-accent)" : "rgba(255,255,255,0.35)" }}
+          {top5.length === 0 ? (
+            <div className="py-6 text-center space-y-1">
+              <Trophy size={22} className="mx-auto" style={{ color: "rgba(255,255,255,0.12)" }} />
+              <p className="text-xs mt-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+                No one has earned XP yet — be the first!
+              </p>
+            </div>
+          ) : (
+            top5.map((entry: any, i: number) => {
+              const isMe = lb?.myRank === i + 1;
+              return (
+                <div
+                  key={entry.memberId ?? i}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm border-b last:border-b-0"
+                  style={{
+                    borderColor: "rgba(255,255,255,0.05)",
+                    background: isMe ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
+                  }}
                 >
-                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
-                </span>
-                <span className="flex-1 truncate" style={{ color: isMe ? "#fff" : "rgba(255,255,255,0.7)" }}>
-                  {entry.name ?? "Member"}
-                </span>
-                <span className="text-xs font-bold flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
-                  <Zap size={11} />{entry.xp ?? 0}
-                </span>
-              </div>
-            );
-          })}
+                  <span
+                    className="w-5 text-xs font-bold text-center shrink-0"
+                    style={{ color: i < 3 ? "var(--color-accent)" : "rgba(255,255,255,0.35)" }}
+                  >
+                    {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
+                  </span>
+                  <span className="flex-1 truncate" style={{ color: isMe ? "#fff" : "rgba(255,255,255,0.7)" }}>
+                    {entry.name ?? "Member"}
+                    {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}>(you)</span>}
+                  </span>
+                  <span className="text-xs font-bold flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
+                    <Zap size={11} />{entry.xp ?? 0}
+                  </span>
+                </div>
+              );
+            })
+          )}
         </div>
       )}
     </div>
@@ -481,6 +783,13 @@ export default function CourseDetailPage({
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
   const { data: certData } = useCertificateEligibility(courseId);
 
+  // Gamification: Practice Arena + Reflection + Spaced Repetition
+  const [practiceOpen, setPracticeOpen] = useState(false);
+  const [pendingReflection, setPendingReflection] = useState<{ lessonId: string; title: string } | null>(null);
+  const [completionTimes, setCompletionTimes] = useState<Record<string, number>>({});
+  const [reflectionCount, setReflectionCount] = useState(0);
+  const reflectedRef = useRef<Set<string>>(new Set());
+
   // Auto-select lesson from URL parameter once course data loads
   useEffect(() => {
     if (course?.lessons && targetLessonId && !selectedLesson) {
@@ -518,6 +827,37 @@ export default function CourseDetailPage({
     }
     if (!selectedLesson || watchState !== "completed") {
       quizTriggeredForRef.current = null;
+    }
+  }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load completion timestamps + reflection count from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(`tbt_cr_${courseId}`) || "{}");
+      setCompletionTimes(stored);
+    } catch {}
+    try {
+      const all = JSON.parse(localStorage.getItem("tbt_reflections") || "{}");
+      const count = Object.keys(all).filter(k => k.startsWith(`${courseId}:`)).length;
+      setReflectionCount(count);
+    } catch {}
+  }, [courseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save completion timestamp + trigger reflection for no-quiz lessons
+  useEffect(() => {
+    if (watchState !== "completed" || !selectedLesson) return;
+    const lid = selectedLesson.id;
+    const title = selectedLesson.title;
+    setCompletionTimes(prev => {
+      if (prev[lid]) return prev;
+      const next = { ...prev, [lid]: Date.now() };
+      try { localStorage.setItem(`tbt_cr_${courseId}`, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    const lesson = courseRef.current?.lessons?.find((l: any) => l.id === lid);
+    if (!lesson?.hasQuiz && !reflectedRef.current.has(lid)) {
+      reflectedRef.current.add(lid);
+      setTimeout(() => setPendingReflection({ lessonId: lid, title }), 1200);
     }
   }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -584,6 +924,16 @@ export default function CourseDetailPage({
   );
   const completedIdsRef = useRef<Set<string>>(new Set());
   completedIdsRef.current = completedIds;
+
+  // Spaced repetition: lessons completed 3+ days ago (Ebbinghaus forgetting curve)
+  const reviewDueIds = useMemo(() => {
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    return Array.from(completedIds).filter(id => {
+      const t = completionTimes[id];
+      return t !== undefined && (now - t) >= threeDaysMs;
+    });
+  }, [progressList, completionTimes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When server data arrives and contradicts a stale-cache "completed" state,
   // correct watchState so the user can actually re-watch the lesson.
@@ -959,6 +1309,18 @@ export default function CourseDetailPage({
     setVideoKey((k) => k + 1);
   };
 
+  const handleCloseQuiz = useCallback((fromResult: boolean) => {
+    setQuizModal(null);
+    setQuizResult(null);
+    if (fromResult) {
+      const lesson = selectedLessonRef.current;
+      if (lesson && !reflectedRef.current.has(lesson.id)) {
+        reflectedRef.current.add(lesson.id);
+        setPendingReflection({ lessonId: lesson.id, title: lesson.title });
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleShareCert = async () => {
     if (!me?.id) return;
     const certId = btoa(`${me.id}:${courseId}`).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
@@ -1068,8 +1430,10 @@ export default function CourseDetailPage({
             {watchState !== "completed" && !selectedLesson.isCompleted && activeDuration > 0 && liveWatched > 0 && (() => {
               const pct = Math.min(100, Math.round((liveWatched / activeDuration) * 100));
               const toComplete = Math.max(0, Math.ceil(activeDuration * 0.85 - liveWatched));
-              const hasQuiz = !!(course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any)?.hasQuiz;
-              const quizApproaching = hasQuiz && pct >= 78 && pct < 85 && !quizHintShown;
+              const currentLesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any;
+              const hasQuiz = !!currentLesson?.hasQuiz;
+              const quizUnlockPct: number = currentLesson?.quizUnlockPercent ?? 80;
+              const quizApproaching = hasQuiz && pct >= (quizUnlockPct - 5) && pct < quizUnlockPct && !quizHintShown;
               if (quizApproaching && !quizHintShown) setQuizHintShown(true);
               return (
                 <div className="space-y-1.5">
@@ -1094,7 +1458,7 @@ export default function CourseDetailPage({
                       }}
                     />
                   </div>
-                  {hasQuiz && pct >= 78 && pct < 100 && (
+                  {hasQuiz && pct >= (quizUnlockPct - 5) && pct < 100 && (
                     <p className="text-xs flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
                       <Zap size={11} /> Quiz unlocking soon — keep watching!
                     </p>
@@ -1175,6 +1539,25 @@ export default function CourseDetailPage({
                 <InstructorCard instructor={course.instructor} />
               </div>
             )}
+            {/* Gamification summary — only when no lesson playing */}
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { icon: <CheckCircle2 size={14} />, label: "Completed", value: `${completedIds.size} / ${lessons.length}` },
+                { icon: <Zap size={14} />, label: "XP / Lesson", value: `+${(course as any).xpPerEpisode ?? 10}` },
+                { icon: <Trophy size={14} />, label: "Pass Score", value: `${(course as any).passingScorePercent ?? 70}%` },
+                { icon: <Award size={14} />, label: "Quizzes", value: lessons.filter((l: any) => l.hasQuiz).length },
+              ].map(({ icon, label, value }) => (
+                <div
+                  key={label}
+                  className="rounded-xl p-3 text-center"
+                  style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+                >
+                  <div className="flex justify-center mb-1.5" style={{ color: "var(--color-accent)" }}>{icon}</div>
+                  <p className="text-sm font-bold text-white">{value}</p>
+                  <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{label}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -1182,15 +1565,34 @@ export default function CourseDetailPage({
       {/* Lesson list */}
       <div className="rounded-xl overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
         <div
-          className="px-4 py-3 border-b text-sm font-semibold"
-          style={{ borderColor: "rgba(255,255,255,0.08)", background: "var(--color-bg-surface)", color: "rgba(255,255,255,0.7)" }}
+          className="px-4 py-3 border-b flex items-center justify-between"
+          style={{ borderColor: "rgba(255,255,255,0.08)", background: "var(--color-bg-surface)" }}
         >
-          {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"}
-          {completedIds.size > 0 && (
-            <span className="ml-2 text-xs font-normal" style={{ color: "rgba(255,255,255,0.35)" }}>
-              · {completedIds.size} done
-            </span>
-          )}
+          <div className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>
+            {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"}
+            {completedIds.size > 0 && (
+              <span className="ml-2 text-xs font-normal" style={{ color: "rgba(255,255,255,0.35)" }}>
+                · {completedIds.size} done
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {reviewDueIds.length > 0 && (
+              <span
+                className="text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1"
+                style={{ background: "color-mix(in srgb, #f59e0b 15%, transparent)", color: "#f59e0b" }}
+              >
+                <RefreshCw size={9} /> {reviewDueIds.length} to review
+              </span>
+            )}
+            <button
+              onClick={() => setPracticeOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+              style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+            >
+              <Brain size={11} /> Practice
+            </button>
+          </div>
         </div>
 
         <div>
@@ -1248,6 +1650,36 @@ export default function CourseDetailPage({
                         {lesson.description}
                       </p>
                     ) : null}
+                    {/* Quiz badge + XP chip */}
+                    <div className="flex items-center gap-2 mt-1">
+                      {(lesson as any).hasQuiz && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide"
+                          style={{
+                            background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
+                            color: "var(--color-accent)",
+                          }}
+                        >
+                          Quiz
+                        </span>
+                      )}
+                      {((course as any).xpPerEpisode ?? 0) > 0 && (
+                        <span
+                          className="text-[10px] flex items-center gap-0.5 font-semibold"
+                          style={{ color: "rgba(255,255,255,0.28)" }}
+                        >
+                          <Zap size={9} />+{(course as any).xpPerEpisode} XP
+                        </span>
+                      )}
+                      {reviewDueIds.includes(lesson.id) && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
+                          style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)", color: "#f59e0b" }}
+                        >
+                          <RefreshCw size={8} /> Review
+                        </span>
+                      )}
+                    </div>
                     {/* Live progress bar for active lesson */}
                     {isActive && livePct > 0 && (
                       <div className="h-0.5 rounded-full overflow-hidden mt-1.5" style={{ background: "rgba(255,255,255,0.1)" }}>
@@ -1274,8 +1706,63 @@ export default function CourseDetailPage({
       {/* XP + Streak */}
       <XpStreakWidget courseId={courseId} />
 
+      {/* Reflections panel — shows after first reflection saved */}
+      {reflectionCount > 0 && (
+        <div
+          className="rounded-xl px-4 py-3 flex items-center gap-3"
+          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+        >
+          <PenLine size={14} style={{ color: "var(--color-accent)" }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Reflections
+            </p>
+            <p className="text-sm font-semibold text-white">
+              {reflectionCount} saved
+            </p>
+          </div>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
+            Elaborative Interrogation at work
+          </p>
+        </div>
+      )}
+
       {/* Leaderboard */}
       <LeaderboardWidget courseId={courseId} />
+
+      {/* Certificate progress — always visible when not yet complete */}
+      {certData && !certData.eligible && (
+        <div
+          className="rounded-xl p-4"
+          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+        >
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <Award size={14} style={{ color: "rgba(255,255,255,0.35)" }} />
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+                Certificate Progress
+              </span>
+            </div>
+            {(certData.remainingLessons ?? 0) > 0 && (
+              <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+                {certData.remainingLessons} lesson{certData.remainingLessons !== 1 ? "s" : ""} left
+              </span>
+            )}
+          </div>
+          <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${certData.completionPercentage ?? 0}%`,
+                background: "var(--color-accent)",
+              }}
+            />
+          </div>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+            {certData.completionPercentage ?? 0}% complete — finish all lessons to earn your certificate
+          </p>
+        </div>
+      )}
 
       {/* Certificate CTA */}
       {certData?.eligible && (
@@ -1352,6 +1839,24 @@ export default function CourseDetailPage({
         <RelatedCourses courses={(course as any).crossSellCourses} title="Related Courses" />
       )}
 
+      {/* Practice Arena modal */}
+      {practiceOpen && (
+        <PracticeArenaModal course={course} onClose={() => setPracticeOpen(false)} />
+      )}
+
+      {/* Reflection modal — triggered after lesson completion */}
+      {pendingReflection && (
+        <ReflectionModal
+          lessonId={pendingReflection.lessonId}
+          lessonTitle={pendingReflection.title}
+          courseId={courseId}
+          onClose={(saved) => {
+            setPendingReflection(null);
+            if (saved) setReflectionCount(c => c + 1);
+          }}
+        />
+      )}
+
       {/* XP flash */}
       {xpFlash !== null && (
         <div
@@ -1375,7 +1880,7 @@ export default function CourseDetailPage({
                 <p className="text-sm font-semibold text-white mt-0.5">{quizModal.quizData?.title ?? "Quiz"}</p>
               </div>
               {!quizResult && (
-                <button onClick={() => setQuizModal(null)} className="text-white/40 hover:text-white/70 transition-colors">
+                <button onClick={() => handleCloseQuiz(false)} className="text-white/40 hover:text-white/70 transition-colors">
                   <X size={18} />
                 </button>
               )}
@@ -1406,7 +1911,7 @@ export default function CourseDetailPage({
                     </button>
                   )}
                   <button
-                    onClick={() => { setQuizModal(null); setQuizResult(null); }}
+                    onClick={() => handleCloseQuiz(true)}
                     className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white transition-colors"
                     style={{ background: "var(--color-accent)" }}
                   >

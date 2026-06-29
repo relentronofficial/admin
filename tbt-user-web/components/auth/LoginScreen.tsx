@@ -73,12 +73,7 @@ export function LoginScreen() {
 
       if (res.data?.otp) setOtp(res.data.otp);
 
-      if (res.data?.step === "reset_password" || res.data?.step === "first_login") {
-        // first_login = admin-created account with no password set yet → same forgot-password flow
-        setStep("reset_password");
-      } else {
-        setStep("otp");
-      }
+      setStep("otp");
     } catch (err: any) {
       setError(err.message || "Login failed. Please check your credentials.");
     } finally {
