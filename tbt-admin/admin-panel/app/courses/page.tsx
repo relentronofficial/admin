@@ -691,7 +691,8 @@ function EpisodesTab({ course }: { course: any }) {
                   <p className="text-[13px] font-medium text-[#f0f0f0] truncate">{ep.title}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-[10px] text-[#888]">{fmtDuration(ep.durationSeconds)}</p>
-                    {ep.quizData && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
+                    {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
+                    {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
                     {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
                   </div>
                 </div>
