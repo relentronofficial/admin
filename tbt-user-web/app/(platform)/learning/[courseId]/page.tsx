@@ -1164,7 +1164,14 @@ export default function CourseDetailPage({
           firedCuesRef.current.add(cue.id);
           cueQuizActiveRef.current = true;
           pausePlayerRef.current();
-          setCueQuizModal({ questions: cue.questions ?? [] });
+          // Exit fullscreen first — modal is in the parent document and won't
+          // appear over a native fullscreen iframe/video element otherwise.
+          const qs = cue.questions ?? [];
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {}).finally(() => { setCueQuizModal({ questions: qs }); });
+          } else {
+            setCueQuizModal({ questions: qs });
+          }
           break;
         }
       }
@@ -1323,7 +1330,14 @@ export default function CourseDetailPage({
                 firedCuesRef.current.add(cue.id);
                 cueQuizActiveRef.current = true;
                 pausePlayerRef.current();
-                setCueQuizModal({ questions: cue.questions ?? [] });
+                // Exit fullscreen first — modal is in the parent document and won't
+                // appear over a native fullscreen iframe/video element otherwise.
+                const qs = cue.questions ?? [];
+                if (document.fullscreenElement) {
+                  document.exitFullscreen().catch(() => {}).finally(() => { setCueQuizModal({ questions: qs }); });
+                } else {
+                  setCueQuizModal({ questions: qs });
+                }
                 break;
               }
             }
