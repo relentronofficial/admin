@@ -1034,7 +1034,9 @@ export default function CourseDetailPage({
     const lesson = selectedLessonRef.current;
     if (!lesson) return;
     setWatchState("completed");
-    triggerUpNextRef.current();
+    // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
+    const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lesson.id);
+    if (!lessonData?.hasQuiz) triggerUpNextRef.current();
     const allLessons = courseRef.current?.lessons ?? [];
     const willBeAllDone = allLessons.length > 0 &&
       allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === lesson.id);
@@ -1052,7 +1054,9 @@ export default function CourseDetailPage({
     if (!selectedLesson || markCalledRef.current) return;
     markCalledRef.current = true;
     setWatchState("completed");
-    triggerUpNextRef.current();
+    // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
+    const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
+    if (!lessonData?.hasQuiz) triggerUpNextRef.current();
     const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
     const allLessons = courseRef.current?.lessons ?? [];
     const willBeAllDone = allLessons.length > 0 &&
@@ -1260,6 +1264,8 @@ export default function CourseDetailPage({
   const handleCloseQuiz = useCallback((fromResult: boolean) => {
     setQuizModal(null);
     setQuizResult(null);
+    // Quiz always shows after lesson completion, so trigger up-next now that it's dismissed
+    triggerUpNextRef.current();
     if (fromResult) {
       const lesson = selectedLessonRef.current;
       if (lesson && !reflectedRef.current.has(lesson.id)) {
