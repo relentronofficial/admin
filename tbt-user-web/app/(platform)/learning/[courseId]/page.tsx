@@ -1313,6 +1313,21 @@ export default function CourseDetailPage({
         if (currentTime !== undefined) {
           lastPlayheadRef.current = currentTime;
           setWatchedSeconds(Math.floor(currentTime));
+          // Mid-video cue quiz check — same logic as handleVideoProgress (HLS path).
+          // Must run here too because iframe timeupdate bypasses handleVideoProgress.
+          if (!cueQuizActiveRef.current) {
+            const lesson = courseRef.current?.lessons?.find((l: any) => l.id === selectedLessonRef.current?.id);
+            const cues: any[] = [...(lesson?.quizData?.cues ?? [])].sort((a: any, b: any) => a.atSeconds - b.atSeconds);
+            for (const cue of cues) {
+              if (!firedCuesRef.current.has(cue.id) && currentTime >= cue.atSeconds) {
+                firedCuesRef.current.add(cue.id);
+                cueQuizActiveRef.current = true;
+                pausePlayerRef.current();
+                setCueQuizModal({ questions: cue.questions ?? [] });
+                break;
+              }
+            }
+          }
         }
         // Fallback: some Bunny versions include duration in the timeupdate payload
         if (typeof payloadValue === "object" && payloadValue.duration > 0 && realDurationRef.current === 0) {
