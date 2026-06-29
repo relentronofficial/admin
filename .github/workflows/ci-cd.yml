@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [main, staging, develop]
+    branches: [main, production, develop]
   pull_request:
-    branches: [main, staging, develop]
+    branches: [main, production, develop]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -51,10 +51,10 @@ jobs:
       - name: Build Admin Panel
         run: npm run build:admin
 
-  # ── Deploy staging backend (staging branch only) ──────────────────────────
+  # ── Deploy staging backend (main branch only) ────────────────────────────
   deploy-backend-staging:
     needs: build-and-test
-    if: github.ref == 'refs/heads/staging' && needs.build-and-test.outputs.backend_changed == 'true'
+    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -93,10 +93,10 @@ jobs:
             --port=8000 \
             --quiet
 
-  # ── Deploy production backend (main branch only) ───────────────────────────
+  # ── Deploy production backend (production branch only) ────────────────────
   deploy-backend-production:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
+    if: github.ref == 'refs/heads/production' && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
