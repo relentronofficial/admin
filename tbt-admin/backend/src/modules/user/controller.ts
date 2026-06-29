@@ -509,7 +509,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       resumeAtSeconds: prog?.lastWatchedSecs ?? 0,
       actualWatchedSecs: prog?.actualWatchedSecs ?? 0,
       isCompleted: prog?.completed ?? false,
-      hasQuiz: !!(ep as any).quizData,
+      hasQuiz: Array.isArray((ep as any).quizData?.questions) && (ep as any).quizData.questions.length > 0,
       quizData: hasAccess ? ((ep as any).quizData ?? null) : null,
       quizUnlockPercent: (ep as any).quizUnlockPercent ?? 80,
     };

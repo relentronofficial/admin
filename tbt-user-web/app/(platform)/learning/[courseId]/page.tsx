@@ -353,6 +353,105 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
   );
 }
 
+// ── Mid-Video Cue Quiz Modal ──────────────────────────────────────────────────
+// Science: Interleaved testing during learning improves retention more than
+// end-of-lesson testing alone. (Kornell & Bjork, 2008; Roediger et al., 2011)
+function CueQuizModal({ questions, onClose }: { questions: any[]; onClose: () => void }) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [revealed, setRevealed] = useState(false);
+
+  const allAnswered = questions.length > 0 && questions.every((q: any) => answers[q.id]);
+  const correctCount = revealed
+    ? questions.filter((q: any) => answers[q.id] === q.options?.find((o: any) => o.correct)?.id).length
+    : 0;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/88 backdrop-blur-sm flex items-center justify-center p-4">
+      <div
+        className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+            style={{ background: "color-mix(in srgb, var(--color-alert) 15%, transparent)", color: "var(--color-alert)" }}
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            Video paused
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Quick Check</p>
+            <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Answer to continue watching</p>
+          </div>
+        </div>
+
+        {/* Questions */}
+        <div className="p-5 space-y-5 max-h-[55vh] overflow-y-auto">
+          {questions.map((q: any, qi: number) => (
+            <div key={q.id}>
+              <p className="text-sm font-semibold text-white leading-snug mb-3">{qi + 1}. {q.question}</p>
+              <div className="space-y-2">
+                {q.options?.map((opt: any) => {
+                  let bg = "transparent";
+                  let borderColor = "rgba(255,255,255,0.1)";
+                  let color = "rgba(255,255,255,0.65)";
+                  if (revealed) {
+                    if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 15%, transparent)"; borderColor = "var(--color-success)"; color = "#fff"; }
+                    else if (opt.id === answers[q.id]) { bg = "color-mix(in srgb, var(--color-accent) 12%, transparent)"; borderColor = "var(--color-accent)"; }
+                  } else if (answers[q.id] === opt.id) {
+                    bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; borderColor = "var(--color-accent)"; color = "#fff";
+                  }
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => !revealed && setAnswers(prev => ({ ...prev, [q.id]: opt.id }))}
+                      className="w-full text-left px-4 py-2.5 rounded-lg text-sm border transition-all"
+                      style={{ background: bg, borderColor, color }}
+                    >
+                      {opt.text}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5 pt-2">
+          {!revealed ? (
+            <button
+              onClick={() => setRevealed(true)}
+              disabled={!allAnswered}
+              className="w-full py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-opacity"
+              style={{ background: "var(--color-accent)" }}
+            >
+              Check Answers
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-center py-1">
+                <p className="text-2xl font-bold" style={{ color: correctCount === questions.length ? "var(--color-success)" : "var(--color-accent)" }}>
+                  {correctCount}/{questions.length}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>correct</p>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: "var(--color-accent)" }}
+              >
+                Continue Watching →
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Instructor Card ───────────────────────────────────────────────────────────
 function InstructorCard({ instructor }: { instructor: { fullName: string; designation?: string | null; profilePhotoUrl?: string | null } }) {
   return (
@@ -790,6 +889,38 @@ export default function CourseDetailPage({
   const [reflectionCount, setReflectionCount] = useState(0);
   const reflectedRef = useRef<Set<string>>(new Set());
 
+  // Mid-video cue quizzes
+  const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
+  const firedCuesRef = useRef<Set<string>>(new Set());
+  const cueQuizActiveRef = useRef(false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // Pause/resume helpers — assigned each render so they always read fresh refs
+  const hlsFailedRef = useRef(false);
+  hlsFailedRef.current = hlsFailed;
+  const pausePlayerRef = useRef<() => void>(() => {});
+  const resumePlayerRef = useRef<() => void>(() => {});
+  pausePlayerRef.current = () => {
+    if (selectedLessonRef.current?.hlsUrl && !hlsFailedRef.current) {
+      playerRef.current?.pause();
+    } else {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ context: "player.js", method: "pause" }),
+        "https://iframe.mediadelivery.net"
+      );
+    }
+  };
+  resumePlayerRef.current = () => {
+    if (selectedLessonRef.current?.hlsUrl && !hlsFailedRef.current) {
+      playerRef.current?.play();
+    } else {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ context: "player.js", method: "play" }),
+        "https://iframe.mediadelivery.net"
+      );
+    }
+  };
+
   // Auto-select lesson from URL parameter once course data loads
   useEffect(() => {
     if (course?.lessons && targetLessonId && !selectedLesson) {
@@ -968,6 +1099,9 @@ export default function CourseDetailPage({
     setLiveRealDuration(0);
     setHlsFailed(false);
     setUpNextCountdown(null);
+    firedCuesRef.current = new Set();
+    cueQuizActiveRef.current = false;
+    setCueQuizModal(null);
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
@@ -1021,6 +1155,20 @@ export default function CourseDetailPage({
   const handleVideoProgress = (s: number) => {
     lastPlayheadRef.current = s;
     setWatchedSeconds(s);
+    // Mid-video cue quiz check — fire earliest untriggered cue when playhead passes its timestamp
+    if (!cueQuizActiveRef.current) {
+      const lesson = courseRef.current?.lessons?.find((l: any) => l.id === selectedLessonRef.current?.id);
+      const cues: any[] = [...(lesson?.quizData?.cues ?? [])].sort((a: any, b: any) => a.atSeconds - b.atSeconds);
+      for (const cue of cues) {
+        if (!firedCuesRef.current.has(cue.id) && s >= cue.atSeconds) {
+          firedCuesRef.current.add(cue.id);
+          cueQuizActiveRef.current = true;
+          pausePlayerRef.current();
+          setCueQuizModal({ questions: cue.questions ?? [] });
+          break;
+        }
+      }
+    }
   };
 
   const handleVideoSpeedChange = (s: number) => {
@@ -1259,6 +1407,13 @@ export default function CourseDetailPage({
     return () => clearInterval(hb);
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Close cue quiz and resume video — must be before early returns (hook rule)
+  const handleCloseCueQuiz = useCallback(() => {
+    setCueQuizModal(null);
+    cueQuizActiveRef.current = false;
+    resumePlayerRef.current();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Must be declared before any early returns — useCallback is a hook and must run
   // unconditionally every render regardless of access/loading state.
   const handleCloseQuiz = useCallback((fromResult: boolean) => {
@@ -1389,6 +1544,7 @@ export default function CourseDetailPage({
                 />
               ) : isBunnyEmbed(selectedLesson.videoUrl) ? (
                 <iframe
+                  ref={iframeRef}
                   key={`${selectedLesson.id}-${videoKey}-iframe`}
                   src={withResumeTime(normalizeBunnyUrl(selectedLesson.videoUrl) + "&autoplay=true", videoKey > 0 ? 0 : (selectedLesson.resumeAtSeconds ?? 0))}
                   className="w-full h-full border-0"
@@ -1845,6 +2001,11 @@ export default function CourseDetailPage({
       )}
       {(course as any).crossSellCourses?.length > 0 && (
         <RelatedCourses courses={(course as any).crossSellCourses} title="Related Courses" />
+      )}
+
+      {/* Mid-video cue quiz — pauses player until dismissed */}
+      {cueQuizModal && (
+        <CueQuizModal questions={cueQuizModal.questions} onClose={handleCloseCueQuiz} />
       )}
 
       {/* Practice Arena modal */}

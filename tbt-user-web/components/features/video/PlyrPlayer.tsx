@@ -8,6 +8,8 @@ import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from "re
 export interface PlyrPlayerHandle {
   readonly currentTime: number;
   readonly duration: number;
+  pause(): void;
+  play(): void;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -59,6 +61,8 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
   useImperativeHandle(ref, () => ({
     get currentTime() { return videoRef.current?.currentTime ?? 0; },
     get duration() { return videoRef.current?.duration ?? 0; },
+    pause() { try { playerRef.current?.pause(); } catch {} },
+    play() { try { playerRef.current?.play().catch(() => {}); } catch {} },
   }));
 
   // Main init — dynamic imports keep hls.js + Plyr out of the SSR bundle

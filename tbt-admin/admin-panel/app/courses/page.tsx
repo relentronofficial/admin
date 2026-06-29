@@ -35,10 +35,21 @@ const EMPTY_COURSE = {
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
 };
+const uid = () => Math.random().toString(36).slice(2, 10);
+const secsToTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const timeToSecs = (t: string) => {
+  const [m, s] = t.split(":").map(Number);
+  return (isNaN(m) ? 0 : m) * 60 + (isNaN(s) ? 0 : s);
+};
+const EMPTY_OPTION = () => ({ id: uid(), text: "", correct: false });
+const EMPTY_QUESTION = () => ({ id: uid(), question: "", options: [EMPTY_OPTION(), EMPTY_OPTION()] });
+const EMPTY_CUE = () => ({ id: uid(), atSeconds: 60, atTime: "1:00", questions: [EMPTY_QUESTION()] });
+
 const EMPTY_EP = {
   title: "", videoUrl: "", bunnyVideoId: "", thumbnailUrl: "",
   durationSeconds: "", isVisible: true,
   quizUnlockPercent: "80", drmEnabled: false, bunnyDrmToken: "",
+  quizData: null as any,
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -534,6 +545,9 @@ function EpisodesTab({ course }: { course: any }) {
 
   const openCreate = () => { setEpForm(EMPTY_EP); setEditingEp(null); setShowForm(true); };
   const openEdit = (ep: any) => {
+    // Normalise stored cues: add atTime display field
+    const rawCues = ep.quizData?.cues ?? [];
+    const cues = rawCues.map((c: any) => ({ ...c, atTime: secsToTime(c.atSeconds ?? 0) }));
     setEpForm({
       title: ep.title, videoUrl: ep.videoUrl, bunnyVideoId: ep.bunnyVideoId || "",
       thumbnailUrl: ep.thumbnailUrl || "", durationSeconds: String(ep.durationSeconds || ""),
@@ -541,6 +555,9 @@ function EpisodesTab({ course }: { course: any }) {
       quizUnlockPercent: String(ep.quizUnlockPercent ?? 80),
       drmEnabled: ep.drmEnabled ?? false,
       bunnyDrmToken: ep.bunnyDrmToken || "",
+      quizData: ep.quizData
+        ? { questions: ep.quizData.questions ?? [], cues }
+        : null,
     });
     setEditingEp(ep); setShowForm(true);
   };
@@ -585,6 +602,19 @@ function EpisodesTab({ course }: { course: any }) {
   const handleSaveEp = async () => {
     if (!epForm.title.trim() || !epForm.videoUrl.trim()) return toast.error("Title and video are required");
     const normalizedVideoUrl = epForm.videoUrl.replace(/https?:\/\/player\.mediadelivery\.net\/play\/(\d+)\/([\w-]+)/, 'https://iframe.mediadelivery.net/embed/$1/$2');
+    // Serialise quizData: strip atTime display field from cues, drop empty questions/options
+    let quizData: any = null;
+    if (epForm.quizData) {
+      const questions = (epForm.quizData.questions ?? []).filter((q: any) => q.question.trim());
+      const cues = (epForm.quizData.cues ?? [])
+        .map((c: any) => ({
+          id: c.id,
+          atSeconds: timeToSecs(c.atTime ?? "") || c.atSeconds || 0,
+          questions: (c.questions ?? []).filter((q: any) => q.question.trim()),
+        }))
+        .filter((c: any) => c.questions.length > 0);
+      if (questions.length > 0 || cues.length > 0) quizData = { questions, cues };
+    }
     const payload = {
       ...epForm, videoUrl: normalizedVideoUrl,
       durationSeconds: Number(epForm.durationSeconds) || 0,
@@ -592,6 +622,7 @@ function EpisodesTab({ course }: { course: any }) {
       quizUnlockPercent: Number(epForm.quizUnlockPercent) || 80,
       drmEnabled: epForm.drmEnabled,
       bunnyDrmToken: epForm.bunnyDrmToken || undefined,
+      quizData,
     };
     try {
       if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); toast.success("Episode updated"); }
@@ -746,6 +777,113 @@ function EpisodesTab({ course }: { course: any }) {
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs font-mono" />
             </div>
           )}
+          {/* ── Quiz Editor ──────────────────────────────────────────── */}
+          <div className="border-t border-[#2a2a2a] pt-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Quiz</p>
+              {!epForm.quizData && (
+                <button type="button"
+                  onClick={() => setEpField("quizData", { questions: [EMPTY_QUESTION()], cues: [] })}
+                  className="text-[10px] text-[#dc2626] hover:text-red-400 font-rajdhani font-bold uppercase tracking-widest">
+                  + Enable Quiz
+                </button>
+              )}
+              {epForm.quizData && (
+                <button type="button" onClick={() => setEpField("quizData", null)}
+                  className="text-[10px] text-[#888] hover:text-red-400 font-rajdhani">Remove All</button>
+              )}
+            </div>
+
+            {epForm.quizData && (() => {
+              const qd = epForm.quizData;
+              const setQd = (fn: (prev: any) => any) => setEpField("quizData", fn(qd));
+
+              // ── End-of-lesson questions ──
+              const renderQuestions = (questions: any[], onChange: (qs: any[]) => void, label: string) => (
+                <div className="space-y-2">
+                  <p className="text-[9px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">{label}</p>
+                  {questions.map((q: any, qi: number) => (
+                    <div key={q.id} className="bg-[#1a1a1a] border border-[#333] rounded-lg p-2.5 space-y-2">
+                      <div className="flex items-start gap-1.5">
+                        <input value={q.question}
+                          onChange={e => onChange(questions.map((x: any, i: number) => i === qi ? { ...x, question: e.target.value } : x))}
+                          placeholder={`Q${qi + 1}: Enter question…`}
+                          className="flex-1 bg-[#141414] border border-[#2a2a2a] rounded h-7 px-2 text-white outline-none focus:border-[#dc2626] text-[11px]" />
+                        <button type="button" onClick={() => onChange(questions.filter((_: any, i: number) => i !== qi))}
+                          className="text-[#666] hover:text-red-400 p-0.5 shrink-0"><X size={11} /></button>
+                      </div>
+                      {q.options.map((opt: any, oi: number) => (
+                        <div key={opt.id} className="flex items-center gap-1.5 pl-2">
+                          <button type="button"
+                            onClick={() => onChange(questions.map((x: any, i: number) => i === qi ? {
+                              ...x, options: x.options.map((o: any, j: number) => ({ ...o, correct: j === oi }))
+                            } : x))}
+                            className={`w-3.5 h-3.5 rounded-full border shrink-0 transition-colors ${opt.correct ? "bg-green-500 border-green-500" : "border-[#555] hover:border-green-400"}`} />
+                          <input value={opt.text}
+                            onChange={e => onChange(questions.map((x: any, i: number) => i === qi ? {
+                              ...x, options: x.options.map((o: any, j: number) => j === oi ? { ...o, text: e.target.value } : o)
+                            } : x))}
+                            placeholder={`Option ${oi + 1}`}
+                            className="flex-1 bg-[#141414] border border-[#2a2a2a] rounded h-6 px-2 text-white outline-none focus:border-[#dc2626] text-[11px]" />
+                          {q.options.length > 2 && (
+                            <button type="button" onClick={() => onChange(questions.map((x: any, i: number) => i === qi ? {
+                              ...x, options: x.options.filter((_: any, j: number) => j !== oi)
+                            } : x))} className="text-[#666] hover:text-red-400"><X size={9} /></button>
+                          )}
+                        </div>
+                      ))}
+                      <div className="flex gap-2 pl-2">
+                        <button type="button"
+                          onClick={() => onChange(questions.map((x: any, i: number) => i === qi ? { ...x, options: [...x.options, EMPTY_OPTION()] } : x))}
+                          className="text-[9px] text-[#dc2626] hover:text-red-400 font-rajdhani font-bold uppercase tracking-widest">+ Option</button>
+                      </div>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => onChange([...questions, EMPTY_QUESTION()])}
+                    className="text-[10px] text-[#dc2626] hover:text-red-400 font-rajdhani font-bold uppercase tracking-widest">+ Question</button>
+                </div>
+              );
+
+              return (
+                <div className="space-y-4">
+                  {renderQuestions(
+                    qd.questions ?? [],
+                    qs => setQd((prev: any) => ({ ...prev, questions: qs })),
+                    "End-of-Lesson Quiz"
+                  )}
+
+                  {/* ── Mid-video cues ── */}
+                  <div className="space-y-3">
+                    <p className="text-[9px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">Mid-Video Quizzes</p>
+                    {(qd.cues ?? []).map((cue: any, ci: number) => (
+                      <div key={cue.id} className="bg-[#111] border border-[#333] rounded-lg p-2.5 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] text-[#888] font-rajdhani uppercase">At</span>
+                          <input value={cue.atTime ?? secsToTime(cue.atSeconds ?? 0)}
+                            onChange={e => setQd((prev: any) => ({ ...prev, cues: prev.cues.map((c: any, i: number) => i === ci ? { ...c, atTime: e.target.value } : c) }))}
+                            placeholder="M:SS"
+                            className="w-16 bg-[#141414] border border-[#2a2a2a] rounded h-6 px-2 text-white outline-none focus:border-[#dc2626] text-[11px] font-mono" />
+                          <span className="text-[9px] text-[#555] font-rajdhani">mm:ss into video</span>
+                          <button type="button"
+                            onClick={() => setQd((prev: any) => ({ ...prev, cues: prev.cues.filter((_: any, i: number) => i !== ci) }))}
+                            className="ml-auto text-[#666] hover:text-red-400"><X size={11} /></button>
+                        </div>
+                        {renderQuestions(
+                          cue.questions ?? [],
+                          qs => setQd((prev: any) => ({ ...prev, cues: prev.cues.map((c: any, i: number) => i === ci ? { ...c, questions: qs } : c) })),
+                          `Cue ${ci + 1} Questions`
+                        )}
+                      </div>
+                    ))}
+                    <button type="button"
+                      onClick={() => setQd((prev: any) => ({ ...prev, cues: [...(prev.cues ?? []), EMPTY_CUE()] }))}
+                      className="text-[10px] text-[#dc2626] hover:text-red-400 font-rajdhani font-bold uppercase tracking-widest">+ Mid-Video Quiz</button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Visible */}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setEpField("isVisible", !epForm.isVisible)}
