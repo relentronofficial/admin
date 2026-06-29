@@ -279,8 +279,17 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
 function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
   lessonId: string; lessonTitle: string; courseId: string; onClose: (saved?: boolean) => void;
 }) {
+  const { uiStrings } = useSiteConfig();
   const [text, setText] = useState("");
   const [saved, setSaved] = useState(false);
+
+  const title        = uiStrings?.reflectTitle        ?? "Reflect & Retain";
+  const prefix       = uiStrings?.reflectPromptPrefix ?? "What's one thing from";
+  const suffix       = uiStrings?.reflectPromptSuffix ?? "you'll actually apply?";
+  const placeholder  = uiStrings?.reflectPlaceholder  ?? "Write in your own words — 2-3 sentences is enough…";
+  const skipLabel    = uiStrings?.reflectSkipLabel    ?? "Skip";
+  const saveLabel    = uiStrings?.reflectSaveLabel    ?? "Save Reflection";
+  const savedLabel   = uiStrings?.reflectSavedLabel   ?? "✓ Saved!";
 
   const handleSave = () => {
     try {
@@ -301,17 +310,17 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
         <div className="px-6 py-5 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           <div className="flex items-center gap-2 mb-1">
             <PenLine size={13} style={{ color: "var(--color-accent)" }} />
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Reflect & Retain</p>
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>{title}</p>
           </div>
           <p className="text-sm font-semibold text-white leading-snug">
-            What's one thing from <span className="italic" style={{ color: "rgba(255,255,255,0.65)" }}>"{lessonTitle}"</span> you'll actually apply?
+            {prefix} <span className="italic" style={{ color: "rgba(255,255,255,0.65)" }}>"{lessonTitle}"</span> {suffix}
           </p>
         </div>
         <div className="p-5 space-y-4">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Write in your own words — 2-3 sentences is enough…"
+            placeholder={placeholder}
             autoFocus
             rows={4}
             className="w-full rounded-xl p-3.5 text-sm text-white resize-none outline-none placeholder:opacity-40"
@@ -336,7 +345,7 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
               className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-opacity hover:opacity-80"
               style={{ borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.5)" }}
             >
-              Skip
+              {skipLabel}
             </button>
             <button
               onClick={handleSave}
@@ -344,7 +353,7 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
               className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-40"
               style={{ background: saved ? "var(--color-success)" : "var(--color-accent)" }}
             >
-              {saved ? "✓ Saved!" : "Save Reflection"}
+              {saved ? savedLabel : saveLabel}
             </button>
           </div>
         </div>
@@ -888,6 +897,9 @@ export default function CourseDetailPage({
   const [completionTimes, setCompletionTimes] = useState<Record<string, number>>({});
   const [reflectionCount, setReflectionCount] = useState(0);
   const reflectedRef = useRef<Set<string>>(new Set());
+  // Tracks whether completion happened during THIS session (vs. pre-existing when lesson loaded).
+  // Reflection modal should only fire for fresh completions, not for already-done lessons.
+  const justCompletedInSessionRef = useRef(false);
 
   // Mid-video cue quizzes
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
@@ -986,7 +998,8 @@ export default function CourseDetailPage({
       return next;
     });
     const lesson = courseRef.current?.lessons?.find((l: any) => l.id === lid);
-    if (!lesson?.hasQuiz && !reflectedRef.current.has(lid)) {
+    // Only show reflection for completions that happened in this session, not pre-existing ones.
+    if (!lesson?.hasQuiz && !reflectedRef.current.has(lid) && justCompletedInSessionRef.current) {
       reflectedRef.current.add(lid);
       setTimeout(() => setPendingReflection({ lessonId: lid, title }), 1200);
     }
@@ -1102,6 +1115,7 @@ export default function CourseDetailPage({
     firedCuesRef.current = new Set();
     cueQuizActiveRef.current = false;
     setCueQuizModal(null);
+    justCompletedInSessionRef.current = false;
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
@@ -1125,6 +1139,7 @@ export default function CourseDetailPage({
     if (markCalledRef.current) return;
     const watched = selectedLesson.actualWatchedSecs ?? 0;
     if (watched < liveRealDuration * 0.85) return;
+    justCompletedInSessionRef.current = true;
     setWatchState("completed");
     markCalledRef.current = true;
     markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: Math.floor(watched), isCompleted: true, videoDuration: liveRealDuration });
@@ -1188,6 +1203,7 @@ export default function CourseDetailPage({
     isPlayingRef.current = false;
     const lesson = selectedLessonRef.current;
     if (!lesson) return;
+    justCompletedInSessionRef.current = true;
     setWatchState("completed");
     // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
     const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lesson.id);
@@ -1208,6 +1224,7 @@ export default function CourseDetailPage({
   const handleMarkComplete = () => {
     if (!selectedLesson || markCalledRef.current) return;
     markCalledRef.current = true;
+    justCompletedInSessionRef.current = true;
     setWatchState("completed");
     // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
     const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
@@ -1239,6 +1256,7 @@ export default function CourseDetailPage({
       if (!lesson) return;
       isPlayingRef.current = false;
       doMarkCompleteRef.current = false;
+      justCompletedInSessionRef.current = true;
       setWatchState("completed");
       triggerUpNextRef.current();
       if (!markCalledRef.current) {

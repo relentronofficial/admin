@@ -2098,6 +2098,13 @@ model UiStrings {
   chatEmptyTitle            String   @default("No conversations yet") @map("chat_empty_title")
   chatEmptyDesc             String   @default("Start a conversation with the TBT team.") @map("chat_empty_desc")
   chatSelectPrompt          String   @default("Select a conversation or start a new one.") @map("chat_select_prompt")
+  reflectTitle              String   @default("Reflect & Retain") @map("reflect_title")
+  reflectPromptPrefix       String   @default("What's one thing from") @map("reflect_prompt_prefix")
+  reflectPromptSuffix       String   @default("you'll actually apply?") @map("reflect_prompt_suffix")
+  reflectPlaceholder        String   @default("Write in your own words — 2-3 sentences is enough…") @map("reflect_placeholder")
+  reflectSkipLabel          String   @default("Skip") @map("reflect_skip_label")
+  reflectSaveLabel          String   @default("Save Reflection") @map("reflect_save_label")
+  reflectSavedLabel         String   @default("✓ Saved!") @map("reflect_saved_label")
   createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

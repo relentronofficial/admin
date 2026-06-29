@@ -272,6 +272,13 @@ export interface UiStrings {
   recentlyWatched?: string;
   recentlyWatchedEmpty?: string;
   recentlyWatchedEmptyDesc?: string;
+  reflectTitle?: string;
+  reflectPromptPrefix?: string;
+  reflectPromptSuffix?: string;
+  reflectPlaceholder?: string;
+  reflectSkipLabel?: string;
+  reflectSaveLabel?: string;
+  reflectSavedLabel?: string;
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────

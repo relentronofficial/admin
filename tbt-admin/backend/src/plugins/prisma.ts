@@ -86,6 +86,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS payment_link_url TEXT`);
     // Resource description field
     await prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS description TEXT`);
+    // Reflection modal UI strings
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_title TEXT NOT NULL DEFAULT 'Reflect & Retain'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_prompt_prefix TEXT NOT NULL DEFAULT 'What''s one thing from'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_prompt_suffix TEXT NOT NULL DEFAULT 'you''ll actually apply?'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_placeholder TEXT NOT NULL DEFAULT 'Write in your own words — 2-3 sentences is enough…'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_skip_label TEXT NOT NULL DEFAULT 'Skip'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_save_label TEXT NOT NULL DEFAULT 'Save Reflection'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_saved_label TEXT NOT NULL DEFAULT '✓ Saved!'`);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full
