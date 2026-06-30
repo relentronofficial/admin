@@ -595,7 +595,10 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
             </div>
           ) : (
             top5.map((entry: any, i: number) => {
-              const isMe = lb?.myRank === i + 1;
+              const isMe = !!entry.isMe;
+              const name = entry.member
+                ? [entry.member.firstName, entry.member.lastName].filter(Boolean).join(" ") || "Member"
+                : "Member";
               return (
                 <div
                   key={entry.memberId ?? i}
@@ -612,11 +615,11 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
                     {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
                   </span>
                   <span className="flex-1 truncate" style={{ color: isMe ? "#fff" : "rgba(255,255,255,0.7)" }}>
-                    {entry.name ?? "Member"}
+                    {name}
                     {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}>(you)</span>}
                   </span>
                   <span className="text-xs font-bold flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
-                    <Zap size={11} />{entry.xp ?? 0}
+                    <Zap size={11} />{entry.totalXp ?? 0}
                   </span>
                 </div>
               );

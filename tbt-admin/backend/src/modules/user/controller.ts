@@ -1174,7 +1174,7 @@ export async function getCourseXpHandler(request: FastifyRequest, reply: Fastify
   try {
     const rows = await (request.server.prisma as any).memberXP.findMany({
       where: { memberId: request.memberId, courseId },
-      select: { id: true, source: true, amount: true, earnedAt: true, episodeId: true },
+      select: { id: true, source: true, amount: true, earnedAt: true },
       orderBy: { earnedAt: 'desc' },
     });
 
