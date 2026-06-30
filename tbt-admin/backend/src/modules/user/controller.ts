@@ -34,15 +34,29 @@ async function recalculateMemberStats(prisma: any, memberId: string, redis?: any
   if (!allowed) return;
 
   try {
-    const [completedEpisodes, completedChallenges, submittedAssignments, totalEpisodes, member] = await Promise.all([
+    const [
+      completedWorkshopEpisodes,
+      completedChallenges,
+      submittedAssignments,
+      totalWorkshopEpisodes,
+      member,
+      courseXpResult,
+      completedCourseEpisodes,
+      totalCourseEpisodes,
+    ] = await Promise.all([
       prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
       prisma.memberChallengeProgress.count({ where: { memberId, status: 'completed' } }),
       prisma.assignmentSubmission.count({ where: { memberId } }),
       prisma.memberEpisodeProgress.count({ where: { memberId } }),
       prisma.member.findUnique({ where: { id: memberId }, select: { currentStreak: true, lastActiveAt: true } }),
+      prisma.memberXP.aggregate({ where: { memberId }, _sum: { amount: true } }).catch(() => ({ _sum: { amount: 0 } })),
+      (prisma as any).courseEpisodeProgress.count({ where: { memberId, completed: true } }).catch(() => 0),
+      (prisma as any).courseEpisodeProgress.count({ where: { memberId } }).catch(() => 0),
     ]);
 
-    const totalPoints = completedEpisodes * 10 + completedChallenges * 25 + submittedAssignments * 15;
+    const workshopPoints = (completedWorkshopEpisodes as number) * 10 + (completedChallenges as number) * 25 + (submittedAssignments as number) * 15;
+    const courseXp = (courseXpResult as any)?._sum?.amount ?? 0;
+    const totalPoints = workshopPoints + courseXp;
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -61,6 +75,8 @@ async function recalculateMemberStats(prisma: any, memberId: string, redis?: any
 
     const daysSinceActive = lastActiveDay ? Math.floor((today.getTime() - lastActiveDay.getTime()) / 86_400_000) : 999;
     const recencyScore = daysSinceActive === 0 ? 40 : daysSinceActive <= 1 ? 35 : daysSinceActive <= 3 ? 25 : daysSinceActive <= 7 ? 15 : daysSinceActive <= 30 ? 5 : 0;
+    const totalEpisodes = (totalWorkshopEpisodes as number) + (totalCourseEpisodes as number);
+    const completedEpisodes = (completedWorkshopEpisodes as number) + (completedCourseEpisodes as number);
     const completionScore = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 40) : 0;
     const streakScore = Math.min(20, currentStreak);
     const healthScore = recencyScore + completionScore + streakScore;
@@ -108,6 +124,10 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
   const meKey = `me:${request.memberId}`;
   const cachedMe = await cacheGet<Record<string, unknown>>(redis, meKey);
   if (cachedMe) return ok(reply, cachedMe);
+
+  // Refresh member stats (throttled to once per 60 s) before reading DB so the
+  // profile page always reflects current points/streak/health.
+  await recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined);
 
   const [member, allTiers, uiStrings] = await Promise.all([
     request.server.prisma.member.findUnique({
