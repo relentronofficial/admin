@@ -714,7 +714,7 @@ export const useGetBatchDayDetail = (batchId: string, dayNumber: number | null) 
 export const useUpsertBatchDay = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ batchId, dayNumber, ...data }: { batchId: string; dayNumber: number; title?: string; notes?: string; resourceUrl?: string; tasks?: any[] }) => {
+    mutationFn: async ({ batchId, dayNumber, ...data }: { batchId: string; dayNumber: number; title?: string; notes?: string; resourceUrl?: string; tasks?: any[]; category?: string }) => {
       const res: any = await apiClient.put(`/api/batches/${batchId}/days/${dayNumber}`, data);
       return res.data;
     },
@@ -803,6 +803,69 @@ export const useListPrograms = () =>
     queryFn: async () => { const res: any = await apiClient.get('/api/batches/programs'); return res; },
     staleTime: 60_000,
   });
+
+export const useGetBatchMemberAttendance = (batchId: string, memberId: string | null) =>
+  useQuery({
+    queryKey: ['batch-attendance', batchId, memberId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/attendance/${memberId}`); return res; },
+    enabled: !!batchId && !!memberId,
+    staleTime: 15_000,
+  });
+
+export const useUpsertBatchAttendance = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, memberId, dayNumber, status, notes }: { batchId: string; memberId: string; dayNumber: number; status: string; notes?: string }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/attendance/${memberId}/${dayNumber}`, { status, notes });
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => qc.invalidateQueries({ queryKey: ['batch-attendance', vars.batchId, vars.memberId] }),
+  });
+};
+
+export const useGetBatchBreaks = (batchId: string) =>
+  useQuery({
+    queryKey: ['batch-breaks', batchId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/breaks`); return res; },
+    enabled: !!batchId,
+    staleTime: 15_000,
+  });
+
+export const useApproveBreak = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, reqId }: { batchId: string; reqId: string }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/breaks/${reqId}/approve`);
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => qc.invalidateQueries({ queryKey: ['batch-breaks', vars.batchId] }),
+  });
+};
+
+export const useRejectBreak = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, reqId, adminNote }: { batchId: string; reqId: string; adminNote?: string }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/breaks/${reqId}/reject`, { adminNote });
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => qc.invalidateQueries({ queryKey: ['batch-breaks', vars.batchId] }),
+  });
+};
+
+export const useUpsertMemberBatchSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, memberId, extendedDays, notes }: { batchId: string; memberId: string; extendedDays: number; notes?: string }) => {
+      const res: any = await apiClient.put(`/api/batches/${batchId}/members/${memberId}/settings`, { extendedDays, notes });
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['batch-progress', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['member-day-progress', vars.batchId, vars.memberId] });
+    },
+  });
+};
 
 // ── MEMBER ENROLLMENTS ────────────────────────────────────────────────
 

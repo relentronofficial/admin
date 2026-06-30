@@ -311,6 +311,22 @@ export interface UiStrings {
   batchProgressSaved?: string;
   batchProgressSaveError?: string;
   batchSubmitSuccess?: string;
+  batchAttendanceLabel?: string;
+  batchMarkPresentLabel?: string;
+  batchPresentLabel?: string;
+  batchAbsentLabel?: string;
+  batchBreakLabel?: string;
+  batchAttendanceRateLabel?: string;
+  batchRequestBreakLabel?: string;
+  batchBreakReasonPlaceholder?: string;
+  batchBreakSubmittedMsg?: string;
+  batchBreakApprovedLabel?: string;
+  batchBreakPendingLabel?: string;
+  batchCategoryLabel?: string;
+  batchNotMarkedLabel?: string;
+  batchExtendedDaysLabel?: string;
+  batchBreakStartLabel?: string;
+  batchBreakEndLabel?: string;
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────

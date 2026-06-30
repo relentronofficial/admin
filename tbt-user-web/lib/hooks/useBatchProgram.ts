@@ -5,13 +5,17 @@ import apiClient from "@/lib/api/client";
 
 export const useMyBatchProgram = () =>
   useQuery({
-    queryKey: ["my-batch-program"],
+    queryKey: ["my-batch"],
     queryFn: async () => {
       const res: any = await apiClient.get("/api/user-batch");
       return res.data as {
         batch: any;
         days: any[];
         progress: any[];
+        attendance?: any[];
+        breaks?: any[];
+        totalDays?: number;
+        programName?: string | null;
       } | null;
     },
     staleTime: 30_000,
@@ -38,7 +42,7 @@ export const useSaveBatchDraft = () => {
       });
       return res.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-batch-program"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-batch"] }),
   });
 };
 
@@ -49,6 +53,24 @@ export const useSubmitBatchDay = () => {
       const res: any = await apiClient.post(`/api/user-batch/${dayNumber}/submit`);
       return res.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-batch-program"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-batch"] }),
+  });
+};
+
+export const useMarkAttendance = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { dayNumber: number; notes?: string }) =>
+      apiClient.post('/api/user-batch/attendance', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-batch'] }),
+  });
+};
+
+export const useRequestBreak = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { startDay: number; endDay: number; reason?: string }) =>
+      apiClient.post('/api/user-batch/break', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-batch'] }),
   });
 };

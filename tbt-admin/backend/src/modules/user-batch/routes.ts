@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getMyBatchHandler, saveDraftHandler, submitDayHandler } from './controller.js';
+import { getMyBatchHandler, saveDraftHandler, submitDayHandler, markAttendanceHandler, requestBreakHandler } from './controller.js';
 
 export async function userBatchRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticateUser);
@@ -7,4 +7,6 @@ export async function userBatchRoutes(fastify: FastifyInstance) {
   fastify.get('/', getMyBatchHandler);
   fastify.put('/:dayNumber', saveDraftHandler);
   fastify.post('/:dayNumber/submit', submitDayHandler);
+  fastify.post('/attendance', markAttendanceHandler);
+  fastify.post('/break', requestBreakHandler);
 }

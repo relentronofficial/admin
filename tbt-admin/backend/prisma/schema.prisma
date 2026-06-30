@@ -349,6 +349,9 @@ model Member {
   liveCallFeedback      LiveCallFeedback[]
   liveCallCertificates  LiveCallCertificate[]
   dayProgress           MemberDayProgress[]
+  attendance            MemberAttendance[]
+  breakRequests         BatchBreakRequest[]
+  batchSettings         MemberBatchSettings[]
   courseAccesses        CourseAccess[]
   coursePayments        CoursePayment[]
   xpRecords             MemberXP[]
@@ -976,11 +979,14 @@ model Batch {
   updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   // Relations
-  program   Program?   @relation(fields: [programId], references: [id], onDelete: Restrict)
-  members   Member[]
-  workshops Workshop[]
-  days      BatchDay[]
-  progress  MemberDayProgress[]
+  program        Program?              @relation(fields: [programId], references: [id], onDelete: Restrict)
+  members        Member[]
+  workshops      Workshop[]
+  days           BatchDay[]
+  progress       MemberDayProgress[]
+  attendance     MemberAttendance[]
+  breakRequests  BatchBreakRequest[]
+  memberSettings MemberBatchSettings[]
 
   @@map("batches")
 }
@@ -994,11 +1000,60 @@ model BatchDay {
   notes       String?
   resourceUrl String?  @map("resource_url")
   tasks       Json?
+  category    String?  @map("category")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([batchId, dayNumber])
   @@map("batch_days")
+}
+
+model MemberAttendance {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  batchId   String   @map("batch_id") @db.Uuid
+  dayNumber Int      @map("day_number")
+  status    String   @default("present")
+  notes     String?
+  markedAt  DateTime @default(now()) @map("marked_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  @@unique([memberId, batchId, dayNumber])
+  @@map("member_attendance")
+}
+
+model BatchBreakRequest {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId   String    @map("member_id") @db.Uuid
+  batchId    String    @map("batch_id") @db.Uuid
+  startDay   Int       @map("start_day")
+  endDay     Int       @map("end_day")
+  reason     String?
+  status     String    @default("pending")
+  adminNote  String?   @map("admin_note")
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member     Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  batch      Batch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  @@map("batch_break_requests")
+}
+
+model MemberBatchSettings {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId     String   @map("member_id") @db.Uuid
+  batchId      String   @map("batch_id") @db.Uuid
+  extendedDays Int      @default(0) @map("extended_days")
+  notes        String?
+  updatedBy    String?  @map("updated_by")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member       Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  batch        Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  @@unique([memberId, batchId])
+  @@map("member_batch_settings")
 }
 
 model MemberDayProgress {

@@ -126,6 +126,67 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_progress_saved TEXT NOT NULL DEFAULT 'Progress saved'`);
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_progress_save_error TEXT NOT NULL DEFAULT 'Failed to save progress'`);
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_submit_success TEXT NOT NULL DEFAULT 'Submitted for review!'`);
+    // Attendance & break system
+    await prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_attendance (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+        day_number INT NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'present',
+        notes TEXT,
+        marked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, batch_id, day_number)
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS batch_break_requests (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+        start_day INT NOT NULL,
+        end_day INT NOT NULL,
+        reason TEXT,
+        status VARCHAR(50) NOT NULL DEFAULT 'pending',
+        admin_note TEXT,
+        reviewed_by TEXT,
+        reviewed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_batch_settings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+        extended_days INT NOT NULL DEFAULT 0,
+        notes TEXT,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, batch_id)
+      )
+    `);
+    // New UiStrings for attendance/break/category
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_attendance_label TEXT NOT NULL DEFAULT 'Attendance'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_mark_present_label TEXT NOT NULL DEFAULT 'Mark Present'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_present_label TEXT NOT NULL DEFAULT 'Present'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_absent_label TEXT NOT NULL DEFAULT 'Absent'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_label TEXT NOT NULL DEFAULT 'Break'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_attendance_rate_label TEXT NOT NULL DEFAULT 'Attendance Rate'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_request_break_label TEXT NOT NULL DEFAULT 'Request Break'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_reason_placeholder TEXT NOT NULL DEFAULT 'Reason for taking a break...'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_submitted_msg TEXT NOT NULL DEFAULT 'Break request submitted'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_approved_label TEXT NOT NULL DEFAULT 'Break approved'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_pending_label TEXT NOT NULL DEFAULT 'Break pending approval'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_category_label TEXT NOT NULL DEFAULT 'Category'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_not_marked_label TEXT NOT NULL DEFAULT 'Not marked'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_extended_days_label TEXT NOT NULL DEFAULT 'Extended days'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_start_label TEXT NOT NULL DEFAULT 'Start day'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_end_label TEXT NOT NULL DEFAULT 'End day'`);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

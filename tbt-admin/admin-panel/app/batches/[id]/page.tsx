@@ -41,6 +41,9 @@ import {
   useApproveBatchDay,
   useRejectBatchDay,
   useGetBatchPending,
+  useGetBatchBreaks,
+  useApproveBreak,
+  useRejectBreak,
 } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import { format, differenceInDays, isValid } from "date-fns";
@@ -51,7 +54,7 @@ const fmtDate = (d: any) => {
   try { const dt = new Date(d); return isValid(dt) ? format(dt, "dd MMM yyyy") : "—"; } catch { return "—"; }
 };
 
-type Tab = "overview" | "program" | "progress" | "pending";
+type Tab = "overview" | "program" | "progress" | "pending" | "breaks";
 
 // ─── Day Edit Modal ────────────────────────────────────────────────────────────
 
@@ -71,6 +74,7 @@ function DayEditModal({
   const [title, setTitle] = useState(existing?.title ?? "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [resourceUrl, setResourceUrl] = useState(existing?.resourceUrl ?? "");
+  const [category, setCategory] = useState(existing?.category ?? "");
   const [tasks, setTasks] = useState<TaskItem[]>(
     Array.isArray(existing?.tasks) ? existing.tasks : []
   );
@@ -87,7 +91,7 @@ function DayEditModal({
 
   const save = async () => {
     try {
-      await upsert.mutateAsync({ batchId, dayNumber, title: title || undefined, notes: notes || undefined, resourceUrl: resourceUrl || undefined, tasks });
+      await upsert.mutateAsync({ batchId, dayNumber, title: title || undefined, notes: notes || undefined, resourceUrl: resourceUrl || undefined, category: category || undefined, tasks });
       toast.success(`Day ${dayNumber} saved`);
       onClose();
     } catch {
@@ -114,6 +118,15 @@ function DayEditModal({
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder={`Day ${dayNumber} title…`}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1.5">Category</label>
+            <input
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+              placeholder="e.g. Marketing, Health, Mindset…"
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm"
             />
           </div>
@@ -410,17 +423,21 @@ function CellModal({
 function MemberTimelineDrawer({
   batchId,
   member,
+  totalDays,
   onClose,
   onCellClick,
 }: {
   batchId: string;
   member: any;
+  totalDays: number;
   onClose: () => void;
   onCellClick: (member: any, dayNumber: number, progress: any, dayContent: any) => void;
 }) {
   const { data: res, isLoading } = useGetMemberProgress(batchId, member.id);
   const progressArr: any[] = (res as any)?.data?.progress ?? [];
   const daysArr: any[] = (res as any)?.data?.days ?? [];
+  const extendedDays: number = (res as any)?.data?.extendedDays ?? 0;
+  const effectiveTotalDays = totalDays + extendedDays;
 
   const progressMap = useMemo(() => {
     const m: Record<number, any> = {};
@@ -444,7 +461,7 @@ function MemberTimelineDrawer({
             <h2 className="text-[15px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">
               {member.firstName} {member.lastName}
             </h2>
-            <p className="text-[12px] text-[#606060] mt-0.5">{completedCount} / 90 days completed</p>
+            <p className="text-[12px] text-[#606060] mt-0.5">{completedCount} / {effectiveTotalDays} days completed{extendedDays > 0 && ` (+${extendedDays} extended)`}</p>
           </div>
           <button onClick={onClose} className="text-[#606060] hover:text-white transition-colors">
             <X size={20} />
@@ -457,7 +474,7 @@ function MemberTimelineDrawer({
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto py-2">
-            {Array.from({ length: 90 }, (_, i) => {
+            {Array.from({ length: effectiveTotalDays }, (_, i) => {
               const dayNum = i + 1;
               const prog = progressMap[dayNum];
               const dayContent = daysMap[dayNum];
@@ -530,6 +547,14 @@ export default function BatchDetailPage() {
   const approveDay = useApproveBatchDay();
   const rejectDay = useRejectBatchDay();
 
+  // Break requests
+  const { data: breaksRes, isLoading: breaksLoading } = useGetBatchBreaks(id);
+  const breakRecords: any[] = (breaksRes as any)?.data ?? [];
+  const approveBreak = useApproveBreak();
+  const rejectBreak = useRejectBreak();
+  const [breakRejectId, setBreakRejectId] = useState<string | null>(null);
+  const [breakRejectNote, setBreakRejectNote] = useState("");
+
   // Modals
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [cellModal, setCellModal] = useState<{ member: any; dayNumber: number; progress: any; dayContent: any } | null>(null);
@@ -552,12 +577,14 @@ export default function BatchDetailPage() {
     return m;
   }, [progressArr]);
 
+  const totalDays: number = (batch as any)?.program?.durationDays ?? 90;
+
   // Stats
   const stats = useMemo(() => {
     if (!batch) return null;
     const now = Date.now();
     const start = new Date(batch.startsAt).getTime();
-    const daysElapsed = Math.min(90, Math.max(0, Math.floor((now - start) / 86_400_000)));
+    const daysElapsed = Math.min(totalDays, Math.max(0, Math.floor((now - start) / 86_400_000)));
     const totalMembers = members.length;
 
     const memberStats = members.map(m => {
@@ -573,9 +600,9 @@ export default function BatchDetailPage() {
     const completionRate = totalPossible > 0 ? Math.round((totalCompleted / totalPossible) * 100) : 0;
 
     return { daysElapsed, totalMembers, onTrackCount, behindCount, completionRate, memberStats };
-  }, [batch, members, progressMap, progressArr]);
+  }, [batch, members, progressMap, progressArr, totalDays]);
 
-  const DAYS = Array.from({ length: 90 }, (_, i) => i + 1);
+  const DAYS = Array.from({ length: totalDays }, (_, i) => i + 1);
 
   if (batchLoading) {
     return (
@@ -631,9 +658,10 @@ export default function BatchDetailPage() {
         <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1 w-fit">
           {([
             { id: "overview", label: "Overview", icon: BarChart2 },
-            { id: "program", label: "Program (90 Days)", icon: BookOpen },
+            { id: "program", label: `Program (${totalDays} Days)`, icon: BookOpen },
             { id: "progress", label: "Progress Grid", icon: Users },
             { id: "pending", label: "Pending", icon: Bell, badge: pendingRecords.length },
+            { id: "breaks", label: "Breaks", icon: Clock, badge: breakRecords.filter((b: any) => b.status === 'pending').length },
           ] as { id: Tab; label: string; icon: any; badge?: number }[]).map(({ id: tid, label, icon: Icon, badge }) => (
             <button
               key={tid}
@@ -663,7 +691,7 @@ export default function BatchDetailPage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: "Total Members", value: stats.totalMembers, icon: Users, color: "#a0a0a0" },
-                { label: "Days Elapsed", value: `${stats.daysElapsed} / 90`, icon: CalendarDays, color: "#a0a0a0" },
+                { label: "Days Elapsed", value: `${stats.daysElapsed} / ${totalDays}`, icon: CalendarDays, color: "#a0a0a0" },
                 { label: "On Track", value: stats.onTrackCount, icon: TrendingUp, color: "#22c55e" },
                 { label: "Behind", value: stats.behindCount, icon: TrendingDown, color: "#ef4444" },
               ].map(s => (
@@ -702,7 +730,7 @@ export default function BatchDetailPage() {
                 </div>
                 <div className="divide-y divide-[#1f1f1f]">
                   {stats.memberStats.map((m: any) => {
-                    const pct = Math.round((m.completed / 90) * 100);
+                    const pct = Math.round((m.completed / totalDays) * 100);
                     return (
                       <div key={m.id} className="flex items-center gap-4 px-5 py-3">
                         <div className="w-8 h-8 rounded-full bg-[#1f1f1f] flex items-center justify-center text-xs font-bold text-[#dc2626] flex-shrink-0">
@@ -717,7 +745,7 @@ export default function BatchDetailPage() {
                                 style={{ width: `${pct}%`, background: m.onTrack ? "#22c55e" : "#ef4444" }}
                               />
                             </div>
-                            <span className="text-[11px] text-[#606060] flex-shrink-0">{m.completed}/90</span>
+                            <span className="text-[11px] text-[#606060] flex-shrink-0">{m.completed}/{totalDays}</span>
                           </div>
                         </div>
                         <span className={cn(
@@ -740,7 +768,7 @@ export default function BatchDetailPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[13px] text-[#606060]">
-                {configuredDays.length} of 90 days configured
+                {configuredDays.length} of {totalDays} days configured
               </p>
             </div>
             {DAYS.map(dayNum => {
@@ -758,9 +786,16 @@ export default function BatchDetailPage() {
                     {dayNum}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-[#f0f0f0] truncate">
-                      {day?.title ?? <span className="text-[#444] font-normal italic">Not configured</span>}
-                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-[13px] font-semibold text-[#f0f0f0] truncate">
+                        {day?.title ?? <span className="text-[#444] font-normal italic">Not configured</span>}
+                      </p>
+                      {day?.category && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}>
+                          {day.category}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3 mt-0.5">
                       {tasks.length > 0 && (
                         <span className="text-[11px] text-[#606060] flex items-center gap-1">
@@ -825,7 +860,7 @@ export default function BatchDetailPage() {
 
                 {/* Scrollable grid */}
                 <div className="overflow-x-auto">
-                  <div style={{ minWidth: `${200 + 90 * 26}px` }}>
+                  <div style={{ minWidth: `${200 + totalDays * 26}px` }}>
                     {/* Day header row */}
                     <div className="flex sticky top-0 z-10 bg-[#141414] border-b border-[#1f1f1f]">
                       <div className="w-[200px] flex-shrink-0 px-4 py-2.5">
@@ -1004,6 +1039,118 @@ export default function BatchDetailPage() {
             )}
           </div>
         )}
+
+        {/* ── Breaks Tab ── */}
+        {activeTab === "breaks" && (
+          <div className="space-y-3">
+            {breaksLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 size={28} className="animate-spin text-[#dc2626]" />
+              </div>
+            ) : breakRecords.length === 0 ? (
+              <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-16 text-center">
+                <CheckCircle2 size={36} className="text-green-500/40 mx-auto mb-3" />
+                <p className="text-[#606060] text-sm">No break requests.</p>
+              </div>
+            ) : (
+              breakRecords.map((rec: any) => {
+                const isRejecting = breakRejectId === rec.id;
+                return (
+                  <div key={rec.id} className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[#1f1f1f] flex items-center justify-center text-xs font-bold text-[#dc2626] flex-shrink-0">
+                          {rec.first_name?.[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-[13px] font-semibold text-[#f0f0f0]">
+                            {rec.first_name} {rec.last_name}
+                          </p>
+                          <p className="text-[11px] text-[#606060]">{rec.member_code}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(96,165,250,0.15)", color: "#60a5fa" }}>
+                          Days {rec.start_day} – {rec.end_day}
+                        </span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
+                          style={{
+                            background: rec.status === 'approved' ? "rgba(34,197,94,0.15)" : rec.status === 'rejected' ? "rgba(239,68,68,0.15)" : "rgba(167,139,250,0.15)",
+                            color: rec.status === 'approved' ? "#22c55e" : rec.status === 'rejected' ? "#ef4444" : "#a78bfa",
+                          }}>
+                          {rec.status}
+                        </span>
+                      </div>
+                    </div>
+                    {rec.reason && (
+                      <p className="text-[13px] text-[#a0a0a0] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3">
+                        {rec.reason}
+                      </p>
+                    )}
+                    {rec.status === 'pending' && (
+                      !isRejecting ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={async () => {
+                              try {
+                                await approveBreak.mutateAsync({ batchId: id, reqId: rec.id });
+                                toast.success("Break approved");
+                              } catch { toast.error("Failed to approve break"); }
+                            }}
+                            disabled={approveBreak.isPending}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                            style={{ background: "#22c55e" }}
+                          >
+                            {approveBreak.isPending ? <Loader2 size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
+                            Approve Break
+                          </button>
+                          <button
+                            onClick={() => { setBreakRejectId(rec.id); setBreakRejectNote(""); }}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all"
+                            style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}
+                          >
+                            <ThumbsDown size={14} /> Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <textarea
+                            value={breakRejectNote}
+                            onChange={e => setBreakRejectNote(e.target.value)}
+                            rows={2}
+                            placeholder="Reason for rejecting…"
+                            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#dc2626] resize-none"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <button onClick={() => setBreakRejectId(null)} className="flex-1 py-2 rounded-lg text-sm text-[#606060] hover:text-white transition-colors bg-[#1f1f1f]">
+                              Cancel
+                            </button>
+                            <button
+                              disabled={rejectBreak.isPending}
+                              onClick={async () => {
+                                try {
+                                  await rejectBreak.mutateAsync({ batchId: id, reqId: rec.id, adminNote: breakRejectNote || undefined });
+                                  toast.success("Break rejected");
+                                  setBreakRejectId(null);
+                                } catch { toast.error("Failed to reject break"); }
+                              }}
+                              className="flex-1 py-2 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                              style={{ background: "#ef4444" }}
+                            >
+                              {rejectBreak.isPending ? <Loader2 size={13} className="animate-spin inline mr-1" /> : null}
+                              Confirm Reject
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Day Edit Modal ── */}
@@ -1033,6 +1180,7 @@ export default function BatchDetailPage() {
         <MemberTimelineDrawer
           batchId={id}
           member={timelineMember}
+          totalDays={totalDays}
           onClose={() => setTimelineMember(null)}
           onCellClick={(m, d, p, dc) => {
             setTimelineMember(null);

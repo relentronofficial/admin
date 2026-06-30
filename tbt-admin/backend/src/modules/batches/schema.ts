@@ -18,6 +18,7 @@ export const upsertBatchDaySchema = z.object({
   title: z.string().optional(),
   notes: z.string().optional(),
   resourceUrl: z.string().optional(),
+  category: z.string().optional(),
   tasks: z.array(z.object({
     id: z.string(),
     title: z.string(),

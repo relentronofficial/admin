@@ -12,6 +12,12 @@ import {
   getBatchProgressHandler,
   getMemberProgressHandler,
   upsertMemberProgressHandler,
+  getAttendanceHandler,
+  upsertAttendanceHandler,
+  getBreakRequestsHandler,
+  approveBreakHandler,
+  rejectBreakHandler,
+  upsertMemberSettingsHandler,
 } from './controller.js';
 import {
   approveDayHandler,
@@ -44,4 +50,16 @@ export async function batchRoutes(fastify: FastifyInstance) {
   fastify.put('/:id/progress/:memberId/:dayNumber', upsertMemberProgressHandler);
   fastify.put('/:id/progress/:memberId/:dayNumber/approve', approveDayHandler);
   fastify.put('/:id/progress/:memberId/:dayNumber/reject', rejectDayHandler);
+
+  // Attendance (admin)
+  fastify.get('/:id/attendance/:memberId', getAttendanceHandler);
+  fastify.put('/:id/attendance/:memberId/:dayNumber', upsertAttendanceHandler);
+
+  // Break requests (admin)
+  fastify.get('/:id/breaks', getBreakRequestsHandler);
+  fastify.put('/:id/breaks/:reqId/approve', approveBreakHandler);
+  fastify.put('/:id/breaks/:reqId/reject', rejectBreakHandler);
+
+  // Member settings (admin)
+  fastify.put('/:id/members/:memberId/settings', upsertMemberSettingsHandler);
 }
