@@ -187,6 +187,13 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_extended_days_label TEXT NOT NULL DEFAULT 'Extended days'`);
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_start_label TEXT NOT NULL DEFAULT 'Start day'`);
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_end_label TEXT NOT NULL DEFAULT 'End day'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_reason_label TEXT NOT NULL DEFAULT 'Reason'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_rejected_label TEXT NOT NULL DEFAULT 'Rejected'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_break_submit_label TEXT NOT NULL DEFAULT 'Submit Request'`);
+    // Batch task proofs — stores per-task proof URLs/text submitted by member
+    await prisma.$executeRawUnsafe(`ALTER TABLE member_day_progress ADD COLUMN IF NOT EXISTS task_proofs JSONB`);
+    // Configurable XP awarded per approved day (default 50)
+    await prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50`);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

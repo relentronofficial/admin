@@ -102,7 +102,7 @@ Paths `["/Products", "/profile"]` are exempt.
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
-- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`)
+- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + `totalDays` + `attendance` + `breaks`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`)
 - `lib/hooks/useCourses.ts` — `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`
 - `lib/hooks/useEvents.ts` — events hooks
 
@@ -150,6 +150,7 @@ useEffect(() => {
 8. **`refetchQueries` predicate in TanStack Query v5** — `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
 9. **`req.memberId` not `req.member`** — `fastify.authenticateUser` sets `request.memberId: string`; there is NO `request.member` object
 10. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both carry `type: "workshop" | "course"` as a discriminator. Don't fork the hook calls or filter by content type.
+15. **Batch program `totalDays` is dynamic** — `useMyBatchProgram` returns `totalDays` (base days + admin-granted extended days). Never hardcode 90. Response also includes `attendance[]` (`{ dayNumber, status, notes, markedAt }`) and `breaks[]`. Day objects have a `category` string field.
 11. **`lessonAlreadyDone` uses exactly 3 signals** — `completedIds.has(lessonId)`, `!!isCompleted`, `actualWatchedSecs >= durationSeconds * 0.85`. No position proximity heuristic. If it returns `true`, `markCalledRef.current` is pre-set, silently blocking all completion POSTs for the session.
 12. **`BUNNY_CDN_URL` env var lacks `https://`** — normalize with `` `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8` ``
 13. **Course `quizData` has two layers** — end-of-video quiz: `{ questions: [...] }` (gated by `quizUnlockPercent`); mid-video cues: `{ questions: [...], cues: [{ id, atSeconds, questions: [...] }] }`. `hasQuiz` is `true` only when `questions.length > 0`; cues alone do not set it. `Lesson` type in `types/index.ts` does NOT include `quizData` — access as `(lesson as any).quizData`.

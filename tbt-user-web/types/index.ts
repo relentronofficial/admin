@@ -283,6 +283,7 @@ export interface UiStrings {
   batchProgramLabel?: string;
   batchNotAssignedMsg?: string;
   batchContactMsg?: string;
+  batchNoAssignedCta?: string;
   batchDaysApprovedLabel?: string;
   batchAllDaysLabel?: string;
   batchStatusNotStarted?: string;
@@ -316,6 +317,10 @@ export interface UiStrings {
   batchPresentLabel?: string;
   batchAbsentLabel?: string;
   batchBreakLabel?: string;
+  batchStreakLabel?: string;
+  batchStreakUnit?: string;
+  batchCertificateLabel?: string;
+  batchCompletedMsg?: string;
   batchAttendanceRateLabel?: string;
   batchRequestBreakLabel?: string;
   batchBreakReasonPlaceholder?: string;
@@ -327,6 +332,27 @@ export interface UiStrings {
   batchExtendedDaysLabel?: string;
   batchBreakStartLabel?: string;
   batchBreakEndLabel?: string;
+  batchProofLabel?: string;
+}
+
+// ─── Batch Program ───────────────────────────────────────────────────────────
+
+export interface MemberDayProgress {
+  id: string;
+  batchId: string;
+  memberId: string;
+  dayNumber: number;
+  status: 'not_started' | 'in_progress' | 'pending_approval' | 'approved' | 'rejected';
+  isCompleted: boolean;
+  journalEntry?: string | null;
+  journalFileUrl?: string | null;
+  completedTaskIds?: string[] | null;
+  taskProofs?: Record<string, string> | null;
+  reviewNote?: string | null;
+  submittedAt?: string | null;
+  completedAt?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────

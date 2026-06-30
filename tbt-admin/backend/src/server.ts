@@ -42,6 +42,7 @@ import { conversationsRoutes } from './modules/conversations/routes.js';
 import { securityRoutes } from './modules/security/routes.js';
 import { userAuthRoutes } from './modules/user-auth/routes.js';
 import { userBatchRoutes } from './modules/user-batch/routes.js';
+import { batchReminderCronHandler } from './modules/user-batch/controller.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
 
@@ -134,6 +135,7 @@ async function bootstrap() {
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
+    fastify.post('/api/user-batch/cron/batch-reminder', batchReminderCronHandler);
     fastify.post('/api/cron/course-expiry-reminder', async (req, reply) => {
       const secret = req.headers['x-cron-secret'];
       if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {

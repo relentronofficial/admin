@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -8,7 +9,6 @@ import {
   Circle,
   Clock,
   AlertCircle,
-  XCircle,
   ExternalLink,
   Save,
   Send,
@@ -18,6 +18,7 @@ import {
   ChevronRight,
   UserCheck,
   Tag,
+  Paperclip,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -25,8 +26,27 @@ import {
   useSaveBatchDraft,
   useSubmitBatchDay,
   useMarkAttendance,
+  useUploadTaskProof,
 } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
+import { useSocket } from "@/lib/socket/useSocket";
+
+function getEmbedUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
+      const vid = u.searchParams.get("v") ?? u.pathname.split("/").pop();
+      return vid ? `https://www.youtube.com/embed/${vid}` : null;
+    }
+    if (u.hostname.includes("vimeo.com")) {
+      const vid = u.pathname.split("/").filter(Boolean).pop();
+      return vid ? `https://player.vimeo.com/video/${vid}` : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 type DayStatus = "not_started" | "in_progress" | "pending_approval" | "approved" | "rejected";
 type AttendanceStatus = "present" | "absent" | "break" | "future" | "not_marked";
@@ -56,9 +76,12 @@ export default function BatchDayPage() {
   const { uiStrings } = useSiteConfig();
 
   const { data: program, isLoading } = useMyBatchProgram();
+  const queryClient = useQueryClient();
+  const { socket } = useSocket();
   const saveDraft = useSaveBatchDraft();
   const submitDay = useSubmitBatchDay();
   const markAttendance = useMarkAttendance();
+  const { upload: uploadProof } = useUploadTaskProof();
 
   const totalDays: number = (program as any)?.totalDays ?? 90;
 
@@ -151,14 +174,55 @@ export default function BatchDayPage() {
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
   const [journalEntry, setJournalEntry] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [localTaskProofs, setLocalTaskProofs] = useState<Record<string, string>>({});
+  const [uploadingTaskIds, setUploadingTaskIds] = useState<Set<string>>(new Set());
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     if (progress) {
       setCompletedTaskIds(progress.completedTaskIds ?? []);
       setJournalEntry(progress.journalEntry ?? "");
+      setLocalTaskProofs((progress.taskProofs as Record<string, string> | null) ?? {});
       setDirty(false);
     }
   }, [progress?.dayNumber]);
+
+  const handleFileSelect = async (taskId: string, file: File) => {
+    if (!program?.batch?.id) return;
+    setUploadingTaskIds((prev) => { const s = new Set(prev); s.add(taskId); return s; });
+    try {
+      const publicUrl = await uploadProof(file, program.batch.id, dayNumber);
+      const next = { ...localTaskProofs, [taskId]: publicUrl };
+      setLocalTaskProofs(next);
+      await saveDraft.mutateAsync({ dayNumber, completedTaskIds, taskProofs: next });
+    } catch {
+      toast.error("Failed to upload proof");
+    } finally {
+      setUploadingTaskIds((prev) => { const s = new Set(prev); s.delete(taskId); return s; });
+    }
+  };
+
+  // Real-time: update when admin approves or rejects this day
+  useEffect(() => {
+    if (!socket) return;
+    const handleApproved = (payload: { dayNumber: number; xpAwarded: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["my-batch"] });
+      toast.success(`Day ${payload.dayNumber} approved! +${payload.xpAwarded} XP`);
+      if (payload.dayNumber === dayNumber) {
+        router.replace("/batch-program");
+      }
+    };
+    const handleRejected = (payload: { dayNumber: number; reviewNote: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["my-batch"] });
+      toast.error(`Day ${payload.dayNumber} needs revision`);
+    };
+    socket.on("batch:day_approved", handleApproved);
+    socket.on("batch:day_rejected", handleRejected);
+    return () => {
+      socket.off("batch:day_approved", handleApproved);
+      socket.off("batch:day_rejected", handleRejected);
+    };
+  }, [socket]);
 
   const toggleTask = (id: string) => {
     if (isLocked) return;
@@ -226,6 +290,7 @@ export default function BatchDayPage() {
   const canMarkPresent =
     !isFutureDay && attStatus !== "present" && attStatus !== "break";
   const programName = (program as any).programName ?? program.batch.name;
+  const embedUrl = dayContent?.resourceUrl ? getEmbedUrl(dayContent.resourceUrl) : null;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
@@ -258,6 +323,29 @@ export default function BatchDayPage() {
           </button>
         </div>
       </div>
+
+      {/* Prominent revision callout — shown before everything when day is rejected */}
+      {status === "rejected" && (
+        <div
+          className="rounded-xl p-4"
+          style={{
+            background: "color-mix(in srgb, #f59e0b 12%, transparent)",
+            border: "1px solid #f59e0b",
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} style={{ color: "#f59e0b", flexShrink: 0 }} />
+            <p className="text-sm font-bold" style={{ color: "#f59e0b" }}>
+              {uiStrings?.batchRevisionLabel ?? "Revision Requested"}
+            </p>
+          </div>
+          <p className="text-sm mt-2 italic" style={{ color: "#f0f0f0" }}>
+            {progress?.reviewNote?.trim()
+              ? progress.reviewNote
+              : "This day was sent back for revision. Please update and resubmit."}
+          </p>
+        </div>
+      )}
 
       {/* Day header */}
       <div
@@ -342,27 +430,6 @@ export default function BatchDayPage() {
         </div>
 
         {/* Status notes */}
-        {status === "rejected" && progress?.reviewNote && (
-          <div
-            className="flex items-start gap-2.5 p-3 rounded-xl"
-            style={{
-              background: "rgba(239,68,68,0.08)",
-              border: "1px solid rgba(239,68,68,0.2)",
-            }}
-          >
-            <XCircle
-              size={14}
-              className="flex-shrink-0 mt-0.5"
-              style={{ color: "#ef4444" }}
-            />
-            <div>
-              <p className="text-xs font-bold" style={{ color: "#ef4444" }}>
-                {uiStrings?.batchRevisionLabel ?? "Revision requested"}
-              </p>
-              <p className="text-sm mt-0.5">{progress.reviewNote}</p>
-            </div>
-          </div>
-        )}
         {isFutureDay && (
           <div
             className="flex items-center gap-2.5 p-3 rounded-xl"
@@ -408,19 +475,32 @@ export default function BatchDayPage() {
           </div>
         )}
         {dayContent?.resourceUrl && (
-          <a
-            href={dayContent.resourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm py-2.5 px-3 rounded-xl transition-colors"
-            style={{
-              background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
-              color: "var(--color-accent)",
-            }}
-          >
-            <ExternalLink size={14} />
-            {uiStrings?.batchOpenResourceLabel ?? "Open Resource"}
-          </a>
+          embedUrl ? (
+            <div className="rounded-xl overflow-hidden" style={{ aspectRatio: "16/9" }}>
+              <iframe
+                src={embedUrl}
+                className="w-full h-full"
+                style={{ border: 0 }}
+                sandbox="allow-scripts allow-same-origin allow-presentation"
+                allowFullScreen
+                title="Resource video"
+              />
+            </div>
+          ) : (
+            <a
+              href={dayContent.resourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm py-2.5 px-3 rounded-xl transition-colors"
+              style={{
+                background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+                color: "var(--color-accent)",
+              }}
+            >
+              <ExternalLink size={14} />
+              {uiStrings?.batchOpenResourceLabel ?? "Open Resource"}
+            </a>
+          )
         )}
         {dayContent?.notes && (
           <div
@@ -452,32 +532,77 @@ export default function BatchDayPage() {
           <div className="space-y-2">
             {tasks.sort((a, b) => a.order - b.order).map((task) => {
               const done = completedTaskIds.includes(task.id);
+              const proof: string | undefined = localTaskProofs[task.id];
+              const isUploading = uploadingTaskIds.has(task.id);
               return (
-                <button
-                  key={task.id}
-                  onClick={() => toggleTask(task.id)}
-                  disabled={!canEdit}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all"
-                  style={{
-                    borderColor: done
-                      ? "rgba(34,197,94,0.3)"
-                      : "var(--color-border, rgba(255,255,255,0.08))",
-                    background: done ? "rgba(34,197,94,0.06)" : "transparent",
-                    cursor: canEdit ? "pointer" : "default",
-                  }}
-                >
-                  {done ? (
-                    <CheckCircle2
-                      size={18}
-                      style={{ color: "#22c55e", flexShrink: 0 }}
-                    />
-                  ) : (
-                    <Circle size={18} className="opacity-30 flex-shrink-0" />
-                  )}
-                  <span className={`text-sm ${done ? "line-through opacity-60" : ""}`}>
-                    {task.title}
-                  </span>
-                </button>
+                <div key={task.id}>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    ref={(el) => { fileInputRefs.current[task.id] = el; }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileSelect(task.id, file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <div
+                    onClick={() => canEdit && toggleTask(task.id)}
+                    role="checkbox"
+                    aria-checked={done}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all"
+                    style={{
+                      borderColor: done
+                        ? "rgba(34,197,94,0.3)"
+                        : "var(--color-border, rgba(255,255,255,0.08))",
+                      background: done ? "rgba(34,197,94,0.06)" : "transparent",
+                      cursor: canEdit ? "pointer" : "default",
+                    }}
+                  >
+                    {done ? (
+                      <CheckCircle2 size={18} style={{ color: "#22c55e", flexShrink: 0 }} />
+                    ) : (
+                      <Circle size={18} className="opacity-30 flex-shrink-0" />
+                    )}
+                    <span className={`text-sm flex-1 ${done ? "line-through opacity-60" : ""}`}>
+                      {task.title}
+                    </span>
+                    {proof && (
+                      <a
+                        href={proof}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                        style={{
+                          color: "var(--color-accent)",
+                          background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                        }}
+                      >
+                        <ExternalLink size={9} />
+                        {uiStrings?.batchProofLabel ?? "Proof"}
+                      </a>
+                    )}
+                    {canEdit && done && (
+                      isUploading ? (
+                        <Loader2 size={14} className="animate-spin flex-shrink-0 opacity-40" />
+                      ) : !proof ? (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); fileInputRefs.current[task.id]?.click(); }}
+                          className="flex-shrink-0 p-1 rounded transition-colors"
+                          style={{ color: "#606060" }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-accent)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#606060"; }}
+                          title="Attach proof"
+                        >
+                          <Paperclip size={14} />
+                        </button>
+                      ) : null
+                    )}
+                  </div>
+                </div>
               );
             })}
           </div>

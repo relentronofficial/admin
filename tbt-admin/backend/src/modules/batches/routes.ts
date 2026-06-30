@@ -6,6 +6,7 @@ import {
   createBatchHandler,
   updateBatchHandler,
   deleteBatchHandler,
+  cloneBatchHandler,
   listBatchDaysHandler,
   getBatchDayDetailHandler,
   upsertBatchDayHandler,
@@ -18,11 +19,13 @@ import {
   approveBreakHandler,
   rejectBreakHandler,
   upsertMemberSettingsHandler,
+  getDayAnalyticsHandler,
 } from './controller.js';
 import {
   approveDayHandler,
   rejectDayHandler,
   getPendingApprovalsHandler,
+  bulkApproveDaysHandler,
 } from '../user-batch/controller.js';
 
 export async function batchRoutes(fastify: FastifyInstance) {
@@ -37,6 +40,7 @@ export async function batchRoutes(fastify: FastifyInstance) {
   fastify.post('/', createBatchHandler);
   fastify.put('/:id', updateBatchHandler);
   fastify.delete('/:id', deleteBatchHandler);
+  fastify.post('/:id/clone', cloneBatchHandler);
 
   // Day content
   fastify.get('/:id/days', listBatchDaysHandler);
@@ -46,6 +50,7 @@ export async function batchRoutes(fastify: FastifyInstance) {
   // Member progress (admin view + manual mark)
   fastify.get('/:id/progress', getBatchProgressHandler);
   fastify.get('/:id/pending', getPendingApprovalsHandler);
+  fastify.post('/:id/pending/bulk-approve', bulkApproveDaysHandler);
   fastify.get('/:id/progress/:memberId', getMemberProgressHandler);
   fastify.put('/:id/progress/:memberId/:dayNumber', upsertMemberProgressHandler);
   fastify.put('/:id/progress/:memberId/:dayNumber/approve', approveDayHandler);
@@ -62,4 +67,7 @@ export async function batchRoutes(fastify: FastifyInstance) {
 
   // Member settings (admin)
   fastify.put('/:id/members/:memberId/settings', upsertMemberSettingsHandler);
+
+  // Day-level analytics
+  fastify.get('/:id/day-analytics', getDayAnalyticsHandler);
 }

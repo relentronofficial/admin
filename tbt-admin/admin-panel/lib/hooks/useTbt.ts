@@ -867,6 +867,39 @@ export const useUpsertMemberBatchSettings = () => {
   });
 };
 
+export const useBulkApproveBatchDays = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, items }: { batchId: string; items: Array<{ memberId: string; dayNumber: number }> }) => {
+      const res: any = await apiClient.post(`/api/batches/${batchId}/pending/bulk-approve`, { items });
+      return res.data;
+    },
+    onSuccess: (_: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['batch-pending', vars.batchId] });
+      qc.invalidateQueries({ queryKey: ['batch-progress', vars.batchId] });
+    },
+  });
+};
+
+export const useBatchDayAnalytics = (batchId: string) =>
+  useQuery({
+    queryKey: ['batch-day-analytics', batchId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/day-analytics`); return res; },
+    enabled: !!batchId,
+    staleTime: 5 * 60 * 1_000,
+  });
+
+export const useCloneBatch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name, startsAt }: { id: string; name: string; startsAt: string }) => {
+      const res: any = await apiClient.post(`/api/batches/${id}/clone`, { name, startsAt });
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batches'] }),
+  });
+};
+
 // ── MEMBER ENROLLMENTS ────────────────────────────────────────────────
 
 export const useMemberEnrollments = (memberId: string) =>

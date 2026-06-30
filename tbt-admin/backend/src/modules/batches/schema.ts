@@ -7,6 +7,7 @@ export const createBatchSchema = z.object({
   startsAt: z.string().min(1, 'Start date is required'),
   endsAt: z.string().optional(),
   isActive: z.boolean().default(true),
+  xpPerDay: z.number().int().min(0).max(500).default(50).optional(),
 });
 
 export const updateBatchSchema = createBatchSchema.partial();
@@ -35,3 +36,12 @@ export const upsertMemberProgressSchema = z.object({
 
 export type UpsertBatchDayBody = z.infer<typeof upsertBatchDaySchema>;
 export type UpsertMemberProgressBody = z.infer<typeof upsertMemberProgressSchema>;
+
+export const bulkApproveSchema = z.object({
+  items: z.array(z.object({
+    memberId: z.string().uuid(),
+    dayNumber: z.number().int().min(1),
+  })).min(1),
+});
+
+export type BulkApproveBody = z.infer<typeof bulkApproveSchema>;

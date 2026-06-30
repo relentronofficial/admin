@@ -20,6 +20,14 @@ export async function listBatchesHandler(req: FastifyRequest, reply: FastifyRepl
       _count: { select: { members: true } },
     },
   });
+  if (batches.length > 0) {
+    const xpRows = await req.server.prisma.$queryRawUnsafe<{ id: string; xp_per_day: number }[]>(
+      `SELECT id, xp_per_day FROM batches WHERE id = ANY($1::uuid[])`,
+      batches.map(b => b.id),
+    );
+    const xpMap = Object.fromEntries(xpRows.map(r => [r.id, Number(r.xp_per_day)]));
+    return reply.send({ success: true, data: batches.map(b => ({ ...b, xpPerDay: xpMap[b.id] ?? 50 })), error: null });
+  }
   return reply.send({ success: true, data: batches, error: null });
 }
 
@@ -53,7 +61,11 @@ export async function getBatchHandler(req: FastifyRequest<{ Params: { id: string
     },
   });
   if (!batch) return reply.status(404).send({ success: false, data: null, error: 'Batch not found' });
-  return reply.send({ success: true, data: batch, error: null });
+  const [xpRow] = await req.server.prisma.$queryRawUnsafe<{ xp_per_day: number }[]>(
+    `SELECT xp_per_day FROM batches WHERE id = $1`,
+    req.params.id,
+  );
+  return reply.send({ success: true, data: { ...batch, xpPerDay: Number(xpRow?.xp_per_day ?? 50) }, error: null });
 }
 
 export async function listProgramsHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -68,7 +80,7 @@ export async function createBatchHandler(req: FastifyRequest, reply: FastifyRepl
   const parsed = createBatchSchema.safeParse(req.body);
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
-  const { startsAt, endsAt, programId, ...rest } = parsed.data;
+  const { startsAt, endsAt, programId, xpPerDay, ...rest } = parsed.data;
   const batch = await req.server.prisma.batch.create({
     data: {
       ...rest,
@@ -89,14 +101,17 @@ export async function createBatchHandler(req: FastifyRequest, reply: FastifyRepl
       _count: { select: { members: true } },
     },
   });
-  return reply.status(201).send({ success: true, data: batch, error: null });
+  if (xpPerDay !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(`UPDATE batches SET xp_per_day=$1 WHERE id=$2`, xpPerDay, batch.id);
+  }
+  return reply.status(201).send({ success: true, data: { ...batch, xpPerDay: xpPerDay ?? 50 }, error: null });
 }
 
 export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   const parsed = updateBatchSchema.safeParse(req.body);
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
-  const { startsAt, endsAt, programId, ...rest } = parsed.data;
+  const { startsAt, endsAt, programId, xpPerDay, ...rest } = parsed.data;
   const batch = await req.server.prisma.batch.update({
     where: { id: req.params.id },
     data: {
@@ -120,7 +135,10 @@ export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: str
       _count: { select: { members: true } },
     },
   });
-  return reply.send({ success: true, data: batch, error: null });
+  if (xpPerDay !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(`UPDATE batches SET xp_per_day=$1 WHERE id=$2`, xpPerDay, batch.id);
+  }
+  return reply.send({ success: true, data: { ...batch, xpPerDay: xpPerDay ?? 50 }, error: null });
 }
 
 export async function deleteBatchHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
@@ -130,6 +148,60 @@ export async function deleteBatchHandler(req: FastifyRequest<{ Params: { id: str
   });
   await req.server.prisma.batch.delete({ where: { id: req.params.id } });
   return reply.send({ success: true, data: null, error: null });
+}
+
+export async function cloneBatchHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const schema = { name: '', startsAt: '' };
+  const body = req.body as any;
+  if (!body?.name?.trim()) return reply.status(400).send({ success: false, data: null, error: 'name is required' });
+  if (!body?.startsAt) return reply.status(400).send({ success: false, data: null, error: 'startsAt is required' });
+
+  const source = await req.server.prisma.batch.findUnique({
+    where: { id: req.params.id },
+    include: { days: { orderBy: { dayNumber: 'asc' } } },
+  });
+  if (!source) return reply.status(404).send({ success: false, data: null, error: 'Batch not found' });
+
+  const newBatch = await req.server.prisma.batch.create({
+    data: {
+      name: body.name.trim(),
+      description: source.description,
+      isActive: false,
+      startsAt: new Date(body.startsAt),
+      endsAt: null,
+      ...(source.programId ? { program: { connect: { id: source.programId } } } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      isActive: true,
+      startsAt: true,
+      endsAt: true,
+      createdAt: true,
+      programId: true,
+      _count: { select: { members: true } },
+    },
+  });
+
+  if (source.days.length > 0) {
+    await req.server.prisma.batchDay.createMany({
+      data: source.days.map(d => ({
+        batchId: newBatch.id,
+        dayNumber: d.dayNumber,
+        title: d.title,
+        notes: d.notes,
+        resourceUrl: d.resourceUrl,
+        tasks: d.tasks ?? undefined,
+        category: d.category,
+      })),
+    });
+  }
+
+  return reply.status(201).send({ success: true, data: newBatch, error: null });
 }
 
 // ─── Day content handlers ──────────────────────────────────────────────────────
@@ -321,7 +393,27 @@ export async function approveBreakHandler(
      WHERE id=$2 AND batch_id=$3 RETURNING *`,
     adminId, req.params.reqId, req.params.id,
   );
-  return reply.send({ success: true, data: record ?? null, error: null });
+
+  if (!record) {
+    return reply.status(404).send({ success: false, data: null, error: 'Break request not found' });
+  }
+
+  // Retroactively mark every day in the approved break range as 'break'.
+  // Uses ON CONFLICT DO UPDATE so existing attendance rows (present/absent) are overwritten —
+  // an approved break supersedes whatever was previously recorded.
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO member_attendance (member_id, batch_id, day_number, status, marked_at, updated_at)
+     SELECT $1, $2, gs.day, 'break', NOW(), NOW()
+     FROM generate_series($3::int, $4::int) AS gs(day)
+     ON CONFLICT (member_id, batch_id, day_number)
+     DO UPDATE SET status = 'break', updated_at = NOW()`,
+    record.member_id,
+    req.params.id,
+    record.start_day,
+    record.end_day,
+  );
+
+  return reply.send({ success: true, data: record, error: null });
 }
 
 // Admin: PUT /api/batches/:id/breaks/:reqId/reject
@@ -355,6 +447,36 @@ export async function upsertMemberSettingsHandler(
     req.params.memberId, req.params.id, extendedDays, notes ?? null, adminId,
   );
   return reply.send({ success: true, data: record, error: null });
+}
+
+export async function getDayAnalyticsHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT
+       day_number,
+       COUNT(*) FILTER (WHERE status = 'approved')         AS approved,
+       COUNT(*) FILTER (WHERE status = 'rejected')         AS rejected,
+       COUNT(*) FILTER (WHERE status = 'pending_approval') AS pending,
+       COUNT(*) FILTER (WHERE status = 'in_progress')      AS in_progress,
+       COUNT(*)                                             AS total
+     FROM member_day_progress
+     WHERE batch_id = $1
+     GROUP BY day_number
+     ORDER BY day_number ASC`,
+    req.params.id,
+  );
+  const data = rows.map(r => ({
+    dayNumber:    Number(r.day_number),
+    approved:     Number(r.approved),
+    rejected:     Number(r.rejected),
+    pending:      Number(r.pending),
+    inProgress:   Number(r.in_progress),
+    total:        Number(r.total),
+    approvalRate: Number(r.total) > 0 ? Math.round((Number(r.approved) / Number(r.total)) * 100) : 0,
+  }));
+  return reply.send({ success: true, data, error: null });
 }
 
 export async function upsertMemberProgressHandler(

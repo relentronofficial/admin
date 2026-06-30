@@ -2192,6 +2192,9 @@ model UiStrings {
   batchProgressSaved          String   @default("Progress saved") @map("batch_progress_saved")
   batchProgressSaveError      String   @default("Failed to save progress") @map("batch_progress_save_error")
   batchSubmitSuccess          String   @default("Submitted for review!") @map("batch_submit_success")
+  batchBreakReasonLabel       String   @default("Reason") @map("batch_break_reason_label")
+  batchBreakRejectedLabel     String   @default("Rejected") @map("batch_break_rejected_label")
+  batchBreakSubmitLabel       String   @default("Submit Request") @map("batch_break_submit_label")
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

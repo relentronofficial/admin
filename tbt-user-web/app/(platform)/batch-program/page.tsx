@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   GraduationCap,
@@ -18,10 +19,13 @@ import {
   Send,
   Loader2,
   X,
+  Flame,
+  Download,
 } from "lucide-react";
 import { PageLoader } from "@/components/common/LoadingSpinner";
-import { useMyBatchProgram, useRequestBreak } from "@/lib/hooks/useBatchProgram";
+import { useMyBatchProgram, useRequestBreak, useDownloadBatchCertificate } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
+import { useSocket } from "@/lib/socket/useSocket";
 import {
   format,
   isValid,
@@ -65,25 +69,48 @@ function getAttendanceForDay(
 
 function BreakRequestModal({
   totalDays,
+  batchStartsAt,
   onClose,
   uiStrings,
 }: {
   totalDays: number;
+  batchStartsAt: string;
   onClose: () => void;
   uiStrings: any;
 }) {
-  const [startDay, setStartDay] = useState<string>("");
-  const [endDay, setEndDay] = useState<string>("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
   const requestBreak = useRequestBreak();
 
+  const batchStartMs = new Date(batchStartsAt).getTime();
+  const minDate = new Date(batchStartsAt).toISOString().split("T")[0];
+  const maxDateObj = new Date(batchStartsAt);
+  maxDateObj.setDate(maxDateObj.getDate() + totalDays - 1);
+  const maxDate = maxDateObj.toISOString().split("T")[0];
+
+  const toDay = (dateStr: string) =>
+    dateStr ? Math.floor((new Date(dateStr).getTime() - batchStartMs) / 86_400_000) + 1 : null;
+
+  const computedStart = toDay(startDate);
+  const computedEnd = toDay(endDate);
+  const dayRangeText =
+    computedStart !== null && computedEnd !== null
+      ? `Days ${computedStart}–${computedEnd} of your batch`
+      : null;
+
+  const inputStyle = {
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
+    color: "inherit",
+  };
+
   const handleSubmit = async () => {
-    const s = parseInt(startDay, 10);
-    const e = parseInt(endDay, 10);
-    if (!s || !e || s > e || s < 1 || e > totalDays) {
-      toast.error("Invalid day range");
-      return;
-    }
+    const s = toDay(startDate);
+    const e = toDay(endDate);
+    if (!s || !e) { toast.error("Please select both dates"); return; }
+    if (s > e) { toast.error("Start date must be before end date"); return; }
+    if (s < 1 || e > totalDays) { toast.error(`Days must be within your batch (1–${totalDays})`); return; }
     try {
       await requestBreak.mutateAsync({ startDay: s, endDay: e, reason: reason || undefined });
       toast.success(uiStrings?.batchBreakSubmittedMsg ?? "Break request submitted");
@@ -116,69 +143,59 @@ function BreakRequestModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-muted-foreground block mb-1">
-              {uiStrings?.batchBreakStartLabel ?? "Start day"}
+              {uiStrings?.batchBreakStartLabel ?? "Start date"}
             </label>
             <input
-              type="number"
-              value={startDay}
-              onChange={(e) => setStartDay(e.target.value)}
-              min={1}
-              max={totalDays}
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-              style={{
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
-                color: "inherit",
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                if (endDate && e.target.value > endDate) setEndDate(e.target.value);
               }}
+              min={minDate}
+              max={maxDate}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={inputStyle}
             />
           </div>
           <div>
             <label className="text-xs text-muted-foreground block mb-1">
-              {uiStrings?.batchBreakEndLabel ?? "End day"}
+              {uiStrings?.batchBreakEndLabel ?? "End date"}
             </label>
             <input
-              type="number"
-              value={endDay}
-              onChange={(e) => setEndDay(e.target.value)}
-              min={1}
-              max={totalDays}
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              min={startDate || minDate}
+              max={maxDate}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-              style={{
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
-                color: "inherit",
-              }}
+              style={inputStyle}
             />
           </div>
         </div>
+        {dayRangeText && (
+          <p className="text-xs text-center font-semibold" style={{ color: "var(--color-accent)" }}>
+            {dayRangeText}
+          </p>
+        )}
         <div>
           <label className="text-xs text-muted-foreground block mb-1">Reason</label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
-            placeholder={
-              uiStrings?.batchBreakReasonPlaceholder ?? "Reason for taking a break..."
-            }
+            placeholder={uiStrings?.batchBreakReasonPlaceholder ?? "Reason for taking a break..."}
             className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
-              color: "inherit",
-            }}
+            style={inputStyle}
           />
         </div>
         <button
           onClick={handleSubmit}
-          disabled={requestBreak.isPending}
+          disabled={requestBreak.isPending || !startDate || !endDate}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50"
           style={{ background: "var(--color-accent)" }}
         >
-          {requestBreak.isPending ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <Send size={15} />
-          )}
+          {requestBreak.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
           Submit Request
         </button>
       </div>
@@ -189,8 +206,11 @@ function BreakRequestModal({
 export default function BatchProgramPage() {
   const { uiStrings } = useSiteConfig();
   const { data: program, isLoading } = useMyBatchProgram();
+  const queryClient = useQueryClient();
+  const { socket } = useSocket();
   const [calMonth, setCalMonth] = useState(() => new Date());
   const [showBreakModal, setShowBreakModal] = useState(false);
+  const downloadCertificate = useDownloadBatchCertificate();
 
   const totalDays: number = (program as any)?.totalDays ?? 90;
 
@@ -322,7 +342,60 @@ export default function BatchProgramPage() {
     });
   }, [program, calMonth, progressMap, attendanceMap, daysElapsed, totalDays]);
 
+  const submitStreak = useMemo(() => {
+    let streak = 0;
+    for (let day = daysElapsed; day >= 1; day--) {
+      const p = progressMap[String(day)];
+      if (p && ["pending_approval", "approved"].includes(p.status)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }, [progressMap, daysElapsed]);
+
   const breaks: any[] = (program as any)?.breaks ?? [];
+
+  const todayDay = daysElapsed + 1;
+  const batchNotStarted = program?.batch
+    ? new Date(program.batch.startsAt) > new Date()
+    : false;
+  const batchCompleted = daysElapsed >= totalDays;
+  const todayStatus = (progressMap[String(todayDay)]?.status ?? "not_started") as DayStatus;
+
+  // Auto-scroll the day list to today's row once batch data loads
+  useEffect(() => {
+    if (!program?.batch || batchNotStarted || batchCompleted) return;
+    const el = document.getElementById(`day-row-${todayDay}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program?.batch?.id]);
+
+  // Real-time: update when admin approves or rejects a day
+  useEffect(() => {
+    if (!socket) return;
+    const handleApproved = (payload: { dayNumber: number; xpAwarded: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["my-batch"] });
+      toast.success(`Day ${payload.dayNumber} approved! +${payload.xpAwarded} XP`);
+    };
+    const handleRejected = (payload: { dayNumber: number; reviewNote: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["my-batch"] });
+      toast.error(`Day ${payload.dayNumber} needs revision`);
+    };
+    const handleCompleted = (payload: { totalDays: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["my-batch"] });
+      toast.success(uiStrings?.batchCompletedMsg ?? `Congratulations! You completed all ${payload.totalDays} days. 🏆`);
+    };
+    socket.on("batch:day_approved", handleApproved);
+    socket.on("batch:day_rejected", handleRejected);
+    socket.on("batch:completed", handleCompleted);
+    return () => {
+      socket.off("batch:day_approved", handleApproved);
+      socket.off("batch:day_rejected", handleRejected);
+      socket.off("batch:completed", handleCompleted);
+    };
+  }, [socket]);
 
   if (isLoading) return <PageLoader />;
 
@@ -333,26 +406,50 @@ export default function BatchProgramPage() {
           {uiStrings?.batchProgramLabel ?? "Program"}
         </h2>
         <div
-          className="rounded-2xl border p-12 text-center"
+          className="rounded-2xl border px-8 py-16 flex flex-col items-center text-center gap-5"
           style={{
             borderColor: "var(--color-border, rgba(255,255,255,0.08))",
             background: "var(--color-bg-surface)",
           }}
         >
-          <GraduationCap size={40} className="mx-auto mb-4 opacity-30" />
-          <p className="text-muted-foreground">
-            {uiStrings?.batchNotAssignedMsg ?? "You haven't been assigned to a batch yet."}
-          </p>
-          <p className="text-muted-foreground text-sm mt-1">
-            {uiStrings?.batchContactMsg ?? "Contact your account manager to get assigned."}
-          </p>
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="opacity-25"
+          >
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+            <rect x="9" y="3" width="6" height="4" rx="1" />
+            <path d="M9 12h6M9 16h4" />
+          </svg>
+
+          <div className="space-y-1.5">
+            <p className="font-semibold text-base">
+              {uiStrings?.batchNotAssignedMsg ?? "You're not enrolled in a batch yet."}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {uiStrings?.batchContactMsg ?? "Contact your account manager to get assigned."}
+            </p>
+          </div>
+
+          <Link
+            href="/messages"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+            style={{ background: "var(--color-accent)", color: "#fff" }}
+          >
+            {uiStrings?.batchNoAssignedCta ?? "Message Support"}
+          </Link>
         </div>
       </div>
     );
   }
 
   const startDate = new Date(program.batch.startsAt);
-  const todayDay = daysElapsed + 1;
 
   // Calendar grid: Sunday = 0, pad start with empty cells
   const firstDayOfWeek = getDay(startOfMonth(calMonth));
@@ -382,6 +479,111 @@ export default function BatchProgramPage() {
           {uiStrings?.batchRequestBreakLabel ?? "Request Break"}
         </button>
       </div>
+
+      {/* Today shortcut / Batch status notice */}
+      {batchNotStarted ? (
+        <div
+          className="flex items-center gap-4 p-4 rounded-2xl"
+          style={{
+            background: "color-mix(in srgb, var(--color-accent) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)",
+          }}
+        >
+          <CalendarDays size={20} style={{ color: "var(--color-accent)", flexShrink: 0 }} />
+          <div>
+            <p className="font-semibold text-sm">Batch starts on</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isValid(startDate) ? format(startDate, "dd MMM yyyy") : "—"}
+            </p>
+          </div>
+        </div>
+      ) : batchCompleted ? (
+        <div
+          className="flex items-center gap-4 p-4 rounded-2xl flex-wrap"
+          style={{
+            background: "rgba(34,197,94,0.08)",
+            border: "1px solid rgba(34,197,94,0.25)",
+          }}
+        >
+          <CheckCircle2 size={20} style={{ color: "#22c55e", flexShrink: 0 }} />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: "#22c55e" }}>
+              {uiStrings?.batchCompletedMsg ?? "Congratulations! You completed the full batch."}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {totalDays} days approved — your certificate is ready.
+            </p>
+          </div>
+          <button
+            onClick={() => downloadCertificate.mutate()}
+            disabled={downloadCertificate.isPending}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex-shrink-0"
+            style={{ background: "#22c55e", color: "#fff" }}
+          >
+            {downloadCertificate.isPending ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Download size={14} />
+            )}
+            {uiStrings?.batchCertificateLabel ?? "Download Certificate"}
+          </button>
+        </div>
+      ) : (
+        <Link
+          href={`/batch-program/${todayDay}`}
+          className="flex items-center gap-4 p-4 rounded-2xl group transition-opacity hover:opacity-90"
+          style={{
+            background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+            borderTop: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)",
+            borderRight: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)",
+            borderBottom: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)",
+            borderLeft: "3px solid var(--color-accent)",
+          }}
+        >
+          {/* Day number badge */}
+          <div
+            className="w-12 h-12 rounded-xl flex flex-col items-center justify-center flex-shrink-0"
+            style={{ background: "var(--color-accent)" }}
+          >
+            <span className="text-white text-[10px] font-bold uppercase tracking-wider leading-none">
+              {uiStrings?.batchTodayLabel ?? "Today"}
+            </span>
+            <span className="text-white text-lg font-bold leading-tight">{todayDay}</span>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm truncate">
+              {daysMap[String(todayDay)]?.title ?? `Day ${todayDay}`}
+            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {daysMap[String(todayDay)]?.category && (
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
+                  style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}
+                >
+                  {daysMap[String(todayDay)].category}
+                </span>
+              )}
+              <span
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
+                style={{
+                  background: statusConfig[todayStatus]?.bg || "rgba(255,255,255,0.08)",
+                  color: statusConfig[todayStatus]?.color || "inherit",
+                }}
+              >
+                {statusConfig[todayStatus]?.label}
+              </span>
+            </div>
+          </div>
+
+          <ChevronRight
+            size={18}
+            style={{ color: "var(--color-accent)", flexShrink: 0 }}
+            className="opacity-70 group-hover:opacity-100 transition-opacity"
+          />
+        </Link>
+      )}
 
       {/* Stats */}
       <div
@@ -449,6 +651,31 @@ export default function BatchProgramPage() {
                 style={{ width: `${stats.attendanceRate}%`, background: "#22c55e" }}
               />
             </div>
+          </div>
+        )}
+
+        {/* Streak */}
+        {daysElapsed > 0 && (
+          <div
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+            style={{
+              background: submitStreak >= 7 ? "rgba(234,179,8,0.08)" : "rgba(255,255,255,0.03)",
+              border: `1px solid ${submitStreak >= 7 ? "rgba(234,179,8,0.3)" : "rgba(255,255,255,0.06)"}`,
+            }}
+          >
+            <Flame
+              size={16}
+              style={{ color: submitStreak >= 7 ? "#eab308" : "var(--color-accent)", flexShrink: 0 }}
+            />
+            <span className="text-xs text-muted-foreground flex-1">
+              {uiStrings?.batchStreakLabel ?? "Current Streak"}
+            </span>
+            <span
+              className="text-sm font-bold"
+              style={{ color: submitStreak >= 7 ? "#eab308" : "var(--color-accent)" }}
+            >
+              {submitStreak} {uiStrings?.batchStreakUnit ?? "days"}
+            </span>
           </div>
         )}
 
@@ -718,6 +945,7 @@ export default function BatchProgramPage() {
             return (
               <Link
                 key={dayNum}
+                id={`day-row-${dayNum}`}
                 href={`/batch-program/${dayNum}`}
                 className="flex items-center gap-4 p-4 rounded-xl border transition-all group"
                 style={{
@@ -815,6 +1043,7 @@ export default function BatchProgramPage() {
       {showBreakModal && (
         <BreakRequestModal
           totalDays={totalDays}
+          batchStartsAt={program.batch.startsAt}
           onClose={() => setShowBreakModal(false)}
           uiStrings={uiStrings}
         />

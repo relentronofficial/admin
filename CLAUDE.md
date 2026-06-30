@@ -17,6 +17,10 @@ tbt-user-web/    # Next.js 15 (App Router) member-facing frontend (port 3001)
 
 **NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.**
 
+`tbt-admin-safe/` is a backup snapshot directory — not a workspace, not a source of truth. Ignore it entirely.
+
+**Surgical updates over large rewrites** — prefer targeted data sanitation (handling nulls/empty strings, guarding one field) over refactoring entire controllers or modules. Minimal, non-breaking fixes only.
+
 ## Commands
 
 ### Admin + Backend (from `tbt-admin/`)
@@ -35,6 +39,7 @@ npm run build:backend
 npm run typecheck        # Both workspaces
 npm run lint
 npm run format
+npm run seed:gamified -w backend   # Seed XP/gamification data
 
 # TypeScript check (targeted — Bash syntax; use before/after any edit)
 cd tbt-admin && npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | grep <filename>
@@ -94,7 +99,7 @@ npm run format      # prettier --write .
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (183+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below).
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (183+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB), `useCreateBunnyVideo` (`POST /api/upload/bunny-video-create`), `useDeleteBunnyVideo` (`DELETE /api/upload/bunny-video/:videoId`)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts`
@@ -182,7 +187,7 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
-- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`)
+- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`)
 - `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`; backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
 - All hooks are `"use client"` and use TanStack Query v5
@@ -309,6 +314,8 @@ const detectDuration = (file: File): Promise<number> =>
 - Always check `isLoaded` before accessing Clerk state in Client Components: `if (!isLoaded) return null`
 - Only **one layer** should own a given redirect path — stacking redirects across middleware + layout + page causes infinite redirect loops
 - Never use `useUser()`, `useAuth()`, or `useSession()` inside Server Components — these are Client Component-only hooks
+- Middleware matcher must **never** intercept `_next/*`, `favicon.ico`, Clerk internal routes, or standard static assets — always explicitly exclude them in the matcher config
+- Public routes (`/`, `/sign-in`, `/sign-up`) must always be explicitly excluded from Clerk middleware protection
 
 ### Real-time (Admin)
 `lib/socket/client.ts` exports `getAdminSocket()` — call inside `useEffect`, register `.on()` listeners, clean up with `.off()` on unmount.
@@ -447,7 +454,9 @@ POST /api/courses/:id/badges/:badgeId/award
     - **Practice Arena modal** (`PracticeArenaModal`): pulls `(lesson as any).quizData?.questions` from all lessons in the course query, shuffles them into interleaved practice. No XP, no backend call.
     - **localStorage keys**: `tbt_cr_${courseId}` — completion timestamps `{ [lessonId]: timestampMs }`. `tbt_reflections` — global across all courses. `tbt_speed` — persisted playback speed.
     - **`Lesson` type does not include `quizData`** — the TypeScript interface in `types/index.ts` omits it; access as `(lesson as any).quizData` wherever needed.
-23. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both types now carry `type: "workshop" | "course"` as a discriminator (in `tbt-user-web/types/index.ts`). Workshop items include `workshopSlug`/`workshopTitle`; course items include `courseId`/`courseTitle`. Dashboard "Recently Watched" and "Continue Watching" sections render both types from a single merged list — don't branch the hook calls or filter by content type.
+23. **Batch program `totalDays` is dynamic** — `totalDays = batch.program.durationDays + memberBatchSettings.extendedDays`. Never hardcode 90. `useMyBatchProgram` response now includes `totalDays`, `attendance` (array of `{ dayNumber, status, notes, markedAt }`), and `breaks` (array of break requests). Day objects include a `category` string field.
+24. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both types now carry `type: "workshop" | "course"` as a discriminator (in `tbt-user-web/types/index.ts`). Workshop items include `workshopSlug`/`workshopTitle`; course items include `courseId`/`courseTitle`. Dashboard "Recently Watched" and "Continue Watching" sections render both types from a single merged list — don't branch the hook calls or filter by content type.
+25. **`batches.xp_per_day` is a raw SQL column** — not in Prisma schema; added via idempotent `ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50` in `prisma.ts` startup. Reading: after `prisma.batch.findMany/findUnique`, run a supplementary `$queryRawUnsafe` and merge `xpPerDay` via object map. Writing (create/update): **destructure `xpPerDay` out of the body before spreading into `prisma.batch.create/update`** (Prisma throws "Unknown field" otherwise), then persist via `$executeRawUnsafe('UPDATE batches SET xp_per_day=$1 WHERE id=$2', xpPerDay, id)`. Default fallback: `xpRow?.xp_per_day ?? 50`. On approve, `approveDayHandler` / `bulkApproveDaysHandler` fetch `xp_per_day` from the DB (once, before any loop) and use it for `pointsLedger` + socket emit `batch:day_approved` + notification text.
 
 ## Socket Events
 
@@ -459,7 +468,7 @@ Socket.IO rooms and the events each room receives:
 | Room | Events emitted |
 |---|---|
 | `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `chat:conversation_new`, `chat:unread_ping` |
-| `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder` |
+| `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`) |
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
 | `conversation:{id}` | `chat:message`, `chat:typing`, `chat:conversation_closed`, `chat:conversation_reopened` |
@@ -478,7 +487,7 @@ Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` 
 | Clerk | Admin panel auth (API + frontend). Also installed in user-web for `(auth)/` pages and middleware auth-state; main user login uses JWT cookies |
 | Firebase | Push notifications |
 | Resend / Twilio | Email / SMS |
-| Anthropic Claude | AI quiz generation in workshops (`claude-haiku-4-5`, requires `ANTHROPIC_API_KEY`) |
+| Anthropic Claude | AI quiz generation in workshops + live call summary generation (`claude-haiku-4-5`, requires `ANTHROPIC_API_KEY`) |
 | pdfkit | Server-side PDF generation |
 | Sentry | Error tracking |
 | Better Stack | Log aggregation |
@@ -518,3 +527,6 @@ Sections 1–12 implemented in `tbt-user-web/`. Includes: marketing landing, pla
 
 ### Course Platform (`TBT_Course_Platform_Spec.md`) — ✅ Complete (2026-06-24)
 VOD course platform with pricing/access control, XP gamification, episode quizzes, DRM, badges, certificates, upsell/cross-sell, leaderboards, and analytics. See `TBT_Course_Platform_Spec.md` for the full spec.
+
+### Batch Program Improvements (`TASK_FEATURE_SPEC.md`) — ✅ Complete (2026-06-30)
+All 25 items implemented: attendance marking, break requests (admin approve/reject), per-day categories, calendar view, bulk approve, task proofs, configurable XP per batch (`xp_per_day`), extended days per member, UI-string driven labels, and socket notifications.

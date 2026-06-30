@@ -33,10 +33,11 @@ npm run lint             # Both workspaces
 npm run format           # Prettier (whole repo)
 
 # Database
-npm run prepare                      # Generate Prisma client (required after schema changes)
+npm run prisma:generate -w backend   # Regenerate Prisma client after schema changes
 npm run prisma:migrate -w backend    # Run migrations
 npm run prisma:studio -w backend     # GUI for DB
 npx prisma db seed                   # Seed super admin (run from backend/)
+npm run seed:gamified                # Seed XP/gamification data
 ```
 
 ## Architecture
@@ -57,7 +58,7 @@ Clerk is the auth provider for both frontend and backend.
 
 ### Frontend Structure
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). Response interceptor unwraps `response.data`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks for workshops, hero, content sections, courses, config, nav, tiers, badges, notifications, products, resources, batches, live calls, analytics (`useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics`), and community. Add new hooks to the bottom.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks for workshops, hero, content sections, courses, config, nav, tiers, badges, notifications, products, resources, live calls, analytics (`useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics`), community, and 21 course-platform hooks. Batch hooks: `useGetBatch`, `useListBatches`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`. Batch objects include `xpPerDay` (int, default 50) — raw SQL column, not Prisma schema. Add new hooks to the bottom.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `{ status }` filter for pending/active/etc.), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`), and related mutations
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related mutations
@@ -181,5 +182,9 @@ Required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys (frontend + ba
 ## PRD Reference
 Full PRD: `F:\admin\TBT_Admin_PRD.md`
 Status tracker: `F:\admin\tbt-admin\PROJECT_STATUS.md`
-Pending tasks: `F:\admin\tbt-admin\PENDING_TASKS.md`
 Architecture detail: `F:\admin\tbt-admin\ARCHITECTURE.md`
+
+## Implementation Status
+- All 18 Admin PRD sections ✅ complete
+- Course Platform (`TBT_Course_Platform_Spec.md`) ✅ complete (2026-06-24)
+- Batch Program Improvements (`TASK_FEATURE_SPEC.md`) ✅ complete (2026-06-30): attendance, break requests, categories, calendar, bulk approve, task proofs, `xp_per_day`, extended days, socket notifications

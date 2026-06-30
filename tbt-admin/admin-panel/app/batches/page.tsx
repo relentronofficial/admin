@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   GraduationCap,
@@ -19,6 +19,7 @@ import {
   ToggleRight,
   ChevronRight,
   BarChart2,
+  Copy,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -28,6 +29,7 @@ import {
   useUpdateBatch,
   useDeleteBatch,
   useListPrograms,
+  useCloneBatch,
 } from "@/lib/hooks/useTbt";
 import { useListMembers, useUpdateMember } from "@/lib/hooks/useMembers";
 import { useQueryClient } from "@tanstack/react-query";
@@ -47,6 +49,7 @@ type BatchForm = {
   startsAt: string;
   endsAt: string;
   isActive: boolean;
+  xpPerDay: number;
 };
 
 const emptyForm: BatchForm = {
@@ -56,6 +59,7 @@ const emptyForm: BatchForm = {
   startsAt: "",
   endsAt: "",
   isActive: true,
+  xpPerDay: 50,
 };
 
 export default function BatchesPage() {
@@ -67,9 +71,15 @@ export default function BatchesPage() {
   const { data: programsRes } = useListPrograms();
   const programs: any[] = (programsRes as any)?.data || [];
 
+  const batchNameMap: Record<string, string> = useMemo(
+    () => Object.fromEntries(batches.map((b: any) => [b.id, b.name])),
+    [batches],
+  );
+
   const createBatch = useCreateBatch();
   const updateBatch = useUpdateBatch();
   const deleteBatch = useDeleteBatch();
+  const cloneBatch = useCloneBatch();
   const updateMember = useUpdateMember();
 
   // Modals
@@ -77,6 +87,9 @@ export default function BatchesPage() {
   const [editingBatch, setEditingBatch] = useState<any | null>(null);
   const [deletingBatch, setDeletingBatch] = useState<any | null>(null);
   const [managingBatch, setManagingBatch] = useState<any | null>(null);
+  const [cloningBatch, setCloningBatch] = useState<any | null>(null);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneStartsAt, setCloneStartsAt] = useState("");
 
   // Form state
   const [form, setForm] = useState<BatchForm>(emptyForm);
@@ -104,6 +117,7 @@ export default function BatchesPage() {
         startsAt: editingBatch.startsAt ? new Date(editingBatch.startsAt).toISOString().split("T")[0] : "",
         endsAt: editingBatch.endsAt ? new Date(editingBatch.endsAt).toISOString().split("T")[0] : "",
         isActive: editingBatch.isActive ?? true,
+        xpPerDay: editingBatch.xpPerDay ?? 50,
       });
       setFormErr("");
     }
@@ -126,6 +140,7 @@ export default function BatchesPage() {
         startsAt: form.startsAt,
         endsAt: form.endsAt || undefined,
         isActive: form.isActive,
+        xpPerDay: form.xpPerDay,
       });
       toast.success("Batch created");
       setCreateOpen(false);
@@ -146,6 +161,7 @@ export default function BatchesPage() {
         startsAt: form.startsAt,
         endsAt: form.endsAt || undefined,
         isActive: form.isActive,
+        xpPerDay: form.xpPerDay,
       });
       toast.success("Batch updated");
       setEditingBatch(null);
@@ -165,7 +181,33 @@ export default function BatchesPage() {
     }
   };
 
+  const openClone = (batch: any) => {
+    setCloningBatch(batch);
+    setCloneName(`Copy of ${batch.name}`);
+    setCloneStartsAt("");
+  };
+
+  const handleClone = async () => {
+    if (!cloneName.trim()) { toast.error("Batch name is required"); return; }
+    if (!cloneStartsAt) { toast.error("Start date is required"); return; }
+    try {
+      const result: any = await cloneBatch.mutateAsync({ id: cloningBatch.id, name: cloneName.trim(), startsAt: cloneStartsAt });
+      toast.success(`Batch cloned — ${result?.name ?? cloneName}`);
+      setCloningBatch(null);
+      if (result?.id) router.push(`/batches/${result.id}`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to clone batch");
+    }
+  };
+
   const handleAssignMember = async (member: any) => {
+    if (member.batchId && member.batchId !== managingBatch.id) {
+      const oldName = batchNameMap[member.batchId] ?? "another batch";
+      const ok = window.confirm(
+        `This will move ${member.firstName} from "${oldName}" to "${managingBatch.name}". Continue?`,
+      );
+      if (!ok) return;
+    }
     try {
       await updateMember.mutateAsync({ id: member.id, data: { batchId: managingBatch.id } });
       toast.success(`${member.firstName} added to batch`);
@@ -246,6 +288,17 @@ export default function BatchesPage() {
             className={cn(inputCls, "color-scheme-dark")}
           />
         </div>
+      </div>
+      <div>
+        <label className={labelCls}>XP Per Day <span className="text-[#666]">(awarded on approval)</span></label>
+        <input
+          type="number"
+          min={0}
+          max={500}
+          value={form.xpPerDay}
+          onChange={(e) => setForm(f => ({ ...f, xpPerDay: Math.max(0, Math.min(500, parseInt(e.target.value) || 0)) }))}
+          className={inputCls}
+        />
       </div>
       <div className="flex items-center justify-between bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 h-11">
         <span className="text-sm text-[#a0a0a0]">Active batch</span>
@@ -345,6 +398,13 @@ export default function BatchesPage() {
                     title="Manage members"
                   >
                     <Users size={14} />
+                  </button>
+                  <button
+                    onClick={() => openClone(batch)}
+                    className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#f0f0f0] transition-all"
+                    title="Clone batch"
+                  >
+                    <Copy size={14} />
                   </button>
                   <button
                     onClick={() => { setEditingBatch(batch); }}
@@ -565,9 +625,13 @@ export default function BatchesPage() {
                             </p>
                             <p className="text-[11px] text-[#606060] truncate">{m.memberId} · {m.phone}</p>
                           </div>
-                          {m.batchId && (
-                            <span className="text-[10px] text-[#888] bg-[#2a2a2a] px-2 py-0.5 rounded font-mono flex-shrink-0">
-                              In another batch
+                          {m.batchId && m.batchId !== managingBatch?.id && (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 uppercase tracking-wide"
+                              style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}
+                              title={`Currently in: ${batchNameMap[m.batchId] ?? "another batch"}`}
+                            >
+                              {batchNameMap[m.batchId] ?? "Another batch"}
                             </span>
                           )}
                           <button
@@ -597,6 +661,55 @@ export default function BatchesPage() {
                 className="px-4 py-2 bg-[#1f1f1f] hover:bg-[#262626] text-[#a0a0a0] hover:text-white rounded-lg text-sm font-semibold transition-colors"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Clone Batch Modal ── */}
+      {cloningBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[#1f1f1f]">
+              <div>
+                <h2 className="text-[16px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">Clone Batch</h2>
+                <p className="text-[12px] text-[#606060] mt-0.5">Copies all {(cloningBatch as any)._count?.members !== undefined ? "" : "day "}content from <span className="text-[#a0a0a0]">{cloningBatch.name}</span></p>
+              </div>
+              <button onClick={() => setCloningBatch(null)} className="text-[#606060] hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className={labelCls}>New Batch Name <span className="text-[#dc2626]">*</span></label>
+                <input
+                  value={cloneName}
+                  onChange={(e) => setCloneName(e.target.value)}
+                  className={inputCls}
+                  placeholder="e.g. Copy of Batch 25"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Start Date <span className="text-[#dc2626]">*</span></label>
+                <input
+                  type="date"
+                  value={cloneStartsAt}
+                  onChange={(e) => setCloneStartsAt(e.target.value)}
+                  className={cn(inputCls, "color-scheme-dark")}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f1f]">
+              <button onClick={() => setCloningBatch(null)} className="px-5 py-2.5 text-[#888] hover:text-white text-sm font-semibold transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleClone}
+                disabled={cloneBatch.isPending}
+                className="flex items-center gap-2 bg-[#dc2626] hover:bg-red-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors"
+              >
+                {cloneBatch.isPending ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
+                Clone Batch
               </button>
             </div>
           </div>
