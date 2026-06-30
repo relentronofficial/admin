@@ -30,7 +30,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       select: {
         id: true, name: true, description: true,
         startsAt: true, endsAt: true, isActive: true,
-        program: { select: { name: true } },
+        program: { select: { name: true, durationDays: true } },
       },
     }),
     req.server.prisma.batchDay.findMany({
@@ -48,6 +48,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     data: {
       batch,
       programName: (batch as any)?.program?.name ?? null,
+      totalDays: (batch as any)?.program?.durationDays ?? 90,
       days,
       progress,
     },

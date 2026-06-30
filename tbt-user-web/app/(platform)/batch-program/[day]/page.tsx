@@ -19,18 +19,15 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useMyBatchProgram, useSaveBatchDraft, useSubmitBatchDay } from "@/lib/hooks/useBatchProgram";
+import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
 type DayStatus = "not_started" | "in_progress" | "pending_approval" | "approved" | "rejected";
 
-function StatusBadge({ status }: { status: DayStatus }) {
-  const cfg: Record<DayStatus, { label: string; color: string; bg: string }> = {
-    not_started:      { label: "Not started",     color: "#888",    bg: "rgba(255,255,255,0.06)" },
-    in_progress:      { label: "In progress",      color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
-    pending_approval: { label: "Pending review",   color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
-    approved:         { label: "Approved ✓",       color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
-    rejected:         { label: "Needs revision",   color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
-  };
-  const c = cfg[status];
+function StatusBadge({ status, labels }: {
+  status: DayStatus;
+  labels: Record<DayStatus, { label: string; color: string; bg: string }>;
+}) {
+  const c = labels[status];
   return (
     <span className="text-[11px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider" style={{ color: c.color, background: c.bg }}>
       {c.label}
@@ -42,10 +39,21 @@ export default function BatchDayPage() {
   const { day } = useParams<{ day: string }>();
   const router = useRouter();
   const dayNumber = parseInt(day, 10);
+  const { uiStrings } = useSiteConfig();
 
   const { data: program, isLoading } = useMyBatchProgram();
   const saveDraft = useSaveBatchDraft();
   const submitDay = useSubmitBatchDay();
+
+  const totalDays: number = (program as any)?.totalDays ?? 90;
+
+  const statusLabels = useMemo(() => ({
+    not_started:      { label: uiStrings?.batchStatusNotStarted ?? "Not started",     color: "#888",    bg: "rgba(255,255,255,0.06)" },
+    in_progress:      { label: uiStrings?.batchStatusInProgress ?? "In progress",      color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+    pending_approval: { label: uiStrings?.batchStatusPendingReview ?? "Pending review", color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+    approved:         { label: uiStrings?.batchStatusApprovedCheck ?? "Approved ✓",   color: "#22c55e", bg: "rgba(34,197,94,0.12)" },
+    rejected:         { label: uiStrings?.batchStatusNeedsRevision ?? "Needs revision", color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
+  }), [uiStrings]);
 
   // Find day content + progress
   const dayContent = useMemo(() =>
@@ -61,7 +69,7 @@ export default function BatchDayPage() {
   const isLocked = status === "approved";
 
   const daysElapsed = program?.batch
-    ? Math.min(90, Math.max(0, Math.floor((Date.now() - new Date(program.batch.startsAt).getTime()) / 86_400_000)))
+    ? Math.min(totalDays, Math.max(0, Math.floor((Date.now() - new Date(program.batch.startsAt).getTime()) / 86_400_000)))
     : 0;
   const isFutureDay = dayNumber > daysElapsed + 1;
 
@@ -97,9 +105,9 @@ export default function BatchDayPage() {
     try {
       await saveDraft.mutateAsync({ dayNumber, journalEntry: journalEntry || undefined, completedTaskIds });
       setDirty(false);
-      toast.success("Progress saved");
+      toast.success(uiStrings?.batchProgressSaved ?? "Progress saved");
     } catch {
-      toast.error("Failed to save progress");
+      toast.error(uiStrings?.batchProgressSaveError ?? "Failed to save progress");
     }
   };
 
@@ -109,7 +117,7 @@ export default function BatchDayPage() {
     }
     try {
       await submitDay.mutateAsync(dayNumber);
-      toast.success("Submitted for review!");
+      toast.success(uiStrings?.batchSubmitSuccess ?? "Submitted for review!");
     } catch (e: any) {
       toast.error(e?.response?.data?.error ?? "Failed to submit");
     }
@@ -126,13 +134,14 @@ export default function BatchDayPage() {
   if (!program?.batch) {
     return (
       <div className="py-20 text-center text-muted-foreground">
-        You are not currently assigned to a batch.
+        {uiStrings?.batchNotAssignedNote ?? "You are not currently assigned to a batch."}
       </div>
     );
   }
 
   const canEdit = !isLocked && !isFutureDay && status !== "pending_approval";
   const canSubmit = !isLocked && !isFutureDay && status !== "pending_approval";
+  const programName = (program as any).programName ?? program.batch.name;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
@@ -143,7 +152,7 @@ export default function BatchDayPage() {
           className="flex items-center gap-2 text-sm text-muted-foreground hover:opacity-80 transition-opacity"
         >
           <ArrowLeft size={16} />
-          90-Day Program
+          {programName}
         </button>
         <div className="flex items-center gap-1">
           <button
@@ -153,10 +162,10 @@ export default function BatchDayPage() {
           >
             <ChevronLeft size={18} />
           </button>
-          <span className="text-sm px-2 text-muted-foreground">{dayNumber} / 90</span>
+          <span className="text-sm px-2 text-muted-foreground">{dayNumber} / {totalDays}</span>
           <button
             onClick={() => router.push(`/batch-program/${dayNumber + 1}`)}
-            disabled={dayNumber >= 90}
+            disabled={dayNumber >= totalDays}
             className="p-1.5 rounded-lg transition-colors hover:bg-white/5 disabled:opacity-30"
           >
             <ChevronRight size={18} />
@@ -173,7 +182,7 @@ export default function BatchDayPage() {
               {dayContent?.title ?? `Day ${dayNumber}`}
             </h2>
           </div>
-          <StatusBadge status={status} />
+          <StatusBadge status={status} labels={statusLabels} />
         </div>
 
         {/* Rejection note */}
@@ -181,7 +190,7 @@ export default function BatchDayPage() {
           <div className="flex items-start gap-2.5 p-3 rounded-xl" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
             <XCircle size={14} className="flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
             <div>
-              <p className="text-xs font-bold" style={{ color: "#ef4444" }}>Revision requested</p>
+              <p className="text-xs font-bold" style={{ color: "#ef4444" }}>{uiStrings?.batchRevisionLabel ?? "Revision requested"}</p>
               <p className="text-sm mt-0.5">{progress.reviewNote}</p>
             </div>
           </div>
@@ -191,7 +200,7 @@ export default function BatchDayPage() {
         {isFutureDay && (
           <div className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
             <Clock size={14} className="opacity-40" />
-            <p className="text-sm text-muted-foreground">This day hasn&apos;t started yet. You can view but not submit.</p>
+            <p className="text-sm text-muted-foreground">{uiStrings?.batchFutureNote ?? "This day hasn't started yet. You can view but not submit."}</p>
           </div>
         )}
 
@@ -199,7 +208,7 @@ export default function BatchDayPage() {
         {status === "pending_approval" && (
           <div className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.2)" }}>
             <AlertCircle size={14} style={{ color: "#a78bfa" }} />
-            <p className="text-sm" style={{ color: "#a78bfa" }}>Submitted for review — waiting for account manager approval</p>
+            <p className="text-sm" style={{ color: "#a78bfa" }}>{uiStrings?.batchPendingNote ?? "Submitted for review — waiting for account manager approval"}</p>
           </div>
         )}
 
@@ -207,7 +216,7 @@ export default function BatchDayPage() {
         {status === "approved" && (
           <div className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
             <CheckCircle2 size={14} style={{ color: "#22c55e" }} />
-            <p className="text-sm" style={{ color: "#22c55e" }}>Day approved by your account manager</p>
+            <p className="text-sm" style={{ color: "#22c55e" }}>{uiStrings?.batchApprovedNote ?? "Day approved by your account manager"}</p>
           </div>
         )}
 
@@ -221,7 +230,7 @@ export default function BatchDayPage() {
             style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)", color: "var(--color-accent)" }}
           >
             <ExternalLink size={14} />
-            Open Resource
+            {uiStrings?.batchOpenResourceLabel ?? "Open Resource"}
           </a>
         )}
 
@@ -237,8 +246,8 @@ export default function BatchDayPage() {
       {tasks.length > 0 && (
         <div className="rounded-2xl border p-5 space-y-3" style={{ borderColor: "var(--color-border, rgba(255,255,255,0.08))", background: "var(--color-bg-surface)" }}>
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Checklist</h3>
-            <span className="text-xs text-muted-foreground">{completedTaskIds.length}/{tasks.length} done</span>
+            <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">{uiStrings?.batchChecklistLabel ?? "Checklist"}</h3>
+            <span className="text-xs text-muted-foreground">{completedTaskIds.length}/{tasks.length} {uiStrings?.batchDoneLabel ?? "done"}</span>
           </div>
           <div className="space-y-2">
             {tasks.sort((a, b) => a.order - b.order).map(task => {
@@ -270,14 +279,14 @@ export default function BatchDayPage() {
       <div className="rounded-2xl border p-5 space-y-3" style={{ borderColor: "var(--color-border, rgba(255,255,255,0.08))", background: "var(--color-bg-surface)" }}>
         <div className="flex items-center gap-2">
           <FileText size={14} className="opacity-50" />
-          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Daily Journal</h3>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">{uiStrings?.batchJournalLabel ?? "Daily Journal"}</h3>
         </div>
         <textarea
           value={journalEntry}
           onChange={e => handleJournalChange(e.target.value)}
           disabled={!canEdit}
           rows={6}
-          placeholder={canEdit ? "What did you do today? What did you learn? Any challenges?" : ""}
+          placeholder={canEdit ? (uiStrings?.batchJournalPlaceholder ?? "What did you do today? What did you learn? Any challenges?") : ""}
           className="w-full rounded-xl px-4 py-3 text-sm resize-none outline-none transition-colors"
           style={{
             background: "rgba(255,255,255,0.04)",
@@ -301,7 +310,7 @@ export default function BatchDayPage() {
             }}
           >
             {saveDraft.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Save Draft
+            {uiStrings?.batchSaveDraftLabel ?? "Save Draft"}
           </button>
           <button
             onClick={handleSubmit}
@@ -312,7 +321,7 @@ export default function BatchDayPage() {
             {(submitDay.isPending || saveDraft.isPending)
               ? <Loader2 size={16} className="animate-spin" />
               : <Send size={16} />}
-            Submit for Review
+            {uiStrings?.batchSubmitLabel ?? "Submit for Review"}
           </button>
         </div>
       )}

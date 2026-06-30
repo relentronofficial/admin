@@ -15,18 +15,10 @@ import {
 } from "lucide-react";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
-import { useMe } from "@/lib/hooks/useUser";
+import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { differenceInDays, format, isValid } from "date-fns";
 
 type DayStatus = "not_started" | "in_progress" | "pending_approval" | "approved" | "rejected";
-
-const STATUS_CONFIG: Record<DayStatus, { label: string; icon: any; color: string; bg: string }> = {
-  not_started:      { label: "Not started",       icon: Circle,        color: "var(--color-text-muted, #888)",    bg: "transparent" },
-  in_progress:      { label: "In progress",        icon: Clock,         color: "#f59e0b",                          bg: "rgba(245,158,11,0.12)" },
-  pending_approval: { label: "Pending review",     icon: AlertCircle,   color: "#a78bfa",                          bg: "rgba(167,139,250,0.12)" },
-  approved:         { label: "Approved",           icon: CheckCircle2,  color: "#22c55e",                          bg: "rgba(34,197,94,0.12)" },
-  rejected:         { label: "Needs revision",     icon: XCircle,       color: "#ef4444",                          bg: "rgba(239,68,68,0.12)" },
-};
 
 function getStatusForDay(progress: any): DayStatus {
   if (!progress) return "not_started";
@@ -34,8 +26,18 @@ function getStatusForDay(progress: any): DayStatus {
 }
 
 export default function BatchProgramPage() {
-  const { data: me } = useMe();
+  const { uiStrings } = useSiteConfig();
   const { data: program, isLoading } = useMyBatchProgram();
+
+  const totalDays: number = (program as any)?.totalDays ?? 90;
+
+  const statusConfig = useMemo(() => ({
+    not_started:      { label: uiStrings?.batchStatusNotStarted ?? "Not started",       icon: Circle,        color: "var(--color-text-muted, #888)",    bg: "transparent" },
+    in_progress:      { label: uiStrings?.batchStatusInProgress ?? "In progress",        icon: Clock,         color: "#f59e0b",                          bg: "rgba(245,158,11,0.12)" },
+    pending_approval: { label: uiStrings?.batchStatusPendingReview ?? "Pending review",  icon: AlertCircle,   color: "#a78bfa",                          bg: "rgba(167,139,250,0.12)" },
+    approved:         { label: uiStrings?.batchStatusApproved ?? "Approved",             icon: CheckCircle2,  color: "#22c55e",                          bg: "rgba(34,197,94,0.12)" },
+    rejected:         { label: uiStrings?.batchStatusNeedsRevision ?? "Needs revision",  icon: XCircle,       color: "#ef4444",                          bg: "rgba(239,68,68,0.12)" },
+  }), [uiStrings]);
 
   const { daysElapsed, progressMap, daysMap, stats } = useMemo((): {
     daysElapsed: number;
@@ -46,7 +48,7 @@ export default function BatchProgramPage() {
     if (!program?.batch) return { daysElapsed: 0, progressMap: {}, daysMap: {}, stats: null };
 
     const start = new Date(program.batch.startsAt).getTime();
-    const elapsed = Math.min(90, Math.max(0, Math.floor((Date.now() - start) / 86_400_000)));
+    const elapsed = Math.min(totalDays, Math.max(0, Math.floor((Date.now() - start) / 86_400_000)));
 
     const pMap: Record<string, any> = {};
     for (const p of (program.progress ?? [])) pMap[String(p.dayNumber)] = p;
@@ -65,18 +67,18 @@ export default function BatchProgramPage() {
       daysMap: dMap,
       stats: { approved, pending, rejected, inProgress },
     };
-  }, [program]);
+  }, [program, totalDays]);
 
   if (isLoading) return <PageLoader />;
 
   if (!program?.batch) {
     return (
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold tracking-tight">Program</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{uiStrings?.batchProgramLabel ?? "Program"}</h2>
         <div className="rounded-2xl border p-12 text-center" style={{ borderColor: "var(--color-border, rgba(255,255,255,0.08))", background: "var(--color-bg-surface)" }}>
           <GraduationCap size={40} className="mx-auto mb-4 opacity-30" />
-          <p className="text-muted-foreground">You haven&apos;t been assigned to a batch yet.</p>
-          <p className="text-muted-foreground text-sm mt-1">Contact your account manager to get assigned.</p>
+          <p className="text-muted-foreground">{uiStrings?.batchNotAssignedMsg ?? "You haven't been assigned to a batch yet."}</p>
+          <p className="text-muted-foreground text-sm mt-1">{uiStrings?.batchContactMsg ?? "Contact your account manager to get assigned."}</p>
         </div>
       </div>
     );
@@ -106,20 +108,20 @@ export default function BatchProgramPage() {
           </div>
           <div className="flex items-center gap-2">
             <TrendingUp size={14} style={{ color: "var(--color-accent)" }} />
-            <span className="text-sm font-semibold">Day {Math.min(daysElapsed, 90)} of 90</span>
+            <span className="text-sm font-semibold">Day {Math.min(daysElapsed, totalDays)} of {totalDays}</span>
           </div>
         </div>
 
         {/* Progress bar */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs text-muted-foreground">{stats?.approved ?? 0} days approved</span>
-            <span className="text-xs font-semibold">{Math.round(((stats?.approved ?? 0) / 90) * 100)}%</span>
+            <span className="text-xs text-muted-foreground">{stats?.approved ?? 0} {uiStrings?.batchDaysApprovedLabel ?? "days approved"}</span>
+            <span className="text-xs font-semibold">{Math.round(((stats?.approved ?? 0) / totalDays) * 100)}%</span>
           </div>
           <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${((stats?.approved ?? 0) / 90) * 100}%`, background: "var(--color-accent)" }}
+              style={{ width: `${((stats?.approved ?? 0) / totalDays) * 100}%`, background: "var(--color-accent)" }}
             />
           </div>
         </div>
@@ -127,10 +129,10 @@ export default function BatchProgramPage() {
         {/* Stat pills */}
         <div className="flex flex-wrap gap-2">
           {[
-            { label: `${stats?.approved ?? 0} Approved`, color: "#22c55e" },
-            { label: `${stats?.pending ?? 0} Pending`, color: "#a78bfa" },
-            { label: `${stats?.rejected ?? 0} Needs Revision`, color: "#ef4444" },
-            { label: `${stats?.inProgress ?? 0} In Progress`, color: "#f59e0b" },
+            { label: `${stats?.approved ?? 0} ${uiStrings?.batchApprovedPillLabel ?? "Approved"}`, color: "#22c55e" },
+            { label: `${stats?.pending ?? 0} ${uiStrings?.batchPendingPillLabel ?? "Pending"}`, color: "#a78bfa" },
+            { label: `${stats?.rejected ?? 0} ${uiStrings?.batchNeedsRevisionPillLabel ?? "Needs Revision"}`, color: "#ef4444" },
+            { label: `${stats?.inProgress ?? 0} ${uiStrings?.batchInProgressPillLabel ?? "In Progress"}`, color: "#f59e0b" },
           ].map(s => (
             <span
               key={s.label}
@@ -145,15 +147,14 @@ export default function BatchProgramPage() {
 
       {/* Days grid / list */}
       <div>
-        <h3 className="text-sm font-semibold mb-3 opacity-60 uppercase tracking-widest">All 90 Days</h3>
+        <h3 className="text-sm font-semibold mb-3 opacity-60 uppercase tracking-widest">{uiStrings?.batchAllDaysLabel ?? "All Days"}</h3>
 
         {/* Visual mini-grid (dots) */}
         <div className="flex flex-wrap gap-1 mb-6 p-4 rounded-2xl border" style={{ borderColor: "var(--color-border, rgba(255,255,255,0.08))", background: "var(--color-bg-surface)" }}>
-          {Array.from({ length: 90 }, (_, i) => {
+          {Array.from({ length: totalDays }, (_, i) => {
             const dayNum = i + 1;
             const prog = progressMap[String(dayNum)];
             const status = getStatusForDay(prog);
-            const cfg = STATUS_CONFIG[status];
             const isToday = dayNum === todayDay;
             return (
               <Link
@@ -179,12 +180,12 @@ export default function BatchProgramPage() {
 
         {/* Day list */}
         <div className="space-y-2">
-          {Array.from({ length: 90 }, (_, i) => {
+          {Array.from({ length: totalDays }, (_, i) => {
             const dayNum = i + 1;
             const prog = progressMap[String(dayNum)];
             const dayContent = daysMap[String(dayNum)];
             const status = getStatusForDay(prog);
-            const cfg = STATUS_CONFIG[status];
+            const cfg = statusConfig[status];
             const Icon = cfg.icon;
             const isToday = dayNum === todayDay;
             const isFuture = dayNum > todayDay;
@@ -221,7 +222,7 @@ export default function BatchProgramPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate">
                     {dayContent?.title ?? `Day ${dayNum}`}
-                    {isToday && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: "var(--color-accent)", color: "#fff" }}>Today</span>}
+                    {isToday && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: "var(--color-accent)", color: "#fff" }}>{uiStrings?.batchTodayLabel ?? "Today"}</span>}
                   </p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <Icon size={11} style={{ color: cfg.color, flexShrink: 0 }} />

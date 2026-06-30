@@ -94,6 +94,38 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_skip_label TEXT NOT NULL DEFAULT 'Skip'`);
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_save_label TEXT NOT NULL DEFAULT 'Save Reflection'`);
     await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS reflect_saved_label TEXT NOT NULL DEFAULT '✓ Saved!'`);
+    // Batch program UI strings
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_program_label TEXT NOT NULL DEFAULT 'Program'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_not_assigned_msg TEXT NOT NULL DEFAULT 'You haven''t been assigned to a batch yet.'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_contact_msg TEXT NOT NULL DEFAULT 'Contact your account manager to get assigned.'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_days_approved_label TEXT NOT NULL DEFAULT 'days approved'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_all_days_label TEXT NOT NULL DEFAULT 'All Days'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_status_not_started TEXT NOT NULL DEFAULT 'Not started'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_status_in_progress TEXT NOT NULL DEFAULT 'In progress'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_status_pending_review TEXT NOT NULL DEFAULT 'Pending review'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_status_approved TEXT NOT NULL DEFAULT 'Approved'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_status_needs_revision TEXT NOT NULL DEFAULT 'Needs revision'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_status_approved_check TEXT NOT NULL DEFAULT 'Approved ✓'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_approved_pill_label TEXT NOT NULL DEFAULT 'Approved'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_pending_pill_label TEXT NOT NULL DEFAULT 'Pending'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_needs_revision_pill_label TEXT NOT NULL DEFAULT 'Needs Revision'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_in_progress_pill_label TEXT NOT NULL DEFAULT 'In Progress'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_today_label TEXT NOT NULL DEFAULT 'Today'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_not_assigned_note TEXT NOT NULL DEFAULT 'You are not currently assigned to a batch.'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_revision_label TEXT NOT NULL DEFAULT 'Revision requested'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_future_note TEXT NOT NULL DEFAULT 'This day hasn''t started yet. You can view but not submit.'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_pending_note TEXT NOT NULL DEFAULT 'Submitted for review — waiting for account manager approval'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_approved_note TEXT NOT NULL DEFAULT 'Day approved by your account manager'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_open_resource_label TEXT NOT NULL DEFAULT 'Open Resource'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_checklist_label TEXT NOT NULL DEFAULT 'Checklist'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_done_label TEXT NOT NULL DEFAULT 'done'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_journal_label TEXT NOT NULL DEFAULT 'Daily Journal'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_journal_placeholder TEXT NOT NULL DEFAULT 'What did you do today? What did you learn? Any challenges?'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_save_draft_label TEXT NOT NULL DEFAULT 'Save Draft'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_submit_label TEXT NOT NULL DEFAULT 'Submit for Review'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_progress_saved TEXT NOT NULL DEFAULT 'Progress saved'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_progress_save_error TEXT NOT NULL DEFAULT 'Failed to save progress'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE ui_strings ADD COLUMN IF NOT EXISTS batch_submit_success TEXT NOT NULL DEFAULT 'Submitted for review!'`);
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

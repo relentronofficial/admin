@@ -279,6 +279,38 @@ export interface UiStrings {
   reflectSkipLabel?: string;
   reflectSaveLabel?: string;
   reflectSavedLabel?: string;
+  // Batch program
+  batchProgramLabel?: string;
+  batchNotAssignedMsg?: string;
+  batchContactMsg?: string;
+  batchDaysApprovedLabel?: string;
+  batchAllDaysLabel?: string;
+  batchStatusNotStarted?: string;
+  batchStatusInProgress?: string;
+  batchStatusPendingReview?: string;
+  batchStatusApproved?: string;
+  batchStatusNeedsRevision?: string;
+  batchStatusApprovedCheck?: string;
+  batchApprovedPillLabel?: string;
+  batchPendingPillLabel?: string;
+  batchNeedsRevisionPillLabel?: string;
+  batchInProgressPillLabel?: string;
+  batchTodayLabel?: string;
+  batchNotAssignedNote?: string;
+  batchRevisionLabel?: string;
+  batchFutureNote?: string;
+  batchPendingNote?: string;
+  batchApprovedNote?: string;
+  batchOpenResourceLabel?: string;
+  batchChecklistLabel?: string;
+  batchDoneLabel?: string;
+  batchJournalLabel?: string;
+  batchJournalPlaceholder?: string;
+  batchSaveDraftLabel?: string;
+  batchSubmitLabel?: string;
+  batchProgressSaved?: string;
+  batchProgressSaveError?: string;
+  batchSubmitSuccess?: string;
 }
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
