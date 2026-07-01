@@ -49,7 +49,7 @@ import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/co
 async function bootstrap() {
   const fastify = Fastify({
     trustProxy: true,   // read real client IP from X-Forwarded-For (GCP load balancer)
-    pluginTimeout: 60000, // 60s — startup migrations run 28 SQL statements; 10s default is too short under pool contention
+    pluginTimeout: 120000, // 120s — startup migrations run 70+ SQL statements; allow time after schema resets
     logger: {
       level: 'info',
       transport: env.NODE_ENV === 'development' ? {
