@@ -58,6 +58,7 @@ import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket/client";
+import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
 import { getServerNow, getCachedTokenSync } from "@/lib/api/client";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
@@ -3459,9 +3460,10 @@ function WorkshopAccessGate({ detail, slug }: { detail: any; slug: string }) {
     try {
       const result = await requestAccess.mutateAsync();
       setLocalStatus(result.enrollmentStatus);
-      // Invalidate so page refetches with new status
       void qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
-    } catch {}
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to send request. Please try again.");
+    }
   };
 
   const isPending = localStatus === "pending";
