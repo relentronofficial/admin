@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Pencil,
@@ -13,12 +13,24 @@ import {
   Zap,
   Search,
   ChevronDown,
+  ChevronRight,
   BookOpen,
   Calendar,
+  ListChecks,
+  Save,
+  GripVertical,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListTasks, useCreateTaskInitiative, useUpdateTask, useDeleteTask, TaskInitiativeInput } from "@/lib/hooks/useTasks";
-import { useListPrograms, useCreateProgram, useUpdateProgram, useDeleteProgram } from "@/lib/hooks/useTbt";
+import {
+  useListPrograms,
+  useCreateProgram,
+  useUpdateProgram,
+  useDeleteProgram,
+  useListBatches,
+  useListBatchDays,
+  useUpsertBatchDay,
+} from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
@@ -47,12 +59,14 @@ const emptyProgramForm = () => ({
   durationDays: 90,
 });
 
-type Tab = "tasks" | "programs";
+type Tab = "tasks" | "programs" | "batch-checklist";
+
+type ChecklistTask = { id: string; title: string; order: number };
 
 export default function TasksPage() {
   const [activeTab, setActiveTab] = useState<Tab>("tasks");
 
-  // Task state
+  // ── Task state ────────────────────────────────────────────────────────────────
   const [programFilter, setProgramFilter] = useState("");
   const [search, setSearch] = useState("");
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -60,14 +74,26 @@ export default function TasksPage() {
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState<Partial<TaskInitiativeInput>>(emptyTaskForm());
 
-  // Program state
+  // ── Program state ─────────────────────────────────────────────────────────────
   const [programModalOpen, setProgramModalOpen] = useState(false);
   const [editingProgram, setEditingProgram] = useState<any | null>(null);
   const [deletingProgramId, setDeletingProgramId] = useState<string | null>(null);
   const [programForm, setProgramForm] = useState(emptyProgramForm());
 
+  // ── Batch checklist state ─────────────────────────────────────────────────────
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set());
+  const [dayTaskDrafts, setDayTaskDrafts] = useState<Record<number, ChecklistTask[]>>({});
+  const [dirtyDays, setDirtyDays] = useState<Set<number>>(new Set());
+  const [savingDay, setSavingDay] = useState<number | null>(null);
+  const [newTaskInputs, setNewTaskInputs] = useState<Record<number, string>>({});
+  const batchDaysKey = useRef(0);
+
+  // ── Hooks ─────────────────────────────────────────────────────────────────────
   const { data: tasksData, isLoading: tasksLoading } = useListTasks(programFilter ? { programId: programFilter } : undefined);
   const { data: programsData, isLoading: programsLoading } = useListPrograms();
+  const { data: batchesData } = useListBatches();
+  const { data: batchDaysData, isLoading: batchDaysLoading } = useListBatchDays(selectedBatchId);
 
   const createTask = useCreateTaskInitiative();
   const updateTask = useUpdateTask();
@@ -75,16 +101,34 @@ export default function TasksPage() {
   const createProgram = useCreateProgram();
   const updateProgram = useUpdateProgram();
   const deleteProgram = useDeleteProgram();
+  const upsertDay = useUpsertBatchDay();
 
   const tasks: any[] = tasksData?.data || tasksData || [];
   const programs: any[] = (programsData as any)?.data || programsData || [];
+  const batches: any[] = (batchesData as any)?.data || batchesData || [];
+  const batchDays: any[] = (batchDaysData as any)?.data || batchDaysData || [];
 
   const filteredTasks = tasks.filter(t =>
     !search || t.title?.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ─── Task handlers ────────────────────────────────────────────────────────────
+  // Seed local drafts when batch days load / batch changes
+  useEffect(() => {
+    if (!selectedBatchId) return;
+    const drafts: Record<number, ChecklistTask[]> = {};
+    batchDays.forEach((day: any) => {
+      drafts[day.dayNumber] = Array.isArray(day.tasks)
+        ? day.tasks.map((t: any) => ({ id: t.id, title: t.title, order: t.order ?? 0 }))
+        : [];
+    });
+    setDayTaskDrafts(drafts);
+    setDirtyDays(new Set());
+    setNewTaskInputs({});
+    setExpandedDays(new Set());
+    batchDaysKey.current += 1;
+  }, [batchDaysData, selectedBatchId]);
 
+  // ── Task handlers ─────────────────────────────────────────────────────────────
   const setTask = (key: keyof TaskInitiativeInput, value: any) =>
     setTaskForm(f => ({ ...f, [key]: value }));
 
@@ -144,8 +188,7 @@ export default function TasksPage() {
     }
   };
 
-  // ─── Program handlers ─────────────────────────────────────────────────────────
-
+  // ── Program handlers ──────────────────────────────────────────────────────────
   const setProgram = (key: string, value: any) =>
     setProgramForm(f => ({ ...f, [key]: value }));
 
@@ -191,8 +234,71 @@ export default function TasksPage() {
     }
   };
 
+  // ── Batch checklist handlers ──────────────────────────────────────────────────
+  const toggleDayExpand = (dayNumber: number) => {
+    setExpandedDays(prev => {
+      const next = new Set(prev);
+      if (next.has(dayNumber)) next.delete(dayNumber);
+      else next.add(dayNumber);
+      return next;
+    });
+  };
+
+  const addChecklistTask = (dayNumber: number) => {
+    const title = (newTaskInputs[dayNumber] || "").trim();
+    if (!title) return;
+    const current = dayTaskDrafts[dayNumber] || [];
+    const newTask: ChecklistTask = {
+      id: `task_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      title,
+      order: current.length,
+    };
+    const updated = [...current, newTask];
+    setDayTaskDrafts(prev => ({ ...prev, [dayNumber]: updated }));
+    setDirtyDays(prev => new Set(prev).add(dayNumber));
+    setNewTaskInputs(prev => ({ ...prev, [dayNumber]: "" }));
+  };
+
+  const removeChecklistTask = (dayNumber: number, taskId: string) => {
+    const updated = (dayTaskDrafts[dayNumber] || [])
+      .filter(t => t.id !== taskId)
+      .map((t, i) => ({ ...t, order: i }));
+    setDayTaskDrafts(prev => ({ ...prev, [dayNumber]: updated }));
+    setDirtyDays(prev => new Set(prev).add(dayNumber));
+  };
+
+  const editChecklistTaskTitle = (dayNumber: number, taskId: string, title: string) => {
+    const updated = (dayTaskDrafts[dayNumber] || []).map(t =>
+      t.id === taskId ? { ...t, title } : t
+    );
+    setDayTaskDrafts(prev => ({ ...prev, [dayNumber]: updated }));
+    setDirtyDays(prev => new Set(prev).add(dayNumber));
+  };
+
+  const saveDayTasks = async (dayNumber: number) => {
+    setSavingDay(dayNumber);
+    try {
+      await upsertDay.mutateAsync({
+        batchId: selectedBatchId,
+        dayNumber,
+        tasks: (dayTaskDrafts[dayNumber] || []).map((t, i) => ({ ...t, order: i })),
+      });
+      toast.success(`Day ${dayNumber} tasks saved`);
+      setDirtyDays(prev => {
+        const next = new Set(prev);
+        next.delete(dayNumber);
+        return next;
+      });
+    } catch {
+      toast.error(`Failed to save Day ${dayNumber}`);
+    } finally {
+      setSavingDay(null);
+    }
+  };
+
   const isSavingTask = createTask.isPending || updateTask.isPending;
   const isSavingProgram = createProgram.isPending || updateProgram.isPending;
+  const selectedBatch = batches.find((b: any) => b.id === selectedBatchId);
 
   return (
     <DashboardLayout>
@@ -203,10 +309,10 @@ export default function TasksPage() {
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
               <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Tasks</h1>
-              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Manage programs and task initiatives for batch members.</p>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Manage programs, task initiatives, and per-day checklists.</p>
             </div>
           </div>
-          {activeTab === "tasks" ? (
+          {activeTab === "tasks" && (
             <button
               onClick={openCreateTask}
               className="flex items-center gap-2 bg-[#dc2626] text-white px-6 py-2.5 rounded-md font-rajdhani font-bold text-[13px] tracking-[1.5px] uppercase hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(220,38,38,0.2)] active:scale-95 shrink-0"
@@ -214,7 +320,8 @@ export default function TasksPage() {
               <Plus size={16} strokeWidth={3} />
               Add Task
             </button>
-          ) : (
+          )}
+          {activeTab === "programs" && (
             <button
               onClick={openCreateProgram}
               className="flex items-center gap-2 bg-[#dc2626] text-white px-6 py-2.5 rounded-md font-rajdhani font-bold text-[13px] tracking-[1.5px] uppercase hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(220,38,38,0.2)] active:scale-95 shrink-0"
@@ -227,7 +334,7 @@ export default function TasksPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-[#2a2a2a]">
-          {(["tasks", "programs"] as Tab[]).map((tab) => (
+          {(["tasks", "programs", "batch-checklist"] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -238,8 +345,10 @@ export default function TasksPage() {
                   : "text-[#666] border-transparent hover:text-[#a0a0a0]"
               )}
             >
-              {tab === "tasks" ? <CheckSquare size={14} /> : <BookOpen size={14} />}
-              {tab}
+              {tab === "tasks" && <CheckSquare size={14} />}
+              {tab === "programs" && <BookOpen size={14} />}
+              {tab === "batch-checklist" && <ListChecks size={14} />}
+              {tab === "tasks" ? "Tasks" : tab === "programs" ? "Programs" : "Batch Checklist"}
             </button>
           ))}
         </div>
@@ -435,6 +544,164 @@ export default function TasksPage() {
               </table>
             )}
           </div>
+        )}
+
+        {/* ── BATCH CHECKLIST TAB ───────────────────────────────────────────────── */}
+        {activeTab === "batch-checklist" && (
+          <>
+            {/* Batch selector */}
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+              <div className="relative">
+                <select
+                  value={selectedBatchId}
+                  onChange={e => { setSelectedBatchId(e.target.value); }}
+                  className="bg-[#181818] border border-[#2a2a2a] rounded-lg h-10 pl-4 pr-9 text-sm text-white outline-none focus:border-[#dc2626] appearance-none cursor-pointer min-w-[220px]"
+                >
+                  <option value="">Select a batch…</option>
+                  {batches.map((b: any) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#666] pointer-events-none" />
+              </div>
+              {selectedBatch && (
+                <span className="text-[12px] text-[#666] font-rajdhani font-bold uppercase tracking-widest">
+                  {batchDays.length} days loaded
+                </span>
+              )}
+              {dirtyDays.size > 0 && (
+                <span className="ml-auto text-[12px] text-yellow-500 font-bold font-rajdhani uppercase tracking-widest">
+                  {dirtyDays.size} day{dirtyDays.size !== 1 ? "s" : ""} with unsaved changes
+                </span>
+              )}
+            </div>
+
+            {!selectedBatchId ? (
+              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-20 gap-3">
+                <ListChecks size={36} className="text-[#333]" />
+                <p className="text-[#555] font-rajdhani font-bold uppercase tracking-widest text-sm">Select a batch to manage its daily checklists</p>
+                <p className="text-[12px] text-[#444]">These are the per-day tasks members check off in the user app</p>
+              </div>
+            ) : batchDaysLoading ? (
+              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex items-center justify-center py-20">
+                <Loader2 size={32} className="animate-spin text-[#dc2626]" />
+              </div>
+            ) : batchDays.length === 0 ? (
+              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-16 gap-3">
+                <Calendar size={36} className="text-[#333]" />
+                <p className="text-[#555] font-rajdhani font-bold uppercase tracking-widest text-sm">No days configured for this batch yet</p>
+              </div>
+            ) : (
+              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden divide-y divide-[#1e1e1e]">
+                {batchDays
+                  .slice()
+                  .sort((a: any, b: any) => a.dayNumber - b.dayNumber)
+                  .map((day: any) => {
+                    const dayTasks = dayTaskDrafts[day.dayNumber] || [];
+                    const isExpanded = expandedDays.has(day.dayNumber);
+                    const isDirty = dirtyDays.has(day.dayNumber);
+                    const isSaving = savingDay === day.dayNumber;
+
+                    return (
+                      <div key={day.dayNumber}>
+                        {/* Day row header */}
+                        <button
+                          onClick={() => toggleDayExpand(day.dayNumber)}
+                          className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-[#1f1f1f] transition-colors text-left"
+                        >
+                          <span className={cn(
+                            "transition-transform duration-150",
+                            isExpanded ? "rotate-90" : "rotate-0"
+                          )}>
+                            <ChevronRight size={15} className="text-[#555]" />
+                          </span>
+                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[#dc2626]/10 text-[#dc2626] text-[12px] font-bold font-rajdhani shrink-0">
+                            {day.dayNumber}
+                          </span>
+                          <span className="flex-1 text-[13px] text-[#f0f0f0] font-medium">
+                            {day.title || `Day ${day.dayNumber}`}
+                          </span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            {isDirty && (
+                              <span className="w-2 h-2 rounded-full bg-yellow-500 shrink-0" title="Unsaved changes" />
+                            )}
+                            <span className="text-[12px] text-[#666] font-rajdhani font-bold uppercase tracking-wider">
+                              {dayTasks.length} task{dayTasks.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* Expanded day tasks */}
+                        {isExpanded && (
+                          <div className="px-5 pb-5 pt-2 bg-[#141414] border-t border-[#1e1e1e]">
+                            {/* Task list */}
+                            <div className="space-y-2 mb-3">
+                              {dayTasks.length === 0 ? (
+                                <p className="text-[12px] text-[#555] py-2 text-center font-rajdhani uppercase tracking-wider">
+                                  No tasks yet — add one below
+                                </p>
+                              ) : (
+                                dayTasks.map((task, idx) => (
+                                  <div key={task.id} className="flex items-center gap-2 group">
+                                    <GripVertical size={14} className="text-[#333] shrink-0" />
+                                    <span className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[10px] text-[#666] font-bold font-rajdhani flex items-center justify-center shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <input
+                                      value={task.title}
+                                      onChange={e => editChecklistTaskTitle(day.dayNumber, task.id, e.target.value)}
+                                      className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all"
+                                    />
+                                    <button
+                                      onClick={() => removeChecklistTask(day.dayNumber, task.id)}
+                                      className="p-1.5 rounded-lg text-[#444] hover:text-red-400 hover:bg-red-900/20 transition-all opacity-0 group-hover:opacity-100"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            {/* Add task input */}
+                            <div className="flex gap-2">
+                              <input
+                                value={newTaskInputs[day.dayNumber] || ""}
+                                onChange={e => setNewTaskInputs(prev => ({ ...prev, [day.dayNumber]: e.target.value }))}
+                                onKeyDown={e => { if (e.key === "Enter") addChecklistTask(day.dayNumber); }}
+                                placeholder="Add a task… (Enter to add)"
+                                className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all placeholder:text-[#444]"
+                              />
+                              <button
+                                onClick={() => addChecklistTask(day.dayNumber)}
+                                className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white hover:border-[#555] text-[12px] font-bold font-rajdhani uppercase tracking-wider transition-all"
+                              >
+                                <Plus size={13} />
+                                Add
+                              </button>
+                            </div>
+
+                            {/* Save button */}
+                            {isDirty && (
+                              <div className="flex justify-end mt-3">
+                                <button
+                                  onClick={() => saveDayTasks(day.dayNumber)}
+                                  disabled={isSaving}
+                                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#dc2626] text-white text-[12px] font-bold font-rajdhani uppercase tracking-wider hover:bg-red-700 transition-all disabled:opacity-50"
+                                >
+                                  {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                                  Save Day {day.dayNumber}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
