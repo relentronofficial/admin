@@ -32,8 +32,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function fetchPublicJson<T>(path: string): Promise<T | null> {
   try {
+    // Public config changes rarely — 5-minute revalidate reduces TTFB by
+    // serving from Next.js data cache instead of cold-fetching the backend
+    // on every request. Next.js also deduplicates same-URL fetches within
+    // a single render pass (e.g. workshops/page.tsx fetches ui-strings too).
     const res = await fetch(`${API_BASE}${path}`, {
-      cache: 'no-store',
+      next: { revalidate: 300 },
     });
     if (!res.ok) return null;
     const json = await res.json();

@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.b-cdn.net" },
       { protocol: "https", hostname: "**.supabase.co" },
     ],
+    // Serve AVIF first (30-50% smaller than WebP at same quality), then WebP.
+    // Vercel's image optimizer respects the browser's Accept header.
+    formats: ["image/avif", "image/webp"],
+    // Cache optimized images for 30 days (default is 60s which causes frequent re-optimization).
+    // Safe because images are content-addressed via their URL (changing the source URL busts the cache).
+    minimumCacheTTL: 2592000,
   },
   experimental: {
     optimizePackageImports: ["lucide-react", "framer-motion"],

@@ -1,15 +1,19 @@
-"use client";
+// Server Component — no "use client".
+// Workshops data is fetched server-side using the tbt_access cookie so the
+// grid HTML arrives in the first byte, eliminating the client-side data waterfall
+// that was causing LCP 5.7s.
 
 import Link from "next/link";
 import Image from "next/image";
+import { cookies } from "next/headers";
 import { CheckCircle2, Lock } from "lucide-react";
-import { useAllWorkshops } from "@/lib/hooks/useConfig";
-import { useSiteConfig } from "@/lib/context/SiteConfigContext";
-import type { WorkshopListItem } from "@/types";
+import type { WorkshopListItem, UiStrings } from "@/types";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
-function WorkshopCard({ item }: { item: WorkshopListItem }) {
+function WorkshopCard({ item, priority }: { item: WorkshopListItem; priority: boolean }) {
   const Wrapper = item.locked ? "div" : Link;
   const wrapperProps = item.locked ? {} : { href: `/workshop/${item.slug}` };
 
@@ -30,6 +34,8 @@ function WorkshopCard({ item }: { item: WorkshopListItem }) {
             src={item.thumbnailUrl}
             alt={item.title}
             fill
+            priority={priority}
+            sizes="(max-width: 640px) calc(100vw - 32px), (max-width: 1024px) calc(50vw - 32px), calc(33vw - 24px)"
             className={`object-cover transition-transform duration-300 ${!item.locked ? "group-hover:scale-[1.03]" : ""}`}
           />
         ) : (
@@ -39,9 +45,7 @@ function WorkshopCard({ item }: { item: WorkshopListItem }) {
         {/* Lock overlay */}
         {item.locked && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
-            <div className="flex flex-col items-center gap-1.5">
-              <Lock size={22} style={{ color: "var(--color-locked, #4a4a4a)" }} />
-            </div>
+            <Lock size={22} style={{ color: "var(--color-locked, #4a4a4a)" }} />
           </div>
         )}
 
@@ -101,9 +105,9 @@ function WorkshopCard({ item }: { item: WorkshopListItem }) {
   );
 }
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
+// ─── Skeleton (still needed for Suspense boundaries in sibling routes) ─────────
 
-function WorkshopsSkeleton() {
+export function WorkshopsSkeleton() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {Array.from({ length: 6 }).map((_, i) => (
@@ -123,15 +127,75 @@ function WorkshopsSkeleton() {
   );
 }
 
+// ─── Grid ─────────────────────────────────────────────────────────────────────
+
+function WorkshopsGrid({ workshops }: { workshops: WorkshopListItem[] }) {
+  const enrolled  = workshops.filter((w) => w.enrollmentStatus === "active");
+  const completed = workshops.filter((w) => w.enrollmentStatus === "completed");
+  const available = workshops.filter((w) => !w.enrollmentStatus);
+
+  const groups = [
+    enrolled.length  > 0 && { label: "My Workshops", items: enrolled  },
+    completed.length > 0 && { label: "Completed",    items: completed },
+    available.length > 0 && { label: "All Workshops", items: available },
+  ].filter(Boolean) as { label: string; items: WorkshopListItem[] }[];
+
+  if (groups.length === 1) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {workshops.map((w, i) => (
+          <WorkshopCard key={w.id} item={w} priority={i < 3} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-10">
+      {groups.map((g, gi) => (
+        <section key={g.label} className="space-y-4">
+          <h2 className="text-lg font-bold" style={{ color: "rgba(255,255,255,0.85)" }}>
+            {g.label}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {g.items.map((w, i) => (
+              <WorkshopCard key={w.id} item={w} priority={gi === 0 && i < 3} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function WorkshopsPage() {
-  const { data: workshops, isLoading } = useAllWorkshops();
-  const { uiStrings } = useSiteConfig();
+export default async function WorkshopsPage() {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get("tbt_access")?.value;
 
-  if (isLoading) return <WorkshopsSkeleton />;
+  // Both fetches run in parallel. ui-strings uses revalidate so Next.js
+  // deduplicates it with the root layout's fetch of the same endpoint.
+  const [workshopsResult, uiStringsResult] = await Promise.all([
+    accessToken
+      ? fetch(`${API_BASE}/api/user/workshops`, {
+          headers: { Cookie: `tbt_access=${accessToken}` },
+          cache: "no-store", // user-specific — must never be shared across users
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      : null,
+    fetch(`${API_BASE}/api/pub/config/ui-strings`, {
+      next: { revalidate: 300 },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+  ]);
 
-  if (!workshops?.length) {
+  const workshops: WorkshopListItem[] = workshopsResult?.data ?? [];
+  const uiStrings: UiStrings = uiStringsResult?.data ?? {};
+
+  if (!workshops.length) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
@@ -141,42 +205,5 @@ export default function WorkshopsPage() {
     );
   }
 
-  // Split into enrolled/completed and others for visual grouping
-  const enrolled = workshops.filter((w) => w.enrollmentStatus === "active");
-  const completed = workshops.filter((w) => w.enrollmentStatus === "completed");
-  const available = workshops.filter((w) => !w.enrollmentStatus);
-
-  const groups = [
-    enrolled.length > 0 && { label: "My Workshops", items: enrolled },
-    completed.length > 0 && { label: "Completed", items: completed },
-    available.length > 0 && { label: "All Workshops", items: available },
-  ].filter(Boolean) as { label: string; items: WorkshopListItem[] }[];
-
-  // If only one group, skip the label and show flat grid
-  if (groups.length === 1) {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {workshops.map((w) => (
-          <WorkshopCard key={w.id} item={w} />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-10">
-      {groups.map((g) => (
-        <section key={g.label} className="space-y-4">
-          <h2 className="text-lg font-bold" style={{ color: "rgba(255,255,255,0.85)" }}>
-            {g.label}
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {g.items.map((w) => (
-              <WorkshopCard key={w.id} item={w} />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
+  return <WorkshopsGrid workshops={workshops} />;
 }
