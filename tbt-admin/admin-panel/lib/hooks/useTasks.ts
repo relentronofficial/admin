@@ -40,3 +40,24 @@ export const useListTasks = (params?: { programId?: string; stepId?: string }) =
     },
   });
 };
+
+export const useUpdateTask = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TaskInitiativeInput> }) => {
+      const res: any = await apiClient.put(`/api/tasks/${id}`, data);
+      return res.data || res;
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tasks'] }); },
+  });
+};
+
+export const useDeleteTask = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/tasks/${id}`);
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tasks'] }); },
+  });
+};
