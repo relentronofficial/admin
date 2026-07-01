@@ -1,13 +1,11 @@
-import { cookies } from "next/headers";
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { CheckCircle2, Lock } from "lucide-react";
-import WorkshopsClient from "./WorkshopsClient";
+import { useAllWorkshops } from "@/lib/hooks/useConfig";
+import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WorkshopListItem } from "@/types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-// ─── Server-rendered card (no hooks needed) ───────────────────────────────────
 
 function WorkshopCard({ item, priority }: { item: WorkshopListItem; priority: boolean }) {
   return (
@@ -92,37 +90,47 @@ function WorkshopCard({ item, priority }: { item: WorkshopListItem; priority: bo
   );
 }
 
-// ─── Page (RSC — eliminates client waterfall for LCP) ─────────────────────────
+function WorkshopsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-xl overflow-hidden animate-pulse"
+          style={{ background: "var(--color-bg-surface)" }}
+        >
+          <div className="aspect-video" />
+          <div className="p-4 space-y-2">
+            <div className="h-4 w-3/4 rounded" style={{ background: "var(--color-bg-primary)" }} />
+            <div className="h-3 w-1/3 rounded" style={{ background: "var(--color-bg-primary)" }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-export default async function WorkshopsPage() {
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get("tbt_access")?.value;
+export default function WorkshopsClient() {
+  const { data: workshops, isLoading } = useAllWorkshops();
+  const { uiStrings } = useSiteConfig();
 
-  // No auth token — fall back to client component (handles its own loading state + token refresh)
-  if (!accessToken) return <WorkshopsClient />;
+  if (isLoading) return <WorkshopsSkeleton />;
 
-  try {
-    const res = await fetch(`${API_BASE}/api/user/workshops`, {
-      headers: { Cookie: `tbt_access=${accessToken}` },
-      cache: "no-store",
-    });
-
-    if (!res.ok) return <WorkshopsClient />;
-
-    const json = await res.json();
-    const workshops: WorkshopListItem[] = json?.data ?? [];
-
-    // Empty list — let client component show the proper uiStrings empty state
-    if (!workshops.length) return <WorkshopsClient />;
-
+  if (!workshops?.length) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {workshops.map((w, i) => (
-          <WorkshopCard key={w.id} item={w} priority={i < 3} />
-        ))}
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+          {uiStrings?.noWorkshops ?? "No workshops available yet."}
+        </p>
       </div>
     );
-  } catch {
-    return <WorkshopsClient />;
   }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {workshops.map((w, i) => (
+        <WorkshopCard key={w.id} item={w} priority={i < 3} />
+      ))}
+    </div>
+  );
 }
