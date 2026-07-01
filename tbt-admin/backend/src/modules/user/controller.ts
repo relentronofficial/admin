@@ -21,6 +21,10 @@ function fail(reply: FastifyReply, status: number, message: string) {
   return reply.status(status).send({ success: false, data: null, error: { code: 'ERROR', message } });
 }
 
+function isEnrolled(status: string | null | undefined): boolean {
+  return status === 'active' || status === 'completed';
+}
+
 async function logActivity(prisma: any, memberId: string, action: string, metadata?: Record<string, unknown>): Promise<void> {
   await prisma.activityLog.create({
     data: { userId: memberId, userType: 'member', action, metadata: metadata ?? null },
@@ -431,8 +435,12 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   return ok(reply, data, { total, page: Number(page), limit: Number(limit) });
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getUserCourseHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
+
+  if (!UUID_RE.test(id)) return fail(reply, 400, 'Invalid course ID');
 
   const course = await request.server.prisma.course.findUnique({
     where: { id },
@@ -2357,6 +2365,27 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   }
 
   const enrollment = (workshop as any).enrollments?.[0];
+  const enrollmentStatus = enrollment?.status ?? null;
+
+  // Non-enrolled (null) or pending — return gate payload only; skip expensive progress queries
+  if (!isEnrolled(enrollmentStatus)) {
+    const gatePayload = {
+      id: workshop.id,
+      title: workshop.title,
+      thumbnailUrl: workshop.thumbnailUrl ?? null,
+      description: workshop.description ?? null,
+      backLabel: workshop.backLabel,
+      backUrl: workshop.backUrl,
+      enrollmentStatus,
+      sidebar: { tabs: [] },
+      learningProgress: null,
+      certificate: null,
+      workshopFlowLabel: null,
+      defaultMainAreaType: null,
+    };
+    void cacheSet(redis, wsDetKey, gatePayload, 15);
+    return ok(reply, gatePayload);
+  }
 
   // Only count challenges that are actually in the flow — keeps stats consistent with sidebar
   const flowChallengeRefs = await request.server.prisma.workshopFlowItem.findMany({
@@ -2418,6 +2447,8 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   const wsDetPayload = {
     id: workshop.id,
     title: workshop.title,
+    thumbnailUrl: workshop.thumbnailUrl ?? null,
+    description: workshop.description ?? null,
     backLabel: workshop.backLabel,
     backUrl: workshop.backUrl,
     sidebar: {
@@ -2445,7 +2476,7 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
     },
     workshopFlowLabel: workshop.workshopFlowLabel,
     defaultMainAreaType,
-    enrollmentStatus: enrollment?.status ?? null,
+    enrollmentStatus,
   };
   void cacheSet(redis, wsDetKey, wsDetPayload, 60);
   return ok(reply, wsDetPayload);
@@ -2463,6 +2494,12 @@ export async function getWorkshopCertificateHandler(request: FastifyRequest, rep
     },
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
+
+  const certEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
+    select: { status: true },
+  });
+  if (!isEnrolled(certEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
 
   const member = await request.server.prisma.member.findUnique({
     where: { id: request.memberId },
@@ -2549,6 +2586,12 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
   });
 
   if (!workshop) return fail(reply, 404, 'Workshop not found');
+
+  const flowEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
+    select: { status: true },
+  });
+  if (!isEnrolled(flowEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
 
   // Single flat query for all episode progress instead of N+1 nested includes
   const allEpisodeIds = (workshop as any).flowItems.flatMap(
@@ -2662,6 +2705,12 @@ export async function getWorkshopQaHandler(request: FastifyRequest, reply: Fasti
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
 
+  const qaEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
+    select: { status: true },
+  });
+  if (!isEnrolled(qaEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+
   const [posts, total] = await Promise.all([
     request.server.prisma.qAPost.findMany({
       where: { workshopId: workshop.id },
@@ -2733,6 +2782,12 @@ export async function postWorkshopQaHandler(request: FastifyRequest, reply: Fast
     select: { id: true },
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
+
+  const postQaEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
+    select: { status: true },
+  });
+  if (!isEnrolled(postQaEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
 
   const post = await request.server.prisma.qAPost.create({
     data: { workshopId: workshop.id, memberId: request.memberId, questionText: questionText.trim() },
@@ -2819,6 +2874,12 @@ export async function getWorkshopAssignmentsHandler(request: FastifyRequest, rep
 
   if (!workshop) return fail(reply, 404, 'Workshop not found');
 
+  const assignEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
+    select: { status: true },
+  });
+  if (!isEnrolled(assignEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+
   const ctaLabel = uiStrings?.assignmentCtaLabel ?? 'Answer';
   const submitLabel = uiStrings?.assignmentSubmitLabel ?? 'Submit';
   const cancelLabel = uiStrings?.assignmentCancelLabel ?? 'Cancel';
@@ -2872,8 +2933,20 @@ export async function submitAssignmentHandler(request: FastifyRequest, reply: Fa
     videoUrl?: string;
   };
 
-  const assignment = await request.server.prisma.assignment.findUnique({ where: { id: assignmentId } });
+  const assignment = await request.server.prisma.assignment.findUnique({
+    where: { id: assignmentId },
+    include: { challenge: { select: { workshopId: true } } },
+  });
   if (!assignment) return fail(reply, 404, 'Assignment not found');
+
+  const submitWorkshopId = (assignment as any).challenge?.workshopId as string | undefined;
+  if (submitWorkshopId) {
+    const submitEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+      where: { workshopId_memberId: { workshopId: submitWorkshopId, memberId: request.memberId } },
+      select: { status: true },
+    });
+    if (!isEnrolled(submitEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+  }
 
   const type = (assignment as any).assignmentType ?? 'qa';
 
@@ -2920,6 +2993,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
         videoUrl: true,
         bunnyVideoId: true,
         durationSeconds: true,
+        challenge: { select: { workshopId: true } },
         progress: {
           where: { memberId: request.memberId },
           select: { lastWatchedSecs: true, isCompleted: true },
@@ -2930,6 +3004,15 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
   ]);
 
   if (!episode) return fail(reply, 404, 'Episode not found');
+
+  const playbackWorkshopId = (episode as any).challenge?.workshopId as string | undefined;
+  if (playbackWorkshopId) {
+    const playbackEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+      where: { workshopId_memberId: { workshopId: playbackWorkshopId, memberId: request.memberId } },
+      select: { status: true },
+    });
+    if (!isEnrolled(playbackEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+  }
 
   let duration = episode.durationSeconds;
 
@@ -3010,10 +3093,19 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     select: {
       durationSeconds: true,
       bunnyVideoId: true,
-      challenge: { select: { workshop: { select: { slug: true } } } },
+      challenge: { select: { workshopId: true, workshop: { select: { slug: true } } } },
     },
   });
   if (!episode) return fail(reply, 404, 'Episode not found');
+
+  const progressWorkshopId = (episode as any).challenge?.workshopId as string | undefined;
+  if (progressWorkshopId) {
+    const progressEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+      where: { workshopId_memberId: { workshopId: progressWorkshopId, memberId: request.memberId } },
+      select: { status: true },
+    });
+    if (!isEnrolled(progressEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+  }
 
   const existingProgress = await request.server.prisma.memberEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
@@ -3684,6 +3776,44 @@ export async function updateNotificationPrefsHandler(request: FastifyRequest, re
   return ok(reply, prefs);
 }
 
+// ─── Workshop Access Request (user self-service) ──────────────────────────────
+
+export async function requestWorkshopAccessHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { slug } = request.params as { slug: string };
+  const prisma = request.server.prisma;
+
+  const workshop = await prisma.workshop.findFirst({
+    where: { slug },
+    select: { id: true, title: true },
+  });
+  if (!workshop) return fail(reply, 404, 'Workshop not found');
+
+  const existing = await prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
+    select: { status: true },
+  });
+
+  if (existing) {
+    // Already enrolled or pending — return current status (idempotent)
+    return ok(reply, { enrollmentStatus: existing.status });
+  }
+
+  await prisma.workshopEnrollment.create({
+    data: { workshopId: workshop.id, memberId: request.memberId, status: 'pending' },
+  });
+
+  // Notify admin room so they can see the request in real time
+  try {
+    request.server.io?.to('admin').emit('admin:workshop_access_request', {
+      memberId: request.memberId,
+      workshopId: workshop.id,
+      workshopTitle: workshop.title,
+    });
+  } catch {}
+
+  return ok(reply, { enrollmentStatus: 'pending' });
+}
+
 // ─── Workshop Challenges ──────────────────────────────────────────────────────
 
 export async function getWorkshopChallengesHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -3694,6 +3824,12 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
     select: { id: true },
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
+
+  const chalEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
+    select: { status: true },
+  });
+  if (!isEnrolled(chalEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
 
   // Use flow item order so admin drag-and-drop reordering is respected,
   // and live calls are interleaved at the admin-configured position.
@@ -3833,18 +3969,27 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
 }
 
 // Aggregated endpoint: returns detail + flow + challenges in a single round-trip.
-// The workshop page previously made 3 separate requests; this replaces all of them.
 export async function getWorkshopOverviewHandler(request: FastifyRequest, reply: FastifyReply) {
   const { slug } = request.params as { slug: string };
 
-  // Run all three queries in parallel — same logic as the individual handlers.
-  const [detailResult, flowResult, challengesResult] = await Promise.all([
-    getWorkshopDetailData(request, slug),
+  // Fetch detail first — it includes enrollmentStatus which gates content delivery
+  const detailResult = await getWorkshopDetailData(request, slug);
+  if (!detailResult) return fail(reply, 404, 'Workshop not found');
+
+  // Non-enrolled members get only the gate data; flow/challenges are withheld
+  if (!isEnrolled(detailResult.enrollmentStatus)) {
+    return ok(reply, {
+      detail: detailResult,
+      flow: { flowItems: [] },
+      challenges: { challenges: [] },
+    });
+  }
+
+  // Enrolled: fetch remaining data in parallel
+  const [flowResult, challengesResult] = await Promise.all([
     getWorkshopFlowData(request, slug),
     getWorkshopChallengesData(request, slug),
   ]);
-
-  if (!detailResult) return fail(reply, 404, 'Workshop not found');
 
   return ok(reply, {
     detail: detailResult,
@@ -3867,6 +4012,25 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
   if (!workshop) return null;
 
   const enrollment = (workshop as any).enrollments?.[0];
+  const enrollmentStatus = enrollment?.status ?? null;
+
+  // Non-enrolled: return gate payload without expensive progress queries
+  if (!isEnrolled(enrollmentStatus)) {
+    return {
+      id: workshop.id,
+      title: workshop.title,
+      thumbnailUrl: workshop.thumbnailUrl ?? null,
+      description: workshop.description ?? null,
+      backLabel: workshop.backLabel,
+      backUrl: workshop.backUrl,
+      enrollmentStatus,
+      sidebar: { tabs: [] },
+      learningProgress: null,
+      certificate: null,
+      workshopFlowLabel: null,
+      defaultMainAreaType: null,
+    };
+  }
   const allChallenges: any[] = (workshop as any).challenges ?? [];
   const allEpisodes = allChallenges.flatMap((c: any) => c.episodes ?? []);
 
@@ -3910,6 +4074,8 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
   return {
     id: workshop.id,
     title: workshop.title,
+    thumbnailUrl: workshop.thumbnailUrl ?? null,
+    description: workshop.description ?? null,
     backLabel: workshop.backLabel,
     backUrl: workshop.backUrl,
     sidebar: { tabs: [
@@ -3929,7 +4095,7 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
     certificate: { eligible: certEligible, videosCompletedPct, videosWatchPct, challengesCompletedPct, remainingVideos: totalCount - completedCount, remainingChallenges: totalChallenges - completedChallengeCount },
     workshopFlowLabel: workshop.workshopFlowLabel,
     defaultMainAreaType: hasUpcomingCall ? 'countdown' : null,
-    enrollmentStatus: enrollment?.status ?? null,
+    enrollmentStatus,
   };
 }
 
@@ -4116,6 +4282,12 @@ export async function completeChallengeHandler(request: FastifyRequest, reply: F
   });
   if (!challenge) return fail(reply, 404, 'Challenge not found');
 
+  const complChalEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+    where: { workshopId_memberId: { workshopId: challenge.workshopId, memberId: request.memberId } },
+    select: { status: true },
+  });
+  if (!isEnrolled(complChalEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+
   // Sequential lock check — use WorkshopFlowItem.order (the user-visible sequence)
   // rather than Challenge.order, which can diverge when the flow is manually reordered
   // or when live-call items sit between challenges.
@@ -4204,9 +4376,18 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
 
   const episode = await request.server.prisma.workshopEpisode.findUnique({
     where: { id },
-    select: { id: true, durationSeconds: true, bunnyVideoId: true },
+    select: { id: true, durationSeconds: true, bunnyVideoId: true, challenge: { select: { workshopId: true } } },
   });
   if (!episode) return fail(reply, 404, 'Episode not found');
+
+  const complEpWorkshopId = (episode as any).challenge?.workshopId as string | undefined;
+  if (complEpWorkshopId) {
+    const complEpEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
+      where: { workshopId_memberId: { workshopId: complEpWorkshopId, memberId: request.memberId } },
+      select: { status: true },
+    });
+    if (!isEnrolled(complEpEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+  }
 
   const progress = await request.server.prisma.memberEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId: id } },

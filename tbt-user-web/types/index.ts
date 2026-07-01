@@ -567,9 +567,13 @@ export interface CertificateDetails {
 }
 
 export interface WorkshopDetail {
+  id?: string;
   backUrl: string;
   backLabel: string;
   title: string;
+  thumbnailUrl?: string | null;
+  description?: string | null;
+  enrollmentStatus: string | null;
   sidebar: {
     tabs: WorkshopTab[];
   };

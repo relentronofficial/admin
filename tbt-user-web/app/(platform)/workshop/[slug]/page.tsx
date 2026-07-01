@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ChevronLeft,
   ChevronDown,
@@ -50,6 +51,7 @@ import {
   useGetLiveCallResources,
   useGetLiveCallChapters,
   useGetMyLiveCallCertificate,
+  useRequestWorkshopAccess,
 } from "@/lib/hooks/useConfig";
 import { useMe } from "@/lib/hooks/useUser";
 import { WorkshopLiveCall } from "@/components/features/live/WorkshopLiveCall";
@@ -3446,6 +3448,82 @@ function ChallengeView({
   }
 }
 
+// ─── Access Gate (non-enrolled / pending) ─────────────────────────────────────
+
+function WorkshopAccessGate({ detail, slug }: { detail: any; slug: string }) {
+  const qc = useQueryClient();
+  const requestAccess = useRequestWorkshopAccess(slug);
+  const [localStatus, setLocalStatus] = useState<string | null>(detail?.enrollmentStatus ?? null);
+
+  const handleRequest = async () => {
+    try {
+      const result = await requestAccess.mutateAsync();
+      setLocalStatus(result.enrollmentStatus);
+      // Invalidate so page refetches with new status
+      void qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+    } catch {}
+  };
+
+  const isPending = localStatus === "pending";
+
+  return (
+    <div className="max-w-xl mx-auto py-12 px-4 text-center space-y-6">
+      {detail?.thumbnailUrl && (
+        <div className="aspect-video relative rounded-2xl overflow-hidden mx-auto max-w-sm shadow-lg">
+          <Image
+            src={detail.thumbnailUrl}
+            alt={detail.title ?? "Workshop"}
+            fill
+            sizes="(max-width: 640px) 100vw, 384px"
+            className="object-cover"
+          />
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <h1 className="text-xl font-bold" style={{ color: "var(--color-bg-primary)" }}>
+          {detail?.title ?? "Workshop"}
+        </h1>
+        {detail?.description && (
+          <p className="text-sm leading-relaxed" style={{ color: "rgba(0,0,0,0.55)" }}>
+            {detail.description}
+          </p>
+        )}
+      </div>
+
+      {isPending ? (
+        <div
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-full text-sm font-semibold"
+          style={{ background: "rgba(234,179,8,0.12)", color: "#b45309", border: "1px solid rgba(234,179,8,0.3)" }}
+        >
+          <span>Access Requested — Pending Approval</span>
+        </div>
+      ) : (
+        <button
+          onClick={handleRequest}
+          disabled={requestAccess.isPending}
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-sm font-bold text-white transition-opacity disabled:opacity-60"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {requestAccess.isPending ? "Sending request…" : "Request Access"}
+        </button>
+      )}
+
+      {detail?.backUrl && (
+        <div>
+          <Link
+            href={detail.backUrl}
+            className="text-xs font-semibold uppercase tracking-widest transition-colors"
+            style={{ color: "rgba(0,0,0,0.35)" }}
+          >
+            ← {detail?.backLabel ?? "Back to Workshops"}
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function DetailSkeleton() {
@@ -3592,6 +3670,24 @@ export default function WorkshopDetailPage() {
     };
   }, [slug, qc]);
 
+  // Listen for admin-approval socket event to auto-refresh enrollment status
+  useEffect(() => {
+    if (!slug) return;
+    let mounted = true;
+    getSocket().then((socket) => {
+      if (!mounted) return;
+      const onEnrolled = (payload: { workshopId?: string }) => {
+        // Invalidate detail so enrollmentStatus refreshes without manual reload
+        void qc.invalidateQueries({ queryKey: ["workshop-detail", slug] });
+        void qc.invalidateQueries({ queryKey: ["workshop-flow", slug] });
+        void qc.invalidateQueries({ queryKey: ["workshop-challenges", slug] });
+      };
+      socket.on("workshop:enrolled", onEnrolled);
+      return () => { socket.off("workshop:enrolled", onEnrolled); };
+    });
+    return () => { mounted = false; };
+  }, [slug, qc]);
+
   if (detailLoading) return <DetailSkeleton />;
   if (!detail) {
     return (
@@ -3599,6 +3695,12 @@ export default function WorkshopDetailPage() {
         {uiStrings?.errorGeneric}
       </p>
     );
+  }
+
+  // Show enrollment gate for non-enrolled and pending members
+  const enrollmentStatus = detail.enrollmentStatus as string | null;
+  if (enrollmentStatus !== "active" && enrollmentStatus !== "completed") {
+    return <WorkshopAccessGate detail={detail} slug={slug} />;
   }
 
   const progress = detail.learningProgress;

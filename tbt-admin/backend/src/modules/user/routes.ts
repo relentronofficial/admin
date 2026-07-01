@@ -38,6 +38,7 @@ import {
   getHomeSectionsHandler,
   listWorkshopsHandler,
   getMyWorkshopsHandler,
+  requestWorkshopAccessHandler,
   getWorkshopDetailHandler,
   getWorkshopFlowHandler,
   getWorkshopQaHandler,
@@ -152,6 +153,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Workshops (user-facing) ───────────────────────────────────────────────
   fastify.get('/workshops', listWorkshopsHandler);
   fastify.get('/workshops/my', getMyWorkshopsHandler);
+  fastify.post('/workshops/:slug/request-access', requestWorkshopAccessHandler);
   fastify.get('/workshops/:slug/overview', getWorkshopOverviewHandler);
   fastify.get('/workshops/:slug/detail', getWorkshopDetailHandler);
   fastify.get('/workshops/:slug/flow', getWorkshopFlowHandler);

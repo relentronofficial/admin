@@ -219,6 +219,14 @@ export const useWorkshopOverview = (slug: string) =>
     staleTime: 30 * 1000,
   });
 
+export const useRequestWorkshopAccess = (slug: string) =>
+  useMutation({
+    mutationFn: async () => {
+      const res: any = await apiClient.post(`/api/user/workshops/${slug}/request-access`);
+      return res?.data as { enrollmentStatus: string };
+    },
+  });
+
 export const useCompleteChallenge = () =>
   useMutation({
     mutationFn: async ({ challengeId, answersData }: { challengeId: string; answersData?: any }) => {

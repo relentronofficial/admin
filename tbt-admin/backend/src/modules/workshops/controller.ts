@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { env } from '../../config/env.js';
+import { invalidateCache } from '../../lib/cache.js';
 
 // ── BUNNY STREAM DURATION HELPER ──────────────────────────────────────
 
@@ -128,7 +129,7 @@ export async function enrollMembersHandler(req: FastifyRequest, reply: FastifyRe
   const { memberIds } = req.body as any;
 
   const [workshop, created] = await Promise.all([
-    req.server.prisma.workshop.findUnique({ where: { id }, select: { title: true } }),
+    req.server.prisma.workshop.findUnique({ where: { id }, select: { title: true, slug: true } }),
     req.server.prisma.$transaction(
       memberIds.map((memberId: string) =>
         req.server.prisma.workshopEnrollment.upsert({
@@ -146,6 +147,10 @@ export async function enrollMembersHandler(req: FastifyRequest, reply: FastifyRe
         workshopId: id,
         workshopTitle: workshop.title,
       });
+      // Bust the per-member detail cache so the next request returns the new enrollmentStatus
+      if (req.server.redis) {
+        void invalidateCache(req.server.redis, `ws:detail:${memberId}:${workshop.slug}`);
+      }
     });
   }
 
