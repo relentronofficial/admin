@@ -81,7 +81,7 @@ jobs:
           DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
         run: |
           npm install --ignore-scripts
-          npx prisma db push --skip-generate
+          npx prisma db push --skip-generate --accept-data-loss
 
       - name: Deploy to Cloud Run (staging)
         run: |
@@ -123,7 +123,7 @@ jobs:
           DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
         run: |
           npm install --ignore-scripts
-          npx prisma db push --skip-generate
+          npx prisma db push --skip-generate --accept-data-loss
 
       - name: Deploy to Cloud Run (production)
         run: |
