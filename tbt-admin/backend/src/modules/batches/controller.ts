@@ -71,9 +71,50 @@ export async function getBatchHandler(req: FastifyRequest<{ Params: { id: string
 export async function listProgramsHandler(req: FastifyRequest, reply: FastifyReply) {
   const programs = await req.server.prisma.program.findMany({
     orderBy: { createdAt: 'desc' },
-    select: { id: true, name: true, description: true },
+    select: { id: true, name: true, description: true, durationDays: true },
   });
   return reply.send({ success: true, data: programs, error: null });
+}
+
+export async function createProgramHandler(req: FastifyRequest, reply: FastifyReply) {
+  const body = req.body as any;
+  if (!body?.name?.trim()) {
+    return reply.status(400).send({ success: false, data: null, error: 'Program name is required' });
+  }
+  const program = await req.server.prisma.program.create({
+    data: {
+      name: body.name.trim(),
+      description: body.description?.trim() ?? null,
+      durationDays: body.durationDays ? parseInt(body.durationDays) : 90,
+    },
+    select: { id: true, name: true, description: true, durationDays: true, createdAt: true },
+  });
+  return reply.status(201).send({ success: true, data: program, error: null });
+}
+
+export async function updateProgramHandler(
+  req: FastifyRequest<{ Params: { programId: string } }>,
+  reply: FastifyReply,
+) {
+  const body = req.body as any;
+  const program = await req.server.prisma.program.update({
+    where: { id: req.params.programId },
+    data: {
+      ...(body.name ? { name: body.name.trim() } : {}),
+      ...(body.description !== undefined ? { description: body.description?.trim() ?? null } : {}),
+      ...(body.durationDays !== undefined ? { durationDays: parseInt(body.durationDays) } : {}),
+    },
+    select: { id: true, name: true, description: true, durationDays: true, createdAt: true },
+  });
+  return reply.send({ success: true, data: program, error: null });
+}
+
+export async function deleteProgramHandler(
+  req: FastifyRequest<{ Params: { programId: string } }>,
+  reply: FastifyReply,
+) {
+  await req.server.prisma.program.delete({ where: { id: req.params.programId } });
+  return reply.send({ success: true, data: null, error: null });
 }
 
 export async function createBatchHandler(req: FastifyRequest, reply: FastifyReply) {

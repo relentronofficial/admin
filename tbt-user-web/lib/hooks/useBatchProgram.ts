@@ -16,6 +16,21 @@ export const useMyBatchProgram = () =>
         breaks?: any[];
         totalDays?: number;
         programName?: string | null;
+        programTasks?: {
+          id: string;
+          dayNumber: number;
+          title: string;
+          description?: string | null;
+          deliverables?: string | null;
+          contentUrl?: string | null;
+          basePoints: number;
+          bonusPoints: number;
+          proofType: string;
+          estimatedMinutes: number;
+          isMilestone: boolean;
+          milestoneLabel?: string | null;
+          sortOrder: number;
+        }[];
       } | null;
     },
     staleTime: 30_000,

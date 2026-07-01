@@ -1,6 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import {
   listProgramsHandler,
+  createProgramHandler,
+  updateProgramHandler,
+  deleteProgramHandler,
   listBatchesHandler,
   getBatchHandler,
   createBatchHandler,
@@ -31,8 +34,11 @@ import {
 export async function batchRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
 
-  // Programs list (for batch form dropdown)
+  // Programs CRUD
   fastify.get('/programs', listProgramsHandler);
+  fastify.post('/programs', createProgramHandler);
+  fastify.put('/programs/:programId', updateProgramHandler);
+  fastify.delete('/programs/:programId', deleteProgramHandler);
 
   // Batch CRUD
   fastify.get('/', listBatchesHandler);

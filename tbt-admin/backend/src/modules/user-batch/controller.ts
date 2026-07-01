@@ -58,6 +58,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       where: { id: member.batchId },
       select: {
         id: true, name: true, description: true,
+        programId: true,
         startsAt: true, endsAt: true, isActive: true,
         program: { select: { name: true, durationDays: true } },
       },
@@ -88,6 +89,28 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
   const extendedDays = (settings[0] as any)?.extended_days ?? 0;
   const totalDays = baseDays + extendedDays;
 
+  const programTasks = (batch as any)?.programId
+    ? await req.server.prisma.task.findMany({
+        where: { programId: (batch as any).programId },
+        orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
+        select: {
+          id: true,
+          dayNumber: true,
+          title: true,
+          description: true,
+          deliverables: true,
+          contentUrl: true,
+          basePoints: true,
+          bonusPoints: true,
+          proofType: true,
+          estimatedMinutes: true,
+          isMilestone: true,
+          milestoneLabel: true,
+          sortOrder: true,
+        },
+      })
+    : [];
+
   return reply.send({
     success: true,
     data: {
@@ -98,6 +121,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       progress,
       attendance,
       breaks,
+      programTasks,
     },
     error: null,
   });

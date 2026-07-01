@@ -165,11 +165,18 @@ export default function BatchDayPage() {
           ? "not_marked"
           : "future";
 
-  const tasks: { id: string; title: string; order: number }[] = Array.isArray(
-    dayContent?.tasks,
-  )
-    ? dayContent.tasks
-    : [];
+  const programTasksForDay = useMemo(() => {
+    const all: any[] = (program as any)?.programTasks ?? [];
+    return all.filter((t: any) => t.dayNumber === dayNumber)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }, [program, dayNumber]);
+
+  const tasks: { id: string; title: string; order: number; description?: string; proofType?: string; basePoints?: number; estimatedMinutes?: number; isMilestone?: boolean }[] =
+    programTasksForDay.length > 0
+      ? programTasksForDay.map((t: any) => ({ ...t, order: t.sortOrder ?? 0 }))
+      : Array.isArray(dayContent?.tasks)
+        ? dayContent.tasks
+        : [];
 
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
   const [journalEntry, setJournalEntry] = useState("");
@@ -530,7 +537,7 @@ export default function BatchDayPage() {
             </span>
           </div>
           <div className="space-y-2">
-            {tasks.sort((a, b) => a.order - b.order).map((task) => {
+            {tasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((task) => {
               const done = completedTaskIds.includes(task.id);
               const proof: string | undefined = localTaskProofs[task.id];
               const isUploading = uploadingTaskIds.has(task.id);
@@ -551,7 +558,7 @@ export default function BatchDayPage() {
                     onClick={() => canEdit && toggleTask(task.id)}
                     role="checkbox"
                     aria-checked={done}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all"
+                    className="w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all"
                     style={{
                       borderColor: done
                         ? "rgba(34,197,94,0.3)"
@@ -560,47 +567,76 @@ export default function BatchDayPage() {
                       cursor: canEdit ? "pointer" : "default",
                     }}
                   >
-                    {done ? (
-                      <CheckCircle2 size={18} style={{ color: "#22c55e", flexShrink: 0 }} />
-                    ) : (
-                      <Circle size={18} className="opacity-30 flex-shrink-0" />
-                    )}
-                    <span className={`text-sm flex-1 ${done ? "line-through opacity-60" : ""}`}>
-                      {task.title}
-                    </span>
-                    {proof && (
-                      <a
-                        href={proof}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex-shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors"
-                        style={{
-                          color: "var(--color-accent)",
-                          background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                        }}
-                      >
-                        <ExternalLink size={9} />
-                        {uiStrings?.batchProofLabel ?? "Proof"}
-                      </a>
-                    )}
-                    {canEdit && done && (
-                      isUploading ? (
-                        <Loader2 size={14} className="animate-spin flex-shrink-0 opacity-40" />
-                      ) : !proof ? (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); fileInputRefs.current[task.id]?.click(); }}
-                          className="flex-shrink-0 p-1 rounded transition-colors"
-                          style={{ color: "#606060" }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-accent)"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#606060"; }}
-                          title="Attach proof"
+                    <div className="mt-0.5 shrink-0">
+                      {done ? (
+                        <CheckCircle2 size={18} style={{ color: "#22c55e" }} />
+                      ) : (
+                        <Circle size={18} className="opacity-30" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm font-medium block ${done ? "line-through opacity-60" : ""}`}>
+                        {task.title}
+                      </span>
+                      {task.description && (
+                        <span className="text-[12px] opacity-50 mt-0.5 block">{task.description}</span>
+                      )}
+                      {(task.basePoints || task.estimatedMinutes || task.proofType) && (
+                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                          {(task.basePoints ?? 0) > 0 && (
+                            <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>
+                              +{task.basePoints} pts
+                            </span>
+                          )}
+                          {(task.estimatedMinutes ?? 0) > 0 && (
+                            <span className="text-[11px] opacity-40 flex items-center gap-1">
+                              <Clock size={10} />
+                              {task.estimatedMinutes}m
+                            </span>
+                          )}
+                          {task.proofType && (
+                            <span className="text-[10px] uppercase tracking-wider opacity-35 font-bold">
+                              {task.proofType}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {proof && (
+                        <a
+                          href={proof}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                          style={{
+                            color: "var(--color-accent)",
+                            background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                          }}
                         >
-                          <Paperclip size={14} />
-                        </button>
-                      ) : null
-                    )}
+                          <ExternalLink size={9} />
+                          {uiStrings?.batchProofLabel ?? "Proof"}
+                        </a>
+                      )}
+                      {canEdit && done && (
+                        isUploading ? (
+                          <Loader2 size={14} className="animate-spin opacity-40" />
+                        ) : !proof ? (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); fileInputRefs.current[task.id]?.click(); }}
+                            className="p-1 rounded transition-colors"
+                            style={{ color: "#606060" }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-accent)"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#606060"; }}
+                            title="Attach proof"
+                          >
+                            <Paperclip size={14} />
+                          </button>
+                        ) : null
+                      )}
+                    </div>
                   </div>
                 </div>
               );

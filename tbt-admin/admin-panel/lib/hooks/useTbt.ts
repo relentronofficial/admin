@@ -804,6 +804,38 @@ export const useListPrograms = () =>
     staleTime: 60_000,
   });
 
+export const useCreateProgram = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; description?: string; durationDays?: number }) => {
+      const res: any = await apiClient.post('/api/batches/programs', data);
+      return res.data || res;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['programs'] }),
+  });
+};
+
+export const useUpdateProgram = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; durationDays?: number } }) => {
+      const res: any = await apiClient.put(`/api/batches/programs/${id}`, data);
+      return res.data || res;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['programs'] }),
+  });
+};
+
+export const useDeleteProgram = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/batches/programs/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['programs'] }),
+  });
+};
+
 export const useGetBatchMemberAttendance = (batchId: string, memberId: string | null) =>
   useQuery({
     queryKey: ['batch-attendance', batchId, memberId],
