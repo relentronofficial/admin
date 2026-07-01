@@ -31,7 +31,8 @@ import {
   Target,
   Trophy,
   MessageSquare,
-  UploadCloud
+  UploadCloud,
+  Camera
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -113,11 +114,14 @@ export default function MembersListPage() {
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [editKycDoc, setEditKycDoc] = useState<File | null>(null);
   const [editIsUploading, setEditIsUploading] = useState(false);
+  const [editProfilePhotoUrl, setEditProfilePhotoUrl] = useState<string>("");
+  const [editIsUploadingPhoto, setEditIsUploadingPhoto] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [pendingBadge, setPendingBadge] = useState(0);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const editKycRef = useRef<HTMLInputElement>(null);
+  const editPhotoRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: statusFilter });
   const { data: pendingData, refetch: refetchPending } = useListMembers({ page: 1, limit: 1, status: 'pending' });
@@ -179,6 +183,7 @@ export default function MembersListPage() {
 
   useEffect(() => {
     if (editingMember) {
+      setEditProfilePhotoUrl(editingMember.profilePhotoUrl || "");
       reset({
         firstName: editingMember.firstName || "",
         lastName: editingMember.lastName || "",
@@ -254,6 +259,23 @@ export default function MembersListPage() {
     }
   };
 
+  const handleEditPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error("Photo must be under 2MB"); return; }
+    setEditIsUploadingPhoto(true);
+    try {
+      const result = await uploadImage.mutateAsync({ file, pathPrefix: "members/avatars" });
+      setEditProfilePhotoUrl(result.publicUrl);
+      toast.success("Photo uploaded");
+    } catch {
+      toast.error("Photo upload failed");
+    } finally {
+      setEditIsUploadingPhoto(false);
+      e.target.value = "";
+    }
+  };
+
   const onUpdateSubmit = async (formData: MemberUpdateInput) => {
     try {
       setEditIsUploading(true);
@@ -265,6 +287,9 @@ export default function MembersListPage() {
       if (password && password.trim() !== "") {
         payload.password = password;
       }
+      if (editProfilePhotoUrl !== (editingMember.profilePhotoUrl || "")) {
+        payload.profilePhotoUrl = editProfilePhotoUrl;
+      }
       if (editKycDoc) {
         const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
         payload.kycDocumentUrl = publicUrl;
@@ -274,6 +299,7 @@ export default function MembersListPage() {
       setEditingMember(null);
       setShowEditPassword(false);
       setEditKycDoc(null);
+      setEditProfilePhotoUrl("");
       refetch();
     } catch (err: any) {
       toast.error(err.message || "Failed to update member");
@@ -719,6 +745,45 @@ export default function MembersListPage() {
                 <section>
                   <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">01. Basic Info</h4>
                   <div className="space-y-5">
+                    {/* Profile Photo */}
+                    <div className="flex items-start gap-5">
+                      <div className="relative w-20 h-20 shrink-0">
+                        <div className="w-20 h-20 rounded-xl bg-[#1a1a1a] border border-[#333] overflow-hidden flex items-center justify-center">
+                          {editProfilePhotoUrl ? (
+                            <img src={editProfilePhotoUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <User size={28} className="text-[#666]" />
+                          )}
+                        </div>
+                        {editProfilePhotoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setEditProfilePhotoUrl("")}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-white hover:bg-red-700"
+                          >
+                            <X size={10} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-2 pt-1">
+                        <label className={cn(
+                          "flex items-center gap-2 px-4 py-2 rounded-lg border border-[#333] text-[11px] font-bold font-rajdhani uppercase tracking-widest cursor-pointer transition-all",
+                          editIsUploadingPhoto ? "text-[#777] pointer-events-none" : "text-[#a0a0a0] hover:border-[#606060] hover:text-white"
+                        )}>
+                          {editIsUploadingPhoto ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+                          {editIsUploadingPhoto ? "Uploading..." : "Change Photo"}
+                          <input
+                            type="file"
+                            ref={editPhotoRef}
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleEditPhotoChange}
+                            disabled={editIsUploadingPhoto}
+                          />
+                        </label>
+                        <p className="text-[10px] text-[#777] uppercase tracking-wider font-rajdhani font-bold">JPG, PNG, WEBP · Max 2MB</p>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">First Name</label>
@@ -1099,6 +1164,9 @@ export default function MembersListPage() {
                         const { challenge1, challenge2, challenge3, password, ...rest } = formValues as any;
                         const payload: any = { ...rest, currentChallenges: [challenge1, challenge2, challenge3].filter(Boolean) };
                         if (password && password.trim() !== "") payload.password = password;
+                        if (editProfilePhotoUrl !== (editingMember.profilePhotoUrl || "")) {
+                          payload.profilePhotoUrl = editProfilePhotoUrl;
+                        }
                         if (editKycDoc) {
                           const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
                           payload.kycDocumentUrl = publicUrl;
@@ -1107,6 +1175,7 @@ export default function MembersListPage() {
                         toast.success("Member approved and activated");
                         setEditingMember(null);
                         setEditKycDoc(null);
+                        setEditProfilePhotoUrl("");
                         refetch();
                         refetchPending();
                       } catch (err: any) {
