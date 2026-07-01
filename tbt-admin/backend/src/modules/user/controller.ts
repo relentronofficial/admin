@@ -560,7 +560,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     accessType: accessRecord?.accessType ?? null,
     accessExpiresAt: accessRecord?.expiresAt ?? null,
     paymentLinkUrl: course.paymentLinkUrl ?? null,
-    pendingPayment: pendingPayment ? { id: pendingPayment.id } : null,
+    pendingPayment: pendingPayment ? { id: pendingPayment.id, paymentUrl: course.paymentLinkUrl ?? null } : null,
     xpPerEpisode: (course as any).xpPerEpisode ?? 10,
     passingScorePercent: (course as any).passingScorePercent ?? 70,
     lessons,
@@ -581,7 +581,7 @@ export async function requestCourseAccessHandler(request: FastifyRequest, reply:
 
   const course = await request.server.prisma.course.findUnique({
     where: { id: courseId },
-    select: { id: true, price: true, isPublished: true, paymentLinkUrl: true },
+    select: { id: true, title: true, price: true, isPublished: true, paymentLinkUrl: true },
   });
   if (!course || !course.isPublished) return fail(reply, 404, 'Course not found');
 
@@ -606,6 +606,15 @@ export async function requestCourseAccessHandler(request: FastifyRequest, reply:
       },
     });
     paymentId = payment.id;
+
+    // Notify admin room so they see the request in real time
+    try {
+      request.server.io?.to('admin').emit('admin:course_access_request', {
+        memberId,
+        courseId,
+        courseTitle: course.title,
+      });
+    } catch {}
   }
 
   const paymentUrl = course.paymentLinkUrl ?? 'https://tamilbusinesstribe.com';
@@ -666,6 +675,9 @@ export async function enrollCourseHandler(request: FastifyRequest, reply: Fastif
 
 export async function getCertificateEligibilityHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId } = request.params as { courseId: string };
+
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
 
   const course = await request.server.prisma.course.findUnique({
     where: { id: courseId },
@@ -771,6 +783,9 @@ async function buildCourseCertificatePdf(
 
 export async function getCourseCertificateHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId } = request.params as { courseId: string };
+
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
 
   const [course, member] = await Promise.all([
     request.server.prisma.course.findUnique({ where: { id: courseId }, select: { id: true, title: true } }),
@@ -884,6 +899,9 @@ export async function getEnrollmentsHandler(request: FastifyRequest, reply: Fast
 export async function getLessonProgressHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId } = request.params as { courseId: string };
 
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
+
   const progress = await (request.server.prisma as any).courseEpisodeProgress.findMany({
     where: { memberId: request.memberId, episode: { courseId } },
     select: { episodeId: true, completed: true, completedAt: true },
@@ -907,6 +925,9 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     isCompleted?: boolean;
     videoDuration?: number;
   };
+
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
 
   const episode = await request.server.prisma.courseEpisode.findFirst({
     where: { id: episodeId, courseId },
@@ -1146,6 +1167,9 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
   const { id: courseId, epId } = request.params as { id: string; epId: string };
   const { answers } = request.body as { answers: Record<string, string> };
 
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
+
   const episode = await request.server.prisma.courseEpisode.findFirst({
     where: { id: epId, courseId },
     select: { id: true, title: true, quizData: true, courseId: true },
@@ -1198,6 +1222,9 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
 
 export async function getCourseXpHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: courseId } = request.params as { id: string };
+
+  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
 
   try {
     const rows = await (request.server.prisma as any).memberXP.findMany({

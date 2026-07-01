@@ -23,6 +23,7 @@ import { useUploadImage, useCreateBunnyVideo } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
+import { getAdminSocket } from "@/lib/socket/client";
 
 const toSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -104,6 +105,7 @@ function FileUploadBtn({
 
 // ── Main page ──────────────────────────────────────────────────────────
 export default function CoursesPage() {
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const { data, isLoading } = useListVodCourses({ search });
   const { data: tiersData } = useListTiers();
@@ -114,6 +116,10 @@ export default function CoursesPage() {
 
   const courses: any[] = (data as any)?.data || [];
   const total = (data as any)?.meta?.total || 0;
+
+  // Pending access-request count — drives the badge on the Payments toggle
+  const { data: pendingCountData } = useListCoursePayments({ status: "pending", limit: 1 });
+  const pendingPaymentsTotal: number = (pendingCountData as any)?.meta?.total ?? 0;
 
   const [viewMode, setViewMode] = useState<"courses" | "payments">("courses");
   const [showCourseForm, setShowCourseForm] = useState(false);
@@ -169,6 +175,22 @@ export default function CoursesPage() {
     catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
+  // Real-time: new course access request from member
+  useEffect(() => {
+    let mounted = true;
+    getAdminSocket().then((socket) => {
+      if (!mounted) return;
+      socket.on('admin:course_access_request', (data: { courseId: string; courseTitle: string }) => {
+        toast.success(`New access request for ${data.courseTitle}`);
+        qc.invalidateQueries({ queryKey: ['course-payments'] });
+      });
+    });
+    return () => {
+      mounted = false;
+      getAdminSocket().then((s) => s.off('admin:course_access_request'));
+    };
+  }, [qc]);
+
   return (
     <DashboardLayout>
       <div className="max-w-6xl mx-auto space-y-6">
@@ -190,6 +212,11 @@ export default function CoursesPage() {
               <button onClick={() => setViewMode("payments")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all ${viewMode === "payments" ? "bg-[#dc2626] text-white" : "text-[#888] hover:text-[#f0f0f0]"}`}>
                 <CreditCard size={12} /> Payments
+                {pendingPaymentsTotal > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold bg-yellow-500 text-black">
+                    {pendingPaymentsTotal}
+                  </span>
+                )}
               </button>
             </div>
             {viewMode === "courses" && (
