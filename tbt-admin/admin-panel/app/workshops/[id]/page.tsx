@@ -31,6 +31,7 @@ import { useLiveCallAdminStatus, useGetAttendance, useSyncEpisodeDurations, useL
 import { useUser } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
+import { getAdminSocket } from "@/lib/socket/client";
 
 const TABS = [
   { id: "info", label: "Info & Labels", icon: Settings },
@@ -925,6 +926,23 @@ export default function WorkshopDetailPage() {
     } catch (err: any) { toast.error(err.message || "Failed"); }
   };
 
+  // ── Real-time: new access request from member ─────────────────────────
+  useEffect(() => {
+    let mounted = true;
+    getAdminSocket().then((socket) => {
+      if (!mounted) return;
+      socket.on('admin:workshop_access_request', (data: { workshopId: string; workshopTitle: string }) => {
+        if (data.workshopId !== id) return;
+        toast.success(`New access request for ${data.workshopTitle}`);
+        refetchEnrollments();
+      });
+    });
+    return () => {
+      mounted = false;
+      getAdminSocket().then((s) => s.off('admin:workshop_access_request'));
+    };
+  }, [id, refetchEnrollments]);
+
   // ── Flow tab state ────────────────────────────────────────────────────
   const [localFlowItems, setLocalFlowItems] = useState<any[]>([]);
   const [flowIsDirty, setFlowIsDirty] = useState(false);
@@ -1347,6 +1365,7 @@ export default function WorkshopDetailPage() {
   };
 
   // ── Enrollment state ──────────────────────────────────────────────────
+  const pendingEnrollmentCount = enrollments.filter((e: any) => e.status === "pending").length;
   const [deletingEnrollment, setDeletingEnrollment] = useState<string | null>(null);
   const [enrollSearch, setEnrollSearch] = useState("");
   const [enrollDropOpen, setEnrollDropOpen] = useState(false);
@@ -1406,11 +1425,17 @@ export default function WorkshopDetailPage() {
         <div className="flex gap-1 bg-[#111] border border-[#2a2a2a] rounded-xl p-1 overflow-x-auto">
           {TABS.map(tab => {
             const Icon = tab.icon;
+            const showPendingBadge = tab.id === "enrollments" && pendingEnrollmentCount > 0;
             return (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all ${activeTab === tab.id ? "bg-[#dc2626] text-white" : "text-[#888] hover:text-[#a0a0a0] hover:bg-white/[0.03]"}`}>
                 <Icon size={13} />
                 <span className="hidden md:inline">{tab.label}</span>
+                {showPendingBadge && (
+                  <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold bg-yellow-500 text-black">
+                    {pendingEnrollmentCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -2109,23 +2134,36 @@ export default function WorkshopDetailPage() {
                   </thead>
                   <tbody className="divide-y divide-[#2a2a2a]">
                     {enrollments.map((e: any) => (
-                      <tr key={e.id} className="hover:bg-white/[0.02] transition-colors">
+                      <tr key={e.id} className={`transition-colors ${e.status === "pending" ? "bg-yellow-500/5 border-l-2 border-l-yellow-500/50 hover:bg-yellow-500/10" : "hover:bg-white/[0.02]"}`}>
                         <td className="px-6 py-4">
                           <p className="font-bold text-[#f0f0f0] text-sm">{e.member?.firstName} {e.member?.lastName}</p>
                           <p className="text-[11px] text-[#777]">{e.member?.email}</p>
                         </td>
                         <td className="px-6 py-4">
-                          <select value={e.status} onChange={ev => handleUpdateEnrollment(e.id, ev.target.value)} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded h-8 px-2 text-white text-[11px] outline-none focus:border-[#dc2626] transition-all appearance-none">
-                            {["active", "completed", "paused", "dropped"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                          </select>
+                          {e.status === "pending" ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/30">
+                              Pending Approval
+                            </span>
+                          ) : (
+                            <select value={e.status} onChange={ev => handleUpdateEnrollment(e.id, ev.target.value)} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded h-8 px-2 text-white text-[11px] outline-none focus:border-[#dc2626] transition-all appearance-none">
+                              {["active", "completed", "paused", "dropped"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                            </select>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-[#888] text-sm">{e.createdAt ? format(new Date(e.createdAt), "dd MMM yyyy") : "—"}</td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {e.status === "completed" && <span className="flex items-center gap-1 text-[11px] text-green-400 font-bold"><CheckCircle2 size={12} /></span>}
-                            {e.status === "active" && <span className="flex items-center gap-1 text-[11px] text-blue-400 font-bold"><Clock size={12} /></span>}
-                            <button onClick={() => setDeletingEnrollment(e.id)} className="p-1.5 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={13} /></button>
-                          </div>
+                          {e.status === "pending" ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button onClick={() => handleUpdateEnrollment(e.id, "active")} title="Approve" className="p-1.5 text-green-400 hover:text-green-300 rounded transition-all"><CheckCircle2 size={14} /></button>
+                              <button onClick={() => setDeletingEnrollment(e.id)} title="Reject" className="p-1.5 text-red-400 hover:text-red-300 rounded transition-all"><X size={14} /></button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1.5">
+                              {e.status === "completed" && <span className="flex items-center gap-1 text-[11px] text-green-400 font-bold"><CheckCircle2 size={12} /></span>}
+                              {e.status === "active" && <span className="flex items-center gap-1 text-[11px] text-blue-400 font-bold"><Clock size={12} /></span>}
+                              <button onClick={() => setDeletingEnrollment(e.id)} className="p-1.5 text-[#777] hover:text-red-400 rounded transition-all"><Trash2 size={13} /></button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
