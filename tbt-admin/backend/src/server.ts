@@ -64,7 +64,11 @@ async function bootstrap() {
     fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
       if (!body || (body as string).trim() === '') { done(null, {}); return; }
       try { done(null, JSON.parse(body as string)); }
-      catch (err: any) { done(err, undefined); }
+      catch (_err: any) {
+        const e = new Error('Invalid JSON body') as any;
+        e.statusCode = 400;
+        done(e, undefined);
+      }
     });
 
     // Register Plugins

@@ -35,6 +35,8 @@ export async function notifyCourseAccessGranted(ctx: Ctx & { courseId: string; c
   const body = `You now have access to "${courseTitle}". Start learning now!`;
   await createInApp(prisma, memberId, title, body, 'course_access', `/tbt/programs/${courseId}`);
   emit(io, memberId, title, body, 'course_access');
+  // Dedicated event so the course page can invalidate its query cache immediately
+  io?.to(`user:${memberId}`).emit('course:access_granted', { courseId });
   const { phone, pushToken } = await getMemberNotifDetails(prisma, memberId);
   if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });
   if (phone) await sendWhatsappMessage(phone, `${title}: ${body}`);
