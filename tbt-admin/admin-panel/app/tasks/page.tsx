@@ -397,7 +397,7 @@ export default function TasksPage() {
                 </thead>
                 <tbody>
                   {programs.map((prog, i) => {
-                    const taskCount = tasks.filter((t: any) => t.programId === prog.id).length;
+                    const taskCount: number = (prog as any)._count?.tasks ?? 0;
                     return (
                       <tr key={prog.id} className={cn("border-b border-[#1e1e1e] hover:bg-[#1f1f1f] transition-colors", i === programs.length - 1 && "border-b-0")}>
                         <td className="px-5 py-4">

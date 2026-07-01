@@ -71,7 +71,14 @@ export async function getBatchHandler(req: FastifyRequest<{ Params: { id: string
 export async function listProgramsHandler(req: FastifyRequest, reply: FastifyReply) {
   const programs = await req.server.prisma.program.findMany({
     orderBy: { createdAt: 'desc' },
-    select: { id: true, name: true, description: true, durationDays: true },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      durationDays: true,
+      createdAt: true,
+      _count: { select: { tasks: true } },
+    },
   });
   return reply.send({ success: true, data: programs, error: null });
 }

@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { taskInitiativeSchema, updateTaskSchema } from './schema.js';
 
 export async function listTasksHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { programId, stepId, page = 1, limit = 50 } = request.query as any;
+  const { programId, stepId, page = 1, limit = 500 } = request.query as any;
   const where: any = {};
   if (programId) where.programId = programId;
   if (stepId) where.stepId = stepId;
