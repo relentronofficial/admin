@@ -107,7 +107,7 @@ function WorkshopCard({ item, priority }: { item: WorkshopListItem; priority: bo
 
 // ─── Skeleton (still needed for Suspense boundaries in sibling routes) ─────────
 
-export function WorkshopsSkeleton() {
+function WorkshopsSkeleton() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {Array.from({ length: 6 }).map((_, i) => (
