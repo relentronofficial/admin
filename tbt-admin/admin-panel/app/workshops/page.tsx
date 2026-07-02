@@ -261,7 +261,7 @@ export default function WorkshopsPage() {
           ) : (
             <div className="divide-y divide-[#2a2a2a]">
               {workshops.map((w: any) => (
-                <div key={w.id} className="flex flex-col md:grid md:grid-cols-[2fr_1fr_1fr_1fr_80px_80px_120px] gap-4 items-center px-6 py-4 hover:bg-white/[0.02] transition-colors group">
+                <div key={w.id} className="flex flex-col md:grid md:grid-cols-[2fr_1fr_1fr_1fr_80px_80px_auto] gap-4 items-center px-6 py-4 hover:bg-white/[0.02] transition-colors group">
                   {/* Title + thumbnail */}
                   <div className="flex items-center gap-3 min-w-0 w-full">
                     {w.thumbnailUrl ? (
@@ -322,18 +322,26 @@ export default function WorkshopsPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-3 shrink-0">
                     <button
                       onClick={() => router.push(`/workshops/${w.id}`)}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-[#1a1a1a] border border-[#333] rounded text-[11px] font-bold text-[#a0a0a0] hover:text-white hover:border-[#555] font-rajdhani uppercase tracking-widest transition-all"
+                      className="flex items-center gap-1 px-3 py-1.5 bg-[#1a1a1a] border border-[#333] rounded text-[11px] font-bold text-[#a0a0a0] hover:text-white hover:border-[#555] font-rajdhani uppercase tracking-widest transition-all focus:outline-none focus:ring-1 focus:ring-[#555]"
                     >
                       Manage <ChevronRight size={12} />
                     </button>
-                    <button onClick={() => openEdit(w)} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all">
-                      <Pencil size={14} />
+                    <button
+                      onClick={() => openEdit(w)}
+                      className="w-9 h-9 flex items-center justify-center text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all focus:outline-none focus:ring-1 focus:ring-green-400/40"
+                      title="Edit workshop"
+                    >
+                      <Pencil size={15} />
                     </button>
-                    <button onClick={() => setDeleting(w.id)} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all">
-                      <Trash2 size={14} />
+                    <button
+                      onClick={() => setDeleting(w.id)}
+                      className="w-9 h-9 flex items-center justify-center text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all focus:outline-none focus:ring-1 focus:ring-red-400/40"
+                      title="Delete workshop"
+                    >
+                      <Trash2 size={15} />
                     </button>
                   </div>
                 </div>
