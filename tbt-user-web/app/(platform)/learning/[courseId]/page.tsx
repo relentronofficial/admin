@@ -12,12 +12,14 @@ import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useCourse, useLessonProgress, useMarkLessonComplete,
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
 } from "@/lib/hooks/useCourses";
 import { useMe } from "@/lib/hooks/useUser";
+import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { toast } from "react-hot-toast";
@@ -860,10 +862,28 @@ export default function CourseDetailPage({
   const searchParams = useSearchParams();
   const targetLessonId = searchParams.get("lesson");
   const { uiStrings } = useSiteConfig();
+  const qc = useQueryClient();
   const { data: course, isLoading } = useCourse(courseId);
   const { data: progressList } = useLessonProgress(courseId);
   const markComplete = useMarkLessonComplete(courseId);
   const { data: me } = useMe();
+
+  // Real-time: when admin grants course access, invalidate so PaywallView disappears
+  useEffect(() => {
+    if (!courseId) return;
+    let mounted = true;
+    getSocket().then((socket) => {
+      if (!mounted) return;
+      const onAccessGranted = ({ courseId: grantedId }: { courseId: string }) => {
+        if (grantedId !== courseId) return;
+        void qc.invalidateQueries({ queryKey: ["courses", courseId] });
+        void qc.invalidateQueries({ queryKey: ["user", "progress", courseId] });
+      };
+      socket.on("course:access_granted", onAccessGranted);
+      return () => { socket.off("course:access_granted", onAccessGranted); };
+    });
+    return () => { mounted = false; };
+  }, [courseId, qc]);
 
   const [selectedLesson, setSelectedLesson] = useState<SelectedLesson | null>(null);
   const [watchState, setWatchState] = useState<WatchState>("not_started");

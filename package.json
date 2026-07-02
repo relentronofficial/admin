@@ -1,6 +1,16 @@
 {
+  "scripts": {
+    "percy:player": "percy exec -- playwright test percy/player-visual.spec.ts",
+    "percy:all": "percy exec -- playwright test percy/"
+  },
   "dependencies": {
     "concurrently": "^9.2.1",
     "tweetsodium": "^0.0.4"
+  },
+  "devDependencies": {
+    "@percy/cli": "^1.32.2",
+    "@percy/playwright": "^1.1.0",
+    "@playwright/test": "^1.61.0",
+    "chromatic": "^17.5.0"
   }
 }
