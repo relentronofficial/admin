@@ -23,6 +23,13 @@ import {
   rejectBreakHandler,
   upsertMemberSettingsHandler,
   getDayAnalyticsHandler,
+  listBatchTasksHandler,
+  createBatchTaskHandler,
+  updateBatchTaskHandler,
+  deleteBatchTaskHandler,
+  reorderBatchTasksHandler,
+  migrateJsonTasksHandler,
+  getBatchSubmissionsHandler,
 } from './controller.js';
 import {
   approveDayHandler,
@@ -76,4 +83,15 @@ export async function batchRoutes(fastify: FastifyInstance) {
 
   // Day-level analytics
   fastify.get('/:id/day-analytics', getDayAnalyticsHandler);
+
+  // Inline task CRUD (tasks table with batchId)
+  fastify.get('/:id/tasks', listBatchTasksHandler);
+  fastify.post('/:id/tasks', createBatchTaskHandler);
+  fastify.put('/:id/tasks/reorder', reorderBatchTasksHandler);
+  fastify.post('/:id/tasks/migrate-json', migrateJsonTasksHandler);
+  fastify.put('/:id/tasks/:taskId', updateBatchTaskHandler);
+  fastify.delete('/:id/tasks/:taskId', deleteBatchTaskHandler);
+
+  // Task submissions (admin view)
+  fastify.get('/:id/submissions', getBatchSubmissionsHandler);
 }

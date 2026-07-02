@@ -33,7 +33,14 @@ const saveDraftSchema = z.object({
   journalEntry: z.string().optional(),
   journalFileUrl: z.string().optional(),
   completedTaskIds: z.array(z.string()).optional(),
-  taskProofs: z.record(z.string()).optional(), // { [taskId]: urlOrText }
+  // Legacy JSON-blob proof map (kept for backward compat reads)
+  taskProofs: z.record(z.string()).optional(),
+  // Unified per-task proof objects: { [taskId]: { value?, url?, type } }
+  taskSubmissions: z.record(z.object({
+    value: z.string().optional(),
+    url: z.string().optional(),
+    type: z.string().optional(),
+  })).optional(),
 });
 
 const rejectSchema = z.object({
@@ -53,7 +60,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     return reply.send({ success: true, data: null, error: null });
   }
 
-  const [batch, days, progress, attendance, breaks, settings] = await Promise.all([
+  const [batch, days, progress, attendance, breaks, settings, mySubmissions] = await Promise.all([
     req.server.prisma.batch.findUnique({
       where: { id: member.batchId },
       select: {
@@ -81,6 +88,12 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     ),
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1 AND member_id=$2 LIMIT 1`,
+      member.batchId, memberId,
+    ),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT task_id as "taskId", response_value as "responseValue", proof_url as "proofUrl",
+              proof_type as "proofType", status, day_number as "dayNumber"
+       FROM task_submissions WHERE batch_id=$1 AND member_id=$2`,
       member.batchId, memberId,
     ),
   ]);
@@ -122,6 +135,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       attendance,
       breaks,
       programTasks,
+      mySubmissions,
     },
     error: null,
   });
@@ -164,7 +178,7 @@ export async function saveDraftHandler(
     return reply.status(400).send({ success: false, data: null, error: 'This day has already been approved' });
   }
 
-  const { taskProofs, ...prismaData } = parsed.data;
+  const { taskProofs, taskSubmissions: taskSubmissionsInput, ...prismaData } = parsed.data;
 
   const record = await req.server.prisma.memberDayProgress.upsert({
     where: { batchId_memberId_dayNumber: { batchId: member.batchId, memberId, dayNumber: dayNum } },
@@ -181,12 +195,34 @@ export async function saveDraftHandler(
     },
   });
 
-  // Store taskProofs in the JSONB column (not in Prisma model, handled via raw)
+  // Legacy JSONB proof map (backward compat)
   if (taskProofs !== undefined) {
     await req.server.prisma.$executeRawUnsafe(
       `UPDATE member_day_progress SET task_proofs=$1 WHERE id=$2`,
       JSON.stringify(taskProofs), record.id,
     );
+  }
+
+  // Unified task submissions — upsert one row per task
+  if (taskSubmissionsInput && Object.keys(taskSubmissionsInput).length > 0) {
+    for (const [taskId, proof] of Object.entries(taskSubmissionsInput)) {
+      await req.server.prisma.$executeRawUnsafe(
+        `INSERT INTO task_submissions
+           (id, member_id, task_id, batch_id, day_progress_id, day_number,
+            response_value, proof_url, proof_type, status, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW(), NOW())
+         ON CONFLICT (member_id, task_id) DO UPDATE SET
+           response_value = EXCLUDED.response_value,
+           proof_url = EXCLUDED.proof_url,
+           proof_type = EXCLUDED.proof_type,
+           day_progress_id = EXCLUDED.day_progress_id,
+           batch_id = EXCLUDED.batch_id,
+           day_number = EXCLUDED.day_number,
+           updated_at = NOW()`,
+        memberId, taskId, member.batchId, record.id, dayNum,
+        proof.value ?? null, proof.url ?? null, proof.type ?? null,
+      );
+    }
   }
 
   // Auto-mark attendance as present on draft save (DO NOTHING to preserve admin-set records)
@@ -320,7 +356,7 @@ export async function approveDayHandler(
   );
   const xpPerDay = Number(xpRow?.xp_per_day ?? 50);
 
-  // Award XP for day approval (non-blocking, idempotent check via reason uniqueness)
+  // Award day-level XP bonus (non-blocking)
   req.server.prisma.pointsLedger.create({
     data: {
       memberId: req.params.memberId,
@@ -330,6 +366,82 @@ export async function approveDayHandler(
       referenceId: record.id,
     },
   }).catch(() => {});
+
+  // Award per-task basePoints + handle milestones (non-blocking)
+  void (async () => {
+    const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT ts.id, ts.task_id as "taskId", t.base_points as "basePoints",
+              t.bonus_points as "bonusPoints", t.is_milestone as "isMilestone",
+              t.milestone_label as "milestoneLabel"
+       FROM task_submissions ts
+       JOIN tasks t ON t.id = ts.task_id
+       WHERE ts.day_progress_id = $1 AND ts.status = 'pending'`,
+      record.id,
+    );
+
+    for (const sub of submissions) {
+      // Mark submission approved
+      await req.server.prisma.$executeRawUnsafe(
+        `UPDATE task_submissions SET status='approved', reviewed_by=$1, reviewed_at=NOW(), updated_at=NOW() WHERE id=$2`,
+        adminId, sub.id,
+      );
+      // Award task base points
+      if (sub.basePoints > 0) {
+        await req.server.prisma.pointsLedger.create({
+          data: {
+            memberId: req.params.memberId,
+            points: sub.basePoints,
+            reason: `Task completed — day ${dayNum}`,
+            referenceType: 'task_submission',
+            referenceId: sub.id,
+          },
+        }).catch(() => {});
+      }
+      // Handle milestone
+      if (sub.isMilestone) {
+        await req.server.prisma.$executeRawUnsafe(
+          `INSERT INTO member_milestones (id, member_id, milestone_id, achieved_at)
+           SELECT gen_random_uuid(), $1, m.id, NOW()
+           FROM milestones m
+           WHERE m.program_id = (SELECT program_id FROM tasks WHERE id=$2) LIMIT 1
+           ON CONFLICT DO NOTHING`,
+          req.params.memberId, sub.taskId,
+        ).catch(() => {});
+        if (sub.bonusPoints > 0) {
+          await req.server.prisma.pointsLedger.create({
+            data: {
+              memberId: req.params.memberId,
+              points: sub.bonusPoints,
+              reason: sub.milestoneLabel ? `Milestone: ${sub.milestoneLabel}` : `Milestone bonus — day ${dayNum}`,
+              referenceType: 'milestone',
+              referenceId: sub.taskId,
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // Update streak
+    await req.server.prisma.$executeRawUnsafe(
+      `INSERT INTO streaks (id, member_id, current_streak, longest_streak, last_activity_date, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, 1, 1, CURRENT_DATE, NOW(), NOW())
+       ON CONFLICT (member_id) DO UPDATE SET
+         current_streak = CASE
+           WHEN streaks.last_activity_date = CURRENT_DATE - INTERVAL '1 day' THEN streaks.current_streak + 1
+           WHEN streaks.last_activity_date = CURRENT_DATE THEN streaks.current_streak
+           ELSE 1
+         END,
+         longest_streak = GREATEST(streaks.longest_streak,
+           CASE
+             WHEN streaks.last_activity_date = CURRENT_DATE - INTERVAL '1 day' THEN streaks.current_streak + 1
+             ELSE 1
+           END
+         ),
+         last_activity_date = CURRENT_DATE,
+         updated_at = NOW()`,
+      req.params.memberId,
+    ).catch(() => {});
+  })().catch(() => {});
 
   // Notify member in real-time
   req.server.io.to(`user:${req.params.memberId}`).emit('batch:day_approved', {
@@ -556,7 +668,7 @@ export async function requestBreakHandler(req: FastifyRequest, reply: FastifyRep
   return reply.send({ success: true, data: record, error: null });
 }
 
-// Admin: GET /api/batches/:id/pending — all pending approval records
+// Admin: GET /api/batches/:id/pending — all pending approval records with task submissions
 export async function getPendingApprovalsHandler(
   req: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply,
@@ -570,7 +682,47 @@ export async function getPendingApprovalsHandler(
     },
     orderBy: [{ submittedAt: 'asc' }, { dayNumber: 'asc' }],
   });
-  return reply.send({ success: true, data: records, error: null });
+
+  // Attach task submissions for each pending record
+  const enriched = await Promise.all(records.map(async (rec) => {
+    const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT ts.id, ts.task_id as "taskId", ts.response_value as "responseValue",
+              ts.proof_url as "proofUrl", ts.proof_type as "proofType", ts.status,
+              t.title, t.base_points as "basePoints", t.proof_type as "taskProofType",
+              t.deliverables, t.is_milestone as "isMilestone"
+       FROM task_submissions ts
+       JOIN tasks t ON t.id = ts.task_id
+       WHERE ts.day_progress_id = $1
+       ORDER BY t.sort_order ASC, t.day_number ASC`,
+      rec.id,
+    );
+    return { ...rec, taskSubmissions: submissions };
+  }));
+
+  return reply.send({ success: true, data: enriched, error: null });
+}
+
+// GET /api/user-batch/submissions — member's own task submissions for current batch
+export async function getMySubmissionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const member = await req.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { batchId: true },
+  });
+  if (!member?.batchId) return reply.send({ success: true, data: [], error: null });
+
+  const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT ts.id, ts.task_id as "taskId", ts.response_value as "responseValue",
+            ts.proof_url as "proofUrl", ts.proof_type as "proofType", ts.status,
+            ts.day_number as "dayNumber", ts.feedback,
+            t.title, t.base_points as "basePoints"
+     FROM task_submissions ts
+     JOIN tasks t ON t.id = ts.task_id
+     WHERE ts.batch_id=$1 AND ts.member_id=$2
+     ORDER BY ts.day_number ASC, t.sort_order ASC`,
+    member.batchId, memberId,
+  );
+  return reply.send({ success: true, data: submissions, error: null });
 }
 
 // POST /api/user-batch/cron/batch-reminder — daily reminder for members who haven't submitted today

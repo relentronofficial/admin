@@ -3,6 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 
+export type TaskSubmissionProof = { value?: string; url?: string; type: string };
+
 export const useMyBatchProgram = () =>
   useQuery({
     queryKey: ["my-batch"],
@@ -31,6 +33,15 @@ export const useMyBatchProgram = () =>
           milestoneLabel?: string | null;
           sortOrder: number;
         }[];
+        mySubmissions?: {
+          id: string;
+          taskId: string;
+          dayNumber: number;
+          status: string;
+          responseValue?: string | null;
+          proofUrl?: string | null;
+          proofType?: string | null;
+        }[];
       } | null;
     },
     staleTime: 30_000,
@@ -44,19 +55,19 @@ export const useSaveBatchDraft = () => {
       journalEntry,
       journalFileUrl,
       completedTaskIds,
-      taskProofs,
+      taskSubmissions,
     }: {
       dayNumber: number;
       journalEntry?: string;
       journalFileUrl?: string;
       completedTaskIds?: string[];
-      taskProofs?: Record<string, string>;
+      taskSubmissions?: Record<string, TaskSubmissionProof>;
     }) => {
       const res: any = await apiClient.put(`/api/user-batch/${dayNumber}`, {
         journalEntry,
         journalFileUrl,
         completedTaskIds,
-        taskProofs,
+        taskSubmissions,
       });
       return res.data;
     },

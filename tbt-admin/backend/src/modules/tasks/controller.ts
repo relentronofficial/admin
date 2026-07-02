@@ -72,3 +72,70 @@ export async function deleteTaskHandler(request: FastifyRequest, reply: FastifyR
   await request.server.prisma.task.delete({ where: { id } });
   return reply.send({ success: true, data: null, error: null });
 }
+
+// PUT /api/tasks/submissions/:subId/review — admin approves or rejects a single task submission
+export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { subId } = request.params as { subId: string };
+  const { action, feedback } = request.body as { action: 'approve' | 'reject'; feedback?: string };
+  const adminId = (request as any).auth?.sub ?? null;
+
+  if (action !== 'approve' && action !== 'reject') {
+    return reply.status(400).send({ success: false, data: null, error: 'action must be approve or reject' });
+  }
+
+  const sub = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT ts.*, t.base_points as "basePoints", t.bonus_points as "bonusPoints",
+            t.is_milestone as "isMilestone", t.milestone_label as "milestoneLabel"
+     FROM task_submissions ts JOIN tasks t ON t.id = ts.task_id WHERE ts.id = $1`,
+    subId,
+  );
+  if (!sub[0]) return reply.status(404).send({ success: false, data: null, error: 'Submission not found' });
+  const s = sub[0];
+
+  const newStatus = action === 'approve' ? 'approved' : 'rejected';
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE task_submissions SET status=$1, reviewed_by=$2, reviewed_at=NOW(), feedback=$3, updated_at=NOW() WHERE id=$4`,
+    newStatus, adminId, feedback ?? null, subId,
+  );
+
+  if (action === 'approve') {
+    // Award base points
+    if (s.basePoints > 0) {
+      await request.server.prisma.pointsLedger.create({
+        data: {
+          memberId: s.member_id,
+          points: s.basePoints,
+          reason: `Task approved`,
+          referenceType: 'task_submission',
+          referenceId: subId,
+        },
+      }).catch(() => {});
+    }
+    // Milestone bonus
+    if (s.isMilestone && s.bonusPoints > 0) {
+      await request.server.prisma.pointsLedger.create({
+        data: {
+          memberId: s.member_id,
+          points: s.bonusPoints,
+          reason: s.milestoneLabel ? `Milestone: ${s.milestoneLabel}` : 'Milestone bonus',
+          referenceType: 'milestone',
+          referenceId: s.task_id,
+        },
+      }).catch(() => {});
+    }
+    // Notify member
+    request.server.io.to(`user:${s.member_id}`).emit('notification', {
+      title: 'Task Approved ✓',
+      body: 'Your task submission has been approved.',
+      type: 'task_approved',
+    });
+  } else {
+    request.server.io.to(`user:${s.member_id}`).emit('notification', {
+      title: 'Task Needs Revision',
+      body: feedback ?? 'Your task submission needs revision.',
+      type: 'task_rejected',
+    });
+  }
+
+  return reply.send({ success: true, data: { id: subId, status: newStatus }, error: null });
+}

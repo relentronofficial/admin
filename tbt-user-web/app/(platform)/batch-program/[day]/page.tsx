@@ -27,6 +27,7 @@ import {
   useSubmitBatchDay,
   useMarkAttendance,
   useUploadTaskProof,
+  type TaskSubmissionProof,
 } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useSocket } from "@/lib/socket/useSocket";
@@ -171,7 +172,11 @@ export default function BatchDayPage() {
       .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }, [program, dayNumber]);
 
-  const tasks: { id: string; title: string; order: number; description?: string; proofType?: string; basePoints?: number; estimatedMinutes?: number; isMilestone?: boolean }[] =
+  const tasks: {
+    id: string; title: string; order: number;
+    description?: string | null; deliverables?: string | null; contentUrl?: string | null;
+    proofType?: string; basePoints?: number; estimatedMinutes?: number; isMilestone?: boolean;
+  }[] =
     programTasksForDay.length > 0
       ? programTasksForDay.map((t: any) => ({ ...t, order: t.sortOrder ?? 0 }))
       : Array.isArray(dayContent?.tasks)
@@ -181,7 +186,7 @@ export default function BatchDayPage() {
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
   const [journalEntry, setJournalEntry] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [localTaskProofs, setLocalTaskProofs] = useState<Record<string, string>>({});
+  const [taskSubmissions, setTaskSubmissions] = useState<Record<string, TaskSubmissionProof>>({});
   const [uploadingTaskIds, setUploadingTaskIds] = useState<Set<string>>(new Set());
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -189,19 +194,34 @@ export default function BatchDayPage() {
     if (progress) {
       setCompletedTaskIds(progress.completedTaskIds ?? []);
       setJournalEntry(progress.journalEntry ?? "");
-      setLocalTaskProofs((progress.taskProofs as Record<string, string> | null) ?? {});
       setDirty(false);
     }
+    // Seed task submission proofs from backend mySubmissions
+    const mySubmissions: any[] = (program as any)?.mySubmissions ?? [];
+    const seeded: Record<string, TaskSubmissionProof> = {};
+    for (const sub of mySubmissions) {
+      if (sub.taskId) {
+        seeded[sub.taskId] = {
+          value: sub.responseValue ?? undefined,
+          url:   sub.proofUrl    ?? undefined,
+          type:  sub.proofType   ?? "watch",
+        };
+      }
+    }
+    setTaskSubmissions(seeded);
   }, [progress?.dayNumber]);
 
-  const handleFileSelect = async (taskId: string, file: File) => {
+  const handleFileSelect = async (taskId: string, file: File, proofType: string) => {
     if (!program?.batch?.id) return;
     setUploadingTaskIds((prev) => { const s = new Set(prev); s.add(taskId); return s; });
     try {
       const publicUrl = await uploadProof(file, program.batch.id, dayNumber);
-      const next = { ...localTaskProofs, [taskId]: publicUrl };
-      setLocalTaskProofs(next);
-      await saveDraft.mutateAsync({ dayNumber, completedTaskIds, taskProofs: next });
+      const next: Record<string, TaskSubmissionProof> = {
+        ...taskSubmissions,
+        [taskId]: { url: publicUrl, type: proofType },
+      };
+      setTaskSubmissions(next);
+      await saveDraft.mutateAsync({ dayNumber, completedTaskIds, taskSubmissions: next });
     } catch {
       toast.error("Failed to upload proof");
     } finally {
@@ -250,6 +270,7 @@ export default function BatchDayPage() {
         dayNumber,
         journalEntry: journalEntry || undefined,
         completedTaskIds,
+        taskSubmissions: Object.keys(taskSubmissions).length > 0 ? taskSubmissions : undefined,
       });
       setDirty(false);
       toast.success(uiStrings?.batchProgressSaved ?? "Progress saved");
@@ -536,24 +557,32 @@ export default function BatchDayPage() {
               {completedTaskIds.length}/{tasks.length} {uiStrings?.batchDoneLabel ?? "done"}
             </span>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {tasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((task) => {
               const done = completedTaskIds.includes(task.id);
-              const proof: string | undefined = localTaskProofs[task.id];
+              const proof = taskSubmissions[task.id];
               const isUploading = uploadingTaskIds.has(task.id);
+              const proofType = task.proofType ?? "watch";
+              const needsFileUpload = proofType === "image" || proofType === "file";
+              const needsUrlInput   = proofType === "link"  || proofType === "video";
+              const needsTextInput  = proofType === "text";
+              const needsNoProof    = proofType === "watch";
+
               return (
-                <div key={task.id}>
+                <div key={task.id} className="space-y-2">
                   <input
                     type="file"
-                    accept="image/*,application/pdf"
+                    accept={proofType === "image" ? "image/*" : "image/*,application/pdf,.zip"}
                     className="hidden"
                     ref={(el) => { fileInputRefs.current[task.id] = el; }}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleFileSelect(task.id, file);
+                      if (file) handleFileSelect(task.id, file, proofType);
                       e.target.value = "";
                     }}
                   />
+
+                  {/* Task row — checkbox + title + meta */}
                   <div
                     onClick={() => canEdit && toggleTask(task.id)}
                     role="checkbox"
@@ -581,48 +610,31 @@ export default function BatchDayPage() {
                       {task.description && (
                         <span className="text-[12px] opacity-50 mt-0.5 block">{task.description}</span>
                       )}
-                      {(task.basePoints || task.estimatedMinutes || task.proofType) && (
-                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                          {(task.basePoints ?? 0) > 0 && (
-                            <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>
-                              +{task.basePoints} pts
-                            </span>
-                          )}
-                          {(task.estimatedMinutes ?? 0) > 0 && (
-                            <span className="text-[11px] opacity-40 flex items-center gap-1">
-                              <Clock size={10} />
-                              {task.estimatedMinutes}m
-                            </span>
-                          )}
-                          {task.proofType && (
-                            <span className="text-[10px] uppercase tracking-wider opacity-35 font-bold">
-                              {task.proofType}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                        {(task.basePoints ?? 0) > 0 && (
+                          <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>
+                            +{task.basePoints} pts
+                          </span>
+                        )}
+                        {(task.estimatedMinutes ?? 0) > 0 && (
+                          <span className="text-[11px] opacity-40 flex items-center gap-1">
+                            <Clock size={10} />
+                            {task.estimatedMinutes}m
+                          </span>
+                        )}
+                        {!needsNoProof && (
+                          <span className="text-[10px] uppercase tracking-wider opacity-35 font-bold">
+                            {proofType}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {proof && (
-                        <a
-                          href={proof}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors"
-                          style={{
-                            color: "var(--color-accent)",
-                            background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                          }}
-                        >
-                          <ExternalLink size={9} />
-                          {uiStrings?.batchProofLabel ?? "Proof"}
-                        </a>
-                      )}
-                      {canEdit && done && (
-                        isUploading ? (
+                    {/* File upload icon for image/file types */}
+                    {canEdit && done && needsFileUpload && (
+                      <div className="shrink-0">
+                        {isUploading ? (
                           <Loader2 size={14} className="animate-spin opacity-40" />
-                        ) : !proof ? (
+                        ) : !proof?.url ? (
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); fileInputRefs.current[task.id]?.click(); }}
@@ -630,14 +642,116 @@ export default function BatchDayPage() {
                             style={{ color: "#606060" }}
                             onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-accent)"; }}
                             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#606060"; }}
-                            title="Attach proof"
+                            title={uiStrings?.batchAttachProofLabel ?? "Attach proof"}
                           >
                             <Paperclip size={14} />
                           </button>
-                        ) : null
+                        ) : (
+                          <a
+                            href={proof.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ color: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
+                          >
+                            <ExternalLink size={9} />
+                            {uiStrings?.batchProofLabel ?? "Proof"}
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Learning resource link */}
+                  {task.contentUrl && (
+                    <a
+                      href={task.contentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-[12px] px-3 py-2 rounded-lg transition-colors"
+                      style={{
+                        background: "color-mix(in srgb, var(--color-accent) 8%, transparent)",
+                        color: "var(--color-accent)",
+                      }}
+                    >
+                      <ExternalLink size={12} />
+                      {uiStrings?.batchLearningResourceLabel ?? "Learning Resource"}
+                    </a>
+                  )}
+
+                  {/* Deliverables hint */}
+                  {task.deliverables && (
+                    <div
+                      className="px-3 py-2 rounded-lg text-[12px] leading-relaxed"
+                      style={{ background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.5)" }}
+                    >
+                      <span className="font-bold uppercase tracking-widest text-[10px] opacity-60 block mb-0.5">
+                        {uiStrings?.batchDeliverablesLabel ?? "What to submit"}
+                      </span>
+                      {task.deliverables}
+                    </div>
+                  )}
+
+                  {/* Text proof input */}
+                  {canEdit && done && needsTextInput && (
+                    <textarea
+                      value={proof?.value ?? ""}
+                      onChange={(e) => {
+                        const next = { ...taskSubmissions, [task.id]: { value: e.target.value, type: proofType } };
+                        setTaskSubmissions(next);
+                        setDirty(true);
+                      }}
+                      rows={3}
+                      placeholder={uiStrings?.batchTextProofPlaceholder ?? "Describe your proof or paste your response here…"}
+                      className="w-full rounded-xl px-4 py-2.5 text-sm resize-none outline-none transition-colors"
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
+                        color: "inherit",
+                      }}
+                    />
+                  )}
+
+                  {/* URL proof input */}
+                  {canEdit && done && needsUrlInput && (
+                    <input
+                      type="url"
+                      value={proof?.url ?? ""}
+                      onChange={(e) => {
+                        const next = { ...taskSubmissions, [task.id]: { url: e.target.value, type: proofType } };
+                        setTaskSubmissions(next);
+                        setDirty(true);
+                      }}
+                      placeholder={proofType === "video"
+                        ? (uiStrings?.batchVideoUrlPlaceholder ?? "Paste your video URL…")
+                        : (uiStrings?.batchLinkUrlPlaceholder  ?? "Paste your link URL…")}
+                      className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-colors"
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
+                        color: "inherit",
+                      }}
+                    />
+                  )}
+
+                  {/* Submitted proof display (read-only when locked or pending) */}
+                  {!canEdit && proof && (
+                    <div className="px-3 py-2 rounded-lg text-[12px]" style={{ background: "rgba(255,255,255,0.03)" }}>
+                      <span className="font-bold uppercase tracking-widest text-[10px] opacity-40 block mb-0.5">
+                        {uiStrings?.batchSubmittedProofLabel ?? "Submitted proof"}
+                      </span>
+                      {proof.value && <p className="opacity-70 leading-relaxed">{proof.value}</p>}
+                      {proof.url && (
+                        <a href={proof.url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 font-bold mt-1"
+                          style={{ color: "var(--color-accent)" }}>
+                          <ExternalLink size={11} />
+                          {uiStrings?.batchViewProofLabel ?? "View proof"}
+                        </a>
                       )}
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}

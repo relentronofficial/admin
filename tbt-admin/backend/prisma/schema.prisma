@@ -591,7 +591,8 @@ model TaskStep {
 
 model Task {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  programId        String   @map("program_id") @db.Uuid
+  programId        String?  @map("program_id") @db.Uuid
+  batchId          String?  @map("batch_id") @db.Uuid
   stepId           String?  @map("step_id") @db.Uuid
   dayNumber        Int      @map("day_number")
   title            String
@@ -599,7 +600,7 @@ model Task {
   deliverables     String?
   contentUrl       String?  @map("content_url")
   basePoints       Int      @default(100) @map("base_points")
-  proofType        String   @map("proof_type")
+  proofType        String   @default("watch") @map("proof_type")
   estimatedMinutes Int      @default(15) @map("estimated_minutes")
   isMilestone      Boolean  @default(false) @map("is_milestone")
   milestoneLabel   String?  @map("milestone_label")
@@ -609,7 +610,8 @@ model Task {
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  program     Program          @relation(fields: [programId], references: [id], onDelete: Cascade)
+  program     Program?         @relation(fields: [programId], references: [id], onDelete: Cascade)
+  batch       Batch?           @relation(fields: [batchId], references: [id], onDelete: Cascade)
   step        TaskStep?        @relation(fields: [stepId], references: [id])
   submissions TaskSubmission[]
 
@@ -620,6 +622,9 @@ model TaskSubmission {
   id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   memberId      String           @map("member_id") @db.Uuid
   taskId        String           @map("task_id") @db.Uuid
+  batchId       String?          @map("batch_id") @db.Uuid
+  dayProgressId String?          @map("day_progress_id") @db.Uuid
+  dayNumber     Int?             @map("day_number")
   responseValue String?          @map("response_value")
   proofUrl      String?          @map("proof_url")
   proofType     String?          @map("proof_type")
@@ -631,10 +636,13 @@ model TaskSubmission {
   updatedAt     DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  reviewer Admin? @relation("TaskReviewer", fields: [reviewedBy], references: [id])
+  member      Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  task        Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  batch       Batch?             @relation(fields: [batchId], references: [id])
+  dayProgress MemberDayProgress? @relation(fields: [dayProgressId], references: [id], onDelete: Cascade)
+  reviewer    Admin?             @relation("TaskReviewer", fields: [reviewedBy], references: [id])
 
+  @@unique([memberId, taskId])
   @@map("task_submissions")
 }
 
@@ -979,14 +987,16 @@ model Batch {
   updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   // Relations
-  program        Program?              @relation(fields: [programId], references: [id], onDelete: Restrict)
-  members        Member[]
-  workshops      Workshop[]
-  days           BatchDay[]
-  progress       MemberDayProgress[]
-  attendance     MemberAttendance[]
-  breakRequests  BatchBreakRequest[]
-  memberSettings MemberBatchSettings[]
+  program         Program?              @relation(fields: [programId], references: [id], onDelete: Restrict)
+  members         Member[]
+  workshops       Workshop[]
+  days            BatchDay[]
+  progress        MemberDayProgress[]
+  attendance      MemberAttendance[]
+  breakRequests   BatchBreakRequest[]
+  memberSettings  MemberBatchSettings[]
+  tasks           Task[]
+  taskSubmissions TaskSubmission[]
 
   @@map("batches")
 }
@@ -1075,6 +1085,8 @@ model MemberDayProgress {
   member           Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  taskSubmissions TaskSubmission[]
 
   @@unique([batchId, memberId, dayNumber])
   @@map("member_day_progress")

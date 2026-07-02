@@ -29,6 +29,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Bell,
+  ExternalLink,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -1357,6 +1358,34 @@ export default function BatchDetailPage() {
                         <p className="text-[13px] text-[#a0a0a0] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 line-clamp-3">
                           {rec.journalEntry}
                         </p>
+                      )}
+
+                      {/* Per-task submissions */}
+                      {Array.isArray(rec.taskSubmissions) && rec.taskSubmissions.length > 0 && (
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[#555] font-rajdhani">Task Proofs</p>
+                          {rec.taskSubmissions.map((sub: any) => (
+                            <div key={sub.id} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[12px] font-semibold text-[#d0d0d0] flex-1 min-w-0 truncate">{sub.taskTitle ?? "Task"}</p>
+                                <span className="text-[10px] uppercase font-bold font-rajdhani text-[#555] shrink-0">{sub.proofType}</span>
+                              </div>
+                              {sub.responseValue && (
+                                <p className="text-[12px] text-[#888] leading-relaxed line-clamp-2">{sub.responseValue}</p>
+                              )}
+                              {sub.proofUrl && (
+                                <a href={sub.proofUrl} target="_blank" rel="noreferrer"
+                                  className="flex items-center gap-1 text-[11px] font-bold text-[#3b82f6] hover:text-blue-300 transition-colors">
+                                  <ExternalLink size={10} />
+                                  View proof
+                                </a>
+                              )}
+                              {sub.deliverables && (
+                                <p className="text-[10px] text-[#555] italic">{sub.deliverables}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       )}
 
                       {!isRejecting ? (

@@ -5,6 +5,7 @@ import {
   getTaskHandler,
   updateTaskHandler,
   deleteTaskHandler,
+  reviewTaskSubmissionHandler,
 } from './controller.js';
 
 export async function taskRoutes(fastify: FastifyInstance) {
@@ -15,4 +16,5 @@ export async function taskRoutes(fastify: FastifyInstance) {
   fastify.get('/:id', getTaskHandler);
   fastify.put('/:id', updateTaskHandler);
   fastify.delete('/:id', deleteTaskHandler);
+  fastify.put('/submissions/:subId/review', reviewTaskSubmissionHandler);
 }

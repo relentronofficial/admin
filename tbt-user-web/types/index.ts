@@ -333,6 +333,14 @@ export interface UiStrings {
   batchBreakStartLabel?: string;
   batchBreakEndLabel?: string;
   batchProofLabel?: string;
+  batchAttachProofLabel?: string;
+  batchLearningResourceLabel?: string;
+  batchDeliverablesLabel?: string;
+  batchTextProofPlaceholder?: string;
+  batchVideoUrlPlaceholder?: string;
+  batchLinkUrlPlaceholder?: string;
+  batchSubmittedProofLabel?: string;
+  batchViewProofLabel?: string;
 }
 
 // ─── Batch Program ───────────────────────────────────────────────────────────

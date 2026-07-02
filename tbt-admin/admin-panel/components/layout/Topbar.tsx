@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { Bell, Settings, Check, CheckCheck, Megaphone, Users, ShoppingBag, Video, BookOpen, Info } from "lucide-react";
+import { Bell, Settings, Check, CheckCheck, Megaphone, Users, ShoppingBag, Video, BookOpen, Info, ClipboardList } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import {
@@ -10,6 +10,8 @@ import {
   useMarkAdminNotificationRead,
   useMarkAllAdminNotificationsRead,
 } from "@/lib/hooks/useTbt";
+import { getAdminSocket } from "@/lib/socket/client";
+import { toast } from "react-hot-toast";
 
 // ── Type icon map ─────────────────────────────────────────────────────────────
 
@@ -143,9 +145,33 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
 export function Topbar() {
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [pendingSubmissions, setPendingSubmissions] = useState(0);
   const panelRef  = useRef<HTMLDivElement>(null);
 
   const { data: unreadCount = 0 } = useAdminUnreadCount();
+
+  // Listen for day submissions from members
+  useEffect(() => {
+    let mounted = true;
+    function onDaySubmitted(data: { dayNumber: number; memberName?: string; batchName?: string }) {
+      if (!mounted) return;
+      setPendingSubmissions(n => n + 1);
+      const who = data.memberName ?? "A member";
+      const where = data.batchName ? ` (${data.batchName})` : "";
+      toast(`${who} submitted Day ${data.dayNumber}${where}`, {
+        icon: "📋",
+        style: { background: "#1a1a1a", color: "#f0f0f0", border: "1px solid #2a2a2a" },
+      });
+    }
+    getAdminSocket().then(socket => {
+      if (!mounted) return;
+      socket.on("admin:day_submitted", onDaySubmitted);
+    });
+    return () => {
+      mounted = false;
+      getAdminSocket().then(socket => socket.off("admin:day_submitted", onDaySubmitted));
+    };
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -190,6 +216,24 @@ export function Topbar() {
 
       {/* Right actions */}
       <div className="ml-auto flex items-center gap-3.5">
+
+        {/* Pending submissions badge */}
+        <button
+          onClick={() => setPendingSubmissions(0)}
+          className="relative w-8 h-8 bg-[#1f1f1f] border border-[#2a2a2a] rounded-md flex items-center justify-center text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] transition-all shadow-sm"
+          aria-label="Pending submissions"
+          title="Pending day submissions"
+        >
+          <ClipboardList size={15} strokeWidth={2} />
+          {pendingSubmissions > 0 && (
+            <span
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 leading-none"
+              style={{ background: "#f59e0b", boxShadow: "0 0 0 2px #111" }}
+            >
+              {pendingSubmissions > 99 ? "99+" : pendingSubmissions}
+            </span>
+          )}
+        </button>
 
         {/* Bell + dropdown */}
         <div className="relative" ref={panelRef}>

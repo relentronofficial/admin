@@ -134,6 +134,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
       prisma.$executeRawUnsafe(`ALTER TABLE member_day_progress ADD COLUMN IF NOT EXISTS task_proofs JSONB`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50`),
+      // Task unification — Phase 1 migrations
+      prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id) ON DELETE CASCADE`),
+      prisma.$executeRawUnsafe(`ALTER TABLE tasks ALTER COLUMN program_id DROP NOT NULL`).catch(() => {}),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE task_submissions
+          ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id),
+          ADD COLUMN IF NOT EXISTS day_progress_id UUID REFERENCES member_day_progress(id) ON DELETE CASCADE,
+          ADD COLUMN IF NOT EXISTS day_number INT
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_task_sub_day_progress ON task_submissions(day_progress_id)`),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_task_sub_batch_member ON task_submissions(batch_id, member_id)`),
+      prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_sub_unique ON task_submissions(member_id, task_id)`).catch(() => {}),
       // CREATE TABLE statements (idempotent)
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS product_inquiries (

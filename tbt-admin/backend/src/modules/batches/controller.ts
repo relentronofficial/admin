@@ -564,3 +564,182 @@ export async function upsertMemberProgressHandler(
   });
   return reply.send({ success: true, data: record, error: null });
 }
+
+// ─── Inline Task CRUD ────────────────────────────────────────────────────────
+
+// GET /api/batches/:id/tasks?dayNumber=N
+export async function listBatchTasksHandler(
+  req: FastifyRequest<{ Params: { id: string }; Querystring: { dayNumber?: string } }>,
+  reply: FastifyReply,
+) {
+  const dayNumber = req.query.dayNumber ? parseInt(req.query.dayNumber, 10) : undefined;
+  const tasks = await req.server.prisma.task.findMany({
+    where: {
+      batchId: req.params.id,
+      ...(dayNumber !== undefined ? { dayNumber } : {}),
+    },
+    orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
+  });
+  return reply.send({ success: true, data: tasks, error: null });
+}
+
+// POST /api/batches/:id/tasks
+export async function createBatchTaskHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const {
+    dayNumber, title, description, deliverables, contentUrl,
+    basePoints = 100, bonusPoints = 0, proofType = 'watch',
+    estimatedMinutes = 15, isMilestone = false, milestoneLabel, sortOrder = 0,
+  } = req.body as any;
+  if (!dayNumber || !title) {
+    return reply.status(400).send({ success: false, data: null, error: 'dayNumber and title are required' });
+  }
+  const task = await req.server.prisma.task.create({
+    data: {
+      batchId: req.params.id,
+      dayNumber: parseInt(String(dayNumber), 10),
+      title,
+      description: description ?? null,
+      deliverables: deliverables ?? null,
+      contentUrl: contentUrl ?? null,
+      basePoints,
+      bonusPoints,
+      proofType,
+      estimatedMinutes,
+      isMilestone,
+      milestoneLabel: milestoneLabel ?? null,
+      sortOrder,
+    },
+  });
+  return reply.status(201).send({ success: true, data: task, error: null });
+}
+
+// PUT /api/batches/:id/tasks/:taskId
+export async function updateBatchTaskHandler(
+  req: FastifyRequest<{ Params: { id: string; taskId: string } }>,
+  reply: FastifyReply,
+) {
+  const {
+    dayNumber, title, description, deliverables, contentUrl,
+    basePoints, bonusPoints, proofType, estimatedMinutes,
+    isMilestone, milestoneLabel, sortOrder,
+  } = req.body as any;
+  const task = await req.server.prisma.task.update({
+    where: { id: req.params.taskId },
+    data: {
+      ...(dayNumber !== undefined ? { dayNumber: parseInt(String(dayNumber), 10) } : {}),
+      ...(title !== undefined ? { title } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(deliverables !== undefined ? { deliverables } : {}),
+      ...(contentUrl !== undefined ? { contentUrl } : {}),
+      ...(basePoints !== undefined ? { basePoints } : {}),
+      ...(bonusPoints !== undefined ? { bonusPoints } : {}),
+      ...(proofType !== undefined ? { proofType } : {}),
+      ...(estimatedMinutes !== undefined ? { estimatedMinutes } : {}),
+      ...(isMilestone !== undefined ? { isMilestone } : {}),
+      ...(milestoneLabel !== undefined ? { milestoneLabel } : {}),
+      ...(sortOrder !== undefined ? { sortOrder } : {}),
+    },
+  });
+  return reply.send({ success: true, data: task, error: null });
+}
+
+// DELETE /api/batches/:id/tasks/:taskId
+export async function deleteBatchTaskHandler(
+  req: FastifyRequest<{ Params: { id: string; taskId: string } }>,
+  reply: FastifyReply,
+) {
+  await req.server.prisma.task.delete({ where: { id: req.params.taskId } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// PUT /api/batches/:id/tasks/reorder
+export async function reorderBatchTasksHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const { ids } = req.body as { ids: string[] };
+  if (!Array.isArray(ids)) {
+    return reply.status(400).send({ success: false, data: null, error: 'ids array required' });
+  }
+  await Promise.all(
+    ids.map((id, idx) => req.server.prisma.task.update({ where: { id }, data: { sortOrder: idx } })),
+  );
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// POST /api/batches/:id/tasks/migrate-json
+// Reads batch_days.tasks JSON and creates proper Task rows. Clears JSON after migration.
+export async function migrateJsonTasksHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const days = await req.server.prisma.batchDay.findMany({
+    where: { batchId: req.params.id },
+    orderBy: { dayNumber: 'asc' },
+  });
+
+  let created = 0;
+  for (const day of days) {
+    const jsonTasks = Array.isArray((day as any).tasks) ? (day as any).tasks : [];
+    for (let i = 0; i < jsonTasks.length; i++) {
+      const t = jsonTasks[i];
+      if (!t?.title) continue;
+      const existing = await req.server.prisma.task.findFirst({
+        where: { batchId: req.params.id, dayNumber: day.dayNumber, title: t.title },
+      });
+      if (!existing) {
+        await req.server.prisma.task.create({
+          data: {
+            batchId: req.params.id,
+            dayNumber: day.dayNumber,
+            title: t.title,
+            proofType: t.proofType ?? 'watch',
+            basePoints: t.basePoints ?? 100,
+            sortOrder: i,
+          },
+        });
+        created++;
+      }
+    }
+    // Clear JSON blob after migration
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE batch_days SET tasks = NULL WHERE id = $1`,
+      day.id,
+    );
+  }
+  return reply.send({ success: true, data: { created }, error: null });
+}
+
+// GET /api/batches/:id/submissions?dayNumber=N&memberId=X&status=Y
+export async function getBatchSubmissionsHandler(
+  req: FastifyRequest<{ Params: { id: string }; Querystring: { dayNumber?: string; memberId?: string; status?: string } }>,
+  reply: FastifyReply,
+) {
+  const { dayNumber, memberId, status } = req.query;
+  const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT ts.id, ts.task_id as "taskId", ts.member_id as "memberId",
+            ts.response_value as "responseValue", ts.proof_url as "proofUrl",
+            ts.proof_type as "proofType", ts.status, ts.feedback,
+            ts.day_number as "dayNumber", ts.reviewed_at as "reviewedAt",
+            t.title as "taskTitle", t.base_points as "basePoints",
+            t.proof_type as "taskProofType", t.deliverables, t.is_milestone as "isMilestone",
+            m.first_name as "firstName", m.last_name as "lastName",
+            m.member_id as "memberCode", m.profile_photo_url as "profilePhotoUrl"
+     FROM task_submissions ts
+     JOIN tasks t ON t.id = ts.task_id
+     JOIN members m ON m.id = ts.member_id
+     WHERE ts.batch_id = $1
+       AND ($2::int IS NULL OR ts.day_number = $2)
+       AND ($3::uuid IS NULL OR ts.member_id = $3)
+       AND ($4::text IS NULL OR ts.status::text = $4)
+     ORDER BY ts.day_number ASC, m.first_name ASC`,
+    req.params.id,
+    dayNumber ? parseInt(dayNumber, 10) : null,
+    memberId ?? null,
+    status ?? null,
+  );
+  return reply.send({ success: true, data: submissions, error: null });
+}
