@@ -262,7 +262,7 @@ export default function MembersListPage() {
   const handleEditPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast.error("Photo must be under 2MB"); return; }
+    if (!file.type.startsWith("image/")) { toast.error("Please upload an image file"); return; }
     setEditIsUploadingPhoto(true);
     try {
       const result = await uploadImage.mutateAsync({ file, pathPrefix: "members/avatars" });

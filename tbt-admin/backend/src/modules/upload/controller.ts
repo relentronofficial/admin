@@ -3,15 +3,40 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'crypto';
 import { env } from '../../config/env.js';
+import sharp from 'sharp';
+
+// Image MIME types that will be converted to WebP before storage
+const CONVERTIBLE_IMAGE_TYPES = new Set([
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+  'image/avif', 'image/gif', 'image/bmp', 'image/tiff',
+]);
 
 
 
 export async function uploadImageHandler(req: FastifyRequest, reply: FastifyReply) {
   const { pathPrefix = 'uploads', filename = 'file' } = req.query as { pathPrefix?: string; filename?: string };
-  const contentType = (req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim();
-  const body = req.body as Buffer;
+  const rawContentType = (req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+  let body = req.body as Buffer;
+  let contentType = rawContentType;
+  let safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
 
-  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
+  // Convert images to optimized WebP before storage
+  if (CONVERTIBLE_IMAGE_TYPES.has(rawContentType)) {
+    try {
+      const isAnimated = rawContentType === 'image/gif';
+      const converted = await sharp(body, isAnimated ? { animated: true } : {})
+        .webp({ quality: 85 })
+        .toBuffer();
+      const originalSize = body.length;
+      body = converted;
+      contentType = 'image/webp';
+      safeFilename = safeFilename.replace(/\.[^.]*$/, '') + '.webp';
+      req.log.info(`[image-opt] ${rawContentType} → webp: ${originalSize} → ${converted.length} bytes (${Math.round((1 - converted.length / originalSize) * 100)}% smaller)`);
+    } catch (convErr: any) {
+      req.log.warn(`[image-opt] conversion failed, uploading original: ${convErr.message}`);
+    }
+  }
+
   const key = `${pathPrefix}/${Date.now()}-${safeFilename}`;
 
   // Primary: Bunny Storage — natively served by BUNNY_CDN_URL (no extra CDN wiring needed)

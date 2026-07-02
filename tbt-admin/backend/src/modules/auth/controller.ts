@@ -40,6 +40,17 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
       });
     }
 
+    // Update lastLoginAt once per session (only if null or older than 1 hour).
+    // This endpoint is Clerk-protected so it is only reachable after successful auth.
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    if (!admin.lastLoginAt || admin.lastLoginAt < oneHourAgo) {
+      request.server.prisma.admin.update({
+        where: { id: admin.id },
+        data: { lastLoginAt: now },
+      }).catch(() => {}); // non-fatal fire-and-forget
+    }
+
     return reply.send({ success: true, data: admin, error: null });
   } catch (err) {
     // Database connection failure fallback

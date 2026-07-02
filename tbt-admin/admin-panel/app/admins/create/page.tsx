@@ -199,13 +199,8 @@ export default function CreateAdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-      toast.error("Invalid file type. Please upload a JPG, PNG, or WEBP image.");
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("File size exceeds 2MB limit.");
+    if (!file.type.startsWith("image/")) {
+      toast.error("Invalid file type. Please upload an image.");
       return;
     }
 

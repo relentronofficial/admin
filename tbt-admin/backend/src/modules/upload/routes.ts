@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getPresignedUrlHandler, createBunnyVideoHandler, deleteBunnyVideoHandler, uploadImageHandler } from './controller.js';
 
-const IMAGE_LIMIT = 20 * 1024 * 1024;   // 20 MB
+const IMAGE_LIMIT = 50 * 1024 * 1024;   // 50 MB (sharp converts to WebP before storage)
 const VIDEO_LIMIT = 500 * 1024 * 1024;  // 500 MB
 
 export async function uploadRoutes(fastify: FastifyInstance) {
