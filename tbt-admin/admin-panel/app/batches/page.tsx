@@ -97,8 +97,15 @@ export default function BatchesPage() {
 
   // Member management
   const [memberSearch, setMemberSearch] = useState("");
-  const { data: batchDetail, isLoading: loadingDetail, refetch: refetchDetail } = useGetBatch(managingBatch?.id || "");
+  const { data: batchDetail, isLoading: loadingDetail, isFetching: isFetchingDetail, refetch: refetchDetail } = useGetBatch(managingBatch?.id || "");
   const batchMembers: any[] = (batchDetail as any)?.data?.members || [];
+
+  // Force a fresh fetch every time the manage-members modal opens to bypass stale cache
+  useEffect(() => {
+    if (managingBatch?.id) {
+      refetchDetail();
+    }
+  }, [managingBatch?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: searchRes } = useListMembers({ page: 1, limit: 20, search: memberSearch, status: "" });
   const searchResults: any[] = searchRes?.data || [];
@@ -213,6 +220,7 @@ export default function BatchesPage() {
       toast.success(`${member.firstName} added to batch`);
       refetchDetail();
       qc.invalidateQueries({ queryKey: ['batches'] });
+      qc.invalidateQueries({ queryKey: ['batch', managingBatch.id] });
     } catch {
       toast.error("Failed to assign member");
     }
@@ -224,6 +232,7 @@ export default function BatchesPage() {
       toast.success(`${member.firstName} removed from batch`);
       refetchDetail();
       qc.invalidateQueries({ queryKey: ['batches'] });
+      qc.invalidateQueries({ queryKey: ['batch', managingBatch.id] });
     } catch {
       toast.error("Failed to remove member");
     }
@@ -531,7 +540,7 @@ export default function BatchesPage() {
                   {managingBatch.name}
                 </h2>
                 <p className="text-[12px] text-[#606060] mt-0.5">
-                  {batchMembers.length} member{batchMembers.length !== 1 ? "s" : ""} · Starts {fmtDate(managingBatch.startsAt)}
+                  {isFetchingDetail ? "…" : `${batchMembers.length} member${batchMembers.length !== 1 ? "s" : ""}`} · Starts {fmtDate(managingBatch.startsAt)}
                 </p>
               </div>
               <button onClick={() => { setManagingBatch(null); setMemberSearch(""); }} className="text-[#606060] hover:text-white transition-colors">
@@ -542,8 +551,8 @@ export default function BatchesPage() {
             <div className="flex-1 overflow-y-auto">
               {/* Current Members */}
               <div className="p-6 space-y-3">
-                <p className={labelCls}>Current Members ({batchMembers.length})</p>
-                {loadingDetail ? (
+                <p className={labelCls}>Current Members ({isFetchingDetail ? "…" : batchMembers.length})</p>
+                {loadingDetail || isFetchingDetail ? (
                   <div className="flex justify-center py-6"><Loader2 size={22} className="animate-spin text-[#dc2626]" /></div>
                 ) : batchMembers.length === 0 ? (
                   <div className="text-center py-8 text-[#606060] text-sm">
