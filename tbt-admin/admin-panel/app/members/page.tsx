@@ -321,7 +321,7 @@ export default function MembersListPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-[1600px] mx-auto space-y-6 font-sans">
+      <div className="space-y-6 font-sans">
         
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

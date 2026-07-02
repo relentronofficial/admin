@@ -302,7 +302,7 @@ export default function TasksPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-[1400px] mx-auto space-y-6 font-sans">
+      <div className="space-y-6 font-sans">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex gap-3 items-start">

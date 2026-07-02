@@ -62,7 +62,7 @@ export default function DisplayBadgesPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex gap-3 items-start">
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />

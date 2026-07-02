@@ -1411,7 +1411,7 @@ export default function WorkshopDetailPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-start gap-4">
           <button onClick={() => router.push("/workshops")} className="mt-1 text-[#777] hover:text-white transition-colors"><ArrowLeft size={20} /></button>

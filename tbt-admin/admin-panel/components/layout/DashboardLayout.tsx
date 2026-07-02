@@ -13,7 +13,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <Sidebar />
       <div className="pl-[220px] flex flex-col min-h-screen w-full">
         <Topbar />
-        <main className="p-7 flex-1 w-full max-w-[1400px] mx-auto">
+        <main className="p-7 flex-1 w-full">
           {children}
         </main>
       </div>
