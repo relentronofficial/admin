@@ -520,7 +520,7 @@ export function Navbar() {
               <button
                 onClick={() => setNotifOpen((v) => !v)}
                 className={cn(
-                  "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0 overflow-hidden",
+                  "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
                   notifOpen || pathname === "/notifications" ? "text-white" : "text-[#888] hover:text-white"
                 )}
                 aria-label="Notifications"
