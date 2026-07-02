@@ -1544,3 +1544,43 @@ export const useCourseLeaderboardAdmin = (courseId: string, limit = 20) =>
     enabled: !!courseId,
     staleTime: 60_000,
   });
+
+// ── Admin Notifications ───────────────────────────────────────────────────────
+
+export const useAdminNotifications = (page = 1, limit = 30) =>
+  useQuery({
+    queryKey: ['admin-notifications', page, limit],
+    queryFn: async () => { const res: any = await apiClient.get('/api/admin-notifications', { params: { page, limit } }); return res; },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+export const useAdminUnreadCount = () =>
+  useQuery({
+    queryKey: ['admin-notifications-unread'],
+    queryFn: async () => { const res: any = await apiClient.get('/api/admin-notifications/unread-count'); return (res?.data?.count ?? 0) as number; },
+    staleTime: 0,
+    refetchInterval: 30_000,
+  });
+
+export const useMarkAdminNotificationRead = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { await apiClient.put(`/api/admin-notifications/${id}/read`); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-notifications'] });
+      qc.invalidateQueries({ queryKey: ['admin-notifications-unread'] });
+    },
+  });
+};
+
+export const useMarkAllAdminNotificationsRead = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => { await apiClient.put('/api/admin-notifications/read-all'); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-notifications'] });
+      qc.invalidateQueries({ queryKey: ['admin-notifications-unread'] });
+    },
+  });
+};

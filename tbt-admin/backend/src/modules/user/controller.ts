@@ -11,6 +11,7 @@ import {
   notifyCourseCompleted,
   notifyQuizPassed,
 } from '../../lib/courseNotifications.js';
+import { createAdminNotification } from '../../lib/adminNotifications.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -614,6 +615,12 @@ export async function requestCourseAccessHandler(request: FastifyRequest, reply:
         memberId,
         courseId,
         courseTitle: course.title,
+      });
+      void createAdminNotification(request.server.prisma, {
+        title: 'Course Access Request',
+        body: `A member requested access to "${course.title}".`,
+        type: 'course_access_request',
+        metadata: { memberId, courseId, courseTitle: course.title },
       });
     } catch {}
   }
@@ -3362,6 +3369,12 @@ export async function submitProductInquiryHandler(request: FastifyRequest, reply
     memberName,
     phone: member?.phone ?? '',
   });
+  void createAdminNotification(request.server.prisma, {
+    title: 'Product Inquiry',
+    body: `${memberName} is interested in "${product.title}".`,
+    type: 'product_inquiry',
+    metadata: { inquiryId: inquiry.id, productTitle: product.title, memberName },
+  });
 
   return reply.status(201).send({ success: true, data: { id: inquiry.id }, error: null });
 }
@@ -3836,6 +3849,12 @@ export async function requestWorkshopAccessHandler(request: FastifyRequest, repl
       memberId: request.memberId,
       workshopId: workshop.id,
       workshopTitle: workshop.title,
+    });
+    void createAdminNotification(request.server.prisma, {
+      title: 'Workshop Access Request',
+      body: `A member requested access to "${workshop.title}".`,
+      type: 'workshop_access_request',
+      metadata: { memberId: request.memberId, workshopId: workshop.id, workshopTitle: workshop.title },
     });
   } catch {}
 

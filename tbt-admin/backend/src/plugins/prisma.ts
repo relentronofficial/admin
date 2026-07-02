@@ -188,6 +188,17 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           UNIQUE(member_id, batch_id)
         )
       `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS admin_notifications (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          type VARCHAR(50) NOT NULL DEFAULT 'info',
+          metadata JSONB,
+          is_read BOOLEAN NOT NULL DEFAULT false,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
     ]);
 
     // Nav item inserts (run after table locks from above are released)

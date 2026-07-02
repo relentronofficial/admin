@@ -58,22 +58,36 @@ function AuthInterceptor() {
   useEffect(() => {
     if (!isLoaded) return;
     let mounted = true;
+
+    function invalidateAdminNotifs() {
+      queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-notifications-unread'] });
+    }
+
     getAdminSocket().then((socket) => {
       if (!mounted) return;
       socket.on('admin:member_pending', (data: { fullName: string; phone: string }) => {
         toast.success(`New signup: ${data.fullName} is waiting for approval`);
         queryClient.invalidateQueries({ queryKey: ['members'] });
+        invalidateAdminNotifs();
       });
       socket.on('admin:product_inquiry', (data: { memberName: string; productTitle: string }) => {
         toast.success(`Purchase inquiry: ${data.memberName} is interested in "${data.productTitle}"`);
         queryClient.invalidateQueries({ queryKey: ['product-inquiries'] });
+        invalidateAdminNotifs();
       });
+      socket.on('admin:workshop_access_request', () => { invalidateAdminNotifs(); });
+      socket.on('admin:course_access_request', () => { invalidateAdminNotifs(); });
+      socket.on('admin:member_joined', () => { invalidateAdminNotifs(); });
     });
     return () => {
       mounted = false;
       getAdminSocket().then((s) => {
         s.off('admin:member_pending');
         s.off('admin:product_inquiry');
+        s.off('admin:workshop_access_request');
+        s.off('admin:course_access_request');
+        s.off('admin:member_joined');
       });
     };
   }, [isLoaded, queryClient]);

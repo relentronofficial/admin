@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcrypt';
+import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { generateOtp, storeOtp, verifyAndConsumeOtp } from '../../lib/otp.js';
 import { sendOtpWhatsapp } from '../../lib/whatsapp.js';
 import {
@@ -319,11 +320,18 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
   });
 
   // Notify all connected admins in real-time
+  const memberFullName = `${firstName} ${lastName ?? ''}`.trim();
   (fastify as any).io?.to('admin').emit('admin:member_pending', {
     memberId: member.id,
-    fullName: `${firstName} ${lastName ?? ''}`.trim(),
+    fullName: memberFullName,
     phone: member.phone,
     createdAt: member.createdAt,
+  });
+  void createAdminNotification(fastify.prisma, {
+    title: 'New Member Signup',
+    body: `${memberFullName} signed up and is waiting for approval.`,
+    type: 'member_pending',
+    metadata: { memberId: member.id, phone: member.phone },
   });
 
   fastify.log.info({ memberId: member.id, phone: member.phone }, 'New self-signup — pending approval');

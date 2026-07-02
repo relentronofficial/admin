@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
 import { invalidateCache } from '../../lib/cache.js';
+import { createAdminNotification } from '../../lib/adminNotifications.js';
 
 export async function listMembersHandler(request: FastifyRequest, reply: FastifyReply) {
   const { page = 1, limit = 10, search, status } = request.query as any;
@@ -129,10 +130,17 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
       throw prismaErr;
     }
 
+    const joinedFullName = member.firstName + ' ' + (member.lastName ?? '');
     request.server.io.to('admin').emit('admin:member_joined', {
       memberId: member.id,
-      fullName: member.firstName + ' ' + (member.lastName ?? ''),
+      fullName: joinedFullName,
       createdAt: member.createdAt,
+    });
+    void createAdminNotification(request.server.prisma, {
+      title: 'New Member Added',
+      body: `${joinedFullName} was added as a new member.`,
+      type: 'member_joined',
+      metadata: { memberId: member.id },
     });
 
     return reply.status(201).send({ success: true, data: member, error: null });
