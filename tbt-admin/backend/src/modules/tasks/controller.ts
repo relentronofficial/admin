@@ -13,7 +13,7 @@ export async function listTasksHandler(request: FastifyRequest, reply: FastifyRe
       skip: (Number(page) - 1) * Number(limit),
       take: Number(limit),
       orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
-      include: { program: { select: { id: true, name: true } }, step: true },
+      include: { program: { select: { id: true, name: true } } },
     }),
     request.server.prisma.task.count({ where }),
   ]);
@@ -45,7 +45,7 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
       bonusPoints: body.bonusPoints,
       sortOrder: body.sortOrder,
     },
-    include: { program: { select: { id: true, name: true } }, step: true },
+    include: { program: { select: { id: true, name: true } } },
   });
   return reply.status(201).send({ success: true, data: task, error: null });
 }
@@ -54,7 +54,7 @@ export async function getTaskHandler(request: FastifyRequest, reply: FastifyRepl
   const { id } = request.params as { id: string };
   const task = await request.server.prisma.task.findUnique({
     where: { id },
-    include: { program: true, step: true, submissions: { take: 10, orderBy: { createdAt: 'desc' } } },
+    include: { program: true, submissions: { take: 10, orderBy: { createdAt: 'desc' } } },
   });
   if (!task) return reply.status(404).send({ success: false, data: null, error: 'Task not found' });
   return reply.send({ success: true, data: task, error: null });

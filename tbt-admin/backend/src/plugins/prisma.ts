@@ -228,7 +228,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `),
-    ]);
+    ]).catch((err) => {
+      fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
+    });
 
     // Nav item inserts (run after table locks from above are released)
     await Promise.all([
@@ -246,7 +248,20 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
                true, NOW(), NOW()
         WHERE NOT EXISTS (SELECT 1 FROM nav_items WHERE href = '/courses')
       `),
-    ]);
+    ]).catch(() => {});
+
+    // Ensure admin_notifications exists even if the main startup batch above partially failed
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS admin_notifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type VARCHAR(50) NOT NULL DEFAULT 'info',
+        metadata JSONB,
+        is_read BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full
