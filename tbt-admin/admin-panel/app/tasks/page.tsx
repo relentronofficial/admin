@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Plus, Pencil, Trash2, X, Loader2, CheckSquare, Star, Clock, Zap, Search,
   ChevronDown, ChevronRight, BookOpen, Calendar, ListChecks, Save, GripVertical,
@@ -111,8 +111,9 @@ export default function TasksPage() {
   const { data: tasksData, isLoading: tasksLoading } = useListTasks(programFilter ? { programId: programFilter } : undefined);
   const { data: programsData, isLoading: programsLoading } = useListPrograms();
   const { data: batchesData } = useListBatches();
-  const { data: batchDaysData, isLoading: batchDaysLoading } = useListBatchDays(selectedBatchId);
-  const { data: batchTasksData, isLoading: batchTasksLoading } = useListBatchTasks(selectedBatchId);
+  const { data: batchDaysData } = useListBatchDays(selectedBatchId);
+  const { data: batchTasksData } = useListBatchTasks(selectedBatchId);
+  const { data: checklistAllTasksData, isLoading: checklistAllLoading } = useGetAllBatchTasks(selectedBatchId);
 
   const { data: submissionsData, isLoading: submissionsLoading } = useGetBatchSubmissions(
     subBatchId,
@@ -141,7 +142,7 @@ export default function TasksPage() {
   const programs: any[] = (programsData as any)?.data || programsData || [];
   const batches: any[]  = (batchesData as any)?.data  || batchesData  || [];
   const batchDays: any[] = (batchDaysData as any)?.data || batchDaysData || [];
-  const allBatchTasks: any[] = batchTasksData ?? [];
+  const checklistAllTasks: any[] = checklistAllTasksData ?? [];
   const submissions: any[] = (submissionsData as any)?.data ?? submissionsData ?? [];
   const overviewTasks: any[] = overviewTasksData ?? [];
 
@@ -153,15 +154,21 @@ export default function TasksPage() {
   useEffect(() => {
     setLocalTasksMap({});
     setDirtyDayOrders(new Set());
-  }, [selectedBatchId, batchTasksData]);
+  }, [selectedBatchId, checklistAllTasksData]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────────
-  function tasksForDay(dayNumber: number) {
+  function inlineTasksForDay(dayNumber: number): any[] {
     if (dirtyDayOrders.has(dayNumber)) {
       return localTasksMap[dayNumber] ?? [];
     }
-    return allBatchTasks
-      .filter((t: any) => t.dayNumber === dayNumber)
+    return checklistAllTasks
+      .filter((t: any) => t.source === 'batch' && t.dayNumber === dayNumber)
+      .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+  }
+
+  function programTasksForDay(dayNumber: number): any[] {
+    return checklistAllTasks
+      .filter((t: any) => t.source === 'program' && t.dayNumber === dayNumber)
       .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
   }
 
@@ -281,7 +288,7 @@ export default function TasksPage() {
   }
 
   function openAddInlineTask(dayNumber: number) {
-    setInlineForm({ ...emptyInlineTaskForm(), sortOrder: tasksForDay(dayNumber).length });
+    setInlineForm({ ...emptyInlineTaskForm(), sortOrder: inlineTasksForDay(dayNumber).length });
     setInlineModal({ dayNumber });
   }
 
@@ -353,7 +360,7 @@ export default function TasksPage() {
       dragFrom.current = null;
       return;
     }
-    const current = [...tasksForDay(dayNumber)];
+    const current = [...inlineTasksForDay(dayNumber)];
     const [moved] = current.splice(from.idx, 1);
     current.splice(dropIdx, 0, moved);
     setLocalTasksMap(m => ({ ...m, [dayNumber]: current }));
@@ -417,6 +424,22 @@ export default function TasksPage() {
   const isSavingProgram = createProgram.isPending || updateProgram.isPending;
   const isSavingInline  = createInlineTask.isPending || updateInlineTask.isPending;
   const selectedBatch   = batches.find((b: any) => b.id === selectedBatchId);
+
+  // Day numbers to render in Batch Checklist — union of snapshotDays range + any day numbers from tasks
+  const checklistDayNumbers = useMemo(() => {
+    const totalDays = selectedBatch?.snapshotDays ?? 0;
+    const dayNums = new Set<number>([
+      ...Array.from({ length: totalDays }, (_, i) => i + 1),
+      ...checklistAllTasks.map((t: any) => Number(t.dayNumber)),
+    ]);
+    return Array.from(dayNums).sort((a, b) => a - b);
+  }, [selectedBatch?.snapshotDays, checklistAllTasks]);
+
+  // BatchDay records indexed by dayNumber for title lookups
+  const batchDaysByNumber = useMemo(
+    () => Object.fromEntries(batchDays.map((d: any) => [d.dayNumber, d])),
+    [batchDays],
+  );
 
   return (
     <DashboardLayout>
@@ -643,7 +666,7 @@ export default function TasksPage() {
               </div>
               {selectedBatch && (
                 <span className="text-[12px] text-[#666] font-rajdhani font-bold uppercase tracking-widest">
-                  {batchDays.length} days · {allBatchTasks.length} tasks
+                  {checklistDayNumbers.length} days · {checklistAllTasks.length} tasks
                 </span>
               )}
               {selectedBatchId && (
@@ -664,120 +687,163 @@ export default function TasksPage() {
                 <ListChecks size={36} className="text-[#333]" />
                 <p className="text-[#555] font-rajdhani font-bold uppercase tracking-widest text-sm">Select a batch to manage its daily tasks</p>
               </div>
-            ) : batchDaysLoading || batchTasksLoading ? (
+            ) : checklistAllLoading ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex items-center justify-center py-20">
                 <Loader2 size={32} className="animate-spin text-[#dc2626]" />
               </div>
-            ) : batchDays.length === 0 ? (
+            ) : checklistDayNumbers.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-16 gap-3">
                 <Calendar size={36} className="text-[#333]" />
-                <p className="text-[#555] font-rajdhani font-bold uppercase tracking-widest text-sm">No days configured for this batch</p>
+                <p className="text-[#555] font-rajdhani font-bold uppercase tracking-widest text-sm">No tasks or days configured for this batch</p>
+                <p className="text-[#444] text-[12px] text-center px-8">Link a program with tasks to this batch, or add batch-specific tasks below.</p>
               </div>
             ) : (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden divide-y divide-[#1e1e1e]">
-                {batchDays
-                  .slice()
-                  .sort((a: any, b: any) => a.dayNumber - b.dayNumber)
-                  .map((day: any) => {
-                    const dayTasks   = tasksForDay(day.dayNumber);
-                    const isExpanded = expandedDays.has(day.dayNumber);
-                    const isDirty    = dirtyDayOrders.has(day.dayNumber);
+                {checklistDayNumbers.map((dayNum: number) => {
+                  const batchDayRecord = batchDaysByNumber[dayNum];
+                  const inlineTasks    = inlineTasksForDay(dayNum);
+                  const progTasks      = programTasksForDay(dayNum);
+                  const isExpanded     = expandedDays.has(dayNum);
+                  const isDirty        = dirtyDayOrders.has(dayNum);
+                  const totalTasks     = inlineTasks.length + progTasks.length;
 
-                    return (
-                      <div key={day.dayNumber}>
-                        <button
-                          onClick={() => toggleDayExpand(day.dayNumber)}
-                          className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-[#1f1f1f] transition-colors text-left"
-                        >
-                          <span className={cn("transition-transform duration-150", isExpanded ? "rotate-90" : "rotate-0")}>
-                            <ChevronRight size={15} className="text-[#555]" />
-                          </span>
-                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[#dc2626]/10 text-[#dc2626] text-[12px] font-bold font-rajdhani shrink-0">
-                            {day.dayNumber}
-                          </span>
-                          <span className="flex-1 text-[13px] text-[#f0f0f0] font-medium">{day.title || `Day ${day.dayNumber}`}</span>
-                          <div className="flex items-center gap-3 shrink-0">
-                            {isDirty && <span className="w-2 h-2 rounded-full bg-yellow-500" title="Unsaved order" />}
-                            <span className="text-[12px] text-[#666] font-rajdhani font-bold uppercase tracking-wider">
-                              {dayTasks.length} task{dayTasks.length !== 1 ? "s" : ""}
+                  return (
+                    <div key={dayNum}>
+                      <button
+                        onClick={() => toggleDayExpand(dayNum)}
+                        className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-[#1f1f1f] transition-colors text-left"
+                      >
+                        <span className={cn("transition-transform duration-150", isExpanded ? "rotate-90" : "rotate-0")}>
+                          <ChevronRight size={15} className="text-[#555]" />
+                        </span>
+                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[#dc2626]/10 text-[#dc2626] text-[12px] font-bold font-rajdhani shrink-0">
+                          {dayNum}
+                        </span>
+                        <span className="flex-1 text-[13px] text-[#f0f0f0] font-medium">{batchDayRecord?.title || `Day ${dayNum}`}</span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {isDirty && <span className="w-2 h-2 rounded-full bg-yellow-500" title="Unsaved order" />}
+                          {progTasks.length > 0 && (
+                            <span className="text-[10px] text-blue-400 font-bold font-rajdhani uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-950/30">
+                              {progTasks.length} inherited
                             </span>
-                          </div>
-                        </button>
+                          )}
+                          <span className="text-[12px] text-[#666] font-rajdhani font-bold uppercase tracking-wider">
+                            {totalTasks} task{totalTasks !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </button>
 
-                        {isExpanded && (
-                          <div className="px-5 pb-5 pt-2 bg-[#141414] border-t border-[#1e1e1e]">
-                            <div className="space-y-1.5 mb-3">
-                              {dayTasks.length === 0 ? (
-                                <p className="text-[12px] text-[#555] py-2 text-center font-rajdhani uppercase tracking-wider">No tasks yet</p>
-                              ) : (
-                                dayTasks.map((task: any, idx: number) => (
+                      {isExpanded && (
+                        <div className="px-5 pb-5 pt-2 bg-[#141414] border-t border-[#1e1e1e]">
+                          {/* Program tasks — inherited, read-only */}
+                          {progTasks.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-[10px] font-bold text-blue-400/60 uppercase tracking-widest font-rajdhani mb-1.5 flex items-center gap-1.5">
+                                <BookOpen size={10} className="text-blue-400/60" />
+                                Inherited from Program
+                              </p>
+                              <div className="space-y-1">
+                                {progTasks.map((task: any, idx: number) => (
                                   <div
                                     key={task.id}
-                                    className={cn(
-                                      "flex items-center gap-2 group rounded-lg px-2 py-1.5 transition-colors",
-                                      dragOverMap[day.dayNumber] === idx ? "bg-[#dc2626]/10" : "hover:bg-[#1a1a1a]"
-                                    )}
-                                    draggable
-                                    onDragStart={() => onDragStart(day.dayNumber, idx)}
-                                    onDragOver={e => { e.preventDefault(); onDragOverItem(day.dayNumber, idx); }}
-                                    onDrop={() => onDropItem(day.dayNumber, idx)}
-                                    onDragEnd={() => setDragOverMap(m => { const n = { ...m }; delete n[day.dayNumber]; return n; })}
+                                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 bg-[#0d1a2e] border border-blue-900/20"
                                   >
-                                    <GripVertical size={14} className="text-[#333] shrink-0 cursor-grab" />
-                                    <span className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[10px] text-[#666] font-bold font-rajdhani flex items-center justify-center shrink-0">
+                                    <span className="w-5 h-5 rounded bg-blue-900/30 text-[10px] text-blue-400/70 font-bold font-rajdhani flex items-center justify-center shrink-0">
                                       {idx + 1}
                                     </span>
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-[13px] text-[#f0f0f0] font-medium truncate">{task.title}</p>
+                                      <p className="text-[13px] text-[#c0c0c0] font-medium truncate">{task.title}</p>
                                       <div className="flex items-center gap-2 mt-0.5">
-                                        <span className="text-[10px] text-[#666] uppercase font-rajdhani font-bold">{task.proofType}</span>
-                                        <span className="text-[10px] text-yellow-500 font-bold">{task.basePoints}pts</span>
-                                        {task.isMilestone && <Star size={10} className="text-yellow-400 fill-yellow-400" />}
+                                        <span className="text-[10px] text-[#555] uppercase font-rajdhani font-bold">{task.proofType}</span>
+                                        <span className="text-[10px] text-yellow-600 font-bold">{task.basePoints}pts</span>
+                                        {task.isMilestone && <Star size={10} className="text-yellow-400/60 fill-yellow-400/60" />}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                      <button
-                                        onClick={() => openEditInlineTask(day.dayNumber, task)}
-                                        className="p-1 rounded text-[#666] hover:text-white hover:bg-[#2a2a2a] transition-all"
-                                      >
-                                        <Pencil size={12} />
-                                      </button>
-                                      <button
-                                        onClick={() => setDeletingInlineTask({ batchId: selectedBatchId, taskId: task.id })}
-                                        className="p-1 rounded text-[#666] hover:text-red-400 hover:bg-red-900/20 transition-all"
-                                      >
-                                        <Trash2 size={12} />
-                                      </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Batch-specific tasks — editable */}
+                          <div className="space-y-1.5 mb-3">
+                            {progTasks.length > 0 && (
+                              <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest font-rajdhani mb-1.5 flex items-center gap-1.5">
+                                <ListChecks size={10} />
+                                Batch-specific tasks
+                              </p>
+                            )}
+                            {inlineTasks.length === 0 ? (
+                              <p className="text-[12px] text-[#555] py-2 text-center font-rajdhani uppercase tracking-wider">No batch tasks yet</p>
+                            ) : (
+                              inlineTasks.map((task: any, idx: number) => (
+                                <div
+                                  key={task.id}
+                                  className={cn(
+                                    "flex items-center gap-2 group rounded-lg px-2 py-1.5 transition-colors",
+                                    dragOverMap[dayNum] === idx ? "bg-[#dc2626]/10" : "hover:bg-[#1a1a1a]"
+                                  )}
+                                  draggable
+                                  onDragStart={() => onDragStart(dayNum, idx)}
+                                  onDragOver={e => { e.preventDefault(); onDragOverItem(dayNum, idx); }}
+                                  onDrop={() => onDropItem(dayNum, idx)}
+                                  onDragEnd={() => setDragOverMap(m => { const n = { ...m }; delete n[dayNum]; return n; })}
+                                >
+                                  <GripVertical size={14} className="text-[#333] shrink-0 cursor-grab" />
+                                  <span className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[10px] text-[#666] font-bold font-rajdhani flex items-center justify-center shrink-0">
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[13px] text-[#f0f0f0] font-medium truncate">{task.title}</p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] text-[#666] uppercase font-rajdhani font-bold">{task.proofType}</span>
+                                      <span className="text-[10px] text-yellow-500 font-bold">{task.basePoints}pts</span>
+                                      {task.isMilestone && <Star size={10} className="text-yellow-400 fill-yellow-400" />}
                                     </div>
                                   </div>
-                                ))
-                              )}
-                            </div>
-
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => openAddInlineTask(day.dayNumber)}
-                                className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white hover:border-[#555] text-[12px] font-bold font-rajdhani uppercase tracking-wider transition-all"
-                              >
-                                <Plus size={13} />
-                                Add Task
-                              </button>
-                              {isDirty && (
-                                <button
-                                  onClick={() => handleSaveOrder(day.dayNumber)}
-                                  disabled={reorderInlineTasks.isPending}
-                                  className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-[#dc2626] text-white text-[12px] font-bold font-rajdhani uppercase tracking-wider hover:bg-red-700 transition-all disabled:opacity-50"
-                                >
-                                  {reorderInlineTasks.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                                  Save Order
-                                </button>
-                              )}
-                            </div>
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                    <button
+                                      onClick={() => openEditInlineTask(dayNum, task)}
+                                      className="p-1 rounded text-[#666] hover:text-white hover:bg-[#2a2a2a] transition-all"
+                                    >
+                                      <Pencil size={12} />
+                                    </button>
+                                    <button
+                                      onClick={() => setDeletingInlineTask({ batchId: selectedBatchId, taskId: task.id })}
+                                      className="p-1 rounded text-[#666] hover:text-red-400 hover:bg-red-900/20 transition-all"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openAddInlineTask(dayNum)}
+                              className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white hover:border-[#555] text-[12px] font-bold font-rajdhani uppercase tracking-wider transition-all"
+                            >
+                              <Plus size={13} />
+                              Add Task
+                            </button>
+                            {isDirty && (
+                              <button
+                                onClick={() => handleSaveOrder(dayNum)}
+                                disabled={reorderInlineTasks.isPending}
+                                className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-[#dc2626] text-white text-[12px] font-bold font-rajdhani uppercase tracking-wider hover:bg-red-700 transition-all disabled:opacity-50"
+                              >
+                                {reorderInlineTasks.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                                Save Order
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>

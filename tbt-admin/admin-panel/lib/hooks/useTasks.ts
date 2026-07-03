@@ -87,6 +87,7 @@ export const useCreateBatchTask = () => {
     },
     onSuccess: (_r, vars) => {
       queryClient.invalidateQueries({ queryKey: ['batch-tasks', vars.batchId] });
+      queryClient.invalidateQueries({ queryKey: ['all-batch-tasks', vars.batchId] });
     },
   });
 };
@@ -100,6 +101,7 @@ export const useUpdateBatchTask = () => {
     },
     onSuccess: (_r, vars) => {
       queryClient.invalidateQueries({ queryKey: ['batch-tasks', vars.batchId] });
+      queryClient.invalidateQueries({ queryKey: ['all-batch-tasks', vars.batchId] });
     },
   });
 };
@@ -112,6 +114,7 @@ export const useDeleteBatchTask = () => {
     },
     onSuccess: (_r, vars) => {
       queryClient.invalidateQueries({ queryKey: ['batch-tasks', vars.batchId] });
+      queryClient.invalidateQueries({ queryKey: ['all-batch-tasks', vars.batchId] });
     },
   });
 };
@@ -124,6 +127,7 @@ export const useReorderBatchTasks = () => {
     },
     onSuccess: (_r, vars) => {
       queryClient.invalidateQueries({ queryKey: ['batch-tasks', vars.batchId] });
+      queryClient.invalidateQueries({ queryKey: ['all-batch-tasks', vars.batchId] });
     },
   });
 };
