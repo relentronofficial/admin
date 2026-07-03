@@ -14,7 +14,8 @@
     "prisma:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "seed:gamified": "tsx prisma/seed-gamified-course.ts",
-    "seed:tasks": "tsx prisma/seed-tasks.ts"
+    "seed:tasks": "tsx prisma/seed-tasks.ts",
+    "seed:batches": "tsx prisma/seed-batches.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

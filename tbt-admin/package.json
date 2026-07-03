@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "typecheck": "npm run typecheck -w admin-panel && npm run typecheck -w backend",
     "seed:gamified": "npm run seed:gamified -w backend",
-    "seed:tasks": "npm run seed:tasks -w backend"
+    "seed:tasks": "npm run seed:tasks -w backend",
+    "seed:batches": "npm run seed:batches -w backend"
   },
   "devDependencies": {
     "client-only": "^0.0.1",
