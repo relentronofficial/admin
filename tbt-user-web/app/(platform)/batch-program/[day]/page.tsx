@@ -29,6 +29,7 @@ import {
   useUploadTaskProof,
   type TaskSubmissionProof,
 } from "@/lib/hooks/useBatchProgram";
+import { getServerNow } from "@/lib/api/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useSocket } from "@/lib/socket/useSocket";
 
@@ -142,7 +143,7 @@ export default function BatchDayPage() {
         Math.max(
           0,
           Math.floor(
-            (Date.now() - new Date(program.batch.startsAt).getTime()) / 86_400_000,
+            (getServerNow() - new Date(program.batch.startsAt).getTime()) / 86_400_000,
           ),
         ),
       )

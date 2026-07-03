@@ -40,6 +40,8 @@ npm run typecheck        # Both workspaces
 npm run lint
 npm run format
 npm run seed:gamified -w backend   # Seed XP/gamification data
+npm run seed:tasks -w backend      # Seed task/initiative sample data
+npm run seed:batches -w backend    # Seed batch sample data
 
 # TypeScript check (targeted — Bash syntax; use before/after any edit)
 cd tbt-admin && npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | grep <filename>
@@ -93,16 +95,16 @@ npm run format      # prettier --write .
 - **Route prefix convention:** `/api/<module>` (e.g. `/api/courses`, `/api/members`)
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
-- **Backend modules present:** `admins`, `auth`, `batches`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `hero`, `location`, `members`, `messages`, `notifications`, `products`, `pub`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`, `app-notifications`, `app-resources`
+- **Backend modules present:** `admin-notifications`, `admins`, `app-notifications`, `app-resources`, `auth`, `batches`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `hero`, `location`, `members`, `messages`, `notifications`, `products`, `pub`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
 - **Cron endpoints** — `/api/workshops/cron/generate-recurring` and `/api/cron/course-expiry-reminder` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (183+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (202+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`, `useBatchDayAnalytics`.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB), `useCreateBunnyVideo` (`POST /api/upload/bunny-video-create`), `useDeleteBunnyVideo` (`DELETE /api/upload/bunny-video/:videoId`)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
-- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts`
+- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, `useUpdateTask`, `useDeleteTask`, `useListBatchTasks`, `useCreateBatchTask`, `useUpdateBatchTask`, `useDeleteBatchTask`, `useReorderBatchTasks`, `useMigrateJsonTasks`, `useGetBatchSubmissions`, `useReviewTaskSubmission`
 - **State:** TanStack Query (server state, `staleTime: 5min`), Zustand (client state)
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
 
@@ -335,6 +337,22 @@ Input:       bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-whit
 Read-only module — logs suspicious viewing behaviour, no automatic blocking. Event types: `EXCESSIVE_SKIPPING`, `RAPID_EPISODE_SWITCHING`, `ABNORMAL_PROGRESS_SPEED`, `MULTIPLE_DEVICES`.
 
 Admin hooks: `useSecurityLogs(params)` and `useSecurityLogStats()` in `useTbt.ts`.
+
+### Admin Notifications (`/api/admin-notifications`)
+In-app notification bell for admins (separate from the member-facing `/api/notifications`). Stored in its own DB table, emitted via Socket.IO to the `'admin'` room.
+
+Admin hooks in `useTbt.ts`: `useAdminNotifications(page, limit)`, `useAdminUnreadCount()`, `useMarkAdminNotificationRead()`, `useMarkAllAdminNotificationsRead()`. UI lives in `admin-panel/app/app-notifications/page.tsx`.
+
+### Assignment Review (`/api/workshops/:id/assignments`)
+Workshop assignment submissions (uploaded by members) are reviewed by admins in `admin-panel/app/assignments/page.tsx`.
+
+Admin hooks in `useTbt.ts`: `useAllAssignmentSubmissions({ page?, limit?, reviewed?, workshopId? })`, `useReviewAssignment()`.
+
+### Site Settings (`admin-panel/app/settings/`)
+Admin pages for editing site-wide config served by `/api/config` (persisted to DB, read by `SiteConfigProvider` on user-web load):
+- `settings/site/` — site name, logos, colours, splash screen
+- `settings/navigation/` — nav links and right-icon flags
+- `settings/ui-strings/` — all member-facing string overrides
 
 ---
 

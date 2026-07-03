@@ -11,13 +11,14 @@ export const useGetMember = (id: string) =>
     enabled: !!id,
   });
 
-export const useListMembers = (params: { page?: number; limit?: number; search?: string; status?: string } = {}) => {
+export const useListMembers = (params: { page?: number; limit?: number; search?: string; status?: string; showArchived?: boolean } = {}) => {
   return useQuery({
     queryKey: ['members', params],
     queryFn: async () => {
-      const { page = 1, limit = 10, search = '', status = '' } = params;
+      const { page = 1, limit = 10, search = '', status = '', showArchived = false } = params;
       let url = `/api/members?page=${page}&limit=${limit}&search=${search}`;
-      if (status) url += `&status=${status}`;
+      if (status && !showArchived) url += `&status=${status}`;
+      if (showArchived) url += `&showArchived=true`;
       const res: any = await apiClient.get(url);
       return res;
     },

@@ -660,8 +660,8 @@ export const useUpdateResourcesPageConfig = () => {
   return useMutation({ mutationFn: async (data: any) => { const res: any = await apiClient.put('/api/config/resources-page', data); return res.data; }, onSuccess: () => qc.invalidateQueries({ queryKey: ['resources-page-config'] }) });
 };
 
-export const useListBatches = () =>
-  useQuery({ queryKey: ['batches'], queryFn: async () => { const res: any = await apiClient.get('/api/batches'); return res; } });
+export const useListBatches = (params?: { status?: string }) =>
+  useQuery({ queryKey: ['batches', params], queryFn: async () => { const res: any = await apiClient.get('/api/batches', { params }); return res; } });
 
 export const useGetBatch = (id: string) =>
   useQuery({ queryKey: ['batch', id], queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${id}`); return res; }, enabled: !!id });
@@ -725,10 +725,16 @@ export const useUpsertBatchDay = () => {
   });
 };
 
-export const useGetBatchProgress = (batchId: string) =>
+export const useGetBatchProgress = (
+  batchId: string,
+  params?: { page?: number; limit?: number; memberId?: string; status?: string; dayNumber?: number },
+) =>
   useQuery({
-    queryKey: ['batch-progress', batchId],
-    queryFn: async () => { const res: any = await apiClient.get(`/api/batches/${batchId}/progress`); return res; },
+    queryKey: ['batch-progress', batchId, params],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/batches/${batchId}/progress`, { params });
+      return res;
+    },
     enabled: !!batchId,
     staleTime: 15_000,
   });
@@ -928,6 +934,22 @@ export const useCloneBatch = () => {
       const res: any = await apiClient.post(`/api/batches/${id}/clone`, { name, startsAt });
       return res.data;
     },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batches'] }),
+  });
+};
+
+export const useMarkBatchComplete = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { const res: any = await apiClient.post(`/api/batches/${id}/complete`); return res.data; },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batches'] }),
+  });
+};
+
+export const useArchiveBatch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { const res: any = await apiClient.post(`/api/batches/${id}/archive`); return res.data; },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['batches'] }),
   });
 };

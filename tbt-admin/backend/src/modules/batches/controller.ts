@@ -7,13 +7,17 @@ import {
 } from './schema.js';
 
 export async function listBatchesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { status } = req.query as { status?: string };
   const batches = await req.server.prisma.batch.findMany({
+    where: status ? { isActive: status === 'active' ? true : undefined } : undefined,
     orderBy: { startsAt: 'desc' },
     select: {
       id: true,
       name: true,
       description: true,
       isActive: true,
+      xpPerDay: true,
+      snapshotDays: true,
       startsAt: true,
       endsAt: true,
       createdAt: true,
@@ -21,12 +25,17 @@ export async function listBatchesHandler(req: FastifyRequest, reply: FastifyRepl
     },
   });
   if (batches.length > 0) {
-    const xpRows = await req.server.prisma.$queryRawUnsafe<{ id: string; xp_per_day: number }[]>(
-      `SELECT id, xp_per_day FROM batches WHERE id = ANY($1::uuid[])`,
+    const rawRows = await req.server.prisma.$queryRawUnsafe<{ id: string; status: string }[]>(
+      `SELECT id, status FROM batches WHERE id = ANY($1::uuid[])`,
       batches.map(b => b.id),
     );
-    const xpMap = Object.fromEntries(xpRows.map(r => [r.id, Number(r.xp_per_day)]));
-    return reply.send({ success: true, data: batches.map(b => ({ ...b, xpPerDay: xpMap[b.id] ?? 50 })), error: null });
+    const rawMap = Object.fromEntries(rawRows.map(r => [r.id, r]));
+    const data = batches.map(b => {
+      const batchStatus: string = rawMap[b.id]?.status ?? 'active';
+      if (status && batchStatus !== status) return null;
+      return { ...b, status: batchStatus };
+    }).filter(Boolean);
+    return reply.send({ success: true, data, error: null });
   }
   return reply.send({ success: true, data: batches, error: null });
 }
@@ -39,6 +48,8 @@ export async function getBatchHandler(req: FastifyRequest<{ Params: { id: string
       name: true,
       description: true,
       isActive: true,
+      xpPerDay: true,
+      snapshotDays: true,
       startsAt: true,
       endsAt: true,
       createdAt: true,
@@ -61,11 +72,11 @@ export async function getBatchHandler(req: FastifyRequest<{ Params: { id: string
     },
   });
   if (!batch) return reply.status(404).send({ success: false, data: null, error: 'Batch not found' });
-  const [xpRow] = await req.server.prisma.$queryRawUnsafe<{ xp_per_day: number }[]>(
-    `SELECT xp_per_day FROM batches WHERE id = $1::uuid`,
+  const [rawRow] = await req.server.prisma.$queryRawUnsafe<{ status: string }[]>(
+    `SELECT status FROM batches WHERE id = $1::uuid`,
     req.params.id,
   );
-  return reply.send({ success: true, data: { ...batch, xpPerDay: Number(xpRow?.xp_per_day ?? 50) }, error: null });
+  return reply.send({ success: true, data: { ...batch, status: rawRow?.status ?? 'active' }, error: null });
 }
 
 export async function listProgramsHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -129,18 +140,30 @@ export async function createBatchHandler(req: FastifyRequest, reply: FastifyRepl
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
   const { startsAt, endsAt, programId, xpPerDay, ...rest } = parsed.data;
+
+  // FIX-15: snapshot program duration at creation so edits to the program don't affect running batches
+  let snapshotDays: number | undefined;
+  if (programId) {
+    const prog = await req.server.prisma.program.findUnique({ where: { id: programId }, select: { durationDays: true } });
+    snapshotDays = prog?.durationDays ?? undefined;
+  }
+
   const batch = await req.server.prisma.batch.create({
     data: {
       ...rest,
       startsAt: new Date(startsAt),
       endsAt: endsAt ? new Date(endsAt) : null,
       ...(programId ? { program: { connect: { id: programId } } } : {}),
+      xpPerDay: xpPerDay ?? 50,
+      ...(snapshotDays !== undefined ? { snapshotDays } : {}),
     },
     select: {
       id: true,
       name: true,
       description: true,
       isActive: true,
+      xpPerDay: true,
+      snapshotDays: true,
       startsAt: true,
       endsAt: true,
       createdAt: true,
@@ -149,10 +172,7 @@ export async function createBatchHandler(req: FastifyRequest, reply: FastifyRepl
       _count: { select: { members: true } },
     },
   });
-  if (xpPerDay !== undefined) {
-    await req.server.prisma.$executeRawUnsafe(`UPDATE batches SET xp_per_day=$1 WHERE id=$2`, xpPerDay, batch.id);
-  }
-  return reply.status(201).send({ success: true, data: { ...batch, xpPerDay: xpPerDay ?? 50 }, error: null });
+  return reply.status(201).send({ success: true, data: batch, error: null });
 }
 
 export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
@@ -160,6 +180,14 @@ export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: str
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
   const { startsAt, endsAt, programId, xpPerDay, ...rest } = parsed.data;
+
+  // Re-snapshot if program changes
+  let snapshotDays: number | undefined;
+  if (programId) {
+    const prog = await req.server.prisma.program.findUnique({ where: { id: programId }, select: { durationDays: true } });
+    snapshotDays = prog?.durationDays ?? undefined;
+  }
+
   const batch = await req.server.prisma.batch.update({
     where: { id: req.params.id },
     data: {
@@ -169,12 +197,16 @@ export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: str
       ...(programId !== undefined
         ? (programId ? { program: { connect: { id: programId } } } : { program: { disconnect: true } })
         : {}),
+      ...(xpPerDay !== undefined ? { xpPerDay } : {}),
+      ...(snapshotDays !== undefined ? { snapshotDays } : {}),
     },
     select: {
       id: true,
       name: true,
       description: true,
       isActive: true,
+      xpPerDay: true,
+      snapshotDays: true,
       startsAt: true,
       endsAt: true,
       createdAt: true,
@@ -183,10 +215,7 @@ export async function updateBatchHandler(req: FastifyRequest<{ Params: { id: str
       _count: { select: { members: true } },
     },
   });
-  if (xpPerDay !== undefined) {
-    await req.server.prisma.$executeRawUnsafe(`UPDATE batches SET xp_per_day=$1 WHERE id=$2`, xpPerDay, batch.id);
-  }
-  return reply.send({ success: true, data: { ...batch, xpPerDay: xpPerDay ?? 50 }, error: null });
+  return reply.send({ success: true, data: batch, error: null });
 }
 
 export async function deleteBatchHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
@@ -220,6 +249,8 @@ export async function cloneBatchHandler(
       isActive: false,
       startsAt: new Date(body.startsAt),
       endsAt: null,
+      xpPerDay: source.xpPerDay,
+      ...(source.snapshotDays != null ? { snapshotDays: source.snapshotDays } : {}),
       ...(source.programId ? { program: { connect: { id: source.programId } } } : {}),
     },
     select: {
@@ -227,6 +258,8 @@ export async function cloneBatchHandler(
       name: true,
       description: true,
       isActive: true,
+      xpPerDay: true,
+      snapshotDays: true,
       startsAt: true,
       endsAt: true,
       createdAt: true,
@@ -249,7 +282,34 @@ export async function cloneBatchHandler(
     });
   }
 
-  return reply.status(201).send({ success: true, data: newBatch, error: null });
+  // Clone task table rows linked to the source batch
+  const sourceTasks = await req.server.prisma.task.findMany({
+    where: { batchId: req.params.id },
+    orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
+  });
+  if (sourceTasks.length > 0) {
+    await req.server.prisma.task.createMany({
+      data: sourceTasks.map(t => ({
+        programId: t.programId,
+        batchId: newBatch.id,
+        stepId: t.stepId,
+        dayNumber: t.dayNumber,
+        title: t.title,
+        description: t.description,
+        deliverables: t.deliverables,
+        contentUrl: t.contentUrl,
+        basePoints: t.basePoints,
+        bonusPoints: t.bonusPoints,
+        proofType: t.proofType,
+        estimatedMinutes: t.estimatedMinutes,
+        isMilestone: t.isMilestone,
+        milestoneLabel: t.milestoneLabel,
+        sortOrder: t.sortOrder,
+      })),
+    });
+  }
+
+  return reply.status(201).send({ success: true, data: { ...newBatch, clonedTaskCount: sourceTasks.length }, error: null });
 }
 
 // ─── Day content handlers ──────────────────────────────────────────────────────
@@ -317,41 +377,47 @@ export async function getBatchProgressHandler(
   req: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply,
 ) {
-  const [members, progress, batch] = await Promise.all([
+  const { page = '1', limit = '50', memberId, status, dayNumber } = req.query as {
+    page?: string; limit?: string; memberId?: string; status?: string; dayNumber?: string;
+  };
+  const pageNum  = Math.max(1, parseInt(page, 10));
+  const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10)));
+  const skip     = (pageNum - 1) * limitNum;
+
+  const progressWhere: any = { batchId: req.params.id };
+  if (memberId)   progressWhere.memberId   = memberId;
+  if (status)     progressWhere.status     = status;
+  if (dayNumber)  progressWhere.dayNumber  = parseInt(dayNumber, 10);
+
+  const [members, progress, progressTotal, batch] = await Promise.all([
     req.server.prisma.member.findMany({
       where: { batchId: req.params.id },
-      select: {
-        id: true,
-        memberId: true,
-        firstName: true,
-        lastName: true,
-        profilePhotoUrl: true,
-        status: true,
-      },
+      select: { id: true, memberId: true, firstName: true, lastName: true, profilePhotoUrl: true, status: true },
       orderBy: { createdAt: 'asc' },
     }),
     req.server.prisma.memberDayProgress.findMany({
-      where: { batchId: req.params.id },
+      where: progressWhere,
       select: {
-        memberId: true,
-        dayNumber: true,
-        status: true,
-        isCompleted: true,
-        completedAt: true,
-        submittedAt: true,
-        journalEntry: true,
-        journalFileUrl: true,
-        completedTaskIds: true,
-        reviewNote: true,
-        updatedAt: true,
+        memberId: true, dayNumber: true, status: true, isCompleted: true,
+        completedAt: true, submittedAt: true, journalEntry: true,
+        journalFileUrl: true, completedTaskIds: true, reviewNote: true, updatedAt: true,
       },
+      orderBy: [{ dayNumber: 'asc' }, { memberId: 'asc' }],
+      skip,
+      take: limitNum,
     }),
+    req.server.prisma.memberDayProgress.count({ where: progressWhere }),
     req.server.prisma.batch.findUnique({
       where: { id: req.params.id },
       select: { id: true, name: true, startsAt: true, endsAt: true, isActive: true },
     }),
   ]);
-  return reply.send({ success: true, data: { batch, members, progress }, error: null });
+  return reply.send({
+    success: true,
+    data: { batch, members, progress },
+    meta: { total: progressTotal, page: pageNum, limit: limitNum },
+    error: null,
+  });
 }
 
 export async function getMemberProgressHandler(
@@ -447,14 +513,18 @@ export async function approveBreakHandler(
   }
 
   // Retroactively mark every day in the approved break range as 'break'.
-  // Uses ON CONFLICT DO UPDATE so existing attendance rows (present/absent) are overwritten —
-  // an approved break supersedes whatever was previously recorded.
+  // Preserves 'present' status — break fills only absent/unmarked days.
   await req.server.prisma.$executeRawUnsafe(
     `INSERT INTO member_attendance (member_id, batch_id, day_number, status, marked_at, updated_at)
      SELECT $1::uuid, $2::uuid, gs.day, 'break', NOW(), NOW()
      FROM generate_series($3::int, $4::int) AS gs(day)
      ON CONFLICT (member_id, batch_id, day_number)
-     DO UPDATE SET status = 'break', updated_at = NOW()`,
+     DO UPDATE SET
+       status = CASE
+         WHEN member_attendance.status = 'present' THEN member_attendance.status
+         ELSE 'break'
+       END,
+       updated_at = NOW()`,
     record.member_id,
     req.params.id,
     record.start_day,
@@ -711,6 +781,66 @@ export async function migrateJsonTasksHandler(
     );
   }
   return reply.send({ success: true, data: { created }, error: null });
+}
+
+// POST /api/batches/:id/complete
+export async function markBatchCompleteHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE batches SET status='completed', is_active=false, updated_at=NOW() WHERE id=$1::uuid`,
+    req.params.id,
+  );
+  const batch = await req.server.prisma.batch.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, name: true, isActive: true, startsAt: true, endsAt: true },
+  });
+  return reply.send({ success: true, data: batch, error: null });
+}
+
+// POST /api/batches/:id/archive
+export async function archiveBatchHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE batches SET status='archived', is_active=false, updated_at=NOW() WHERE id=$1::uuid`,
+    req.params.id,
+  );
+  const batch = await req.server.prisma.batch.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, name: true, isActive: true, startsAt: true, endsAt: true },
+  });
+  return reply.send({ success: true, data: batch, error: null });
+}
+
+// GET /api/batches/:id/all-tasks — program tasks + batch-inline tasks combined
+export async function getAllBatchTasksHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const batch = await req.server.prisma.batch.findUnique({
+    where: { id: req.params.id },
+    select: { programId: true },
+  });
+  if (!batch) return reply.status(404).send({ success: false, data: null, error: 'Batch not found' });
+
+  const tasks = await req.server.prisma.task.findMany({
+    where: {
+      OR: [
+        { batchId: req.params.id },
+        ...(batch.programId ? [{ programId: batch.programId, batchId: null }] : []),
+      ],
+    },
+    orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
+  });
+
+  return reply.send({
+    success: true,
+    data: tasks.map(t => ({ ...t, source: t.batchId === req.params.id ? 'batch' : 'program' })),
+    error: null,
+  });
 }
 
 // GET /api/batches/:id/submissions?dayNumber=N&memberId=X&status=Y

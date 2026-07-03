@@ -642,7 +642,6 @@ model TaskSubmission {
   dayProgress MemberDayProgress? @relation(fields: [dayProgressId], references: [id], onDelete: Cascade)
   reviewer    Admin?             @relation("TaskReviewer", fields: [reviewedBy], references: [id])
 
-  @@unique([memberId, taskId])
   @@map("task_submissions")
 }
 
@@ -982,9 +981,11 @@ model Batch {
   programId   String?   @map("program_id") @db.Uuid
   startsAt    DateTime  @map("starts_at") @db.Timestamptz(6)
   endsAt      DateTime? @map("ends_at") @db.Timestamptz(6)
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  isActive     Boolean   @default(true) @map("is_active")
+  xpPerDay     Int       @default(50) @map("xp_per_day")
+  snapshotDays Int?      @map("snapshot_days")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   // Relations
   program         Program?              @relation(fields: [programId], references: [id], onDelete: Restrict)
@@ -1081,6 +1082,7 @@ model MemberDayProgress {
   reviewedBy       String?   @map("reviewed_by") @db.Uuid
   reviewedAt       DateTime? @map("reviewed_at") @db.Timestamptz(6)
   reviewNote       String?   @map("review_note")
+  taskProofs       Json?     @map("task_proofs")
   batch            Batch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
   member           Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

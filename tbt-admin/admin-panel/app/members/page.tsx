@@ -117,13 +117,18 @@ export default function MembersListPage() {
   const [editProfilePhotoUrl, setEditProfilePhotoUrl] = useState<string>("");
   const [editIsUploadingPhoto, setEditIsUploadingPhoto] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [showArchived, setShowArchived] = useState(false);
   const [pendingBadge, setPendingBadge] = useState(0);
+  // FIX-03: track original batch to warn on reassignment
+  const [originalBatchId, setOriginalBatchId] = useState<string>("");
+  // FIX-12: batch selected during approval (separate from edit form)
+  const [approveBatchId, setApproveBatchId] = useState<string>("");
 
   const menuRef = useRef<HTMLDivElement>(null);
   const editKycRef = useRef<HTMLInputElement>(null);
   const editPhotoRef = useRef<HTMLInputElement>(null);
 
-  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: statusFilter });
+  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: showArchived ? '' : statusFilter, showArchived });
   const { data: pendingData, refetch: refetchPending } = useListMembers({ page: 1, limit: 1, status: 'pending' });
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
@@ -183,6 +188,8 @@ export default function MembersListPage() {
 
   useEffect(() => {
     if (editingMember) {
+      setOriginalBatchId(editingMember.batchId || "");
+      setApproveBatchId(editingMember.batchId || "");
       setEditProfilePhotoUrl(editingMember.profilePhotoUrl || "");
       reset({
         firstName: editingMember.firstName || "",
@@ -366,7 +373,7 @@ export default function MembersListPage() {
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden shadow-2xl relative">
           
           {/* Status Filter Tabs */}
-          <div className="px-4 pt-4 flex gap-2 border-b border-[#2a2a2a] pb-0">
+          <div className="px-4 pt-4 flex gap-2 border-b border-[#2a2a2a] pb-0 flex-wrap">
             {[
               { label: 'All', value: '' },
               { label: 'Active', value: 'active' },
@@ -376,10 +383,10 @@ export default function MembersListPage() {
             ].map((tab) => (
               <button
                 key={tab.value}
-                onClick={() => { setStatusFilter(tab.value); setPage(1); }}
+                onClick={() => { setStatusFilter(tab.value); setShowArchived(false); setPage(1); }}
                 className={cn(
                   "relative px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani border-b-2 transition-all flex items-center gap-1.5",
-                  statusFilter === tab.value
+                  !showArchived && statusFilter === tab.value
                     ? "text-[#dc2626] border-[#dc2626]"
                     : "text-[#888] border-transparent hover:text-[#a0a0a0]"
                 )}
@@ -392,6 +399,17 @@ export default function MembersListPage() {
                 )}
               </button>
             ))}
+            <button
+              onClick={() => { setShowArchived(true); setStatusFilter(''); setPage(1); }}
+              className={cn(
+                "relative px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani border-b-2 transition-all flex items-center gap-1.5",
+                showArchived
+                  ? "text-[#dc2626] border-[#dc2626]"
+                  : "text-[#888] border-transparent hover:text-[#a0a0a0]"
+              )}
+            >
+              Archived
+            </button>
           </div>
 
           <div className="p-4 border-b border-[#2a2a2a] flex flex-col md:flex-row gap-4 items-center justify-between bg-[#1a1a1a]/50">
@@ -1053,6 +1071,21 @@ export default function MembersListPage() {
                             </option>
                           ))}
                         </select>
+                        {/* FIX-03: warn when batch is being changed on an existing member */}
+                        {(() => {
+                          const newBatchId = watch("batchId") || "";
+                          if (originalBatchId && newBatchId && newBatchId !== originalBatchId) {
+                            const oldBatch = batches.find((b: any) => b.id === originalBatchId);
+                            const newBatch = batches.find((b: any) => b.id === newBatchId);
+                            return (
+                              <div className="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-[11px] text-yellow-400 leading-relaxed">
+                                ⚠ Moving from <strong>{oldBatch?.name ?? "previous batch"}</strong> to <strong>{newBatch?.name ?? "new batch"}</strong>.
+                                Their existing progress in the old batch will remain in the database but will no longer be visible to the member.
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
                     <div>
@@ -1155,6 +1188,18 @@ export default function MembersListPage() {
               </div>
               <div className="px-8 py-6 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-between items-center gap-4">
                 {editingMember?.status === 'pending' ? (
+                  <div className="flex items-center gap-3">
+                    {/* FIX-12: batch assignment during approval */}
+                    <select
+                      value={approveBatchId}
+                      onChange={e => setApproveBatchId(e.target.value)}
+                      className="bg-[#0f0f0f] border border-[#333] rounded-md h-10 px-3 text-[12px] text-[#a0a0a0] font-rajdhani font-bold uppercase tracking-wider outline-none focus:border-green-600 transition-all min-w-[180px]"
+                    >
+                      <option value="">Assign batch (optional)</option>
+                      {batches.filter((b: any) => b.isActive).map((b: any) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
                   <button
                     type="button"
                     disabled={approveMember.isPending}
@@ -1163,6 +1208,7 @@ export default function MembersListPage() {
                         const formValues = watch();
                         const { challenge1, challenge2, challenge3, password, ...rest } = formValues as any;
                         const payload: any = { ...rest, currentChallenges: [challenge1, challenge2, challenge3].filter(Boolean) };
+                        if (approveBatchId) payload.batchId = approveBatchId;
                         if (password && password.trim() !== "") payload.password = password;
                         if (editProfilePhotoUrl !== (editingMember.profilePhotoUrl || "")) {
                           payload.profilePhotoUrl = editProfilePhotoUrl;
@@ -1176,6 +1222,7 @@ export default function MembersListPage() {
                         setEditingMember(null);
                         setEditKycDoc(null);
                         setEditProfilePhotoUrl("");
+                        setApproveBatchId("");
                         refetch();
                         refetchPending();
                       } catch (err: any) {
@@ -1187,6 +1234,7 @@ export default function MembersListPage() {
                     {approveMember.isPending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                     Approve Member
                   </button>
+                  </div>
                 ) : <div />}
                 <div className="flex gap-4">
                   <button

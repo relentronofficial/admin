@@ -132,8 +132,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS visibility JSONB`),
       prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS description TEXT`),
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
-      prisma.$executeRawUnsafe(`ALTER TABLE member_day_progress ADD COLUMN IF NOT EXISTS task_proofs JSONB`),
-      prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50`),
+      prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`),
+      prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS snapshot_days INT`),
       // Task unification — Phase 1 migrations
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id) ON DELETE CASCADE`),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ALTER COLUMN program_id DROP NOT NULL`).catch(() => {}),
@@ -145,7 +145,24 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `),
       prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_task_sub_day_progress ON task_submissions(day_progress_id)`),
       prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_task_sub_batch_member ON task_submissions(batch_id, member_id)`),
-      prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_sub_unique ON task_submissions(member_id, task_id)`).catch(() => {}),
+      // FIX-05: replace global unique(member_id, task_id) with day-scoped partial indexes
+      // so the same task can appear on different days without collision
+      prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+          DROP INDEX IF EXISTS idx_task_sub_unique;
+          DROP INDEX IF EXISTS "task_submissions_member_id_task_id_key";
+        END $$
+      `).catch(() => {}),
+      prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_task_sub_batch_scoped
+        ON task_submissions(member_id, task_id, batch_id, day_number)
+        WHERE batch_id IS NOT NULL AND day_number IS NOT NULL
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_task_sub_program_scoped
+        ON task_submissions(member_id, task_id)
+        WHERE batch_id IS NULL AND day_number IS NULL
+      `),
       // CREATE TABLE statements (idempotent)
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS product_inquiries (

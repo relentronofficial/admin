@@ -20,6 +20,8 @@ import {
   ChevronRight,
   BarChart2,
   Copy,
+  CheckCheck,
+  Archive,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -30,6 +32,8 @@ import {
   useDeleteBatch,
   useListPrograms,
   useCloneBatch,
+  useMarkBatchComplete,
+  useArchiveBatch,
 } from "@/lib/hooks/useTbt";
 import { useListMembers, useUpdateMember } from "@/lib/hooks/useMembers";
 import { useQueryClient } from "@tanstack/react-query";
@@ -62,11 +66,28 @@ const emptyForm: BatchForm = {
   xpPerDay: 50,
 };
 
+const BATCH_STATUS_TABS = [
+  { key: "", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "completed", label: "Completed" },
+  { key: "archived", label: "Archived" },
+] as const;
+
+function batchStatusBadge(status: string) {
+  if (status === "completed") return { bg: "rgba(59,130,246,0.12)", color: "#3b82f6", label: "Completed" };
+  if (status === "archived")  return { bg: "rgba(255,255,255,0.06)", color: "#606060", label: "Archived" };
+  return { bg: "rgba(34,197,94,0.12)", color: "#22c55e", label: "Active" };
+}
+
 export default function BatchesPage() {
   const router = useRouter();
   const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState("");
   const { data: batchesRes, isLoading } = useListBatches();
-  const batches: any[] = (batchesRes as any)?.data || [];
+  const allBatches: any[] = (batchesRes as any)?.data || [];
+  const batches = statusFilter
+    ? allBatches.filter((b: any) => (b.status ?? "active") === statusFilter)
+    : allBatches;
 
   const { data: programsRes } = useListPrograms();
   const programs: any[] = (programsRes as any)?.data || [];
@@ -80,6 +101,8 @@ export default function BatchesPage() {
   const updateBatch = useUpdateBatch();
   const deleteBatch = useDeleteBatch();
   const cloneBatch = useCloneBatch();
+  const markComplete = useMarkBatchComplete();
+  const archiveBatch = useArchiveBatch();
   const updateMember = useUpdateMember();
 
   // Modals
@@ -204,6 +227,26 @@ export default function BatchesPage() {
       if (result?.id) router.push(`/batches/${result.id}`);
     } catch (e: any) {
       toast.error(e?.message || "Failed to clone batch");
+    }
+  };
+
+  const handleMarkComplete = async (batch: any) => {
+    if (!window.confirm(`Mark "${batch.name}" as completed? This will set isActive = false.`)) return;
+    try {
+      await markComplete.mutateAsync(batch.id);
+      toast.success("Batch marked as completed");
+    } catch {
+      toast.error("Failed to mark batch complete");
+    }
+  };
+
+  const handleArchive = async (batch: any) => {
+    if (!window.confirm(`Archive "${batch.name}"? It will be hidden from the default list.`)) return;
+    try {
+      await archiveBatch.mutateAsync(batch.id);
+      toast.success("Batch archived");
+    } catch {
+      toast.error("Failed to archive batch");
     }
   };
 
@@ -345,6 +388,27 @@ export default function BatchesPage() {
           </button>
         </div>
 
+        {/* Status Filter Tabs */}
+        <div className="flex items-center gap-1 bg-[#141414] border border-[#1f1f1f] rounded-lg p-1 w-fit">
+          {BATCH_STATUS_TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setStatusFilter(tab.key)}
+              className={cn(
+                "px-4 py-1.5 rounded-md text-[12px] font-bold uppercase tracking-wider transition-all",
+                statusFilter === tab.key
+                  ? "bg-[#dc2626] text-white"
+                  : "text-[#606060] hover:text-[#a0a0a0]",
+              )}
+            >
+              {tab.label}
+              {tab.key === "" && (
+                <span className="ml-1.5 text-[10px] opacity-60">{allBatches.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* Batch Grid */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -370,14 +434,17 @@ export default function BatchesPage() {
                       <p className="text-[12px] text-[#606060] mt-0.5 line-clamp-2 leading-relaxed">{batch.description}</p>
                     )}
                   </div>
-                  <span
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 uppercase tracking-wider"
-                    style={batch.isActive
-                      ? { background: "rgba(34,197,94,0.12)", color: "#22c55e" }
-                      : { background: "rgba(255,255,255,0.06)", color: "#606060" }}
-                  >
-                    {batch.isActive ? "Active" : "Inactive"}
-                  </span>
+                  {(() => {
+                    const badge = batchStatusBadge(batch.status ?? "active");
+                    return (
+                      <span
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 uppercase tracking-wider"
+                        style={{ background: badge.bg, color: badge.color }}
+                      >
+                        {badge.label}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* Date + member count */}
@@ -415,6 +482,26 @@ export default function BatchesPage() {
                   >
                     <Copy size={14} />
                   </button>
+                  {(batch.status ?? "active") === "active" && (
+                    <button
+                      onClick={() => handleMarkComplete(batch)}
+                      disabled={markComplete.isPending}
+                      className="p-2 rounded-lg hover:bg-blue-900/20 text-[#606060] hover:text-blue-400 transition-all"
+                      title="Mark complete"
+                    >
+                      <CheckCheck size={14} />
+                    </button>
+                  )}
+                  {(batch.status ?? "active") !== "archived" && (
+                    <button
+                      onClick={() => handleArchive(batch)}
+                      disabled={archiveBatch.isPending}
+                      className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#a0a0a0] transition-all"
+                      title="Archive batch"
+                    >
+                      <Archive size={14} />
+                    </button>
+                  )}
                   <button
                     onClick={() => { setEditingBatch(batch); }}
                     className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#f0f0f0] transition-all"

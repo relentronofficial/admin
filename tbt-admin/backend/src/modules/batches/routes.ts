@@ -10,6 +10,9 @@ import {
   updateBatchHandler,
   deleteBatchHandler,
   cloneBatchHandler,
+  markBatchCompleteHandler,
+  archiveBatchHandler,
+  getAllBatchTasksHandler,
   listBatchDaysHandler,
   getBatchDayDetailHandler,
   upsertBatchDayHandler,
@@ -54,6 +57,8 @@ export async function batchRoutes(fastify: FastifyInstance) {
   fastify.put('/:id', updateBatchHandler);
   fastify.delete('/:id', deleteBatchHandler);
   fastify.post('/:id/clone', cloneBatchHandler);
+  fastify.post('/:id/complete', markBatchCompleteHandler);
+  fastify.post('/:id/archive', archiveBatchHandler);
 
   // Day content
   fastify.get('/:id/days', listBatchDaysHandler);
@@ -91,6 +96,9 @@ export async function batchRoutes(fastify: FastifyInstance) {
   fastify.post('/:id/tasks/migrate-json', migrateJsonTasksHandler);
   fastify.put('/:id/tasks/:taskId', updateBatchTaskHandler);
   fastify.delete('/:id/tasks/:taskId', deleteBatchTaskHandler);
+
+  // All tasks for a batch (program + batch-inline combined)
+  fastify.get('/:id/all-tasks', getAllBatchTasksHandler);
 
   // Task submissions (admin view)
   fastify.get('/:id/submissions', getBatchSubmissionsHandler);

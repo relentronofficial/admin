@@ -157,6 +157,18 @@ export const useGetBatchSubmissions = (
   });
 };
 
+export const useGetAllBatchTasks = (batchId: string) => {
+  return useQuery({
+    queryKey: ['all-batch-tasks', batchId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/batches/${batchId}/all-tasks`);
+      return (res.data ?? res) as any[];
+    },
+    enabled: !!batchId,
+    staleTime: 1000 * 60 * 5,
+  });
+};
+
 export const useReviewTaskSubmission = () => {
   const queryClient = useQueryClient();
   return useMutation({

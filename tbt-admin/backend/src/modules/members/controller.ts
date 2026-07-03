@@ -5,11 +5,11 @@ import { invalidateCache } from '../../lib/cache.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 
 export async function listMembersHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 10, search, status } = request.query as any;
+  const { page = 1, limit = 10, search, status, showArchived } = request.query as any;
   const skip = (page - 1) * limit;
 
-  const where: any = { deletedAt: null };
-  if (status) where.status = status;
+  const where: any = showArchived === 'true' ? { deletedAt: { not: null } } : { deletedAt: null };
+  if (status && showArchived !== 'true') where.status = status;
   if (search) {
     where.OR = [
       { firstName: { contains: search, mode: 'insensitive' } },
@@ -260,15 +260,16 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       }
     }
 
+    let previousBatchProgressDays = 0;
     if (batchId !== undefined) {
       if (batchId && batchId.trim() !== '') {
-        // Clear orphaned progress if moving to a different batch
         const prev = await request.server.prisma.member.findUnique({
           where: { id },
           select: { batchId: true },
         });
         if (prev?.batchId && prev.batchId !== batchId) {
-          await request.server.prisma.memberDayProgress.deleteMany({
+          // Preserve old progress — do NOT delete; count detached days for the response
+          previousBatchProgressDays = await request.server.prisma.memberDayProgress.count({
             where: { batchId: prev.batchId, memberId: id },
           });
         }
@@ -310,12 +311,12 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       });
     }
 
-    return reply.send({ success: true, data: member, error: null });
+    return reply.send({ success: true, data: member, meta: { previousBatchProgressDays }, error: null });
   } catch (err: any) {
     if (err.name === 'ZodError') {
-      return reply.status(400).send({ 
-        success: false, 
-        error: { code: 'VALIDATION_ERROR', message: 'Validation failed', fields: err.flatten().fieldErrors } 
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Validation failed', fields: err.flatten().fieldErrors }
       });
     }
     request.server.log.error({ err }, 'Failed to update member');
@@ -1012,7 +1013,7 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Member is not in pending status' } });
     }
 
-    const { password, dob, businessEstablishedOn, accountManagerId, batchId, subscriptionEndsAt, ...rest } = body;
+    const { password, dob, businessEstablishedOn, accountManagerId, batchId, subscriptionEndsAt, status: _ignoredStatus, ...rest } = body;
 
     // Filter out empty strings — enum fields (gender, preferredSessionMode, etc.) reject "" in Prisma
     const data: any = { status: 'active' };
@@ -1067,6 +1068,24 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
 
     void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_approved', { memberId: id });
+
+    // Notify the member in real-time and persist an in-app notification
+    request.server.io.to(`user:${id}`).emit('notification', {
+      type: 'system',
+      title: 'Account Approved',
+      body: 'Your TBT account has been approved. Welcome to the community!',
+      createdAt: new Date().toISOString(),
+    });
+    request.server.prisma.notification.create({
+      data: {
+        memberId: id,
+        type: 'system',
+        title: 'Account Approved',
+        body: 'Your TBT account has been approved. Welcome to the community!',
+        isRead: false,
+      },
+    }).catch(() => {});
+
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
     request.server.log.error({ err }, 'Failed to approve member');

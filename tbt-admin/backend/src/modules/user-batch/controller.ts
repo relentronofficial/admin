@@ -65,7 +65,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       where: { id: member.batchId },
       select: {
         id: true, name: true, description: true,
-        programId: true,
+        programId: true, snapshotDays: true,
         startsAt: true, endsAt: true, isActive: true,
         program: { select: { name: true, durationDays: true } },
       },
@@ -74,10 +74,10 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       where: { batchId: member.batchId },
       orderBy: { dayNumber: 'asc' },
     }),
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT *, task_proofs as "taskProofs" FROM member_day_progress WHERE batch_id=$1::uuid AND member_id=$2::uuid ORDER BY day_number ASC`,
-      member.batchId, memberId,
-    ),
+    req.server.prisma.memberDayProgress.findMany({
+      where: { batchId: member.batchId, memberId },
+      orderBy: { dayNumber: 'asc' },
+    }),
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT day_number, status, notes, marked_at FROM member_attendance WHERE batch_id=$1::uuid AND member_id=$2::uuid ORDER BY day_number ASC`,
       member.batchId, memberId,
@@ -98,7 +98,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     ),
   ]);
 
-  const baseDays = (batch as any)?.program?.durationDays ?? 90;
+  const baseDays = (batch as any)?.snapshotDays ?? (batch as any)?.program?.durationDays ?? 90;
   const extendedDays = (settings[0] as any)?.extended_days ?? 0;
   const totalDays = baseDays + extendedDays;
 
@@ -190,17 +190,18 @@ export async function saveDraftHandler(
       ...prismaData,
     },
     update: {
-      status: existing?.status === 'rejected' ? 'in_progress' : (existing?.status ?? 'in_progress'),
+      // Advance not_started → in_progress on first draft; preserve all other statuses
+      status: existing?.status === 'not_started' ? 'in_progress' : (existing?.status ?? 'in_progress'),
       ...prismaData,
     },
   });
 
   // Legacy JSONB proof map (backward compat)
   if (taskProofs !== undefined) {
-    await req.server.prisma.$executeRawUnsafe(
-      `UPDATE member_day_progress SET task_proofs=$1 WHERE id=$2::uuid`,
-      JSON.stringify(taskProofs), record.id,
-    );
+    await req.server.prisma.memberDayProgress.update({
+      where: { id: record.id },
+      data: { taskProofs },
+    });
   }
 
   // Unified task submissions — upsert one row per task
@@ -211,13 +212,13 @@ export async function saveDraftHandler(
            (id, member_id, task_id, batch_id, day_progress_id, day_number,
             response_value, proof_url, proof_type, status, created_at, updated_at)
          VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, 'pending', NOW(), NOW())
-         ON CONFLICT (member_id, task_id) DO UPDATE SET
+         ON CONFLICT (member_id, task_id, batch_id, day_number)
+         WHERE batch_id IS NOT NULL AND day_number IS NOT NULL
+         DO UPDATE SET
            response_value = EXCLUDED.response_value,
            proof_url = EXCLUDED.proof_url,
            proof_type = EXCLUDED.proof_type,
            day_progress_id = EXCLUDED.day_progress_id,
-           batch_id = EXCLUDED.batch_id,
-           day_number = EXCLUDED.day_number,
            updated_at = NOW()`,
         memberId, taskId, member.batchId, record.id, dayNum,
         proof.value ?? null, proof.url ?? null, proof.type ?? null,
@@ -349,12 +350,8 @@ export async function approveDayHandler(
     },
   });
 
-  // Read batch-specific XP per day
-  const [xpRow] = await req.server.prisma.$queryRawUnsafe<{ xp_per_day: number }[]>(
-    `SELECT xp_per_day FROM batches WHERE id = $1::uuid`,
-    req.params.id,
-  );
-  const xpPerDay = Number(xpRow?.xp_per_day ?? 50);
+  const batchXp = await req.server.prisma.batch.findUnique({ where: { id: req.params.id }, select: { xpPerDay: true } });
+  const xpPerDay = batchXp?.xpPerDay ?? 50;
 
   // Award day-level XP bonus (non-blocking)
   req.server.prisma.pointsLedger.create({
@@ -468,14 +465,15 @@ export async function approveDayHandler(
       }),
       req.server.prisma.batch.findUnique({
         where: { id: req.params.id },
-        select: { program: { select: { durationDays: true } } },
+        select: { snapshotDays: true, program: { select: { durationDays: true } } },
       }),
       req.server.prisma.$queryRawUnsafe<any[]>(
         `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
         req.params.id, req.params.memberId,
       ),
     ]);
-    const totalDays = ((batchWithProgram as any)?.program?.durationDays ?? 90) + ((settings[0] as any)?.extended_days ?? 0);
+    const baseDaysApprove = (batchWithProgram as any)?.snapshotDays ?? (batchWithProgram as any)?.program?.durationDays ?? 90;
+    const totalDays = baseDaysApprove + ((settings[0] as any)?.extended_days ?? 0);
     if (approvedCount >= totalDays) {
       req.server.io.to(`user:${req.params.memberId}`).emit('batch:completed', {
         batchId: req.params.id,
@@ -575,11 +573,8 @@ export async function bulkApproveDaysHandler(
     return reply.status(400).send({ success: false, data: null, error: 'items array is required' });
   }
 
-  const [xpBulkRow] = await req.server.prisma.$queryRawUnsafe<{ xp_per_day: number }[]>(
-    `SELECT xp_per_day FROM batches WHERE id = $1::uuid`,
-    batchId,
-  );
-  const xpPerDayBulk = Number(xpBulkRow?.xp_per_day ?? 50);
+  const batchXpBulk = await req.server.prisma.batch.findUnique({ where: { id: batchId }, select: { xpPerDay: true } });
+  const xpPerDayBulk = batchXpBulk?.xpPerDay ?? 50;
 
   const results: any[] = [];
   for (const { memberId, dayNumber } of items) {
@@ -789,7 +784,7 @@ export async function getBatchCertificateHandler(req: FastifyRequest, reply: Fas
   const [batch, settings] = await Promise.all([
     req.server.prisma.batch.findUnique({
       where: { id: member.batchId },
-      select: { name: true, program: { select: { name: true, durationDays: true } } },
+      select: { name: true, snapshotDays: true, program: { select: { name: true, durationDays: true } } },
     }),
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
@@ -797,7 +792,8 @@ export async function getBatchCertificateHandler(req: FastifyRequest, reply: Fas
     ),
   ]);
 
-  const totalDays = ((batch as any)?.program?.durationDays ?? 90) + ((settings[0] as any)?.extended_days ?? 0);
+  const baseDaysCert = (batch as any)?.snapshotDays ?? (batch as any)?.program?.durationDays ?? 90;
+  const totalDays = baseDaysCert + ((settings[0] as any)?.extended_days ?? 0);
 
   const approvedCount = await req.server.prisma.memberDayProgress.count({
     where: { batchId: member.batchId, memberId, status: 'approved' },
