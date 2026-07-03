@@ -8,9 +8,18 @@ import { useAuth } from "@clerk/nextjs";
 import apiClient from "../lib/api/apiClient";
 import { initAdminSocket, getAdminSocket } from "@/lib/socket/client";
 
-// Token cache — Clerk tokens are valid for 60s; refresh 8s before expiry
+// Token cache — read actual exp from JWT so we never use a token past its expiry
 let _cachedToken: string | null = null;
 let _tokenExpiresAt = 0;
+
+function jwtExpiry(token: string): number {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
 
 function AuthInterceptor() {
   const { getToken, isLoaded } = useAuth();
@@ -35,7 +44,11 @@ function AuthInterceptor() {
         const now = Date.now();
         if (!_cachedToken || now >= _tokenExpiresAt) {
           _cachedToken = await getTokenRef.current();
-          _tokenExpiresAt = now + 52_000; // cache for 52s (Clerk default lifetime is 60s)
+          if (_cachedToken) {
+            const exp = jwtExpiry(_cachedToken);
+            // Refresh 8s before actual expiry; fall back to 52s if exp unreadable
+            _tokenExpiresAt = exp > now + 8_000 ? exp - 8_000 : now + 52_000;
+          }
         }
         if (_cachedToken) {
           config.headers.Authorization = `Bearer ${_cachedToken}`;
