@@ -75,25 +75,25 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       orderBy: { dayNumber: 'asc' },
     }),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT *, task_proofs as "taskProofs" FROM member_day_progress WHERE batch_id=$1 AND member_id=$2 ORDER BY day_number ASC`,
+      `SELECT *, task_proofs as "taskProofs" FROM member_day_progress WHERE batch_id=$1::uuid AND member_id=$2::uuid ORDER BY day_number ASC`,
       member.batchId, memberId,
     ),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT day_number, status, notes, marked_at FROM member_attendance WHERE batch_id=$1 AND member_id=$2 ORDER BY day_number ASC`,
+      `SELECT day_number, status, notes, marked_at FROM member_attendance WHERE batch_id=$1::uuid AND member_id=$2::uuid ORDER BY day_number ASC`,
       member.batchId, memberId,
     ),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, start_day, end_day, reason, status, admin_note, created_at FROM batch_break_requests WHERE batch_id=$1 AND member_id=$2 ORDER BY created_at DESC`,
+      `SELECT id, start_day, end_day, reason, status, admin_note, created_at FROM batch_break_requests WHERE batch_id=$1::uuid AND member_id=$2::uuid ORDER BY created_at DESC`,
       member.batchId, memberId,
     ),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1 AND member_id=$2 LIMIT 1`,
+      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
       member.batchId, memberId,
     ),
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT task_id as "taskId", response_value as "responseValue", proof_url as "proofUrl",
               proof_type as "proofType", status, day_number as "dayNumber"
-       FROM task_submissions WHERE batch_id=$1 AND member_id=$2`,
+       FROM task_submissions WHERE batch_id=$1::uuid AND member_id=$2::uuid`,
       member.batchId, memberId,
     ),
   ]);
@@ -198,7 +198,7 @@ export async function saveDraftHandler(
   // Legacy JSONB proof map (backward compat)
   if (taskProofs !== undefined) {
     await req.server.prisma.$executeRawUnsafe(
-      `UPDATE member_day_progress SET task_proofs=$1 WHERE id=$2`,
+      `UPDATE member_day_progress SET task_proofs=$1 WHERE id=$2::uuid`,
       JSON.stringify(taskProofs), record.id,
     );
   }
@@ -210,7 +210,7 @@ export async function saveDraftHandler(
         `INSERT INTO task_submissions
            (id, member_id, task_id, batch_id, day_progress_id, day_number,
             response_value, proof_url, proof_type, status, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW(), NOW())
+         VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, 'pending', NOW(), NOW())
          ON CONFLICT (member_id, task_id) DO UPDATE SET
            response_value = EXCLUDED.response_value,
            proof_url = EXCLUDED.proof_url,
@@ -227,12 +227,12 @@ export async function saveDraftHandler(
 
   // Auto-mark attendance as present on draft save (DO NOTHING to preserve admin-set records)
   const onBreakDraft = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id FROM batch_break_requests WHERE batch_id=$1 AND member_id=$2 AND status='approved' AND start_day<=$3 AND end_day>=$3 LIMIT 1`,
+    `SELECT id FROM batch_break_requests WHERE batch_id=$1::uuid AND member_id=$2::uuid AND status='approved' AND start_day<=$3 AND end_day>=$3 LIMIT 1`,
     member.batchId, memberId, dayNum,
   );
   await req.server.prisma.$executeRawUnsafe(
     `INSERT INTO member_attendance (member_id, batch_id, day_number, status, marked_at, updated_at)
-     VALUES ($1,$2,$3,$4,NOW(),NOW())
+     VALUES ($1::uuid,$2::uuid,$3,$4,NOW(),NOW())
      ON CONFLICT (member_id, batch_id, day_number) DO NOTHING`,
     memberId, member.batchId, dayNum, onBreakDraft.length > 0 ? 'break' : 'present',
   );
@@ -291,12 +291,12 @@ export async function submitDayHandler(
 
   // Auto-mark attendance as present on submit (if not already recorded)
   const onBreak = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id FROM batch_break_requests WHERE batch_id=$1 AND member_id=$2 AND status='approved' AND start_day<=$3 AND end_day>=$3 LIMIT 1`,
+    `SELECT id FROM batch_break_requests WHERE batch_id=$1::uuid AND member_id=$2::uuid AND status='approved' AND start_day<=$3 AND end_day>=$3 LIMIT 1`,
     member.batchId, memberId, dayNum,
   );
   await req.server.prisma.$executeRawUnsafe(
     `INSERT INTO member_attendance (member_id, batch_id, day_number, status, marked_at, updated_at)
-     VALUES ($1,$2,$3,$4,NOW(),NOW())
+     VALUES ($1::uuid,$2::uuid,$3,$4,NOW(),NOW())
      ON CONFLICT (member_id, batch_id, day_number) DO NOTHING`,
     memberId, member.batchId, dayNum, onBreak.length > 0 ? 'break' : 'present',
   );
@@ -351,7 +351,7 @@ export async function approveDayHandler(
 
   // Read batch-specific XP per day
   const [xpRow] = await req.server.prisma.$queryRawUnsafe<{ xp_per_day: number }[]>(
-    `SELECT xp_per_day FROM batches WHERE id = $1`,
+    `SELECT xp_per_day FROM batches WHERE id = $1::uuid`,
     req.params.id,
   );
   const xpPerDay = Number(xpRow?.xp_per_day ?? 50);
@@ -375,14 +375,14 @@ export async function approveDayHandler(
               t.milestone_label as "milestoneLabel"
        FROM task_submissions ts
        JOIN tasks t ON t.id = ts.task_id
-       WHERE ts.day_progress_id = $1 AND ts.status = 'pending'`,
+       WHERE ts.day_progress_id = $1::uuid AND ts.status = 'pending'`,
       record.id,
     );
 
     for (const sub of submissions) {
       // Mark submission approved
       await req.server.prisma.$executeRawUnsafe(
-        `UPDATE task_submissions SET status='approved', reviewed_by=$1, reviewed_at=NOW(), updated_at=NOW() WHERE id=$2`,
+        `UPDATE task_submissions SET status='approved', reviewed_by=$1, reviewed_at=NOW(), updated_at=NOW() WHERE id=$2::uuid`,
         adminId, sub.id,
       );
       // Award task base points
@@ -401,9 +401,9 @@ export async function approveDayHandler(
       if (sub.isMilestone) {
         await req.server.prisma.$executeRawUnsafe(
           `INSERT INTO member_milestones (id, member_id, milestone_id, achieved_at)
-           SELECT gen_random_uuid(), $1, m.id, NOW()
+           SELECT gen_random_uuid(), $1::uuid, m.id, NOW()
            FROM milestones m
-           WHERE m.program_id = (SELECT program_id FROM tasks WHERE id=$2) LIMIT 1
+           WHERE m.program_id = (SELECT program_id FROM tasks WHERE id=$2::uuid) LIMIT 1
            ON CONFLICT DO NOTHING`,
           req.params.memberId, sub.taskId,
         ).catch(() => {});
@@ -424,7 +424,7 @@ export async function approveDayHandler(
     // Update streak
     await req.server.prisma.$executeRawUnsafe(
       `INSERT INTO streaks (id, member_id, current_streak, longest_streak, last_activity_date, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, 1, 1, CURRENT_DATE, NOW(), NOW())
+       VALUES (gen_random_uuid(), $1::uuid, 1, 1, CURRENT_DATE, NOW(), NOW())
        ON CONFLICT (member_id) DO UPDATE SET
          current_streak = CASE
            WHEN streaks.last_activity_date = CURRENT_DATE - INTERVAL '1 day' THEN streaks.current_streak + 1
@@ -471,7 +471,7 @@ export async function approveDayHandler(
         select: { program: { select: { durationDays: true } } },
       }),
       req.server.prisma.$queryRawUnsafe<any[]>(
-        `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1 AND member_id=$2 LIMIT 1`,
+        `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
         req.params.id, req.params.memberId,
       ),
     ]);
@@ -576,7 +576,7 @@ export async function bulkApproveDaysHandler(
   }
 
   const [xpBulkRow] = await req.server.prisma.$queryRawUnsafe<{ xp_per_day: number }[]>(
-    `SELECT xp_per_day FROM batches WHERE id = $1`,
+    `SELECT xp_per_day FROM batches WHERE id = $1::uuid`,
     batchId,
   );
   const xpPerDayBulk = Number(xpBulkRow?.xp_per_day ?? 50);
@@ -630,14 +630,14 @@ export async function markAttendanceHandler(req: FastifyRequest, reply: FastifyR
 
   // Check if day is on approved break — mark as break
   const breaks = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id FROM batch_break_requests WHERE batch_id=$1 AND member_id=$2 AND status='approved' AND start_day<=$3 AND end_day>=$3 LIMIT 1`,
+    `SELECT id FROM batch_break_requests WHERE batch_id=$1::uuid AND member_id=$2::uuid AND status='approved' AND start_day<=$3 AND end_day>=$3 LIMIT 1`,
     member.batchId, memberId, dayNumber,
   );
   const status = breaks.length > 0 ? 'break' : 'present';
 
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO member_attendance (member_id, batch_id, day_number, status, notes, marked_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
+     VALUES ($1::uuid,$2::uuid,$3,$4,$5,NOW(),NOW())
      ON CONFLICT (member_id, batch_id, day_number)
      DO UPDATE SET status=EXCLUDED.status, notes=EXCLUDED.notes, marked_at=NOW(), updated_at=NOW()
      RETURNING *`,
@@ -662,7 +662,7 @@ export async function requestBreakHandler(req: FastifyRequest, reply: FastifyRep
 
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO batch_break_requests (member_id, batch_id, start_day, end_day, reason)
-     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+     VALUES ($1::uuid,$2::uuid,$3,$4,$5) RETURNING *`,
     memberId, member.batchId, startDay, endDay, reason ?? null,
   );
   return reply.send({ success: true, data: record, error: null });
@@ -692,7 +692,7 @@ export async function getPendingApprovalsHandler(
               t.deliverables, t.is_milestone as "isMilestone"
        FROM task_submissions ts
        JOIN tasks t ON t.id = ts.task_id
-       WHERE ts.day_progress_id = $1
+       WHERE ts.day_progress_id = $1::uuid
        ORDER BY t.sort_order ASC, t.day_number ASC`,
       rec.id,
     );
@@ -718,7 +718,7 @@ export async function getMySubmissionsHandler(req: FastifyRequest, reply: Fastif
             t.title, t.base_points as "basePoints"
      FROM task_submissions ts
      JOIN tasks t ON t.id = ts.task_id
-     WHERE ts.batch_id=$1 AND ts.member_id=$2
+     WHERE ts.batch_id=$1::uuid AND ts.member_id=$2::uuid
      ORDER BY ts.day_number ASC, t.sort_order ASC`,
     member.batchId, memberId,
   );
@@ -792,7 +792,7 @@ export async function getBatchCertificateHandler(req: FastifyRequest, reply: Fas
       select: { name: true, program: { select: { name: true, durationDays: true } } },
     }),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1 AND member_id=$2 LIMIT 1`,
+      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
       member.batchId, memberId,
     ),
   ]);

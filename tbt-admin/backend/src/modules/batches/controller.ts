@@ -62,7 +62,7 @@ export async function getBatchHandler(req: FastifyRequest<{ Params: { id: string
   });
   if (!batch) return reply.status(404).send({ success: false, data: null, error: 'Batch not found' });
   const [xpRow] = await req.server.prisma.$queryRawUnsafe<{ xp_per_day: number }[]>(
-    `SELECT xp_per_day FROM batches WHERE id = $1`,
+    `SELECT xp_per_day FROM batches WHERE id = $1::uuid`,
     req.params.id,
   );
   return reply.send({ success: true, data: { ...batch, xpPerDay: Number(xpRow?.xp_per_day ?? 50) }, error: null });
@@ -368,15 +368,15 @@ export async function getMemberProgressHandler(
       orderBy: { dayNumber: 'asc' },
     }),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT day_number, status, notes, marked_at FROM member_attendance WHERE batch_id=$1 AND member_id=$2 ORDER BY day_number ASC`,
+      `SELECT day_number, status, notes, marked_at FROM member_attendance WHERE batch_id=$1::uuid AND member_id=$2::uuid ORDER BY day_number ASC`,
       req.params.id, req.params.memberId,
     ),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT * FROM batch_break_requests WHERE batch_id=$1 AND member_id=$2 ORDER BY created_at DESC`,
+      `SELECT * FROM batch_break_requests WHERE batch_id=$1::uuid AND member_id=$2::uuid ORDER BY created_at DESC`,
       req.params.id, req.params.memberId,
     ),
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1 AND member_id=$2 LIMIT 1`,
+      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
       req.params.id, req.params.memberId,
     ),
   ]);
@@ -390,7 +390,7 @@ export async function getAttendanceHandler(
   reply: FastifyReply,
 ) {
   const records = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT * FROM member_attendance WHERE batch_id = $1 AND member_id = $2 ORDER BY day_number ASC`,
+    `SELECT * FROM member_attendance WHERE batch_id = $1::uuid AND member_id = $2::uuid ORDER BY day_number ASC`,
     req.params.id, req.params.memberId,
   );
   return reply.send({ success: true, data: records, error: null });
@@ -405,7 +405,7 @@ export async function upsertAttendanceHandler(
   const { status = 'present', notes } = (req.body as any) ?? {};
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO member_attendance (member_id, batch_id, day_number, status, notes, marked_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
+     VALUES ($1::uuid,$2::uuid,$3,$4,$5,NOW(),NOW())
      ON CONFLICT (member_id, batch_id, day_number)
      DO UPDATE SET status=EXCLUDED.status, notes=EXCLUDED.notes, updated_at=NOW()
      RETURNING *`,
@@ -423,7 +423,7 @@ export async function getBreakRequestsHandler(
     `SELECT br.*, m.first_name, m.last_name, m.member_id as member_code
      FROM batch_break_requests br
      JOIN members m ON m.id = br.member_id
-     WHERE br.batch_id = $1
+     WHERE br.batch_id = $1::uuid
      ORDER BY br.created_at DESC`,
     req.params.id,
   );
@@ -438,7 +438,7 @@ export async function approveBreakHandler(
   const adminId = (req as any).auth?.sub ?? null;
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `UPDATE batch_break_requests SET status='approved', reviewed_by=$1, reviewed_at=NOW(), updated_at=NOW()
-     WHERE id=$2 AND batch_id=$3 RETURNING *`,
+     WHERE id=$2::uuid AND batch_id=$3::uuid RETURNING *`,
     adminId, req.params.reqId, req.params.id,
   );
 
@@ -451,7 +451,7 @@ export async function approveBreakHandler(
   // an approved break supersedes whatever was previously recorded.
   await req.server.prisma.$executeRawUnsafe(
     `INSERT INTO member_attendance (member_id, batch_id, day_number, status, marked_at, updated_at)
-     SELECT $1, $2, gs.day, 'break', NOW(), NOW()
+     SELECT $1::uuid, $2::uuid, gs.day, 'break', NOW(), NOW()
      FROM generate_series($3::int, $4::int) AS gs(day)
      ON CONFLICT (member_id, batch_id, day_number)
      DO UPDATE SET status = 'break', updated_at = NOW()`,
@@ -473,7 +473,7 @@ export async function rejectBreakHandler(
   const { adminNote } = (req.body as any) ?? {};
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `UPDATE batch_break_requests SET status='rejected', admin_note=$1, reviewed_by=$2, reviewed_at=NOW(), updated_at=NOW()
-     WHERE id=$3 AND batch_id=$4 RETURNING *`,
+     WHERE id=$3::uuid AND batch_id=$4::uuid RETURNING *`,
     adminNote ?? null, adminId, req.params.reqId, req.params.id,
   );
   return reply.send({ success: true, data: record ?? null, error: null });
@@ -488,7 +488,7 @@ export async function upsertMemberSettingsHandler(
   const { extendedDays = 0, notes } = (req.body as any) ?? {};
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO member_batch_settings (member_id, batch_id, extended_days, notes, updated_by, updated_at)
-     VALUES ($1,$2,$3,$4,$5,NOW())
+     VALUES ($1::uuid,$2::uuid,$3,$4,$5,NOW())
      ON CONFLICT (member_id, batch_id)
      DO UPDATE SET extended_days=EXCLUDED.extended_days, notes=EXCLUDED.notes, updated_by=EXCLUDED.updated_by, updated_at=NOW()
      RETURNING *`,
@@ -510,7 +510,7 @@ export async function getDayAnalyticsHandler(
        COUNT(*) FILTER (WHERE status = 'in_progress')      AS in_progress,
        COUNT(*)                                             AS total
      FROM member_day_progress
-     WHERE batch_id = $1
+     WHERE batch_id = $1::uuid
      GROUP BY day_number
      ORDER BY day_number ASC`,
     req.params.id,
