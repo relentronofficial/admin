@@ -475,6 +475,8 @@ POST /api/courses/:id/badges/:badgeId/award
 23. **Batch program `totalDays` is dynamic** — `totalDays = batch.program.durationDays + memberBatchSettings.extendedDays`. Never hardcode 90. `useMyBatchProgram` response now includes `totalDays`, `attendance` (array of `{ dayNumber, status, notes, markedAt }`), and `breaks` (array of break requests). Day objects include a `category` string field.
 24. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both types now carry `type: "workshop" | "course"` as a discriminator (in `tbt-user-web/types/index.ts`). Workshop items include `workshopSlug`/`workshopTitle`; course items include `courseId`/`courseTitle`. Dashboard "Recently Watched" and "Continue Watching" sections render both types from a single merged list — don't branch the hook calls or filter by content type.
 25. **`batches.xp_per_day` is a raw SQL column** — not in Prisma schema; added via idempotent `ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50` in `prisma.ts` startup. Reading: after `prisma.batch.findMany/findUnique`, run a supplementary `$queryRawUnsafe` and merge `xpPerDay` via object map. Writing (create/update): **destructure `xpPerDay` out of the body before spreading into `prisma.batch.create/update`** (Prisma throws "Unknown field" otherwise), then persist via `$executeRawUnsafe('UPDATE batches SET xp_per_day=$1 WHERE id=$2', xpPerDay, id)`. Default fallback: `xpRow?.xp_per_day ?? 50`. On approve, `approveDayHandler` / `bulkApproveDaysHandler` fetch `xp_per_day` from the DB (once, before any loop) and use it for `pointsLedger` + socket emit `batch:day_approved` + notification text.
+26. **`task_steps` table does not exist in production** — do NOT include `step: true` or `steps: true` in any Prisma `task.findMany/findUnique` `include` block. The `task_steps` table has no startup `CREATE TABLE` SQL and was never migrated, so a JOIN against it causes a Postgres error → 500 on any task endpoint. The `Task` model has a `stepId` foreign-key field (nullable) but the related table is absent; treat steps as a soft reference only.
+27. **Uploaded images are auto-converted to WebP** — `backend/src/modules/upload/controller.ts` uses `sharp` to convert JPEG/PNG/WebP/GIF to WebP (quality 85, animated GIF preserved) before writing to R2. The stored filename gets a `.webp` extension regardless of the original. Body limit for image endpoints is 50 MB. No client-side format guard is needed — accept `accept="image/*"` in file inputs; the backend normalises everything.
 
 ## Socket Events
 
@@ -485,8 +487,8 @@ Socket.IO rooms and the events each room receives:
 
 | Room | Events emitted |
 |---|---|
-| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `chat:conversation_new`, `chat:unread_ping` |
-| `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`) |
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`) |
+| `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`), `course:access_granted` (`{ courseId }`) |
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
 | `conversation:{id}` | `chat:message`, `chat:typing`, `chat:conversation_closed`, `chat:conversation_reopened` |
