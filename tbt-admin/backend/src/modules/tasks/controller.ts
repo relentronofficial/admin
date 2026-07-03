@@ -76,7 +76,11 @@ export async function deleteTaskHandler(request: FastifyRequest, reply: FastifyR
 // PUT /api/tasks/submissions/:subId/review — admin approves or rejects a single task submission
 export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply: FastifyReply) {
   const { subId } = request.params as { subId: string };
-  const { action, feedback } = request.body as { action: 'approve' | 'reject'; feedback?: string };
+  const { action, feedback, bonusPoints } = request.body as {
+    action: 'approve' | 'reject';
+    feedback?: string;
+    bonusPoints?: number;
+  };
   const adminId = (request as any).auth?.sub ?? null;
 
   if (action !== 'approve' && action !== 'reject') {
@@ -92,6 +96,17 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
   if (!sub[0]) return reply.status(404).send({ success: false, data: null, error: 'Submission not found' });
   const s = sub[0];
 
+  // Guard: if already approved and admin is trying to approve again with no bonus,
+  // block the duplicate to prevent re-awarding base points.
+  const alreadyApproved = s.status === 'approved';
+  if (alreadyApproved && action === 'approve' && !(bonusPoints && bonusPoints > 0)) {
+    return reply.status(400).send({
+      success: false,
+      data: null,
+      error: 'Submission already approved. Provide bonusPoints to award additional points.',
+    });
+  }
+
   const newStatus = action === 'approve' ? 'approved' : 'rejected';
   await request.server.prisma.$executeRawUnsafe(
     `UPDATE task_submissions SET status=$1, reviewed_by=$2, reviewed_at=NOW(), feedback=$3, updated_at=NOW() WHERE id=$4`,
@@ -99,8 +114,9 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
   );
 
   if (action === 'approve') {
-    // Award base points
-    if (s.basePoints > 0) {
+    // Base points — only award on first approval. If the day-approval path already set
+    // status='approved', skip base points entirely to prevent double XP.
+    if (!alreadyApproved && s.basePoints > 0) {
       await request.server.prisma.pointsLedger.create({
         data: {
           memberId: s.member_id,
@@ -111,8 +127,9 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
         },
       }).catch(() => {});
     }
-    // Milestone bonus
-    if (s.isMilestone && s.bonusPoints > 0) {
+
+    // Milestone bonus — only on first approval
+    if (!alreadyApproved && s.isMilestone && s.bonusPoints > 0) {
       await request.server.prisma.pointsLedger.create({
         data: {
           memberId: s.member_id,
@@ -123,7 +140,20 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
         },
       }).catch(() => {});
     }
-    // Notify member
+
+    // Admin-supplied bonus points — allowed at any time (first review or subsequent)
+    if (bonusPoints && bonusPoints > 0) {
+      await request.server.prisma.pointsLedger.create({
+        data: {
+          memberId: s.member_id,
+          points: bonusPoints,
+          reason: `Task review bonus`,
+          referenceType: 'task_submission',
+          referenceId: subId,
+        },
+      }).catch(() => {});
+    }
+
     request.server.io.to(`user:${s.member_id}`).emit('notification', {
       title: 'Task Approved ✓',
       body: 'Your task submission has been approved.',

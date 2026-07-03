@@ -8,7 +8,7 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
   const { page = 1, limit = 10, search, status } = request.query as any;
   const skip = (page - 1) * limit;
 
-  const where: any = {};
+  const where: any = { deletedAt: null };
   if (status) where.status = status;
   if (search) {
     where.OR = [
@@ -158,16 +158,16 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
 
 export async function getMemberHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  const member = await request.server.prisma.member.findUnique({ 
+  const member = await request.server.prisma.member.findUnique({
     where: { id },
-    include: { 
-        accountManager: true, 
+    include: {
+        accountManager: true,
         creator: true,
         batch: true,
         courseEnrollments: { include: { course: true } }
     }
   });
-  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+  if (!member || (member as any).deletedAt) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
   return reply.send({ success: true, data: member, error: null });
 }
 
@@ -325,8 +325,17 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
 
 export async function deleteMemberHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  // Implement soft delete if needed, but for now hard delete as per previous code
-  await request.server.prisma.member.delete({ where: { id } });
+  const member = await request.server.prisma.member.findUnique({
+    where: { id },
+    select: { id: true, deletedAt: true } as any,
+  });
+  if (!member || (member as any).deletedAt) {
+    return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+  }
+  await request.server.prisma.member.update({
+    where: { id },
+    data: { deletedAt: new Date() } as any,
+  });
   return reply.send({ success: true, data: null, error: null });
 }
 

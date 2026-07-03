@@ -49,7 +49,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
 
   const member = await fastify.prisma.member.findFirst({
     where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
-    select: { id: true, phone: true, passwordHash: true, status: true } as any,
+    select: { id: true, phone: true, passwordHash: true, status: true, deletedAt: true } as any,
   });
 
   if (!member) {
@@ -57,6 +57,10 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   }
 
   const m = member as any;
+
+  if (m.deletedAt) {
+    return reply.status(403).send({ success: false, data: null, error: 'Account not found. Please contact admin.' });
+  }
 
   if (['inactive', 'suspended', 'paused'].includes(m.status)) {
     return reply.status(403).send({ success: false, data: null, error: `Account is ${m.status}. Please contact admin.` });

@@ -311,11 +311,11 @@ export default function MembersListPage() {
   const handleDelete = async (id: string) => {
     try {
       await deleteMember.mutateAsync(id);
-      toast.success("Member record purged");
+      toast.success("Member archived successfully");
       setDeletingMemberId(null);
       refetch();
     } catch (err: any) {
-      toast.error(err.message || "Failed to purge record");
+      toast.error(err.message || "Failed to archive member");
     }
   };
 
@@ -545,7 +545,7 @@ export default function MembersListPage() {
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-[12px] text-[#a0a0a0] hover:text-red-500 hover:bg-red-500/10 transition-colors font-bold uppercase tracking-wider font-rajdhani"
                               >
-                                <Trash2 size={14} className="text-red-500" /> Delete Member
+                                <Trash2 size={14} className="text-red-500" /> Archive Member
                               </button>
                             </div>
                           )}
@@ -1222,22 +1222,23 @@ export default function MembersListPage() {
               <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
                 <AlertCircle className="text-red-500" size={32} />
               </div>
-              <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest mb-2 text-[#f0f0f0]">Authorize Deletion?</h3>
+              <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest mb-2 text-[#f0f0f0]">Archive Member?</h3>
               <p className="text-[#888] text-sm leading-relaxed mb-8">
-                This action is permanent. All member data will be purged from the system.
+                This member will be hidden from the platform and will no longer be able to log in.
+                Their batch progress, points, and history are preserved and can be reviewed by the tech team.
               </p>
               <div className="flex flex-col gap-3">
-                <button 
+                <button
                   onClick={() => handleDelete(deletingMemberId)}
                   className="w-full bg-[#dc2626] hover:bg-red-700 text-white py-3 rounded-lg font-rajdhani font-bold text-[13px] uppercase tracking-[2px] transition-all shadow-lg active:scale-95"
                 >
-                  Confirm Purge
+                  Confirm Archive
                 </button>
-                <button 
+                <button
                   onClick={() => setDeletingMemberId(null)}
                   className="w-full bg-[#1a1a1a] border border-[#333] hover:border-[#444] text-[#a0a0a0] hover:text-white py-3 rounded-lg font-rajdhani font-bold text-[13px] uppercase tracking-[2px] transition-all"
                 >
-                  Abort Action
+                  Cancel
                 </button>
               </div>
             </div>
