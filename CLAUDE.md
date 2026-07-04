@@ -75,7 +75,7 @@ npm run format      # prettier --write .
 
 **Admin panel auth (Clerk):**
 - `clerkPlugin` (`backend/src/plugins/clerk.ts`) decorates Fastify with `fastify.authenticate` — verifies Clerk JWTs, used as `preHandler` on all admin-protected routes
-- `ClerkProvider` wraps root layout. `AuthInterceptor` in `admin-panel/components/Providers.tsx` registers an Axios request interceptor that calls `getToken()` (with 52-second in-memory cache) and attaches `Authorization: Bearer <token>` to every `apiClient` call
+- `ClerkProvider` wraps root layout. `AuthInterceptor` in `admin-panel/components/Providers.tsx` registers an Axios request interceptor that calls `getToken()` (token cached until 8 s before its `exp` claim; falls back to 52 s if `exp` is unreadable) and attaches `Authorization: Bearer <token>` to every `apiClient` call
 - Admin socket authenticates via Clerk token in `socket.handshake.auth.token`
 
 **User web auth (custom JWT cookies):**
@@ -487,7 +487,7 @@ Socket.IO rooms and the events each room receives:
 
 | Room | Events emitted |
 |---|---|
-| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`) |
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`) |
 | `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`), `course:access_granted` (`{ courseId }`) |
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
