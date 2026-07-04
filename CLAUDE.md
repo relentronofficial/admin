@@ -80,7 +80,7 @@ npm run format      # prettier --write .
 
 **User web auth (custom JWT cookies):**
 - `@clerk/nextjs` IS installed in user-web, but only for: the `app/(auth)/` Clerk-hosted route group and middleware auth-state detection. The main `/login` page and all backend API calls use custom JWT cookies — never Clerk JWTs or bearer tokens.
-- `POST /api/user-auth/login` → phone + password → bcrypt check → OTP sent via WhatsApp → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
+- `POST /api/user-auth/login` → phone + password → bcrypt check → OTP sent via WhatsApp (WABA) or SMS (MSG91) → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
 - Axios client has `withCredentials: true`; cookies are sent automatically on every request
 - Auto-refresh: interceptor catches 401, calls `/api/user-auth/refresh`, retries original request (skipped for `/api/user-auth/` paths)
 - `initApiClient()` in `tbt-user-web/lib/api/client.ts` is a **no-op stub** — user web never attaches bearer tokens; auth is entirely cookie-based
@@ -374,11 +374,11 @@ Workshops and resources support per-batch access restriction via a `batchIds Jso
 - **`CourseAccess`** — authorization record (who is allowed). Separate from `CourseEnrollment` (progress tracking). A member needs a valid `CourseAccess` row to access a course; `CourseEnrollment` is created automatically on first lesson view.
   - `accessType`: `"lifetime"` (valid while `isActive=true`) or `"duration"` (valid while `isActive=true` AND `expiresAt > now()`)
   - Unique constraint: `(memberId, courseId)`
-- **`CoursePayment`** — payment ledger record. `method`: `"manual" | "razorpay" | "bank_transfer" | "upi" | "free"`. Approved by admin via `POST /api/courses/:id/payments/:paymentId/approve`.
+- **`CoursePayment`** — payment ledger record. `method`: `"manual" | "razorpay" | "bank_transfer" | "upi" | "free" | "external"`. Approved by admin via `POST /api/courses/:id/payments/:paymentId/approve`.
 - **`MemberXP`** — XP ledger. `source`: `"episode_complete" | "quiz_pass"`. Amount comes from `course.xpPerEpisode`.
 - **`CourseBadge`** — manually awardable badge per course. Admin awards via `POST /api/courses/:id/badges/:badgeId/award`.
 
-### Extended Course Fields (via startup `ALTER TABLE`)
+### Extended Fields (via startup `ALTER TABLE`)
 ```
 courses:
   price DECIMAL(10,2)          -- null = free
@@ -395,6 +395,22 @@ course_episodes:
   quiz_unlock_percent INT DEFAULT 80  -- % of episode watched before quiz unlocks
   drm_enabled BOOLEAN DEFAULT false
   bunny_drm_token TEXT
+
+products:
+  price DECIMAL(10,2)
+  currency VARCHAR(10) DEFAULT 'INR'
+  category VARCHAR(100)
+  stock_status VARCHAR(50) DEFAULT 'in_stock'
+
+app_resources:
+  description TEXT             -- added via startup ALTER TABLE
+  visibility JSONB             -- { batchIds: string[] } for batch access restriction
+
+site_configs:
+  login_bg_images JSONB        -- array of background image URLs for login page
+
+member_episode_progress:
+  watched_segments TEXT        -- serialized segment ranges for DRM tracking
 ```
 
 ### Admin Hooks (`useTbt.ts`)
@@ -474,9 +490,11 @@ POST /api/courses/:id/badges/:badgeId/award
     - **`Lesson` type does not include `quizData`** — the TypeScript interface in `types/index.ts` omits it; access as `(lesson as any).quizData` wherever needed.
 23. **Batch program `totalDays` is dynamic** — `totalDays = batch.program.durationDays + memberBatchSettings.extendedDays`. Never hardcode 90. `useMyBatchProgram` response now includes `totalDays`, `attendance` (array of `{ dayNumber, status, notes, markedAt }`), and `breaks` (array of break requests). Day objects include a `category` string field.
 24. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both types now carry `type: "workshop" | "course"` as a discriminator (in `tbt-user-web/types/index.ts`). Workshop items include `workshopSlug`/`workshopTitle`; course items include `courseId`/`courseTitle`. Dashboard "Recently Watched" and "Continue Watching" sections render both types from a single merged list — don't branch the hook calls or filter by content type.
-25. **`batches.xp_per_day` is a raw SQL column** — not in Prisma schema; added via idempotent `ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50` in `prisma.ts` startup. Reading: after `prisma.batch.findMany/findUnique`, run a supplementary `$queryRawUnsafe` and merge `xpPerDay` via object map. Writing (create/update): **destructure `xpPerDay` out of the body before spreading into `prisma.batch.create/update`** (Prisma throws "Unknown field" otherwise), then persist via `$executeRawUnsafe('UPDATE batches SET xp_per_day=$1 WHERE id=$2', xpPerDay, id)`. Default fallback: `xpRow?.xp_per_day ?? 50`. On approve, `approveDayHandler` / `bulkApproveDaysHandler` fetch `xp_per_day` from the DB (once, before any loop) and use it for `pointsLedger` + socket emit `batch:day_approved` + notification text.
+25. **`batches.xp_per_day` is a raw SQL column** — not in Prisma schema; added via idempotent `ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50` in `prisma.ts` startup. Reading: after `prisma.batch.findMany/findUnique`, run a supplementary `$queryRawUnsafe` and merge `xpPerDay` via object map. Writing (create/update): **destructure `xpPerDay` out of the body before spreading into `prisma.batch.create/update`** (Prisma throws "Unknown field" otherwise), then persist via `$executeRawUnsafe('UPDATE batches SET xp_per_day=$1 WHERE id=$2', xpPerDay, id)`. Default fallback: `xpRow?.xp_per_day ?? 50`. On approve, `approveDayHandler` / `bulkApproveDaysHandler` fetch `xp_per_day` from the DB (once, before any loop) and use it for `pointsLedger` + socket emit `batch:day_approved` + notification text. Similarly, `batches.status` (VARCHAR, default `'active'`) and `batches.snapshot_days` (INT, nullable) are raw SQL columns added at startup — destructure them before spreading into Prisma and persist separately.
 26. **`task_steps` table does not exist in production** — do NOT include `step: true` or `steps: true` in any Prisma `task.findMany/findUnique` `include` block. The `task_steps` table has no startup `CREATE TABLE` SQL and was never migrated, so a JOIN against it causes a Postgres error → 500 on any task endpoint. The `Task` model has a `stepId` foreign-key field (nullable) but the related table is absent; treat steps as a soft reference only.
 27. **Uploaded images are auto-converted to WebP** — `backend/src/modules/upload/controller.ts` uses `sharp` to convert JPEG/PNG/WebP/GIF to WebP (quality 85, animated GIF preserved) before writing to R2. The stored filename gets a `.webp` extension regardless of the original. Body limit for image endpoints is 50 MB. No client-side format guard is needed — accept `accept="image/*"` in file inputs; the backend normalises everything.
+28. **Several tables exist only as raw SQL — not in Prisma schema** — `member_attendance`, `batch_break_requests`, `member_batch_settings`, `product_inquiries`, `admin_notifications` are created entirely via `$executeRawUnsafe` in `prisma.ts` startup. There are no Prisma models for them; all reads/writes must use `$queryRawUnsafe` / `$executeRawUnsafe`. Never attempt `prisma.memberAttendance.findMany()` — it will fail with "does not exist on type PrismaClient".
+29. **Task unification — `tasks.batch_id` now nullable FK** — the startup SQL added `batch_id UUID REFERENCES batches(id)` to `tasks` and made `program_id` nullable. `task_submissions` gained `batch_id`, `day_progress_id`, `day_number` columns. The old global unique constraint `(member_id, task_id)` was replaced by two day-scoped partial indexes: one for batch tasks `(member_id, task_id, batch_id, day_number)` and one for program tasks `(member_id, task_id) WHERE batch_id IS NULL`. Batch-inline tasks (batch_id set, program_id null) and program tasks (program_id set, batch_id null) are differentiated by which FK is populated.
 
 ## Socket Events
 
@@ -507,6 +525,7 @@ Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` 
 | Clerk | Admin panel auth (API + frontend). Also installed in user-web for `(auth)/` pages and middleware auth-state; main user login uses JWT cookies |
 | Firebase | Push notifications |
 | Resend / Twilio | Email / SMS |
+| MSG91 | SMS OTP fallback (`MSG91_AUTH_KEY/SENDER_ID/TEMPLATE_ID` in env; `backend/src/lib/msg91.ts`) |
 | Anthropic Claude | AI quiz generation in workshops + live call summary generation (`claude-haiku-4-5`, requires `ANTHROPIC_API_KEY`) |
 | pdfkit | Server-side PDF generation |
 | Sentry | Error tracking |
