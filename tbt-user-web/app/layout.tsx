@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { cookies } from "next/headers";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 import type { SiteConfig, NavItem, UiStrings } from "@/types";
@@ -47,11 +48,19 @@ async function fetchPublicJson<T>(path: string): Promise<T | null> {
   }
 }
 
+// Minified anti-flash script — runs synchronously before React hydration to apply
+// the saved theme class on <html> without a flash of the wrong theme.
+const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('tbt_theme');var t=s==='light'||s==='dark'?s:(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.classList.toggle('dark',t==='dark');document.documentElement.classList.toggle('light',t==='light');var m=365*24*60*60;document.cookie='tbt_theme='+t+'; path=/; max-age='+m+'; SameSite=Lax';}catch(e){document.documentElement.classList.add('dark');}})();`;
+
 export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const cookieStore = await cookies();
+  const themeCookie = cookieStore.get("tbt_theme")?.value;
+  const initialThemeClass = themeCookie === "light" ? "light" : "dark";
+
   const [initialConfig, initialNav, initialUiStrings] = await Promise.all([
     fetchPublicJson<SiteConfig>("/api/pub/config/site"),
     fetchPublicJson<{ items: NavItem[]; rightIcons: RightIcons }>("/api/pub/config/nav"),
@@ -59,9 +68,11 @@ export default async function RootLayout({
   ]);
 
   // Inject theme CSS variables into <head> server-side — zero flash, zero layout shift.
-  // These are available before any JavaScript runs.
+  // In light mode, skip --color-bg-primary/surface (dark API values would override light CSS vars).
   const themeCSS = initialConfig?.theme
-    ? `:root{--color-accent:${initialConfig.theme.accentColor};--color-alert:${initialConfig.theme.alertColor};--color-success:${initialConfig.theme.successColor};--color-bg-primary:${initialConfig.theme.bgPrimary};--color-bg-surface:${initialConfig.theme.bgSurface};}`
+    ? initialThemeClass === "light"
+      ? `:root{--color-accent:${initialConfig.theme.accentColor};--color-alert:${initialConfig.theme.alertColor};--color-success:${initialConfig.theme.successColor};}`
+      : `:root{--color-accent:${initialConfig.theme.accentColor};--color-alert:${initialConfig.theme.alertColor};--color-success:${initialConfig.theme.successColor};--color-bg-primary:${initialConfig.theme.bgPrimary};--color-bg-surface:${initialConfig.theme.bgSurface};}`
     : "";
 
   // Derive CDN origin from the first available media URL — works across all environments
@@ -73,8 +84,10 @@ export default async function RootLayout({
   })();
 
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" className={initialThemeClass} suppressHydrationWarning>
       <head>
+        {/* Anti-flash script must be first — runs before any CSS or React hydration */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {themeCSS && <style dangerouslySetInnerHTML={{ __html: themeCSS }} />}
         {initialConfig?.faviconUrl && (
           <link rel="icon" href={initialConfig.faviconUrl} />

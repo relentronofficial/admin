@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { SiteConfig, NavItem, UiStrings } from "@/types";
+import { useUIStore } from "@/lib/stores/useUIStore";
 
 export interface RightIcons {
   notifications: boolean;
@@ -31,13 +32,19 @@ export function useSiteConfig() {
   return useContext(SiteConfigContext);
 }
 
-function applyTheme(theme: SiteConfig["theme"]) {
+function applyTheme(theme: SiteConfig["theme"], currentTheme: "light" | "dark") {
   const root = document.documentElement;
   root.style.setProperty("--color-accent", theme.accentColor);
   root.style.setProperty("--color-alert", theme.alertColor);
   root.style.setProperty("--color-success", theme.successColor);
-  root.style.setProperty("--color-bg-primary", theme.bgPrimary);
-  root.style.setProperty("--color-bg-surface", theme.bgSurface);
+  if (currentTheme === "dark") {
+    root.style.setProperty("--color-bg-primary", theme.bgPrimary);
+    root.style.setProperty("--color-bg-surface", theme.bgSurface);
+  } else {
+    // Remove inline overrides so light CSS vars take effect via fallback chain
+    root.style.removeProperty("--color-bg-primary");
+    root.style.removeProperty("--color-bg-surface");
+  }
 }
 
 function setFavicon(url: string) {
@@ -82,10 +89,12 @@ export function SiteConfigProvider({
   const [uiStrings, setUiStrings] = useState<UiStrings | null>(initialUiStrings ?? null);
   const [isLoading, setIsLoading] = useState(!(initialConfig && initialNav && initialUiStrings));
 
+  const theme = useUIStore((s) => s.theme);
+
   useEffect(() => {
     // If server already provided full initial data, just apply theme and stop.
     if (initialConfig && initialNav && initialUiStrings) {
-      if (initialConfig.theme) applyTheme(initialConfig.theme);
+      if (initialConfig.theme) applyTheme(initialConfig.theme, useUIStore.getState().theme);
       if (initialConfig.faviconUrl) setFavicon(initialConfig.faviconUrl);
       setIsLoading(false);
       return;
@@ -101,7 +110,7 @@ export function SiteConfigProvider({
 
       if (cfg) {
         setConfig(cfg);
-        applyTheme(cfg.theme);
+        applyTheme(cfg.theme, useUIStore.getState().theme);
         if (cfg.faviconUrl) setFavicon(cfg.faviconUrl);
       }
       if (navData?.items?.length) setNav(navData.items);
@@ -112,6 +121,13 @@ export function SiteConfigProvider({
 
     bootstrap();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-apply theme vars whenever user toggles or config refreshes
+  useEffect(() => {
+    if (config?.theme) {
+      applyTheme(config.theme, theme);
+    }
+  }, [theme, config]);
 
   return (
     <SiteConfigContext.Provider value={{ config, nav, rightIcons, uiStrings, isLoading }}>

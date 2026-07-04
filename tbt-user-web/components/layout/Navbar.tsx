@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils/cn";
 import toast from "react-hot-toast";
 import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
+import { ThemeToggle } from "./ThemeToggle";
 import type { Notification } from "@/types";
 
 // ── Notification type icon config ─────────────────────────────────────────────
@@ -62,8 +63,8 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
     <div
       className="absolute right-0 top-full mt-2 w-80 rounded-2xl overflow-hidden z-50 flex flex-col"
       style={{
-        background: "rgba(10,10,10,0.98)",
-        border: "1px solid rgba(255,255,255,0.09)",
+        background: "var(--color-notif-bg)",
+        border: "1px solid var(--color-border-medium)",
         boxShadow: "0 16px 48px rgba(0,0,0,0.7)",
         maxHeight: "420px",
       }}
@@ -71,9 +72,9 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
       >
-        <span className="text-sm font-bold text-white">Notifications</span>
+        <span className="text-sm font-bold text-foreground">Notifications</span>
         {unreadInList > 0 && (
           <button
             onClick={() => markAll.mutate()}
@@ -91,7 +92,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
         {isLoading ? (
           <div className="space-y-1 p-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "rgba(255,255,255,0.04)" }} />
+              <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--color-surface-overlay)" }} />
             ))}
           </div>
         ) : notifications.length === 0 ? (
@@ -107,8 +108,8 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
                 <button
                   key={n.id}
                   onClick={() => handleClick(n)}
-                  className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.04]"
-                  style={!n.isRead ? { background: "rgba(255,255,255,0.02)" } : undefined}
+                  className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--color-surface-overlay)]"
+                  style={!n.isRead ? { background: "var(--color-surface-overlay-xs)" } : undefined}
                 >
                   {/* Type icon */}
                   <div
@@ -120,8 +121,8 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-white leading-snug truncate">{n.title}</p>
-                    <p className="text-[11px] text-[#888] mt-0.5 line-clamp-2 leading-snug">{n.body}</p>
+                    <p className="text-xs font-semibold text-foreground leading-snug truncate">{n.title}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">{n.body}</p>
                   </div>
 
                   {/* Media thumbnail */}
@@ -134,9 +135,9 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
                   {n.mediaType === "video" && n.mediaUrl && (
                     <div
                       className="w-11 h-11 rounded-lg flex-shrink-0 flex items-center justify-center"
-                      style={{ background: "rgba(255,255,255,0.06)" }}
+                      style={{ background: "var(--color-surface-overlay-md)" }}
                     >
-                      <Film size={14} className="text-[#888]" />
+                      <Film size={14} className="text-muted-foreground" />
                     </div>
                   )}
 
@@ -157,7 +158,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
       {/* Footer */}
       <div
         className="px-4 py-3 text-center flex-shrink-0"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+        style={{ borderTop: "1px solid var(--color-border-subtle)" }}
       >
         <Link
           href="/notifications"
@@ -175,15 +176,14 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
 // ── Glass button glow background ──────────────────────────────────────────────
 
 function GlowBg({ active }: { active: boolean }) {
-  const accentRed = "#dc2626";
   if (active) {
     return (
       <span
         className="absolute inset-0 rounded-xl pointer-events-none"
         style={{
-          background: `color-mix(in srgb, ${accentRed} 18%, rgba(0,0,0,0.25))`,
-          border: `1px solid color-mix(in srgb, ${accentRed} 32%, transparent)`,
-          boxShadow: `0 0 16px color-mix(in srgb, ${accentRed} 24%, transparent)`,
+          background: `color-mix(in srgb, var(--color-accent) 18%, var(--color-surface-overlay-md))`,
+          border: `1px solid color-mix(in srgb, var(--color-accent) 32%, transparent)`,
+          boxShadow: `0 0 16px color-mix(in srgb, var(--color-accent) 24%, transparent)`,
         }}
       />
     );
@@ -192,7 +192,7 @@ function GlowBg({ active }: { active: boolean }) {
     <span
       className="absolute inset-0 rounded-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
       style={{
-        background: `color-mix(in srgb, ${accentRed} 9%, rgba(255,255,255,0.03))`,
+        background: `color-mix(in srgb, var(--color-accent) 9%, var(--color-surface-overlay))`,
       }}
     />
   );
@@ -240,22 +240,22 @@ function ProfileButton() {
           <div
             className="absolute right-0 top-full mt-2 w-44 rounded-xl z-50 py-1 overflow-hidden"
             style={{
-              background: "rgba(10,10,10,0.97)",
+              background: "var(--color-modal-bg)",
               backdropFilter: "blur(16px)",
-              border: "1px solid rgba(255,255,255,0.09)",
+              border: "1px solid var(--color-border-medium)",
               boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
             }}
           >
             <Link
               href="/profile"
               onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-sm text-[#ccc] hover:text-white hover:bg-white/5 transition-colors"
+              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
             >
               Profile
             </Link>
             <button
               onClick={handleLogout}
-              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
+              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)] transition-colors"
             >
               Sign out
             </button>
@@ -301,8 +301,8 @@ export function Navbar() {
               <div
                 className="flex items-start gap-3 px-4 py-3 rounded-2xl cursor-pointer select-none"
                 style={{
-                  background: "rgba(12,12,12,0.97)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "var(--color-modal-bg)",
+                  border: "1px solid var(--color-border-medium)",
                   boxShadow: "0 8px 32px rgba(0,0,0,0.65)",
                   minWidth: 280,
                   maxWidth: 340,
@@ -322,14 +322,14 @@ export function Navbar() {
                   <Icon size={14} style={{ color }} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-white leading-tight">{payload.title}</p>
+                  <p className="text-sm font-bold text-foreground leading-tight">{payload.title}</p>
                   {payload.body && (
-                    <p className="text-xs text-[#a0a0a0] mt-0.5 line-clamp-2">{payload.body}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{payload.body}</p>
                   )}
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); toast.dismiss(t.id); }}
-                  className="p-0.5 text-[#888] hover:text-[#999] flex-shrink-0"
+                  className="p-0.5 text-muted-foreground hover:text-foreground flex-shrink-0"
                 >
                   <X size={12} />
                 </button>
@@ -401,17 +401,15 @@ export function Navbar() {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{
-          // Solid background — drawer slides in from off-screen so blur offers no
-          // readability benefit, and is expensive on mobile GPUs
-          background: "rgba(8, 8, 8, 0.98)",
-          borderColor: "rgba(255,255,255,0.07)",
+          background: "var(--color-drawer-bg)",
+          borderColor: "var(--color-border-subtle)",
           boxShadow: "4px 0 40px rgba(0,0,0,0.7)",
         }}
       >
         {/* Drawer header */}
         <div
           className="h-16 flex items-center justify-between px-4 border-b flex-shrink-0"
-          style={{ borderColor: "rgba(255,255,255,0.06)" }}
+          style={{ borderColor: "var(--color-border-subtle)" }}
         >
           <Link
             href={homeHref}
@@ -422,7 +420,7 @@ export function Navbar() {
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="p-1.5 rounded-lg text-[#666] hover:text-white transition-colors duration-200"
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors duration-200"
           >
             <X size={16} />
           </button>
@@ -442,7 +440,7 @@ export function Navbar() {
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
                   "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                  active ? "text-white" : "text-[#888] hover:text-white"
+                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <GlowBg active={active} />
@@ -458,21 +456,19 @@ export function Navbar() {
       <header
         className="fixed top-3 left-4 right-4 z-40 h-14 flex items-center px-3 gap-3 rounded-2xl supports-[backdrop-filter]:md:backdrop-blur-xl"
         style={{
-          // Mobile: solid — backdrop-filter is GPU-expensive on mobile compositing
-          // Desktop (md+): blur re-enabled via Tailwind supports- class above
-          background: "rgba(10, 10, 10, 0.93)",
-          border: "1px solid rgba(255,255,255,0.07)",
+          background: "var(--color-navbar-bg)",
+          border: "1px solid var(--color-border-subtle)",
           boxShadow: [
             "0 4px 24px rgba(0,0,0,0.55)",
-            "0 1px 0 rgba(255,255,255,0.04) inset",
-            "0 0 60px color-mix(in srgb, #dc2626 5%, transparent)",
+            "0 1px 0 var(--color-surface-overlay) inset",
+            "0 0 60px color-mix(in srgb, var(--color-accent) 5%, transparent)",
           ].join(", "),
         }}
       >
         {/* Mobile: hamburger */}
         <button
           onClick={toggleSidebar}
-          className="lg:hidden relative p-2 rounded-xl text-[#888] hover:text-white transition-colors duration-200 flex-shrink-0 group overflow-hidden"
+          className="lg:hidden relative p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors duration-200 flex-shrink-0 group overflow-hidden"
           aria-label="Toggle menu"
         >
           <GlowBg active={false} />
@@ -486,7 +482,7 @@ export function Navbar() {
         </Link>
 
         {/* Visual separator (desktop) */}
-        <div className="hidden lg:block w-px h-5 flex-shrink-0" style={{ background: "rgba(255,255,255,0.1)" }} />
+        <div className="hidden lg:block w-px h-5 flex-shrink-0" style={{ background: "var(--color-border-medium)" }} />
 
         {/* Desktop: inline nav */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
@@ -501,7 +497,7 @@ export function Navbar() {
                 href={href}
                 className={cn(
                   "relative px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors duration-200 group overflow-hidden flex-shrink-0",
-                  active ? "text-white" : "text-[#888] hover:text-white"
+                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <GlowBg active={active} />
@@ -514,6 +510,9 @@ export function Navbar() {
         {/* Right icons */}
         <div className="flex items-center gap-1 ml-auto lg:ml-0">
 
+          {/* Theme toggle */}
+          <ThemeToggle />
+
           {/* ── Notifications (dropdown) ────────────────────────────── */}
           {rightIcons.notifications && (
             <div className="relative">
@@ -521,7 +520,7 @@ export function Navbar() {
                 onClick={() => setNotifOpen((v) => !v)}
                 className={cn(
                   "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
-                  notifOpen || pathname === "/notifications" ? "text-white" : "text-[#888] hover:text-white"
+                  notifOpen || pathname === "/notifications" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
                 aria-label="Notifications"
               >
@@ -530,7 +529,7 @@ export function Navbar() {
                 {unreadCount > 0 && (
                   <span
                     className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5 z-20"
-                    style={{ background: "#dc2626" }}
+                    style={{ background: "var(--color-accent)" }}
                   >
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
@@ -546,7 +545,7 @@ export function Navbar() {
               href="/messages"
               className={cn(
                 "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
-                pathname === "/messages" ? "text-white" : "text-[#888] hover:text-white"
+                pathname === "/messages" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
               aria-label="Messages"
             >
@@ -555,7 +554,7 @@ export function Navbar() {
               {unreadMsgCount > 0 && (
                 <span
                   className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5 z-20"
-                  style={{ background: "#dc2626" }}
+                  style={{ background: "var(--color-accent)" }}
                 >
                   {unreadMsgCount > 99 ? "99+" : unreadMsgCount}
                 </span>

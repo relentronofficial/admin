@@ -378,19 +378,19 @@ function SectionRow({ section }: { section: ContentSection }) {
               onClick={() => scrollPage("left")}
               disabled={!canScrollLeft}
               className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 disabled:opacity-25 hover:scale-110 active:scale-95"
-              style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
               aria-label="Scroll left"
             >
-              <ChevronLeft size={15} className="text-white" />
+              <ChevronLeft size={15} className="text-foreground" />
             </button>
             <button
               onClick={() => scrollPage("right")}
               disabled={!canScrollRight}
               className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 disabled:opacity-25 hover:scale-110 active:scale-95"
-              style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
               aria-label="Scroll right"
             >
-              <ChevronRight size={15} className="text-white" />
+              <ChevronRight size={15} className="text-foreground" />
             </button>
           </div>
         )}
@@ -481,7 +481,7 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
           {item.thumbnailUrl ? (
             <Image src={item.thumbnailUrl} alt={item.title} fill className="object-cover" sizes="80px" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <div className="w-full h-full flex items-center justify-center" style={{ background: "var(--color-surface-overlay)" }}>
               <PlayCircle size={20} className="text-muted-foreground" />
             </div>
           )}
@@ -510,7 +510,7 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
       </div>
       <div className="px-3 pb-2">
         <div className="flex items-center gap-2">
-          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{ width: `${item.progressPercent}%`, background: "var(--color-accent)" }}
@@ -523,7 +523,7 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
       </div>
       <div
         className="px-3 py-2 border-t border-border flex items-center justify-between"
-        style={{ background: "rgba(255,255,255,0.02)" }}
+        style={{ background: "var(--color-surface-overlay-xs)" }}
       >
         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
           <Clock size={10} />
@@ -602,7 +602,7 @@ export function ContinueWatchingSection() {
               onClick={() => scrollPage("left")}
               disabled={!canScrollLeft}
               className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
-              style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
               aria-label="Scroll left"
             >
               <ChevronLeft size={15} className="text-white" />
@@ -611,7 +611,7 @@ export function ContinueWatchingSection() {
               onClick={() => scrollPage("right")}
               disabled={!canScrollRight}
               className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
-              style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
               aria-label="Scroll right"
             >
               <ChevronRight size={15} className="text-white" />
@@ -674,7 +674,7 @@ function WatchHistoryCard({
           {item.thumbnailUrl ? (
             <Image src={item.thumbnailUrl} alt={parentTitle ?? item.episodeTitle} fill className="object-cover" sizes="80px" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <div className="w-full h-full flex items-center justify-center" style={{ background: "var(--color-surface-overlay)" }}>
               <PlayCircle size={20} className="text-muted-foreground" />
             </div>
           )}
@@ -717,12 +717,12 @@ function WatchHistoryCard({
       </div>
       <div className="px-3 pb-2">
         <div className="flex items-center gap-2">
-          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
                 width: `${isCompleted ? 100 : item.progressPercent}%`,
-                background: isCompleted ? "#22c55e" : "var(--color-accent)",
+                background: isCompleted ? "var(--color-success, #22c55e)" : "var(--color-accent)",
               }}
             />
           </div>
@@ -733,7 +733,7 @@ function WatchHistoryCard({
       </div>
       <div
         className="px-3 py-2 border-t border-border flex items-center justify-between"
-        style={{ background: "rgba(255,255,255,0.02)" }}
+        style={{ background: "var(--color-surface-overlay-xs)" }}
       >
         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
           <Clock size={10} />
@@ -741,7 +741,7 @@ function WatchHistoryCard({
         </span>
         <span
           className="flex items-center gap-1.5 text-[11px] font-bold transition-all group-hover:gap-2.5"
-          style={{ color: isCompleted ? "#22c55e" : "var(--color-accent)" }}
+          style={{ color: isCompleted ? "var(--color-success, #22c55e)" : "var(--color-accent)" }}
         >
           <Play size={9} fill="currentColor" />
           {isCompleted ? "Rewatch" : "Continue"}
@@ -845,7 +845,7 @@ export function RecentlyWatchedSection() {
                 onClick={() => scrollPage("left")}
                 disabled={!canScrollLeft}
                 className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
-                style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+                style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
                 aria-label="Scroll left"
               >
                 <ChevronLeft size={15} className="text-white" />
@@ -854,7 +854,7 @@ export function RecentlyWatchedSection() {
                 onClick={() => scrollPage("right")}
                 disabled={!canScrollRight}
                 className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-25 hover:scale-110 active:scale-95"
-                style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+                style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
                 aria-label="Scroll right"
               >
                 <ChevronRight size={15} className="text-white" />
@@ -871,7 +871,7 @@ export function RecentlyWatchedSection() {
                 className="text-[11px] font-bold px-3 py-1 transition-colors"
                 style={{
                   background: filter === key ? "var(--color-accent)" : "transparent",
-                  color: filter === key ? "#fff" : "#a0a0a0",
+                  color: filter === key ? "#fff" : "var(--color-text-secondary)",
                 }}
               >
                 {label}

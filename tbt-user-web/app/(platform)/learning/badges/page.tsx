@@ -15,14 +15,14 @@ export default function BadgesPage() {
   return (
     <div className="space-y-6 pb-12">
       <div className="flex items-center gap-3">
-        <Link href="/learning" className="flex items-center gap-1.5 text-sm transition-colors hover:opacity-100" style={{ color: "rgba(255,255,255,0.45)" }}>
+        <Link href="/learning" className="flex items-center gap-1.5 text-sm transition-colors hover:opacity-100 text-muted-foreground">
           <ChevronLeft size={16} /> Learning
         </Link>
       </div>
 
       <div>
-        <h1 className="text-2xl font-bold text-white">My Badges</h1>
-        <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+        <h1 className="text-2xl font-bold text-foreground">My Badges</h1>
+        <p className="text-sm mt-1 text-muted-foreground">
           {list.length > 0 ? `${list.length} badge${list.length !== 1 ? "s" : ""} earned` : "Complete courses to earn badges"}
         </p>
       </div>
@@ -33,7 +33,7 @@ export default function BadgesPage() {
             style={{ background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-surface))" }}>
             <Award size={36} style={{ color: "var(--color-accent)", opacity: 0.5 }} />
           </div>
-          <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.5)" }}>
+          <p className="text-sm font-medium text-muted-foreground">
             No badges yet — keep learning!
           </p>
           <Link href="/programs"
@@ -62,9 +62,9 @@ export default function BadgesPage() {
                   </div>
                 )}
                 <div>
-                  <p className="text-sm font-semibold text-white leading-snug">{badge.label}</p>
+                  <p className="text-sm font-semibold text-foreground leading-snug">{badge.label}</p>
                   {item.earnedAt && (
-                    <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    <p className="text-[11px] mt-1 text-muted-foreground">
                       {new Date(item.earnedAt).toLocaleDateString()}
                     </p>
                   )}

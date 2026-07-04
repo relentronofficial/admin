@@ -14,7 +14,7 @@ function WorkshopCard({ item, priority }: { item: WorkshopListItem; priority: bo
       className="group block rounded-xl overflow-hidden border transition-colors"
       style={{
         background: "var(--color-bg-surface)",
-        borderColor: "rgba(255,255,255,0.08)",
+        borderColor: "var(--color-border-subtle)",
         opacity: item.locked ? 0.6 : 1,
       }}
     >
@@ -75,8 +75,7 @@ function WorkshopCard({ item, priority }: { item: WorkshopListItem; priority: bo
 
       <div className="p-4">
         <h3
-          className="font-semibold text-sm line-clamp-2 leading-snug group-hover:opacity-80 transition-opacity"
-          style={{ color: "rgba(255,255,255,0.9)" }}
+          className="font-semibold text-sm line-clamp-2 leading-snug group-hover:opacity-80 transition-opacity text-foreground"
         >
           {item.title}
         </h3>
@@ -119,7 +118,7 @@ export default function WorkshopsClient() {
   if (!workshops?.length) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+        <p className="text-sm text-muted-foreground">
           {uiStrings?.noWorkshops ?? "No workshops available yet."}
         </p>
       </div>

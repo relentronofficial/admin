@@ -138,7 +138,7 @@ export default function NotificationsPage() {
             className="text-xs font-bold px-4 py-1.5 capitalize transition-colors"
             style={{
               background: filter === f ? "var(--color-accent)" : "transparent",
-              color: filter === f ? "#fff" : "#a0a0a0",
+              color: filter === f ? "#fff" : "hsl(var(--muted-foreground))",
             }}
           >
             {f === "all" ? "All" : "Unread"}
@@ -167,7 +167,7 @@ export default function NotificationsPage() {
                       "group relative flex items-start gap-3 rounded-xl border p-4 transition-all cursor-pointer",
                       n.isRead
                         ? "border-border bg-card"
-                        : "border-transparent hover:border-[rgba(255,255,255,0.08)]"
+                        : "border-transparent hover:border-[var(--color-border-subtle)]"
                     )}
                     style={
                       !n.isRead

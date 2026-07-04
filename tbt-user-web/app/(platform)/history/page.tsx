@@ -86,22 +86,22 @@ function EpisodeRow({
         "group relative flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-200",
         isCompleted
           ? "border-border opacity-70 hover:opacity-90"
-          : "border-border hover:border-[rgba(255,255,255,0.15)] hover:bg-white/[0.03]"
+          : "border-border hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-overlay-xs)]"
       )}
-      style={isCompleted ? { borderLeftColor: "#22c55e", borderLeftWidth: 2 } : {}}
+      style={isCompleted ? { borderLeftColor: "var(--color-success, #22c55e)", borderLeftWidth: 2 } : {}}
     >
       {/* Thumbnail */}
       <Link href={href} className="relative w-20 flex-shrink-0 rounded-lg overflow-hidden block" style={{ height: "52px", width: "80px" }}>
         {item.thumbnailUrl ? (
           <Image src={item.thumbnailUrl} alt={item.episodeTitle} fill className="object-cover" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)" }}>
+          <div className="w-full h-full flex items-center justify-center" style={{ background: "var(--color-surface-overlay)" }}>
             <Clock size={16} className="text-muted-foreground" />
           </div>
         )}
         {isCompleted ? (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <CheckCircle2 size={18} style={{ color: "#22c55e" }} />
+            <CheckCircle2 size={18} style={{ color: "var(--color-success, #22c55e)" }} />
           </div>
         ) : (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -136,17 +136,17 @@ function EpisodeRow({
 
         {/* Progress bar */}
         <div className="flex items-center gap-2 mt-2">
-          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
             <div
               className="h-full rounded-full"
               style={{
                 width: `${isCompleted ? 100 : item.progressPercent}%`,
-                background: isCompleted ? "#22c55e" : "var(--color-accent)",
+                background: isCompleted ? "var(--color-success, #22c55e)" : "var(--color-accent)",
               }}
             />
           </div>
           {isCompleted ? (
-            <span className="text-[10px] font-bold whitespace-nowrap" style={{ color: "#22c55e" }}>
+            <span className="text-[10px] font-bold whitespace-nowrap" style={{ color: "var(--color-success, #22c55e)" }}>
               Completed
             </span>
           ) : (
@@ -170,8 +170,8 @@ function EpisodeRow({
           href={href}
           className="text-xs font-bold px-3 py-1 rounded-lg transition-colors whitespace-nowrap"
           style={{
-            background: isCompleted ? "rgba(255,255,255,0.07)" : "color-mix(in srgb, var(--color-accent) 15%, transparent)",
-            color: isCompleted ? "#a0a0a0" : "var(--color-accent)",
+            background: isCompleted ? "var(--color-surface-overlay-md)" : "color-mix(in srgb, var(--color-accent) 15%, transparent)",
+            color: isCompleted ? "var(--color-text-secondary)" : "var(--color-accent)",
           }}
         >
           {isCompleted ? "Rewatch" : "Continue"}
@@ -213,7 +213,7 @@ export default function HistoryPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link href="/tbt" className="p-2 rounded-lg transition-colors hover:bg-white/[0.05]">
+        <Link href="/tbt" className="p-2 rounded-lg transition-colors hover:bg-[var(--color-surface-overlay)]">
           <ArrowLeft size={18} className="text-muted-foreground" />
         </Link>
         <div>
@@ -233,7 +233,7 @@ export default function HistoryPage() {
             className="text-xs font-bold px-4 py-2 transition-colors"
             style={{
               background: filter === key ? "var(--color-accent)" : "transparent",
-              color: filter === key ? "#fff" : "#a0a0a0",
+              color: filter === key ? "#fff" : "var(--color-text-secondary)",
             }}
           >
             {label}
@@ -275,7 +275,7 @@ export default function HistoryPage() {
               <div className="flex items-center justify-between gap-3 pb-1 border-b border-border">
                 <div className="flex items-center gap-2 min-w-0">
                   {group.type === "course" && !group.thumbnailUrl && (
-                    <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: "rgba(255,255,255,0.07)" }}>
+                    <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: "var(--color-surface-overlay-md)" }}>
                       <BookOpen size={14} className="text-muted-foreground" />
                     </div>
                   )}
@@ -303,7 +303,7 @@ export default function HistoryPage() {
                       background: group.allCompleted
                         ? "rgba(34,197,94,0.15)"
                         : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                      color: group.allCompleted ? "#22c55e" : "var(--color-accent)",
+                      color: group.allCompleted ? "var(--color-success, #22c55e)" : "var(--color-accent)",
                     }}
                   >
                     {group.allCompleted ? "✓ Done" : `${group.progressPercent}%`}

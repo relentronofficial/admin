@@ -92,7 +92,7 @@ export default function BatchDayPage() {
       not_started: {
         label: uiStrings?.batchStatusNotStarted ?? "Not started",
         color: "#888",
-        bg: "rgba(255,255,255,0.06)",
+        bg: "var(--color-surface-overlay-md)",
       },
       in_progress: {
         label: uiStrings?.batchStatusInProgress ?? "In progress",
@@ -380,7 +380,7 @@ export default function BatchDayPage() {
       <div
         className="rounded-2xl border p-5 space-y-3"
         style={{
-          borderColor: "var(--color-border, rgba(255,255,255,0.08))",
+          borderColor: "var(--color-border-subtle)",
           background: "var(--color-bg-surface)",
         }}
       >
@@ -411,8 +411,8 @@ export default function BatchDayPage() {
         <div
           className="flex items-center justify-between gap-3 py-2.5 px-3 rounded-xl"
           style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "var(--color-surface-overlay-xs)",
+            border: "1px solid var(--color-border-subtle)",
           }}
         >
           <div className="flex items-center gap-2">
@@ -426,7 +426,7 @@ export default function BatchDayPage() {
                       ? "#60a5fa"
                       : attStatus === "not_marked"
                         ? "#ef4444"
-                        : "rgba(255,255,255,0.15)",
+                        : "var(--color-border-strong)",
               }}
             />
             <span className="text-sm">
@@ -463,8 +463,8 @@ export default function BatchDayPage() {
           <div
             className="flex items-center gap-2.5 p-3 rounded-xl"
             style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
+              background: "var(--color-surface-overlay)",
+              border: "1px solid var(--color-border-subtle)",
             }}
           >
             <Clock size={14} className="opacity-40" />
@@ -534,7 +534,7 @@ export default function BatchDayPage() {
         {dayContent?.notes && (
           <div
             className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap pt-1 border-t"
-            style={{ borderColor: "rgba(255,255,255,0.06)" }}
+            style={{ borderColor: "var(--color-border-subtle)" }}
           >
             {dayContent.notes}
           </div>
@@ -546,7 +546,7 @@ export default function BatchDayPage() {
         <div
           className="rounded-2xl border p-5 space-y-3"
           style={{
-            borderColor: "var(--color-border, rgba(255,255,255,0.08))",
+            borderColor: "var(--color-border-subtle)",
             background: "var(--color-bg-surface)",
           }}
         >
@@ -592,7 +592,7 @@ export default function BatchDayPage() {
                     style={{
                       borderColor: done
                         ? "rgba(34,197,94,0.3)"
-                        : "var(--color-border, rgba(255,255,255,0.08))",
+                        : "var(--color-border-subtle)",
                       background: done ? "rgba(34,197,94,0.06)" : "transparent",
                       cursor: canEdit ? "pointer" : "default",
                     }}
@@ -685,7 +685,7 @@ export default function BatchDayPage() {
                   {task.deliverables && (
                     <div
                       className="px-3 py-2 rounded-lg text-[12px] leading-relaxed"
-                      style={{ background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.5)" }}
+                      style={{ background: "var(--color-surface-overlay-xs)", color: "var(--color-text-subtle)" }}
                     >
                       <span className="font-bold uppercase tracking-widest text-[10px] opacity-60 block mb-0.5">
                         {uiStrings?.batchDeliverablesLabel ?? "What to submit"}
@@ -707,8 +707,8 @@ export default function BatchDayPage() {
                       placeholder={uiStrings?.batchTextProofPlaceholder ?? "Describe your proof or paste your response here…"}
                       className="w-full rounded-xl px-4 py-2.5 text-sm resize-none outline-none transition-colors"
                       style={{
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
+                        background: "var(--color-surface-overlay)",
+                        border: "1px solid var(--color-border-medium)",
                         color: "inherit",
                       }}
                     />
@@ -729,8 +729,8 @@ export default function BatchDayPage() {
                         : (uiStrings?.batchLinkUrlPlaceholder  ?? "Paste your link URL…")}
                       className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-colors"
                       style={{
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
+                        background: "var(--color-surface-overlay)",
+                        border: "1px solid var(--color-border-medium)",
                         color: "inherit",
                       }}
                     />
@@ -738,7 +738,7 @@ export default function BatchDayPage() {
 
                   {/* Submitted proof display (read-only when locked or pending) */}
                   {!canEdit && proof && (
-                    <div className="px-3 py-2 rounded-lg text-[12px]" style={{ background: "rgba(255,255,255,0.03)" }}>
+                    <div className="px-3 py-2 rounded-lg text-[12px]" style={{ background: "var(--color-surface-overlay-xs)" }}>
                       <span className="font-bold uppercase tracking-widest text-[10px] opacity-40 block mb-0.5">
                         {uiStrings?.batchSubmittedProofLabel ?? "Submitted proof"}
                       </span>
@@ -764,7 +764,7 @@ export default function BatchDayPage() {
       <div
         className="rounded-2xl border p-5 space-y-3"
         style={{
-          borderColor: "var(--color-border, rgba(255,255,255,0.08))",
+          borderColor: "var(--color-border-subtle)",
           background: "var(--color-bg-surface)",
         }}
       >
@@ -787,8 +787,8 @@ export default function BatchDayPage() {
           }
           className="w-full rounded-xl px-4 py-3 text-sm resize-none outline-none transition-colors"
           style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid var(--color-border, rgba(255,255,255,0.08))",
+            background: "var(--color-surface-overlay)",
+            border: "1px solid var(--color-border-subtle)",
             color: "inherit",
             opacity: !canEdit ? 0.7 : 1,
           }}
@@ -803,8 +803,8 @@ export default function BatchDayPage() {
             disabled={saveDraft.isPending || !dirty}
             className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold border transition-all disabled:opacity-40"
             style={{
-              borderColor: "var(--color-border, rgba(255,255,255,0.12))",
-              background: "rgba(255,255,255,0.05)",
+              borderColor: "var(--color-border-medium)",
+              background: "var(--color-surface-overlay)",
             }}
           >
             {saveDraft.isPending ? (

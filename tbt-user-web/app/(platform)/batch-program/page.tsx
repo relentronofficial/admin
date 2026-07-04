@@ -100,8 +100,8 @@ function BreakRequestModal({
       : null;
 
   const inputStyle = {
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid var(--color-border, rgba(255,255,255,0.1))",
+    background: "var(--color-surface-overlay-md)",
+    border: "1px solid var(--color-border-medium)",
     color: "inherit",
   };
 
@@ -129,7 +129,7 @@ function BreakRequestModal({
         className="rounded-2xl border p-6 w-full max-w-sm space-y-4"
         style={{
           background: "var(--color-bg-surface)",
-          borderColor: "var(--color-border, rgba(255,255,255,0.1))",
+          borderColor: "var(--color-border-medium)",
         }}
       >
         <div className="flex items-center justify-between">
@@ -408,7 +408,7 @@ export default function BatchProgramPage() {
         <div
           className="rounded-2xl border px-8 py-16 flex flex-col items-center text-center gap-5"
           style={{
-            borderColor: "var(--color-border, rgba(255,255,255,0.08))",
+            borderColor: "var(--color-border-subtle)",
             background: "var(--color-bg-surface)",
           }}
         >
@@ -471,8 +471,8 @@ export default function BatchProgramPage() {
           onClick={() => setShowBreakModal(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all hover:opacity-80"
           style={{
-            borderColor: "var(--color-border, rgba(255,255,255,0.1))",
-            background: "rgba(255,255,255,0.04)",
+            borderColor: "var(--color-border-medium)",
+            background: "var(--color-surface-overlay)",
           }}
         >
           <Coffee size={15} className="opacity-60" />
@@ -568,7 +568,7 @@ export default function BatchProgramPage() {
               <span
                 className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
                 style={{
-                  background: statusConfig[todayStatus]?.bg || "rgba(255,255,255,0.08)",
+                  background: statusConfig[todayStatus]?.bg || "var(--color-surface-overlay-lg)",
                   color: statusConfig[todayStatus]?.color || "inherit",
                 }}
               >
@@ -589,7 +589,7 @@ export default function BatchProgramPage() {
       <div
         className="rounded-2xl border p-5 space-y-4"
         style={{
-          borderColor: "var(--color-border, rgba(255,255,255,0.08))",
+          borderColor: "var(--color-border-subtle)",
           background: "var(--color-bg-surface)",
         }}
       >
@@ -620,7 +620,7 @@ export default function BatchProgramPage() {
           </div>
           <div
             className="h-2 rounded-full overflow-hidden"
-            style={{ background: "rgba(255,255,255,0.06)" }}
+            style={{ background: "var(--color-surface-overlay-md)" }}
           >
             <div
               className="h-full rounded-full transition-all duration-500"
@@ -644,7 +644,7 @@ export default function BatchProgramPage() {
             </div>
             <div
               className="h-2 rounded-full overflow-hidden"
-              style={{ background: "rgba(255,255,255,0.06)" }}
+              style={{ background: "var(--color-surface-overlay-md)" }}
             >
               <div
                 className="h-full rounded-full transition-all duration-500"
@@ -659,8 +659,8 @@ export default function BatchProgramPage() {
           <div
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
             style={{
-              background: submitStreak >= 7 ? "rgba(234,179,8,0.08)" : "rgba(255,255,255,0.03)",
-              border: `1px solid ${submitStreak >= 7 ? "rgba(234,179,8,0.3)" : "rgba(255,255,255,0.06)"}`,
+              background: submitStreak >= 7 ? "rgba(234,179,8,0.08)" : "var(--color-surface-overlay-xs)",
+              border: `1px solid ${submitStreak >= 7 ? "rgba(234,179,8,0.3)" : "var(--color-border-subtle)"}`,
             }}
           >
             <Flame
@@ -723,7 +723,7 @@ export default function BatchProgramPage() {
         <div
           className="rounded-2xl border p-4 space-y-2"
           style={{
-            borderColor: "var(--color-border, rgba(255,255,255,0.08))",
+            borderColor: "var(--color-border-subtle)",
             background: "var(--color-bg-surface)",
           }}
         >
@@ -735,8 +735,8 @@ export default function BatchProgramPage() {
               key={b.id}
               className="flex items-center justify-between gap-3 text-sm p-2.5 rounded-xl"
               style={{
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.06)",
+                background: "var(--color-surface-overlay-xs)",
+                border: "1px solid var(--color-border-subtle)",
               }}
             >
               <span className="text-muted-foreground">
@@ -774,7 +774,7 @@ export default function BatchProgramPage() {
       <div
         className="rounded-2xl border p-5 space-y-4"
         style={{
-          borderColor: "var(--color-border, rgba(255,255,255,0.08))",
+          borderColor: "var(--color-border-subtle)",
           background: "var(--color-bg-surface)",
         }}
       >
@@ -823,7 +823,7 @@ export default function BatchProgramPage() {
                 <div
                   key={i}
                   className="aspect-square rounded-lg flex flex-col items-center justify-center"
-                  style={{ background: "rgba(255,255,255,0.02)" }}
+                  style={{ background: "var(--color-surface-overlay-xs)" }}
                 >
                   <span className="text-[11px] text-muted-foreground opacity-30">
                     {format(date, "d")}
@@ -859,7 +859,7 @@ export default function BatchProgramPage() {
                 style={{
                   background: isToday
                     ? "color-mix(in srgb, var(--color-accent) 15%, transparent)"
-                    : "rgba(255,255,255,0.03)",
+                    : "var(--color-surface-overlay-xs)",
                   outline: isToday ? "2px solid var(--color-accent)" : undefined,
                   outlineOffset: isToday ? "1px" : undefined,
                 }}
@@ -892,7 +892,7 @@ export default function BatchProgramPage() {
         {/* Legend */}
         <div
           className="flex flex-wrap gap-3 pt-2 border-t"
-          style={{ borderColor: "rgba(255,255,255,0.06)" }}
+          style={{ borderColor: "var(--color-border-subtle)" }}
         >
           <p className="text-[11px] text-muted-foreground w-full opacity-60">
             Larger dot = Attendance · Smaller dot = Task
@@ -953,7 +953,7 @@ export default function BatchProgramPage() {
                     ? "var(--color-accent)"
                     : status === "approved"
                       ? "rgba(34,197,94,0.25)"
-                      : "var(--color-border, rgba(255,255,255,0.08))",
+                      : "var(--color-border-subtle)",
                   background: isToday
                     ? "color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-surface, transparent))"
                     : "var(--color-bg-surface)",
@@ -966,7 +966,7 @@ export default function BatchProgramPage() {
                   style={{
                     background: isToday
                       ? "var(--color-accent)"
-                      : cfg.bg || "rgba(255,255,255,0.06)",
+                      : cfg.bg || "var(--color-surface-overlay-md)",
                     color: isToday ? "#fff" : cfg.color,
                   }}
                 >
@@ -1013,7 +1013,7 @@ export default function BatchProgramPage() {
                                   ? "#60a5fa"
                                   : attStatus === "absent"
                                     ? "#ef4444"
-                                    : "rgba(255,255,255,0.15)",
+                                    : "var(--color-border-strong)",
                           }}
                         />
                         <span className="text-[11px] text-muted-foreground">

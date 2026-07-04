@@ -15,7 +15,7 @@ function EnrolledCourseCard({ enrollment }: { enrollment: any }) {
     <Link
       href={`/learning/${course.id}`}
       className="group rounded-xl overflow-hidden flex flex-col"
-      style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+      style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
     >
       <div className="relative aspect-video overflow-hidden">
         {course.thumbnailUrl ? (
@@ -25,7 +25,7 @@ function EnrolledCourseCard({ enrollment }: { enrollment: any }) {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.04)" }}>
+          <div className="w-full h-full flex items-center justify-center" style={{ background: "var(--color-surface-overlay)" }}>
             <Play size={32} style={{ color: "var(--color-accent)" }} />
           </div>
         )}
@@ -39,16 +39,16 @@ function EnrolledCourseCard({ enrollment }: { enrollment: any }) {
         )}
       </div>
       <div className="p-4 flex flex-col gap-2 flex-1">
-        <p className="font-semibold text-sm text-white line-clamp-2 leading-snug">{course.title}</p>
+        <p className="font-semibold text-sm text-foreground line-clamp-2 leading-snug">{course.title}</p>
         {course.level && (
-          <p className="text-xs capitalize" style={{ color: "rgba(255,255,255,0.38)" }}>{course.level}</p>
+          <p className="text-xs capitalize text-muted-foreground">{course.level}</p>
         )}
         <div className="mt-auto pt-1 space-y-1.5">
-          <div className="flex items-center justify-between text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{progress}% complete</span>
             {isCompleted && <CheckCircle2 size={12} style={{ color: "var(--color-success)" }} />}
           </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
@@ -70,8 +70,8 @@ export default function LearningPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">My Learning</h2>
-          <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">My Learning</h2>
+          <p className="text-sm mt-1 text-muted-foreground">
             All your enrolled courses in one place.
           </p>
         </div>

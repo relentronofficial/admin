@@ -25,7 +25,7 @@ export default function DashboardPage() {
             ? uiStrings.dashboardWelcome.replace("{name}", me?.firstName || "Member")
             : `Welcome back, ${me?.firstName || "Member"} 👋`}
         </h2>
-        <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+        <p className="text-sm mt-1 text-muted-foreground">
           {uiStrings?.dashboardSubtitle ?? "Here's what's happening with your learning journey."}
         </p>
       </div>
@@ -68,7 +68,7 @@ export default function DashboardPage() {
                   className="group relative flex flex-col rounded-xl overflow-hidden transition-all hover:scale-[1.01]"
                   style={{
                     background: "var(--color-bg-surface)",
-                    border: "1px solid rgba(255,255,255,0.07)",
+                    border: "1px solid var(--color-border-subtle)",
                   }}
                 >
                   {/* Thumbnail */}
@@ -82,7 +82,7 @@ export default function DashboardPage() {
                         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center" style={{ color: "rgba(255,255,255,0.15)" }}>
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground opacity-20">
                         <BookOpen size={32} />
                       </div>
                     )}
@@ -143,14 +143,14 @@ export default function DashboardPage() {
 
                   {/* Info */}
                   <div className="p-3 flex-1 flex flex-col gap-0.5">
-                    <p className="font-semibold text-sm line-clamp-1 text-white">{item.title}</p>
-                    <p className="text-xs line-clamp-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+                    <p className="font-semibold text-sm line-clamp-1 text-foreground">{item.title}</p>
+                    <p className="text-xs line-clamp-1 text-muted-foreground">
                       {item.isCompleted
                         ? `Completed: ${item.lastLessonTitle}`
                         : `Resume: ${item.lastLessonTitle}`}
                     </p>
                     {!item.isCompleted && item.progressPercent > 0 && (
-                      <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--color-text-tertiary)" }}>
                         {item.progressPercent}% watched
                       </p>
                     )}
@@ -176,8 +176,8 @@ export default function DashboardPage() {
               </Link>
               <Link
                 href="/courses"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
-                style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.75)" }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-muted-foreground transition-opacity hover:opacity-80"
+                style={{ border: "1px solid var(--color-border-medium)" }}
               >
                 Browse Courses <ArrowRight size={15} />
               </Link>

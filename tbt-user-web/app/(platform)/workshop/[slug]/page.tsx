@@ -1024,7 +1024,7 @@ function CertificateModal({
         <button
           onClick={onClose}
           className="absolute top-3 right-3 z-10 p-1.5 rounded-full text-muted-foreground hover:text-foreground transition-colors print:hidden"
-          style={{ background: "rgba(255,255,255,0.06)" }}
+          style={{ background: "var(--color-surface-overlay-md)" }}
         >
           <X size={16} />
         </button>
@@ -1549,14 +1549,14 @@ function ChallengeList({
                 {typeMeta.label}
               </span>
               {ch.isLocked && (
-                <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                <span className="text-[9px]" style={{ color: "var(--color-text-disabled)" }}>
                   Complete previous to unlock
                 </span>
               )}
               {isInProgress && !isSelected && (
                 <span
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                  style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.55)" }}
+                  style={{ background: "var(--color-surface-overlay-lg)", color: "var(--color-text-normal)" }}
                 >
                   Resume
                 </span>

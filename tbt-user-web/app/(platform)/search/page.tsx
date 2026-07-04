@@ -20,7 +20,7 @@ function WorkshopSearchCard({ item }: { item: WorkshopListItem }) {
     return (
       <div
         className="group block rounded-xl overflow-hidden border cursor-default opacity-60"
-        style={{ background: "var(--color-bg-surface)", borderColor: "rgba(255,255,255,0.08)" }}
+        style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}
       >
         <div className="aspect-video relative overflow-hidden" style={{ background: "var(--color-bg-primary)" }}>
           {item.thumbnailUrl && (
@@ -31,7 +31,7 @@ function WorkshopSearchCard({ item }: { item: WorkshopListItem }) {
           </div>
         </div>
         <div className="p-3">
-          <p className="text-sm font-semibold line-clamp-2" style={{ color: "rgba(255,255,255,0.9)" }}>{item.title}</p>
+          <p className="text-sm font-semibold line-clamp-2 text-foreground">{item.title}</p>
           <p className="text-xs mt-0.5" style={{ color: "var(--color-locked, #4a4a4a)" }}>Not available for your batch</p>
         </div>
       </div>
@@ -41,7 +41,7 @@ function WorkshopSearchCard({ item }: { item: WorkshopListItem }) {
     <Link
       href={`/workshop/${item.slug}`}
       className="group block rounded-xl overflow-hidden border transition-colors"
-      style={{ background: "var(--color-bg-surface)", borderColor: "rgba(255,255,255,0.08)" }}
+      style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}
     >
       <div className="aspect-video relative overflow-hidden" style={{ background: "var(--color-bg-primary)" }}>
         {item.thumbnailUrl && (
@@ -49,7 +49,7 @@ function WorkshopSearchCard({ item }: { item: WorkshopListItem }) {
         )}
       </div>
       <div className="p-3">
-        <p className="text-sm font-semibold line-clamp-2 group-hover:opacity-80 transition-opacity" style={{ color: "rgba(255,255,255,0.9)" }}>{item.title}</p>
+        <p className="text-sm font-semibold line-clamp-2 group-hover:opacity-80 transition-opacity text-foreground">{item.title}</p>
       </div>
     </Link>
   );
@@ -97,7 +97,7 @@ export default function SearchPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search workshops, courses, events..."
-          className="w-full pl-11 pr-4 h-12 bg-background border border-border rounded-xl text-base outline-none focus:border-brand-600 transition-colors"
+          className="w-full pl-11 pr-4 h-12 bg-background border border-border rounded-xl text-base outline-none focus:ring-1 focus:ring-brand-600 focus:border-brand-600 transition-colors"
         />
       </div>
 
@@ -109,7 +109,7 @@ export default function SearchPage() {
             onClick={() => setTab(t.id)}
             className={cn(
               "px-4 py-2.5 text-sm font-medium capitalize transition-colors border-b-2 -mb-px",
-              tab === t.id ? "border-brand-600 text-brand-600" : "border-transparent text-muted-foreground hover:text-foreground"
+              tab === t.id ? "border-brand-600 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
             {t.label}

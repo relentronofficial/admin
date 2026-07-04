@@ -110,11 +110,11 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
       <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
         <div
           className="w-full max-w-md rounded-2xl p-8 text-center space-y-4 shadow-2xl"
-          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+          style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
         >
-          <Brain size={40} className="mx-auto" style={{ color: "rgba(255,255,255,0.2)" }} />
-          <p className="text-white font-semibold">No quiz questions yet</p>
-          <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+          <Brain size={40} className="mx-auto" style={{ color: "var(--color-text-disabled)" }} />
+          <p className="text-foreground font-semibold">No quiz questions yet</p>
+          <p className="text-sm" style={{ color: "var(--color-text-subtle)" }}>
             Complete lessons that have quizzes to unlock the Practice Arena. The more lessons you finish, the richer the practice session.
           </p>
           <button
@@ -152,19 +152,19 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
       <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
         <div
           className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
-          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+          style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
         >
-          <div className="px-6 py-5 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div className="px-6 py-5 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
             <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Practice Complete</p>
           </div>
           <div className="p-6 text-center space-y-4">
             <div className="text-5xl font-bold" style={{ color: pct >= (course?.passingScorePercent ?? 70) ? "var(--color-success)" : "var(--color-accent)" }}>
               {pct}%
             </div>
-            <p className="font-semibold text-white">{score} / {questions.length} correct</p>
+            <p className="font-semibold text-foreground">{score} / {questions.length} correct</p>
             <div
               className="flex items-start gap-2 px-3 py-3 rounded-lg text-xs text-left"
-              style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)" }}
+              style={{ background: "var(--color-surface-overlay)", color: "var(--color-text-subtle)" }}
             >
               <Brain size={13} className="shrink-0 mt-0.5" />
               <span>Each retrieval attempt strengthens the memory trace — even getting an answer wrong helps. Come back tomorrow for another round. <em>(Roediger & Karpicke, 2006)</em></span>
@@ -173,7 +173,7 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
               <button
                 onClick={() => { setIdx(0); setScore(0); setSelected(null); setRevealed(false); setDone(false); }}
                 className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-opacity hover:opacity-80"
-                style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}
+                style={{ borderColor: "var(--color-border-strong)", color: "var(--color-text-normal)" }}
               >
                 Practice Again
               </button>
@@ -195,30 +195,30 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
       <div
         className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
-        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+        style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
       >
-        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: "var(--color-border-subtle)" }}>
           <div>
             <div className="flex items-center gap-2">
               <Brain size={13} style={{ color: "var(--color-accent)" }} />
               <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>
                 Practice Arena
               </p>
-              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)" }}>
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "var(--color-surface-overlay-md)", color: "var(--color-text-subtle)" }}>
                 Retrieval Practice
               </span>
             </div>
-            <p className="text-[11px] mt-0.5 truncate max-w-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <p className="text-[11px] mt-0.5 truncate max-w-xs" style={{ color: "var(--color-text-subtle)" }}>
               {current.lessonTitle}
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            <span className="text-xs font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>{idx + 1}/{questions.length}</span>
-            <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={18} /></button>
+            <span className="text-xs font-bold" style={{ color: "var(--color-text-subtle)" }}>{idx + 1}/{questions.length}</span>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X size={18} /></button>
           </div>
         </div>
 
-        <div className="h-1" style={{ background: "rgba(255,255,255,0.06)" }}>
+        <div className="h-1" style={{ background: "var(--color-surface-overlay-md)" }}>
           <div
             className="h-full transition-all duration-300"
             style={{ width: `${((idx) / questions.length) * 100}%`, background: "var(--color-accent)" }}
@@ -226,15 +226,15 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
         </div>
 
         <div className="p-6 space-y-4">
-          <p className="text-sm font-semibold text-white leading-snug">{current.q.question}</p>
+          <p className="text-sm font-semibold text-foreground leading-snug">{current.q.question}</p>
           <div className="space-y-2">
             {current.q.options?.map((opt: any) => {
               let bg = "transparent";
-              let borderColor = "rgba(255,255,255,0.1)";
-              let color = "rgba(255,255,255,0.7)";
+              let borderColor = "var(--color-border-medium)";
+              let color = "var(--color-text-normal)";
               if (revealed) {
                 if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 18%, transparent)"; borderColor = "var(--color-success)"; color = "#fff"; }
-                else if (opt.id === selected) { bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; borderColor = "var(--color-accent)"; color = "rgba(255,255,255,0.6)"; }
+                else if (opt.id === selected) { bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; borderColor = "var(--color-accent)"; color = "var(--color-text-normal)"; }
               } else if (selected === opt.id) {
                 borderColor = "var(--color-accent)"; bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; color = "#fff";
               }
@@ -307,15 +307,15 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div
         className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
-        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+        style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
       >
-        <div className="px-6 py-5 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+        <div className="px-6 py-5 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
           <div className="flex items-center gap-2 mb-1">
             <PenLine size={13} style={{ color: "var(--color-accent)" }} />
             <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>{title}</p>
           </div>
-          <p className="text-sm font-semibold text-white leading-snug">
-            {prefix} <span className="italic" style={{ color: "rgba(255,255,255,0.65)" }}>"{lessonTitle}"</span> {suffix}
+          <p className="text-sm font-semibold text-foreground leading-snug">
+            {prefix} <span className="italic" style={{ color: "var(--color-text-normal)" }}>"{lessonTitle}"</span> {suffix}
           </p>
         </div>
         <div className="p-5 space-y-4">
@@ -325,15 +325,15 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
             placeholder={placeholder}
             autoFocus
             rows={4}
-            className="w-full rounded-xl p-3.5 text-sm text-white resize-none outline-none placeholder:opacity-40"
+            className="w-full rounded-xl p-3.5 text-sm text-foreground resize-none outline-none placeholder:opacity-40"
             style={{
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.12)",
+              background: "var(--color-surface-overlay)",
+              border: "1px solid var(--color-border-medium)",
             }}
           />
           <div
             className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs"
-            style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.38)" }}
+            style={{ background: "var(--color-surface-overlay)", color: "var(--color-text-subtle)" }}
           >
             <Brain size={13} className="shrink-0 mt-0.5" />
             <span>
@@ -345,7 +345,7 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
             <button
               onClick={() => onClose(false)}
               className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-opacity hover:opacity-80"
-              style={{ borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.5)" }}
+              style={{ borderColor: "var(--color-border-medium)", color: "var(--color-text-subtle)" }}
             >
               {skipLabel}
             </button>
@@ -380,10 +380,10 @@ function CueQuizModal({ questions, onClose }: { questions: any[]; onClose: () =>
     <div className="fixed inset-0 z-50 bg-black/88 backdrop-blur-sm flex items-center justify-center p-4">
       <div
         className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
-        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+        style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+        <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: "var(--color-border-subtle)" }}>
           <div
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
             style={{ background: "color-mix(in srgb, var(--color-alert) 15%, transparent)", color: "var(--color-alert)" }}
@@ -393,7 +393,7 @@ function CueQuizModal({ questions, onClose }: { questions: any[]; onClose: () =>
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Quick Check</p>
-            <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Answer to continue watching</p>
+            <p className="text-[10px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>Answer to continue watching</p>
           </div>
         </div>
 
@@ -401,12 +401,12 @@ function CueQuizModal({ questions, onClose }: { questions: any[]; onClose: () =>
         <div className="p-5 space-y-5 max-h-[55vh] overflow-y-auto">
           {questions.map((q: any, qi: number) => (
             <div key={q.id}>
-              <p className="text-sm font-semibold text-white leading-snug mb-3">{qi + 1}. {q.question}</p>
+              <p className="text-sm font-semibold text-foreground leading-snug mb-3">{qi + 1}. {q.question}</p>
               <div className="space-y-2">
                 {q.options?.map((opt: any) => {
                   let bg = "transparent";
-                  let borderColor = "rgba(255,255,255,0.1)";
-                  let color = "rgba(255,255,255,0.65)";
+                  let borderColor = "var(--color-border-medium)";
+                  let color = "var(--color-text-normal)";
                   if (revealed) {
                     if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 15%, transparent)"; borderColor = "var(--color-success)"; color = "#fff"; }
                     else if (opt.id === answers[q.id]) { bg = "color-mix(in srgb, var(--color-accent) 12%, transparent)"; borderColor = "var(--color-accent)"; }
@@ -446,7 +446,7 @@ function CueQuizModal({ questions, onClose }: { questions: any[]; onClose: () =>
                 <p className="text-2xl font-bold" style={{ color: correctCount === questions.length ? "var(--color-success)" : "var(--color-accent)" }}>
                   {correctCount}/{questions.length}
                 </p>
-                <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>correct</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>correct</p>
               </div>
               <button
                 onClick={onClose}
@@ -468,23 +468,23 @@ function InstructorCard({ instructor }: { instructor: { fullName: string; design
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 rounded-xl"
-      style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+      style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
     >
       {instructor.profilePhotoUrl ? (
         <img src={instructor.profilePhotoUrl} alt={instructor.fullName} className="w-10 h-10 rounded-full object-cover shrink-0" />
       ) : (
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
-          style={{ background: "color-mix(in srgb, var(--color-accent) 25%, rgba(255,255,255,0.1))" }}
+          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-foreground"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 25%, var(--color-surface-overlay-md))" }}
         >
           {instructor.fullName[0]}
         </div>
       )}
       <div className="min-w-0">
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>Instructor</p>
-        <p className="text-sm font-semibold text-white truncate">{instructor.fullName}</p>
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Instructor</p>
+        <p className="text-sm font-semibold text-foreground truncate">{instructor.fullName}</p>
         {instructor.designation && (
-          <p className="text-xs truncate" style={{ color: "rgba(255,255,255,0.45)" }}>{instructor.designation}</p>
+          <p className="text-xs truncate" style={{ color: "var(--color-text-subtle)" }}>{instructor.designation}</p>
         )}
       </div>
     </div>
@@ -504,7 +504,7 @@ function ExpiryWarning({ expiresAt }: { expiresAt: string }) {
       }}
     >
       <AlertTriangle size={16} style={{ color: "var(--color-alert)", flexShrink: 0 }} />
-      <p className="text-white">
+      <p className="text-foreground">
         Your access expires in{" "}
         <strong>{daysLeft <= 0 ? "less than a day" : `${daysLeft} day${daysLeft === 1 ? "" : "s"}`}</strong>. Complete it before it expires!
       </p>
@@ -519,11 +519,11 @@ function XpStreakWidget({ courseId }: { courseId: string }) {
   return (
     <div
       className="rounded-xl overflow-hidden"
-      style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+      style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
     >
-      <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+      <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: "var(--color-border-subtle)" }}>
         <Zap size={13} style={{ color: "var(--color-accent)" }} />
-        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.45)" }}>Your Stats</span>
+        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Your Stats</span>
       </div>
       <div className="p-3 grid grid-cols-3 gap-3">
         {[
@@ -534,18 +534,18 @@ function XpStreakWidget({ courseId }: { courseId: string }) {
           <div
             key={label}
             className="rounded-xl p-3 text-center"
-            style={{ background: "rgba(255,255,255,0.04)" }}
+            style={{ background: "var(--color-surface-overlay)" }}
           >
-            <div className="flex justify-center mb-1" style={{ color: accent ? "var(--color-accent)" : "rgba(255,255,255,0.4)" }}>
+            <div className="flex justify-center mb-1" style={{ color: accent ? "var(--color-accent)" : "var(--color-text-subtle)" }}>
               {icon}
             </div>
-            <p className="text-base font-bold text-white">{value}</p>
-            <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{label}</p>
+            <p className="text-base font-bold text-foreground">{value}</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>{label}</p>
           </div>
         ))}
       </div>
       {!hasActivity && !isLoading && (
-        <p className="text-xs text-center pb-3 px-4" style={{ color: "rgba(255,255,255,0.3)" }}>
+        <p className="text-xs text-center pb-3 px-4" style={{ color: "var(--color-text-disabled)" }}>
           Complete lessons to start earning XP and building your streak!
         </p>
       )}
@@ -561,11 +561,11 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
   return (
     <div
       className="rounded-xl overflow-hidden"
-      style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+      style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
     >
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-foreground hover:opacity-80 transition-opacity"
       >
         <div className="flex items-center gap-2">
           <Trophy size={15} style={{ color: "var(--color-accent)" }} />
@@ -583,15 +583,15 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
           )}
         </div>
         {open
-          ? <ChevronUp size={14} style={{ color: "rgba(255,255,255,0.4)" }} />
-          : <ChevronDown size={14} style={{ color: "rgba(255,255,255,0.4)" }} />}
+          ? <ChevronUp size={14} style={{ color: "var(--color-text-subtle)" }} />
+          : <ChevronDown size={14} style={{ color: "var(--color-text-subtle)" }} />}
       </button>
       {open && (
-        <div className="border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+        <div className="border-t" style={{ borderColor: "var(--color-border-subtle)" }}>
           {top5.length === 0 ? (
             <div className="py-6 text-center space-y-1">
-              <Trophy size={22} className="mx-auto" style={{ color: "rgba(255,255,255,0.12)" }} />
-              <p className="text-xs mt-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+              <Trophy size={22} className="mx-auto text-muted-foreground opacity-20" />
+              <p className="text-xs mt-2" style={{ color: "var(--color-text-subtle)" }}>
                 No one has earned XP yet — be the first!
               </p>
             </div>
@@ -606,17 +606,17 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
                   key={entry.memberId ?? i}
                   className="flex items-center gap-3 px-4 py-2.5 text-sm border-b last:border-b-0"
                   style={{
-                    borderColor: "rgba(255,255,255,0.05)",
+                    borderColor: "var(--color-border-subtle)",
                     background: isMe ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "transparent",
                   }}
                 >
                   <span
                     className="w-5 text-xs font-bold text-center shrink-0"
-                    style={{ color: i < 3 ? "var(--color-accent)" : "rgba(255,255,255,0.35)" }}
+                    style={{ color: i < 3 ? "var(--color-accent)" : "var(--color-text-subtle)" }}
                   >
                     {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
                   </span>
-                  <span className="flex-1 truncate" style={{ color: isMe ? "#fff" : "rgba(255,255,255,0.7)" }}>
+                  <span className="flex-1 truncate" style={{ color: isMe ? "#fff" : "var(--color-text-normal)" }}>
                     {name}
                     {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}>(you)</span>}
                   </span>
@@ -638,14 +638,14 @@ function RelatedCourses({ courses, title }: { courses: any[]; title: string }) {
   if (!courses?.length) return null;
   return (
     <div>
-      <p className="text-sm font-semibold text-white mb-3">{title}</p>
+      <p className="text-sm font-semibold text-foreground mb-3">{title}</p>
       <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
         {courses.map((c: any) => (
           <a
             key={c.id}
             href={`/learning/${c.id}`}
             className="shrink-0 w-48 rounded-xl overflow-hidden group"
-            style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+            style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
           >
             <div className="aspect-video relative overflow-hidden">
               {c.thumbnailUrl ? (
@@ -655,13 +655,13 @@ function RelatedCourses({ courses, title }: { courses: any[]; title: string }) {
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.04)" }}>
+                <div className="w-full h-full flex items-center justify-center" style={{ background: "var(--color-surface-overlay)" }}>
                   <Play size={20} style={{ color: "var(--color-accent)" }} />
                 </div>
               )}
             </div>
             <div className="p-2.5">
-              <p className="text-xs font-medium text-white line-clamp-2 leading-snug">{c.title}</p>
+              <p className="text-xs font-medium text-foreground line-clamp-2 leading-snug">{c.title}</p>
               {c.price != null && Number(c.price) > 0 && (
                 <p className="text-xs mt-1 font-semibold" style={{ color: "var(--color-accent)" }}>
                   ₹{Number(c.price).toLocaleString("en-IN")}
@@ -707,13 +707,13 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
           <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <Lock size={48} style={{ color: "rgba(255,255,255,0.2)" }} />
+            <Lock size={48} style={{ color: "var(--color-text-disabled)" }} />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-6">
-          <h1 className="text-2xl font-bold text-white leading-tight">{course.title}</h1>
+          <h1 className="text-2xl font-bold text-foreground leading-tight">{course.title}</h1>
           {course.description && (
-            <p className="text-sm mt-1 line-clamp-2" style={{ color: "rgba(255,255,255,0.65)" }}>
+            <p className="text-sm mt-1 line-clamp-2" style={{ color: "var(--color-text-normal)" }}>
               {course.description}
             </p>
           )}
@@ -721,13 +721,13 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
             {course.level && (
               <span
                 className="text-xs capitalize px-2.5 py-1 rounded-full font-medium"
-                style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.7)" }}
+                style={{ background: "var(--color-surface-overlay-lg)", color: "var(--color-text-normal)" }}
               >
                 {course.level}
               </span>
             )}
             {lessons.length > 0 && (
-              <span className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
+              <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
                 {lessons.length} lesson{lessons.length !== 1 ? "s" : ""}
               </span>
             )}
@@ -741,29 +741,29 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
       {/* Purchase CTA */}
       <div
         className="rounded-xl p-5 space-y-4"
-        style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.09)" }}
+        style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
               Get Access
             </p>
             {course.price != null && Number(course.price) > 0 ? (
-              <p className="text-3xl font-bold text-white mt-1">
+              <p className="text-3xl font-bold text-foreground mt-1">
                 ₹{Number(course.price).toLocaleString("en-IN")}
               </p>
             ) : (
-              <p className="text-lg font-semibold text-white mt-1">Contact us for pricing</p>
+              <p className="text-lg font-semibold text-foreground mt-1">Contact us for pricing</p>
             )}
             {course.accessType === "lifetime" ? (
-              <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.40)" }}>Lifetime access</p>
+              <p className="text-xs mt-1" style={{ color: "var(--color-text-subtle)" }}>Lifetime access</p>
             ) : course.accessDurationDays ? (
-              <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.40)" }}>
+              <p className="text-xs mt-1" style={{ color: "var(--color-text-subtle)" }}>
                 {course.accessDurationDays}-day access
               </p>
             ) : null}
           </div>
-          <Lock size={32} style={{ color: "rgba(255,255,255,0.15)", flexShrink: 0 }} />
+          <Lock size={32} style={{ color: "var(--color-text-disabled)", flexShrink: 0 }} />
         </div>
 
         {course.pendingPayment ? (
@@ -776,7 +776,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
               }}
             >
               <Loader2 size={14} style={{ color: "var(--color-alert)" }} className="animate-spin" />
-              <span style={{ color: "rgba(255,255,255,0.75)" }}>Payment pending — awaiting confirmation</span>
+              <span style={{ color: "var(--color-text-normal)" }}>Payment pending — awaiting confirmation</span>
             </div>
             {course.pendingPayment.paymentUrl && (
               <button
@@ -806,10 +806,10 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
 
       {/* Locked lesson preview */}
       {lessons.length > 0 && (
-        <div className="rounded-xl overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--color-border-subtle)" }}>
           <div
             className="px-4 py-3 border-b text-sm font-semibold"
-            style={{ borderColor: "rgba(255,255,255,0.08)", background: "var(--color-bg-surface)", color: "rgba(255,255,255,0.7)" }}
+            style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)", color: "var(--color-text-normal)" }}
           >
             {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"} — Preview
           </div>
@@ -818,25 +818,25 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
               <div
                 key={lesson.id}
                 className="flex items-center gap-4 px-4 py-4 border-b last:border-b-0"
-                style={{ borderColor: "rgba(255,255,255,0.06)", background: "var(--color-bg-surface)" }}
+                style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
               >
                 <span
                   className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.3)" }}
+                  style={{ background: "var(--color-surface-overlay-md)", color: "var(--color-text-disabled)" }}
                 >
                   {idx + 1}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate" style={{ color: "rgba(255,255,255,0.55)" }}>
+                  <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-normal)" }}>
                     {lesson.title}
                   </p>
                   {lesson.durationSeconds > 0 && (
-                    <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "rgba(255,255,255,0.28)" }}>
+                    <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-disabled)" }}>
                       <Clock size={10} /> {fmtDuration(lesson.durationSeconds)}
                     </p>
                   )}
                 </div>
-                <Lock size={13} style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }} />
+                <Lock size={13} style={{ color: "var(--color-text-disabled)", flexShrink: 0 }} />
               </div>
             ))}
           </div>
@@ -1503,7 +1503,7 @@ export default function CourseDetailPage({
   if (isLoading) return <PageLoader />;
   if (!course) {
     return (
-      <p className="text-center py-16 text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+      <p className="text-center py-16 text-sm" style={{ color: "var(--color-text-subtle)" }}>
         {uiStrings?.errorGeneric ?? "Course not found."}
       </p>
     );
@@ -1575,7 +1575,7 @@ export default function CourseDetailPage({
       <button
         onClick={() => { selectedLesson ? setSelectedLesson(null) : router.back(); }}
         className="inline-flex items-center gap-1.5 text-sm transition-colors hover:opacity-100"
-        style={{ color: "rgba(255,255,255,0.45)" }}
+        style={{ color: "var(--color-text-subtle)" }}
       >
         <ChevronLeft size={16} />
         {selectedLesson ? course.title : "Back"}
@@ -1639,7 +1639,7 @@ export default function CourseDetailPage({
             </VideoWatermark>
 
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-lg font-semibold text-white leading-snug">{selectedLesson.title}</h2>
+              <h2 className="text-lg font-semibold text-foreground leading-snug">{selectedLesson.title}</h2>
               {(watchState === "completed" || !!selectedLesson.isCompleted) ? (
                 <span
                   className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
@@ -1671,7 +1671,7 @@ export default function CourseDetailPage({
               if (quizApproaching && !quizHintShown) setQuizHintShown(true);
               return (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+                  <div className="flex items-center justify-between text-xs" style={{ color: "var(--color-text-subtle)" }}>
                     <span>{pct}% watched</span>
                     {pct < 85 ? (
                       <span>
@@ -1683,7 +1683,7 @@ export default function CourseDetailPage({
                       <span style={{ color: "var(--color-success)" }}>✓ Eligible to complete</span>
                     )}
                   </div>
-                  <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+                  <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
                     <div
                       className="h-full rounded-full transition-all duration-1000"
                       style={{
@@ -1712,8 +1712,8 @@ export default function CourseDetailPage({
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <SkipForward size={14} style={{ color: "var(--color-accent)", flexShrink: 0 }} />
-                  <span className="truncate" style={{ color: "rgba(255,255,255,0.7)" }}>
-                    Next: <span className="text-white font-medium">{nextLesson.title}</span>
+                  <span className="truncate" style={{ color: "var(--color-text-normal)" }}>
+                    Next: <span className="text-foreground font-medium">{nextLesson.title}</span>
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -1723,7 +1723,7 @@ export default function CourseDetailPage({
                   <button
                     onClick={() => { clearInterval(upNextTimerRef.current); setUpNextCountdown(null); }}
                     className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
-                    style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.5)" }}
+                    style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                   >
                     Cancel
                   </button>
@@ -1736,7 +1736,7 @@ export default function CourseDetailPage({
               <button
                 onClick={handleRewatch}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
-                style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.45)" }}
+                style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
               >
                 <RotateCcw size={11} /> Rewatch from start
               </button>
@@ -1757,13 +1757,13 @@ export default function CourseDetailPage({
                 </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-6">
-                <h1 className="text-2xl font-bold text-white leading-tight">{course.title}</h1>
+                <h1 className="text-2xl font-bold text-foreground leading-tight">{course.title}</h1>
                 {course.description && (
-                  <p className="text-sm mt-1 line-clamp-2" style={{ color: "rgba(255,255,255,0.65)" }}>
+                  <p className="text-sm mt-1 line-clamp-2" style={{ color: "var(--color-text-normal)" }}>
                     {course.description}
                   </p>
                 )}
-                <p className="text-xs mt-2" style={{ color: "rgba(255,255,255,0.45)" }}>
+                <p className="text-xs mt-2" style={{ color: "var(--color-text-subtle)" }}>
                   {completedIds.size} / {lessons.length} completed
                 </p>
               </div>
@@ -1784,11 +1784,11 @@ export default function CourseDetailPage({
                 <div
                   key={label}
                   className="rounded-xl p-3 text-center"
-                  style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+                  style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
                 >
                   <div className="flex justify-center mb-1.5" style={{ color: "var(--color-accent)" }}>{icon}</div>
-                  <p className="text-sm font-bold text-white">{value}</p>
-                  <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{label}</p>
+                  <p className="text-sm font-bold text-foreground">{value}</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>{label}</p>
                 </div>
               ))}
             </div>
@@ -1797,15 +1797,15 @@ export default function CourseDetailPage({
       </div>
 
       {/* Lesson list */}
-      <div className="rounded-xl overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+      <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--color-border-subtle)" }}>
         <div
           className="px-4 py-3 border-b flex items-center justify-between"
-          style={{ borderColor: "rgba(255,255,255,0.08)", background: "var(--color-bg-surface)" }}
+          style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
         >
-          <div className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>
+          <div className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
             {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"}
             {completedIds.size > 0 && (
-              <span className="ml-2 text-xs font-normal" style={{ color: "rgba(255,255,255,0.35)" }}>
+              <span className="ml-2 text-xs font-normal" style={{ color: "var(--color-text-subtle)" }}>
                 · {completedIds.size} done
               </span>
             )}
@@ -1831,7 +1831,7 @@ export default function CourseDetailPage({
 
         <div>
           {lessons.length === 0 ? (
-            <p className="text-center py-10 text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>
+            <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
               No lessons available yet.
             </p>
           ) : (
@@ -1855,7 +1855,7 @@ export default function CourseDetailPage({
                     hasVideo ? "cursor-pointer hover:opacity-90" : "cursor-default opacity-50"
                   )}
                   style={{
-                    borderColor: "rgba(255,255,255,0.06)",
+                    borderColor: "var(--color-border-subtle)",
                     background: isActive
                       ? "color-mix(in srgb, var(--color-accent) 18%, var(--color-bg-surface))"
                       : "var(--color-bg-surface)",
@@ -1864,23 +1864,23 @@ export default function CourseDetailPage({
                   <span
                     className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
                     style={{
-                      background: isCompleted ? "var(--color-success)" : isActive ? "var(--color-accent)" : "rgba(255,255,255,0.08)",
-                      color: isCompleted || isActive ? "#fff" : "rgba(255,255,255,0.45)",
+                      background: isCompleted ? "var(--color-success)" : isActive ? "var(--color-accent)" : "var(--color-surface-overlay-lg)",
+                      color: isCompleted || isActive ? "#fff" : "var(--color-text-subtle)",
                     }}
                   >
                     {isCompleted ? <CheckCircle2 size={14} /> : idx + 1}
                   </span>
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: isActive ? "#fff" : "rgba(255,255,255,0.85)" }}>
+                    <p className="text-sm font-medium truncate" style={{ color: isActive ? "#fff" : "var(--color-text-strong)" }}>
                       {lesson.title}
                     </p>
                     {duration && duration > 0 ? (
-                      <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-subtle)" }}>
                         <Clock size={10} /> {fmtDuration(duration)}
                       </p>
                     ) : lesson.description ? (
-                      <p className="text-xs truncate mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>
+                      <p className="text-xs truncate mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
                         {lesson.description}
                       </p>
                     ) : null}
@@ -1900,7 +1900,7 @@ export default function CourseDetailPage({
                       {((course as any).xpPerEpisode ?? 0) > 0 && (
                         <span
                           className="text-[10px] flex items-center gap-0.5 font-semibold"
-                          style={{ color: "rgba(255,255,255,0.28)" }}
+                          style={{ color: "var(--color-text-disabled)" }}
                         >
                           <Zap size={9} />+{(course as any).xpPerEpisode} XP
                         </span>
@@ -1916,7 +1916,7 @@ export default function CourseDetailPage({
                     </div>
                     {/* Live progress bar for active lesson */}
                     {isActive && livePct > 0 && (
-                      <div className="h-0.5 rounded-full overflow-hidden mt-1.5" style={{ background: "rgba(255,255,255,0.1)" }}>
+                      <div className="h-0.5 rounded-full overflow-hidden mt-1.5" style={{ background: "var(--color-progress-track)" }}>
                         <div
                           className="h-full rounded-full transition-all duration-1000"
                           style={{ width: `${livePct}%`, background: "var(--color-accent)" }}
@@ -1944,18 +1944,18 @@ export default function CourseDetailPage({
       {reflectionCount > 0 && (
         <div
           className="rounded-xl px-4 py-3 flex items-center gap-3"
-          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+          style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
         >
           <PenLine size={14} style={{ color: "var(--color-accent)" }} />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
               Reflections
             </p>
-            <p className="text-sm font-semibold text-white">
+            <p className="text-sm font-semibold text-foreground">
               {reflectionCount} saved
             </p>
           </div>
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
+          <p className="text-xs" style={{ color: "var(--color-text-disabled)" }}>
             Elaborative Interrogation at work
           </p>
         </div>
@@ -1968,22 +1968,22 @@ export default function CourseDetailPage({
       {certData && !certData.eligible && (
         <div
           className="rounded-xl p-4"
-          style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.07)" }}
+          style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
         >
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
-              <Award size={14} style={{ color: "rgba(255,255,255,0.35)" }} />
-              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+              <Award size={14} style={{ color: "var(--color-text-subtle)" }} />
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
                 Certificate Progress
               </span>
             </div>
             {(certData.remainingLessons ?? 0) > 0 && (
-              <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+              <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
                 {certData.remainingLessons} lesson{certData.remainingLessons !== 1 ? "s" : ""} left
               </span>
             )}
           </div>
-          <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: "rgba(255,255,255,0.08)" }}>
+          <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: "var(--color-progress-track)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
@@ -1992,7 +1992,7 @@ export default function CourseDetailPage({
               }}
             />
           </div>
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+          <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
             {certData.completionPercentage ?? 0}% complete — finish all lessons to earn your certificate
           </p>
         </div>
@@ -2014,8 +2014,8 @@ export default function CourseDetailPage({
             <Award size={24} style={{ color: "var(--color-accent)" }} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-white text-sm">You completed this course!</p>
-            <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.55)" }}>
+            <p className="font-semibold text-foreground text-sm">You completed this course!</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--color-text-normal)" }}>
               Your certificate of completion is ready.
             </p>
           </div>
@@ -2111,15 +2111,15 @@ export default function CourseDetailPage({
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div
             className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
-            style={{ background: "var(--color-bg-surface)", border: "1px solid rgba(255,255,255,0.1)" }}
+            style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
           >
-            <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+            <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: "var(--color-border-subtle)" }}>
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Episode Quiz</p>
-                <p className="text-sm font-semibold text-white mt-0.5">{quizModal.quizData?.title ?? "Quiz"}</p>
+                <p className="text-sm font-semibold text-foreground mt-0.5">{quizModal.quizData?.title ?? "Quiz"}</p>
               </div>
               {!quizResult && (
-                <button onClick={() => handleCloseQuiz(false)} className="text-white/40 hover:text-white/70 transition-colors">
+                <button onClick={() => handleCloseQuiz(false)} className="text-muted-foreground hover:text-foreground transition-colors">
                   <X size={18} />
                 </button>
               )}
@@ -2130,8 +2130,8 @@ export default function CourseDetailPage({
                 <div className={`text-5xl font-bold ${quizResult.passed ? "text-green-400" : "text-red-400"}`}>
                   {quizResult.score}%
                 </div>
-                <p className="text-white font-semibold">{quizResult.passed ? "🎉 Passed!" : "Not quite — try again"}</p>
-                <p className="text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
+                <p className="text-foreground font-semibold">{quizResult.passed ? "🎉 Passed!" : "Not quite — try again"}</p>
+                <p className="text-sm" style={{ color: "var(--color-text-subtle)" }}>
                   {quizResult.correct} / {quizResult.total} correct
                 </p>
                 {quizResult.passed && xpFlash !== null && (
@@ -2144,7 +2144,7 @@ export default function CourseDetailPage({
                     <button
                       onClick={() => { setQuizAnswers({}); setQuizResult(null); }}
                       className="flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-colors"
-                      style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}
+                      style={{ borderColor: "var(--color-border-strong)", color: "var(--color-text-normal)" }}
                     >
                       Try Again
                     </button>
@@ -2203,7 +2203,7 @@ function QuizQuestions({
 
   if (!questions.length) {
     return (
-      <div className="p-6 text-center text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+      <div className="p-6 text-center text-sm" style={{ color: "var(--color-text-subtle)" }}>
         No quiz questions configured.
       </div>
     );
@@ -2215,7 +2215,7 @@ function QuizQuestions({
     <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
       {questions.map((q: any, qi: number) => (
         <div key={q.id}>
-          <p className="text-sm font-medium text-white mb-3">{qi + 1}. {q.question}</p>
+          <p className="text-sm font-medium text-foreground mb-3">{qi + 1}. {q.question}</p>
           <div className="space-y-2">
             {q.options?.map((opt: any) => (
               <button
@@ -2224,9 +2224,9 @@ function QuizQuestions({
                 onClick={() => setAnswers({ ...answers, [q.id]: opt.id })}
                 className="w-full text-left px-4 py-2.5 rounded-lg text-sm transition-all border"
                 style={{
-                  borderColor: answers[q.id] === opt.id ? "var(--color-accent)" : "rgba(255,255,255,0.1)",
+                  borderColor: answers[q.id] === opt.id ? "var(--color-accent)" : "var(--color-border-medium)",
                   background: answers[q.id] === opt.id ? "color-mix(in srgb, var(--color-accent) 15%, transparent)" : "transparent",
-                  color: answers[q.id] === opt.id ? "#fff" : "rgba(255,255,255,0.6)",
+                  color: answers[q.id] === opt.id ? "#fff" : "var(--color-text-normal)",
                 }}
               >
                 {opt.text}

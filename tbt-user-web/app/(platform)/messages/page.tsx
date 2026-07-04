@@ -309,7 +309,7 @@ export default function MessagesPage() {
                 key={c.id}
                 className={cn(
                   'group relative w-full text-left px-4 py-3 border-b transition-colors cursor-pointer',
-                  activeId === c.id ? 'bg-accent/10' : 'hover:bg-white/[0.03]'
+                  activeId === c.id ? 'bg-accent/10' : 'hover:bg-[var(--color-surface-overlay)]'
                 )}
                 style={{
                   borderColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
@@ -407,11 +407,11 @@ export default function MessagesPage() {
                 <div key={label} className="space-y-3">
                   {/* Date separator */}
                   <div className="flex items-center gap-3 py-1">
-                    <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                    <div className="flex-1 h-px" style={{ background: 'var(--color-border-subtle)' }} />
                     <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2">
                       {label}
                     </span>
-                    <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                    <div className="flex-1 h-px" style={{ background: 'var(--color-border-subtle)' }} />
                   </div>
 
                   {dayMsgs.map((m: any) => {
@@ -422,7 +422,7 @@ export default function MessagesPage() {
                           avatarUrl={isMe ? (me as any)?.avatarUrl : m.senderAvatarUrl}
                           name={isMe ? me?.firstName : m.senderName}
                           size={28}
-                          style={{ background: isMe ? 'var(--color-accent)' : '#444' }}
+                          style={{ background: isMe ? 'var(--color-accent)' : 'hsl(var(--muted-foreground))' }}
                         />
                         <div
                           className={cn(

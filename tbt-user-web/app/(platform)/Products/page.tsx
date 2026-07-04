@@ -57,7 +57,7 @@ function InquiryModal({ product, memberName, onClose }: InquiryModalProps) {
     >
       <div
         className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
-        style={{ background: "var(--color-bg-surface, #1a1a1a)", border: "1px solid rgba(255,255,255,0.1)" }}
+        style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)" }}
       >
         {submitted ? (
           /* ── Success state ── */
@@ -66,11 +66,11 @@ function InquiryModal({ product, memberName, onClose }: InquiryModalProps) {
               className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
               style={{ background: "rgba(34,197,94,0.15)" }}
             >
-              <CheckCircle size={32} style={{ color: "#22c55e" }} />
+              <CheckCircle size={32} style={{ color: "var(--color-success, #22c55e)" }} />
             </div>
-            <h3 className="text-xl font-bold text-white">Request Sent!</h3>
-            <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Your request for <span className="text-white font-semibold">{product.title}</span> has been sent to the admin. We will contact you soon!
+            <h3 className="text-xl font-bold text-foreground">Request Sent!</h3>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Your request for <span className="font-semibold text-foreground">{product.title}</span> has been sent to the admin. We will contact you soon!
             </p>
             <button
               onClick={onClose}
@@ -85,36 +85,35 @@ function InquiryModal({ product, memberName, onClose }: InquiryModalProps) {
           <>
             <div
               className="px-6 py-4 flex items-center justify-between"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+              style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
             >
               <div>
-                <h3 className="font-bold text-white text-base">Buy Now</h3>
-                <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+                <h3 className="font-bold text-foreground text-base">Buy Now</h3>
+                <p className="text-xs mt-0.5 text-muted-foreground">
                   {product.title}
                 </p>
               </div>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-lg transition-opacity hover:opacity-70"
-                style={{ color: "rgba(255,255,255,0.5)" }}
+                className="p-1.5 rounded-lg transition-opacity hover:opacity-70 text-muted-foreground"
               >
                 <X size={18} />
               </button>
             </div>
 
             <div className="px-6 py-5 space-y-4">
-              <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: "rgba(255,255,255,0.04)" }}>
+              <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: "var(--color-surface-overlay)" }}>
                 {product.thumbnailUrl ? (
                   <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0">
                     <Image src={product.thumbnailUrl} alt={product.title} width={56} height={56} className="w-full h-full object-cover" />
                   </div>
                 ) : (
-                  <div className="w-14 h-14 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.06)" }}>
-                    <ShoppingBag size={20} style={{ color: "rgba(255,255,255,0.25)" }} />
+                  <div className="w-14 h-14 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--color-surface-overlay-md)" }}>
+                    <ShoppingBag size={20} className="text-muted-foreground opacity-50" />
                   </div>
                 )}
                 <div>
-                  <p className="font-semibold text-white text-sm leading-snug">{product.title}</p>
+                  <p className="font-semibold text-foreground text-sm leading-snug">{product.title}</p>
                   {formatPrice(product.price, product.currency) && (
                     <p className="text-base font-black mt-0.5" style={{ color: "var(--color-accent, #dc2626)" }}>
                       {formatPrice(product.price, product.currency)}
@@ -124,34 +123,33 @@ function InquiryModal({ product, memberName, onClose }: InquiryModalProps) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.5)" }}>
+                <label className="block text-xs font-semibold mb-1.5 text-muted-foreground">
                   Your Name
                 </label>
                 <div
-                  className="w-full rounded-xl px-4 h-11 flex items-center text-sm"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)" }}
+                  className="w-full rounded-xl px-4 h-11 flex items-center text-sm text-foreground"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
                 >
                   {memberName}
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.5)" }}>
-                  Message <span style={{ color: "rgba(255,255,255,0.25)" }}>(optional)</span>
+                <label className="block text-xs font-semibold mb-1.5 text-muted-foreground">
+                  Message <span className="opacity-60">(optional)</span>
                 </label>
                 <textarea
                   rows={3}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Any questions or special requirements..."
-                  className="w-full rounded-xl px-4 py-3 text-sm resize-none outline-none transition-all"
+                  className="w-full rounded-xl px-4 py-3 text-sm resize-none outline-none transition-all text-foreground placeholder:text-muted-foreground"
                   style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    color: "rgba(255,255,255,0.85)",
+                    background: "var(--color-surface-overlay)",
+                    border: "1px solid var(--color-border-subtle)",
                   }}
-                  onFocus={(e) => (e.target.style.borderColor = "var(--color-accent, #dc2626)")}
-                  onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}
+                  onFocus={(e) => (e.target.style.borderColor = "var(--color-accent)")}
+                  onBlur={(e) => (e.target.style.borderColor = "var(--color-border-subtle)")}
                 />
               </div>
 
@@ -164,12 +162,12 @@ function InquiryModal({ product, memberName, onClose }: InquiryModalProps) {
 
             <div
               className="px-6 py-4 flex gap-3"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+              style={{ borderTop: "1px solid var(--color-border-subtle)" }}
             >
               <button
                 onClick={onClose}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-70"
-                style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)" }}
+                style={{ background: "var(--color-surface-overlay-md)", color: "var(--color-text-subtle)" }}
               >
                 Cancel
               </button>
@@ -207,8 +205,8 @@ function ProductCard({
 
   return (
     <div
-      className="rounded-2xl flex flex-col overflow-hidden border group transition-all hover:border-white/20"
-      style={{ background: "var(--color-bg-surface)", borderColor: "rgba(255,255,255,0.08)" }}
+      className="rounded-2xl flex flex-col overflow-hidden border group transition-all hover:border-[var(--color-border-strong)]"
+      style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}
     >
       {/* Image */}
       <div className="relative aspect-[4/3] overflow-hidden bg-black/20">
@@ -221,7 +219,7 @@ function ProductCard({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <ShoppingBag size={40} style={{ color: "rgba(255,255,255,0.12)" }} />
+            <ShoppingBag size={40} className="text-muted-foreground opacity-20" />
           </div>
         )}
 
@@ -247,10 +245,10 @@ function ProductCard({
 
       {/* Content */}
       <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-bold text-white text-[17px] leading-snug mb-1.5">{product.title}</h3>
+        <h3 className="font-bold text-foreground text-[17px] leading-snug mb-1.5">{product.title}</h3>
 
         {product.description && (
-          <p className="text-sm leading-relaxed mb-4 line-clamp-3" style={{ color: "rgba(255,255,255,0.55)" }}>
+          <p className="text-sm leading-relaxed mb-4 line-clamp-3 text-muted-foreground">
             {product.description}
           </p>
         )}
@@ -270,7 +268,7 @@ function ProductCard({
             onClick={() => !isUnavailable && onBuyNow(product)}
             disabled={isUnavailable}
             className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-85"
-            style={{ background: isUnavailable ? "rgba(255,255,255,0.08)" : "var(--color-accent, #dc2626)", color: isUnavailable ? "rgba(255,255,255,0.3)" : "#fff" }}
+            style={{ background: isUnavailable ? "var(--color-surface-overlay-md)" : "var(--color-accent, #dc2626)", color: isUnavailable ? "var(--color-text-disabled)" : "#fff" }}
           >
             {isUnavailable ? "Unavailable" : "Buy Now"}
           </button>
@@ -287,7 +285,7 @@ function ProductCard({
                     target={cta.openInNewTab ? "_blank" : "_self"}
                     rel="noopener noreferrer"
                     className="flex-1 text-center px-4 py-2 rounded-xl text-xs font-semibold transition-opacity hover:opacity-80"
-                    style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.1)" }}
+                    style={{ background: "var(--color-surface-overlay-md)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-subtle)" }}
                   >
                     {cta.label}
                   </a>
@@ -329,8 +327,8 @@ export default function ProductsPage() {
       <div className="space-y-8">
         {data?.pageTitle && (
           <div className="space-y-1">
-            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">{data.pageTitle}</h1>
-            <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <h1 className="text-2xl md:text-3xl font-black text-foreground tracking-tight">{data.pageTitle}</h1>
+            <p className="text-sm text-muted-foreground">
               {products.length} {products.length === 1 ? "item" : "items"} available
             </p>
           </div>
@@ -344,8 +342,8 @@ export default function ProductsPage() {
           </div>
         ) : (
           <div className="py-20 text-center space-y-3">
-            <ShoppingBag size={40} className="mx-auto" style={{ color: "rgba(255,255,255,0.12)" }} />
-            <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <ShoppingBag size={40} className="mx-auto text-muted-foreground opacity-20" />
+            <p className="text-sm text-muted-foreground">
               {uiStrings?.loading ?? "No products available"}
             </p>
           </div>
