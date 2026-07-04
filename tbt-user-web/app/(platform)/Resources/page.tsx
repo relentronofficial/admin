@@ -94,12 +94,16 @@ function ResourceRow({ resource }: { resource: Resource }) {
               target="_blank"
               rel="noopener noreferrer"
               title={action.label}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-white transition-opacity hover:opacity-80"
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-opacity hover:opacity-80"
               style={{
                 background:
                   action.type === "preview"
-                    ? "var(--color-bg-surface)"
+                    ? "var(--color-surface-overlay-md)"
                     : "var(--color-accent)",
+                color:
+                  action.type === "preview"
+                    ? "var(--color-text-normal)"
+                    : "#fff",
               }}
             >
               {resolveHoverIcon(action.iconType)}

@@ -46,7 +46,7 @@ function Avatar({
         ) : (
           <div
             className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold"
-            style={{ background: "var(--color-bg-surface, #111)" }}
+            style={{ background: "var(--color-accent)" }}
           >
             {firstName[0]?.toUpperCase() ?? "?"}
           </div>

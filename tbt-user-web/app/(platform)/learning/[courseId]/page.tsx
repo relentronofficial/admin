@@ -233,10 +233,10 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
               let borderColor = "var(--color-border-medium)";
               let color = "var(--color-text-normal)";
               if (revealed) {
-                if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 18%, transparent)"; borderColor = "var(--color-success)"; color = "#fff"; }
+                if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 18%, transparent)"; borderColor = "var(--color-success)"; color = "var(--color-text-strong)"; }
                 else if (opt.id === selected) { bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; borderColor = "var(--color-accent)"; color = "var(--color-text-normal)"; }
               } else if (selected === opt.id) {
-                borderColor = "var(--color-accent)"; bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; color = "#fff";
+                borderColor = "var(--color-accent)"; bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; color = "var(--color-text-strong)";
               }
               return (
                 <button
@@ -408,10 +408,10 @@ function CueQuizModal({ questions, onClose }: { questions: any[]; onClose: () =>
                   let borderColor = "var(--color-border-medium)";
                   let color = "var(--color-text-normal)";
                   if (revealed) {
-                    if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 15%, transparent)"; borderColor = "var(--color-success)"; color = "#fff"; }
+                    if (opt.correct) { bg = "color-mix(in srgb, var(--color-success) 15%, transparent)"; borderColor = "var(--color-success)"; color = "var(--color-text-strong)"; }
                     else if (opt.id === answers[q.id]) { bg = "color-mix(in srgb, var(--color-accent) 12%, transparent)"; borderColor = "var(--color-accent)"; }
                   } else if (answers[q.id] === opt.id) {
-                    bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; borderColor = "var(--color-accent)"; color = "#fff";
+                    bg = "color-mix(in srgb, var(--color-accent) 15%, transparent)"; borderColor = "var(--color-accent)"; color = "var(--color-text-strong)";
                   }
                   return (
                     <button
@@ -616,7 +616,7 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
                   >
                     {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
                   </span>
-                  <span className="flex-1 truncate" style={{ color: isMe ? "#fff" : "var(--color-text-normal)" }}>
+                  <span className="flex-1 truncate" style={{ color: isMe ? "var(--color-accent)" : "var(--color-text-normal)" }}>
                     {name}
                     {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}>(you)</span>}
                   </span>
@@ -1872,7 +1872,7 @@ export default function CourseDetailPage({
                   </span>
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: isActive ? "#fff" : "var(--color-text-strong)" }}>
+                    <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-strong)" }}>
                       {lesson.title}
                     </p>
                     {duration && duration > 0 ? (
@@ -2226,7 +2226,7 @@ function QuizQuestions({
                 style={{
                   borderColor: answers[q.id] === opt.id ? "var(--color-accent)" : "var(--color-border-medium)",
                   background: answers[q.id] === opt.id ? "color-mix(in srgb, var(--color-accent) 15%, transparent)" : "transparent",
-                  color: answers[q.id] === opt.id ? "#fff" : "var(--color-text-normal)",
+                  color: answers[q.id] === opt.id ? "var(--color-text-strong)" : "var(--color-text-normal)",
                 }}
               >
                 {opt.text}
