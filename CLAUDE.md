@@ -104,7 +104,7 @@ npm run format      # prettier --write .
 - **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (202+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`, `useBatchDayAnalytics`.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB), `useCreateBunnyVideo` (`POST /api/upload/bunny-video-create`), `useDeleteBunnyVideo` (`DELETE /api/upload/bunny-video/:videoId`)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
-- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, `useUpdateTask`, `useDeleteTask`, `useListBatchTasks`, `useCreateBatchTask`, `useUpdateBatchTask`, `useDeleteBatchTask`, `useReorderBatchTasks`, `useMigrateJsonTasks`, `useGetBatchSubmissions`, `useReviewTaskSubmission`
+- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, `useUpdateTask`, `useDeleteTask`, `useListBatchTasks`, `useCreateBatchTask`, `useUpdateBatchTask`, `useDeleteBatchTask`, `useReorderBatchTasks`, `useMigrateJsonTasks`, `useGetBatchSubmissions`, `useReviewTaskSubmission`, `useGetAllBatchTasks` (`GET /api/batches/:id/all-tasks` — program tasks + batch-inline tasks combined)
 - **State:** TanStack Query (server state, `staleTime: 5min`), Zustand (client state)
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
 
@@ -527,11 +527,17 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## Deployment
 
-- **Backend → Google Cloud Run** (`asia-south1`, project `tbt-lms-platform`, service `tbt-backend`)
-  - Production has `--min-instances=1` to eliminate cold starts
-  - CI/CD in `.github/workflows/ci-cd.yml` — deploys on push to `main` when `tbt-admin/backend/**` changes
-- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `admin-panel`
+Two separate Cloud Run services, two separate branches:
+
+| Branch | Backend service | Notes |
+|---|---|---|
+| `main` | `tbt-backend-staging` | Staging backend; auto-deploy when `tbt-admin/backend/**` changes |
+| `production` | `tbt-backend` | Production backend (`--min-instances=1`); auto-deploy when `tbt-admin/backend/**` changes |
+
+- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service.
 - **User Web → Vercel** — separate project; custom domain `https://app.tamilbusinesstribe.com`
+- **To promote staging → production:** `git push origin main:production`
+- **`prisma db push`** runs against `PROD_DATABASE_URL` in **both** CI jobs (staging and production) — so the production DB schema always tracks `main` even before a production backend deploy.
 - CORS: `USER_WEB_URL` + `ADMIN_WEB_URL` + `CORS_EXTRA_ORIGINS` (comma-separated). Adding a new domain → add to `CORS_EXTRA_ORIGINS` in ci-cd.yml `--set-env-vars`.
 
 **Recommended one-time setup for faster JWT verification:** Add `CLERK_JWT_PUBLIC_KEY` to GCP Secret Manager (`prod-CLERK_JWT_PUBLIC_KEY`) and include it in `--set-secrets` in ci-cd.yml. Without it, Clerk SDK fetches JWKS from the internet on first startup (cached after that, so it's a cold-start cost only). With it, all JWT verification is local crypto.
