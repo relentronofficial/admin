@@ -69,10 +69,13 @@ export default async function RootLayout({
 
   // Inject theme CSS variables into <head> server-side — zero flash, zero layout shift.
   // In light mode, skip --color-bg-primary/surface (dark API values would override light CSS vars).
+  // Only accent/alert/success are injected via <style> tag — these are theme-stable and safe
+  // to set as stylesheet rules. --color-bg-primary and --color-bg-surface are intentionally
+  // excluded: the <style> tag creates a :root rule that survives removeProperty() in
+  // SiteConfigContext (which only clears inline styles), so those two must be managed
+  // exclusively via element.style.setProperty/removeProperty in SiteConfigContext.
   const themeCSS = initialConfig?.theme
-    ? initialThemeClass === "light"
-      ? `:root{--color-accent:${initialConfig.theme.accentColor};--color-alert:${initialConfig.theme.alertColor};--color-success:${initialConfig.theme.successColor};}`
-      : `:root{--color-accent:${initialConfig.theme.accentColor};--color-alert:${initialConfig.theme.alertColor};--color-success:${initialConfig.theme.successColor};--color-bg-primary:${initialConfig.theme.bgPrimary};--color-bg-surface:${initialConfig.theme.bgSurface};}`
+    ? `:root{--color-accent:${initialConfig.theme.accentColor};--color-alert:${initialConfig.theme.alertColor};--color-success:${initialConfig.theme.successColor};}`
     : "";
 
   // Derive CDN origin from the first available media URL — works across all environments
