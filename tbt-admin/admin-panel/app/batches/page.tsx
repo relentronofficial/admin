@@ -22,6 +22,7 @@ import {
   Copy,
   CheckCheck,
   Archive,
+  Zap,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -74,9 +75,9 @@ const BATCH_STATUS_TABS = [
 ] as const;
 
 function batchStatusBadge(status: string) {
-  if (status === "completed") return { bg: "rgba(59,130,246,0.12)", color: "#3b82f6", label: "Completed" };
-  if (status === "archived")  return { bg: "rgba(255,255,255,0.06)", color: "#606060", label: "Archived" };
-  return { bg: "rgba(34,197,94,0.12)", color: "#22c55e", label: "Active" };
+  if (status === "completed") return { bg: "rgba(59,130,246,0.12)", color: "#3b82f6", border: "rgba(59,130,246,0.25)", label: "Completed" };
+  if (status === "archived")  return { bg: "rgba(255,255,255,0.05)", color: "#606060", border: "rgba(255,255,255,0.10)", label: "Archived" };
+  return { bg: "rgba(34,197,94,0.12)", color: "#22c55e", border: "rgba(34,197,94,0.25)", label: "Active" };
 }
 
 export default function BatchesPage() {
@@ -96,6 +97,14 @@ export default function BatchesPage() {
     () => Object.fromEntries(batches.map((b: any) => [b.id, b.name])),
     [batches],
   );
+
+  // Tab counts derived from allBatches — no extra API calls
+  const tabCounts = useMemo(() => ({
+    "": allBatches.length,
+    "active": allBatches.filter((b: any) => (b.status ?? "active") === "active").length,
+    "completed": allBatches.filter((b: any) => b.status === "completed").length,
+    "archived": allBatches.filter((b: any) => b.status === "archived").length,
+  }), [allBatches]);
 
   const createBatch = useCreateBatch();
   const updateBatch = useUpdateBatch();
@@ -370,13 +379,20 @@ export default function BatchesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
+
+        {/* ── Page Header ── */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <GraduationCap size={22} className="text-[#dc2626]" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-[#dc2626]/10 border border-[#dc2626]/20 flex items-center justify-center flex-shrink-0">
+              <GraduationCap size={20} className="text-[#dc2626]" />
+            </div>
             <div>
-              <h1 className="text-[22px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wide">Batches</h1>
-              <p className="text-[13px] text-[#606060] mt-0.5">Create and manage member cohorts</p>
+              <h1 className="text-[22px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wide leading-tight">
+                Batches
+              </h1>
+              <p className="text-[12px] text-[#505050] mt-0.5">
+                {isLoading ? "Loading…" : `${allBatches.length} total · ${tabCounts["active"]} active`}
+              </p>
             </div>
           </div>
           <button
@@ -388,137 +404,199 @@ export default function BatchesPage() {
           </button>
         </div>
 
-        {/* Status Filter Tabs */}
-        <div className="flex items-center gap-1 bg-[#141414] border border-[#1f1f1f] rounded-lg p-1 w-fit">
+        {/* ── Status Filter Tabs ── */}
+        <div className="flex items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg p-1 w-fit">
           {BATCH_STATUS_TABS.map(tab => (
             <button
               key={tab.key}
               onClick={() => setStatusFilter(tab.key)}
               className={cn(
-                "px-4 py-1.5 rounded-md text-[12px] font-bold uppercase tracking-wider transition-all",
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-md text-[12px] font-bold uppercase tracking-wider transition-all",
                 statusFilter === tab.key
-                  ? "bg-[#dc2626] text-white"
-                  : "text-[#606060] hover:text-[#a0a0a0]",
+                  ? "bg-[#dc2626] text-white shadow-sm"
+                  : "text-[#505050] hover:text-[#a0a0a0] hover:bg-[#181818]",
               )}
             >
               {tab.label}
-              {tab.key === "" && (
-                <span className="ml-1.5 text-[10px] opacity-60">{allBatches.length}</span>
+              {tabCounts[tab.key] > 0 && (
+                <span className={cn(
+                  "text-[10px] font-bold px-1.5 py-0.5 rounded-md min-w-[18px] text-center leading-none",
+                  statusFilter === tab.key
+                    ? "bg-white/20 text-white"
+                    : "bg-[#1e1e1e] text-[#484848]"
+                )}>
+                  {tabCounts[tab.key]}
+                </span>
               )}
             </button>
           ))}
         </div>
 
-        {/* Batch Grid */}
+        {/* ── Batch Grid ── */}
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="flex items-center justify-center py-24">
             <Loader2 size={28} className="animate-spin text-[#dc2626]" />
           </div>
         ) : batches.length === 0 ? (
-          <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-16 text-center">
-            <GraduationCap size={40} className="text-[#444] mx-auto mb-4" />
-            <p className="text-[#606060] text-sm">No batches yet. Create your first batch to get started.</p>
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#141414] border border-[#1e1e1e] flex items-center justify-center mb-5">
+              <GraduationCap size={26} className="text-[#333]" />
+            </div>
+            <p className="text-[15px] font-semibold text-[#484848] mb-1.5">
+              {statusFilter ? `No ${statusFilter} batches` : "No batches yet"}
+            </p>
+            <p className="text-[12px] text-[#363636] mb-6">
+              {statusFilter ? "Try a different filter or create a new batch." : "Create your first cohort to get started."}
+            </p>
+            {!statusFilter && (
+              <button
+                onClick={openCreate}
+                className="flex items-center gap-2 bg-[#dc2626] hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors"
+              >
+                <Plus size={15} /> New Batch
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {batches.map((batch: any) => (
-              <div
-                key={batch.id}
-                className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-5 flex flex-col gap-4 hover:border-[#2a2a2a] transition-all group"
-              >
-                {/* Top row: name + status badge */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="text-[15px] font-bold text-[#f0f0f0] leading-snug font-rajdhani truncate">{batch.name}</h3>
-                    {batch.description && (
-                      <p className="text-[12px] text-[#606060] mt-0.5 line-clamp-2 leading-relaxed">{batch.description}</p>
-                    )}
-                  </div>
-                  {(() => {
-                    const badge = batchStatusBadge(batch.status ?? "active");
-                    return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {batches.map((batch: any) => {
+              const badge = batchStatusBadge(batch.status ?? "active");
+              const memberCount = batch._count?.members ?? 0;
+              const xp = batch.xpPerDay ?? 50;
+              return (
+                <div
+                  key={batch.id}
+                  className="bg-[#141414] border border-[#1e1e1e] rounded-xl flex flex-col overflow-hidden transition-all duration-200 hover:border-[#2a2a2a] hover:shadow-[0_4px_24px_rgba(0,0,0,0.5)] hover:-translate-y-0.5 group"
+                >
+                  {/* Colored status accent bar */}
+                  <div className="h-[3px] w-full flex-shrink-0" style={{ background: `linear-gradient(90deg, ${badge.color}60 0%, ${badge.color}18 100%)` }} />
+
+                  {/* ── Card Body ── */}
+                  <div className="p-5 flex-1 flex flex-col gap-3.5">
+
+                    {/* Status badge row */}
+                    <div className="flex items-center justify-between gap-2">
                       <span
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 uppercase tracking-wider"
-                        style={{ background: badge.bg, color: badge.color }}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide border flex-shrink-0"
+                        style={{ background: badge.bg, color: badge.color, borderColor: badge.border }}
                       >
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: badge.color }} />
                         {badge.label}
                       </span>
-                    );
-                  })()}
-                </div>
+                      {batch.isActive === false && (batch.status ?? "active") === "active" && (
+                        <span className="text-[10px] text-[#484848] font-medium">Inactive</span>
+                      )}
+                    </div>
 
-                {/* Date + member count */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-[12px] text-[#a0a0a0]">
-                    <Calendar size={12} className="text-[#606060] flex-shrink-0" />
-                    <span>Starts {fmtDate(batch.startsAt)}</span>
-                    {batch.endsAt && <span className="text-[#606060]">→ {fmtDate(batch.endsAt)}</span>}
+                    {/* Name + description */}
+                    <div className="min-w-0">
+                      <h3 className="text-[17px] font-bold text-[#f0f0f0] leading-tight font-rajdhani truncate">
+                        {batch.name}
+                      </h3>
+                      {batch.description && (
+                        <p className="text-[12px] text-[#565656] mt-1.5 line-clamp-2 leading-relaxed">
+                          {batch.description}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[12px] text-[#a0a0a0]">
-                    <Users size={12} className="text-[#606060] flex-shrink-0" />
-                    <span>{batch._count?.members ?? 0} member{batch._count?.members !== 1 ? "s" : ""}</span>
-                  </div>
-                </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-2 mt-auto pt-2 border-t border-[#1f1f1f]">
-                  <button
-                    onClick={() => router.push(`/batches/${batch.id}`)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold bg-[#dc2626]/10 hover:bg-[#dc2626]/20 text-[#dc2626] transition-all"
-                  >
-                    <BarChart2 size={13} /> View Program
-                  </button>
-                  <button
-                    onClick={() => setManagingBatch(batch)}
-                    className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#f0f0f0] transition-all"
-                    title="Manage members"
-                  >
-                    <Users size={14} />
-                  </button>
-                  <button
-                    onClick={() => openClone(batch)}
-                    className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#f0f0f0] transition-all"
-                    title="Clone batch"
-                  >
-                    <Copy size={14} />
-                  </button>
-                  {(batch.status ?? "active") === "active" && (
+                  {/* ── Stats Row ── */}
+                  <div className="border-t border-[#1c1c1c] px-5 py-3 flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-2 text-[12px] text-[#585858]">
+                      <Calendar size={13} className="text-[#404040] flex-shrink-0" />
+                      <span>
+                        {fmtDate(batch.startsAt)}
+                        {batch.endsAt && (
+                          <span className="text-[#3a3a3a]"> → {fmtDate(batch.endsAt)}</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[12px] text-[#585858]">
+                      <Users size={13} className="text-[#404040] flex-shrink-0" />
+                      <span>
+                        <span className="text-[#888] font-semibold">{memberCount}</span>
+                        {" "}member{memberCount !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[12px] text-[#585858] ml-auto">
+                      <Zap size={12} className="text-[#404040] flex-shrink-0" />
+                      <span><span className="text-[#888] font-semibold">{xp}</span> XP/day</span>
+                    </div>
+                  </div>
+
+                  {/* ── Actions ── */}
+                  <div className="border-t border-[#1c1c1c] px-4 py-3 space-y-2.5">
+                    {/* Primary CTA */}
                     <button
-                      onClick={() => handleMarkComplete(batch)}
-                      disabled={markComplete.isPending}
-                      className="p-2 rounded-lg hover:bg-blue-900/20 text-[#606060] hover:text-blue-400 transition-all"
-                      title="Mark complete"
+                      onClick={() => router.push(`/batches/${batch.id}`)}
+                      className="w-full flex items-center justify-center gap-2 h-9 rounded-lg text-[12px] font-bold bg-[#dc2626]/10 hover:bg-[#dc2626]/20 text-[#dc2626] transition-all border border-[#dc2626]/20 hover:border-[#dc2626]/40 tracking-wide uppercase"
                     >
-                      <CheckCheck size={14} />
+                      <BarChart2 size={14} />
+                      View Program
                     </button>
-                  )}
-                  {(batch.status ?? "active") !== "archived" && (
-                    <button
-                      onClick={() => handleArchive(batch)}
-                      disabled={archiveBatch.isPending}
-                      className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#a0a0a0] transition-all"
-                      title="Archive batch"
-                    >
-                      <Archive size={14} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => { setEditingBatch(batch); }}
-                    className="p-2 rounded-lg hover:bg-[#1f1f1f] text-[#606060] hover:text-[#f0f0f0] transition-all"
-                    title="Edit batch"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => setDeletingBatch(batch)}
-                    className="p-2 rounded-lg hover:bg-red-900/20 text-[#606060] hover:text-red-400 transition-all"
-                    title="Delete batch"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+
+                    {/* Secondary icon actions */}
+                    <div className="flex items-center justify-between">
+                      {/* Utility actions */}
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          onClick={() => setManagingBatch(batch)}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[#1e1e1e] text-[#424242] hover:text-[#a0a0a0] transition-all"
+                          title="Manage members"
+                        >
+                          <Users size={15} />
+                        </button>
+                        <button
+                          onClick={() => openClone(batch)}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[#1e1e1e] text-[#424242] hover:text-[#a0a0a0] transition-all"
+                          title="Clone batch"
+                        >
+                          <Copy size={15} />
+                        </button>
+                        {(batch.status ?? "active") === "active" && (
+                          <button
+                            onClick={() => handleMarkComplete(batch)}
+                            disabled={markComplete.isPending}
+                            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-blue-900/20 text-[#424242] hover:text-blue-400 transition-all disabled:opacity-40"
+                            title="Mark complete"
+                          >
+                            <CheckCheck size={15} />
+                          </button>
+                        )}
+                        {(batch.status ?? "active") !== "archived" && (
+                          <button
+                            onClick={() => handleArchive(batch)}
+                            disabled={archiveBatch.isPending}
+                            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[#1e1e1e] text-[#424242] hover:text-[#a0a0a0] transition-all disabled:opacity-40"
+                            title="Archive batch"
+                          >
+                            <Archive size={15} />
+                          </button>
+                        )}
+                      </div>
+                      {/* Edit / Delete */}
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          onClick={() => setEditingBatch(batch)}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[#1e1e1e] text-[#424242] hover:text-[#f0f0f0] transition-all"
+                          title="Edit batch"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => setDeletingBatch(batch)}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-red-900/20 text-[#424242] hover:text-red-400 transition-all"
+                          title="Delete batch"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -762,6 +840,7 @@ export default function BatchesPage() {
           </div>
         </div>
       )}
+
       {/* ── Clone Batch Modal ── */}
       {cloningBatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
