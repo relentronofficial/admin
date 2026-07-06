@@ -368,7 +368,7 @@ export default function BatchDayPage() {
               {uiStrings?.batchRevisionLabel ?? "Revision Requested"}
             </p>
           </div>
-          <p className="text-sm mt-2 italic" style={{ color: "#f0f0f0" }}>
+          <p className="text-sm mt-2 italic text-foreground">
             {progress?.reviewNote?.trim()
               ? progress.reviewNote
               : "This day was sent back for revision. Please update and resubmit."}
