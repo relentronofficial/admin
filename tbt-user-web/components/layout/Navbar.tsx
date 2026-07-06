@@ -379,11 +379,15 @@ export function Navbar() {
   const logoUrl = config?.logoUrl ?? null;
   const homeHref = nav[0]?.href ?? "/tbt";
 
-  // Light mode uses the black logo for contrast; dark mode uses the white/custom logo.
-  // If a custom logoUrl is set by the admin it is used in both themes as-is.
-  const darkLogoSrc  = logoUrl || "/tbt_logo.webp";
-  const lightLogoSrc = logoUrl || "/tbt_logo_black.png";
-  const activeLogo   = theme === "light" ? lightLogoSrc : darkLogoSrc;
+  // Dark mode: use admin-configured logoUrl (white brand logo) or default white logo.
+  // Light mode: always use the black logo — admin's logoUrl is the white version.
+  const darkLogoSrc = logoUrl || "/tbt_logo.webp";
+  const lightLogoSrc = "/tbt_logo_black.png";
+  // Use a mounted guard so the SSR-rendered dark logo doesn't flash during hydration
+  // when the saved theme is "light" (Zustand reads localStorage on client only).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  const activeLogo = mounted && theme === "light" ? lightLogoSrc : darkLogoSrc;
 
   return (
     <>
