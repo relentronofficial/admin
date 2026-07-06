@@ -219,8 +219,6 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
   if (!item.scheduledAt || !item.countdownConfig) return null;
 
-  const teal = "rgba(0,0,0,0.55)";
-
   const units = [
     [Math.floor(diff / 86400000), uiStrings?.countdownDays ?? "DAYS"],
     [Math.floor((diff % 86400000) / 3600000), uiStrings?.countdownHours ?? "HOURS"],
@@ -232,8 +230,8 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
   const inner = (
     <div
-      className="rounded-xl overflow-hidden flex flex-col items-center justify-center text-center py-12 px-6 space-y-6"
-      style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.08)", minHeight: 300 }}
+      className="rounded-xl overflow-hidden flex flex-col items-center justify-center text-center py-12 px-6 space-y-6 border"
+      style={{ background: "var(--color-bg-surface)", minHeight: 300 }}
     >
       {/* LIVE CALL label */}
       {item.label && (
@@ -247,7 +245,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
       {/* Call title */}
       {item.title && (
-        <h2 className="text-xl md:text-2xl font-bold leading-snug max-w-md -mt-3" style={{ color: "#111111" }}>
+        <h2 className="text-xl md:text-2xl font-bold leading-snug max-w-md -mt-3 text-foreground">
           {item.title}
         </h2>
       )}
@@ -256,13 +254,10 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
       <div className="flex gap-5 md:gap-8">
         {units.map(([val, label], i) => (
           <div key={i} className="flex flex-col items-center">
-            <span className="text-4xl md:text-5xl font-bold tabular-nums font-mono leading-none" style={{ color: "#111111" }}>
+            <span className="text-4xl md:text-5xl font-bold tabular-nums font-mono leading-none text-foreground">
               {String(val).padStart(2, "0")}
             </span>
-            <span
-              className="text-[10px] font-bold tracking-[0.2em] mt-2 uppercase"
-              style={{ color: teal }}
-            >
+            <span className="text-[10px] font-bold tracking-[0.2em] mt-2 uppercase text-muted-foreground">
               {label}
             </span>
           </div>
@@ -270,7 +265,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
       </div>
 
       {/* Date label — timezone-aware */}
-      <p className="text-xs font-semibold tracking-wide" style={{ color: teal }}>
+      <p className="text-xs font-semibold tracking-wide text-muted-foreground">
         {dateLabel}
       </p>
 
@@ -281,16 +276,16 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
             href={googleCalendarUrl(item.title, item.scheduledAt!)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
-            style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-opacity hover:opacity-80"
+            style={{ background: "var(--color-surface-overlay)" }}
           >
             <CalendarDays size={12} />
             Google Calendar
           </a>
           <button
             onClick={() => downloadIcs(item.title!, item.scheduledAt!)}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
-            style={{ borderColor: `${teal}44`, color: teal, background: `${teal}0d` }}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-opacity hover:opacity-80"
+            style={{ background: "var(--color-surface-overlay)" }}
           >
             <CalendarDays size={12} />
             Download .ics
@@ -300,7 +295,7 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
 
       {/* Stay tuned message */}
       {item.countdownConfig.stayTunedMessage && (
-        <p className="text-sm italic max-w-sm -mt-3" style={{ color: teal }}>
+        <p className="text-sm italic max-w-sm -mt-3 text-muted-foreground">
           {item.countdownConfig.stayTunedMessage}
         </p>
       )}
@@ -308,15 +303,15 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
       {/* Pre-session resources */}
       {item.status !== "past" && resources.length > 0 && (
         <div className="w-full max-w-sm space-y-2 -mt-2">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: teal }}>Prepare for this session</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-center text-muted-foreground">Prepare for this session</p>
           {resources.map(r => (
             <a
               key={r.id}
               href={r.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-              style={{ background: `${teal}10`, border: `1px solid ${teal}30`, color: teal }}
+              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 border border-border text-muted-foreground"
+              style={{ background: "var(--color-surface-overlay)" }}
             >
               <span>{r.type === "pdf" ? "📄" : r.type === "video" ? "🎬" : "🔗"}</span>
               <span className="flex-1 truncate">{r.title}</span>
@@ -337,15 +332,14 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
               <button
                 onClick={() => upsertRsvp.mutate({ liveCallId: item.liveCallId!, status: rsvpData.status === "confirmed" ? "declined" : "confirmed" })}
                 disabled={upsertRsvp.isPending}
-                className="text-[11px] underline disabled:opacity-40"
-                style={{ color: teal }}
+                className="text-[11px] underline disabled:opacity-40 text-muted-foreground"
               >
                 Change
               </button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-1.5">
-              <p className="text-[11px] font-semibold" style={{ color: "#a0a0a0" }}>Will you attend?</p>
+              <p className="text-[11px] font-semibold text-muted-foreground">Will you attend?</p>
               <div className="flex gap-2">
                 <button
                   onClick={() => upsertRsvp.mutate({ liveCallId: item.liveCallId!, status: "confirmed" })}
@@ -358,8 +352,8 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
                 <button
                   onClick={() => upsertRsvp.mutate({ liveCallId: item.liveCallId!, status: "declined" })}
                   disabled={upsertRsvp.isPending}
-                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
-                  style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.5)", background: "transparent" }}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border border-border text-muted-foreground transition-opacity hover:opacity-80 disabled:opacity-40"
+                  style={{ background: "transparent" }}
                 >
                   ✗ Can&apos;t make it
                 </button>
@@ -408,8 +402,8 @@ function MainAreaCountdown({ item }: { item: WorkshopFlowItem }) {
               href={item.externalMeetingUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
-              style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.7)", background: "rgba(0,0,0,0.04)" }}
+              className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border border-border text-muted-foreground transition-opacity hover:text-foreground"
+              style={{ background: "var(--color-surface-overlay)" }}
             >
               <ExternalLink size={15} />
               {item.externalMeetingProvider ? `Join via ${item.externalMeetingProvider}` : "Join via External Link"}
@@ -791,24 +785,21 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
   ];
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "rgba(8,5,16,0.9)", boxShadow: "5px 5px 12px rgba(0,0,0,0.8), -2px -2px 6px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+    <div className="rounded-xl overflow-hidden border" style={{ background: "var(--color-bg-surface)" }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-[var(--color-surface-overlay)] transition-colors"
       >
-        <span className="text-sm font-medium" style={{ color: "#e8ddd0" }}>
+        <span className="text-sm font-medium text-foreground">
           {progress.label}{" "}
-          <span
-            className="font-bold tabular-nums"
-            style={{ color: "rgba(232,221,208,0.75)" }}
-          >
+          <span className="font-bold tabular-nums text-muted-foreground">
             {pct}%
           </span>
         </span>
         {open ? (
-          <ChevronUp size={14} style={{ color: "#e8ddd0" }} />
+          <ChevronUp size={14} className="text-foreground" />
         ) : (
-          <ChevronDown size={14} style={{ color: "#e8ddd0" }} />
+          <ChevronDown size={14} className="text-foreground" />
         )}
       </button>
 
@@ -822,15 +813,15 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
                 size={16}
                 style={
                   filled
-                    ? { color: "#ffffff", fill: "#ffffff", filter: "drop-shadow(0 0 5px rgba(255,255,255,0.6))" }
-                    : { color: "rgba(255,255,255,0.2)", fill: "rgba(255,255,255,0.08)" }
+                    ? { color: "var(--color-text-primary)", fill: "var(--color-text-primary)" }
+                    : { color: "var(--color-text-disabled)", fill: "var(--color-text-disabled)" }
                 }
               />
             ))}
           </div>
 
           {/* Progress bar */}
-          <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.6)" }}>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{ width: `${pct}%`, background: "var(--color-accent)", boxShadow: "0 0 8px rgba(220,38,38,0.6), 0 0 16px rgba(220,38,38,0.3)" }}
@@ -838,7 +829,7 @@ function LearningProgressWidget({ progress }: { progress: LearningProgress | nul
           </div>
 
           {/* Count */}
-          <p className="text-xs tabular-nums" style={{ color: "rgba(232,221,208,0.55)" }}>
+          <p className="text-xs tabular-nums text-muted-foreground">
             {progress.completedLabel ?? `${progress.completedCount} / ${progress.totalCount} Completed`}
           </p>
         </div>
@@ -868,24 +859,24 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
     if (allDone) return null; // eligible === true would show, so this shouldn't fire
 
     return (
-      <div className="rounded-xl overflow-hidden" style={{ background: "rgba(8,5,16,0.9)", boxShadow: "5px 5px 12px rgba(0,0,0,0.8), -2px -2px 6px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="rounded-xl overflow-hidden border" style={{ background: "var(--color-bg-surface)" }}>
         <div className="px-4 py-3 flex items-center gap-2.5">
-          <GraduationCap size={15} style={{ color: "rgba(232,221,208,0.5)" }} className="flex-shrink-0" />
-          <span className="text-xs font-semibold" style={{ color: "rgba(232,221,208,0.6)" }}>Certificate Progress</span>
+          <GraduationCap size={15} className="text-muted-foreground flex-shrink-0" />
+          <span className="text-xs font-semibold text-muted-foreground">Certificate Progress</span>
         </div>
         <div className="px-4 pb-4 space-y-2.5">
           {/* Videos bar */}
           {(() => {
             const vp = cert.videosWatchPct ?? cert.videosCompletedPct;
-            const vColor = vp === 100 ? "#22c55e" : vp >= 50 ? "rgba(255,255,255,0.75)" : "var(--color-accent)";
-            const vGlow = vp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : vp >= 50 ? "0 0 6px rgba(255,255,255,0.2)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
+            const vColor = vp === 100 ? "#22c55e" : vp >= 50 ? "hsl(var(--foreground))" : "var(--color-accent)";
+            const vGlow = vp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : vp >= 50 ? "" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
             return (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px]" style={{ color: "rgba(232,221,208,0.5)" }}>Videos</span>
+                  <span className="text-[10px] text-muted-foreground">Videos</span>
                   <span className="text-[10px] font-bold tabular-nums" style={{ color: vColor }}>{vp}%</span>
                 </div>
-                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${vp}%`, background: vColor, boxShadow: vGlow }} />
                 </div>
               </div>
@@ -894,15 +885,15 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
           {/* Challenges bar */}
           {(() => {
             const cp = cert.challengesCompletedPct;
-            const cColor = cp === 100 ? "#22c55e" : cp >= 50 ? "rgba(255,255,255,0.75)" : "var(--color-accent)";
-            const cGlow = cp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : cp >= 50 ? "0 0 6px rgba(255,255,255,0.2)" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
+            const cColor = cp === 100 ? "#22c55e" : cp >= 50 ? "hsl(var(--foreground))" : "var(--color-accent)";
+            const cGlow = cp === 100 ? "0 0 6px rgba(34,197,94,0.5)" : cp >= 50 ? "" : "0 0 8px rgba(220,38,38,0.55), 0 0 14px rgba(220,38,38,0.25)";
             return (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px]" style={{ color: "rgba(232,221,208,0.5)" }}>Challenges</span>
+                  <span className="text-[10px] text-muted-foreground">Challenges</span>
                   <span className="text-[10px] font-bold tabular-nums" style={{ color: cColor }}>{cp}%</span>
                 </div>
-                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.5)" }}>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
                   <div className="h-full rounded-full transition-all duration-500" style={{ width: `${cp}%`, background: cColor, boxShadow: cGlow }} />
                 </div>
               </div>
@@ -916,7 +907,7 @@ function CertificateCard({ cert, slug }: { cert: WorkshopCertificate; slug: stri
               {cert.remainingChallenges > 0 && `${cert.remainingChallenges} challenge${cert.remainingChallenges > 1 ? "s" : ""} remaining`}
             </p>
           )}
-          <p className="text-[10px] font-medium leading-relaxed" style={{ color: "rgba(232,221,208,0.4)" }}>
+          <p className="text-[10px] font-medium leading-relaxed text-muted-foreground">
             Complete all videos &amp; challenges to unlock your certificate.
           </p>
         </div>
@@ -1464,11 +1455,9 @@ function ChallengeList({
               onClick={() => onSelect(ch)}
               className="w-full text-left rounded-xl p-3 transition-all"
               style={{
-                background: isSelected ? "rgba(10,6,20,0.95)" : "rgba(8,5,16,0.75)",
-                border: isSelected ? "1px solid rgba(220,38,38,0.5)" : "1px solid rgba(255,255,255,0.06)",
-                boxShadow: isSelected
-                  ? "3px 3px 10px rgba(0,0,0,0.7), -1px -1px 4px rgba(255,255,255,0.04), 0 0 12px rgba(220,38,38,0.45), 0 0 26px rgba(220,38,38,0.18)"
-                  : "3px 3px 8px rgba(0,0,0,0.6), -1px -1px 3px rgba(255,255,255,0.03)",
+                background: isSelected ? "var(--color-bg-primary)" : "var(--color-surface-overlay)",
+                border: isSelected ? "1px solid rgba(220,38,38,0.5)" : "1px solid hsl(var(--border))",
+                boxShadow: isSelected ? "0 0 12px rgba(220,38,38,0.3)" : "none",
               }}
             >
               <div className="flex items-center gap-2">
@@ -1513,19 +1502,17 @@ function ChallengeList({
             className="w-full text-left rounded-xl p-3 transition-all"
             style={{
               background: isSelected
-                ? "rgba(10,6,20,0.95)"
+                ? "var(--color-bg-primary)"
                 : isCompleted
                   ? "rgba(34,197,94,0.04)"
-                  : "rgba(8,5,16,0.75)",
+                  : "var(--color-surface-overlay)",
               border: isSelected
                 ? "1px solid rgba(220,38,38,0.5)"
                 : isCompleted
                   ? "1px solid rgba(34,197,94,0.3)"
-                  : "1px solid rgba(255,255,255,0.06)",
+                  : "1px solid hsl(var(--border))",
               borderLeft: isCompleted && !isSelected ? "3px solid rgba(34,197,94,0.5)" : undefined,
-              boxShadow: isSelected
-                ? "3px 3px 10px rgba(0,0,0,0.7), -1px -1px 4px rgba(255,255,255,0.04), 0 0 12px rgba(220,38,38,0.45), 0 0 26px rgba(220,38,38,0.18)"
-                : "3px 3px 8px rgba(0,0,0,0.6), -1px -1px 3px rgba(255,255,255,0.03)",
+              boxShadow: isSelected ? "0 0 12px rgba(220,38,38,0.3)" : "none",
               opacity: ch.isLocked ? 0.55 : isCompleted && !isSelected ? 0.7 : 1,
             }}
           >
@@ -2011,7 +1998,7 @@ function WatchChallengeView({
       </VideoWatermark>
 
       {/* Thin red progress bar directly under the video — YouTube-style */}
-      <div className="w-full h-0.5" style={{ background: "rgba(0,0,0,0.06)" }}>
+      <div className="w-full h-0.5" style={{ background: "var(--color-progress-track)" }}>
         <div
           className="h-full transition-all duration-300"
           style={{
@@ -2048,7 +2035,7 @@ function WatchChallengeView({
               <CheckCircle2 size={13} /> Completed
             </span>
           ) : watchState === "rewatching" ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.55)" }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "var(--color-surface-overlay)" }}>
               <RotateCcw size={12} /> Rewatching
             </span>
           ) : watchState === "watching" ? (
@@ -2056,7 +2043,7 @@ function WatchChallengeView({
               <Play size={13} fill="currentColor" /> Watching {activeProgressPct}%
             </span>
           ) : watchState === "paused" ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.55)" }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "var(--color-surface-overlay)" }}>
               <Pause size={13} /> Paused at {formatTime(currentPlayhead)}
             </span>
           ) : watchState === "resume" ? (
@@ -2064,7 +2051,7 @@ function WatchChallengeView({
               <Play size={11} fill="currentColor" className="ml-0.5" /> Continue Watching {savedProgressPct}%
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.55)" }}>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-muted-foreground" style={{ background: "var(--color-surface-overlay)" }}>
               <Play size={11} fill="currentColor" className="ml-0.5 opacity-50" /> Start Watching
             </span>
           )}
@@ -2073,9 +2060,9 @@ function WatchChallengeView({
 
       {/* Speed control + time info strip — only for HLS (PlyrPlayer) */}
       {ep.hlsUrl && !hlsFailed && (watchState === "watching" || watchState === "paused" || watchState === "rewatching") && (
-        <div className="flex items-center justify-between gap-3 pt-0.5 pb-1" style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+        <div className="flex items-center justify-between gap-3 pt-0.5 pb-1 border-t">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "rgba(0,0,0,0.35)" }}>Speed</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Speed</span>
             <div className="flex items-center gap-0.5">
               {[0.75, 1, 1.25, 1.5, 1.75, 2].map((s) => (
                 <button
@@ -2085,7 +2072,7 @@ function WatchChallengeView({
                   style={
                     speed === s
                       ? { background: "var(--color-accent)", color: "#fff" }
-                      : { background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.5)" }
+                      : { background: "var(--color-surface-overlay)", color: "hsl(var(--muted-foreground))" }
                   }
                 >
                   {s}×
@@ -2094,7 +2081,7 @@ function WatchChallengeView({
             </div>
           </div>
           {activeDuration > 0 && currentPlayhead > 0 && (
-            <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "rgba(0,0,0,0.4)" }}>
+            <span className="text-[11px] tabular-nums flex-shrink-0 text-muted-foreground">
               {formatTime(Math.max(0, activeDuration - currentPlayhead))} left
             </span>
           )}
@@ -2138,7 +2125,7 @@ function WatchChallengeView({
             </div>
           </div>
           <div className="flex items-center gap-2.5">
-            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
               <div
                 className="h-full rounded-full transition-all duration-300"
                 style={{ width: `${savedProgressPct}%`, background: "var(--color-accent)" }}
@@ -2157,29 +2144,29 @@ function WatchChallengeView({
       {watchState === "paused" && (
         <div
           className="rounded-xl border px-4 py-3 space-y-2.5"
-          style={{ background: "rgba(0,0,0,0.025)", borderColor: "rgba(0,0,0,0.09)" }}
+          style={{ background: "var(--color-surface-overlay-xs)" }}
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <div
                 className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
-                style={{ background: "rgba(0,0,0,0.07)" }}
+                style={{ background: "var(--color-surface-overlay-md)" }}
               >
-                <Pause size={13} style={{ color: "rgba(0,0,0,0.55)" }} />
+                <Pause size={13} className="text-muted-foreground" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-bold leading-snug" style={{ color: "#111111" }}>
+                <p className="text-xs font-bold leading-snug text-foreground">
                   Paused — Resume from {formatTime(currentPlayhead)}
                 </p>
-                <p className="text-[11px] truncate" style={{ color: "rgba(0,0,0,0.45)" }}>{ep.title}</p>
+                <p className="text-[11px] truncate text-muted-foreground">{ep.title}</p>
               </div>
             </div>
             <div className="text-right flex-shrink-0">
-              <span className="text-xs font-bold tabular-nums" style={{ color: "rgba(0,0,0,0.5)" }}>
+              <span className="text-xs font-bold tabular-nums text-muted-foreground">
                 {formatTime(currentPlayhead)}
               </span>
               {activeDuration > 0 && (
-                <p className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>
+                <p className="text-[10px] tabular-nums text-muted-foreground">
                   / {formatTime(activeDuration)}
                 </p>
               )}
@@ -2188,7 +2175,7 @@ function WatchChallengeView({
 
           {/* Scrubber showing exact pause position */}
           <div className="space-y-1">
-            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.07)" }}>
+            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
               <div
                 className="h-full rounded-full transition-all duration-300"
                 style={{
@@ -2200,8 +2187,8 @@ function WatchChallengeView({
             </div>
             {activeDuration > 0 && (
               <div className="flex justify-between">
-                <span className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>0:00</span>
-                <span className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>
+                <span className="text-[10px] tabular-nums text-muted-foreground">0:00</span>
+                <span className="text-[10px] tabular-nums text-muted-foreground">
                   {formatTime(activeDuration - currentPlayhead)} remaining
                 </span>
               </div>
@@ -2210,13 +2197,12 @@ function WatchChallengeView({
 
           {/* Restart option */}
           <div className="flex items-center justify-between pt-0.5">
-            <p className="text-[11px]" style={{ color: "rgba(0,0,0,0.4)" }}>
+            <p className="text-[11px] text-muted-foreground">
               Click the video to resume
             </p>
             <button
               onClick={() => { setForceStartFrom(0); setWatchState("not_started"); }}
-              className="text-[11px] font-medium transition-colors"
-              style={{ color: "rgba(0,0,0,0.45)" }}
+              className="text-[11px] font-medium transition-colors text-muted-foreground hover:text-foreground"
             >
               Watch from beginning
             </button>
@@ -2265,14 +2251,14 @@ function WatchChallengeView({
         ).length;
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;
         return total > 0 ? (
-          <div className="space-y-1.5 pt-2 border-t" style={{ borderColor: "rgba(0,0,0,0.08)" }}>
+          <div className="space-y-1.5 pt-2 border-t">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Videos</span>
-              <span className="text-[11px] font-bold tabular-nums" style={{ color: done === total ? "#22c55e" : "rgba(0,0,0,0.55)" }}>
+              <span className="text-[11px] font-bold tabular-nums" style={{ color: done === total ? "#22c55e" : "hsl(var(--muted-foreground))" }}>
                 {done} / {total} completed
               </span>
             </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)", boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.04)" }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
@@ -2294,15 +2280,15 @@ function WatchChallengeView({
       {/* Dynamic Episode list */}
       {episodes.length > 0 && (
         <div className="flex items-center justify-between pb-1">
-          <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "rgba(0,0,0,0.4)" }}>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             In this challenge
           </span>
-          <span className="text-[11px] font-bold tabular-nums" style={{ color: "rgba(0,0,0,0.35)" }}>
+          <span className="text-[11px] font-bold tabular-nums text-muted-foreground">
             {episodes.filter((e: any, i: number) => !!e.isCompleted || (i === activeEpIdx && watchState === "completed")).length} / {episodes.length}
           </span>
         </div>
       )}
-      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(0,0,0,0.1)", background: "#ffffff" }}>
+      <div className="rounded-xl overflow-hidden border" style={{ background: "var(--color-bg-surface)" }}>
         {episodes.map((e: any, i: number) => {
           const isActive = i === activeEpIdx;
           const isDone = !!e.isCompleted || (isActive && watchState === "completed");
@@ -2324,7 +2310,7 @@ function WatchChallengeView({
             : isWatching
               ? "var(--color-accent)"
               : isPausedState
-                ? "rgba(0,0,0,0.15)"
+                ? "hsl(var(--border))"
                 : "transparent";
 
           const bgColor = isDone
@@ -2332,19 +2318,17 @@ function WatchChallengeView({
             : isWatching
               ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
               : isPausedState || isResumeState
-                ? "rgba(0,0,0,0.03)"
+                ? "var(--color-surface-overlay-xs)"
                 : "transparent";
 
           const prevIsDone = i > 0 && (!!episodes[i - 1]?.isCompleted);
           const dividerColor = i === 0
             ? "none"
             : isDone && prevIsDone
-              ? "1px solid rgba(255,255,255,0.18)"   /* white-on-green divider between two completed */
-              : isDone
-                ? "1px solid rgba(0,0,0,0.07)"       /* entering green row from white */
-                : prevIsDone
-                  ? "1px solid rgba(255,255,255,0.18)" /* leaving green row to white — still green bg above */
-                  : "1px solid rgba(0,0,0,0.07)";      /* white-to-white */
+              ? "1px solid rgba(255,255,255,0.18)"
+              : isDone || prevIsDone
+                ? "1px solid rgba(255,255,255,0.1)"
+                : "1px solid hsl(var(--border))";
 
           return (
             <button
@@ -2356,7 +2340,7 @@ function WatchChallengeView({
                 borderTop: dividerColor,
                 background: bgColor,
               }}
-              onMouseEnter={(ev) => { ev.currentTarget.style.background = isDone ? "#1baa4d" : bgColor || "rgba(0,0,0,0.02)"; }}
+              onMouseEnter={(ev) => { ev.currentTarget.style.background = isDone ? "#1baa4d" : bgColor || "var(--color-surface-overlay-xs)"; }}
               onMouseLeave={(ev) => { ev.currentTarget.style.background = bgColor; }}
             >
               {/* Row 1: icon + title + right label */}
@@ -2370,10 +2354,10 @@ function WatchChallengeView({
                       : isWatching
                         ? { background: "var(--color-accent)", color: "#fff" }
                         : isPausedState
-                          ? { background: "rgba(0,0,0,0.08)", color: "#111111" }
+                          ? { background: "var(--color-surface-overlay-md)", color: "hsl(var(--foreground))" }
                           : isResumeState || hasPartialProgress
                             ? { background: "color-mix(in srgb, var(--color-accent) 18%, transparent)", color: "var(--color-accent)" }
-                            : { background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.35)" }
+                            : { background: "var(--color-surface-overlay)", color: "hsl(var(--muted-foreground))" }
                   }
                 >
                   {isDone ? (
@@ -2396,10 +2380,10 @@ function WatchChallengeView({
                     color: isDone
                       ? "#ffffff"
                       : isWatching || isPausedState || isResumeState
-                        ? "#111111"
+                        ? "hsl(var(--foreground))"
                         : hasPartialProgress
-                          ? "rgba(0,0,0,0.75)"
-                          : "rgba(0,0,0,0.65)",
+                          ? "hsl(var(--foreground))"
+                          : "hsl(var(--muted-foreground))",
                   }}
                 >
                   {e.title}
@@ -2410,37 +2394,37 @@ function WatchChallengeView({
                   {isDone ? (
                     <CheckCircle2 size={15} style={{ color: "#ffffff", flexShrink: 0 }} />
                   ) : isRewatching ? (
-                    <span className="text-[11px] font-bold" style={{ color: "rgba(0,0,0,0.5)" }}>Rewatching...</span>
+                    <span className="text-[11px] font-bold text-muted-foreground">Rewatching...</span>
                   ) : isWatching ? (
                     <span className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>Watching...</span>
                   ) : isPausedState ? (
-                    <span className="text-[11px] font-medium whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>
+                    <span className="text-[11px] font-medium whitespace-nowrap text-muted-foreground">
                       Paused at {formatTime(currentPlayhead)}
                     </span>
                   ) : isResumeState ? (
                     <div className="text-right">
                       <span className="text-[11px] font-bold block whitespace-nowrap" style={{ color: "var(--color-accent)" }}>{progressPct}%</span>
                       {epDuration > 0 && (
-                        <span className="text-[10px] block whitespace-nowrap" style={{ color: "rgba(0,0,0,0.38)" }}>
+                        <span className="text-[10px] block whitespace-nowrap text-muted-foreground">
                           {formatDuration(Math.max(0, epDuration - (e.lastWatchedSecs ?? 0)))} left
                         </span>
                       )}
                     </div>
                   ) : hasPartialProgress ? (
                     <div className="text-right">
-                      <span className="text-[11px] font-bold block whitespace-nowrap" style={{ color: "rgba(0,0,0,0.5)" }}>{progressPct}%</span>
+                      <span className="text-[11px] font-bold block whitespace-nowrap text-muted-foreground">{progressPct}%</span>
                       {epDuration > 0 && (
-                        <span className="text-[10px] block whitespace-nowrap" style={{ color: "rgba(0,0,0,0.35)" }}>
+                        <span className="text-[10px] block whitespace-nowrap text-muted-foreground">
                           {formatDuration(Math.max(0, epDuration - (e.actualWatchedSecs ?? 0)))} left
                         </span>
                       )}
                     </div>
                   ) : isActive && liveRealDuration > 0 ? (
-                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.45)" }}>{formatDuration(liveRealDuration)}</span>
+                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "hsl(var(--muted-foreground))" }}>{formatDuration(liveRealDuration)}</span>
                   ) : e.durationSeconds > 0 ? (
-                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.45)" }}>{formatDuration(e.durationSeconds)}</span>
+                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "hsl(var(--muted-foreground))" }}>{formatDuration(e.durationSeconds)}</span>
                   ) : e.durationLabel ? (
-                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.45)" }}>{e.durationLabel}</span>
+                    <span className="text-[11px]" style={{ color: isDone ? "rgba(255,255,255,0.75)" : "hsl(var(--muted-foreground))" }}>{e.durationLabel}</span>
                   ) : null}
                 </span>
               </div>
@@ -2449,16 +2433,14 @@ function WatchChallengeView({
               {showBar && (
                 <div className="mt-2.5 pl-10 space-y-1">
                   <div className="flex items-center gap-2.5">
-                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
                       <div
                         className="h-full rounded-full transition-all duration-300"
                         style={{
                           width: `${progressPct}%`,
                           background: isWatching || isResumeState || hasPartialProgress
                             ? "var(--color-accent)"
-                            : isPausedState
-                              ? "rgba(0,0,0,0.25)"
-                              : "rgba(0,0,0,0.2)",
+                            : "hsl(var(--muted-foreground))",
                           boxShadow: (isWatching || isResumeState || hasPartialProgress)
                             ? "0 0 6px rgba(220,38,38,0.65), 0 0 14px rgba(220,38,38,0.3)"
                             : "none",
@@ -2470,7 +2452,7 @@ function WatchChallengeView({
                     </span>
                   </div>
                   {isActive && activeDuration > 0 && currentPlayhead > 0 && (
-                    <p className="text-[10px] tabular-nums" style={{ color: "rgba(0,0,0,0.38)" }}>
+                    <p className="text-[10px] tabular-nums text-muted-foreground">
                       {formatTime(currentPlayhead)} watched · {formatDuration(Math.max(0, activeDuration - currentPlayhead))} left
                     </p>
                   )}
@@ -2613,11 +2595,11 @@ function QuizChallengeView({
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {Object.keys(answers).length} / {questions.length} answered
             </span>
-            <span className="text-[11px] font-bold tabular-nums" style={{ color: allAnswered ? "#22c55e" : "rgba(0,0,0,0.45)" }}>
+            <span className="text-[11px] font-bold tabular-nums" style={{ color: allAnswered ? "#22c55e" : "hsl(var(--muted-foreground))" }}>
               {Math.round((Object.keys(answers).length / questions.length) * 100)}%
             </span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
+          <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
             <div
               className="h-full rounded-full transition-all duration-300"
               style={{
@@ -2634,7 +2616,7 @@ function QuizChallengeView({
         const selected = answers[q.id];
         const isAnswered = selected !== undefined;
         return (
-          <div key={q.id} className="space-y-2.5 rounded-xl p-4" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.07)" }}>
+          <div key={q.id} className="space-y-2.5 rounded-xl p-4 border" style={{ background: "var(--color-bg-surface)" }}>
             <p className="text-sm font-semibold text-foreground">
               <span className="text-muted-foreground mr-1">Q{qi + 1}.</span>{q.question}
             </p>
@@ -2662,14 +2644,14 @@ function QuizChallengeView({
                     bg = "rgba(34,197,94,0.06)";
                     circleColor = "#22c55e";
                   } else {
-                    borderColor = "rgba(0,0,0,0.08)";
+                    borderColor = "hsl(var(--border))";
                     bg = "transparent";
-                    circleColor = "rgba(0,0,0,0.25)";
+                    circleColor = "hsl(var(--muted-foreground))";
                   }
                 } else {
-                  borderColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.15)";
-                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "#ffffff";
-                  circleColor = isSelected ? "var(--color-accent)" : "rgba(0,0,0,0.3)";
+                  borderColor = isSelected ? "var(--color-accent)" : "hsl(var(--border))";
+                  bg = isSelected ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "var(--color-bg-surface)";
+                  circleColor = isSelected ? "var(--color-accent)" : "hsl(var(--muted-foreground))";
                 }
 
                 return (
@@ -2744,7 +2726,7 @@ function WrittenChallengeView({ challenge, slug, onDone }: { challenge: any; slu
   return (
     <div className="space-y-4 px-5 py-5">
       <ChallengeHeader challenge={challenge} />
-      <div className="rounded-xl p-4 space-y-1.5" style={{ background: "#ffffff", border: "1px solid rgba(0,0,0,0.1)", borderLeft: "3px solid var(--color-accent)" }}>
+      <div className="rounded-xl p-4 space-y-1.5 border" style={{ background: "var(--color-bg-surface)", borderLeft: "3px solid var(--color-accent)" }}>
         <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Your Challenge</p>
         <p className="text-sm text-foreground leading-relaxed">{prompt}</p>
       </div>
@@ -2867,9 +2849,9 @@ function MatchingChallengeView({ challenge, slug, onDone }: { challenge: any; sl
                     onClick={() => !isMatchedLeft && setLeftSelected(isSel ? null : p.id)}
                     className="w-full px-3 py-2 rounded-lg border text-left text-xs font-medium transition-all"
                     style={{
-                      borderColor: isMatchedLeft ? "#22c55e88" : isWrong ? "#ef4444" : isSel ? "var(--color-accent)" : "rgba(0,0,0,0.12)",
-                      background: isMatchedLeft ? "#22c55e0a" : isWrong ? "#ef44440a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "white",
-                      color: isMatchedLeft ? "#22c55e" : "#111111",
+                      borderColor: isMatchedLeft ? "#22c55e88" : isWrong ? "#ef4444" : isSel ? "var(--color-accent)" : "hsl(var(--border))",
+                      background: isMatchedLeft ? "#22c55e0a" : isWrong ? "#ef44440a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "var(--color-bg-surface)",
+                      color: isMatchedLeft ? "#22c55e" : "hsl(var(--foreground))",
                     }}
                   >
                     {p.left}
@@ -2892,9 +2874,9 @@ function MatchingChallengeView({ challenge, slug, onDone }: { challenge: any; sl
                     onClick={() => leftSelected && !isMatchedRight && setRightSelected(isSel ? null : p.id)}
                     className="w-full px-3 py-2 rounded-lg border text-left text-xs transition-all"
                     style={{
-                      borderColor: isMatchedRight ? "#22c55e88" : isSel ? "var(--color-accent)" : "rgba(0,0,0,0.12)",
-                      background: isMatchedRight ? "#22c55e0a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "white",
-                      color: isMatchedRight ? "#22c55e" : !leftSelected ? "rgba(0,0,0,0.45)" : "#111111",
+                      borderColor: isMatchedRight ? "#22c55e88" : isSel ? "var(--color-accent)" : "hsl(var(--border))",
+                      background: isMatchedRight ? "#22c55e0a" : isSel ? "color-mix(in srgb, var(--color-accent) 10%, transparent)" : "var(--color-bg-surface)",
+                      color: isMatchedRight ? "#22c55e" : !leftSelected ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
                       opacity: !leftSelected && !isMatchedRight ? 0.6 : 1,
                     }}
                   >
@@ -2997,7 +2979,7 @@ function FlashcardChallengeView({ challenge, slug, onDone }: { challenge: any; s
       <button
         onClick={() => setFlipped((f) => !f)}
         className="w-full rounded-2xl border p-8 text-center transition-all min-h-[180px] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-accent/50"
-        style={{ borderColor: "rgba(0,0,0,0.1)", background: flipped ? "color-mix(in srgb, var(--color-accent) 6%, #ffffff)" : "#ffffff" }}
+        style={{ borderColor: "hsl(var(--border))", background: flipped ? "color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-surface))" : "var(--color-bg-surface)" }}
       >
         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           {flipped ? "Answer" : "Question — tap to flip"}
@@ -3053,7 +3035,6 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
   const memberName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "";
   const isPast = challenge.status === "past";
   const lColor = challenge.labelColor ?? "#ff3d8b";
-  const teal = "rgba(0,0,0,0.55)";
   const [diff, setDiff] = useState(0);
   const [callCreds, setCallCreds] = useState<{ token: string; wsUrl: string; roomName: string; startedAt?: string | null; isWebinar?: boolean } | null>(null);
   const [leftByChoice, setLeftByChoice] = useState(false);
@@ -3177,15 +3158,15 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
             </a>
           )}
           {challenge.recordingUrl && chapters.length > 0 && (
-            <div className="rounded-xl border p-4 space-y-2 text-left" style={{ borderColor: "#2a2a2a", background: "#0d0d0d" }}>
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#606060" }}>Jump to section</p>
+            <div className="rounded-xl border p-4 space-y-2 text-left" style={{ background: "var(--color-bg-surface)" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Jump to section</p>
               {chapters.map((ch: { id: string; label: string; timestampSeconds: number }) => {
                 const url = `${challenge.recordingUrl}${challenge.recordingUrl.includes("?") ? "&" : "?"}t=${ch.timestampSeconds}`;
                 return (
                   <a key={ch.id} href={url} target="_blank" rel="noopener noreferrer"
                      className="flex items-center gap-3 w-full py-1 rounded hover:opacity-80 transition-opacity">
                     <span className="font-mono text-[11px] font-bold tabular-nums shrink-0" style={{ color: lColor }}>{fmtTimestamp(ch.timestampSeconds)}</span>
-                    <span className="text-sm" style={{ color: "#a0a0a0" }}>{ch.label}</span>
+                    <span className="text-sm text-muted-foreground">{ch.label}</span>
                   </a>
                 );
               })}
@@ -3194,10 +3175,10 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
           {challenge.aiSummary && (
             <div
               className="rounded-xl border p-4 text-left space-y-2"
-              style={{ borderColor: "#333", background: "#0d0d0d" }}
+              style={{ background: "var(--color-bg-surface)" }}
             >
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#606060" }}>AI Session Summary</p>
-              <p className="text-xs leading-relaxed italic whitespace-pre-line" style={{ color: "#a0a0a0" }}>{challenge.aiSummary}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">AI Session Summary</p>
+              <p className="text-xs leading-relaxed italic whitespace-pre-line text-muted-foreground">{challenge.aiSummary}</p>
             </div>
           )}
           {certError && (
@@ -3219,29 +3200,29 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
       ) : (
         <div
           className="rounded-xl border p-8 text-center space-y-5"
-          style={{ background: "#ffffff", borderColor: `${lColor}44` }}
+          style={{ background: "var(--color-bg-surface)", borderColor: `${lColor}44` }}
         >
           <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: lColor }}>
             {challenge.label ?? "LIVE CALL:"}
           </p>
-          <h3 className="text-lg font-bold leading-snug -mt-2" style={{ color: "#111111" }}>{challenge.title}</h3>
+          <h3 className="text-lg font-bold leading-snug -mt-2 text-foreground">{challenge.title}</h3>
 
           {diff > 0 ? (
             <>
               <div className="flex gap-5 md:gap-8 justify-center">
                 {units.map(([val, label], i) => (
                   <div key={i} className="flex flex-col items-center">
-                    <span className="text-4xl font-bold tabular-nums font-mono leading-none" style={{ color: "#111111" }}>
+                    <span className="text-4xl font-bold tabular-nums font-mono leading-none text-foreground">
                       {String(val).padStart(2, "0")}
                     </span>
-                    <span className="text-[11px] font-bold tracking-[0.15em] mt-2 uppercase" style={{ color: "rgba(0,0,0,0.55)" }}>
+                    <span className="text-[11px] font-bold tracking-[0.15em] mt-2 uppercase text-muted-foreground">
                       {label}
                     </span>
                   </div>
                 ))}
               </div>
               {dateLabel && (
-                <p className="text-xs font-semibold tracking-wide" style={{ color: "rgba(0,0,0,0.55)" }}>
+                <p className="text-xs font-semibold tracking-wide text-muted-foreground">
                   {dateLabel}
                 </p>
               )}
@@ -3252,16 +3233,16 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                     href={googleCalendarUrl(challenge.title, challenge.scheduledAt)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
-                    style={{ borderColor: "rgba(0,0,0,0.15)", color: "rgba(0,0,0,0.6)", background: "rgba(0,0,0,0.05)" }}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-opacity hover:opacity-80"
+                    style={{ background: "var(--color-surface-overlay)" }}
                   >
                     <CalendarDays size={12} />
                     Google Calendar
                   </a>
                   <button
                     onClick={() => downloadIcs(challenge.title!, challenge.scheduledAt!)}
-                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-opacity hover:opacity-80"
-                    style={{ borderColor: "rgba(0,0,0,0.15)", color: "rgba(0,0,0,0.6)", background: "rgba(0,0,0,0.05)" }}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-opacity hover:opacity-80"
+                    style={{ background: "var(--color-surface-overlay)" }}
                   >
                     <CalendarDays size={12} />
                     Download .ics
@@ -3269,18 +3250,18 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                 </div>
               )}
               {challenge.stayTunedMessage && (
-                <p className="text-sm italic max-w-sm mx-auto" style={{ color: "rgba(0,0,0,0.55)" }}>
+                <p className="text-sm italic max-w-sm mx-auto text-muted-foreground">
                   {challenge.stayTunedMessage}
                 </p>
               )}
               {/* Pre-session resources */}
               {!isPast && resources.length > 0 && (
                 <div className="w-full max-w-sm space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: "rgba(0,0,0,0.55)" }}>Prepare for this session</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-center text-muted-foreground">Prepare for this session</p>
                   {resources.map((r: { id: string; title: string; url: string; type: string }) => (
                     <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-                       style={{ background: "rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.1)", color: "rgba(0,0,0,0.65)" }}>
+                       className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 border border-border text-muted-foreground"
+                       style={{ background: "var(--color-surface-overlay)" }}>
                       <span>{r.type === "pdf" ? "📄" : r.type === "video" ? "🎬" : "🔗"}</span>
                       <span className="flex-1 truncate">{r.title}</span>
                       <ExternalLink size={10} />
@@ -3299,15 +3280,14 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                       <button
                         onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: rsvpData.status === "confirmed" ? "declined" : "confirmed" })}
                         disabled={upsertRsvp.isPending}
-                        className="text-[11px] underline disabled:opacity-40"
-                        style={{ color: "rgba(0,0,0,0.6)" }}
+                        className="text-[11px] underline disabled:opacity-40 text-muted-foreground"
                       >
                         Change
                       </button>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-1.5">
-                      <p className="text-[11px] font-semibold" style={{ color: "#a0a0a0" }}>Will you attend?</p>
+                      <p className="text-[11px] font-semibold text-muted-foreground">Will you attend?</p>
                       <div className="flex gap-2">
                         <button
                           onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: "confirmed" })}
@@ -3320,8 +3300,8 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                         <button
                           onClick={() => upsertRsvp.mutate({ liveCallId: challenge.liveCallId!, status: "declined" })}
                           disabled={upsertRsvp.isPending}
-                          className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border transition-opacity hover:opacity-80 disabled:opacity-40"
-                          style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.5)", background: "transparent" }}
+                          className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold border border-border text-muted-foreground transition-opacity hover:opacity-80 disabled:opacity-40"
+                          style={{ background: "transparent" }}
                         >
                           ✗ Can&apos;t make it
                         </button>
@@ -3367,8 +3347,8 @@ function LiveCallChallengeView({ challenge }: { challenge: any; onDone: () => vo
                   href={challenge.externalMeetingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border transition-opacity"
-                  style={{ borderColor: "rgba(0,0,0,0.12)", color: "rgba(0,0,0,0.7)", background: "rgba(0,0,0,0.04)" }}
+                  className="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold border border-border text-muted-foreground hover:text-foreground transition-opacity"
+                  style={{ background: "var(--color-surface-overlay)" }}
                 >
                   <ExternalLink size={15} />
                   {challenge.externalMeetingProvider ? `Join via ${challenge.externalMeetingProvider}` : "Join via External Link"}
@@ -3483,11 +3463,11 @@ function WorkshopAccessGate({ detail, slug }: { detail: any; slug: string }) {
       )}
 
       <div className="space-y-2">
-        <h1 className="text-xl font-bold" style={{ color: "var(--color-bg-primary)" }}>
+        <h1 className="text-xl font-bold text-foreground">
           {detail?.title ?? "Workshop"}
         </h1>
         {detail?.description && (
-          <p className="text-sm leading-relaxed" style={{ color: "rgba(0,0,0,0.55)" }}>
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {detail.description}
           </p>
         )}
@@ -3515,8 +3495,7 @@ function WorkshopAccessGate({ detail, slug }: { detail: any; slug: string }) {
         <div>
           <Link
             href={detail.backUrl}
-            className="text-xs font-semibold uppercase tracking-widest transition-colors"
-            style={{ color: "rgba(0,0,0,0.35)" }}
+            className="text-xs font-semibold uppercase tracking-widest transition-colors text-muted-foreground hover:text-foreground"
           >
             ← {detail?.backLabel ?? "Back to Workshops"}
           </Link>
@@ -3642,14 +3621,6 @@ export default function WorkshopDetailPage() {
     }
   }, [tabs.length]);
 
-  // Force full white background on this page — class in globals.css applies
-  // background-color: #ffffff !important to html, body, and any .bg-background divs,
-  // overriding the platform dark theme regardless of CSS var timing.
-  useEffect(() => {
-    document.documentElement.classList.add("workshop-white-page");
-    return () => document.documentElement.classList.remove("workshop-white-page");
-  }, []);
-
   useEffect(() => {
     if (!slug) return;
     let mounted = true;
@@ -3718,25 +3689,7 @@ export default function WorkshopDetailPage() {
   const currentTabId = activeTab || tabs[0]?.id;
 
   return (
-    <div className="-mx-4 md:-mx-6 -mt-6 px-4 md:px-6 pt-6 pb-8 min-h-screen space-y-3" style={{
-      backgroundColor: "#f8f6f2",
-      backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.055) 1px, transparent 1px)",
-      backgroundSize: "22px 22px",
-      /* Redefine shadcn CSS vars in HSL-triplet format (no hsl() wrapper) so Tailwind's
-         hsl(var(--foreground)) expansion produces valid CSS on this light-bg page */
-      ["--foreground" as string]: "0 0% 6.7%",       /* #111111 */
-      ["--muted-foreground" as string]: "0 0% 50%",   /* ~rgba(0,0,0,0.5) on pearl */
-      ["--card" as string]: "0 0% 100%",              /* #ffffff — pure white cards on pearl bg */
-      ["--card-foreground" as string]: "0 0% 6.7%",   /* #111111 */
-      ["--border" as string]: "0 0% 90.2%",           /* ~rgba(0,0,0,0.1) on pearl */
-      ["--ring" as string]: "0 72.2% 50.6%",          /* accent red */
-      ["--accent" as string]: "0 0% 96.1%",           /* ~rgba(0,0,0,0.04) hover on pearl */
-      ["--background" as string]: "40 31% 96.1%",     /* #f8f6f2 pearl white */
-      ["--input" as string]: "0 0% 90.2%",
-      ["--secondary" as string]: "0 0% 96.1%",
-      ["--secondary-foreground" as string]: "0 0% 6.7%",
-      ["--muted" as string]: "0 0% 96.1%",
-    }}>
+    <div className="-mx-4 md:-mx-6 -mt-6 px-4 md:px-6 pt-6 pb-8 min-h-screen space-y-3">
       {flowData?.flowItems && (
         <LiveCallUnlockWatcher
           flowItems={flowData.flowItems}
@@ -3744,27 +3697,26 @@ export default function WorkshopDetailPage() {
         />
       )}
       {/* Page header */}
-      <div className="pb-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
+      <div className="pb-4 border-b">
         {detail.backUrl && (
           <Link
             href={detail.backUrl}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest transition-colors hover:text-gray-900 mb-3"
-            style={{ color: "rgba(0,0,0,0.4)" }}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors mb-3"
           >
             <ChevronLeft size={13} />
             {detail.backLabel ?? "Back"}
           </Link>
         )}
-        <h1 className="text-2xl md:text-3xl font-bold leading-tight" style={{ color: "#111111" }}>{detail.title}</h1>
+        <h1 className="text-2xl md:text-3xl font-bold leading-tight text-foreground">{detail.title}</h1>
         {progress && (
           <div className="mt-3 flex items-center gap-3">
-            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(0,0,0,0.08)" }}>
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{ width: `${progress.percentage ?? 0}%`, background: "var(--color-accent)" }}
               />
             </div>
-            <span className="text-[11px] font-bold tabular-nums" style={{ color: "rgba(0,0,0,0.45)", minWidth: 36 }}>
+            <span className="text-[11px] font-bold tabular-nums text-muted-foreground" style={{ minWidth: 36 }}>
               {progress.percentage ?? 0}%
             </span>
           </div>
@@ -3775,7 +3727,7 @@ export default function WorkshopDetailPage() {
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 items-start pt-1">
 
         {/* ── Left: Main Area ── */}
-        <div className="flex-1 min-w-0 rounded-2xl" style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.07)" }}>
+        <div className="flex-1 min-w-0 rounded-2xl border overflow-hidden">
           {mainView.kind === "assignment" ? (
             <AssignmentMainView
               assignmentId={mainView.assignmentId}
@@ -3796,7 +3748,6 @@ export default function WorkshopDetailPage() {
           ) : (
             <div
               className="flex flex-col items-center justify-center gap-5 text-center px-6 py-20 md:px-10 md:py-24 min-h-[260px]"
-              style={{ background: "#ffffff" }}
             >
               <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center"
@@ -3805,13 +3756,13 @@ export default function WorkshopDetailPage() {
                 <Play size={26} style={{ color: "var(--color-accent)" }} />
               </div>
               <div className="space-y-2">
-                <p className="text-base font-bold" style={{ color: "#111111" }}>
+                <p className="text-base font-bold text-foreground">
                   Ready to start learning?
                 </p>
-                <p className="text-xs lg:hidden max-w-xs mx-auto" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.6 }}>
+                <p className="text-xs lg:hidden max-w-xs mx-auto text-muted-foreground" style={{ lineHeight: 1.6 }}>
                   Pick a challenge from the list below to begin your learning journey.
                 </p>
-                <p className="text-xs hidden lg:block max-w-xs mx-auto" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.6 }}>
+                <p className="text-xs hidden lg:block max-w-xs mx-auto text-muted-foreground" style={{ lineHeight: 1.6 }}>
                   Pick a challenge from the sidebar to begin your learning journey.
                 </p>
               </div>
@@ -3827,25 +3778,7 @@ export default function WorkshopDetailPage() {
         </div>
 
         {/* ── Right: Sidebar ── */}
-        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3" style={{
-          background: "#111111",
-          borderRadius: "16px",
-          padding: "12px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.12)",
-          /* HSL triplets so Tailwind's hsl(var(--...)) produces valid CSS on dark sidebar */
-          ["--foreground" as string]: "0 0% 94.1%",        /* #f0f0f0 */
-          ["--muted-foreground" as string]: "0 0% 60%",    /* ~rgba(255,255,255,0.4) on #111 */
-          ["--card" as string]: "0 0% 10.6%",              /* ~rgba(255,255,255,0.04) on #111 */
-          ["--card-foreground" as string]: "0 0% 94.1%",   /* #f0f0f0 */
-          ["--border" as string]: "0 0% 14.5%",            /* ~rgba(255,255,255,0.08) on #111 */
-          ["--ring" as string]: "0 72.2% 50.6%",
-          ["--accent" as string]: "0 0% 12%",              /* ~rgba(255,255,255,0.05) on #111 */
-          ["--background" as string]: "0 0% 6.7%",         /* #111111 */
-          ["--muted" as string]: "0 0% 10.2%",
-          ["--secondary" as string]: "0 0% 10.2%",
-          ["--secondary-foreground" as string]: "0 0% 94.1%",
-          ["--input" as string]: "0 0% 14.5%",
-        }}>
+        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-3 rounded-2xl p-3 border" style={{ background: "var(--color-bg-surface)" }}>
           {/* Challenge progress + certificate — always visible above tabs */}
           <LearningProgressWidget progress={progress} />
           {detail.certificate && (
@@ -3854,7 +3787,7 @@ export default function WorkshopDetailPage() {
 
           {/* Tab buttons */}
           {tabs.length > 0 && (
-            <div className="flex gap-1.5 p-1.5 rounded-xl overflow-x-auto" style={{ background: "rgba(0,0,0,0.55)", boxShadow: "inset 2px 2px 6px rgba(0,0,0,0.8), inset -1px -1px 3px rgba(255,255,255,0.04)", scrollbarWidth: "none" }}>
+            <div className="flex gap-1.5 p-1.5 rounded-xl overflow-x-auto" style={{ background: "var(--color-surface-overlay-lg)", scrollbarWidth: "none" }}>
               {tabs
                 .slice()
                 .sort((a: WorkshopTab, b: WorkshopTab) => a.order - b.order)
@@ -3865,16 +3798,15 @@ export default function WorkshopDetailPage() {
                     className={cn(
                       "flex-1 flex-shrink-0 min-w-[80px] px-3 py-2 text-xs font-bold rounded-lg transition-all duration-200 whitespace-nowrap",
                       currentTabId === tab.id
-                        ? ""
-                        : "text-white/45 hover:text-white/80 hover:bg-white/[0.05] cursor-pointer"
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay-md)] cursor-pointer"
                     )}
                     style={
                       currentTabId === tab.id
                         ? {
-                            background: "rgba(10,6,20,0.95)",
-                            color: "#e8ddd0",
+                            background: "var(--color-bg-primary)",
                             border: "1px solid rgba(220,38,38,0.5)",
-                            boxShadow: "3px 3px 8px rgba(0,0,0,0.7), -1px -1px 4px rgba(255,255,255,0.04), 0 0 10px rgba(220,38,38,0.4), 0 0 22px rgba(220,38,38,0.18)",
+                            boxShadow: "0 0 10px rgba(220,38,38,0.3)",
                           }
                         : {}
                     }
