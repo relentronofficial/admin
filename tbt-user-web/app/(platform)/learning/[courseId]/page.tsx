@@ -711,23 +711,23 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-6">
-          <h1 className="text-2xl font-bold text-foreground leading-tight">{course.title}</h1>
+          <h1 className="text-2xl font-bold leading-tight overlay-text">{course.title}</h1>
           {course.description && (
-            <p className="text-sm mt-1 line-clamp-2" style={{ color: "var(--color-text-normal)" }}>
+            <p className="text-sm mt-1 line-clamp-2 overlay-meta">
               {course.description}
             </p>
           )}
           <div className="flex items-center gap-3 mt-3">
             {course.level && (
               <span
-                className="text-xs capitalize px-2.5 py-1 rounded-full font-medium"
-                style={{ background: "var(--color-surface-overlay-lg)", color: "var(--color-text-normal)" }}
+                className="text-xs capitalize px-2.5 py-1 rounded-full font-medium overlay-meta"
+                style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(4px)" }}
               >
                 {course.level}
               </span>
             )}
             {lessons.length > 0 && (
-              <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
+              <span className="text-xs overlay-meta">
                 {lessons.length} lesson{lessons.length !== 1 ? "s" : ""}
               </span>
             )}
@@ -1757,13 +1757,13 @@ export default function CourseDetailPage({
                 </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-6">
-                <h1 className="text-2xl font-bold text-foreground leading-tight">{course.title}</h1>
+                <h1 className="text-2xl font-bold leading-tight overlay-text">{course.title}</h1>
                 {course.description && (
-                  <p className="text-sm mt-1 line-clamp-2" style={{ color: "var(--color-text-normal)" }}>
+                  <p className="text-sm mt-1 line-clamp-2 overlay-meta">
                     {course.description}
                   </p>
                 )}
-                <p className="text-xs mt-2" style={{ color: "var(--color-text-subtle)" }}>
+                <p className="text-xs mt-2 overlay-meta">
                   {completedIds.size} / {lessons.length} completed
                 </p>
               </div>

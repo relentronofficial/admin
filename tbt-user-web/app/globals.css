@@ -179,6 +179,22 @@
   overflow: visible !important;
 }
 
+/* Overlay text — for headings / body that sit on top of dark image/video/banner gradients.
+ * These must always be white regardless of the active theme because the gradient is always dark. */
+.overlay-text {
+  color: #ffffff;
+  text-shadow:
+    0 0 2px rgba(255,255,255,0.25),
+    0 0 6px rgba(255,255,255,0.18),
+    0 1px 2px rgba(0,0,0,0.85);
+}
+
+/* Slightly softer variant for metadata / secondary text on dark gradients */
+.overlay-meta {
+  color: rgba(255,255,255,0.78);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.75);
+}
+
 /* Certificate modal print isolation — hide everything except the open modal */
 @media print {
   body > * { display: none !important; }
