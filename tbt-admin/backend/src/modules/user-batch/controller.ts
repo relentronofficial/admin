@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { sendPushNotification } from '../../lib/firebase.js';
+import { createAdminNotification } from '../../lib/adminNotifications.js';
 
 async function sendBatchNotif(
   server: { prisma: any; io: any },
@@ -302,13 +303,23 @@ export async function submitDayHandler(
     memberId, member.batchId, dayNum, onBreak.length > 0 ? 'break' : 'present',
   );
 
+  const memberName = `${member.firstName} ${member.lastName ?? ''}`.trim();
+
   // Notify admin room so they can review without polling
   req.server.io.to('admin').emit('admin:day_submitted', {
     memberId,
-    memberName: `${member.firstName} ${member.lastName ?? ''}`.trim(),
+    memberName,
     memberCode: member.memberId,
     batchId: member.batchId,
     dayNumber: dayNum,
+  });
+
+  // Persist notification to admin bell
+  void createAdminNotification(req.server.prisma, {
+    title: 'Batch Day Submitted',
+    body: `${memberName} submitted Day ${dayNum}.`,
+    type: 'day_submitted',
+    metadata: { memberId, batchId: member.batchId, dayNumber: dayNum, memberName },
   });
 
   return reply.send({ success: true, data: record, error: null });

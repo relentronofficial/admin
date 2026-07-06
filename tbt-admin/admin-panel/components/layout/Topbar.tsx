@@ -2,7 +2,7 @@
 
 import { UserButton } from "@clerk/nextjs";
 import { Bell, Settings, Check, CheckCheck, Megaphone, Users, ShoppingBag, Video, BookOpen, Info, ClipboardList } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import {
   useAdminNotifications,
@@ -12,16 +12,18 @@ import {
 } from "@/lib/hooks/useTbt";
 import { getAdminSocket } from "@/lib/socket/client";
 import { toast } from "react-hot-toast";
+import { resolveNotificationRoute } from "@/lib/utils/notificationRouter";
 
 // ── Type icon map ─────────────────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<string, { Icon: React.ElementType; color: string; bg: string }> = {
-  member_pending:          { Icon: Users,      color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-  member_joined:           { Icon: Users,      color: "#22c55e", bg: "rgba(34,197,94,0.15)"  },
-  workshop_access_request: { Icon: Video,      color: "#3b82f6", bg: "rgba(59,130,246,0.15)" },
-  course_access_request:   { Icon: BookOpen,   color: "#8b5cf6", bg: "rgba(139,92,246,0.15)" },
-  product_inquiry:         { Icon: ShoppingBag,color: "#ec4899", bg: "rgba(236,72,153,0.15)" },
-  announcement:            { Icon: Megaphone,  color: "#dc2626", bg: "rgba(220,38,38,0.15)"  },
+  member_pending:          { Icon: Users,         color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
+  member_joined:           { Icon: Users,         color: "#22c55e", bg: "rgba(34,197,94,0.15)"  },
+  workshop_access_request: { Icon: Video,         color: "#3b82f6", bg: "rgba(59,130,246,0.15)" },
+  course_access_request:   { Icon: BookOpen,      color: "#8b5cf6", bg: "rgba(139,92,246,0.15)" },
+  product_inquiry:         { Icon: ShoppingBag,   color: "#ec4899", bg: "rgba(236,72,153,0.15)" },
+  announcement:            { Icon: Megaphone,     color: "#dc2626", bg: "rgba(220,38,38,0.15)"  },
+  day_submitted:           { Icon: ClipboardList, color: "#f97316", bg: "rgba(249,115,22,0.15)" },
 };
 
 function typeConfig(type: string) {
@@ -41,6 +43,7 @@ function timeAgo(dateStr: string | Date) {
 // ── Notification dropdown ─────────────────────────────────────────────────────
 
 function NotifPanel({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
   const { data, isLoading } = useAdminNotifications(1, 30);
   const markRead   = useMarkAdminNotificationRead();
   const markAll    = useMarkAllAdminNotificationsRead();
@@ -50,6 +53,9 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
 
   function handleClick(n: any) {
     if (!n.isRead) markRead.mutate(n.id);
+    const route = resolveNotificationRoute({ type: n.type, metadata: n.metadata });
+    onClose();
+    router.push(route);
   }
 
   return (
