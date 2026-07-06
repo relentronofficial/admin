@@ -154,6 +154,16 @@ function InquiriesTab() {
 
 export default function ProductsPage() {
   const [activeTab, setActiveTab] = useState<"products" | "inquiries">("products");
+
+  // Deep-link from notification: ?tab=inquiries → auto-switch tab
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "inquiries") {
+      setActiveTab("inquiries");
+      window.history.replaceState({}, "", "/products");
+    }
+  }, []);
+
   const { data, isLoading, refetch } = useListProducts();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();

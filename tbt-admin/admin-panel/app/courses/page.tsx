@@ -129,6 +129,26 @@ export default function CoursesPage() {
   const [selectedCourse, setSelectedCourse] = useState<any>(null);
   const [courseUploading, setCourseUploading] = useState<string | null>(null);
 
+  // Deep-link from notification: ?open=<courseId> → auto-select that course
+  const [autoOpenId, setAutoOpenId] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("open");
+    if (id) {
+      setAutoOpenId(id);
+      window.history.replaceState({}, "", "/courses");
+    }
+  }, []);
+  useEffect(() => {
+    if (!autoOpenId || courses.length === 0) return;
+    const course = courses.find((c: any) => c.id === autoOpenId);
+    if (course) {
+      setViewMode("courses");
+      setSelectedCourse(course);
+      setAutoOpenId(null);
+    }
+  }, [autoOpenId, courses]);
+
   const setCourseField = (k: string, v: any) => setCourseForm((f: any) => ({ ...f, [k]: v }));
 
   const openCreateCourse = () => { setCourseForm(EMPTY_COURSE); setEditingCourse(null); setShowCourseForm(true); };

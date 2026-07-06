@@ -21,6 +21,16 @@ export default function AdminMessagesPage() {
   const queryClient = useQueryClient();
 
   const [activeId, setActiveId]   = useState<string | null>(null);
+
+  // Deep-link from notification: ?conversation=<id> → auto-open that conversation
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const convoId = params.get("conversation");
+    if (convoId) {
+      setActiveId(convoId);
+      window.history.replaceState({}, "", "/messages");
+    }
+  }, []);
   const [search, setSearch]       = useState("");
   const [filter, setFilter]       = useState<FilterTab>("all");
   const [input, setInput]         = useState("");
