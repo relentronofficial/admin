@@ -274,7 +274,7 @@ export function Navbar() {
   const routerRef = useRef(router);
   routerRef.current = router;
 
-  const { sidebarOpen, setSidebarOpen, toggleSidebar } = useUIStore();
+  const { sidebarOpen, setSidebarOpen, toggleSidebar, theme } = useUIStore();
   const { config, nav, rightIcons } = useSiteConfig();
   const queryClient = useQueryClient();
 
@@ -379,6 +379,12 @@ export function Navbar() {
   const logoUrl = config?.logoUrl ?? null;
   const homeHref = nav[0]?.href ?? "/tbt";
 
+  // Light mode uses the black logo for contrast; dark mode uses the white/custom logo.
+  // If a custom logoUrl is set by the admin it is used in both themes as-is.
+  const darkLogoSrc  = logoUrl || "/tbt_logo.webp";
+  const lightLogoSrc = logoUrl || "/tbt_logo_black.png";
+  const activeLogo   = theme === "light" ? lightLogoSrc : darkLogoSrc;
+
   return (
     <>
       {/* ── Mobile drawer backdrop ────────────────────────────────────────── */}
@@ -416,7 +422,7 @@ export function Navbar() {
             onClick={() => setSidebarOpen(false)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoUrl || "/tbt_logo.webp"} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" />
+            <img src={activeLogo} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" onError={(e) => { (e.target as HTMLImageElement).src = darkLogoSrc; }} />
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -478,7 +484,7 @@ export function Navbar() {
         {/* Logo */}
         <Link href={homeHref} className="flex-shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoUrl || "/tbt_logo.webp"} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" fetchPriority="high" />
+          <img src={activeLogo} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" fetchPriority="high" onError={(e) => { (e.target as HTMLImageElement).src = darkLogoSrc; }} />
         </Link>
 
         {/* Visual separator (desktop) */}
