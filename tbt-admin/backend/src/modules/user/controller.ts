@@ -2418,7 +2418,7 @@ export async function getWorkshopDetailHandler(request: FastifyRequest, reply: F
   // between the two on the client. Same defensive pattern as the courseEpisode
   // fallback in getEpisodePlaybackHandler.
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     include: {
       enrollments: {
         where: { memberId: request.memberId },
@@ -2573,7 +2573,7 @@ export async function getWorkshopCertificateHandler(request: FastifyRequest, rep
   const { slug } = request.params as { slug: string };
 
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     include: {
       challenges: {
         select: { id: true, type: true, episodes: { select: { id: true } } },
@@ -2656,7 +2656,7 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
   if (cachedFlow) return ok(reply, cachedFlow);
 
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     include: {
       flowItems: {
         orderBy: { order: 'asc' },
@@ -2787,7 +2787,7 @@ export async function getWorkshopQaHandler(request: FastifyRequest, reply: Fasti
   const { page = 1, limit = 20 } = request.query as { page?: number; limit?: number };
 
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     select: { id: true },
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
@@ -2865,7 +2865,7 @@ export async function postWorkshopQaHandler(request: FastifyRequest, reply: Fast
   if (!questionText?.trim()) return fail(reply, 400, 'Question text is required');
 
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     select: { id: true },
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
@@ -2927,7 +2927,7 @@ export async function getWorkshopAssignmentsHandler(request: FastifyRequest, rep
 
   const [workshop, uiStrings] = await Promise.all([
     request.server.prisma.workshop.findFirst({
-      where: { OR: [{ slug }, { id: slug }] },
+      where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
       include: {
         challenges: {
           orderBy: { order: 'asc' },
@@ -3967,7 +3967,7 @@ export async function requestWorkshopAccessHandler(request: FastifyRequest, repl
   const prisma = request.server.prisma;
 
   const workshop = await prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     select: { id: true, title: true },
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
@@ -4010,7 +4010,7 @@ export async function getWorkshopChallengesHandler(request: FastifyRequest, repl
   const { slug } = request.params as { slug: string };
 
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     select: { id: true },
   });
   if (!workshop) return fail(reply, 404, 'Workshop not found');
@@ -4192,7 +4192,7 @@ export async function getWorkshopOverviewHandler(request: FastifyRequest, reply:
 
 async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     include: {
       enrollments: { where: { memberId: request.memberId }, select: { status: true } },
       challenges: { select: { id: true, type: true, episodes: { select: { id: true, durationSeconds: true } } }, orderBy: { order: 'asc' } },
@@ -4291,7 +4291,7 @@ async function getWorkshopDetailData(request: FastifyRequest, slug: string) {
 
 async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promise<any[]> {
   const workshop = await request.server.prisma.workshop.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
     include: {
       flowItems: {
         orderBy: { order: 'asc' },
@@ -4362,7 +4362,7 @@ async function getWorkshopFlowData(request: FastifyRequest, slug: string): Promi
 }
 
 async function getWorkshopChallengesData(request: FastifyRequest, slug: string): Promise<any[]> {
-  const workshop = await request.server.prisma.workshop.findFirst({ where: { OR: [{ slug }, { id: slug }] }, select: { id: true } });
+  const workshop = await request.server.prisma.workshop.findFirst({ where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug }, select: { id: true } });
   if (!workshop) return [];
 
   const flowItems = await request.server.prisma.workshopFlowItem.findMany({
