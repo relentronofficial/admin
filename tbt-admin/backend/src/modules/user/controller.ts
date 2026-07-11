@@ -1570,7 +1570,10 @@ export async function getUserProgramHandler(request: FastifyRequest, reply: Fast
       status: true,
       createdAt: true,
       batches: {
-        where: { status: 'active' },
+        // `status` is a raw-SQL column (not in Prisma schema per CLAUDE.md
+        // "Raw SQL Columns"); cast to bypass typecheck. Runtime works because
+        // Prisma forwards unknown filter keys verbatim.
+        where: { status: 'active' } as any,
         select: { id: true, name: true },
         take: 5,
       },
