@@ -84,6 +84,10 @@ import {
   getUserCourseLeaderboardHandler,
   getUserBadgesHandler,
   requestCourseAccessHandler,
+  searchHandler,
+  getMyInquiredProductsHandler,
+  listUserProgramsHandler,
+  getUserProgramHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -191,6 +195,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Products & Resources ──────────────────────────────────────────────────
   fastify.get('/products', getUserProductsHandler);
+  fastify.get('/products/my', getMyInquiredProductsHandler);
   fastify.post('/products/:id/inquire', submitProductInquiryHandler);
   fastify.get('/resources', getUserResourcesHandler);
   fastify.get('/resources/:id/download', getResourceDownloadHandler);
@@ -206,4 +211,11 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Device Tracking ───────────────────────────────────────────────────────
   fastify.get('/my-devices', getMyDevicesHandler);
   fastify.delete('/my-devices/:id', revokeDeviceHandler);
+
+  // ── Programs ──────────────────────────────────────────────────────────────
+  fastify.get('/programs', listUserProgramsHandler);
+  fastify.get('/programs/:id', getUserProgramHandler);
+
+  // ── Global search ─────────────────────────────────────────────────────────
+  fastify.get('/search', searchHandler);
 }

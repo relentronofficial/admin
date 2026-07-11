@@ -156,6 +156,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
         currentStreak: true,
         healthScore: true,
         notificationPrefs: true,
+        batchId: true,
         displayBadges: {
           select: {
             badge: { select: { id: true, label: true, color: true, bgColor: true } },
@@ -257,6 +258,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 
   const mePayload = {
     id: member.id,
+    name: [member.firstName, member.lastName].filter(Boolean).join(' '),
     firstName: member.firstName,
     lastName: member.lastName ?? null,
     email: member.email,
@@ -269,6 +271,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     city: member.city ?? null,
     state: member.state ?? null,
     businessName: member.businessName ?? null,
+    batchId: member.batchId ?? null,
     totalPoints: member.totalPoints,
     currentStreak: member.currentStreak,
     healthScore: member.healthScore,
@@ -1533,6 +1536,48 @@ export async function registerForEventHandler(request: FastifyRequest, reply: Fa
   });
 
   return reply.status(201).send({ success: true, data: { registered: true }, error: null });
+}
+
+// ─── Programs ─────────────────────────────────────────────────────────────────
+
+export async function listUserProgramsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const programs = await request.server.prisma.program.findMany({
+    where: { status: 'active' },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      durationDays: true,
+      incubationDays: true,
+      status: true,
+      createdAt: true,
+    },
+  });
+  return ok(reply, programs);
+}
+
+export async function getUserProgramHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const program = await request.server.prisma.program.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      durationDays: true,
+      incubationDays: true,
+      status: true,
+      createdAt: true,
+      batches: {
+        where: { status: 'active' },
+        select: { id: true, name: true },
+        take: 5,
+      },
+    },
+  });
+  if (!program) return fail(reply, 404, 'Program not found');
+  return ok(reply, program);
 }
 
 // ─── Webinars ─────────────────────────────────────────────────────────────────
@@ -3038,7 +3083,61 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
     request.server.prisma.uiStrings.findFirst(),
   ]);
 
-  if (!episode) return fail(reply, 404, 'Episode not found');
+  if (!episode) {
+    // Fallback: look up a course episode so the Flutter lesson player can use
+    // the same single endpoint for both workshop and course content.
+    const COURSE_BUNNY_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)|(?:vz-[^.]+\.b-cdn\.net)\/([\w-]{8,})\//;
+    const courseEp = await request.server.prisma.courseEpisode.findFirst({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        videoUrl: true,
+        bunnyVideoId: true,
+        durationSeconds: true,
+        quizData: true,
+        quizUnlockPercent: true,
+        drmEnabled: true,
+        bunnyDrmToken: true,
+        courseId: true,
+        progress: {
+          where: { memberId: request.memberId! },
+          select: { lastWatchedSecs: true, completed: true },
+        },
+      },
+    });
+    if (!courseEp) return fail(reply, 404, 'Episode not found');
+
+    const courseAccessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseEp.courseId);
+    if (!isAccessValid(courseAccessRecord)) return fail(reply, 403, 'Access required for this course');
+
+    const cdn = env.BUNNY_CDN_URL
+      ? (env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')
+      : null;
+    const courseUrlMatch = courseEp.videoUrl?.match(COURSE_BUNNY_RE);
+    const courseBunnyId = courseEp.bunnyVideoId ?? courseUrlMatch?.[1] ?? courseUrlMatch?.[2] ?? null;
+    const courseHlsUrl = !(courseEp as any).drmEnabled && courseBunnyId && cdn
+      ? `${cdn}/${courseBunnyId}/playlist.m3u8`
+      : null;
+
+    const courseProg = courseEp.progress?.[0];
+    const quizDataVal = courseEp.quizData as any;
+
+    return ok(reply, {
+      id: courseEp.id,
+      title: courseEp.title,
+      description: null as string | null,
+      videoUrl: courseEp.videoUrl,
+      hlsUrl: courseHlsUrl,
+      videoType: courseHlsUrl ? 'hls' : 'iframe',
+      durationSeconds: courseEp.durationSeconds ?? null,
+      resumeAtSeconds: courseProg?.lastWatchedSecs ?? 0,
+      isCompleted: courseProg?.completed ?? false,
+      hasQuiz: Array.isArray(quizDataVal?.questions) && quizDataVal.questions.length > 0,
+      quizData: quizDataVal ?? null,
+      quizUnlockPercent: courseEp.quizUnlockPercent ?? 80,
+    });
+  }
 
   const playbackWorkshopId = (episode as any).challenge?.workshopId as string | undefined;
   if (playbackWorkshopId) {
@@ -3098,6 +3197,10 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
     videoType: hlsUrl ? 'hls' : 'iframe',
     durationSeconds: duration ?? null,
     resumeAtSeconds: prog?.lastWatchedSecs ?? 0,
+    isCompleted: prog?.isCompleted ?? false,
+    hasQuiz: false,
+    quizData: null as any,
+    quizUnlockPercent: 80,
     qualityOptions: ['auto'],
     defaultQuality: 'auto',
     speedOptions: ['0.5x', '0.75x', '1x', '1.25x', '1.5x', '2x'],
@@ -3346,6 +3449,31 @@ export async function getUserProductsHandler(request: FastifyRequest, reply: Fas
   });
 }
 
+export async function getMyInquiredProductsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const rows = await request.server.prisma.$queryRawUnsafe<
+    { product_id: string; title: string; thumbnail_url: string | null; price: number | null; currency: string; category: string | null; status: string; created_at: Date }[]
+  >(
+    `SELECT pi.product_id, p.title, p.thumbnail_url, p.price::float AS price, COALESCE(p.currency,'INR') AS currency, p.category, pi.status, pi.created_at
+     FROM product_inquiries pi
+     JOIN products p ON p.id = pi.product_id
+     WHERE pi.member_id = $1
+     ORDER BY pi.created_at DESC`,
+    memberId,
+  );
+  const data = rows.map((r) => ({
+    id: r.product_id,
+    title: r.title,
+    thumbnailUrl: r.thumbnail_url ?? null,
+    price: r.price ?? null,
+    currency: r.currency,
+    category: r.category ?? null,
+    inquiryStatus: r.status,
+    inquiredAt: r.created_at.toISOString(),
+  }));
+  return ok(reply, data);
+}
+
 export async function submitProductInquiryHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { id: productId } = request.params as { id: string };
@@ -3503,6 +3631,14 @@ export async function getResourceDownloadHandler(request: FastifyRequest, reply:
     }
   }
 
+  // Content negotiation: Flutter (Dio) sends `Accept: application/json` and
+  // wants the URL in a JSON body so it can drive its own download UI. The web
+  // uses a plain `<a href>` so the browser sends `Accept: text/html,...` and
+  // needs a real 302 redirect to trigger the download. Return whichever the
+  // client asked for.
+  const accept = (request.headers['accept'] as string | undefined) ?? '';
+  const wantsJson = accept.includes('application/json') && !accept.includes('text/html');
+  if (wantsJson) return ok(reply, { downloadUrl });
   return reply.redirect(302, downloadUrl);
 }
 
@@ -4680,4 +4816,44 @@ export async function getMyDevicesHandler(request: FastifyRequest, reply: Fastif
   });
 
   return ok(reply, devices);
+}
+
+// ── Global search ─────────────────────────────────────────────────────────────
+
+export async function searchHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { q = '' } = request.query as { q?: string };
+  const query = q.trim();
+  if (!query) return ok(reply, { workshops: [], courses: [], episodes: [], resources: [] });
+
+  const like = { contains: query, mode: 'insensitive' as const };
+
+  const [workshops, courses, episodes, resources] = await Promise.all([
+    request.server.prisma.workshop.findMany({
+      where: { isActive: true, OR: [{ title: like }, { description: like }] },
+      select: { id: true, title: true, slug: true, thumbnailUrl: true },
+      take: 10,
+    }),
+    (request.server.prisma.course.findMany as any)({
+      where: { isPublished: true, OR: [{ title: like }, { description: like }] },
+      select: { id: true, title: true, thumbnailUrl: true },
+      take: 10,
+    }) as Promise<{ id: string; title: string; thumbnailUrl: string | null }[]>,
+    (request.server.prisma.courseEpisode.findMany as any)({
+      where: { isVisible: true, title: like },
+      select: { id: true, title: true, courseId: true },
+      take: 10,
+    }) as Promise<{ id: string; title: string; courseId: string }[]>,
+    request.server.prisma.appResource.findMany({
+      where: { OR: [{ title: like }, { description: like }] },
+      select: { id: true, title: true, fileType: true },
+      take: 10,
+    }),
+  ]);
+
+  return ok(reply, {
+    workshops: workshops.map((w) => ({ id: w.id, title: w.title, slug: w.slug, thumbnailUrl: w.thumbnailUrl ?? null })),
+    courses: courses.map((c: any) => ({ id: c.id, title: c.title, thumbnailUrl: c.thumbnailUrl ?? null })),
+    episodes: episodes.map((e: any) => ({ id: e.id, title: e.title, courseId: e.courseId })),
+    resources: resources.map((r) => ({ id: r.id, title: r.title, fileType: r.fileType ?? null })),
+  });
 }
