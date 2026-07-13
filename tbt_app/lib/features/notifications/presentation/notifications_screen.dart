@@ -156,6 +156,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   Widget build(BuildContext context) {
     final accent = context.tbt.accent;
     final notifAsync = ref.watch(notificationsNotifierProvider);
+    // Global unread count from /unread-count endpoint (matches web behaviour —
+    // web's header shows total unread across all pages, not just the loaded page).
+    final globalUnread = ref.watch(unreadNotifCountNotifierProvider);
+    final hasRead = notifAsync.valueOrNull?.any((n) => n.isRead) == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -174,8 +178,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           ),
         ),
         actions: [
+          if (hasRead)
+            TextButton(
+              onPressed: () => ref
+                  .read(notificationsNotifierProvider.notifier)
+                  .clearRead(),
+              child: const Text(
+                'Clear read',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: kColorTextSecondary,
+                ),
+              ),
+            ),
           TextButton(
-            onPressed: notifAsync.valueOrNull?.any((n) => !n.isRead) == true
+            onPressed: globalUnread > 0
                 ? () => ref.read(notificationsNotifierProvider.notifier).markAllRead()
                 : null,
             child: Text(
@@ -183,33 +201,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: notifAsync.valueOrNull?.any((n) => !n.isRead) == true
-                    ? accent
-                    : kColorTextMuted,
+                color: globalUnread > 0 ? accent : kColorTextMuted,
               ),
             ),
           ),
-          PopupMenuButton<String>(
-            tooltip: 'More',
-            icon: const Icon(Icons.more_vert, color: kColorTextSecondary),
-            color: kColorBgSurface,
-            onSelected: (v) {
-              if (v == 'clear') {
-                ref
-                    .read(notificationsNotifierProvider.notifier)
-                    .clearRead();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'clear',
-                child: Text(
-                  'Clear read',
-                  style: TextStyle(color: kColorTextPrimary, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: notifAsync.when(
@@ -223,7 +219,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             children: [
               _FilterStrip(
                 unreadOnly: _unreadOnly,
-                unreadCount: allItems.where((n) => !n.isRead).length,
+                unreadCount: globalUnread,
                 onChanged: (v) => setState(() => _unreadOnly = v),
                 accent: accent,
               ),
