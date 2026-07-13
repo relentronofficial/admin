@@ -1439,6 +1439,11 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     return true;
   });
 
+  // Note: `_ms` is a private sort key stripped before the response goes over
+  // the wire. `updatedAt` is returned as an ISO string so it matches the
+  // Flutter WatchHistoryItem model (`String? updatedAt`) — earlier the raw
+  // getTime() number caused a Dart TypeError at parse time in release mode,
+  // which the dashboard surfaced as "Failed to load. Retry."
   const combined = [
     ...dedupedCourses.map(p => ({
       type: 'course' as const,
@@ -1455,7 +1460,8 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       episodeCount: p.episode.course._count.courseEpisodes,
       progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
       isCompleted: p.completed,
-      updatedAt: p.updatedAt.getTime(),
+      updatedAt: p.updatedAt.toISOString(),
+      _ms: p.updatedAt.getTime(),
     })),
     ...dedupedWorkshops.map(p => ({
       type: 'workshop' as const,
@@ -1472,9 +1478,13 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       episodeCount: p.episode.challenge._count.episodes,
       progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
       isCompleted: p.isCompleted,
-      updatedAt: p.updatedAt.getTime(),
+      updatedAt: p.updatedAt.toISOString(),
+      _ms: p.updatedAt.getTime(),
     })),
-  ].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6);
+  ]
+    .sort((a, b) => b._ms - a._ms)
+    .slice(0, 6)
+    .map(({ _ms: _ignored, ...rest }) => rest);
 
   void cacheSet(redis, clKey, combined, 120);
   return ok(reply, combined);
