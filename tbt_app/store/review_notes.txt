@@ -1,0 +1,108 @@
+TAMIL BUSINESS TRIBE — REVIEWER NOTES
+======================================
+
+Thank you for reviewing the Tamil Business Tribe mobile app.
+
+This app is a members-only e-learning platform. You will need the test
+credentials below to reach the main app surfaces. All account-gated content
+is unlocked for the reviewer account.
+
+
+TEST ACCOUNT
+------------
+
+Phone number:    +91 90000 00000
+Password:        Reviewer!@#8520
+Static OTP:      424242
+
+The reviewer account bypasses the WhatsApp OTP flow — enter the static OTP
+"424242" on the OTP screen after tapping "Sign In". This is a backend-side
+flag scoped to this specific phone number and is not exposed in the Flutter
+binary. Regular members receive their OTPs via WhatsApp Business API.
+
+
+HOW TO SIGN IN
+--------------
+
+1. Open the app.
+2. On the Login screen, enter the phone number above and password above.
+3. Tap "Sign In".
+4. On the OTP screen, enter the static OTP: 424242
+5. You will land on the Dashboard.
+
+
+CRITICAL PATHS TO REVIEW
+------------------------
+
+1. Dashboard        — "Continue Watching" and "Recently Watched" rows load
+                      live member data.
+2. Explore (/tbt)   — Content catalog with hero banner and horizontal
+                      sections. Tap any item to open its detail screen.
+3. Workshops        — Tap any workshop card to open the 4-tab detail
+                      (Overview / Flow / Q&A / Live Calls). Q&A polls
+                      every 15 seconds.
+4. Courses          — Tap a course, then a lesson, to reach the video
+                      player. Video streams over HLS via Bunny CDN.
+5. Batch Program    — Calendar view of the reviewer's assigned batch;
+                      tap any day to see its tasks and attendance state.
+6. Notifications    — Live list of push events. Tapping a notification
+                      routes to the relevant screen.
+7. Messages         — Chat with the TBT support team (staff auto-reply
+                      is enabled for the reviewer account).
+8. Profile          — View member details; the reviewer account has
+                      "premium" plan so all gated content is unlocked.
+
+
+PERMISSIONS DECLARED
+--------------------
+
+• Microphone (iOS + Android)
+    Reason:  Required by the LiveKit SDK for workshop live-call attendee
+             mode. Local mic is muted by default; users can toggle it
+             from the call controls bar. Denying the permission is
+             non-fatal — the user simply cannot un-mute.
+
+• Notifications (iOS)
+    Reason:  Push notifications for course access grants, batch-day
+             approvals, live-call reminders, and admin announcements.
+             We prompt for permission after login, never on cold start.
+
+• Photo library / Files (iOS + Android)
+    Reason:  Avatar upload and workshop assignment file submission.
+             We use the system file picker; we do not read the library
+             in the background.
+
+No location, contacts, calendar, camera (photo capture), or Bluetooth
+permissions are used.
+
+
+IN-APP PURCHASE POSTURE
+-----------------------
+
+There are NO in-app purchases in this build. The "Upgrade" call-to-action
+in the Products screen opens the TBT website in an external browser
+(https://app.tamilbusinesstribe.com/Products) where members complete
+purchase via bank transfer or Razorpay. This matches the guidance in
+App Store Review Guideline 3.1.3(a) — "Reader" apps and services sold
+outside of the app.
+
+
+PRIVACY POLICY + SUPPORT
+------------------------
+
+Privacy Policy:  https://tamilbusinesstribe.com/privacy
+Support:         support@tamilbusinesstribe.com
+Support URL:     https://tamilbusinesstribe.com/support
+
+
+CONTACT DURING REVIEW
+---------------------
+
+If any step fails or you need a fresh OTP, please contact:
+
+Name:    TBT Tech Team
+Email:   tech@tamilbusinesstribe.com
+Phone:   +91 XXXXX XXXXX  (fill before submission)
+
+We monitor this inbox during business hours (IST) and can typically
+respond within 4 hours.

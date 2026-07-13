@@ -1,0 +1,7 @@
+First release of the Tamil Business Tribe mobile app.
+
+• Courses with video playback, quizzes, and certificates
+• Workshops with Q&A, assignments, and live calls
+• Batch program: daily tasks, attendance, XP tracking
+• Push notifications for approvals and live-call reminders
+• Members-only content gated by batch and subscription

@@ -1,0 +1,28 @@
+# App icon generator configuration.
+# Run after placing the required icon files:
+#   dart run flutter_launcher_icons
+#
+# Required assets (create from the TBT brand logo):
+#   assets/images/app_icon.png             — 1024×1024 PNG, full-bleed icon on transparent bg
+#   assets/images/app_icon_foreground.png  — 1024×1024 PNG, foreground layer only (Android adaptive)
+#
+# Android adaptive icon: foreground layer on #0f0f0f background.
+# iOS icon: full-bleed (no transparency, no rounded corners — App Store does rounding).
+
+flutter_launcher_icons:
+  android: ic_launcher
+  ios: true
+  remove_alpha_ios: true
+
+  image_path: assets/images/app_icon.png
+
+  # Android adaptive icon (API 26+)
+  adaptive_icon_background: "#0f0f0f"
+  adaptive_icon_foreground: assets/images/app_icon_foreground.png
+
+  # Web (optional)
+  web:
+    generate: false
+
+  # Min SDK — matches flutter.minSdkVersion
+  min_sdk_android: 21

@@ -1,0 +1,24 @@
+Tamil Business Tribe (TBT) is the official mobile app for members of the Tamil Business Tribe community — a business-education platform that combines structured learning, live workshops, batch programs, and peer accountability.
+
+WHAT YOU CAN DO IN THE APP
+• Watch on-demand courses with progress tracking, quizzes, and completion certificates
+• Join workshops with instructor Q&A, submitted assignments, and live sessions
+• Follow a day-by-day batch program with task submission, attendance, and XP-based progress
+• Track your learning: continue-watching, watch history, badges, and leaderboards
+• Chat and message with your batch cohort and support team
+• Access downloadable resources gated to your batch
+• Get real-time push notifications for approvals, live-call reminders, and announcements
+
+BUILT FOR MEMBERS
+This app is for existing TBT members and members-in-registration. New sign-ups require phone-number verification via WhatsApp OTP. Access to premium content depends on your membership tier.
+
+TECHNOLOGY
+TBT is built with Flutter for a fast, native experience on both Android and iOS. Videos stream in HLS with adaptive bitrate. All content is delivered from our servers in India for low-latency playback.
+
+WHO WE ARE
+Tamil Business Tribe is a business education initiative dedicated to helping Tamil-speaking entrepreneurs grow through structured learning, mentorship, and community.
+
+Website: https://tamilbusinesstribe.com
+Support: support@tamilbusinesstribe.com
+
+By using this app, you agree to our Terms of Service and Privacy Policy.

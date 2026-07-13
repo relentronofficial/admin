@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  iOS App Store export options.
+  Used with: flutter build ipa - -export-options-plist ios/ExportOptions.plist
+
+  Before using:
+  1. Replace TEAM_ID with your Apple Developer Team ID (10-character string).
+  2. Create an App Store distribution provisioning profile in the Developer Portal
+     for bundle ID com.tamilbusinesstribe.tbtApp and set it below.
+  3. Ensure a Distribution certificate is in your local keychain.
+
+  To build an .ipa for App Store upload:
+    flutter build ipa --release --export-options-plist ios/ExportOptions.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>app-store</string>
+
+    <key>teamID</key>
+    <string>TEAM_ID</string>
+
+    <key>uploadBitcode</key>
+    <false/>
+
+    <key>uploadSymbols</key>
+    <true/>
+
+    <key>compileBitcode</key>
+    <false/>
+
+    <key>provisioningProfiles</key>
+    <dict>
+        <!-- Bundle ID → Provisioning profile name (exact string from Developer Portal) -->
+        <key>com.tamilbusinesstribe.tbtApp</key>
+        <string>TBT App Store Distribution</string>
+    </dict>
+
+    <key>signingStyle</key>
+    <string>manual</string>
+
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+</dict>
+</plist>

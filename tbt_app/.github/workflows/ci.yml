@@ -1,0 +1,266 @@
+# GitHub Actions CI — TBT Flutter App
+#
+# Jobs:
+#   analyze       — dart analyze (all branches / PRs)
+#   test          — unit + widget tests (all branches / PRs)
+#   build-android — signed release Android App Bundle (push to main only)
+#   build-ios     — iOS no-codesign build check (push to main only)
+#
+# Required repository secrets (Settings → Secrets → Actions):
+#   STAGING_API_URL            e.g. https://tbt-backend-staging-xxxxx.a.run.app
+#   PROD_API_URL               e.g. https://tbt-backend-xxxxx.a.run.app
+#   GOOGLE_SERVICES_JSON       base64-encoded android/app/google-services.json
+#   GOOGLE_SERVICE_INFO_PLIST  base64-encoded ios/Runner/GoogleService-Info.plist
+#   KEYSTORE_BASE64            base64-encoded android/app/release.keystore
+#   KEYSTORE_PASSWORD          Keystore store password
+#   KEY_ALIAS                  Keystore key alias
+#   KEY_PASSWORD               Keystore key password
+#
+# Firebase config and signing secrets are only needed by the build jobs.
+# analyze and test run fine without them.
+#
+# To encode Firebase credentials:
+#   base64 -i android/app/google-services.json         | pbcopy
+#   base64 -i ios/Runner/GoogleService-Info.plist      | pbcopy
+#
+# To create the Android keystore:
+#   keytool -genkey -v -keystore release.keystore -keyalg RSA \
+#     -keysize 2048 -validity 10000 -alias tbt
+#   base64 -i release.keystore | pbcopy   # then paste as KEYSTORE_BASE64 secret
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Which API URL to bake into the build'
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+
+# Cancel any in-progress run on the same branch when a new push arrives.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.29.2'
+
+# ── Job 1: Static analysis ────────────────────────────────────────────────────
+
+jobs:
+  analyze:
+    name: Dart analyze
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - run: flutter pub get
+      - run: flutter analyze --no-pub
+
+# ── Job 2: Unit & widget tests ────────────────────────────────────────────────
+
+  test:
+    name: Unit & widget tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - run: flutter pub get
+
+      - name: Unit tests
+        run: flutter test test/unit/ --no-pub --reporter expanded
+
+      - name: Widget tests
+        run: flutter test test/widget/ --no-pub --reporter expanded
+
+      - name: Collect coverage
+        run: |
+          flutter test test/unit/ test/widget/ \
+            --no-pub \
+            --coverage \
+            --reporter compact
+        continue-on-error: true
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          retention-days: 14
+        continue-on-error: true
+
+# ── Job 3: Android release build (main branch only) ──────────────────────────
+
+  build-android:
+    name: Android release App Bundle
+    runs-on: ubuntu-latest
+    needs: [analyze, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Write Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
+
+      - name: Write Android keystore and key.properties
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          {
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyPassword=$KEY_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "storeFile=app/release.keystore"
+          } > android/key.properties
+
+      - run: flutter pub get
+
+      - name: Resolve API base URL
+        id: apiurl
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+            echo "url=${{ secrets.PROD_API_URL }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=${{ secrets.STAGING_API_URL }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release App Bundle
+        run: |
+          flutter build appbundle \
+            --release \
+            --no-pub \
+            --dart-define=API_BASE_URL=${{ steps.apiurl.outputs.url }}
+
+      - name: Upload release App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aab-${{ github.sha }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+# ── Job 4: iOS build check (main branch only) ─────────────────────────────────
+
+  build-ios:
+    name: iOS build (no codesign)
+    runs-on: macos-latest
+    needs: [analyze, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: ios/Pods
+          key: pods-${{ runner.os }}-${{ hashFiles('ios/Podfile.lock') }}
+          restore-keys: pods-${{ runner.os }}-
+
+      - name: Write Firebase config
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
+
+      - run: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        run: pod install --project-directory=ios --repo-update
+
+      - name: Resolve API base URL
+        id: apiurl
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+            echo "url=${{ secrets.PROD_API_URL }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=${{ secrets.STAGING_API_URL }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build iOS (no codesign)
+        run: |
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --no-pub \
+            --dart-define=API_BASE_URL=${{ steps.apiurl.outputs.url }}

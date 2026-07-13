@@ -1,0 +1,33 @@
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/constants/api.dart';
+import '../dio_client.dart';
+import '../dio_provider.dart';
+
+class CatalogService {
+  const CatalogService(this._dio);
+  final Dio _dio;
+
+  Future<List<dynamic>> getContentSections() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(kContentSections);
+      return (res.data?['data'] as List<dynamic>?) ?? [];
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getHero() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(kHero);
+      return res.data ?? {};
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+}
+
+final catalogServiceProvider = Provider<CatalogService>(
+  (ref) => CatalogService(ref.watch(dioProvider)),
+);

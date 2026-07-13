@@ -1,0 +1,22 @@
+# Android release signing configuration.
+#
+# Copy this file to android/key.properties (gitignored) and fill in real values,
+# OR set the following GitHub Actions secrets for CI signing:
+#   KEYSTORE_BASE64   — base64-encoded .jks file (base64 -i release.keystore)
+#   KEYSTORE_PASSWORD — store password
+#   KEY_ALIAS         — key alias used when creating the keystore
+#   KEY_PASSWORD      — key password
+#
+# To create a new keystore:
+#   keytool -genkey -v \
+#     -keystore android/app/release.keystore \
+#     -keyalg RSA -keysize 2048 -validity 10000 \
+#     -alias tbt
+#
+# Store the generated .jks securely (password manager / CI secrets).
+# Never commit the real key.properties or .jks file.
+
+storePassword=<store-password>
+keyPassword=<key-password>
+keyAlias=tbt
+storeFile=app/release.keystore

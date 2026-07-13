@@ -1,0 +1,34 @@
+# Native splash screen configuration.
+# Run after placing the logo asset:
+#   dart run flutter_native_splash:create
+#
+# Required asset:
+#   assets/images/splash_logo.png — transparent PNG, logo centered on dark bg.
+#   Recommended size: 288×288 px (covers xxxhdpi without upscaling).
+#
+# To regenerate after changing this file or the asset:
+#   dart run flutter_native_splash:create
+#
+# To revert to the Flutter default splash:
+#   dart run flutter_native_splash:remove
+
+flutter_native_splash:
+  # Background color matches the app's dark theme page background.
+  color: "#0f0f0f"
+  color_dark: "#0f0f0f"
+
+  # Uncomment once assets/images/splash_logo.png exists:
+  # image: assets/images/splash_logo.png
+  # image_dark: assets/images/splash_logo.png
+
+  android: true
+  ios: true
+  web: false
+
+  # Android 12+ splash screen (SplashScreen API).
+  android_12:
+    color: "#0f0f0f"
+    color_dark: "#0f0f0f"
+    # icon_background_color: "#0f0f0f"
+    # image: assets/images/splash_logo.png
+    # image_dark: assets/images/splash_logo.png
