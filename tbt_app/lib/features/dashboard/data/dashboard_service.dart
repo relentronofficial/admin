@@ -53,6 +53,14 @@ class DashboardService {
       throw mapDioError(e);
     }
   }
+
+  Future<void> removeFromHistory(String episodeId) async {
+    try {
+      await _dio.delete<dynamic>('$kDashboardWatchHistory/$episodeId');
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 }
 
 final dashboardServiceProvider = Provider<DashboardService>(

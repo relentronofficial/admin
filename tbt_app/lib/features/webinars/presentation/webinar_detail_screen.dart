@@ -1,65 +1,21 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/constants/routes.dart';
 import '../../../shared/theme/design_constants.dart';
-import '../data/events_service.dart';
-import '../providers/events_provider.dart';
+import '../providers/webinars_provider.dart';
 
-class EventDetailScreen extends ConsumerStatefulWidget {
-  const EventDetailScreen({super.key, required this.eventId});
+class WebinarDetailScreen extends ConsumerWidget {
+  const WebinarDetailScreen({super.key, required this.webinarId});
 
-  final String eventId;
-
-  @override
-  ConsumerState<EventDetailScreen> createState() => _EventDetailScreenState();
-}
-
-class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
-  bool _registering = false;
-  bool _registered = false;
-
-  Future<void> _register(TbtEvent event) async {
-    setState(() => _registering = true);
-    try {
-      await ref
-          .read(eventsFeatureServiceProvider)
-          .registerForEvent(widget.eventId);
-      if (!mounted) return;
-      setState(() => _registered = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("You're registered!"),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      // If the event also has an external registration URL (e.g. for calendar
-      // add or third-party ticketing), open it after the in-app registration.
-      final url = event.registrationUrl;
-      if (url != null && url.isNotEmpty) {
-        final uri = Uri.tryParse(url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Registration failed: $e'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _registering = false);
-    }
-  }
+  final String webinarId;
 
   @override
-  Widget build(BuildContext context) {
-    final eventId = widget.eventId;
-    final async = ref.watch(eventProvider(eventId));
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(webinarProvider(webinarId));
 
     return Scaffold(
       appBar: AppBar(
@@ -71,7 +27,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text(
-          'EVENT DETAILS',
+          'WEBINAR',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
@@ -88,33 +44,52 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+              const Icon(Icons.error_outline,
+                  color: kColorTextMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load event',
+              const Text('Failed to load webinar',
                   style: TextStyle(color: kColorTextSecondary)),
               const SizedBox(height: 12),
               TextButton(
-                onPressed: () => ref.invalidate(eventProvider(eventId)),
+                onPressed: () => ref.invalidate(webinarProvider(webinarId)),
                 child: const Text('Retry'),
               ),
             ],
           ),
         ),
-        data: (event) {
-          final date = event.parsedDate;
+        data: (webinar) {
+          final scheduled = webinar.parsedScheduledAt;
+          final canJoin = webinar.isLive;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title + status row
+                if (webinar.thumbnailUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: CachedNetworkImage(
+                        imageUrl: webinar.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          color: kColorBgInput,
+                          child: const Center(
+                            child: Icon(Icons.videocam_outlined,
+                                color: kColorTextSubtle, size: 40),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: Text(
-                        event.title,
+                        webinar.title,
                         style: const TextStyle(
                           color: kColorTextPrimary,
                           fontSize: 20,
@@ -123,55 +98,38 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _StatusBadge(status: event.status),
+                    _StatusBadge(status: webinar.status, isLive: webinar.isLive),
                   ],
                 ),
-
                 const SizedBox(height: 16),
-
-                // Info cards
                 _InfoCard(
                   children: [
-                    if (date != null)
+                    if (scheduled != null)
                       _InfoRow(
                         icon: Icons.calendar_today_outlined,
-                        label: 'Date & Time',
+                        label: 'Scheduled',
                         value: DateFormat('EEEE, MMMM d, y · h:mm a')
-                            .format(date),
+                            .format(scheduled),
                       ),
-                    _InfoRow(
-                      icon: event.isOnline
-                          ? Icons.videocam_outlined
-                          : Icons.location_on_outlined,
-                      label: event.isOnline ? 'Format' : 'Location',
-                      value: event.isOnline
-                          ? 'Online Event'
-                          : (event.location ?? 'TBD'),
-                    ),
-                    _InfoRow(
-                      icon: Icons.category_outlined,
-                      label: 'Type',
-                      value: event.eventType
-                          .replaceAll('_', ' ')
-                          .split(' ')
-                          .map((w) =>
-                              w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
-                          .join(' '),
-                    ),
-                    if (event.maxAttendees != null)
+                    if (webinar.host != null && webinar.host!.isNotEmpty)
+                      _InfoRow(
+                        icon: Icons.person_outline,
+                        label: 'Host',
+                        value: webinar.host!,
+                      ),
+                    if (webinar.attendeeCount != null)
                       _InfoRow(
                         icon: Icons.people_outline,
-                        label: 'Capacity',
-                        value: '${event.maxAttendees} attendees',
+                        label: 'Attendees',
+                        value: '${webinar.attendeeCount}',
                       ),
                   ],
                 ),
-
-                if (event.description != null &&
-                    event.description!.isNotEmpty) ...[
+                if (webinar.description != null &&
+                    webinar.description!.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const Text(
-                    'ABOUT THIS EVENT',
+                    'ABOUT',
                     style: TextStyle(
                       fontFamily: 'Rajdhani',
                       fontSize: 11,
@@ -190,7 +148,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       border: Border.all(color: kColorBorderCard),
                     ),
                     child: Text(
-                      event.description!,
+                      webinar.description!,
                       style: const TextStyle(
                         color: kColorTextSecondary,
                         fontSize: 14,
@@ -199,55 +157,46 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     ),
                   ),
                 ],
-
-                if (event.isUpcoming) ...[
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _registered
-                            ? const Color(0xFF16a34a)
-                            : kColorAccent,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        disabledBackgroundColor:
-                            kColorAccent.withValues(alpha: 0.5),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          canJoin ? kColorAccent : kColorBgInput,
+                      foregroundColor:
+                          canJoin ? Colors.white : kColorTextMuted,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      icon: _registering
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Icon(
-                              _registered
-                                  ? Icons.check_circle_outline
-                                  : Icons.event_available,
-                              size: 18,
-                            ),
-                      label: Text(
-                        _registered ? 'REGISTERED' : 'REGISTER NOW',
-                        style: const TextStyle(
-                          fontFamily: 'Rajdhani',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      onPressed: (_registering || _registered)
-                          ? null
-                          : () => _register(event),
+                      disabledBackgroundColor: kColorBgInput,
+                      disabledForegroundColor: kColorTextMuted,
                     ),
+                    icon: Icon(
+                      canJoin
+                          ? Icons.play_circle_outline
+                          : (webinar.hasEnded
+                              ? Icons.replay
+                              : Icons.schedule),
+                      size: 18,
+                    ),
+                    label: Text(
+                      canJoin
+                          ? 'JOIN LIVE'
+                          : (webinar.hasEnded ? 'ENDED' : 'NOT YET LIVE'),
+                      style: const TextStyle(
+                        fontFamily: 'Rajdhani',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    onPressed: canJoin
+                        ? () => context.push(AppRoutes.webinarPath(webinar.id))
+                        : null,
                   ),
-                ],
-
+                ),
                 const SizedBox(height: 24),
               ],
             ),
@@ -259,15 +208,15 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status});
+  const _StatusBadge({required this.status, required this.isLive});
 
   final String status;
+  final bool isLive;
 
   Color get _color {
+    if (isLive) return kColorAccent;
     switch (status) {
-      case 'ongoing':
-        return const Color(0xFF16a34a);
-      case 'completed':
+      case 'ended':
         return kColorTextMuted;
       case 'cancelled':
         return kColorAccent;
@@ -278,6 +227,7 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = isLive ? 'LIVE' : status.toUpperCase();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -285,7 +235,7 @@ class _StatusBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        status.toUpperCase(),
+        label,
         style: TextStyle(
           color: _color,
           fontSize: 10,
@@ -299,7 +249,6 @@ class _StatusBadge extends StatelessWidget {
 
 class _InfoCard extends StatelessWidget {
   const _InfoCard({required this.children});
-
   final List<Widget> children;
 
   @override
@@ -314,7 +263,11 @@ class _InfoCard extends StatelessWidget {
       ),
       child: Column(
         children: children
-            .expand((w) => [w, if (w != children.last) const Divider(color: kColorBorderCard, height: 20)])
+            .expand((w) => [
+                  w,
+                  if (w != children.last)
+                    const Divider(color: kColorBorderCard, height: 20),
+                ])
             .toList(),
       ),
     );
@@ -322,12 +275,8 @@ class _InfoCard extends StatelessWidget {
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
+  const _InfoRow(
+      {required this.icon, required this.label, required this.value});
   final IconData icon;
   final String label;
   final String value;

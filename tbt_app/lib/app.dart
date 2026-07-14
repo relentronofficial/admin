@@ -24,6 +24,8 @@ import 'features/courses/presentation/lesson_player_screen.dart';
 import 'features/dashboard/presentation/dashboard_screen.dart';
 import 'features/events/presentation/event_detail_screen.dart';
 import 'features/events/presentation/events_screen.dart';
+import 'features/webinars/presentation/webinar_detail_screen.dart';
+import 'features/webinars/presentation/webinars_screen.dart';
 import 'features/history/presentation/history_screen.dart';
 import 'features/live/presentation/live_call_screen.dart';
 import 'features/live/presentation/webinar_screen.dart';
@@ -318,6 +320,22 @@ List<RouteBase> _buildRoutes() => [
             name: RouteNames.eventDetail,
             builder: (_, state) => EventDetailScreen(
               eventId: state.pathParameters['id']!,
+            ),
+          ),
+        ],
+      ),
+
+      // ── Outside shell — Webinars ───────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.webinars,
+        name: RouteNames.webinars,
+        builder: (_, __) => const WebinarsScreen(),
+        routes: [
+          GoRoute(
+            path: ':id',
+            name: RouteNames.webinarDetail,
+            builder: (_, state) => WebinarDetailScreen(
+              webinarId: state.pathParameters['id']!,
             ),
           ),
         ],

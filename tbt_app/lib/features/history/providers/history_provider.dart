@@ -82,6 +82,23 @@ class WatchHistoryNotifier extends _$WatchHistoryNotifier {
     });
   }
 
+  /// Optimistically removes the episode from local state, then hits the
+  /// backend. Restores state if the server rejects (any DioException).
+  Future<void> remove(String episodeId) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final previous = current.items;
+    state = AsyncData(current.copyWith(
+      items: previous.where((i) => i.episodeId != episodeId).toList(),
+    ));
+    try {
+      await ref.read(dashboardServiceProvider).removeFromHistory(episodeId);
+    } catch (_) {
+      state = AsyncData(current.copyWith(items: previous));
+      rethrow;
+    }
+  }
+
   Future<List<WatchHistoryItem>> _fetchPage(String filter, int page) =>
       ref.read(dashboardServiceProvider).getWatchHistory(
             filter: filter,

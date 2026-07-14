@@ -85,6 +85,16 @@ class EventsFeatureService {
       throw mapDioError(e);
     }
   }
+
+  /// Registers the current member for the event. Idempotent server-side —
+  /// re-registering an already-registered member is a no-op success.
+  Future<void> registerForEvent(String id) async {
+    try {
+      await _dio.post<dynamic>('$kUserEvents/$id/register');
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 }
 
 final eventsFeatureServiceProvider = Provider<EventsFeatureService>(

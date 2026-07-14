@@ -31,6 +31,8 @@ class AppRoutes {
   static const String eventDetail = '/events/:id';
   static const String programs = '/programs';
   static const String programDetail = '/programs/:id';
+  static const String webinars = '/webinars';
+  static const String webinarDetail = '/webinars/:id';
   static const String liveCall = '/live/:workshopSlug/:callId';
   static const String webinar = '/live/:webinarId'; // standalone webinar
   static const String workshopEpisode =
@@ -45,6 +47,7 @@ class AppRoutes {
   static String batchDayPath(int day) => '/batch-program/$day';
   static String eventDetailPath(String id) => '/events/$id';
   static String programDetailPath(String id) => '/programs/$id';
+  static String webinarDetailPath(String id) => '/webinars/$id';
   static String liveCallPath(String workshopSlug, String callId) =>
       '/live/$workshopSlug/$callId';
   static String webinarPath(String webinarId) => '/live/$webinarId';
@@ -80,6 +83,8 @@ class RouteNames {
   static const String eventDetail = 'event-detail';
   static const String programs = 'programs';
   static const String programDetail = 'program-detail';
+  static const String webinars = 'webinars';
+  static const String webinarDetail = 'webinar-detail';
   static const String liveCall = 'live-call';
   static const String webinar = 'webinar';
   static const String workshopEpisode = 'workshop-episode';

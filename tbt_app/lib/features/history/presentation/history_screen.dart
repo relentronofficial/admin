@@ -240,7 +240,47 @@ class _HistoryBody extends ConsumerWidget {
               if (cell is _HistoryGroup) {
                 return _HistoryGroupHeader(group: cell);
               }
-              return _HistoryCard(item: cell as WatchHistoryItem);
+              final item = cell as WatchHistoryItem;
+              final epId = item.episodeId;
+              if (epId == null || epId.isEmpty) {
+                return _HistoryCard(item: item);
+              }
+              return Dismissible(
+                key: ValueKey('history-${item.type}-$epId'),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  color: const Color(0xFFdc2626),
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: const Icon(Icons.delete_outline,
+                      color: Colors.white, size: 22),
+                ),
+                onDismissed: (_) async {
+                  try {
+                    await ref
+                        .read(watchHistoryNotifierProvider(filter).notifier)
+                        .remove(epId);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Removed from history'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to remove — try again'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: _HistoryCard(item: item),
+              );
             },
           ),
         );
