@@ -281,34 +281,69 @@ class _QuickLinksRow extends StatelessWidget {
     final accent = context.tbt.accent;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: _QuickTile(
-              icon: Icons.calendar_month_outlined,
-              label: 'Task',
-              accent: accent,
-              onTap: () =>
-                  GoRouter.of(context).go(AppRoutes.batchProgram),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Task',
+                  accent: accent,
+                  onTap: () =>
+                      GoRouter.of(context).go(AppRoutes.batchProgram),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.school_outlined,
+                  label: 'Courses',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).go(AppRoutes.courses),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.folder_open_outlined,
+                  label: 'Resources',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).go(AppRoutes.resources),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _QuickTile(
-              icon: Icons.school_outlined,
-              label: 'Courses',
-              accent: accent,
-              onTap: () => GoRouter.of(context).go(AppRoutes.courses),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _QuickTile(
-              icon: Icons.folder_open_outlined,
-              label: 'Resources',
-              accent: accent,
-              onTap: () => GoRouter.of(context).go(AppRoutes.resources),
-            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.event_outlined,
+                  label: 'Events',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).go(AppRoutes.events),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.videocam_outlined,
+                  label: 'Webinars',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).go(AppRoutes.webinars),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.history,
+                  label: 'History',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).go(AppRoutes.history),
+                ),
+              ),
+            ],
           ),
         ],
       ),

@@ -31,18 +31,31 @@ class TbtWebinar {
     this.host,
   });
 
-  factory TbtWebinar.fromJson(Map<String, dynamic> j) => TbtWebinar(
-        id: j['id'] as String,
-        title: j['title'] as String? ?? 'Untitled',
-        description: j['description'] as String?,
-        thumbnailUrl: j['thumbnailUrl'] as String?,
-        scheduledAt: j['scheduledAt'] as String?,
-        startedAt: j['startedAt'] as String?,
-        endedAt: j['endedAt'] as String?,
-        status: j['status'] as String? ?? 'scheduled',
-        attendeeCount: (j['attendeeCount'] as num?)?.toInt(),
-        host: j['host'] as String?,
-      );
+  factory TbtWebinar.fromJson(Map<String, dynamic> j) {
+    // `host` may be a bare string OR an object `{id, fullName, ...}` — the
+    // user-facing endpoint returns the object form. Normalize to a display
+    // name so the UI never has to branch.
+    final rawHost = j['host'];
+    String? hostName;
+    if (rawHost is String) {
+      hostName = rawHost;
+    } else if (rawHost is Map<String, dynamic>) {
+      hostName = (rawHost['fullName'] ?? rawHost['name']) as String?;
+    }
+
+    return TbtWebinar(
+      id: j['id'] as String,
+      title: j['title'] as String? ?? 'Untitled',
+      description: j['description'] as String?,
+      thumbnailUrl: j['thumbnailUrl'] as String?,
+      scheduledAt: j['scheduledAt'] as String?,
+      startedAt: j['startedAt'] as String?,
+      endedAt: j['endedAt'] as String?,
+      status: j['status'] as String? ?? 'scheduled',
+      attendeeCount: (j['attendeeCount'] as num?)?.toInt(),
+      host: hostName,
+    );
+  }
 
   DateTime? get parsedScheduledAt {
     try {
