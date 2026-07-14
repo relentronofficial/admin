@@ -295,13 +295,47 @@ export default function MemberDetailPage() {
           <div className="space-y-4">
             {progressLoading ? (
               <div className="flex items-center gap-2 text-[#888] py-16 justify-center"><Loader2 size={22} className="animate-spin" /> Loading progress...</div>
-            ) : !progress?.workshops?.length ? (
+            ) : (!progress?.workshops?.length && !progress?.courses?.length) ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl text-center py-16 space-y-3">
                 <Target size={32} className="mx-auto text-[#666]" />
                 <p className="text-[#777] text-sm font-rajdhani font-bold uppercase tracking-widest">No progress data available</p>
               </div>
-            ) : (
-              progress.workshops.map((w: any) => {
+            ) : (<>
+              {(progress.courses ?? []).length > 0 && (
+                <>
+                  <p className="text-[10px] font-bold text-[#888] uppercase tracking-[2px] font-rajdhani pt-1">Courses</p>
+                  {progress.courses.map((c: any) => {
+                    const pct = c.overallPercent ?? 0;
+                    const pctColor = pct >= 100 ? "#22c55e" : pct > 50 ? "#eab308" : "#dc2626";
+                    return (
+                      <div key={c.courseId} className="bg-[#181818] border border-[#2a2a2a] rounded-xl px-6 py-5">
+                        <div className="flex items-center gap-3 mb-2.5">
+                          <p className="font-bold text-[#f0f0f0] text-sm truncate flex-1">{c.courseTitle}</p>
+                          {c.status && (
+                            <span className={`inline-flex px-2 py-0.5 rounded border text-[9px] font-bold uppercase tracking-widest font-rajdhani ${statusCls(c.status)}`}>{c.status}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-1.5 bg-[#111] rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pctColor }} />
+                          </div>
+                          <span className="text-[12px] font-bold font-rajdhani shrink-0" style={{ color: pctColor }}>{pct}%</span>
+                          <span className="text-[11px] text-[#888] shrink-0">{c.completedCount}/{c.totalCount} eps</span>
+                        </div>
+                        {c.lastActiveAt && (
+                          <p className="text-[10px] text-[#888] font-rajdhani uppercase tracking-widest mt-2">
+                            Last active: <span className="text-[#a0a0a0]">{safeDate(c.lastActiveAt)}</span>
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              {(progress.workshops ?? []).length > 0 && (
+                <p className="text-[10px] font-bold text-[#888] uppercase tracking-[2px] font-rajdhani pt-3">Workshops</p>
+              )}
+              {progress.workshops.map((w: any) => {
                 const isExp = expandedWorkshop === w.workshopId;
                 const pct = w.overallPercent ?? 0;
                 const pctColor = pct >= 100 ? "#22c55e" : pct > 50 ? "#eab308" : "#dc2626";
@@ -397,8 +431,8 @@ export default function MemberDetailPage() {
                     )}
                   </div>
                 );
-              })
-            )}
+              })}
+            </>)}
           </div>
         )}
         {/* ── ANALYTICS TAB ── */}

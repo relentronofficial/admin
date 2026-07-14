@@ -425,23 +425,48 @@ export async function createManagerHandler(request: FastifyRequest, reply: Fasti
 
 export async function getMemberProgressHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
-  const enrollments = await req.server.prisma.workshopEnrollment.findMany({
-    where: { memberId: id },
-    include: {
-      workshop: {
-        include: {
-          challenges: {
-            orderBy: { order: 'asc' },
-            include: {
-              episodes: { include: { progress: { where: { memberId: id } } } },
-              assignments: { include: { submissions: { where: { memberId: id } } } },
+  const [enrollments, courseEnrollments] = await Promise.all([
+    req.server.prisma.workshopEnrollment.findMany({
+      where: { memberId: id },
+      include: {
+        workshop: {
+          include: {
+            challenges: {
+              orderBy: { order: 'asc' },
+              include: {
+                episodes: { include: { progress: { where: { memberId: id } } } },
+                assignments: { include: { submissions: { where: { memberId: id } } } },
+              },
             },
           },
         },
       },
-    },
-    orderBy: { enrolledAt: 'desc' },
-  });
+      orderBy: { enrolledAt: 'desc' },
+    }),
+    (req.server.prisma as any).courseEnrollment.findMany({
+      where: { memberId: id },
+      include: {
+        course: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            courseEpisodes: {
+              where: { isVisible: true },
+              orderBy: { order: 'asc' },
+              select: {
+                id: true,
+                title: true,
+                durationSeconds: true,
+                progress: { where: { memberId: id }, select: { completed: true, actualWatchedSecs: true, updatedAt: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { enrolledAt: 'desc' },
+    }),
+  ]);
 
   const workshops = enrollments.map(e => {
     const challenges = e.workshop.challenges.map(c => {
@@ -479,7 +504,31 @@ export async function getMemberProgressHandler(req: FastifyRequest, reply: Fasti
     };
   });
 
-  return reply.send({ success: true, data: { workshops }, error: null });
+  const courses = (courseEnrollments as any[]).map(e => {
+    const episodes = (e.course.courseEpisodes as any[]) ?? [];
+    const total = episodes.length;
+    const completed = episodes.filter(ep => ep.progress[0]?.completed).length;
+    const lastActivity = episodes
+      .flatMap(ep => (ep.progress as any[]).map(p => p.updatedAt))
+      .sort((a, b) => (b as any) - (a as any))[0] || null;
+    return {
+      courseId: e.courseId,
+      courseTitle: e.course.title,
+      status: e.completedAt ? 'completed' : 'active',
+      overallPercent: total > 0 ? Math.round((completed / total) * 100) : (e.progressPercentage ?? 0),
+      completedCount: completed,
+      totalCount: total,
+      episodes: episodes.map(ep => ({
+        title: ep.title,
+        isCompleted: !!ep.progress[0]?.completed,
+        watchedSeconds: ep.progress[0]?.actualWatchedSecs ?? 0,
+        durationSeconds: ep.durationSeconds ?? 0,
+      })),
+      lastActiveAt: lastActivity,
+    };
+  });
+
+  return reply.send({ success: true, data: { workshops, courses }, error: null });
 }
 
 // ── MEMBER BADGES ─────────────────────────────────────────────────────
@@ -587,8 +636,8 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
     return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Member not found' } });
   }
 
-  const [historyPage, historyTotal, allSummary, devices, securityEvents] = await Promise.all([
-    // Paginated episode-level history
+  const [workshopHistory, workshopHistoryTotal, workshopSummary, courseHistory, courseHistoryTotal, courseSummary, devices, securityEvents] = await Promise.all([
+    // Paginated episode-level history (workshops)
     req.server.prisma.memberEpisodeProgress.findMany({
       where: { memberId: id },
       orderBy: { updatedAt: 'desc' },
@@ -615,13 +664,45 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
       },
     }),
 
-    // Total count for pagination
+    // Total count for pagination (workshops)
     req.server.prisma.memberEpisodeProgress.count({ where: { memberId: id } }),
 
-    // Aggregate stats (all rows, minimal fields)
+    // Aggregate stats — workshops (all rows, minimal fields)
     req.server.prisma.memberEpisodeProgress.findMany({
       where: { memberId: id },
       select: { actualWatchedSecs: true, isCompleted: true },
+    }),
+
+    // Paginated episode-level history (courses)
+    (req.server.prisma as any).courseEpisodeProgress.findMany({
+      where: { memberId: id },
+      orderBy: { updatedAt: 'desc' },
+      take: Number(limit),
+      skip: (Number(page) - 1) * Number(limit),
+      select: {
+        episodeId: true,
+        lastWatchedSecs: true,
+        actualWatchedSecs: true,
+        completed: true,
+        completedAt: true,
+        updatedAt: true,
+        episode: {
+          select: {
+            title: true,
+            durationSeconds: true,
+            course: { select: { id: true, title: true, slug: true } },
+          },
+        },
+      },
+    }),
+
+    // Total count for pagination (courses)
+    (req.server.prisma as any).courseEpisodeProgress.count({ where: { memberId: id } }),
+
+    // Aggregate stats — courses
+    (req.server.prisma as any).courseEpisodeProgress.findMany({
+      where: { memberId: id },
+      select: { actualWatchedSecs: true, completed: true },
     }),
 
     // Active devices (last 30 days)
@@ -640,18 +721,28 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
     }),
   ]);
 
-  // Aggregate stats
+  // Aggregate stats — union of workshop + course progress rows
+  const allSummary = [
+    ...workshopSummary.map((p: any) => ({ actualWatchedSecs: p.actualWatchedSecs, isCompleted: p.isCompleted })),
+    ...(courseSummary as any[]).map((p: any) => ({ actualWatchedSecs: p.actualWatchedSecs, isCompleted: p.completed })),
+  ];
   const totalWatchSeconds = allSummary.reduce((s, p) => s + (p.actualWatchedSecs ?? 0), 0);
   const completedCount    = allSummary.filter(p => p.isCompleted).length;
   const inProgressCount   = allSummary.filter(p => !p.isCompleted && (p.actualWatchedSecs ?? 0) > 0).length;
   const completionRate    = allSummary.length > 0 ? Math.round((completedCount / allSummary.length) * 100) : 0;
+  const historyTotal      = workshopHistoryTotal + Number(courseHistoryTotal);
 
-  const historyItems = historyPage.map(p => {
+  // Merge workshop + course watch history, sort by updatedAt desc, cap at page size
+  const workshopHistoryItems = workshopHistory.map(p => {
     const dur = p.episode.durationSeconds ?? 0;
     const pct = dur > 0 ? Math.min(100, Math.round((p.actualWatchedSecs / dur) * 100)) : 0;
     return {
+      type:             'workshop' as const,
       episodeId:        p.episodeId,
       episodeTitle:     p.episode.title,
+      parentTitle:      p.episode.challenge.workshop.title,
+      parentSlug:       p.episode.challenge.workshop.slug,
+      // legacy field names kept for existing UI
       workshopTitle:    p.episode.challenge.workshop.title,
       workshopSlug:     p.episode.challenge.workshop.slug,
       durationSeconds:  dur,
@@ -663,6 +754,30 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
       lastWatchedAt:    p.updatedAt.toISOString(),
     };
   });
+  const courseHistoryItems = (courseHistory as any[]).map((p: any) => {
+    const dur = p.episode.durationSeconds ?? 0;
+    const pct = dur > 0 ? Math.min(100, Math.round((p.actualWatchedSecs / dur) * 100)) : 0;
+    return {
+      type:             'course' as const,
+      episodeId:        p.episodeId,
+      episodeTitle:     p.episode.title,
+      parentTitle:      p.episode.course.title,
+      parentSlug:       p.episode.course.slug,
+      // legacy field name reused so existing UI column keeps working
+      workshopTitle:    p.episode.course.title,
+      workshopSlug:     p.episode.course.slug,
+      durationSeconds:  dur,
+      watchedSeconds:   p.actualWatchedSecs,
+      lastPositionSecs: p.lastWatchedSecs,
+      progressPct:      pct,
+      isCompleted:      p.completed,
+      completedAt:      p.completedAt?.toISOString() ?? null,
+      lastWatchedAt:    p.updatedAt.toISOString(),
+    };
+  });
+  const historyItems = [...workshopHistoryItems, ...courseHistoryItems]
+    .sort((a, b) => (b.lastWatchedAt > a.lastWatchedAt ? 1 : -1))
+    .slice(0, Number(limit));
 
   const deviceItems = devices.map(d => {
     const { browser, os } = parseUASimple(d.userAgent);
