@@ -232,6 +232,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
 
+    // Backfill: publish any active courses that were created before the admin
+    // Publish toggle existed (the create handler now defaults isPublished=true,
+    // but earlier rows are stuck at is_published=false and never appear on the
+    // user side). Idempotent — no-op once every active course is published.
+    await prisma
+      .$executeRawUnsafe(
+        `UPDATE courses SET is_published = true WHERE is_active = true AND is_published = false`,
+      )
+      .catch((err) => {
+        fastify.log.warn('⚠️ Course backfill (is_published) failed (non-fatal):', err);
+      });
+
     // Nav item inserts (run after table locks from above are released)
     await Promise.all([
       prisma.$executeRawUnsafe(`

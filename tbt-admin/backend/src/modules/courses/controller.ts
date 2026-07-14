@@ -34,6 +34,7 @@ export async function createCourseHandler(req: FastifyRequest, reply: FastifyRep
       thumbnailUrl: body.thumbnailUrl,
       requiredTier: Number(body.requiredTier) || 1,
       isActive: body.isActive ?? true,
+      isPublished: body.isPublished ?? true,
       sortOrder: body.order ?? count,
     },
   });
@@ -55,7 +56,7 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
   const body = req.body as any;
   const data: any = {};
   [
-    'title', 'slug', 'description', 'thumbnailUrl', 'requiredTier', 'isActive',
+    'title', 'slug', 'description', 'thumbnailUrl', 'requiredTier', 'isActive', 'isPublished',
     'price', 'level', 'accessDurationDays', 'maxEnrollments',
     'xpPerEpisode', 'passingScorePercent', 'upsellCourseIds', 'crossSellCourseIds',
     'paymentLinkUrl',

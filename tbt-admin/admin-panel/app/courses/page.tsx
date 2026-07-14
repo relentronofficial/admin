@@ -29,7 +29,7 @@ const toSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replac
 
 const EMPTY_COURSE = {
   title: "", slug: "", description: "", thumbnailUrl: "",
-  requiredTier: "1", isActive: true,
+  requiredTier: "1", isActive: true, isPublished: true,
   price: "", accessDurationDays: "", maxEnrollments: "",
   xpPerEpisode: "10", passingScorePercent: "70",
   paymentLinkUrl: "",
@@ -157,6 +157,7 @@ export default function CoursesPage() {
       title: c.title, slug: c.slug, description: c.description || "",
       thumbnailUrl: c.thumbnailUrl || "", requiredTier: String(c.requiredTier ?? 1),
       isActive: c.isActive ?? true,
+      isPublished: c.isPublished ?? false,
       price: c.price != null ? String(c.price) : "",
       accessDurationDays: c.accessDurationDays != null ? String(c.accessDurationDays) : "",
       maxEnrollments: c.maxEnrollments != null ? String(c.maxEnrollments) : "",
@@ -305,6 +306,7 @@ export default function CoursesPage() {
                       <div className="flex items-center gap-2">
                         <p className="font-bold text-[#f0f0f0] text-sm truncate group-hover:text-[#dc2626] transition-colors">{c.title}</p>
                         {!c.isActive && <span className="text-[10px] text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Inactive</span>}
+                        {c.isActive && !c.isPublished && <span className="text-[10px] text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Draft</span>}
                         {c.price > 0 && <span className="text-[10px] text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded font-bold shrink-0">₹{c.price}</span>}
                       </div>
                       <p className="text-[11px] text-[#777] font-mono">/{c.slug}</p>
@@ -458,12 +460,21 @@ export default function CoursesPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={() => setCourseField("isActive", !courseForm.isActive)}
-                  className={`w-10 h-5 rounded-full relative transition-all ${courseForm.isActive ? "bg-[#dc2626]" : "bg-[#333]"}`}>
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${courseForm.isActive ? "right-0.5" : "left-0.5"}`} />
-                </button>
-                <span className="text-[12px] text-[#a0a0a0] font-rajdhani">Active</span>
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setCourseField("isActive", !courseForm.isActive)}
+                    className={`w-10 h-5 rounded-full relative transition-all ${courseForm.isActive ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${courseForm.isActive ? "right-0.5" : "left-0.5"}`} />
+                  </button>
+                  <span className="text-[12px] text-[#a0a0a0] font-rajdhani">Active</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setCourseField("isPublished", !courseForm.isPublished)}
+                    className={`w-10 h-5 rounded-full relative transition-all ${courseForm.isPublished ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${courseForm.isPublished ? "right-0.5" : "left-0.5"}`} />
+                  </button>
+                  <span className="text-[12px] text-[#a0a0a0] font-rajdhani">Published</span>
+                </div>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
