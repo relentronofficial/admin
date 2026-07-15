@@ -1,9 +1,12 @@
-import '../../../shared/widgets/app_network_image.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../../../shared/widgets/app_network_image.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/content_section.dart';
@@ -55,16 +58,17 @@ class CatalogScreen extends ConsumerWidget {
         },
         child: CustomScrollView(
           slivers: [
-            // ── Hero banner ───────────────────────────────────────────────
+            // ── Hero carousel ─────────────────────────────────────────────
             SliverToBoxAdapter(
               child: heroAsync.when(
                 loading: () => _HeroShimmer(),
                 error: (_, __) => const SizedBox.shrink(),
                 data: (hero) {
                   if (hero.slides.isEmpty) return const SizedBox.shrink();
-                  return _HeroBanner(
-                    slide: hero.slides.first,
-                    onTap: () => _handleCtaTap(context, hero.slides.first),
+                  return _HeroCarousel(
+                    slides: hero.slides,
+                    autoPlayIntervalMs: hero.autoPlayIntervalMs,
+                    onCtaTap: (slide) => _handleCtaTap(context, slide),
                   );
                 },
               ),
@@ -141,7 +145,209 @@ class CatalogScreen extends ConsumerWidget {
   }
 }
 
-// ── Hero banner ───────────────────────────────────────────────────────────────
+// ── Hero carousel ─────────────────────────────────────────────────────────────
+
+/// Auto-advancing carousel of [HeroSlide]s. Matches the user-web
+/// `HeroCarousel` (see `tbt-user-web/app/(platform)/tbt/TbtClient.tsx`):
+///
+///   * `PageView.builder` for native swipe with lazy per-slide build.
+///   * `Timer.periodic` cycles forward every `autoPlayIntervalMs`.
+///   * Auto-advance pauses the moment the user starts dragging and
+///     resumes ~3 s after they let go — so a user reading a slide
+///     isn't yanked to the next one mid-word.
+///   * Dot indicators at the bottom right, animated to highlight the
+///     current slide.
+///   * Respects the OS "Reduce Motion" accessibility setting via
+///     `MediaQuery.disableAnimationsOf` — skip auto-advance so the
+///     screen doesn't move on its own for users who've asked it not
+///     to.
+///   * A single slide short-circuits: no timer, no indicators, no
+///     PageView — renders the [_HeroBanner] directly.
+class _HeroCarousel extends StatefulWidget {
+  const _HeroCarousel({
+    required this.slides,
+    required this.autoPlayIntervalMs,
+    required this.onCtaTap,
+  });
+
+  final List<HeroSlide> slides;
+  final int autoPlayIntervalMs;
+  final ValueChanged<HeroSlide> onCtaTap;
+
+  @override
+  State<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends State<_HeroCarousel> {
+  static const _bannerHeight = 200.0;
+  static const _resumeDelay = Duration(seconds: 3);
+
+  final PageController _controller = PageController();
+  Timer? _autoAdvance;
+  Timer? _resumeAfterIdle;
+  int _current = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startAutoAdvance();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduce-motion can flip while the app is running (Settings → Accessibility).
+    // Re-honor it every time the media query changes.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _stopAutoAdvance();
+    } else if (_autoAdvance == null) {
+      _startAutoAdvance();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoAdvance?.cancel();
+    _resumeAfterIdle?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _startAutoAdvance() {
+    if (widget.slides.length <= 1) return;
+    if (MediaQuery.maybeDisableAnimationsOf(context) == true) return;
+    _autoAdvance?.cancel();
+    _autoAdvance = Timer.periodic(
+      Duration(milliseconds: widget.autoPlayIntervalMs),
+      (_) {
+        if (!mounted || !_controller.hasClients) return;
+        final next = (_current + 1) % widget.slides.length;
+        _controller.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOutCubic,
+        );
+      },
+    );
+  }
+
+  void _stopAutoAdvance() {
+    _autoAdvance?.cancel();
+    _autoAdvance = null;
+  }
+
+  void _onUserInteractStart() {
+    _stopAutoAdvance();
+    _resumeAfterIdle?.cancel();
+  }
+
+  void _onUserInteractEnd() {
+    _resumeAfterIdle?.cancel();
+    _resumeAfterIdle = Timer(_resumeDelay, () {
+      if (mounted) _startAutoAdvance();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slides = widget.slides;
+
+    // Single slide → no carousel machinery needed.
+    if (slides.length == 1) {
+      return _HeroBanner(
+        slide: slides.first,
+        onTap: () => widget.onCtaTap(slides.first),
+      );
+    }
+
+    return SizedBox(
+      height: _bannerHeight + 16, // banner + vertical margin
+      child: Stack(
+        children: [
+          // NotificationListener catches user drag start/end so we can
+          // pause auto-advance without swallowing the gesture.
+          NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              if (n is ScrollStartNotification &&
+                  n.dragDetails != null) {
+                _onUserInteractStart();
+              } else if (n is ScrollEndNotification) {
+                _onUserInteractEnd();
+              }
+              return false;
+            },
+            child: PageView.builder(
+              controller: _controller,
+              itemCount: slides.length,
+              onPageChanged: (i) => setState(() => _current = i),
+              itemBuilder: (context, i) {
+                final slide = slides[i];
+                // RepaintBoundary isolates each slide's paint layer so
+                // the sibling slide's image doesn't repaint during the
+                // horizontal transition animation.
+                return RepaintBoundary(
+                  child: _HeroBanner(
+                    slide: slide,
+                    onTap: () => widget.onCtaTap(slide),
+                  ),
+                );
+              },
+            ),
+          ),
+          Positioned(
+            right: 20,
+            bottom: 20,
+            child: _CarouselIndicators(
+              count: slides.length,
+              current: _current,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Animated dot indicators — active dot expands into a short pill for
+/// clear "you are here" feedback. Matches Material 3 carousel spec.
+class _CarouselIndicators extends StatelessWidget {
+  const _CarouselIndicators({required this.count, required this.current});
+
+  final int count;
+  final int current;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(count, (i) {
+        final isActive = i == current;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: isActive ? 18 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: isActive
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(3),
+            boxShadow: const [
+              BoxShadow(
+                color: Color.fromARGB(60, 0, 0, 0),
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+}
+
+// ── Hero banner (single slide) ────────────────────────────────────────────────
 
 class _HeroBanner extends StatelessWidget {
   const _HeroBanner({required this.slide, required this.onTap});
