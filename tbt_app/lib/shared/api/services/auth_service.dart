@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api.dart';
@@ -107,12 +108,20 @@ class AuthService {
 
   /// Explicitly refreshes the session using the stored refresh token.
   /// The [RefreshInterceptor] handles 401-triggered refreshes automatically;
-  /// this method is for proactive refresh (e.g. on app resume) and unit testing.
+  /// this method is for proactive refresh (e.g. on app resume) and unit
+  /// testing.
+  ///
+  /// Session-preservation rule (mirrors [RefreshInterceptor]):
+  ///   * 401 / 403 from the refresh endpoint → server explicitly says the
+  ///     refresh token is invalid. Wipe tokens; caller decides how to
+  ///     surface the sign-out.
+  ///   * Any other failure (network / timeout / 5xx) → keep tokens intact
+  ///     and rethrow so the caller can retry when the network is back.
   Future<void> refresh() async {
-    try {
-      final refreshToken = await TokenStorage.readRefreshToken();
-      if (refreshToken == null) throw const UnauthorizedException();
+    final refreshToken = await TokenStorage.readRefreshToken();
+    if (refreshToken == null) throw const UnauthorizedException();
 
+    try {
       final res = await _dio.post<dynamic>(
         kAuthRefresh,
         options: Options(headers: {'Cookie': 'tbt_refresh=$refreshToken'}),
@@ -127,7 +136,21 @@ class AuthService {
       if (newAccess != null) await TokenStorage.writeAccessToken(newAccess);
       if (newRefresh != null) await TokenStorage.writeRefreshToken(newRefresh);
     } on DioException catch (e) {
-      await TokenStorage.clearAll();
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        // Server-declared invalid refresh token — clear the session so the
+        // next cold start lands on /login.
+        if (kDebugMode) {
+          debugPrint('[AuthService.refresh] server returned $status — '
+              'clearing tokens');
+        }
+        await TokenStorage.clearAll();
+      } else {
+        if (kDebugMode) {
+          debugPrint('[AuthService.refresh] transient failure '
+              '(${e.type}, status=$status) — KEEPING tokens');
+        }
+      }
       throw mapDioError(e);
     }
   }

@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../shared/api/services/auth_service.dart';
@@ -13,13 +15,16 @@ class AuthNotifier extends _$AuthNotifier {
   @override
   Future<AuthState> build() async {
     // Session-check on app start:
-    //   1. If an access token is present, treat as authenticated.
-    //   2. Else, if a refresh token exists, try to refresh silently. If it
-    //      succeeds, skip login. If it fails (expired / server error), fall
-    //      through to the idle state so the user sees login.
-    // This closes the P1 "always see login on cold start" bug — access tokens
-    // are 15-min TTL, so without a refresh attempt users always land back on
-    // /login after any short idle.
+    //   1. If an access token is present, treat as authenticated. (Access
+    //      tokens are 15-min TTL so this is usually enough for warm starts.)
+    //   2. Else, if a refresh token exists, try to refresh silently. If the
+    //      server explicitly says the refresh token is invalid (401/403),
+    //      wipe tokens and fall through to idle. If the refresh call fails
+    //      for any other reason (network / timeout / 5xx), assume the token
+    //      is still valid on the server — start optimistically authenticated
+    //      so per-request refresh can kick in once connectivity returns.
+    //      This closes an intermittent-logout bug where a poor connection
+    //      on cold start was permanently wiping the session.
     final access = await TokenStorage.readAccessToken();
     if (access != null) {
       return const AuthState(step: AuthStep.authenticated);
@@ -29,8 +34,35 @@ class AuthNotifier extends _$AuthNotifier {
       try {
         await ref.read(authServiceProvider).refresh();
         return const AuthState(step: AuthStep.authenticated);
-      } catch (_) {
-        await TokenStorage.clearAll();
+      } on DioException catch (e) {
+        final status = e.response?.statusCode;
+        if (status == 401 || status == 403) {
+          // Server-declared invalid — really do sign out.
+          if (kDebugMode) {
+            debugPrint('[AuthNotifier.build] cold-start refresh got $status'
+                ' — clearing tokens');
+          }
+          await TokenStorage.clearAll();
+        } else {
+          // Transient (network / timeout / 5xx). Keep the refresh token
+          // and enter the app optimistically; the RefreshInterceptor will
+          // exchange it for a new access token as soon as the first
+          // authenticated request runs on a healthier network.
+          if (kDebugMode) {
+            debugPrint('[AuthNotifier.build] transient refresh failure'
+                ' (${e.type}, status=$status) — KEEPING tokens,'
+                ' entering authenticated optimistically');
+          }
+          return const AuthState(step: AuthStep.authenticated);
+        }
+      } catch (e, st) {
+        // Non-Dio errors (SecureStorage failure, etc.). Keep tokens; the
+        // user is very likely still valid on the backend.
+        if (kDebugMode) {
+          debugPrint('[AuthNotifier.build] non-Dio refresh error: $e\n$st'
+              ' — KEEPING tokens, entering authenticated optimistically');
+        }
+        return const AuthState(step: AuthStep.authenticated);
       }
     }
     return const AuthState(step: AuthStep.idle);
