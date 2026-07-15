@@ -164,11 +164,13 @@ class _WorkshopsScreenState extends ConsumerState<WorkshopsScreen> {
                     padding:
                         const EdgeInsets.fromLTRB(16, 4, 16, 32),
                     itemCount: workshops.length,
-                    itemBuilder: (context, i) => _WorkshopCard(
-                      workshop: workshops[i],
-                      accent: accent,
-                      onTap: () => context.push(
-                        '/workshops/${workshops[i].slug}',
+                    itemBuilder: (context, i) => RepaintBoundary(
+                      child: _WorkshopCard(
+                        workshop: workshops[i],
+                        accent: accent,
+                        onTap: () => context.push(
+                          '/workshops/${workshops[i].slug}',
+                        ),
                       ),
                     ),
                   ),

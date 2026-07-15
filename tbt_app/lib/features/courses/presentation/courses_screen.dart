@@ -203,11 +203,13 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                       childAspectRatio: 0.72,
                     ),
                     itemCount: courses.length,
-                    itemBuilder: (context, i) => _CourseCard(
-                      course: courses[i],
-                      accent: accent,
-                      onTap: () =>
-                          context.push('/learning/${courses[i].id}'),
+                    itemBuilder: (context, i) => RepaintBoundary(
+                      child: _CourseCard(
+                        course: courses[i],
+                        accent: accent,
+                        onTap: () =>
+                            context.push('/learning/${courses[i].id}'),
+                      ),
                     ),
                   ),
                 );

@@ -49,6 +49,7 @@ import 'features/workshops/providers/workshops_provider.dart';
 import 'shared/providers/site_config_provider.dart';
 import 'shared/providers/socket_provider.dart';
 import 'shared/providers/theme_mode_provider.dart';
+import 'shared/theme/app_scroll_behavior.dart';
 import 'shared/theme/app_theme.dart';
 import 'shared/theme/tbt_theme.dart';
 import 'shared/widgets/app_navbar.dart';
@@ -546,18 +547,24 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
       routerConfig: router,
       localizationsDelegates: AppL10n.localizationsDelegates,
       supportedLocales: AppL10n.supportedLocales,
+      // Platform-adaptive scroll physics + Android 12 stretch
+      // overscroll + trackpad/mouse support. See AppScrollBehavior.
+      scrollBehavior: const AppScrollBehavior(),
       builder: (context, child) {
         // Respect the user's OS-level text-size preference (accessibility
         // large-text setting), but clamp at 1.4x so multi-line labels and
         // fixed-height rows don't overflow. Larger scales cause clipping
         // in dense list cards; clamping is standard practice.
-        final mq = MediaQuery.of(context);
-        final scale = mq.textScaler.clamp(
+        //
+        // `sizeOf` / `textScalerOf` establish narrow dependencies so this
+        // builder rebuilds only when the scale actually changes, not on
+        // every MediaQueryData field mutation.
+        final scale = MediaQuery.textScalerOf(context).clamp(
           minScaleFactor: 0.85,
           maxScaleFactor: 1.4,
         );
         return MediaQuery(
-          data: mq.copyWith(textScaler: scale),
+          data: MediaQuery.of(context).copyWith(textScaler: scale),
           child: child ?? const SizedBox.shrink(),
         );
       },

@@ -72,7 +72,9 @@ class BadgesScreen extends ConsumerWidget {
               childAspectRatio: 0.85,
             ),
             itemCount: badges.length,
-            itemBuilder: (_, i) => _BadgeCard(badge: badges[i]),
+            itemBuilder: (_, i) => RepaintBoundary(
+              child: _BadgeCard(badge: badges[i]),
+            ),
           );
         },
       ),

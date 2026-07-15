@@ -785,14 +785,26 @@ class _BottomTabs extends StatelessWidget {
 
 // ── Leaderboard tab ───────────────────────────────────────────────────────────
 
-class _LeaderboardTab extends ConsumerWidget {
+class _LeaderboardTab extends ConsumerStatefulWidget {
   const _LeaderboardTab({required this.courseId, required this.accent});
 
   final String courseId;
   final Color accent;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LeaderboardTab> createState() => _LeaderboardTabState();
+}
+
+class _LeaderboardTabState extends ConsumerState<_LeaderboardTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final courseId = widget.courseId;
+    final accent = widget.accent;
     final lbAsync = ref.watch(courseLeaderboardProvider(courseId));
     return lbAsync.when(
       loading: () => const Center(
@@ -908,11 +920,21 @@ class _LeaderboardTab extends ConsumerWidget {
 
 // ── Badges tab ────────────────────────────────────────────────────────────────
 
-class _BadgesTab extends ConsumerWidget {
+class _BadgesTab extends ConsumerStatefulWidget {
   const _BadgesTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_BadgesTab> createState() => _BadgesTabState();
+}
+
+class _BadgesTabState extends ConsumerState<_BadgesTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
     final badgesAsync = ref.watch(earnedBadgesProvider);
     return badgesAsync.when(
       loading: () => const Center(
@@ -950,7 +972,9 @@ class _BadgesTab extends ConsumerWidget {
             childAspectRatio: 0.85,
           ),
           itemCount: badges.length,
-          itemBuilder: (_, i) => _BadgeCard(badge: badges[i]),
+          itemBuilder: (_, i) => RepaintBoundary(
+            child: _BadgeCard(badge: badges[i]),
+          ),
         );
       },
     );

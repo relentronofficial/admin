@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,6 +27,20 @@ void main() async {
   // Open the shared response cache before any provider tries to read
   // from it. Cheap — opens a single Hive box.
   await ResponseCache.init();
+
+  // Opt into the highest supported display refresh rate on Android.
+  // Flutter caps at 60 Hz by default even on 120 Hz hardware — this
+  // call picks the mode with the highest refresh rate among modes that
+  // match the current resolution. iOS handles this via
+  // `CADisableMinimumFrameDurationOnPhone` in Info.plist (already set).
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    try {
+      await FlutterDisplayMode.setHighRefreshRate();
+    } catch (_) {
+      // Not fatal — some emulators / older Android versions don't
+      // support the mode API. Fall back to whatever the OS gave us.
+    }
+  }
 
   // Terminated state: resolve the tapped notification's route and stash it for
   // the router to consume once the user is authenticated.

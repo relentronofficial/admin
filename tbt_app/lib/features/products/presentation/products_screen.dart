@@ -67,9 +67,22 @@ class ProductsScreen extends ConsumerWidget {
 
 // ── All Products tab ──────────────────────────────────────────────────────────
 
-class _AllProductsTab extends ConsumerWidget {
+class _AllProductsTab extends ConsumerStatefulWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AllProductsTab> createState() => _AllProductsTabState();
+}
+
+class _AllProductsTabState extends ConsumerState<_AllProductsTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    // Required for AutomaticKeepAliveClientMixin — registers the alive
+    // state with the enclosing PageStorage / TabBarView.
+    super.build(context);
+
     final async = ref.watch(productsProvider);
 
     return async.when(
@@ -90,7 +103,10 @@ class _AllProductsTab extends ConsumerWidget {
         }
 
         // 2 cols on phones, 3 on tablets (matches the web tablet layout).
-        final width = MediaQuery.of(context).size.width;
+        // `sizeOf` narrows the dependency: this widget only rebuilds
+        // when the size dimension actually changes, not every time the
+        // full MediaQueryData mutates.
+        final width = MediaQuery.sizeOf(context).width;
         final cols = width >= 600 ? 3 : 2;
         return GridView.builder(
           padding: const EdgeInsets.all(AppSpacing.md),
@@ -101,9 +117,11 @@ class _AllProductsTab extends ConsumerWidget {
             childAspectRatio: 0.72,
           ),
           itemCount: products.length,
-          itemBuilder: (_, i) => _ProductCard(
-            product: products[i],
-            onTap: () => _showProductDetail(context, ref, products[i]),
+          itemBuilder: (_, i) => RepaintBoundary(
+            child: _ProductCard(
+              product: products[i],
+              onTap: () => _showProductDetail(context, ref, products[i]),
+            ),
           ),
         );
       },
@@ -496,9 +514,19 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
 
 // ── My Inquiries tab ──────────────────────────────────────────────────────────
 
-class _MyProductsTab extends ConsumerWidget {
+class _MyProductsTab extends ConsumerStatefulWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_MyProductsTab> createState() => _MyProductsTabState();
+}
+
+class _MyProductsTabState extends ConsumerState<_MyProductsTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
     final async = ref.watch(myProductsProvider);
 
     return async.when(
@@ -521,7 +549,9 @@ class _MyProductsTab extends ConsumerWidget {
         return ListView.builder(
           padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
           itemCount: items.length,
-          itemBuilder: (_, i) => _InquiredProductTile(item: items[i]),
+          itemBuilder: (_, i) => RepaintBoundary(
+            child: _InquiredProductTile(item: items[i]),
+          ),
         );
       },
     );

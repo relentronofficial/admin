@@ -177,6 +177,24 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
     textTheme: textTheme,
     primaryTextTheme: textTheme,
 
+    // ── Page transitions ────────────────────────────────────────────────────
+    // Match each platform's native standard: iOS uses the horizontal
+    // slide + tint of `CupertinoPageTransitionsBuilder`; Android uses
+    // Material 3's `ZoomPageTransitionsBuilder` (the same subtle
+    // scale + fade you get in Gmail, Photos, etc.). Without this
+    // override every route on every platform gets the FadeUpwards
+    // default, which feels un-native on both.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: <TargetPlatform, PageTransitionsBuilder>{
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.android: ZoomPageTransitionsBuilder(),
+        TargetPlatform.fuchsia: ZoomPageTransitionsBuilder(),
+        TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+        TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+      },
+    ),
+
     // ── Card ────────────────────────────────────────────────────────────────
     cardTheme: CardThemeData(
       color: isDark ? ext.bgSurface : p.bgSurface,

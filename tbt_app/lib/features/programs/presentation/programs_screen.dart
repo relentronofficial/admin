@@ -74,10 +74,12 @@ class ProgramsScreen extends ConsumerWidget {
           return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: programs.length,
-            itemBuilder: (_, i) => _ProgramCard(
-              program: programs[i],
-              onTap: () =>
-                  context.push(AppRoutes.programDetailPath(programs[i].id)),
+            itemBuilder: (_, i) => RepaintBoundary(
+              child: _ProgramCard(
+                program: programs[i],
+                onTap: () =>
+                    context.push(AppRoutes.programDetailPath(programs[i].id)),
+              ),
             ),
           );
         },

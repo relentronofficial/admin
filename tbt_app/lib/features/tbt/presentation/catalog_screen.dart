@@ -335,9 +335,11 @@ class _ContentSection extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               itemCount: section.items.length,
-              itemBuilder: (_, i) => _CatalogCard(
-                item: section.items[i],
-                onTap: () => onItemTap(section.items[i]),
+              itemBuilder: (_, i) => RepaintBoundary(
+                child: _CatalogCard(
+                  item: section.items[i],
+                  onTap: () => onItemTap(section.items[i]),
+                ),
               ),
             ),
           ),

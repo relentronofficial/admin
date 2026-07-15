@@ -141,10 +141,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                   itemCount: events.length,
-                  itemBuilder: (_, i) => _EventCard(
-                    event: events[i],
-                    onTap: () => context
-                        .push(AppRoutes.eventDetailPath(events[i].id)),
+                  itemBuilder: (_, i) => RepaintBoundary(
+                    child: _EventCard(
+                      event: events[i],
+                      onTap: () => context
+                          .push(AppRoutes.eventDetailPath(events[i].id)),
+                    ),
                   ),
                 );
               },

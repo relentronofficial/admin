@@ -236,9 +236,10 @@ class _HistoryBody extends ConsumerWidget {
               final item = cell as WatchHistoryItem;
               final epId = item.episodeId;
               if (epId == null || epId.isEmpty) {
-                return _HistoryCard(item: item);
+                return RepaintBoundary(child: _HistoryCard(item: item));
               }
-              return Dismissible(
+              return RepaintBoundary(
+                child: Dismissible(
                 key: ValueKey('history-${item.type}-$epId'),
                 direction: DismissDirection.endToStart,
                 background: Container(
@@ -279,7 +280,8 @@ class _HistoryBody extends ConsumerWidget {
                     }
                   }
                 },
-                child: _HistoryCard(item: item),
+                  child: _HistoryCard(item: item),
+                ),
               );
             },
           ),

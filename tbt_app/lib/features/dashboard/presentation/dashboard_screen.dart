@@ -594,6 +594,7 @@ class _ContentCard extends StatelessWidget {
       button: true,
       child: GestureDetector(
       onTap: () => _onTap(context),
+      behavior: HitTestBehavior.opaque,
       child: Container(
         width: 172,
         decoration: BoxDecoration(

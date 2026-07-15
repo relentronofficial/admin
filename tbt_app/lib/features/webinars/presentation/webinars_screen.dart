@@ -72,10 +72,12 @@ class WebinarsScreen extends ConsumerWidget {
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               itemCount: webinars.length,
-              itemBuilder: (_, i) => _WebinarCard(
-                webinar: webinars[i],
-                onTap: () => context
-                    .push(AppRoutes.webinarDetailPath(webinars[i].id)),
+              itemBuilder: (_, i) => RepaintBoundary(
+                child: _WebinarCard(
+                  webinar: webinars[i],
+                  onTap: () => context
+                      .push(AppRoutes.webinarDetailPath(webinars[i].id)),
+                ),
               ),
             ),
           );

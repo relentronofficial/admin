@@ -301,26 +301,28 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       cursor++;
       for (final n in g.items) {
         if (index == cursor) {
-          return Dismissible(
-            key: ValueKey('notif-${n.id}'),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-              margin: const EdgeInsets.symmetric(vertical: AppSpacing.xs + 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFFdc2626),
-                borderRadius: BorderRadius.circular(AppRadius.md),
+          return RepaintBoundary(
+            child: Dismissible(
+              key: ValueKey('notif-${n.id}'),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                margin: const EdgeInsets.symmetric(vertical: AppSpacing.xs + 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFdc2626),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: const Icon(Icons.delete_outline, color: Colors.white),
               ),
-              child: const Icon(Icons.delete_outline, color: Colors.white),
-            ),
-            onDismissed: (_) => ref
-                .read(notificationsNotifierProvider.notifier)
-                .dismiss(n.id),
-            child: _NotifCard(
-              notification: n,
-              accent: accent,
-              onTap: () => _handleTap(n),
+              onDismissed: (_) => ref
+                  .read(notificationsNotifierProvider.notifier)
+                  .dismiss(n.id),
+              child: _NotifCard(
+                notification: n,
+                accent: accent,
+                onTap: () => _handleTap(n),
+              ),
             ),
           );
         }

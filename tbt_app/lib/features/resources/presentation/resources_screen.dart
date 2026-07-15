@@ -150,20 +150,24 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
                       childAspectRatio: 0.9,
                     ),
                     itemCount: items.length,
-                    itemBuilder: (_, i) => _ResourceGridCard(
-                      resource: items[i],
-                      onDownload: () => _download(context, ref, items[i]),
-                      onPreview: () => _preview(context, items[i]),
+                    itemBuilder: (_, i) => RepaintBoundary(
+                      child: _ResourceGridCard(
+                        resource: items[i],
+                        onDownload: () => _download(context, ref, items[i]),
+                        onPreview: () => _preview(context, items[i]),
+                      ),
                     ),
                   );
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                   itemCount: items.length,
-                  itemBuilder: (_, i) => _ResourceTile(
-                    resource: items[i],
-                    onDownload: () => _download(context, ref, items[i]),
-                    onPreview: () => _preview(context, items[i]),
+                  itemBuilder: (_, i) => RepaintBoundary(
+                    child: _ResourceTile(
+                      resource: items[i],
+                      onDownload: () => _download(context, ref, items[i]),
+                      onPreview: () => _preview(context, items[i]),
+                    ),
                   ),
                 );
               },
