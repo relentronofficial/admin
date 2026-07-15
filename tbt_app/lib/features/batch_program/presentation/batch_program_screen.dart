@@ -228,7 +228,7 @@ class BatchProgramScreen extends ConsumerWidget {
                       BatchCalendar(
                         program: program,
                         onDayTap: (day) =>
-                            context.go(AppRoutes.batchDayPath(day)),
+                            context.push(AppRoutes.batchDayPath(day)),
                       ),
                       if (program.breaks.isNotEmpty) ...[
                         const SizedBox(height: 20),
@@ -275,7 +275,8 @@ class BatchProgramScreen extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  onPressed: () => context.go(AppRoutes.batchDayPath(todayDay)),
+                  onPressed: () =>
+                      context.push(AppRoutes.batchDayPath(todayDay)),
                 ),
               ),
             ),

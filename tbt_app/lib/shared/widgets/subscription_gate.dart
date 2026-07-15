@@ -189,7 +189,7 @@ class _FreeInterceptor extends ConsumerWidget {
         SizedBox(
           height: 48,
           child: ElevatedButton(
-            onPressed: () => context.go(AppRoutes.products),
+            onPressed: () => context.push(AppRoutes.products),
             style: ElevatedButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: Colors.white,

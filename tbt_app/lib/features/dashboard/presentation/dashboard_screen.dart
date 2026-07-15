@@ -291,7 +291,7 @@ class _QuickLinksRow extends StatelessWidget {
                   label: 'Task',
                   accent: accent,
                   onTap: () =>
-                      GoRouter.of(context).go(AppRoutes.batchProgram),
+                      GoRouter.of(context).push(AppRoutes.batchProgram),
                 ),
               ),
               const SizedBox(width: 10),
@@ -300,7 +300,7 @@ class _QuickLinksRow extends StatelessWidget {
                   icon: Icons.school_outlined,
                   label: 'Courses',
                   accent: accent,
-                  onTap: () => GoRouter.of(context).go(AppRoutes.courses),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.courses),
                 ),
               ),
               const SizedBox(width: 10),
@@ -309,7 +309,7 @@ class _QuickLinksRow extends StatelessWidget {
                   icon: Icons.folder_open_outlined,
                   label: 'Resources',
                   accent: accent,
-                  onTap: () => GoRouter.of(context).go(AppRoutes.resources),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.resources),
                 ),
               ),
             ],
@@ -322,7 +322,7 @@ class _QuickLinksRow extends StatelessWidget {
                   icon: Icons.event_outlined,
                   label: 'Events',
                   accent: accent,
-                  onTap: () => GoRouter.of(context).go(AppRoutes.events),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.events),
                 ),
               ),
               const SizedBox(width: 10),
@@ -331,7 +331,7 @@ class _QuickLinksRow extends StatelessWidget {
                   icon: Icons.videocam_outlined,
                   label: 'Webinars',
                   accent: accent,
-                  onTap: () => GoRouter.of(context).go(AppRoutes.webinars),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.webinars),
                 ),
               ),
               const SizedBox(width: 10),
@@ -340,7 +340,7 @@ class _QuickLinksRow extends StatelessWidget {
                   icon: Icons.history,
                   label: 'History',
                   accent: accent,
-                  onTap: () => GoRouter.of(context).go(AppRoutes.history),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.history),
                 ),
               ),
             ],
@@ -566,21 +566,23 @@ class _ContentCard extends StatelessWidget {
     // Deep-link straight into the player when we know the specific lesson /
     // episode — matches the web `?lesson=<id>` behaviour. Falls back to the
     // parent detail screen when the id isn't in the payload.
+    // Use `push` so the back button returns to the dashboard rather than
+    // collapsing the stack (see BACK_NAV_SPEC).
     if (item.type == 'course') {
       final courseId = item.courseId ?? item.id ?? '';
       final lessonId = item.lessonId;
       if (courseId.isNotEmpty && lessonId != null && lessonId.isNotEmpty) {
-        context.go(AppRoutes.lessonPlayerPath(courseId, lessonId));
+        context.push(AppRoutes.lessonPlayerPath(courseId, lessonId));
       } else if (courseId.isNotEmpty) {
-        context.go(AppRoutes.courseDetailPath(courseId));
+        context.push(AppRoutes.courseDetailPath(courseId));
       }
     } else {
       final slug = item.workshopSlug ?? item.id ?? '';
       final episodeId = item.episodeId;
       if (slug.isNotEmpty && episodeId != null && episodeId.isNotEmpty) {
-        context.go(AppRoutes.workshopEpisodePath(slug, episodeId));
+        context.push(AppRoutes.workshopEpisodePath(slug, episodeId));
       } else if (slug.isNotEmpty) {
-        context.go(AppRoutes.workshopDetailPath(slug));
+        context.push(AppRoutes.workshopDetailPath(slug));
       }
     }
   }

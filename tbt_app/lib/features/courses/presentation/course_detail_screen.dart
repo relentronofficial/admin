@@ -213,7 +213,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
                             hasAccess: course.hasAccess,
                             accent: accent,
                             onTap: course.hasAccess
-                                ? () => context.go(
+                                ? () => context.push(
                                       '/learning/${widget.courseId}/${course.lessons[i].id}',
                                     )
                                 : null,

@@ -40,7 +40,9 @@ class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
           semanticLabel: msgCount > 0
               ? 'Messages, $msgCount unread'
               : 'Messages',
-          onTap: () => context.go(AppRoutes.messages),
+          // `push` so the back button returns to whichever screen the
+          // user tapped the icon from, instead of exiting the app.
+          onTap: () => context.push(AppRoutes.messages),
         ),
         const SizedBox(width: 4),
         _IconWithBadge(
@@ -50,7 +52,7 @@ class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
           semanticLabel: notifCount > 0
               ? 'Notifications, $notifCount unread'
               : 'Notifications',
-          onTap: () => context.go(AppRoutes.notifications),
+          onTap: () => context.push(AppRoutes.notifications),
         ),
         const SizedBox(width: 8),
       ],

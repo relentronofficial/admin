@@ -188,7 +188,7 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                       course: courses[i],
                       accent: accent,
                       onTap: () =>
-                          context.go('/learning/${courses[i].id}'),
+                          context.push('/learning/${courses[i].id}'),
                     ),
                   ),
                 );

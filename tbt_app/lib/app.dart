@@ -460,15 +460,83 @@ class _TbtAppState extends ConsumerState<TbtApp> {
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
 
-class _AppShell extends StatelessWidget {
+class _AppShell extends StatefulWidget {
   const _AppShell({required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: const AppNavbar(),
-        body: child,
-        bottomNavigationBar: const AppBottomTabBar(),
+  State<_AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<_AppShell> {
+  /// Tracks the last Android system-back press timestamp so we can implement
+  /// the platform-standard "press back again to exit" pattern on the root
+  /// tab. Nulled when the interval window expires so a stale press doesn't
+  /// accidentally exit later.
+  DateTime? _lastBackPress;
+
+  static const _kExitConfirmWindow = Duration(seconds: 2);
+
+  /// Handles hardware / gesture back on the authenticated shell.
+  ///
+  /// Order of preference:
+  ///   1. If GoRouter has a route to pop (a `push`ed detail screen sitting on
+  ///      top of a shell tab), let it pop.
+  ///   2. Else if we're not on the home tab, jump to home so back always
+  ///      converges on `/dashboard` before quitting — matches the behaviour
+  ///      of every major Android app.
+  ///   3. Else on `/dashboard`, require two back presses within
+  ///      [_kExitConfirmWindow] to exit; first press just shows a snackbar.
+  Future<void> _handleBack() async {
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
+      router.pop();
+      return;
+    }
+
+    final currentPath = GoRouterState.of(context).uri.path;
+    if (currentPath != AppRoutes.dashboard) {
+      context.go(AppRoutes.dashboard);
+      return;
+    }
+
+    final now = DateTime.now();
+    final lastPress = _lastBackPress;
+    if (lastPress != null && now.difference(lastPress) < _kExitConfirmWindow) {
+      // User confirmed within the window — actually exit.
+      await SystemNavigator.pop();
+      return;
+    }
+
+    _lastBackPress = now;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Press back again to exit'),
+          duration: _kExitConfirmWindow,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // `canPop: false` tells the framework we're taking full control of the
+    // pop gesture — `onPopInvokedWithResult` decides what actually happens.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
+        appBar: const AppNavbar(),
+        body: widget.child,
+        bottomNavigationBar: const AppBottomTabBar(),
+      ),
+    );
+  }
 }

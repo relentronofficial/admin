@@ -168,7 +168,7 @@ class _WorkshopsScreenState extends ConsumerState<WorkshopsScreen> {
                     itemBuilder: (context, i) => _WorkshopCard(
                       workshop: workshops[i],
                       accent: accent,
-                      onTap: () => context.go(
+                      onTap: () => context.push(
                         '/workshops/${workshops[i].slug}',
                       ),
                     ),

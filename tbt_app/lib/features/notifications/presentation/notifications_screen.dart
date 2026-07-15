@@ -149,7 +149,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     if (!n.isRead) {
       ref.read(notificationsNotifierProvider.notifier).markRead(n.id);
     }
-    context.go(_resolveNotificationRoute(n));
+    // `push` so pressing back returns to the notification list rather than
+    // exiting the app.
+    context.push(_resolveNotificationRoute(n));
   }
 
   @override
