@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/routes.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../data/programs_service.dart';
 import '../providers/programs_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class ProgramsScreen extends ConsumerWidget {
   const ProgramsScreen({super.key});
 
@@ -16,22 +16,22 @@ class ProgramsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
+        title: Text(
           'PROGRAMS',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: kColorTextMuted, size: 20),
+            icon: Icon(Icons.refresh, color: context.tokens.textMuted, size: 20),
             onPressed: () => ref.invalidate(programsProvider),
           ),
         ],
@@ -43,10 +43,10 @@ class ProgramsScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load programs',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load programs',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(programsProvider),
@@ -57,15 +57,15 @@ class ProgramsScreen extends ConsumerWidget {
         ),
         data: (programs) {
           if (programs.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.school_outlined, color: kColorTextMuted, size: 40),
+                  Icon(Icons.school_outlined, color: context.tokens.textMuted, size: 40),
                   SizedBox(height: 12),
                   Text('No programs available',
                       style: TextStyle(
-                          color: kColorTextSecondary, fontSize: 14)),
+                          color: context.tokens.textSecondary, fontSize: 14)),
                 ],
               ),
             );
@@ -105,9 +105,9 @@ class _ProgramCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,11 +117,11 @@ class _ProgramCard extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: kColorAccent.withValues(alpha: 0.12),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.school_outlined,
-                  color: kColorAccent, size: 22),
+              child: Icon(Icons.school_outlined,
+                  color: Theme.of(context).colorScheme.primary, size: 22),
             ),
             const SizedBox(width: 12),
 
@@ -135,8 +135,8 @@ class _ProgramCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           program.name,
-                          style: const TextStyle(
-                            color: kColorTextPrimary,
+                          style: TextStyle(
+                            color: context.tokens.textPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
@@ -145,7 +145,7 @@ class _ProgramCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      _StatusChip(status: program.status),
+                      _StatusChip(context, status: program.status),
                     ],
                   ),
                   if (program.description != null &&
@@ -153,8 +153,8 @@ class _ProgramCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       program.description!,
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 12,
                       ),
                       maxLines: 2,
@@ -180,7 +180,7 @@ class _ProgramCard extends StatelessWidget {
             ),
 
             const SizedBox(width: 4),
-            const Icon(Icons.chevron_right, color: kColorTextMuted, size: 18),
+            Icon(Icons.chevron_right, color: context.tokens.textMuted, size: 18),
           ],
         ),
       ),
@@ -190,35 +190,36 @@ class _ProgramCard extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip(BuildContext context, {required this.status});
 
   final String status;
 
-  Color get _color {
+  Color _color(BuildContext context) {
     switch (status) {
       case 'active':
         return const Color(0xFF16a34a);
       case 'inactive':
-        return kColorTextMuted;
+        return context.tokens.textMuted;
       case 'draft':
         return const Color(0xFFd97706);
       default:
-        return kColorTextMuted;
+        return context.tokens.textMuted;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = _color(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.15),
+        color: c.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         status.toUpperCase(),
         style: TextStyle(
-          color: _color,
+          color: c,
           fontSize: 9,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
@@ -239,12 +240,12 @@ class _MetaChip extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 11, color: kColorTextMuted),
+        Icon(icon, size: 11, color: context.tokens.textMuted),
         const SizedBox(width: 4),
         Text(
           label,
-          style: const TextStyle(
-            color: kColorTextMuted,
+          style: TextStyle(
+            color: context.tokens.textMuted,
             fontSize: 11,
           ),
         ),

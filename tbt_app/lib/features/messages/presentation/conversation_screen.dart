@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/providers/me_provider.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../data/messages_service.dart';
 import '../providers/messages_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class ConversationScreen extends ConsumerStatefulWidget {
   const ConversationScreen({super.key, required this.conversationId});
 
@@ -133,29 +133,29 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: kColorTextPrimary, size: 18),
+          icon: Icon(Icons.arrow_back_ios_new,
+              color: context.tokens.textPrimary, size: 18),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'CONVERSATION',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 18,
             fontWeight: FontWeight.w700,
             letterSpacing: 2,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           PopupMenuButton<String>(
             tooltip: 'More',
-            icon: const Icon(Icons.more_vert, color: kColorTextSecondary),
-            color: kColorBgSurface,
+            icon: Icon(Icons.more_vert, color: context.tokens.textSecondary),
+            color: context.tokens.bgSurface,
             onSelected: (v) async {
               if (v == 'archive') {
                 try {
@@ -174,12 +174,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 }
               }
             },
-            itemBuilder: (_) => const [
+            itemBuilder: (_) => [
               PopupMenuItem(
                 value: 'archive',
                 child: Text(
                   'Archive',
-                  style: TextStyle(color: kColorTextPrimary, fontSize: 13),
+                  style: TextStyle(color: context.tokens.textPrimary, fontSize: 13),
                 ),
               ),
             ],
@@ -198,11 +198,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline,
-                        color: kColorTextMuted, size: 36),
+                    Icon(Icons.error_outline,
+                        color: context.tokens.textMuted, size: 36),
                     const SizedBox(height: 8),
-                    const Text('Failed to load messages',
-                        style: TextStyle(color: kColorTextSecondary)),
+                    Text('Failed to load messages',
+                        style: TextStyle(color: context.tokens.textSecondary)),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: () => ref.invalidate(
@@ -214,11 +214,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               ),
               data: (messages) {
                 if (messages.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Text(
                       'No messages yet.\nSay hello!',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: kColorTextMuted, fontSize: 14),
+                      style: TextStyle(color: context.tokens.textMuted, fontSize: 14),
                     ),
                   );
                 }
@@ -255,10 +255,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
+                    Text(
                       'TBT team is typing…',
                       style: TextStyle(
-                        color: kColorTextMuted,
+                        color: context.tokens.textMuted,
                         fontSize: 12,
                         fontStyle: FontStyle.italic,
                       ),
@@ -281,12 +281,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 8),
-                color: kColorBgInput,
-                child: const Text(
+                color: context.tokens.bgInput,
+                child: Text(
                   'This conversation is closed — send a reply to reopen it.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: kColorTextMuted,
+                    color: context.tokens.textMuted,
                     fontSize: 12,
                     fontStyle: FontStyle.italic,
                   ),
@@ -374,13 +374,13 @@ class _DaySeparator extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            const Expanded(child: Divider(color: kColorBorderCard)),
+            Expanded(child: Divider(color: context.tokens.borderCard)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 label,
-                style: const TextStyle(
-                  color: kColorTextMuted,
+                style: TextStyle(
+                  color: context.tokens.textMuted,
                   fontSize: 11,
                   fontFamily: 'Rajdhani',
                   fontWeight: FontWeight.w700,
@@ -388,7 +388,7 @@ class _DaySeparator extends StatelessWidget {
                 ),
               ),
             ),
-            const Expanded(child: Divider(color: kColorBorderCard)),
+            Expanded(child: Divider(color: context.tokens.borderCard)),
           ],
         ),
       );
@@ -431,8 +431,8 @@ class _MessageBubble extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 2, left: 2),
                     child: Text(
                       message.senderName,
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -445,7 +445,7 @@ class _MessageBubble extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isMine ? accent : kColorBgSurface,
+                    color: isMine ? accent : context.tokens.bgSurface,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -456,12 +456,12 @@ class _MessageBubble extends StatelessWidget {
                     ),
                     border: isMine
                         ? null
-                        : Border.all(color: kColorBorderCard),
+                        : Border.all(color: context.tokens.borderCard),
                   ),
                   child: Text(
                     message.body,
                     style: TextStyle(
-                      color: isMine ? Colors.white : kColorTextPrimary,
+                      color: isMine ? Colors.white : context.tokens.textPrimary,
                       fontSize: 14,
                       height: 1.4,
                     ),
@@ -472,8 +472,8 @@ class _MessageBubble extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2, left: 2, right: 2),
                     child: Text(
                       timeStr,
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 10,
                       ),
                     ),
@@ -508,11 +508,11 @@ class _Avatar extends StatelessWidget {
     }
     return CircleAvatar(
       radius: 14,
-      backgroundColor: kColorBgInput,
+      backgroundColor: context.tokens.bgInput,
       child: Text(
         initial,
-        style: const TextStyle(
-          color: kColorTextSecondary,
+        style: TextStyle(
+          color: context.tokens.textSecondary,
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
@@ -539,7 +539,7 @@ class _InputBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       padding: EdgeInsets.fromLTRB(
         12,
         10,
@@ -553,26 +553,26 @@ class _InputBar extends StatelessWidget {
             Expanded(
               child: TextField(
                 controller: controller,
-                style: const TextStyle(
-                    color: kColorTextPrimary, fontSize: 14),
+                style: TextStyle(
+                    color: context.tokens.textPrimary, fontSize: 14),
                 maxLines: null,
                 keyboardType: TextInputType.multiline,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText: 'Type a message…',
                   hintStyle:
-                      const TextStyle(color: kColorTextMuted, fontSize: 14),
+                      TextStyle(color: context.tokens.textMuted, fontSize: 14),
                   filled: true,
-                  fillColor: kColorBgInput,
+                  fillColor: context.tokens.bgInput,
                   contentPadding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(color: kColorBorderCard),
+                    borderSide: BorderSide(color: context.tokens.borderCard),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(color: kColorBorderCard),
+                    borderSide: BorderSide(color: context.tokens.borderCard),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
@@ -592,7 +592,7 @@ class _InputBar extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: sending ? kColorBgInput : accent,
+                    color: sending ? context.tokens.bgInput : accent,
                     shape: BoxShape.circle,
                   ),
                   child: sending

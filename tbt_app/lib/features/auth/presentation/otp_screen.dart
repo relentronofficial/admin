@@ -10,6 +10,7 @@ import '../../../core/exceptions/app_exception.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class OtpScreen extends ConsumerStatefulWidget {
   const OtpScreen({
     super.key,
@@ -134,7 +135,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(msg),
-              backgroundColor: const Color(0xFFdc2626),
+              backgroundColor: Theme.of(context).colorScheme.primary,
             ),
           );
           for (final c in _controllers) {
@@ -148,12 +149,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     final isLoading = ref.watch(authNotifierProvider).isLoading;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0f0f0f),
+      backgroundColor: context.tokens.bgPage,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0f0f0f),
+        backgroundColor: context.tokens.bgPage,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFf0f0f0)),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => context.go(AppRoutes.login),
         ),
       ),
@@ -170,15 +171,15 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
           fontFamily: 'Rajdhani',
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFFf0f0f0),
+                  color: context.tokens.textPrimary,
                   letterSpacing: 2,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Enter the 6-digit code sent to\n${widget.phone}',
-                style: const TextStyle(
-                  color: Color(0xFFa0a0a0),
+                style: TextStyle(
+                  color: context.tokens.textSecondary,
                   fontSize: 14,
                   height: 1.5,
                 ),
@@ -202,8 +203,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 child: ElevatedButton(
                   onPressed: isLoading ? null : _submit,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFdc2626),
-                    disabledBackgroundColor: const Color(0xFF7f1111),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -235,15 +236,15 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 child: _resendSeconds > 0
                     ? Text(
                         'Resend OTP in ${_resendSeconds}s',
-                        style: const TextStyle(
-                          color: Color(0xFF606060),
+                        style: TextStyle(
+                          color: context.tokens.textMuted,
                           fontSize: 13,
                         ),
                       )
                     : TextButton(
                         onPressed: () => context.go(AppRoutes.login),
                         style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFFa0a0a0),
+                          foregroundColor: context.tokens.textSecondary,
                         ),
                         child: const Text(
                           'Back to Sign In to resend',
@@ -283,8 +284,8 @@ class _OtpBox extends StatelessWidget {
           maxLength: 1,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFFf0f0f0),
+          style: TextStyle(
+            color: context.tokens.textPrimary,
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
@@ -292,23 +293,23 @@ class _OtpBox extends StatelessWidget {
           decoration: InputDecoration(
             counterText: '',
             filled: true,
-            fillColor: const Color(0xFF1a1a1a),
+            fillColor: context.tokens.bgInput,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+              borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+              borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide:
-                  const BorderSide(color: Color(0xFFdc2626), width: 2),
+                  BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
             ),
             disabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF1a1a1a)),
+              borderSide: BorderSide(color: context.tokens.bgInput),
             ),
           ),
           onChanged: onChanged,

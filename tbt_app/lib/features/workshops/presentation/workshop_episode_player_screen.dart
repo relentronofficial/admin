@@ -10,9 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../core/constants/storage_keys.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../data/workshops_service.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 /// Workshop episode player. Mirror of `LessonPlayerScreen` for course lessons
 /// but posts progress via `postEpisodeProgress` and marks completion via
 /// `completeWorkshopEpisode` (no course enrollment involved).
@@ -107,11 +107,11 @@ class _WorkshopEpisodePlayerScreenState
       aspectRatio: 16 / 9,
       allowedScreenSleep: false,
       deviceOrientationsAfterFullScreen: [DeviceOrientation.portraitUp],
-      controlsConfiguration: const BetterPlayerControlsConfiguration(
+      controlsConfiguration: BetterPlayerControlsConfiguration(
         controlBarColor: Colors.black87,
         iconsColor: Colors.white,
-        progressBarPlayedColor: kColorAccent,
-        progressBarHandleColor: kColorAccent,
+        progressBarPlayedColor: Theme.of(context).colorScheme.primary,
+        progressBarHandleColor: Theme.of(context).colorScheme.primary,
         progressBarBufferedColor: Colors.white38,
         progressBarBackgroundColor: Colors.white12,
         enableSkips: false,
@@ -293,7 +293,7 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
             AspectRatio(aspectRatio: 16 / 9, child: _buildPlayer()),
             if (!_loading && _playback != null) _buildControls(),
             if (!_loading && _playback != null) ...[
-              const Divider(height: 1, thickness: 1, color: kColorBorderCard),
+              Divider(height: 1, thickness: 1, color: context.tokens.borderCard),
               Expanded(child: _buildMetadata()),
             ],
           ],
@@ -311,14 +311,14 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+              icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
               onPressed: () => context.pop(),
             ),
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  color: kColorTextPrimary,
+                style: TextStyle(
+                  color: context.tokens.textPrimary,
                   fontFamily: 'Rajdhani',
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -337,11 +337,11 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
 
   Widget _buildPlayer() {
     if (_loading) {
-      return const ColoredBox(
+      return ColoredBox(
         color: Colors.black,
         child: Center(
           child: CircularProgressIndicator(
-            color: kColorAccent,
+            color: Theme.of(context).colorScheme.primary,
             strokeWidth: 2.5,
           ),
         ),
@@ -357,9 +357,9 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
               const Icon(Icons.error_outline,
                   color: Colors.redAccent, size: 36),
               const SizedBox(height: 10),
-              const Text('Failed to load video',
+              Text('Failed to load video',
                   style:
-                      TextStyle(color: kColorTextSecondary, fontSize: 14)),
+                      TextStyle(color: context.tokens.textSecondary, fontSize: 14)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () {
@@ -369,8 +369,8 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
                   });
                   _init();
                 },
-                child: const Text('Retry',
-                    style: TextStyle(color: kColorAccent)),
+                child: Text('Retry',
+                    style: TextStyle(color: Theme.of(context).colorScheme.primary)),
               ),
             ],
           ),
@@ -386,11 +386,11 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
           child: BetterPlayer(controller: _playerController!),
         );
       }
-      return const ColoredBox(
+      return ColoredBox(
         color: Colors.black,
         child: Center(
           child: CircularProgressIndicator(
-            color: kColorAccent,
+            color: Theme.of(context).colorScheme.primary,
             strokeWidth: 2.5,
           ),
         ),
@@ -401,11 +401,11 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
         child: WebViewWidget(controller: _webViewController!),
       );
     }
-    return const ColoredBox(
+    return ColoredBox(
       color: Colors.black,
       child: Center(
         child: CircularProgressIndicator(
-          color: kColorAccent,
+          color: Theme.of(context).colorScheme.primary,
           strokeWidth: 2.5,
         ),
       ),
@@ -414,7 +414,7 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
 
   Widget _buildControls() {
     return Container(
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
         children: [
@@ -422,25 +422,25 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
             tooltip: 'Playback speed',
             initialValue: _speed,
             onSelected: _setSpeed,
-            color: kColorBgSurface,
+            color: context.tokens.bgSurface,
             child: Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: kColorBgInput,
+                color: context.tokens.bgInput,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: kColorBorderCard),
+                border: Border.all(color: context.tokens.borderCard),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.speed,
-                      color: kColorTextSecondary, size: 14),
+                  Icon(Icons.speed,
+                      color: context.tokens.textSecondary, size: 14),
                   const SizedBox(width: 4),
                   Text(
-                    _speed == 1.0 ? '1×' : '${_speed}×',
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    _speed == 1.0 ? '1×' : '$_speed×',
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -452,11 +452,11 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
                 .map((s) => PopupMenuItem<double>(
                       value: s,
                       child: Text(
-                        s == 1.0 ? '1×' : '${s}×',
+                        s == 1.0 ? '1×' : '$s×',
                         style: TextStyle(
                           color: s == _speed
-                              ? kColorAccent
-                              : kColorTextPrimary,
+                              ? Theme.of(context).colorScheme.primary
+                              : context.tokens.textPrimary,
                           fontWeight: s == _speed
                               ? FontWeight.w700
                               : FontWeight.w400,
@@ -471,7 +471,7 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
             Text(
               '${_fmt(_currentTime)} / ${_fmt(_duration)}',
               style:
-                  const TextStyle(color: kColorTextMuted, fontSize: 12),
+                  TextStyle(color: context.tokens.textMuted, fontSize: 12),
             ),
         ],
       ),
@@ -496,8 +496,8 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontFamily: 'Rajdhani',
               fontSize: 20,
               fontWeight: FontWeight.w700,
@@ -508,8 +508,8 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
             const SizedBox(height: 10),
             Text(
               description,
-              style: const TextStyle(
-                color: kColorTextSecondary,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
                 fontSize: 14,
                 height: 1.55,
               ),

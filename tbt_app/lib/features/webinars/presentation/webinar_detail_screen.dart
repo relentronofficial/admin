@@ -5,9 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/constants/routes.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../providers/webinars_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class WebinarDetailScreen extends ConsumerWidget {
   const WebinarDetailScreen({super.key, required this.webinarId});
 
@@ -19,21 +19,21 @@ class WebinarDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'WEBINAR',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
       ),
@@ -44,11 +44,11 @@ class WebinarDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline,
-                  color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline,
+                  color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load webinar',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load webinar',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(webinarProvider(webinarId)),
@@ -75,10 +75,10 @@ class WebinarDetailScreen extends ConsumerWidget {
                         imageUrl: webinar.thumbnailUrl!,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => Container(
-                          color: kColorBgInput,
-                          child: const Center(
+                          color: context.tokens.bgInput,
+                          child: Center(
                             child: Icon(Icons.videocam_outlined,
-                                color: kColorTextSubtle, size: 40),
+                                color: context.tokens.textSubtle, size: 40),
                           ),
                         ),
                       ),
@@ -90,8 +90,8 @@ class WebinarDetailScreen extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         webinar.title,
-                        style: const TextStyle(
-                          color: kColorTextPrimary,
+                        style: TextStyle(
+                          color: context.tokens.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
                         ),
@@ -128,14 +128,14 @@ class WebinarDetailScreen extends ConsumerWidget {
                 if (webinar.description != null &&
                     webinar.description!.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'ABOUT',
                     style: TextStyle(
                       fontFamily: 'Rajdhani',
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.5,
-                      color: kColorTextMuted,
+                      color: context.tokens.textMuted,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -143,14 +143,14 @@ class WebinarDetailScreen extends ConsumerWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: kColorBgSurface,
+                      color: context.tokens.bgSurface,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: kColorBorderCard),
+                      border: Border.all(color: context.tokens.borderCard),
                     ),
                     child: Text(
                       webinar.description!,
-                      style: const TextStyle(
-                        color: kColorTextSecondary,
+                      style: TextStyle(
+                        color: context.tokens.textSecondary,
                         fontSize: 14,
                         height: 1.6,
                       ),
@@ -164,14 +164,14 @@ class WebinarDetailScreen extends ConsumerWidget {
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
-                          canJoin ? kColorAccent : kColorBgInput,
+                          canJoin ? Theme.of(context).colorScheme.primary : context.tokens.bgInput,
                       foregroundColor:
-                          canJoin ? Colors.white : kColorTextMuted,
+                          canJoin ? Colors.white : context.tokens.textMuted,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      disabledBackgroundColor: kColorBgInput,
-                      disabledForegroundColor: kColorTextMuted,
+                      disabledBackgroundColor: context.tokens.bgInput,
+                      disabledForegroundColor: context.tokens.textMuted,
                     ),
                     icon: Icon(
                       canJoin
@@ -213,13 +213,13 @@ class _StatusBadge extends StatelessWidget {
   final String status;
   final bool isLive;
 
-  Color get _color {
-    if (isLive) return kColorAccent;
+  Color _color(BuildContext context) {
+    if (isLive) return Theme.of(context).colorScheme.primary;
     switch (status) {
       case 'ended':
-        return kColorTextMuted;
+        return context.tokens.textMuted;
       case 'cancelled':
-        return kColorAccent;
+        return Theme.of(context).colorScheme.primary;
       default:
         return const Color(0xFF1d4ed8);
     }
@@ -227,17 +227,18 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = _color(context);
     final label = isLive ? 'LIVE' : status.toUpperCase();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.15),
+        color: c.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: _color,
+          color: c,
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
@@ -257,16 +258,16 @@ class _InfoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(
         children: children
             .expand((w) => [
                   w,
                   if (w != children.last)
-                    const Divider(color: kColorBorderCard, height: 20),
+                    Divider(color: context.tokens.borderCard, height: 20),
                 ])
             .toList(),
       ),
@@ -286,7 +287,7 @@ class _InfoRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: kColorAccent),
+        Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -294,19 +295,19 @@ class _InfoRow extends StatelessWidget {
             children: [
               Text(
                 label.toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Rajdhani',
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.8,
-                  color: kColorTextMuted,
+                  color: context.tokens.textMuted,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 value,
-                style: const TextStyle(
-                  color: kColorTextPrimary,
+                style: TextStyle(
+                  color: context.tokens.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),

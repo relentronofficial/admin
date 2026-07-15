@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/routes.dart';
 import '../providers/site_config_provider.dart';
-import '../theme/design_constants.dart';
 import '../theme/tbt_theme.dart';
 
+import '../../shared/theme/theme_tokens.dart';
 /// Persistent bottom tab bar for the authenticated shell.
 /// 5 tabs: Dashboard · Explore · Workshops · Notifications · Profile.
 class AppBottomTabBar extends ConsumerWidget {
@@ -43,9 +43,9 @@ class AppBottomTabBar extends ConsumerWidget {
         _tabs.indexWhere((t) => location.startsWith(t.path));
 
     return Container(
-      decoration: const BoxDecoration(
-        color: kColorBgSurface,
-        border: Border(top: BorderSide(color: kColorBorderCard)),
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        border: Border(top: BorderSide(color: context.tokens.borderCard)),
       ),
       child: SafeArea(
         top: false,
@@ -55,7 +55,7 @@ class AppBottomTabBar extends ConsumerWidget {
             children: List.generate(_tabs.length, (i) {
               final tab = _tabs[i];
               final isActive = i == activeIndex;
-              final color = isActive ? accent : kColorTextMuted;
+              final color = isActive ? accent : context.tokens.textMuted;
 
               return Expanded(
                 child: Semantics(

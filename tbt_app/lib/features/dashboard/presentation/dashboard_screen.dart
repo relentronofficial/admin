@@ -1,4 +1,4 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,10 +8,10 @@ import '../../../core/constants/routes.dart';
 import '../../../shared/models/watch_history_item.dart';
 import '../../../shared/providers/me_provider.dart';
 import '../../../shared/providers/site_config_provider.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../providers/dashboard_providers.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -30,7 +30,7 @@ class DashboardScreen extends ConsumerWidget {
       body: SafeArea(
         child: RefreshIndicator(
           color: context.tbt.accent,
-          backgroundColor: kColorBgSurface,
+          backgroundColor: context.tokens.bgSurface,
           onRefresh: () async {
             ref.invalidate(dashboardStatsProvider);
             ref.invalidate(continueLearningProvider);
@@ -114,8 +114,8 @@ class _WelcomeHeader extends StatelessWidget {
         children: [
           Text(
             welcomeLabel,
-            style: const TextStyle(
-              color: kColorTextMuted,
+            style: TextStyle(
+              color: context.tokens.textMuted,
               fontSize: 13,
               letterSpacing: 0.5,
             ),
@@ -128,7 +128,7 @@ class _WelcomeHeader extends StatelessWidget {
           fontFamily: 'Rajdhani',
                 fontSize: 26,
                 fontWeight: FontWeight.w700,
-                color: kColorTextPrimary,
+                color: context.tokens.textPrimary,
                 letterSpacing: 2,
               ),
             )
@@ -137,7 +137,7 @@ class _WelcomeHeader extends StatelessWidget {
               width: 140,
               height: 28,
               decoration: BoxDecoration(
-                color: kColorBgSurface,
+                color: context.tokens.bgSurface,
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
@@ -232,9 +232,9 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -258,8 +258,8 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: kColorTextMuted,
+            style: TextStyle(
+              color: context.tokens.textMuted,
               fontSize: 11,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.6,
@@ -372,9 +372,9 @@ class _QuickTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           children: [
@@ -382,8 +382,8 @@ class _QuickTile extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               label,
-              style: const TextStyle(
-                color: kColorTextPrimary,
+              style: TextStyle(
+                color: context.tokens.textPrimary,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -400,8 +400,8 @@ class _StatsRowSkeleton extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
         child: Shimmer.fromColors(
-          baseColor: kColorBgSurface,
-          highlightColor: kColorBgInput,
+          baseColor: context.tokens.bgSurface,
+          highlightColor: context.tokens.bgInput,
           child: Row(
             children: List.generate(
               3,
@@ -482,15 +482,15 @@ class _RecentlyWatchedState extends ConsumerState<_RecentlyWatched> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: active ? accent.withValues(alpha: 0.15) : kColorBgInput,
+          color: active ? accent.withValues(alpha: 0.15) : context.tokens.bgInput,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: active ? accent : kColorBorderCard),
+          border: Border.all(color: active ? accent : context.tokens.borderCard),
         ),
         child: Center(
           child: Text(
             label,
             style: TextStyle(
-              color: active ? accent : kColorTextSecondary,
+              color: active ? accent : context.tokens.textSecondary,
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.5,
@@ -515,7 +515,7 @@ class _SectionHeader extends StatelessWidget {
           fontFamily: 'Rajdhani',
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: kColorTextMuted,
+            color: context.tokens.textMuted,
             letterSpacing: 2,
           ),
         ),
@@ -599,9 +599,9 @@ class _ContentCard extends StatelessWidget {
       child: Container(
         width: 172,
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -633,7 +633,7 @@ class _ContentCard extends StatelessWidget {
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: isCourse
-                            ? kColorBgSurface.withAlpha(0xe6)
+                            ? context.tokens.bgSurface.withAlpha(0xe6)
                             : accent.withAlpha(0xe6),
                         borderRadius: BorderRadius.circular(4),
                       ),
@@ -643,7 +643,7 @@ class _ContentCard extends StatelessWidget {
           fontFamily: 'Rajdhani',
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
-                          color: isCourse ? kColorTextSecondary : Colors.white,
+                          color: isCourse ? context.tokens.textSecondary : Colors.white,
                           letterSpacing: 1,
                         ),
                       ),
@@ -657,7 +657,7 @@ class _ContentCard extends StatelessWidget {
             LinearProgressIndicator(
               value: progress,
               minHeight: 2,
-              backgroundColor: kColorBorderCard,
+              backgroundColor: context.tokens.borderCard,
               valueColor: AlwaysStoppedAnimation<Color>(accent),
             ),
 
@@ -672,8 +672,8 @@ class _ContentCard extends StatelessWidget {
                       _displayTitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
@@ -685,8 +685,8 @@ class _ContentCard extends StatelessWidget {
                         _subtitle!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: kColorTextMuted,
+                        style: TextStyle(
+                          color: context.tokens.textMuted,
                           fontSize: 10,
                         ),
                       ),
@@ -709,12 +709,12 @@ class _ThumbnailFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        color: kColorBgInput,
+        color: context.tokens.bgInput,
         child: Center(
           child: ExcludeSemantics(
             child: Icon(
               isCourse ? Icons.play_circle_outline : Icons.event_outlined,
-              color: kColorTextSubtle,
+              color: context.tokens.textSubtle,
               size: 32,
             ),
           ),
@@ -734,8 +734,8 @@ class _HorizontalSkeletonList extends StatelessWidget {
           itemCount: 4,
           separatorBuilder: (_, __) => const SizedBox(width: 12),
           itemBuilder: (_, __) => Shimmer.fromColors(
-            baseColor: kColorBgSurface,
-            highlightColor: kColorBgInput,
+            baseColor: context.tokens.bgSurface,
+            highlightColor: context.tokens.bgInput,
             child: Container(
               width: 172,
               decoration: BoxDecoration(
@@ -756,7 +756,7 @@ class _EmptyRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Text(
           'Nothing here yet.',
-          style: const TextStyle(color: kColorTextMuted, fontSize: 13),
+          style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
         ),
       );
 }
@@ -770,9 +770,9 @@ class _RetryError extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            const Text(
+            Text(
               'Failed to load.',
-              style: TextStyle(color: kColorTextMuted, fontSize: 13),
+              style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
             ),
             const SizedBox(width: 12),
             TextButton(

@@ -12,11 +12,11 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../../core/constants/storage_keys.dart';
 import '../../../shared/models/lesson.dart';
 import '../../../shared/providers/site_config_provider.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../data/courses_service.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class LessonPlayerScreen extends ConsumerStatefulWidget {
   const LessonPlayerScreen({
     super.key,
@@ -123,11 +123,11 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
       fullScreenByDefault: false,
       allowedScreenSleep: false,
       deviceOrientationsAfterFullScreen: [DeviceOrientation.portraitUp],
-      controlsConfiguration: const BetterPlayerControlsConfiguration(
+      controlsConfiguration: BetterPlayerControlsConfiguration(
         controlBarColor: Colors.black87,
         iconsColor: Colors.white,
-        progressBarPlayedColor: kColorAccent,
-        progressBarHandleColor: kColorAccent,
+        progressBarPlayedColor: Theme.of(context).colorScheme.primary,
+        progressBarHandleColor: Theme.of(context).colorScheme.primary,
         progressBarBufferedColor: Colors.white38,
         progressBarBackgroundColor: Colors.white12,
         enableSkips: false,
@@ -519,7 +519,7 @@ window.addEventListener('message', function(e) {
             if (!_loading && _playback != null)
               _buildControlsRow(),
             if (!_loading && _playback != null) ...[
-              const Divider(height: 1, thickness: 1, color: kColorBorderCard),
+              Divider(height: 1, thickness: 1, color: context.tokens.borderCard),
               Expanded(child: _buildMetadata()),
             ],
           ],
@@ -539,15 +539,15 @@ window.addEventListener('message', function(e) {
         children: [
           IconButton(
             tooltip: 'Back',
-            icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+            icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
             onPressed: () => context.pop(),
           ),
           if (_playback != null)
             Expanded(
               child: Text(
                 _playback!.title,
-                style: const TextStyle(
-                  color: kColorTextPrimary,
+                style: TextStyle(
+                  color: context.tokens.textPrimary,
                   fontFamily: 'Rajdhani',
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -573,11 +573,11 @@ window.addEventListener('message', function(e) {
 
   Widget _buildPlayerContent() {
     if (_loading) {
-      return const ColoredBox(
+      return ColoredBox(
         color: Colors.black,
         child: Center(
           child: CircularProgressIndicator(
-            color: kColorAccent,
+            color: Theme.of(context).colorScheme.primary,
             strokeWidth: 2.5,
           ),
         ),
@@ -593,9 +593,9 @@ window.addEventListener('message', function(e) {
             children: [
               const Icon(Icons.error_outline, color: Colors.redAccent, size: 36),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 'Failed to load video',
-                style: TextStyle(color: kColorTextSecondary, fontSize: 14),
+                style: TextStyle(color: context.tokens.textSecondary, fontSize: 14),
               ),
               const SizedBox(height: 12),
               TextButton(
@@ -606,9 +606,9 @@ window.addEventListener('message', function(e) {
                   });
                   _init();
                 },
-                child: const Text(
+                child: Text(
                   'Retry',
-                  style: TextStyle(color: kColorAccent),
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary),
                 ),
               ),
             ],
@@ -627,11 +627,11 @@ window.addEventListener('message', function(e) {
           child: BetterPlayer(controller: _playerController!),
         );
       }
-      return const ColoredBox(
+      return ColoredBox(
         color: Colors.black,
         child: Center(
           child: CircularProgressIndicator(
-            color: kColorAccent,
+            color: Theme.of(context).colorScheme.primary,
             strokeWidth: 2.5,
           ),
         ),
@@ -644,11 +644,11 @@ window.addEventListener('message', function(e) {
         child: WebViewWidget(controller: _webViewController!),
       );
     }
-    return const ColoredBox(
+    return ColoredBox(
       color: Colors.black,
       child: Center(
         child: CircularProgressIndicator(
-          color: kColorAccent,
+          color: Theme.of(context).colorScheme.primary,
           strokeWidth: 2.5,
         ),
       ),
@@ -657,7 +657,7 @@ window.addEventListener('message', function(e) {
 
   Widget _buildControlsRow() {
     return Container(
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
         children: [
@@ -670,7 +670,7 @@ window.addEventListener('message', function(e) {
           if (_duration > 0)
             Text(
               '${_fmtSeconds(_currentTime)} / ${_fmtSeconds(_duration)}',
-              style: const TextStyle(color: kColorTextMuted, fontSize: 12),
+              style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
             ),
         ],
       ),
@@ -694,8 +694,8 @@ window.addEventListener('message', function(e) {
         children: [
           Text(
             p.title,
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontFamily: 'Rajdhani',
               fontSize: 20,
               fontWeight: FontWeight.w700,
@@ -706,8 +706,8 @@ window.addEventListener('message', function(e) {
             const SizedBox(height: 10),
             Text(
               p.description!,
-              style: const TextStyle(
-                color: kColorTextSecondary,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
                 fontSize: 14,
                 height: 1.55,
               ),
@@ -740,35 +740,35 @@ class _SpeedSelector extends StatelessWidget {
       tooltip: 'Playback speed',
       initialValue: currentSpeed,
       onSelected: onChanged,
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: kColorBorderCard),
+        side: BorderSide(color: context.tokens.borderCard),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: kColorBgInput,
+          color: context.tokens.bgInput,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.speed, color: kColorTextSecondary, size: 14),
+            Icon(Icons.speed, color: context.tokens.textSecondary, size: 14),
             const SizedBox(width: 4),
             Text(
               _label(currentSpeed),
-              style: const TextStyle(
-                color: kColorTextPrimary,
+              style: TextStyle(
+                color: context.tokens.textPrimary,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(width: 2),
-            const Icon(
+            Icon(
               Icons.arrow_drop_down,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
               size: 14,
             ),
           ],
@@ -781,7 +781,7 @@ class _SpeedSelector extends StatelessWidget {
               child: Text(
                 _label(s),
                 style: TextStyle(
-                  color: s == currentSpeed ? kColorAccent : kColorTextPrimary,
+                  color: s == currentSpeed ? Theme.of(context).colorScheme.primary : context.tokens.textPrimary,
                   fontWeight:
                       s == currentSpeed ? FontWeight.w700 : FontWeight.w400,
                   fontSize: 14,

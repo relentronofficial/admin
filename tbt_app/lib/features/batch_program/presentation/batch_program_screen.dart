@@ -8,12 +8,12 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/batch.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../data/batch_service.dart';
 import '../providers/batch_provider.dart';
 import 'break_request_sheet.dart';
 import 'widgets/batch_calendar.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class BatchProgramScreen extends ConsumerWidget {
   const BatchProgramScreen({super.key});
 
@@ -42,7 +42,7 @@ class BatchProgramScreen extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -113,28 +113,28 @@ class BatchProgramScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
+        title: Text(
           'BATCH PROGRAM',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           if (programAsync.valueOrNull != null)
             IconButton(
-              icon: const Icon(Icons.beach_access_outlined,
-                  color: kColorTextPrimary, size: 22),
+              icon: Icon(Icons.beach_access_outlined,
+                  color: context.tokens.textPrimary, size: 22),
               tooltip: 'Request Break',
               onPressed: () => _openBreakSheet(context, programAsync.value!),
             ),
@@ -147,11 +147,11 @@ class BatchProgramScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'Failed to load program',
-                style: TextStyle(color: kColorTextSecondary),
+                style: TextStyle(color: context.tokens.textSecondary),
               ),
               const SizedBox(height: 12),
               TextButton(
@@ -163,16 +163,16 @@ class BatchProgramScreen extends ConsumerWidget {
         ),
         data: (program) {
           if (program == null) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.calendar_today_outlined,
-                      color: kColorTextMuted, size: 40),
+                      color: context.tokens.textMuted, size: 40),
                   SizedBox(height: 12),
                   Text(
                     'No batch program assigned',
-                    style: TextStyle(color: kColorTextSecondary, fontSize: 14),
+                    style: TextStyle(color: context.tokens.textSecondary, fontSize: 14),
                   ),
                 ],
               ),
@@ -269,7 +269,7 @@ class BatchProgramScreen extends ConsumerWidget {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: kColorAccent,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -311,7 +311,7 @@ class _HeaderCard extends StatelessWidget {
     final bigStreak = streakDays >= 7;
     return Container(
       width: double.infinity,
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -321,8 +321,8 @@ class _HeaderCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   batchName,
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontFamily: 'Rajdhani',
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -337,12 +337,12 @@ class _HeaderCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: bigStreak
                         ? const Color(0xFFf59e0b).withValues(alpha: 0.22)
-                        : kColorBgInput,
+                        : context.tokens.bgInput,
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: bigStreak
                           ? const Color(0xFFf59e0b)
-                          : kColorBorderCard,
+                          : context.tokens.borderCard,
                     ),
                     boxShadow: bigStreak
                         ? [
@@ -360,7 +360,7 @@ class _HeaderCard extends StatelessWidget {
                       Icon(Icons.local_fire_department,
                           color: bigStreak
                               ? const Color(0xFFf59e0b)
-                              : kColorTextMuted,
+                              : context.tokens.textMuted,
                           size: 14),
                       const SizedBox(width: 4),
                       Text(
@@ -368,7 +368,7 @@ class _HeaderCard extends StatelessWidget {
                         style: TextStyle(
                           color: bigStreak
                               ? const Color(0xFFf59e0b)
-                              : kColorTextSecondary,
+                              : context.tokens.textSecondary,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -384,13 +384,13 @@ class _HeaderCard extends StatelessWidget {
               _StatChip(
                 label: 'TODAY',
                 value: 'Day $todayDay',
-                color: kColorAccent,
+                color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 10),
               _StatChip(
                 label: 'TOTAL',
                 value: '$totalDays days',
-                color: kColorTextMuted,
+                color: context.tokens.textMuted,
               ),
               const SizedBox(width: 10),
               _StatChip(
@@ -430,12 +430,12 @@ class _StatChip extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 9,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.2,
-            color: kColorTextMuted,
+            color: context.tokens.textMuted,
           ),
         ),
         const SizedBox(height: 2),
@@ -462,12 +462,16 @@ class _Legend extends StatelessWidget {
       child: Wrap(
         spacing: 12,
         runSpacing: 6,
-        children: const [
-          _LegendDot(color: Color(0xFF2a2a2a), label: 'Not started'),
-          _LegendDot(color: Color(0xFF1d4ed8), label: 'In progress'),
-          _LegendDot(color: Color(0xFFd97706), label: 'Submitted'),
-          _LegendDot(color: Color(0xFF16a34a), label: 'Approved'),
-          _LegendDot(color: Color(0xFFdc2626), label: 'Rejected'),
+        children: [
+          // "Not started" uses the neutral surface token — same rule as
+          // batch_calendar._DayCell — so the swatch matches the calendar
+          // cell in both light and dark modes.
+          _LegendDot(
+              color: context.tokens.borderCard, label: 'Not started'),
+          const _LegendDot(color: Color(0xFF1d4ed8), label: 'In progress'),
+          const _LegendDot(color: Color(0xFFd97706), label: 'Submitted'),
+          const _LegendDot(color: Color(0xFF16a34a), label: 'Approved'),
+          const _LegendDot(color: Color(0xFFdc2626), label: 'Rejected'),
         ],
       ),
     );
@@ -496,7 +500,7 @@ class _LegendDot extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           label,
-          style: const TextStyle(color: kColorTextMuted, fontSize: 10),
+          style: TextStyle(color: context.tokens.textMuted, fontSize: 10),
         ),
       ],
     );
@@ -517,14 +521,14 @@ class _BreaksList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'BREAK REQUESTS',
             style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
             ),
           ),
           const SizedBox(height: 8),
@@ -568,9 +572,9 @@ class _BreakTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Row(
         children: [
@@ -580,8 +584,8 @@ class _BreakTile extends StatelessWidget {
               children: [
                 Text(
                   'Day ${breakItem.startDay} – Day ${breakItem.endDay}',
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -591,8 +595,8 @@ class _BreakTile extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       breakItem.reason!,
-                      style: const TextStyle(
-                          color: kColorTextSecondary, fontSize: 11),
+                      style: TextStyle(
+                          color: context.tokens.textSecondary, fontSize: 11),
                     ),
                   ),
                 if (breakItem.adminNote != null &&

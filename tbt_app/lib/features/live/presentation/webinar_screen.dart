@@ -12,9 +12,9 @@ import '../../../shared/api/dio_client.dart';
 import '../../../shared/api/dio_provider.dart';
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/socket/socket_events.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 /// Standalone webinar viewer — mirrors the web `/live/[webinarId]` page.
 /// Fetches webinar via `GET /api/user/webinars/:id`, then:
 /// - if `status == "live"` and `streamUrl` is set: plays the stream.
@@ -249,22 +249,22 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: kColorTextPrimary, size: 18),
+          icon: Icon(Icons.arrow_back_ios_new,
+              color: context.tokens.textPrimary, size: 18),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
+        title: Text(
           'LIVE SESSION',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
       ),
@@ -275,8 +275,8 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
   Widget _buildBody(BuildContext context) {
     switch (_state) {
       case _WebinarState.loading:
-        return const Center(
-          child: CircularProgressIndicator(strokeWidth: 2, color: kColorAccent),
+        return Center(
+          child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
         );
       case _WebinarState.error:
         return Center(
@@ -285,13 +285,13 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline,
-                    color: kColorTextMuted, size: 40),
+                Icon(Icons.error_outline,
+                    color: context.tokens.textMuted, size: 40),
                 const SizedBox(height: 12),
                 Text(
                   _error ?? 'Failed to load session',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: kColorTextSecondary),
+                  style: TextStyle(color: context.tokens.textSecondary),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
@@ -370,13 +370,13 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.people_outline,
-                        color: kColorTextMuted, size: 14),
+                    Icon(Icons.people_outline,
+                        color: context.tokens.textMuted, size: 14),
                     const SizedBox(width: 4),
                     Text(
                       '$_attendeeCount',
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -386,8 +386,8 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
               if (scheduledAt != null)
                 Text(
                   _formatDate(scheduledAt),
-                  style: const TextStyle(
-                    color: kColorTextMuted,
+                  style: TextStyle(
+                    color: context.tokens.textMuted,
                     fontSize: 12,
                   ),
                 ),
@@ -396,11 +396,11 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
           const SizedBox(height: 10),
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 22,
               fontWeight: FontWeight.w700,
-              color: kColorTextPrimary,
+              color: context.tokens.textPrimary,
               height: 1.3,
             ),
           ),
@@ -409,7 +409,7 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 'Hosted by $hostName',
-                style: const TextStyle(color: kColorTextMuted, fontSize: 13),
+                style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
               ),
             ),
           const SizedBox(height: 16),
@@ -418,8 +418,8 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
             const SizedBox(height: 16),
             Text(
               desc,
-              style: const TextStyle(
-                color: kColorTextSecondary,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -438,7 +438,7 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
         decoration: BoxDecoration(
           color: Colors.black,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         clipBehavior: Clip.hardEdge,
         child: _buildVideoInner(context, status, accent, scheduledAt),

@@ -1,3 +1,7 @@
+// Falls back to the legacy dark-only palette when SiteConfig hasn't loaded
+// yet; the const references below are intentional.
+// ignore_for_file: deprecated_member_use_from_same_package
+
 import 'package:flutter/material.dart';
 
 import '../../config/site_config.dart';

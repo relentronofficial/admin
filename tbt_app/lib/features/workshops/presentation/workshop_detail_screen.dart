@@ -17,12 +17,12 @@ import '../../../shared/api/upload_service.dart';
 import '../../../shared/models/workshop.dart';
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/socket/socket_events.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../data/workshops_service.dart';
 import '../providers/workshops_provider.dart';
 import 'widgets/challenge_completion_sheet.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 // workshopId is the slug — route pattern is /workshops/:id but value is a slug.
 class WorkshopDetailScreen extends ConsumerStatefulWidget {
   const WorkshopDetailScreen({super.key, required this.workshopId});
@@ -80,7 +80,7 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen>
         loading: () => const Center(
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        error: (e, _) => _buildError(
+        error: (e, _) => _buildError(context, 
           () => ref.invalidate(workshopDetailProvider(slug)),
           detail: e.toString(),
         ),
@@ -101,7 +101,7 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen>
           return NestedScrollView(
             headerSliverBuilder: (context, _) => [
               _buildHeroSliver(detail, listItem, accent),
-              _buildTabBarSliver(accent),
+              _buildTabBarSliver(accent, detail),
             ],
             body: TabBarView(
               controller: _tabCtrl,
@@ -148,12 +148,12 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen>
     return SliverAppBar(
       expandedHeight: 220,
       pinned: true,
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       elevation: 0,
       scrolledUnderElevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new,
-            color: kColorTextPrimary, size: 18),
+        icon: Icon(Icons.arrow_back_ios_new,
+            color: context.tokens.textPrimary, size: 18),
         onPressed: () => Navigator.of(context).pop(),
       ),
       flexibleSpace: FlexibleSpaceBar(
@@ -166,16 +166,16 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen>
                 imageUrl: detail.thumbnailUrl!,
                 fit: BoxFit.cover,
                 placeholder: (_, __) =>
-                    const ColoredBox(color: kColorBgInput),
+                    ColoredBox(color: context.tokens.bgInput),
                 errorWidget: (_, __, ___) =>
-                    const ColoredBox(color: kColorBgInput),
+                    ColoredBox(color: context.tokens.bgInput),
               )
             else
-              const ColoredBox(
-                color: kColorBgInput,
+              ColoredBox(
+                color: context.tokens.bgInput,
                 child: Center(
                   child: Icon(Icons.play_circle_outline,
-                      color: kColorTextMuted, size: 48),
+                      color: context.tokens.textMuted, size: 48),
                 ),
               ),
             // Gradient overlay for title legibility
@@ -222,14 +222,27 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen>
     );
   }
 
-  Widget _buildTabBarSliver(Color accent) {
+  Widget _buildTabBarSliver(Color accent, WorkshopDetail? detail) {
+    // Backend can override tab labels via detail.sidebar.tabs — matches web
+    // parity. Falls back to hardcoded defaults if any label is absent.
+    final serverTabs = (detail?.sidebar?['tabs'] as List<dynamic>?) ?? [];
+    String labelFor(String id, String fallback) {
+      for (final t in serverTabs) {
+        if (t is Map<String, dynamic> && t['id'] == id) {
+          final v = t['label'];
+          if (v is String && v.isNotEmpty) return v.toUpperCase();
+        }
+      }
+      return fallback;
+    }
+
     return SliverPersistentHeader(
       pinned: true,
       delegate: _TabBarDelegate(
         TabBar(
           controller: _tabCtrl,
           labelColor: accent,
-          unselectedLabelColor: kColorTextMuted,
+          unselectedLabelColor: context.tokens.textMuted,
           indicatorColor: accent,
           indicatorWeight: 2,
           labelStyle: const TextStyle(
@@ -243,12 +256,12 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen>
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
-          tabs: const [
-            Tab(text: 'OVERVIEW'),
-            Tab(text: 'FLOW'),
-            Tab(text: 'Q&A'),
-            Tab(text: 'LIVE CALLS'),
-            Tab(text: 'ASSIGNMENTS'),
+          tabs: [
+            const Tab(text: 'OVERVIEW'),
+            const Tab(text: 'FLOW'),
+            Tab(text: labelFor('qa', 'Q&A')),
+            const Tab(text: 'LIVE CALLS'),
+            Tab(text: labelFor('assignment', 'ASSIGNMENTS')),
           ],
           isScrollable: true,
           tabAlignment: TabAlignment.start,
@@ -323,18 +336,18 @@ class _AccessGateState extends ConsumerState<_AccessGate> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: kColorTextPrimary, size: 18),
+          icon: Icon(Icons.arrow_back_ios_new,
+              color: context.tokens.textPrimary, size: 18),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
           d.title,
-          style: const TextStyle(
-            color: kColorTextPrimary,
+          style: TextStyle(
+            color: context.tokens.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -356,9 +369,9 @@ class _AccessGateState extends ConsumerState<_AccessGate> {
                     imageUrl: d.thumbnailUrl!,
                     fit: BoxFit.cover,
                     placeholder: (_, __) =>
-                        const ColoredBox(color: kColorBgInput),
+                        ColoredBox(color: context.tokens.bgInput),
                     errorWidget: (_, __, ___) =>
-                        const ColoredBox(color: kColorBgInput),
+                        ColoredBox(color: context.tokens.bgInput),
                   ),
                 ),
               ),
@@ -367,8 +380,8 @@ class _AccessGateState extends ConsumerState<_AccessGate> {
 
             Text(
               d.title,
-              style: const TextStyle(
-                color: kColorTextPrimary,
+              style: TextStyle(
+                color: context.tokens.textPrimary,
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 height: 1.3,
@@ -380,8 +393,8 @@ class _AccessGateState extends ConsumerState<_AccessGate> {
               const SizedBox(height: 12),
               Text(
                 d.description!,
-                style: const TextStyle(
-                  color: kColorTextSecondary,
+                style: TextStyle(
+                  color: context.tokens.textSecondary,
                   fontSize: 14,
                   height: 1.6,
                 ),
@@ -396,21 +409,22 @@ class _AccessGateState extends ConsumerState<_AccessGate> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 20, vertical: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF3d2600),
+                  // Amber accent — 12% tint reads correctly in both themes.
+                  color: const Color(0xFFea580c).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                      color: const Color(0xFFfb923c).withAlpha(77)),
+                      color: const Color(0xFFea580c).withValues(alpha: 0.3)),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.hourglass_empty_outlined,
-                        color: Color(0xFFfb923c), size: 16),
+                        color: Color(0xFFea580c), size: 16),
                     SizedBox(width: 8),
                     Text(
                       'Access Requested — Pending Approval',
                       style: TextStyle(
-                        color: Color(0xFFfb923c),
+                        color: Color(0xFFea580c),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -478,21 +492,21 @@ class _OverviewTab extends StatelessWidget {
     final listItems = <Widget>[
         // Description
         if (detail.description != null && detail.description!.isNotEmpty) ...[
-          const Text(
+          Text(
             'ABOUT',
             style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 2,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
             ),
           ),
           const SizedBox(height: 10),
           Text(
             detail.description!,
-            style: const TextStyle(
-              color: kColorTextSecondary,
+            style: TextStyle(
+              color: context.tokens.textSecondary,
               fontSize: 14,
               height: 1.7,
             ),
@@ -502,22 +516,22 @@ class _OverviewTab extends StatelessWidget {
 
         // Learning progress
         if (progress != null) ...[
-          const Text(
+          Text(
             'YOUR PROGRESS',
             style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 2,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
             ),
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: kColorBgSurface,
-              border: Border.all(color: kColorBorderCard),
+              color: context.tokens.bgSurface,
+              border: Border.all(color: context.tokens.borderCard),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(
@@ -528,8 +542,8 @@ class _OverviewTab extends StatelessWidget {
                   children: [
                     Text(
                       progress.label ?? 'Progress',
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -549,7 +563,7 @@ class _OverviewTab extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
                     value: progress.percentage / 100,
-                    backgroundColor: kColorBgInput,
+                    backgroundColor: context.tokens.bgInput,
                     valueColor: AlwaysStoppedAnimation<Color>(accent),
                     minHeight: 6,
                   ),
@@ -557,8 +571,8 @@ class _OverviewTab extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   '${progress.completedCount} of ${progress.totalCount} completed',
-                  style: const TextStyle(
-                    color: kColorTextMuted,
+                  style: TextStyle(
+                    color: context.tokens.textMuted,
                     fontSize: 12,
                   ),
                 ),
@@ -570,22 +584,22 @@ class _OverviewTab extends StatelessWidget {
 
         // Certificate eligibility
         if (cert != null) ...[
-          const Text(
+          Text(
             'CERTIFICATE',
             style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 2,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
             ),
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: kColorBgSurface,
-              border: Border.all(color: kColorBorderCard),
+              color: context.tokens.bgSurface,
+              border: Border.all(color: context.tokens.borderCard),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
@@ -596,7 +610,7 @@ class _OverviewTab extends StatelessWidget {
                       : Icons.pending_outlined,
                   color: cert['eligible'] == true
                       ? const Color(0xFF22c55e)
-                      : kColorTextMuted,
+                      : context.tokens.textMuted,
                   size: 28,
                 ),
                 const SizedBox(width: 14),
@@ -611,7 +625,7 @@ class _OverviewTab extends StatelessWidget {
                         style: TextStyle(
                           color: cert['eligible'] == true
                               ? const Color(0xFF22c55e)
-                              : kColorTextPrimary,
+                              : context.tokens.textPrimary,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -620,8 +634,8 @@ class _OverviewTab extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           _certRemainingText(cert),
-                          style: const TextStyle(
-                            color: kColorTextMuted,
+                          style: TextStyle(
+                            color: context.tokens.textMuted,
                             fontSize: 12,
                           ),
                         ),
@@ -677,20 +691,15 @@ class _ModeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg) = switch (mode) {
-      DeliveryMode.online => (
-          const Color(0xFF1e3a5f),
-          const Color(0xFF60a5fa)
-        ),
-      DeliveryMode.offline => (
-          const Color(0xFF3d2600),
-          const Color(0xFFfb923c)
-        ),
-      DeliveryMode.hybrid => (
-          const Color(0xFF2e1a47),
-          const Color(0xFFa78bfa)
-        ),
+    // Chip colour pattern: `fg` is the semantic accent (light in dark mode,
+    // darker in light mode via the semantic hue) and `bg` is the same accent
+    // at 12% alpha so it reads as a subtle tint in either theme.
+    final fg = switch (mode) {
+      DeliveryMode.online => const Color(0xFF3b82f6),   // blue-500
+      DeliveryMode.offline => const Color(0xFFea580c),  // orange-600
+      DeliveryMode.hybrid => const Color(0xFF7c3aed),   // violet-600
     };
+    final bg = fg.withValues(alpha: 0.12);
     final text = label?.isNotEmpty == true
         ? label!
         : switch (mode) {
@@ -736,7 +745,7 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) =>
-      ColoredBox(color: kColorBgSurface, child: tabBar);
+      ColoredBox(color: context.tokens.bgSurface, child: tabBar);
 
   @override
   bool shouldRebuild(_TabBarDelegate old) => old.tabBar != tabBar;
@@ -760,10 +769,10 @@ class _FlowTab extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: kColorTextMuted, size: 36),
+            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 36),
             const SizedBox(height: 10),
-            const Text('Failed to load flow',
-                style: TextStyle(color: kColorTextSecondary)),
+            Text('Failed to load flow',
+                style: TextStyle(color: context.tokens.textSecondary)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: () => ref.invalidate(workshopFlowProvider(slug)),
@@ -774,9 +783,9 @@ class _FlowTab extends ConsumerWidget {
       ),
       data: (items) {
         if (items.isEmpty) {
-          return const Center(
+          return Center(
             child: Text('No flow items yet',
-                style: TextStyle(color: kColorTextMuted)),
+                style: TextStyle(color: context.tokens.textMuted)),
           );
         }
         return ListView.builder(
@@ -835,8 +844,8 @@ class _ChallengeCardState extends State<_ChallengeCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
-        border: Border.all(color: kColorBorderCard),
+        color: context.tokens.bgSurface,
+        border: Border.all(color: context.tokens.borderCard),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -871,7 +880,7 @@ class _ChallengeCardState extends State<_ChallengeCard> {
                         _expanded
                             ? Icons.keyboard_arrow_up
                             : Icons.keyboard_arrow_down,
-                        color: kColorTextMuted,
+                        color: context.tokens.textMuted,
                         size: 18,
                       ),
                     ],
@@ -879,8 +888,8 @@ class _ChallengeCardState extends State<_ChallengeCard> {
                   const SizedBox(height: 6),
                   Text(
                     item.title ?? '',
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -891,7 +900,7 @@ class _ChallengeCardState extends State<_ChallengeCard> {
                       borderRadius: BorderRadius.circular(3),
                       child: LinearProgressIndicator(
                         value: item.progressPercent / 100,
-                        backgroundColor: kColorBgInput,
+                        backgroundColor: context.tokens.bgInput,
                         valueColor: AlwaysStoppedAnimation<Color>(accent),
                         minHeight: 4,
                       ),
@@ -899,8 +908,8 @@ class _ChallengeCardState extends State<_ChallengeCard> {
                     const SizedBox(height: 4),
                     Text(
                       '${item.progressPercent}% complete',
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 11,
                       ),
                     ),
@@ -910,14 +919,14 @@ class _ChallengeCardState extends State<_ChallengeCard> {
             ),
           ),
           if (_expanded && item.episodes.isNotEmpty) ...[
-            const Divider(color: kColorBorderCard, height: 1),
+            Divider(color: context.tokens.borderCard, height: 1),
             ...item.episodes.map(
               (ep) =>
                   _EpisodeRow(ep: ep, slug: widget.slug, accent: accent),
             ),
           ],
           if (_expanded && !item.isCompleted && item.progressPercent < 100) ...[
-            const Divider(color: kColorBorderCard, height: 1),
+            Divider(color: context.tokens.borderCard, height: 1),
             Padding(
               padding: const EdgeInsets.all(12),
               child: SizedBox(
@@ -984,7 +993,7 @@ class _EpisodeRow extends StatelessWidget {
                   ? Icons.check_circle
                   : Icons.play_circle_outline,
               color:
-                  ep.isCompleted ? const Color(0xFF22c55e) : kColorTextMuted,
+                  ep.isCompleted ? const Color(0xFF22c55e) : context.tokens.textMuted,
               size: 18,
             ),
             const SizedBox(width: 10),
@@ -993,8 +1002,8 @@ class _EpisodeRow extends StatelessWidget {
                 ep.title,
                 style: TextStyle(
                   color: ep.isCompleted
-                      ? kColorTextSecondary
-                      : kColorTextPrimary,
+                      ? context.tokens.textSecondary
+                      : context.tokens.textPrimary,
                   fontSize: 13,
                 ),
               ),
@@ -1002,8 +1011,8 @@ class _EpisodeRow extends StatelessWidget {
             if (ep.durationLabel != null)
               Text(
                 ep.durationLabel!,
-                style: const TextStyle(
-                  color: kColorTextMuted,
+                style: TextStyle(
+                  color: context.tokens.textMuted,
                   fontSize: 11,
                 ),
               ),
@@ -1028,8 +1037,8 @@ class _LiveCallFlowCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
-        border: Border.all(color: kColorBorderCard),
+        color: context.tokens.bgSurface,
+        border: Border.all(color: context.tokens.borderCard),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -1061,8 +1070,8 @@ class _LiveCallFlowCard extends StatelessWidget {
                   ),
                 Text(
                   item.title ?? 'Live Call',
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1071,8 +1080,8 @@ class _LiveCallFlowCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     _formatScheduled(item.scheduledAt!),
-                    style: const TextStyle(
-                        color: kColorTextMuted, fontSize: 12),
+                    style: TextStyle(
+                        color: context.tokens.textMuted, fontSize: 12),
                   ),
                 ],
                 if (item.recordingAvailable && item.recordingLabel != null) ...[
@@ -1126,25 +1135,27 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isPast) {
-      return _badge('Ended', const Color(0xFF3d2600), const Color(0xFFfb923c));
+      return _badge('Ended', const Color(0xFFea580c));
     }
     if (isUnlocked) {
-      return _badge('Live', const Color(0xFF14532d), const Color(0xFF4ade80));
+      return _badge('Live', const Color(0xFF16a34a));
     }
-    return _badge('Upcoming', const Color(0xFF1e3a5f), const Color(0xFF60a5fa));
+    return _badge('Upcoming', const Color(0xFF3b82f6));
   }
 
-  Widget _badge(String label, Color bg, Color fg) => Container(
+  /// Renders a chip with an [accent] hue — 12% alpha fill so it reads
+  /// well in both light and dark themes, matching web parity.
+  Widget _badge(String label, Color accent) => Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: bg,
+          color: accent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: fg,
+            color: accent,
             fontSize: 10,
             fontWeight: FontWeight.w700,
             fontFamily: 'Rajdhani',
@@ -1163,14 +1174,14 @@ class _CustomFlowCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
-        border: Border.all(color: kColorBorderCard),
+        color: context.tokens.bgSurface,
+        border: Border.all(color: context.tokens.borderCard),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
-          const Icon(Icons.checklist_outlined,
-              color: kColorTextMuted, size: 20),
+          Icon(Icons.checklist_outlined,
+              color: context.tokens.textMuted, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1179,8 +1190,8 @@ class _CustomFlowCard extends StatelessWidget {
                 if (item.label != null && item.label!.isNotEmpty)
                   Text(
                     item.label!,
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1188,13 +1199,13 @@ class _CustomFlowCard extends StatelessWidget {
                 if (item.description != null && item.description!.isNotEmpty)
                   Text(
                     item.description!,
-                    style: const TextStyle(
-                        color: kColorTextSecondary, fontSize: 13),
+                    style: TextStyle(
+                        color: context.tokens.textSecondary, fontSize: 13),
                   ),
               ],
             ),
           ),
-          _CompletionIcon(isCompleted: item.isCompleted, accent: kColorTextMuted),
+          _CompletionIcon(isCompleted: item.isCompleted, accent: context.tokens.textMuted),
         ],
       ),
     );
@@ -1211,7 +1222,7 @@ class _CompletionIcon extends StatelessWidget {
         isCompleted
             ? Icons.check_circle
             : Icons.radio_button_unchecked,
-        color: isCompleted ? const Color(0xFF22c55e) : kColorTextMuted,
+        color: isCompleted ? const Color(0xFF22c55e) : context.tokens.textMuted,
         size: 18,
       );
 }
@@ -1301,7 +1312,7 @@ class _QaTabState extends ConsumerState<_QaTab> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1326,10 +1337,10 @@ class _QaTabState extends ConsumerState<_QaTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: kColorTextMuted, size: 36),
+            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 36),
             const SizedBox(height: 10),
-            const Text('Failed to load Q&A',
-                style: TextStyle(color: kColorTextSecondary)),
+            Text('Failed to load Q&A',
+                style: TextStyle(color: context.tokens.textSecondary)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: () =>
@@ -1358,15 +1369,15 @@ class _QaTabState extends ConsumerState<_QaTab> {
             ),
           ),
           body: qa.posts.isEmpty
-              ? const Center(
+              ? Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.question_answer_outlined,
-                          color: kColorTextMuted, size: 40),
+                          color: context.tokens.textMuted, size: 40),
                       SizedBox(height: 10),
                       Text('No questions yet — be the first!',
-                          style: TextStyle(color: kColorTextSecondary)),
+                          style: TextStyle(color: context.tokens.textSecondary)),
                     ],
                   ),
                 )
@@ -1459,8 +1470,8 @@ class _AskQuestionSheetState extends ConsumerState<_AskQuestionSheet> {
         children: [
           Text(
             qa.heading,
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -1469,7 +1480,7 @@ class _AskQuestionSheetState extends ConsumerState<_AskQuestionSheet> {
             const SizedBox(height: 6),
             Text(
               qa.promptText,
-              style: const TextStyle(color: kColorTextMuted, fontSize: 13),
+              style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
             ),
           ],
           const SizedBox(height: 14),
@@ -1477,20 +1488,20 @@ class _AskQuestionSheetState extends ConsumerState<_AskQuestionSheet> {
             controller: _ctrl,
             maxLines: 4,
             style:
-                const TextStyle(color: kColorTextPrimary, fontSize: 14),
+                TextStyle(color: context.tokens.textPrimary, fontSize: 14),
             decoration: InputDecoration(
               hintText: qa.inputPlaceholder,
               hintStyle:
-                  const TextStyle(color: kColorTextMuted, fontSize: 14),
+                  TextStyle(color: context.tokens.textMuted, fontSize: 14),
               filled: true,
-              fillColor: kColorBgInput,
+              fillColor: context.tokens.bgInput,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: kColorBorderCard),
+                borderSide: BorderSide(color: context.tokens.borderCard),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: kColorBorderCard),
+                borderSide: BorderSide(color: context.tokens.borderCard),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -1558,8 +1569,8 @@ class _QaPostCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
-        border: Border.all(color: kColorBorderCard),
+        color: context.tokens.bgSurface,
+        border: Border.all(color: context.tokens.borderCard),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -1576,16 +1587,16 @@ class _QaPostCard extends StatelessWidget {
                   children: [
                     Text(
                       post.author.name,
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
                       post.timeAgo,
-                      style: const TextStyle(
-                          color: kColorTextMuted, fontSize: 11),
+                      style: TextStyle(
+                          color: context.tokens.textMuted, fontSize: 11),
                     ),
                   ],
                 ),
@@ -1596,8 +1607,8 @@ class _QaPostCard extends StatelessWidget {
           // Question text
           Text(
             post.questionText,
-            style: const TextStyle(
-              color: kColorTextSecondary,
+            style: TextStyle(
+              color: context.tokens.textSecondary,
               fontSize: 14,
               height: 1.5,
             ),
@@ -1632,25 +1643,25 @@ class _QaPostCard extends StatelessWidget {
                 Expanded(
                   child: TextField(
                     controller: replyCtrl,
-                    style: const TextStyle(
-                        color: kColorTextPrimary, fontSize: 13),
+                    style: TextStyle(
+                        color: context.tokens.textPrimary, fontSize: 13),
                     decoration: InputDecoration(
                       hintText: 'Write a reply…',
-                      hintStyle: const TextStyle(
-                          color: kColorTextMuted, fontSize: 13),
+                      hintStyle: TextStyle(
+                          color: context.tokens.textMuted, fontSize: 13),
                       filled: true,
-                      fillColor: kColorBgInput,
+                      fillColor: context.tokens.bgInput,
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide:
-                            const BorderSide(color: kColorBorderCard),
+                            BorderSide(color: context.tokens.borderCard),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide:
-                            const BorderSide(color: kColorBorderCard),
+                            BorderSide(color: context.tokens.borderCard),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -1716,8 +1727,8 @@ class _ReplyRow extends StatelessWidget {
                   children: [
                     Text(
                       reply.author.name,
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1725,16 +1736,16 @@ class _ReplyRow extends StatelessWidget {
                     const SizedBox(width: 6),
                     Text(
                       reply.timeAgo,
-                      style: const TextStyle(
-                          color: kColorTextMuted, fontSize: 10),
+                      style: TextStyle(
+                          color: context.tokens.textMuted, fontSize: 10),
                     ),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
                   reply.replyText,
-                  style: const TextStyle(
-                    color: kColorTextSecondary,
+                  style: TextStyle(
+                    color: context.tokens.textSecondary,
                     fontSize: 13,
                     height: 1.4,
                   ),
@@ -1834,10 +1845,10 @@ class _LiveCallsTabState extends ConsumerState<_LiveCallsTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: kColorTextMuted, size: 36),
+            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 36),
             const SizedBox(height: 10),
-            const Text('Failed to load live calls',
-                style: TextStyle(color: kColorTextSecondary)),
+            Text('Failed to load live calls',
+                style: TextStyle(color: context.tokens.textSecondary)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: () =>
@@ -1851,15 +1862,15 @@ class _LiveCallsTabState extends ConsumerState<_LiveCallsTab> {
         final liveCalls =
             items.where((i) => i.type == 'live_call').toList();
         if (liveCalls.isEmpty) {
-          return const Center(
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.videocam_off_outlined,
-                    color: kColorTextMuted, size: 40),
+                    color: context.tokens.textMuted, size: 40),
                 SizedBox(height: 10),
                 Text('No live calls scheduled',
-                    style: TextStyle(color: kColorTextMuted)),
+                    style: TextStyle(color: context.tokens.textMuted)),
               ],
             ),
           );
@@ -2036,8 +2047,8 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
-        border: Border.all(color: kColorBorderCard),
+        color: context.tokens.bgSurface,
+        border: Border.all(color: context.tokens.borderCard),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -2072,8 +2083,8 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
                       ),
                     Text(
                       item.title ?? 'Live Call',
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
@@ -2093,13 +2104,13 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
             const SizedBox(height: 10),
             Row(
               children: [
-                const Icon(Icons.schedule,
-                    color: kColorTextMuted, size: 14),
+                Icon(Icons.schedule,
+                    color: context.tokens.textMuted, size: 14),
                 const SizedBox(width: 6),
                 Text(
                   _formatScheduled(item.scheduledAt!),
-                  style: const TextStyle(
-                      color: kColorTextMuted, fontSize: 13),
+                  style: TextStyle(
+                      color: context.tokens.textMuted, fontSize: 13),
                 ),
               ],
             ),
@@ -2110,8 +2121,8 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
             const SizedBox(height: 8),
             Text(
               item.prerequisiteNote!,
-              style: const TextStyle(
-                  color: kColorTextMuted, fontSize: 12),
+              style: TextStyle(
+                  color: context.tokens.textMuted, fontSize: 12),
             ),
           ],
 
@@ -2129,21 +2140,21 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
 
           if (item.aiSummary != null && item.aiSummary!.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'AI SUMMARY',
               style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
-                color: kColorTextMuted,
+                color: context.tokens.textMuted,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               item.aiSummary!,
-              style: const TextStyle(
-                  color: kColorTextSecondary, fontSize: 13, height: 1.5),
+              style: TextStyle(
+                  color: context.tokens.textSecondary, fontSize: 13, height: 1.5),
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
             ),
@@ -2155,9 +2166,9 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: kColorBgInput,
+                color: context.tokens.bgInput,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: kColorBorderCard),
+                border: Border.all(color: context.tokens.borderCard),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -2166,8 +2177,8 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
                   const SizedBox(width: 6),
                   Text(
                     'Starts in ${_countdownLabel()}',
-                    style: const TextStyle(
-                      color: kColorTextSecondary,
+                    style: TextStyle(
+                      color: context.tokens.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2190,8 +2201,8 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
                       style: TextStyle(fontSize: 12),
                     ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: kColorTextSecondary,
-                      side: const BorderSide(color: kColorBorderCard),
+                      foregroundColor: context.tokens.textSecondary,
+                      side: BorderSide(color: context.tokens.borderCard),
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2209,8 +2220,8 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
                       style: TextStyle(fontSize: 12),
                     ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: kColorTextSecondary,
-                      side: const BorderSide(color: kColorBorderCard),
+                      foregroundColor: context.tokens.textSecondary,
+                      side: BorderSide(color: context.tokens.borderCard),
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2243,11 +2254,11 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _rsvpStatus == 'confirmed'
                           ? accent
-                          : kColorTextSecondary,
+                          : context.tokens.textSecondary,
                       side: BorderSide(
                         color: _rsvpStatus == 'confirmed'
                             ? accent
-                            : kColorBorderCard,
+                            : context.tokens.borderCard,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2269,11 +2280,11 @@ class _LiveCallCardState extends ConsumerState<_LiveCallCard> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _rsvpStatus == 'declined'
                           ? Colors.redAccent
-                          : kColorTextSecondary,
+                          : context.tokens.textSecondary,
                       side: BorderSide(
                         color: _rsvpStatus == 'declined'
                             ? Colors.redAccent
-                            : kColorBorderCard,
+                            : context.tokens.borderCard,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2353,10 +2364,10 @@ class _AssignmentsTab extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: kColorTextMuted, size: 36),
+            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 36),
             const SizedBox(height: 10),
-            const Text('Failed to load assignments',
-                style: TextStyle(color: kColorTextSecondary)),
+            Text('Failed to load assignments',
+                style: TextStyle(color: context.tokens.textSecondary)),
             const SizedBox(height: 10),
             TextButton(
               onPressed: () =>
@@ -2368,15 +2379,15 @@ class _AssignmentsTab extends ConsumerWidget {
       ),
       data: (groups) {
         if (groups.isEmpty) {
-          return const Center(
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.assignment_outlined,
-                    color: kColorTextMuted, size: 40),
+                    color: context.tokens.textMuted, size: 40),
                 SizedBox(height: 10),
                 Text('No assignments yet',
-                    style: TextStyle(color: kColorTextMuted)),
+                    style: TextStyle(color: context.tokens.textMuted)),
               ],
             ),
           );
@@ -2414,18 +2425,18 @@ class _AssignmentGroupCard extends ConsumerWidget {
               children: [
                 TextSpan(
                   text: '${group.challengeLabel}  ',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Rajdhani',
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.5,
-                    color: kColorTextMuted,
+                    color: context.tokens.textMuted,
                   ),
                 ),
                 TextSpan(
                   text: group.challengeTitle,
-                  style: const TextStyle(
-                    color: kColorTextSecondary,
+                  style: TextStyle(
+                    color: context.tokens.textSecondary,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -2701,11 +2712,11 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         border: Border.all(
           color: isSubmitted && !_isEditing
               ? const Color(0xFF14532d)
-              : kColorBorderCard,
+              : context.tokens.borderCard,
         ),
         borderRadius: BorderRadius.circular(10),
       ),
@@ -2726,8 +2737,8 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
               Expanded(
                 child: Text(
                   a.title,
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -2757,8 +2768,8 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
             const SizedBox(height: 8),
             Text(
               a.questionText!,
-              style: const TextStyle(
-                color: kColorTextSecondary,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -2780,8 +2791,8 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: kColorTextSecondary,
-                    side: const BorderSide(color: kColorBorderCard),
+                    foregroundColor: context.tokens.textSecondary,
+                    side: BorderSide(color: context.tokens.borderCard),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -2833,8 +2844,8 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
                   OutlinedButton(
                     onPressed: _submitting ? null : _cancelEdit,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: kColorTextSecondary,
-                      side: const BorderSide(color: kColorBorderCard),
+                      foregroundColor: context.tokens.textSecondary,
+                      side: BorderSide(color: context.tokens.borderCard),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -2874,21 +2885,21 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
         controller: _answerCtrl,
         maxLines: 5,
         minLines: 3,
-        style: const TextStyle(color: kColorTextPrimary, fontSize: 13),
+        style: TextStyle(color: context.tokens.textPrimary, fontSize: 13),
         decoration: InputDecoration(
           hintText: 'Type your answer…',
-          hintStyle: const TextStyle(color: kColorTextMuted, fontSize: 13),
+          hintStyle: TextStyle(color: context.tokens.textMuted, fontSize: 13),
           filled: true,
-          fillColor: kColorBgInput,
+          fillColor: context.tokens.bgInput,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: kColorBorderCard),
+            borderSide: BorderSide(color: context.tokens.borderCard),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: kColorBorderCard),
+            borderSide: BorderSide(color: context.tokens.borderCard),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
@@ -2928,10 +2939,10 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: kColorBgInput,
+          color: context.tokens.bgInput,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: kColorBorderCard,
+            color: context.tokens.borderCard,
             style: BorderStyle.solid,
             width: 1,
           ),
@@ -2950,20 +2961,20 @@ class _AssignmentCardState extends ConsumerState<_AssignmentCard> {
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(iconData, color: kColorTextMuted, size: 28),
+                  Icon(iconData, color: context.tokens.textMuted, size: 28),
                   const SizedBox(height: 8),
                   Text(
                     label,
-                    style: const TextStyle(
-                      color: kColorTextSecondary,
+                    style: TextStyle(
+                      color: context.tokens.textSecondary,
                       fontSize: 13,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     hint,
-                    style: const TextStyle(
-                      color: kColorTextMuted,
+                    style: TextStyle(
+                      color: context.tokens.textMuted,
                       fontSize: 11,
                     ),
                   ),
@@ -3004,14 +3015,14 @@ class _PickedFilePreview extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.insert_drive_file_outlined,
-                  color: kColorTextSecondary, size: 20),
+              Icon(Icons.insert_drive_file_outlined,
+                  color: context.tokens.textSecondary, size: 20),
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
                   name,
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontSize: 13,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -3022,10 +3033,10 @@ class _PickedFilePreview extends StatelessWidget {
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: onRemove,
-          icon: const Icon(Icons.close, size: 14, color: kColorTextMuted),
-          label: const Text(
+          icon: Icon(Icons.close, size: 14, color: context.tokens.textMuted),
+          label: Text(
             'Remove',
-            style: TextStyle(color: kColorTextMuted, fontSize: 12),
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
           ),
           style: TextButton.styleFrom(padding: EdgeInsets.zero),
         ),
@@ -3052,19 +3063,19 @@ class _SubmissionPreview extends StatelessWidget {
             imageUrl: submission.imageUrl!,
             fit: BoxFit.contain,
             placeholder: (_, __) => Container(
-              color: kColorBgInput,
+              color: context.tokens.bgInput,
               height: 120,
               child: const Center(
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
             errorWidget: (_, __, ___) => Container(
-              color: kColorBgInput,
+              color: context.tokens.bgInput,
               height: 60,
               alignment: Alignment.center,
-              child: const Text(
+              child: Text(
                 'Could not load image',
-                style: TextStyle(color: kColorTextMuted, fontSize: 12),
+                style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
               ),
             ),
           ),
@@ -3083,9 +3094,9 @@ class _SubmissionPreview extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: kColorBgInput,
+            color: context.tokens.bgInput,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: kColorBorderCard),
+            border: Border.all(color: context.tokens.borderCard),
           ),
           child: Row(
             children: [
@@ -3101,7 +3112,7 @@ class _SubmissionPreview extends StatelessWidget {
                   ),
                 ),
               ),
-              const Icon(Icons.open_in_new, size: 14, color: kColorTextMuted),
+              Icon(Icons.open_in_new, size: 14, color: context.tokens.textMuted),
             ],
           ),
         ),
@@ -3134,9 +3145,9 @@ class _AnswerText extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: kColorBgInput,
+        color: context.tokens.bgInput,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: numbered
           ? Column(
@@ -3147,8 +3158,8 @@ class _AnswerText extends StatelessWidget {
                     padding: EdgeInsets.only(bottom: i == lines.length - 1 ? 0 : 6),
                     child: Text(
                       lines[i],
-                      style: const TextStyle(
-                        color: kColorTextSecondary,
+                      style: TextStyle(
+                        color: context.tokens.textSecondary,
                         fontSize: 13,
                         height: 1.5,
                       ),
@@ -3158,8 +3169,8 @@ class _AnswerText extends StatelessWidget {
             )
           : Text(
               text,
-              style: const TextStyle(
-                color: kColorTextSecondary,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -3183,25 +3194,25 @@ class _SubmittedVideoTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: kColorBgInput,
+          color: context.tokens.bgInput,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Row(
           children: [
             Icon(Icons.play_circle_outline, color: accent, size: 22),
             const SizedBox(width: 10),
-            const Expanded(
+            Expanded(
               child: Text(
                 'View submitted video',
                 style: TextStyle(
-                  color: kColorTextPrimary,
+                  color: context.tokens.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            const Icon(Icons.open_in_new, size: 14, color: kColorTextMuted),
+            Icon(Icons.open_in_new, size: 14, color: context.tokens.textMuted),
           ],
         ),
       ),
@@ -3231,8 +3242,8 @@ class _CertProgressBars extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
-        border: Border.all(color: kColorBorderCard),
+        color: context.tokens.bgSurface,
+        border: Border.all(color: context.tokens.borderCard),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -3242,27 +3253,27 @@ class _CertProgressBars extends StatelessWidget {
             children: [
               Icon(Icons.workspace_premium_outlined, color: accent, size: 16),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'CERTIFICATE PROGRESS',
                 style: TextStyle(
                   fontFamily: 'Rajdhani',
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
-                  color: kColorTextMuted,
+                  color: context.tokens.textMuted,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _row('Videos', videosPct, accent),
+          _row(context, 'Videos', videosPct, accent),
           const SizedBox(height: 8),
-          _row('Challenges', challengesPct, accent),
+          _row(context, 'Challenges', challengesPct, accent),
           const SizedBox(height: 8),
           Text(
             _remainingLabel(cert),
-            style: const TextStyle(
-              color: kColorTextMuted,
+            style: TextStyle(
+              color: context.tokens.textMuted,
               fontSize: 11,
             ),
           ),
@@ -3271,15 +3282,15 @@ class _CertProgressBars extends StatelessWidget {
     );
   }
 
-  Widget _row(String label, int pct, Color color) {
+  Widget _row(BuildContext context, String label, int pct, Color color) {
     return Row(
       children: [
         SizedBox(
           width: 78,
           child: Text(
             label,
-            style: const TextStyle(
-              color: kColorTextSecondary,
+            style: TextStyle(
+              color: context.tokens.textSecondary,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -3290,7 +3301,7 @@ class _CertProgressBars extends StatelessWidget {
             borderRadius: BorderRadius.circular(3),
             child: LinearProgressIndicator(
               value: pct / 100,
-              backgroundColor: kColorBgInput,
+              backgroundColor: context.tokens.bgInput,
               valueColor: AlwaysStoppedAnimation<Color>(color),
               minHeight: 5,
             ),
@@ -3412,22 +3423,22 @@ class _WorkshopCertDownloadButtonState
 
 // ── Error state ───────────────────────────────────────────────────────────────
 
-Widget _buildError(VoidCallback onRetry, {String? detail}) => Center(
+Widget _buildError(BuildContext context, VoidCallback onRetry, {String? detail}) => Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
           const SizedBox(height: 12),
-          const Text('Failed to load workshop',
-              style: TextStyle(color: kColorTextSecondary)),
+          Text('Failed to load workshop',
+              style: TextStyle(color: context.tokens.textSecondary)),
           if (detail != null) ...[
             const SizedBox(height: 8),
             Text(
               detail,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: kColorTextMuted, fontSize: 11),
+              style: TextStyle(color: context.tokens.textMuted, fontSize: 11),
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
             ),

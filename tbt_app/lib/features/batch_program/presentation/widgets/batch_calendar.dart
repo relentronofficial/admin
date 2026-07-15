@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/models/batch.dart';
-import '../../../../shared/theme/design_constants.dart';
+import '../../../../shared/theme/theme_tokens.dart';
 
-// Status background colours (from CC-36 spec)
-const _kColorNotStarted = Color(0xFF2a2a2a);
+// Status background colours (from CC-36 spec).
+//
+// The four action states use the same semantic accents as the rest of the
+// app and read fine in both light and dark themes. `notStarted` is the odd
+// one — it should render as an inert neutral surface, not a solid colour,
+// so its background comes from `context.tokens.borderCard` at render time
+// (see `_DayCell._bgColor`).
 const _kColorInProgress = Color(0xFF1d4ed8);
 const _kColorSubmitted = Color(0xFFd97706);
 const _kColorApproved = Color(0xFF16a34a);
@@ -133,10 +138,12 @@ class _DayCell extends StatelessWidget {
     return palette[hash % palette.length];
   }
 
-  Color get _bgColor {
+  Color _bgColor(BuildContext context) {
     switch (status) {
       case BatchDayStatus.notStarted:
-        return _kColorNotStarted;
+        // Neutral surface — reads as `#2a2a2a` in dark mode and `#e5e5e5`
+        // in light mode via the token system.
+        return context.tokens.borderCard;
       case BatchDayStatus.inProgress:
         return _kColorInProgress;
       case BatchDayStatus.submitted:
@@ -148,8 +155,10 @@ class _DayCell extends StatelessWidget {
     }
   }
 
-  Color get _textColor {
-    if (status == BatchDayStatus.notStarted) return kColorTextMuted;
+  Color _textColor(BuildContext context) {
+    if (status == BatchDayStatus.notStarted) return context.tokens.textMuted;
+    // Text on the coloured status fills is always white for legibility —
+    // matches web parity where badges use `text-white` on any status hue.
     return Colors.white;
   }
 
@@ -167,10 +176,11 @@ class _DayCell extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
-          color: _bgColor,
+          color: _bgColor(context),
           borderRadius: BorderRadius.circular(6),
           border: isToday
-              ? Border.all(color: Colors.white, width: 1.5)
+              ? Border.all(
+                  color: Theme.of(context).colorScheme.primary, width: 1.5)
               : null,
         ),
         child: Stack(
@@ -179,7 +189,7 @@ class _DayCell extends StatelessWidget {
               child: Text(
                 '$dayNumber',
                 style: TextStyle(
-                  color: _textColor,
+                  color: _textColor(context),
                   fontSize: 11,
                   fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
                 ),

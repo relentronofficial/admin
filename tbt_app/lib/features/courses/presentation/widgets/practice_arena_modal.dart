@@ -2,8 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../../../../shared/theme/design_constants.dart';
 
+import '../../../../shared/theme/theme_tokens.dart';
 /// Client-only retrieval-practice mode. Shuffles quiz questions collected
 /// across every lesson in the course and lets the user answer them
 /// interleaved. No backend call, no XP — pure practice.
@@ -79,10 +79,10 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
       minChildSize: 0.5,
       maxChildSize: 0.95,
       builder: (_, scrollController) => Container(
-        decoration: const BoxDecoration(
-          color: kColorBgSurface,
+        decoration: BoxDecoration(
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          border: Border(top: BorderSide(color: kColorBorderCard)),
+          border: Border(top: BorderSide(color: context.tokens.borderCard)),
         ),
         child: Column(
           children: [
@@ -108,7 +108,7 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
           width: 40,
           height: 4,
           decoration: BoxDecoration(
-            color: kColorTextMuted.withValues(alpha: 0.5),
+            color: context.tokens.textMuted.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -125,11 +125,11 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
             children: [
               Icon(Icons.psychology_alt, color: widget.accent, size: 18),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'PRACTICE ARENA',
                 style: TextStyle(
                   fontFamily: 'Rajdhani',
-                  color: kColorTextPrimary,
+                  color: context.tokens.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
@@ -140,7 +140,7 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
                 iconSize: 20,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                icon: const Icon(Icons.close, color: kColorTextMuted),
+                icon: Icon(Icons.close, color: context.tokens.textMuted),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -154,7 +154,7 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
                   child: LinearProgressIndicator(
                     value: progress,
                     minHeight: 4,
-                    backgroundColor: kColorBgInput,
+                    backgroundColor: context.tokens.bgInput,
                     valueColor: AlwaysStoppedAnimation(widget.accent),
                   ),
                 ),
@@ -162,8 +162,8 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
               const SizedBox(width: 10),
               Text(
                 '${_index + 1}/${_deck.length}',
-                style: const TextStyle(
-                  color: kColorTextMuted,
+                style: TextStyle(
+                  color: context.tokens.textMuted,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -186,8 +186,8 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               lessonTitle.toUpperCase(),
-              style: const TextStyle(
-                color: kColorTextMuted,
+              style: TextStyle(
+                color: context.tokens.textMuted,
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
@@ -196,8 +196,8 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
           ),
         Text(
           question,
-          style: const TextStyle(
-            color: kColorTextPrimary,
+          style: TextStyle(
+            color: context.tokens.textPrimary,
             fontSize: 17,
             fontWeight: FontWeight.w600,
             height: 1.4,
@@ -211,8 +211,8 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
           final isCorrect = optId == _correctOptionId;
           final answered = _pickedOptionId != null;
 
-          Color borderColor = kColorBorderCard;
-          Color bgColor = kColorBgInput;
+          Color borderColor = context.tokens.borderCard;
+          Color bgColor = context.tokens.bgInput;
           Widget? trailing;
           if (answered) {
             if (isCorrect) {
@@ -245,8 +245,8 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
                     Expanded(
                       child: Text(
                         text,
-                        style: const TextStyle(
-                          color: kColorTextPrimary,
+                        style: TextStyle(
+                          color: context.tokens.textPrimary,
                           fontSize: 14,
                           height: 1.4,
                         ),
@@ -273,15 +273,15 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
         : '$_correctCount / $_answered correct';
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: kColorBorderCard)),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: context.tokens.borderCard)),
       ),
       child: Row(
         children: [
           Text(
             scoreText,
-            style: const TextStyle(
-              color: kColorTextSecondary,
+            style: TextStyle(
+              color: context.tokens.textSecondary,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -294,8 +294,8 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.accent,
                 foregroundColor: Colors.white,
-                disabledBackgroundColor: kColorBgInput,
-                disabledForegroundColor: kColorTextMuted,
+                disabledBackgroundColor: context.tokens.bgInput,
+                disabledForegroundColor: context.tokens.textMuted,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),

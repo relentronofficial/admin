@@ -1,4 +1,4 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,9 +7,9 @@ import '../../core/constants/routes.dart';
 import '../../features/messages/providers/messages_provider.dart';
 import '../../features/notifications/providers/notifications_provider.dart';
 import '../providers/site_config_provider.dart';
-import '../theme/design_constants.dart';
 import '../theme/tbt_theme.dart';
 
+import '../../shared/theme/theme_tokens.dart';
 /// Top navigation bar shown inside the persistent shell.
 /// Implements [PreferredSizeWidget] so it can be used as [Scaffold.appBar].
 class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
@@ -26,7 +26,7 @@ class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
     final accent = context.tbt.accent;
 
     return AppBar(
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       elevation: 0,
       scrolledUnderElevation: 0,
       automaticallyImplyLeading: false,
@@ -128,7 +128,7 @@ class _IconWithBadge extends StatelessWidget {
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
-              Icon(icon, color: kColorTextSecondary, size: 24),
+              Icon(icon, color: context.tokens.textSecondary, size: 24),
               if (count > 0)
                 Positioned(
                   top: 8,

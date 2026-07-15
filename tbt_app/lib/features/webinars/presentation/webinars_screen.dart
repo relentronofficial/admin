@@ -5,10 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/constants/routes.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../data/webinars_service.dart';
 import '../providers/webinars_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class WebinarsScreen extends ConsumerWidget {
   const WebinarsScreen({super.key});
 
@@ -18,26 +18,26 @@ class WebinarsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'WEBINARS',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: kColorTextMuted, size: 20),
+            icon: Icon(Icons.refresh, color: context.tokens.textMuted, size: 20),
             onPressed: () => ref.invalidate(webinarsProvider),
           ),
         ],
@@ -49,11 +49,11 @@ class WebinarsScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline,
-                  color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline,
+                  color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load webinars',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load webinars',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(webinarsProvider),
@@ -64,23 +64,23 @@ class WebinarsScreen extends ConsumerWidget {
         ),
         data: (webinars) {
           if (webinars.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.videocam_outlined,
-                      color: kColorTextMuted, size: 40),
+                      color: context.tokens.textMuted, size: 40),
                   SizedBox(height: 12),
                   Text('No webinars available',
                       style: TextStyle(
-                          color: kColorTextSecondary, fontSize: 14)),
+                          color: context.tokens.textSecondary, fontSize: 14)),
                 ],
               ),
             );
           }
           return RefreshIndicator(
-            color: kColorAccent,
-            backgroundColor: kColorBgSurface,
+            color: Theme.of(context).colorScheme.primary,
+            backgroundColor: context.tokens.bgSurface,
             onRefresh: () async {
               ref.invalidate(webinarsProvider);
               await ref.read(webinarsProvider.future);
@@ -119,9 +119,9 @@ class _WebinarCard extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
-            color: kColorBgSurface,
+            color: context.tokens.bgSurface,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: kColorBorderCard),
+            border: Border.all(color: context.tokens.borderCard),
           ),
           clipBehavior: Clip.hardEdge,
           child: Column(
@@ -150,7 +150,7 @@ class _WebinarCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: kColorAccent,
+                            color: Theme.of(context).colorScheme.primary,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Row(
@@ -182,8 +182,8 @@ class _WebinarCard extends StatelessWidget {
                   children: [
                     Text(
                       webinar.title,
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -194,13 +194,13 @@ class _WebinarCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.schedule_outlined,
-                              size: 12, color: kColorTextMuted),
+                          Icon(Icons.schedule_outlined,
+                              size: 12, color: context.tokens.textMuted),
                           const SizedBox(width: 4),
                           Text(
                             DateFormat('EEE, MMM d · h:mm a').format(scheduled),
-                            style: const TextStyle(
-                              color: kColorTextMuted,
+                            style: TextStyle(
+                              color: context.tokens.textMuted,
                               fontSize: 11,
                             ),
                           ),
@@ -211,14 +211,14 @@ class _WebinarCard extends StatelessWidget {
                       const SizedBox(height: 3),
                       Row(
                         children: [
-                          const Icon(Icons.person_outline,
-                              size: 12, color: kColorTextMuted),
+                          Icon(Icons.person_outline,
+                              size: 12, color: context.tokens.textMuted),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               webinar.host!,
-                              style: const TextStyle(
-                                color: kColorTextMuted,
+                              style: TextStyle(
+                                color: context.tokens.textMuted,
                                 fontSize: 11,
                               ),
                               maxLines: 1,
@@ -244,10 +244,10 @@ class _ThumbPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        color: kColorBgInput,
-        child: const Center(
+        color: context.tokens.bgInput,
+        child: Center(
           child: Icon(Icons.videocam_outlined,
-              color: kColorTextSubtle, size: 32),
+              color: context.tokens.textSubtle, size: 32),
         ),
       );
 }

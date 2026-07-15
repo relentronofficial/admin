@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../shared/theme/design_constants.dart';
 import '../data/events_service.dart';
 import '../providers/events_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class EventDetailScreen extends ConsumerStatefulWidget {
   const EventDetailScreen({super.key, required this.eventId});
 
@@ -63,21 +63,21 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'EVENT DETAILS',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
       ),
@@ -88,10 +88,10 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load event',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load event',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(eventProvider(eventId)),
@@ -115,8 +115,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     Expanded(
                       child: Text(
                         event.title,
-                        style: const TextStyle(
-                          color: kColorTextPrimary,
+                        style: TextStyle(
+                          color: context.tokens.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
                         ),
@@ -170,14 +170,14 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 if (event.description != null &&
                     event.description!.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'ABOUT THIS EVENT',
                     style: TextStyle(
                       fontFamily: 'Rajdhani',
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.5,
-                      color: kColorTextMuted,
+                      color: context.tokens.textMuted,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -185,14 +185,14 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: kColorBgSurface,
+                      color: context.tokens.bgSurface,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: kColorBorderCard),
+                      border: Border.all(color: context.tokens.borderCard),
                     ),
                     child: Text(
                       event.description!,
-                      style: const TextStyle(
-                        color: kColorTextSecondary,
+                      style: TextStyle(
+                        color: context.tokens.textSecondary,
                         fontSize: 14,
                         height: 1.6,
                       ),
@@ -209,13 +209,13 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _registered
                             ? const Color(0xFF16a34a)
-                            : kColorAccent,
+                            : Theme.of(context).colorScheme.primary,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
                         disabledBackgroundColor:
-                            kColorAccent.withValues(alpha: 0.5),
+                            Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                       ),
                       icon: _registering
                           ? const SizedBox(
@@ -263,14 +263,14 @@ class _StatusBadge extends StatelessWidget {
 
   final String status;
 
-  Color get _color {
+  Color _color(BuildContext context) {
     switch (status) {
       case 'ongoing':
         return const Color(0xFF16a34a);
       case 'completed':
-        return kColorTextMuted;
+        return context.tokens.textMuted;
       case 'cancelled':
-        return kColorAccent;
+        return Theme.of(context).colorScheme.primary;
       default:
         return const Color(0xFF1d4ed8);
     }
@@ -278,16 +278,17 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = _color(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.15),
+        color: c.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         status.toUpperCase(),
         style: TextStyle(
-          color: _color,
+          color: c,
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
@@ -308,13 +309,13 @@ class _InfoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(
         children: children
-            .expand((w) => [w, if (w != children.last) const Divider(color: kColorBorderCard, height: 20)])
+            .expand((w) => [w, if (w != children.last) Divider(color: context.tokens.borderCard, height: 20)])
             .toList(),
       ),
     );
@@ -337,7 +338,7 @@ class _InfoRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: kColorAccent),
+        Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -345,19 +346,19 @@ class _InfoRow extends StatelessWidget {
             children: [
               Text(
                 label.toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Rajdhani',
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.8,
-                  color: kColorTextMuted,
+                  color: context.tokens.textMuted,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 value,
-                style: const TextStyle(
-                  color: kColorTextPrimary,
+                style: TextStyle(
+                  color: context.tokens.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),

@@ -7,7 +7,7 @@ part of 'notifications_provider.dart';
 // **************************************************************************
 
 String _$unreadNotifCountNotifierHash() =>
-    r'ea5ed02cbdcb99133f5bbf7e10230a3af15c70ad';
+    r'20fb06597ce501d96fda037d2d9259453202239a';
 
 /// See also [UnreadNotifCountNotifier].
 @ProviderFor(UnreadNotifCountNotifier)
@@ -25,7 +25,7 @@ final unreadNotifCountNotifierProvider =
 
 typedef _$UnreadNotifCountNotifier = Notifier<int>;
 String _$notificationsNotifierHash() =>
-    r'087916570ccd8966a3281c1b6175c81e57866c5a';
+    r'47e0565e74f13c45a16b69fc3156bbad8ad777c2';
 
 /// See also [NotificationsNotifier].
 @ProviderFor(NotificationsNotifier)

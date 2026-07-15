@@ -5,6 +5,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../data/batch_service.dart';
 import '../providers/batch_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 /// Break request bottom sheet.
 ///
 /// The backend takes `startDay` / `endDay` as integer day numbers (1..totalDays),
@@ -80,11 +81,11 @@ class _BreakRequestSheetState extends ConsumerState<BreakRequestSheet> {
       lastDate: _maxDate,
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: kColorAccent,
+          colorScheme: ColorScheme.dark(
+            primary: Theme.of(context).colorScheme.primary,
             onPrimary: Colors.white,
-            surface: kColorBgSurface,
-            onSurface: kColorTextPrimary,
+            surface: context.tokens.bgSurface,
+            onSurface: context.tokens.textPrimary,
           ),
         ),
         child: child ?? const SizedBox.shrink(),
@@ -171,19 +172,19 @@ class _BreakRequestSheetState extends ConsumerState<BreakRequestSheet> {
         children: [
           Row(
             children: [
-              const Text(
+              Text(
                 'REQUEST BREAK',
                 style: TextStyle(
                   fontFamily: 'Rajdhani',
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
-                  color: kColorTextPrimary,
+                  color: context.tokens.textPrimary,
                 ),
               ),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.close, color: kColorTextMuted, size: 20),
+                icon: Icon(Icons.close, color: context.tokens.textMuted, size: 20),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -214,8 +215,8 @@ class _BreakRequestSheetState extends ConsumerState<BreakRequestSheet> {
               Center(
                 child: Text(
                   _dayRangeText!,
-                  style: const TextStyle(
-                    color: kColorAccent,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -225,28 +226,28 @@ class _BreakRequestSheetState extends ConsumerState<BreakRequestSheet> {
           ] else
             _NoBatchStartFallback(totalDays: widget.totalDays),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'REASON (OPTIONAL)',
             style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.2,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
             ),
           ),
           const SizedBox(height: 6),
           TextField(
             controller: _reasonController,
             maxLines: 3,
-            style: const TextStyle(color: kColorTextPrimary),
+            style: TextStyle(color: context.tokens.textPrimary),
             decoration: kInputDecoration('Reason for taking a break…'),
           ),
           if (_error != null) ...[
             const SizedBox(height: 10),
             Text(
               _error!,
-              style: const TextStyle(color: kColorAccent, fontSize: 12),
+              style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12),
             ),
           ],
           const SizedBox(height: 20),
@@ -261,10 +262,10 @@ class _BreakRequestSheetState extends ConsumerState<BreakRequestSheet> {
                   ? null
                   : _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: kColorAccent,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 foregroundColor: Colors.white,
-                disabledBackgroundColor: kColorBgInput,
-                disabledForegroundColor: kColorTextMuted,
+                disabledBackgroundColor: context.tokens.bgInput,
+                disabledForegroundColor: context.tokens.textMuted,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -324,12 +325,12 @@ class _DateField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 10,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.2,
-            color: kColorTextMuted,
+            color: context.tokens.textMuted,
           ),
         ),
         const SizedBox(height: 6),
@@ -340,20 +341,20 @@ class _DateField extends StatelessWidget {
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: kColorBgInput,
+              color: context.tokens.bgInput,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: kColorBorderCard),
+              border: Border.all(color: context.tokens.borderCard),
             ),
             child: Row(
               children: [
-                const Icon(Icons.calendar_today_outlined,
-                    color: kColorTextMuted, size: 14),
+                Icon(Icons.calendar_today_outlined,
+                    color: context.tokens.textMuted, size: 14),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _display,
                     style: TextStyle(
-                      color: date == null ? kColorTextMuted : kColorTextPrimary,
+                      color: date == null ? context.tokens.textMuted : context.tokens.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -382,17 +383,17 @@ class _NoBatchStartFallback extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: kColorBgInput,
+        color: context.tokens.bgInput,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Break requests unavailable',
             style: TextStyle(
-              color: kColorTextPrimary,
+              color: context.tokens.textPrimary,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -401,7 +402,7 @@ class _NoBatchStartFallback extends StatelessWidget {
           Text(
             'Your batch does not have a start date set. Please contact your '
             'admin to enable break requests (batch has $totalDays days).',
-            style: const TextStyle(color: kColorTextMuted, fontSize: 12),
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
           ),
         ],
       ),

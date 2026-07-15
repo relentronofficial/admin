@@ -12,6 +12,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../data/batch_service.dart';
 import '../providers/batch_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class BatchDayScreen extends ConsumerStatefulWidget {
   const BatchDayScreen({super.key, required this.day});
 
@@ -120,7 +121,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
           SnackBar(
             content: Text(
                 'Upload failed: ${e.toString().replaceFirst('Exception: ', '')}'),
-            backgroundColor: kColorAccent,
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
       }
@@ -183,11 +184,11 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kColorBgModal,
-        title: const Text(
+        backgroundColor: context.tokens.bgModal,
+        title: Text(
           'Submit Day?',
           style: TextStyle(
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
             fontFamily: 'Rajdhani',
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -195,19 +196,19 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
         ),
         content: Text(
           'Submit Day ${widget.day} for mentor review?\n\nYou will not be able to edit it after submission.',
-          style: const TextStyle(color: kColorTextSecondary, fontSize: 13, height: 1.5),
+          style: TextStyle(color: context.tokens.textSecondary, fontSize: 13, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => ctx.pop(false),
-            child: const Text('Cancel',
-                style: TextStyle(color: kColorTextMuted)),
+            child: Text('Cancel',
+                style: TextStyle(color: context.tokens.textMuted)),
           ),
           TextButton(
             onPressed: () => ctx.pop(true),
-            child: const Text('Submit',
+            child: Text('Submit',
                 style: TextStyle(
-                    color: kColorAccent, fontWeight: FontWeight.w700)),
+                    color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -222,7 +223,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Day submitted for review!'),
-            backgroundColor: Color(0xFF14532d),
+            backgroundColor: Color(0xFF16a34a),
           ),
         );
       }
@@ -232,7 +233,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
           SnackBar(
             content:
                 Text(e.toString().replaceFirst('Exception: ', '')),
-            backgroundColor: kColorAccent,
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
       }
@@ -282,26 +283,26 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text(
           'DAY ${widget.day}',
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           if (_savingDraft)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(right: 16),
               child: Center(
                 child: SizedBox(
@@ -309,7 +310,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 1.5,
-                    color: kColorTextMuted,
+                    color: context.tokens.textMuted,
                   ),
                 ),
               ),
@@ -327,10 +328,10 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
                     onPressed:
                         hasAnyCompleted && !_submitting ? _submitDay : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: kColorAccent,
-                      disabledBackgroundColor: kColorBgInput,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      disabledBackgroundColor: context.tokens.bgInput,
                       foregroundColor: Colors.white,
-                      disabledForegroundColor: kColorTextMuted,
+                      disabledForegroundColor: context.tokens.textMuted,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -364,11 +365,11 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline,
-                  color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline,
+                  color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load day',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load day',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () =>
@@ -380,9 +381,9 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
         ),
         data: (day) {
           if (day == null) {
-            return const Center(
+            return Center(
               child: Text('Day not found',
-                  style: TextStyle(color: kColorTextMuted)),
+                  style: TextStyle(color: context.tokens.textMuted)),
             );
           }
 
@@ -406,13 +407,13 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
             ),
             if (readOnly) _ReadOnlyBanner(status: day.status),
             if (_localTasks.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 48),
                 child: Center(
                   child: Text(
                     'No tasks for this day',
                     style:
-                        TextStyle(color: kColorTextMuted, fontSize: 13),
+                        TextStyle(color: context.tokens.textMuted, fontSize: 13),
                   ),
                 ),
               )
@@ -500,14 +501,14 @@ class _DayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Row(
         children: [
           Text(
             'Day $dayNumber',
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontFamily: 'Rajdhani',
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -517,15 +518,15 @@ class _DayHeader extends StatelessWidget {
           if (category != null && category!.isNotEmpty) ...[
             _Chip(
               label: category!.toUpperCase(),
-              bg: kColorBgInput,
-              fg: kColorTextSecondary,
+              bg: context.tokens.bgInput,
+              fg: context.tokens.textSecondary,
             ),
             const SizedBox(width: 6),
           ],
           _Chip(
             label: _statusLabel(status),
-            bg: _statusColor(status).withValues(alpha: 0.15),
-            fg: _statusColor(status),
+            bg: _statusColor(context, status).withValues(alpha: 0.15),
+            fg: _statusColor(context, status),
           ),
         ],
       ),
@@ -547,10 +548,10 @@ class _DayHeader extends StatelessWidget {
     }
   }
 
-  Color _statusColor(BatchDayStatus s) {
+  Color _statusColor(BuildContext context, BatchDayStatus s) {
     switch (s) {
       case BatchDayStatus.notStarted:
-        return kColorTextMuted;
+        return context.tokens.textMuted;
       case BatchDayStatus.inProgress:
         return const Color(0xFF60a5fa);
       case BatchDayStatus.submitted:
@@ -558,7 +559,7 @@ class _DayHeader extends StatelessWidget {
       case BatchDayStatus.approved:
         return const Color(0xFF4ade80);
       case BatchDayStatus.rejected:
-        return kColorAccent;
+        return Theme.of(context).colorScheme.primary;
     }
   }
 }
@@ -601,29 +602,29 @@ class _ReadOnlyBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg, msg) = switch (status) {
+    // Semantic accents; the banner background is the same accent at 12%
+    // alpha so it reads well in both light and dark themes.
+    final (accent, msg) = switch (status) {
       BatchDayStatus.approved => (
-          const Color(0xFF14532d),
-          const Color(0xFF4ade80),
+          const Color(0xFF16a34a),
           '✓ This day has been approved by your mentor.',
         ),
       BatchDayStatus.submitted => (
-          const Color(0xFF1c1400),
-          const Color(0xFFfbbf24),
+          const Color(0xFFd97706),
           'Submitted — awaiting mentor review.',
         ),
       _ => (
-          const Color(0xFF450a0a),
-          const Color(0xFFfca5a5),
+          const Color(0xFFdc2626),
           'This day was returned for revision. Check with your mentor.',
         ),
     };
 
     return Container(
       width: double.infinity,
-      color: bg,
+      color: accent.withValues(alpha: 0.12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Text(msg, style: TextStyle(color: fg, fontSize: 12, height: 1.4)),
+      child:
+          Text(msg, style: TextStyle(color: accent, fontSize: 12, height: 1.4)),
     );
   }
 }
@@ -649,9 +650,9 @@ class _DayNotes extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -659,8 +660,8 @@ class _DayNotes extends ConsumerWidget {
             if (notes != null && notes.isNotEmpty)
               Text(
                 notes,
-                style: const TextStyle(
-                  color: kColorTextSecondary,
+                style: TextStyle(
+                  color: context.tokens.textSecondary,
                   fontSize: 13,
                   height: 1.55,
                 ),
@@ -677,20 +678,20 @@ class _DayNotes extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: kColorBgInput,
+                    color: context.tokens.bgInput,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: kColorBorderCard),
+                    border: Border.all(color: context.tokens.borderCard),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.play_circle_outline,
-                          size: 16, color: kColorAccent),
+                      Icon(Icons.play_circle_outline,
+                          size: 16, color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 6),
-                      const Text(
+                      Text(
                         'Open resource',
                         style: TextStyle(
-                          color: kColorAccent,
+                          color: Theme.of(context).colorScheme.primary,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.5,
@@ -721,12 +722,12 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Rajdhani',
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.5,
-          color: kColorTextMuted,
+          color: context.tokens.textMuted,
         ),
       ),
     );
@@ -774,9 +775,9 @@ class _TaskRow extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -796,8 +797,8 @@ class _TaskRow extends StatelessWidget {
                     child: Checkbox(
                       value: task.isCompleted,
                       onChanged: readOnly ? null : (_) => onToggle(),
-                      activeColor: kColorAccent,
-                      side: const BorderSide(color: kColorBorderInput),
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      side: BorderSide(color: context.tokens.borderInput),
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize:
                           MaterialTapTargetSize.shrinkWrap,
@@ -812,8 +813,8 @@ class _TaskRow extends StatelessWidget {
                           task.title,
                           style: TextStyle(
                             color: task.isCompleted
-                                ? kColorTextMuted
-                                : kColorTextPrimary,
+                                ? context.tokens.textMuted
+                                : context.tokens.textPrimary,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             decoration: task.isCompleted
@@ -826,12 +827,12 @@ class _TaskRow extends StatelessWidget {
                         Row(
                           children: [
                             Icon(_typeIcon(task.type),
-                                size: 12, color: kColorTextMuted),
+                                size: 12, color: context.tokens.textMuted),
                             const SizedBox(width: 4),
                             Text(
                               _typeLabel(task.type),
-                              style: const TextStyle(
-                                color: kColorTextMuted,
+                              style: TextStyle(
+                                color: context.tokens.textMuted,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -847,13 +848,13 @@ class _TaskRow extends StatelessWidget {
                       width: 32,
                       height: 32,
                       child: isUploading
-                          ? const Center(
+                          ? Center(
                               child: SizedBox(
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
-                                  color: kColorAccent,
+                                  color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
                             )
@@ -864,8 +865,8 @@ class _TaskRow extends StatelessWidget {
                                     ? Icons.attach_file
                                     : Icons.upload_file_outlined,
                                 color: hasPublicUrl
-                                    ? kColorAccent
-                                    : kColorTextMuted,
+                                    ? Theme.of(context).colorScheme.primary
+                                    : context.tokens.textMuted,
                                 size: 18,
                               ),
                               tooltip: 'Attach proof',
@@ -907,7 +908,7 @@ class _TaskRow extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(46, 0, 12, 6),
               child: Text(
                 description!,
-                style: const TextStyle(color: kColorTextMuted, fontSize: 11, height: 1.4),
+                style: TextStyle(color: context.tokens.textMuted, fontSize: 11, height: 1.4),
               ),
             ),
           if (deliverables != null && deliverables!.isNotEmpty)
@@ -916,13 +917,13 @@ class _TaskRow extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: kColorBgInput,
+                  color: context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   deliverables!,
-                  style: const TextStyle(
-                      color: kColorTextSecondary, fontSize: 11, height: 1.4),
+                  style: TextStyle(
+                      color: context.tokens.textSecondary, fontSize: 11, height: 1.4),
                 ),
               ),
             ),
@@ -940,23 +941,23 @@ class _TaskRow extends StatelessWidget {
                     _isUrlProof ? TextInputType.url : TextInputType.multiline,
                 maxLines: _isUrlProof ? 1 : 4,
                 minLines: _isUrlProof ? 1 : 2,
-                style: const TextStyle(color: kColorTextPrimary, fontSize: 13),
+                style: TextStyle(color: context.tokens.textPrimary, fontSize: 13),
                 decoration: InputDecoration(
                   isDense: true,
                   filled: true,
-                  fillColor: kColorBgInput,
+                  fillColor: context.tokens.bgInput,
                   hintText: _isUrlProof
                       ? 'Paste your link (https://…)'
                       : 'Type your response…',
                   hintStyle:
-                      const TextStyle(color: kColorTextMuted, fontSize: 12),
+                      TextStyle(color: context.tokens.textMuted, fontSize: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: kColorBorderCard),
+                    borderSide: BorderSide(color: context.tokens.borderCard),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: kColorBorderCard),
+                    borderSide: BorderSide(color: context.tokens.borderCard),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 8),
@@ -973,14 +974,14 @@ class _TaskRow extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: kColorBgInput,
+                  color: context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: kColorBorderCard),
+                  border: Border.all(color: context.tokens.borderCard),
                 ),
                 child: Text(
                   responseController!.text,
-                  style: const TextStyle(
-                      color: kColorTextSecondary, fontSize: 12, height: 1.4),
+                  style: TextStyle(
+                      color: context.tokens.textSecondary, fontSize: 12, height: 1.4),
                 ),
               ),
             ),
@@ -1034,22 +1035,22 @@ class _JournalSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'JOURNAL',
               style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.8,
-                color: kColorTextMuted,
+                color: context.tokens.textMuted,
               ),
             ),
             const SizedBox(height: 10),
@@ -1058,19 +1059,19 @@ class _JournalSection extends StatelessWidget {
               onChanged: onChanged,
               minLines: 3,
               maxLines: 8,
-              style: const TextStyle(color: kColorTextPrimary, fontSize: 14),
+              style: TextStyle(color: context.tokens.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: kColorBgInput,
+                fillColor: context.tokens.bgInput,
                 hintText: 'What did you learn today?',
-                hintStyle: const TextStyle(color: kColorTextMuted),
+                hintStyle: TextStyle(color: context.tokens.textMuted),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 contentPadding: const EdgeInsets.all(12),
               ),
@@ -1103,9 +1104,9 @@ class _AttendanceSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         padding: const EdgeInsets.all(14),
         child: hasAttendance
@@ -1127,21 +1128,21 @@ class _AttendanceSection extends StatelessWidget {
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'ATTENDANCE',
                     style: TextStyle(
                       fontFamily: 'Rajdhani',
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.5,
-                      color: kColorTextMuted,
+                      color: context.tokens.textMuted,
                     ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: notesController,
-                    style: const TextStyle(
-                        color: kColorTextPrimary, fontSize: 13),
+                    style: TextStyle(
+                        color: context.tokens.textPrimary, fontSize: 13),
                     decoration: kInputDecoration('Notes (optional)'),
                     maxLines: 2,
                   ),
@@ -1152,7 +1153,7 @@ class _AttendanceSection extends StatelessWidget {
                     child: ElevatedButton(
                       onPressed: marking ? null : onMark,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: kColorAccent,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),

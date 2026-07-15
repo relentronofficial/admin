@@ -6,9 +6,9 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/watch_history_item.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../providers/history_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 // ── Filter tabs ───────────────────────────────────────────────────────────────
 
 const _filters = [
@@ -53,21 +53,21 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'WATCH HISTORY',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         bottom: PreferredSize(
@@ -100,7 +100,7 @@ class _FilterTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 44,
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       child: Row(
         children: List.generate(_filters.length, (i) {
           final selected = i == selectedIndex;
@@ -121,14 +121,14 @@ class _FilterTabBar extends StatelessWidget {
                       fontSize: 13,
                       fontWeight:
                           selected ? FontWeight.w700 : FontWeight.w500,
-                      color: selected ? kColorAccent : kColorTextMuted,
+                      color: selected ? Theme.of(context).colorScheme.primary : context.tokens.textMuted,
                     ),
                   ),
                   const SizedBox(height: 8),
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     height: 2,
-                    color: selected ? kColorAccent : Colors.transparent,
+                    color: selected ? Theme.of(context).colorScheme.primary : Colors.transparent,
                   ),
                 ],
               ),
@@ -162,11 +162,11 @@ class _HistoryBody extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline,
-                color: kColorTextMuted, size: 40),
+            Icon(Icons.error_outline,
+                color: context.tokens.textMuted, size: 40),
             const SizedBox(height: 12),
-            const Text('Failed to load history',
-                style: TextStyle(color: kColorTextSecondary)),
+            Text('Failed to load history',
+                style: TextStyle(color: context.tokens.textSecondary)),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () =>
@@ -211,8 +211,8 @@ class _HistoryBody extends ConsumerWidget {
         }
         final loaderExtra = state.hasMore ? 1 : 0;
         return RefreshIndicator(
-          color: kColorAccent,
-          backgroundColor: kColorBgSurface,
+          color: Theme.of(context).colorScheme.primary,
+          backgroundColor: context.tokens.bgSurface,
           onRefresh: () => ref
               .read(watchHistoryNotifierProvider(filter).notifier)
               .refresh(),
@@ -222,7 +222,7 @@ class _HistoryBody extends ConsumerWidget {
             itemCount: cells.length + loaderExtra,
             itemBuilder: (_, i) {
               if (i == cells.length) {
-                return const Padding(
+                return Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Center(
                     child: SizedBox(
@@ -230,7 +230,7 @@ class _HistoryBody extends ConsumerWidget {
                       height: 24,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: kColorAccent,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),
@@ -342,12 +342,12 @@ class _HistoryGroupHeader extends StatelessWidget {
               children: [
                 Text(
                   group.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Rajdhani',
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.8,
-                    color: kColorTextMuted,
+                    color: context.tokens.textMuted,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -357,8 +357,8 @@ class _HistoryGroupHeader extends StatelessWidget {
                   done
                       ? '${group.total} completed'
                       : '${group.completed} of ${group.total} completed',
-                  style: const TextStyle(
-                    color: kColorTextMuted,
+                  style: TextStyle(
+                    color: context.tokens.textMuted,
                     fontSize: 10,
                   ),
                 ),
@@ -370,12 +370,12 @@ class _HistoryGroupHeader extends StatelessWidget {
             icon: Icon(
               done ? Icons.replay : Icons.play_arrow,
               size: 14,
-              color: kColorAccent,
+              color: Theme.of(context).colorScheme.primary,
             ),
             label: Text(
               done ? 'Rewatch' : 'Continue',
-              style: const TextStyle(
-                color: kColorAccent,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
@@ -444,9 +444,9 @@ class _HistoryCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,7 +486,7 @@ class _HistoryCard extends StatelessWidget {
                               horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: isWorkshop
-                                ? kColorAccent.withValues(alpha: 0.12)
+                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
                                 : const Color(0xFF1d4ed8)
                                     .withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(4),
@@ -497,7 +497,7 @@ class _HistoryCard extends StatelessWidget {
                               fontSize: 9,
                               fontWeight: FontWeight.w700,
                               color: isWorkshop
-                                  ? kColorAccent
+                                  ? Theme.of(context).colorScheme.primary
                                   : const Color(0xFF60a5fa),
                               letterSpacing: 0.5,
                             ),
@@ -506,9 +506,9 @@ class _HistoryCard extends StatelessWidget {
                         const Spacer(),
                         Text(
                           _relativeTime(item.updatedAt ?? item.lastWatchedAt),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
-                            color: kColorTextMuted,
+                            color: context.tokens.textMuted,
                           ),
                         ),
                       ],
@@ -518,8 +518,8 @@ class _HistoryCard extends StatelessWidget {
                     // Title
                     Text(
                       displayTitle,
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
@@ -533,8 +533,8 @@ class _HistoryCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         episodeTitle,
-                        style: const TextStyle(
-                          color: kColorTextMuted,
+                        style: TextStyle(
+                          color: context.tokens.textMuted,
                           fontSize: 11,
                         ),
                         maxLines: 1,
@@ -549,11 +549,11 @@ class _HistoryCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(2),
                       child: LinearProgressIndicator(
                         value: progress,
-                        backgroundColor: kColorBorderCard,
+                        backgroundColor: context.tokens.borderCard,
                         valueColor: AlwaysStoppedAnimation<Color>(
                           isCompleted
                               ? const Color(0xFF16a34a)
-                              : kColorAccent,
+                              : Theme.of(context).colorScheme.primary,
                         ),
                         minHeight: 3,
                       ),
@@ -566,8 +566,8 @@ class _HistoryCard extends StatelessWidget {
                           isCompleted
                               ? 'Completed'
                               : '${item.progressPercent}% watched',
-                          style: const TextStyle(
-                            color: kColorTextMuted,
+                          style: TextStyle(
+                            color: context.tokens.textMuted,
                             fontSize: 10,
                           ),
                         ),
@@ -576,8 +576,8 @@ class _HistoryCard extends StatelessWidget {
                           const Icon(Icons.check_circle,
                               size: 13, color: Color(0xFF16a34a))
                         else
-                          const Icon(Icons.play_circle_outlined,
-                              size: 13, color: kColorAccent),
+                          Icon(Icons.play_circle_outlined,
+                              size: 13, color: Theme.of(context).colorScheme.primary),
                       ],
                     ),
                   ],
@@ -598,10 +598,10 @@ class _ThumbPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: kColorBgInput,
-      child: const Center(
+      color: context.tokens.bgInput,
+      child: Center(
         child: Icon(Icons.play_lesson_outlined,
-            color: kColorTextSubtle, size: 24),
+            color: context.tokens.textSubtle, size: 24),
       ),
     );
   }
@@ -631,12 +631,12 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.history, color: kColorTextMuted, size: 56),
+          Icon(Icons.history, color: context.tokens.textMuted, size: 56),
           const SizedBox(height: 16),
           Text(
             label,
-            style: const TextStyle(
-              color: kColorTextSecondary,
+            style: TextStyle(
+              color: context.tokens.textSecondary,
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
@@ -644,8 +644,8 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             sub,
-            style: const TextStyle(
-              color: kColorTextMuted,
+            style: TextStyle(
+              color: context.tokens.textMuted,
               fontSize: 13,
             ),
             textAlign: TextAlign.center,
@@ -667,13 +667,13 @@ class _HistoryShimmer extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: 6,
       itemBuilder: (_, __) => Shimmer.fromColors(
-        baseColor: kColorBgSurface,
-        highlightColor: kColorBgInput,
+        baseColor: context.tokens.bgSurface,
+        highlightColor: context.tokens.bgInput,
         child: Container(
           height: 90,
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
-            color: kColorBgSurface,
+            color: context.tokens.bgSurface,
             borderRadius: BorderRadius.circular(10),
           ),
         ),

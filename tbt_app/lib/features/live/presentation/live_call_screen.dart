@@ -4,16 +4,20 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:livekit_client/livekit_client.dart';
+// LiveKit exports its own ConnectionState enum which clashes with Flutter's
+// (used by AsyncSnapshot). Hide LiveKit's — we only need the Flutter one.
+import 'package:livekit_client/livekit_client.dart' hide ConnectionState;
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../shared/theme/design_constants.dart';
+import '../../../shared/providers/socket_provider.dart';
+import '../../../shared/socket/socket_events.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../../workshops/data/workshops_service.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 enum _CallStatus { loading, connecting, connected, error, permissionDenied }
 
 class LiveCallScreen extends ConsumerStatefulWidget {
@@ -39,18 +43,125 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
   int _participantCount = 0;
   bool _isRecording = false;
   VideoTrack? _remoteVideoTrack;
+  // Admission-gate state: when `live_call:lock` fires the host has
+  // put the room into waiting-room mode; block the stream view until
+  // `live_call:admitted` clears it.
+  bool _isLocked = false;
+  // Track which socket handlers we registered so dispose() can clean them
+  // up without touching unrelated listeners.
+  final List<(String, void Function(dynamic))> _socketHandlers = [];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
   @override
   void dispose() {
+    // Detach socket handlers before nulling out anything they may touch.
+    final sock = ref.read(socketNotifierProvider.notifier);
+    for (final (event, handler) in _socketHandlers) {
+      sock.off(event, handler);
+    }
+    _socketHandlers.clear();
     _listener?.dispose();
     _room?.disconnect();
     super.dispose();
+  }
+
+  /// Full call bootstrap:
+  ///   1) subscribe to `live_call:lock` / `live_call:admitted` sockets
+  ///   2) ensure the user has RSVPed (prompt them if not)
+  ///   3) request mic permission + fetch token + connect to LiveKit
+  Future<void> _bootstrap() async {
+    _subscribeSockets();
+    final ok = await _ensureRsvp();
+    if (!mounted) return;
+    if (!ok) {
+      // User declined to RSVP; bail back to the previous screen.
+      context.pop();
+      return;
+    }
+    await _init();
+  }
+
+  void _subscribeSockets() {
+    final sock = ref.read(socketNotifierProvider.notifier);
+    void onLock(dynamic data) {
+      if (!mounted) return;
+      // Backend only broadcasts to the affected call — but be defensive
+      // in case rooms are shared across calls.
+      final map = data is Map ? data : const {};
+      final callId = map['callId'] ?? map['liveCallId'];
+      if (callId != null && callId != widget.callId) return;
+      setState(() => _isLocked = true);
+    }
+
+    void onAdmit(dynamic data) {
+      if (!mounted) return;
+      final map = data is Map ? data : const {};
+      final callId = map['callId'] ?? map['liveCallId'];
+      if (callId != null && callId != widget.callId) return;
+      setState(() => _isLocked = false);
+    }
+
+    sock.on(kSocketLiveCallLock, onLock);
+    sock.on(kSocketLiveCallAdmitted, onAdmit);
+    _socketHandlers.add((kSocketLiveCallLock, onLock));
+    _socketHandlers.add((kSocketLiveCallAdmitted, onAdmit));
+  }
+
+  /// Fetches the member's current RSVP for this call. If none exists,
+  /// shows a modal asking Yes/Maybe/No. Returns true if the user should
+  /// proceed to join (Yes or Maybe), false if they explicitly bailed.
+  Future<bool> _ensureRsvp() async {
+    try {
+      final svc = ref.read(workshopsServiceProvider);
+      final current = await svc.getRsvpStatus(widget.callId);
+      if (current != null && current.isNotEmpty) return true;
+      if (!mounted) return true;
+      final picked = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: context.tokens.bgSurface,
+          title: Text(
+            "You're joining a live call",
+            style: TextStyle(
+                color: context.tokens.textPrimary, fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            'Let the host know if you plan to attend.',
+            style: TextStyle(color: context.tokens.textSecondary, fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('no'),
+              child: Text("Won't attend",
+                  style: TextStyle(color: context.tokens.textMuted)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('maybe'),
+              child: Text('Maybe',
+                  style: TextStyle(color: context.tokens.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('yes'),
+              child: Text("I'll attend",
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+            ),
+          ],
+        ),
+      );
+      if (picked == null) return false;
+      // Fire-and-forget — user has already made their decision.
+      unawaited(svc.upsertRsvp(widget.callId, picked));
+      return picked != 'no';
+    } catch (_) {
+      // RSVP is best-effort — never block the join on this endpoint.
+      return true;
+    }
   }
 
   Future<void> _init() async {
@@ -210,10 +321,10 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
     final wantCert = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: kColorBgSurface,
-        title: const Text(
+        backgroundColor: context.tokens.bgSurface,
+        title: Text(
           'Download attendance certificate?',
-          style: TextStyle(color: kColorTextPrimary, fontSize: 16),
+          style: TextStyle(color: context.tokens.textPrimary, fontSize: 16),
         ),
         actions: [
           TextButton(
@@ -288,22 +399,48 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
     );
   }
 
+  void _openParticipants() {
+    final room = _room;
+    if (room == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ParticipantsSheet(
+        room: room,
+        accent: context.tbt.accent,
+      ),
+    );
+  }
+
+  void _openChapters() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ChaptersSheet(
+        callId: widget.callId,
+        accent: context.tbt.accent,
+      ),
+    );
+  }
+
   void _showPermissionDialog() {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kColorBgSurface,
-        title: const Text(
+        backgroundColor: context.tokens.bgSurface,
+        title: Text(
           'Microphone Required',
           style: TextStyle(
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
             fontWeight: FontWeight.w700,
           ),
         ),
-        content: const Text(
+        content: Text(
           'Microphone access is needed to participate in the live call. '
           'Please enable it in your device settings.',
-          style: TextStyle(color: kColorTextSecondary, fontSize: 13),
+          style: TextStyle(color: context.tokens.textSecondary, fontSize: 13),
         ),
         actions: [
           TextButton(
@@ -398,24 +535,34 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
                 color: Colors.white70, size: 20),
             onPressed: _openPolls,
           ),
+          IconButton(
+            tooltip: 'Chapters',
+            icon: const Icon(Icons.bookmark_outline,
+                color: Colors.white70, size: 20),
+            onPressed: _openChapters,
+          ),
           if (_status == _CallStatus.connected)
-            Padding(
-              padding: const EdgeInsets.only(right: 16, left: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.people_outline,
-                      color: Colors.white70, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$_participantCount',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+            IconButton(
+              tooltip: 'Participants',
+              onPressed: _openParticipants,
+              icon: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.people_outline,
+                        color: Colors.white70, size: 16),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$_participantCount',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
         ],
@@ -423,7 +570,7 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
       body: Stack(
         children: [
           Positioned.fill(child: _buildBody(accent)),
-          if (_status == _CallStatus.connected)
+          if (_status == _CallStatus.connected && !_isLocked)
             Positioned(
               left: 0,
               right: 0,
@@ -434,6 +581,10 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
                 onLeave: _leave,
                 accent: accent,
               ),
+            ),
+          if (_isLocked)
+            Positioned.fill(
+              child: _WaitingRoomOverlay(accent: accent, onLeave: _leave),
             ),
         ],
       ),
@@ -663,7 +814,7 @@ class _ControlButton extends StatelessWidget {
 
 // ── Shared sheet chrome ───────────────────────────────────────────────────────
 
-Widget _sheetShell({
+Widget _sheetShell(BuildContext context, {
   required String label,
   required Widget body,
   Widget? footer,
@@ -673,10 +824,10 @@ Widget _sheetShell({
     minChildSize: 0.4,
     maxChildSize: 0.95,
     builder: (_, scrollController) => Container(
-      decoration: const BoxDecoration(
-        color: kColorBgSurface,
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        border: Border(top: BorderSide(color: kColorBorderCard)),
+        border: Border(top: BorderSide(color: context.tokens.borderCard)),
       ),
       child: Column(
         children: [
@@ -685,7 +836,7 @@ Widget _sheetShell({
             height: 4,
             margin: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
-              color: kColorTextMuted.withValues(alpha: 0.5),
+              color: context.tokens.textMuted.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -695,12 +846,12 @@ Widget _sheetShell({
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Rajdhani',
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.8,
-                    color: kColorTextPrimary,
+                    color: context.tokens.textPrimary,
                   ),
                 ),
               ],
@@ -762,25 +913,25 @@ class _ResourcesSheetState extends ConsumerState<_ResourcesSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return _sheetShell(
+    return _sheetShell(context, 
       label: 'PRE-SESSION RESOURCES',
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : _error != null
-              ? const Center(
+              ? Center(
                   child: Text('Could not load resources',
-                      style: TextStyle(color: kColorTextMuted)),
+                      style: TextStyle(color: context.tokens.textMuted)),
                 )
               : (_items?.isEmpty ?? true)
-                  ? const Center(
+                  ? Center(
                       child: Text('No resources shared',
-                          style: TextStyle(color: kColorTextMuted)),
+                          style: TextStyle(color: context.tokens.textMuted)),
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                       itemCount: _items!.length,
                       separatorBuilder: (_, __) =>
-                          const Divider(height: 1, color: kColorBorderCard),
+                          Divider(height: 1, color: context.tokens.borderCard),
                       itemBuilder: (_, i) {
                         final r = _items![i];
                         final title = (r['title'] as String?) ?? 'Resource';
@@ -791,14 +942,14 @@ class _ResourcesSheetState extends ConsumerState<_ResourcesSheet> {
                               color: widget.accent),
                           title: Text(
                             title,
-                            style: const TextStyle(
-                              color: kColorTextPrimary,
+                            style: TextStyle(
+                              color: context.tokens.textPrimary,
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          trailing: const Icon(Icons.open_in_new,
-                              size: 16, color: kColorTextMuted),
+                          trailing: Icon(Icons.open_in_new,
+                              size: 16, color: context.tokens.textMuted),
                           onTap: url.isEmpty
                               ? null
                               : () => launchUrl(Uri.parse(url),
@@ -881,14 +1032,14 @@ class _LiveQaSheetState extends ConsumerState<_LiveQaSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return _sheetShell(
+    return _sheetShell(context, 
       label: 'LIVE Q&A',
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : (_items?.isEmpty ?? true)
-              ? const Center(
+              ? Center(
                   child: Text('No questions yet — be first!',
-                      style: TextStyle(color: kColorTextMuted)),
+                      style: TextStyle(color: context.tokens.textMuted)),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
@@ -903,7 +1054,7 @@ class _LiveQaSheetState extends ConsumerState<_LiveQaSheet> {
                     return Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: kColorBgInput,
+                        color: context.tokens.bgInput,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -921,8 +1072,8 @@ class _LiveQaSheetState extends ConsumerState<_LiveQaSheet> {
                           const SizedBox(height: 4),
                           Text(
                             body,
-                            style: const TextStyle(
-                              color: kColorTextPrimary,
+                            style: TextStyle(
+                              color: context.tokens.textPrimary,
                               fontSize: 14,
                               height: 1.4,
                             ),
@@ -944,19 +1095,19 @@ class _LiveQaSheetState extends ConsumerState<_LiveQaSheet> {
             Expanded(
               child: TextField(
                 controller: _ctrl,
-                style: const TextStyle(color: kColorTextPrimary),
+                style: TextStyle(color: context.tokens.textPrimary),
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: 'Ask a question…',
-                  hintStyle: const TextStyle(color: kColorTextMuted),
+                  hintStyle: TextStyle(color: context.tokens.textMuted),
                   filled: true,
-                  fillColor: kColorBgInput,
+                  fillColor: context.tokens.bgInput,
                   border: OutlineInputBorder(
-                    borderSide: const BorderSide(color: kColorBorderCard),
+                    borderSide: BorderSide(color: context.tokens.borderCard),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: kColorBorderCard),
+                    borderSide: BorderSide(color: context.tokens.borderCard),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
@@ -1045,14 +1196,14 @@ class _PollsSheetState extends ConsumerState<_PollsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return _sheetShell(
+    return _sheetShell(context, 
       label: 'LIVE POLLS',
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : (_polls?.isEmpty ?? true)
-              ? const Center(
+              ? Center(
                   child: Text('No active polls',
-                      style: TextStyle(color: kColorTextMuted)),
+                      style: TextStyle(color: context.tokens.textMuted)),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
@@ -1070,17 +1221,17 @@ class _PollsSheetState extends ConsumerState<_PollsSheet> {
                     return Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: kColorBgInput,
+                        color: context.tokens.bgInput,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: kColorBorderCard),
+                        border: Border.all(color: context.tokens.borderCard),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             question,
-                            style: const TextStyle(
-                              color: kColorTextPrimary,
+                            style: TextStyle(
+                              color: context.tokens.textPrimary,
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1106,12 +1257,12 @@ class _PollsSheetState extends ConsumerState<_PollsSheet> {
                                     color: voted
                                         ? widget.accent
                                             .withValues(alpha: 0.15)
-                                        : kColorBgSurface,
+                                        : context.tokens.bgSurface,
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color: voted
                                           ? widget.accent
-                                          : kColorBorderCard,
+                                          : context.tokens.borderCard,
                                     ),
                                   ),
                                   child: Row(
@@ -1122,7 +1273,7 @@ class _PollsSheetState extends ConsumerState<_PollsSheet> {
                                           style: TextStyle(
                                             color: voted
                                                 ? widget.accent
-                                                : kColorTextPrimary,
+                                                : context.tokens.textPrimary,
                                             fontSize: 14,
                                             fontWeight: voted
                                                 ? FontWeight.w700
@@ -1174,20 +1325,20 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: inset),
       child: Container(
-        decoration: const BoxDecoration(
-          color: kColorBgSurface,
+        decoration: BoxDecoration(
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          border: Border(top: BorderSide(color: kColorBorderCard)),
+          border: Border(top: BorderSide(color: context.tokens.borderCard)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'How was the call?',
               style: TextStyle(
-                color: kColorTextPrimary,
+                color: context.tokens.textPrimary,
                 fontFamily: 'Rajdhani',
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
@@ -1203,7 +1354,7 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
                     iconSize: 30,
                     icon: Icon(
                       i <= _rating ? Icons.star : Icons.star_border,
-                      color: i <= _rating ? widget.accent : kColorTextMuted,
+                      color: i <= _rating ? widget.accent : context.tokens.textMuted,
                     ),
                     onPressed: () => setState(() => _rating = i),
                   ),
@@ -1213,18 +1364,18 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
             TextField(
               controller: _commentCtrl,
               maxLines: 3,
-              style: const TextStyle(color: kColorTextPrimary),
+              style: TextStyle(color: context.tokens.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Optional comment…',
-                hintStyle: const TextStyle(color: kColorTextMuted),
+                hintStyle: TextStyle(color: context.tokens.textMuted),
                 filled: true,
-                fillColor: kColorBgInput,
+                fillColor: context.tokens.bgInput,
                 border: OutlineInputBorder(
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
@@ -1236,8 +1387,8 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
                   child: OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: kColorTextSecondary,
-                      side: const BorderSide(color: kColorBorderCard),
+                      foregroundColor: context.tokens.textSecondary,
+                      side: BorderSide(color: context.tokens.borderCard),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -1270,6 +1421,414 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Waiting-room overlay (live_call:lock) ─────────────────────────────────────
+
+class _WaitingRoomOverlay extends StatelessWidget {
+  const _WaitingRoomOverlay({required this.accent, required this.onLeave});
+
+  final Color accent;
+  final VoidCallback onLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.92),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: CircularProgressIndicator(color: accent, strokeWidth: 3),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Waiting to be admitted',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'The host has locked the room. You’ll join automatically as soon '
+            'as they let you in.',
+            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: onLeave,
+            icon: const Icon(Icons.close, size: 16),
+            label: const Text('Leave'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white70,
+              side: const BorderSide(color: Colors.white24),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Participants sheet ────────────────────────────────────────────────────────
+
+class _ParticipantsSheet extends StatelessWidget {
+  const _ParticipantsSheet({required this.room, required this.accent});
+
+  final Room room;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    // Local + remote participants, deduped by identity. Snapshotted at
+    // open time — the sheet doesn't auto-refresh when people join/leave
+    // (matches the polls sheet pattern).
+    final local = room.localParticipant;
+    final entries = <_ParticipantRow>[];
+    if (local != null) {
+      entries.add(_ParticipantRow(
+        identity: local.identity,
+        name: local.name.isEmpty ? 'You' : '${local.name} (you)',
+        isMicOn: local.isMicrophoneEnabled(),
+        isCameraOn: local.isCameraEnabled(),
+        isLocal: true,
+      ));
+    }
+    for (final p in room.remoteParticipants.values) {
+      entries.add(_ParticipantRow(
+        identity: p.identity,
+        name: p.name.isEmpty ? p.identity : p.name,
+        isMicOn: p.isMicrophoneEnabled(),
+        isCameraOn: p.isCameraEnabled(),
+        isLocal: false,
+      ));
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: context.tokens.textMuted.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Icon(Icons.people_outline,
+                  color: context.tokens.textPrimary, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Participants (${entries.length})',
+                style: TextStyle(
+                  fontFamily: 'Rajdhani',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                  color: context.tokens.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (entries.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('No participants yet',
+                    style:
+                        TextStyle(color: context.tokens.textMuted, fontSize: 13)),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints:
+                  BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: entries.length,
+                separatorBuilder: (_, __) =>
+                    Divider(color: context.tokens.borderCard, height: 1),
+                itemBuilder: (_, i) => _participantTile(context, entries[i]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _participantTile(BuildContext context, _ParticipantRow r) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor:
+                r.isLocal ? accent.withValues(alpha: 0.15) : context.tokens.bgInput,
+            child: Text(
+              r.name.isNotEmpty ? r.name[0].toUpperCase() : '?',
+              style: TextStyle(
+                color: r.isLocal ? accent : context.tokens.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              r.name,
+              style: TextStyle(
+                color: context.tokens.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Icon(
+            r.isMicOn ? Icons.mic : Icons.mic_off,
+            color: r.isMicOn ? context.tokens.textSecondary : context.tokens.textMuted,
+            size: 16,
+          ),
+          const SizedBox(width: 10),
+          Icon(
+            r.isCameraOn ? Icons.videocam : Icons.videocam_off,
+            color: r.isCameraOn ? context.tokens.textSecondary : context.tokens.textMuted,
+            size: 16,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParticipantRow {
+  const _ParticipantRow({
+    required this.identity,
+    required this.name,
+    required this.isMicOn,
+    required this.isCameraOn,
+    required this.isLocal,
+  });
+
+  final String identity;
+  final String name;
+  final bool isMicOn;
+  final bool isCameraOn;
+  final bool isLocal;
+}
+
+// ── Chapters sheet ────────────────────────────────────────────────────────────
+
+class _ChaptersSheet extends ConsumerStatefulWidget {
+  const _ChaptersSheet({required this.callId, required this.accent});
+
+  final String callId;
+  final Color accent;
+
+  @override
+  ConsumerState<_ChaptersSheet> createState() => _ChaptersSheetState();
+}
+
+class _ChaptersSheetState extends ConsumerState<_ChaptersSheet> {
+  Future<List<Map<String, dynamic>>>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = ref
+        .read(workshopsServiceProvider)
+        .getLiveCallChapters(widget.callId);
+  }
+
+  String _formatTimestamp(dynamic v) {
+    // Backend may send seconds (int) or a formatted string. Handle both.
+    if (v is num) {
+      final total = v.toInt();
+      final m = total ~/ 60;
+      final s = total % 60;
+      return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    if (v is String && v.isNotEmpty) return v;
+    return '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: context.tokens.textMuted.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Icon(Icons.bookmark_outline,
+                  color: context.tokens.textPrimary, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Chapters',
+                style: TextStyle(
+                  fontFamily: 'Rajdhani',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                  color: context.tokens.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ConstrainedBox(
+            constraints:
+                BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.55),
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _future,
+              builder: (context, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                }
+                if (snap.hasError) {
+                  return Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text('Failed to load chapters',
+                          style: TextStyle(
+                              color: context.tokens.textMuted, fontSize: 13)),
+                    ),
+                  );
+                }
+                final chapters = snap.data ?? const [];
+                if (chapters.isEmpty) {
+                  return Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text('No chapters yet for this session',
+                          style: TextStyle(
+                              color: context.tokens.textMuted, fontSize: 13)),
+                    ),
+                  );
+                }
+                return ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: chapters.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(color: context.tokens.borderCard, height: 1),
+                  itemBuilder: (_, i) {
+                    final c = chapters[i];
+                    final title =
+                        (c['title'] ?? c['label'] ?? 'Chapter ${i + 1}')
+                            .toString();
+                    final ts = _formatTimestamp(
+                        c['startTime'] ?? c['startsAt'] ?? c['atSeconds']);
+                    final note = (c['description'] ?? c['notes'] ?? '')
+                        .toString();
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: widget.accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              ts.isEmpty ? '—' : ts,
+                              style: TextStyle(
+                                color: widget.accent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: TextStyle(
+                                    color: context.tokens.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (note.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    note,
+                                    style: TextStyle(
+                                      color: context.tokens.textMuted,
+                                      fontSize: 12,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

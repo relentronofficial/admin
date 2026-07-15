@@ -6,10 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/constants/routes.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../data/events_service.dart';
 import '../providers/events_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class EventsScreen extends ConsumerStatefulWidget {
   const EventsScreen({super.key});
 
@@ -42,22 +42,22 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
+        title: Text(
           'EVENTS',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: kColorTextMuted, size: 20),
+            icon: Icon(Icons.refresh, color: context.tokens.textMuted, size: 20),
             onPressed: () => ref.invalidate(eventsProvider),
           ),
         ],
@@ -69,32 +69,32 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             child: TextField(
               controller: _searchCtrl,
               onChanged: _onSearchChanged,
-              style: const TextStyle(color: kColorTextPrimary, fontSize: 14),
+              style: TextStyle(color: context.tokens.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 isDense: true,
-                prefixIcon: const Icon(Icons.search,
-                    color: kColorTextMuted, size: 18),
+                prefixIcon: Icon(Icons.search,
+                    color: context.tokens.textMuted, size: 18),
                 suffixIcon: _searchCtrl.text.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.close,
-                            color: kColorTextMuted, size: 18),
+                        icon: Icon(Icons.close,
+                            color: context.tokens.textMuted, size: 18),
                         onPressed: () {
                           _searchCtrl.clear();
                           _onSearchChanged('');
                         },
                       ),
                 hintText: 'Search events…',
-                hintStyle: const TextStyle(color: kColorTextMuted),
+                hintStyle: TextStyle(color: context.tokens.textMuted),
                 filled: true,
-                fillColor: kColorBgInput,
+                fillColor: context.tokens.bgInput,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
@@ -108,11 +108,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline,
-                        color: kColorTextMuted, size: 40),
+                    Icon(Icons.error_outline,
+                        color: context.tokens.textMuted, size: 40),
                     const SizedBox(height: 12),
-                    const Text('Failed to load events',
-                        style: TextStyle(color: kColorTextSecondary)),
+                    Text('Failed to load events',
+                        style: TextStyle(color: context.tokens.textSecondary)),
                     const SizedBox(height: 12),
                     TextButton(
                       onPressed: () => ref.invalidate(eventsProvider),
@@ -135,15 +135,15 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.event_outlined,
-                            color: kColorTextMuted, size: 40),
+                        Icon(Icons.event_outlined,
+                            color: context.tokens.textMuted, size: 40),
                         const SizedBox(height: 12),
                         Text(
                           _query.isEmpty
                               ? 'No events available'
                               : 'No events match "$_query"',
-                          style: const TextStyle(
-                              color: kColorTextSecondary, fontSize: 14),
+                          style: TextStyle(
+                              color: context.tokens.textSecondary, fontSize: 14),
                         ),
                       ],
                     ),
@@ -187,9 +187,9 @@ class _EventCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,7 +206,7 @@ class _EventCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        _StatusChip(status: event.status),
+                        _StatusChip(context, status: event.status),
                         const SizedBox(width: 6),
                         _TypeChip(type: event.eventType),
                       ],
@@ -214,8 +214,8 @@ class _EventCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       event.title,
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -226,13 +226,13 @@ class _EventCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.schedule_outlined,
-                              size: 12, color: kColorTextMuted),
+                          Icon(Icons.schedule_outlined,
+                              size: 12, color: context.tokens.textMuted),
                           const SizedBox(width: 4),
                           Text(
                             DateFormat('EEE, MMM d · h:mm a').format(date),
-                            style: const TextStyle(
-                              color: kColorTextMuted,
+                            style: TextStyle(
+                              color: context.tokens.textMuted,
                               fontSize: 11,
                             ),
                           ),
@@ -249,7 +249,7 @@ class _EventCard extends StatelessWidget {
                                 ? Icons.videocam_outlined
                                 : Icons.location_on_outlined,
                             size: 12,
-                            color: kColorTextMuted,
+                            color: context.tokens.textMuted,
                           ),
                           const SizedBox(width: 4),
                           Expanded(
@@ -257,8 +257,8 @@ class _EventCard extends StatelessWidget {
                               event.isOnline
                                   ? 'Online'
                                   : event.location ?? '',
-                              style: const TextStyle(
-                                color: kColorTextMuted,
+                              style: TextStyle(
+                                color: context.tokens.textMuted,
                                 fontSize: 11,
                               ),
                               maxLines: 1,
@@ -273,10 +273,10 @@ class _EventCard extends StatelessWidget {
               ),
             ),
 
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(right: 10, top: 14),
               child: Icon(Icons.chevron_right,
-                  color: kColorTextMuted, size: 18),
+                  color: context.tokens.textMuted, size: 18),
             ),
           ],
         ),
@@ -298,17 +298,17 @@ class _DateBadge extends StatelessWidget {
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: kColorAccent.withValues(alpha: 0.12),
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: kColorAccent.withValues(alpha: 0.3)),
+        border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             DateFormat('MMM').format(date).toUpperCase(),
-            style: const TextStyle(
-              color: kColorAccent,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
               fontSize: 9,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
@@ -316,8 +316,8 @@ class _DateBadge extends StatelessWidget {
           ),
           Text(
             DateFormat('d').format(date),
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontSize: 22,
               fontWeight: FontWeight.w800,
               height: 1.1,
@@ -325,8 +325,8 @@ class _DateBadge extends StatelessWidget {
           ),
           Text(
             DateFormat('EEE').format(date).toUpperCase(),
-            style: const TextStyle(
-              color: kColorTextMuted,
+            style: TextStyle(
+              color: context.tokens.textMuted,
               fontSize: 9,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,
@@ -339,18 +339,18 @@ class _DateBadge extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip(BuildContext context, {required this.status});
 
   final String status;
 
-  Color get _color {
+  Color _color(BuildContext context) {
     switch (status) {
       case 'ongoing':
         return const Color(0xFF16a34a);
       case 'completed':
-        return kColorTextMuted;
+        return context.tokens.textMuted;
       case 'cancelled':
-        return kColorAccent;
+        return Theme.of(context).colorScheme.primary;
       default:
         return const Color(0xFF1d4ed8);
     }
@@ -358,16 +358,17 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = _color(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.15),
+        color: c.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         status.toUpperCase(),
         style: TextStyle(
-          color: _color,
+          color: c,
           fontSize: 9,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
@@ -387,13 +388,13 @@ class _TypeChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: kColorBgInput,
+        color: context.tokens.bgInput,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         type.replaceAll('_', ' ').toUpperCase(),
-        style: const TextStyle(
-          color: kColorTextMuted,
+        style: TextStyle(
+          color: context.tokens.textMuted,
           fontSize: 9,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.3,

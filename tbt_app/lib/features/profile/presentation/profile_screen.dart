@@ -12,6 +12,7 @@ import '../../../shared/providers/theme_mode_provider.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../providers/profile_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -58,7 +59,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _pickAvatar() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -67,17 +68,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined,
-                  color: kColorTextPrimary),
-              title: const Text('Choose from Gallery',
-                  style: TextStyle(color: kColorTextPrimary)),
+              leading: Icon(Icons.photo_library_outlined,
+                  color: context.tokens.textPrimary),
+              title: Text('Choose from Gallery',
+                  style: TextStyle(color: context.tokens.textPrimary)),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
             ListTile(
-              leading: const Icon(Icons.camera_alt_outlined,
-                  color: kColorTextPrimary),
-              title: const Text('Take Photo',
-                  style: TextStyle(color: kColorTextPrimary)),
+              leading: Icon(Icons.camera_alt_outlined,
+                  color: context.tokens.textPrimary),
+              title: Text('Take Photo',
+                  style: TextStyle(color: context.tokens.textPrimary)),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
           ],
@@ -143,21 +144,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kColorBgModal,
-        title: const Text('Sign Out',
-            style: TextStyle(color: kColorTextPrimary)),
-        content: const Text('Are you sure you want to sign out?',
-            style: TextStyle(color: kColorTextSecondary)),
+        backgroundColor: context.tokens.bgModal,
+        title: Text('Sign Out',
+            style: TextStyle(color: context.tokens.textPrimary)),
+        content: Text('Are you sure you want to sign out?',
+            style: TextStyle(color: context.tokens.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: kColorTextMuted)),
+            child: Text('Cancel',
+                style: TextStyle(color: context.tokens.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sign Out',
-                style: TextStyle(color: kColorAccent)),
+            child: Text('Sign Out',
+                style: TextStyle(color: Theme.of(context).colorScheme.primary)),
           ),
         ],
       ),
@@ -173,17 +174,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
+        title: Text(
           'PROFILE',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
@@ -194,26 +195,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         children: [
                           TextButton(
                             onPressed: _savingName ? null : _cancelEdit,
-                            child: const Text('Cancel',
-                                style: TextStyle(color: kColorTextMuted)),
+                            child: Text('Cancel',
+                                style: TextStyle(color: context.tokens.textMuted)),
                           ),
                           TextButton(
                             onPressed: _savingName ? null : _saveName,
                             child: _savingName
-                                ? const SizedBox(
+                                ? SizedBox(
                                     width: 16,
                                     height: 16,
                                     child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: kColorAccent),
+                                        strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
                                   )
-                                : const Text('Save',
-                                    style: TextStyle(color: kColorAccent)),
+                                : Text('Save',
+                                    style: TextStyle(color: Theme.of(context).colorScheme.primary)),
                           ),
                         ],
                       )
                     : IconButton(
-                        icon: const Icon(Icons.edit_outlined,
-                            color: kColorTextPrimary, size: 20),
+                        icon: Icon(Icons.edit_outlined,
+                            color: context.tokens.textPrimary, size: 20),
                         tooltip: 'Edit name',
                         onPressed: () => _enterEdit(member),
                       ),
@@ -228,11 +229,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline,
-                  color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline,
+                  color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load profile',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load profile',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(meNotifierProvider),
@@ -264,8 +265,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: const Icon(Icons.edit_outlined, size: 16),
                   label: const Text('Edit Personal Info'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: kColorTextSecondary,
-                    side: const BorderSide(color: kColorBorderCard),
+                    foregroundColor: context.tokens.textSecondary,
+                    side: BorderSide(color: context.tokens.borderCard),
                     minimumSize: const Size.fromHeight(40),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -310,8 +311,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: kColorAccent,
-                  side: const BorderSide(color: kColorAccent),
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                  side: BorderSide(color: Theme.of(context).colorScheme.primary),
                   minimumSize: const Size.fromHeight(48),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -349,7 +350,7 @@ class _AvatarSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: kColorBgSurface,
+      color: context.tokens.bgSurface,
       padding: const EdgeInsets.symmetric(vertical: 32),
       child: Column(
         children: [
@@ -385,8 +386,8 @@ class _AvatarSection extends StatelessWidget {
                   child: Container(
                     width: 26,
                     height: 26,
-                    decoration: const BoxDecoration(
-                      color: kColorAccent,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.camera_alt,
@@ -400,8 +401,8 @@ class _AvatarSection extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             member.name,
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontFamily: 'Rajdhani',
               fontSize: 22,
               fontWeight: FontWeight.w700,
@@ -458,8 +459,8 @@ class _Initials extends StatelessWidget {
     return Container(
       width: 80,
       height: 80,
-      decoration: const BoxDecoration(
-        color: kColorAccent,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary,
         shape: BoxShape.circle,
       ),
       child: Center(
@@ -482,27 +483,28 @@ class _PlanChip extends StatelessWidget {
 
   final String plan;
 
-  Color get _color {
+  Color _color(BuildContext context) {
     return switch (plan.toLowerCase()) {
       'premium' => const Color(0xFF7c3aed),
       'enterprise' => const Color(0xFF1d4ed8),
-      _ => kColorTextMuted,
+      _ => context.tokens.textMuted,
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    final planColor = _color(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.15),
+        color: planColor.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _color.withValues(alpha: 0.4)),
+        border: Border.all(color: planColor.withValues(alpha: 0.4)),
       ),
       child: Text(
         plan.toUpperCase(),
         style: TextStyle(
-          color: _color,
+          color: planColor,
           fontFamily: 'Rajdhani',
           fontSize: 10,
           fontWeight: FontWeight.w700,
@@ -588,9 +590,9 @@ class _BadgeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = (badge['label'] as String?) ?? '';
     if (label.isEmpty) return const SizedBox.shrink();
-    final fg = _parse(badge['color'] as String?) ?? kColorTextPrimary;
+    final fg = _parse(badge['color'] as String?) ?? context.tokens.textPrimary;
     final bg = _parse(badge['bgColor'] as String?) ??
-        kColorTextMuted.withValues(alpha: 0.12);
+        context.tokens.textMuted.withValues(alpha: 0.12);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       decoration: BoxDecoration(
@@ -624,9 +626,9 @@ class _InfoSection extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           children: [
@@ -635,7 +637,7 @@ class _InfoSection extends StatelessWidget {
               label: 'NAME',
               value: member.name,
             ),
-            const Divider(height: 1, color: kColorBorderCard),
+            Divider(height: 1, color: context.tokens.borderCard),
             if (member.email != null)
               _InfoRow(
                 icon: Icons.email_outlined,
@@ -643,7 +645,7 @@ class _InfoSection extends StatelessWidget {
                 value: member.email!,
               ),
             if (member.email != null)
-              const Divider(height: 1, color: kColorBorderCard),
+              Divider(height: 1, color: context.tokens.borderCard),
             _InfoRow(
               icon: Icons.phone_outlined,
               label: 'PHONE',
@@ -673,7 +675,7 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
-          Icon(icon, color: kColorTextMuted, size: 18),
+          Icon(icon, color: context.tokens.textMuted, size: 18),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -681,19 +683,19 @@ class _InfoRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Rajdhani',
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.2,
-                    color: kColorTextMuted,
+                    color: context.tokens.textMuted,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
-                      color: kColorTextPrimary, fontSize: 14),
+                  style: TextStyle(
+                      color: context.tokens.textPrimary, fontSize: 14),
                 ),
               ],
             ),
@@ -722,14 +724,14 @@ class _EditNameSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'FULL NAME',
             style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.2,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
             ),
           ),
           const SizedBox(height: 8),
@@ -737,7 +739,7 @@ class _EditNameSection extends StatelessWidget {
             controller: controller,
             autofocus: true,
             enabled: !saving,
-            style: const TextStyle(color: kColorTextPrimary),
+            style: TextStyle(color: context.tokens.textPrimary),
             decoration: kInputDecoration('Your full name'),
           ),
         ],
@@ -814,14 +816,14 @@ class _NotificationPrefsSectionState
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
               child: Text(
                 'NOTIFICATIONS',
@@ -830,7 +832,7 @@ class _NotificationPrefsSectionState
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.8,
-                  color: kColorTextMuted,
+                  color: context.tokens.textMuted,
                 ),
               ),
             ),
@@ -841,7 +843,7 @@ class _NotificationPrefsSectionState
                   ? null
                   : (v) => _save(p.copyWith(push: v)),
             ),
-            const Divider(height: 1, color: kColorBorderCard),
+            Divider(height: 1, color: context.tokens.borderCard),
             _prefToggle(
               label: 'Email',
               value: p.email,
@@ -849,7 +851,7 @@ class _NotificationPrefsSectionState
                   ? null
                   : (v) => _save(p.copyWith(email: v)),
             ),
-            const Divider(height: 1, color: kColorBorderCard),
+            Divider(height: 1, color: context.tokens.borderCard),
             _prefToggle(
               label: 'SMS',
               value: p.sms,
@@ -875,8 +877,8 @@ class _NotificationPrefsSectionState
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
-                color: kColorTextPrimary,
+              style: TextStyle(
+                color: context.tokens.textPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -885,7 +887,7 @@ class _NotificationPrefsSectionState
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: kColorAccent,
+            activeColor: Theme.of(context).colorScheme.primary,
           ),
         ],
       ),
@@ -973,14 +975,14 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
               child: Text(
                 'SIGNED-IN DEVICES',
@@ -989,13 +991,13 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.8,
-                  color: kColorTextMuted,
+                  color: context.tokens.textMuted,
                 ),
               ),
             ),
             for (var i = 0; i < devices.length; i++) ...[
               if (i > 0)
-                const Divider(height: 1, color: kColorBorderCard),
+                Divider(height: 1, color: context.tokens.borderCard),
               _deviceTile(devices[i]),
             ],
           ],
@@ -1010,8 +1012,8 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       child: Row(
         children: [
-          const Icon(Icons.phone_iphone,
-              color: kColorTextSecondary, size: 20),
+          Icon(Icons.phone_iphone,
+              color: context.tokens.textSecondary, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1021,8 +1023,8 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
                   children: [
                     Text(
                       _shortAgent(d.userAgent),
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1033,13 +1035,13 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: kColorAccent.withValues(alpha: 0.2),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text(
+                        child: Text(
                           'THIS DEVICE',
                           style: TextStyle(
-                            color: kColorAccent,
+                            color: Theme.of(context).colorScheme.primary,
                             fontSize: 9,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1,
@@ -1054,8 +1056,8 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       _timeAgo(d.lastSeenAt),
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 12,
                       ),
                     ),
@@ -1072,7 +1074,7 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.logout, size: 18, color: kColorAccent),
+                  : Icon(Icons.logout, size: 18, color: Theme.of(context).colorScheme.primary),
               onPressed: isRevoking ? null : () => _revoke(d.id),
             ),
         ],
@@ -1099,6 +1101,11 @@ class _EditPersonalInfoSheetState
   final _city = TextEditingController();
   final _state = TextEditingController();
   final _businessName = TextEditingController();
+  final _productService = TextEditingController();
+  final _annualTurnover = TextEditingController();
+  final _gstNumber = TextEditingController();
+  final _goal90 = TextEditingController();
+  final _businessEstablished = TextEditingController();
   final _dob = TextEditingController();
   bool _loading = true;
   bool _saving = false;
@@ -1118,6 +1125,11 @@ class _EditPersonalInfoSheetState
       _city,
       _state,
       _businessName,
+      _productService,
+      _annualTurnover,
+      _gstNumber,
+      _goal90,
+      _businessEstablished,
       _dob,
     ]) {
       c.dispose();
@@ -1135,6 +1147,14 @@ class _EditPersonalInfoSheetState
       _city.text = (data['city'] as String?) ?? '';
       _state.text = (data['state'] as String?) ?? '';
       _businessName.text = (data['businessName'] as String?) ?? '';
+      _productService.text = (data['productServiceType'] as String?) ?? '';
+      _annualTurnover.text = (data['annualTurnover'] as String?) ?? '';
+      _gstNumber.text = (data['gstNumber'] as String?) ?? '';
+      _goal90.text = (data['goalAfter90Days'] as String?) ?? '';
+      // API returns full ISO — keep just the date portion for the picker input.
+      final estabRaw = (data['businessEstablishedOn'] as String?) ?? '';
+      _businessEstablished.text =
+          estabRaw.contains('T') ? estabRaw.split('T').first : estabRaw;
       _dob.text = (data['dob'] as String?) ?? '';
       setState(() => _loading = false);
     } catch (_) {
@@ -1152,6 +1172,11 @@ class _EditPersonalInfoSheetState
         'city': _city.text.trim(),
         'state': _state.text.trim(),
         'businessName': _businessName.text.trim(),
+        'productServiceType': _productService.text.trim(),
+        'annualTurnover': _annualTurnover.text.trim(),
+        'gstNumber': _gstNumber.text.trim(),
+        'goalAfter90Days': _goal90.text.trim(),
+        'businessEstablishedOn': _businessEstablished.text.trim(),
         'dob': _dob.text.trim(),
       });
       if (mounted) Navigator.of(context).pop(true);
@@ -1181,6 +1206,20 @@ class _EditPersonalInfoSheetState
     }
   }
 
+  Future<void> _pickBusinessEstablished() async {
+    final now = DateTime.now();
+    final initial = DateTime.tryParse(_businessEstablished.text) ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1950),
+      lastDate: now,
+    );
+    if (picked != null) {
+      _businessEstablished.text = picked.toIso8601String().split('T').first;
+    }
+  }
+
   Widget _field(String label, TextEditingController c,
       {TextInputType? kt, VoidCallback? onTap, bool readOnly = false}) {
     return Padding(
@@ -1190,20 +1229,20 @@ class _EditPersonalInfoSheetState
         keyboardType: kt,
         readOnly: readOnly,
         onTap: onTap,
-        style: const TextStyle(color: kColorTextPrimary, fontSize: 14),
+        style: TextStyle(color: context.tokens.textPrimary, fontSize: 14),
         decoration: InputDecoration(
           isDense: true,
           filled: true,
-          fillColor: kColorBgInput,
+          fillColor: context.tokens.bgInput,
           labelText: label,
-          labelStyle: const TextStyle(color: kColorTextMuted, fontSize: 12),
+          labelStyle: TextStyle(color: context.tokens.textMuted, fontSize: 12),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: kColorBorderCard),
+            borderSide: BorderSide(color: context.tokens.borderCard),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: kColorBorderCard),
+            borderSide: BorderSide(color: context.tokens.borderCard),
           ),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1218,10 +1257,10 @@ class _EditPersonalInfoSheetState
     return Padding(
       padding: EdgeInsets.only(bottom: inset),
       child: Container(
-        decoration: const BoxDecoration(
-          color: kColorBgSurface,
+        decoration: BoxDecoration(
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          border: Border(top: BorderSide(color: kColorBorderCard)),
+          border: Border(top: BorderSide(color: context.tokens.borderCard)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: SingleChildScrollView(
@@ -1235,19 +1274,19 @@ class _EditPersonalInfoSheetState
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    color: kColorTextMuted.withValues(alpha: 0.5),
+                    color: context.tokens.textMuted.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-              const Text(
+              Text(
                 'EDIT PROFILE',
                 style: TextStyle(
                   fontFamily: 'Rajdhani',
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.8,
-                  color: kColorTextPrimary,
+                  color: context.tokens.textPrimary,
                 ),
               ),
               const SizedBox(height: 14),
@@ -1266,6 +1305,12 @@ class _EditPersonalInfoSheetState
                 _field('City', _city),
                 _field('State', _state),
                 _field('Business name', _businessName),
+                _field('Product / Service type', _productService),
+                _field('Annual turnover', _annualTurnover),
+                _field('GST number', _gstNumber),
+                _field('Business established on', _businessEstablished,
+                    readOnly: true, onTap: _pickBusinessEstablished),
+                _field('Goal after 90 days', _goal90),
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -1275,8 +1320,8 @@ class _EditPersonalInfoSheetState
                             ? null
                             : () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: kColorTextSecondary,
-                          side: const BorderSide(color: kColorBorderCard),
+                          foregroundColor: context.tokens.textSecondary,
+                          side: BorderSide(color: context.tokens.borderCard),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -1289,7 +1334,7 @@ class _EditPersonalInfoSheetState
                       child: ElevatedButton(
                         onPressed: _saving ? null : _save,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: kColorAccent,
+                          backgroundColor: Theme.of(context).colorScheme.primary,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -1369,7 +1414,7 @@ class _StatsStripState extends ConsumerState<_StatsStrip> {
               icon: Icons.emoji_events_outlined,
               value: '$points',
               label: 'Points',
-              color: kColorAccent,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
           const SizedBox(width: 10),
@@ -1413,9 +1458,9 @@ class _Stat extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(
         children: [
@@ -1434,8 +1479,8 @@ class _Stat extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(
-              color: kColorTextMuted,
+            style: TextStyle(
+              color: context.tokens.textMuted,
               fontSize: 10,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.6,
@@ -1498,31 +1543,31 @@ class _SubscriptionSectionState extends ConsumerState<_SubscriptionSection> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'SUBSCRIPTION',
               style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.8,
-                color: kColorTextMuted,
+                color: context.tokens.textMuted,
               ),
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                const Text(
+                Text(
                   'Plan',
                   style: TextStyle(
-                    color: kColorTextSecondary,
+                    color: context.tokens.textSecondary,
                     fontSize: 13,
                   ),
                 ),
@@ -1531,13 +1576,13 @@ class _SubscriptionSectionState extends ConsumerState<_SubscriptionSection> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: kColorAccent.withValues(alpha: 0.15),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     plan.toUpperCase(),
-                    style: const TextStyle(
-                      color: kColorAccent,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1,
@@ -1565,11 +1610,11 @@ class _SubscriptionSectionState extends ConsumerState<_SubscriptionSection> {
     return Row(
       children: [
         Text(k,
-            style: const TextStyle(color: kColorTextMuted, fontSize: 12)),
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 12)),
         const Spacer(),
         Text(v,
-            style: const TextStyle(
-                color: kColorTextPrimary,
+            style: TextStyle(
+                color: context.tokens.textPrimary,
                 fontSize: 12,
                 fontWeight: FontWeight.w600)),
       ],
@@ -1620,27 +1665,27 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'TIER ACCESS',
               style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.8,
-                color: kColorTextMuted,
+                color: context.tokens.textMuted,
               ),
             ),
             const SizedBox(height: 10),
             for (var i = 0; i < tiers.length; i++) ...[
-              if (i > 0) const Divider(height: 12, color: kColorBorderCard),
+              if (i > 0) Divider(height: 12, color: context.tokens.borderCard),
               _tierRow(tiers[i]),
             ],
           ],
@@ -1660,7 +1705,7 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
         children: [
           Icon(
             unlocked ? Icons.check_circle : Icons.lock_outline,
-            color: unlocked ? const Color(0xFF22c55e) : kColorTextMuted,
+            color: unlocked ? const Color(0xFF22c55e) : context.tokens.textMuted,
             size: 18,
           ),
           const SizedBox(width: 10),
@@ -1670,8 +1715,8 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1679,8 +1724,8 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
                 if (condition.isNotEmpty && !unlocked)
                   Text(
                     condition,
-                    style: const TextStyle(
-                      color: kColorTextMuted,
+                    style: TextStyle(
+                      color: context.tokens.textMuted,
                       fontSize: 11,
                     ),
                   ),
@@ -1690,7 +1735,7 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
           Text(
             unlocked ? 'UNLOCKED' : 'LOCKED',
             style: TextStyle(
-              color: unlocked ? const Color(0xFF22c55e) : kColorTextMuted,
+              color: unlocked ? const Color(0xFF22c55e) : context.tokens.textMuted,
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1,
@@ -1715,27 +1760,27 @@ class _ThemeToggleTile extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             Icon(
               isDark ? Icons.dark_mode : Icons.light_mode,
-              color: kColorAccent,
+              color: Theme.of(context).colorScheme.primary,
               size: 20,
             ),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Dark mode',
                     style: TextStyle(
-                      color: kColorTextPrimary,
+                      color: context.tokens.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1744,7 +1789,7 @@ class _ThemeToggleTile extends ConsumerWidget {
                   Text(
                     'Toggle app appearance',
                     style: TextStyle(
-                      color: kColorTextMuted,
+                      color: context.tokens.textMuted,
                       fontSize: 11,
                     ),
                   ),
@@ -1756,7 +1801,7 @@ class _ThemeToggleTile extends ConsumerWidget {
               onChanged: (v) => ref
                   .read(themeModeProvider.notifier)
                   .setMode(v ? ThemeMode.dark : ThemeMode.light),
-              activeColor: kColorAccent,
+              activeColor: Theme.of(context).colorScheme.primary,
             ),
           ],
         ),

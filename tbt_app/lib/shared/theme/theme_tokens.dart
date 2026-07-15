@@ -1,3 +1,7 @@
+// The palette below intentionally references the legacy `kColor*` const
+// values so both APIs resolve to the exact same dark-mode hex codes.
+// ignore_for_file: deprecated_member_use_from_same_package
+
 import 'package:flutter/material.dart';
 
 import 'design_constants.dart';

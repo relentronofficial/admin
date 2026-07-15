@@ -7,6 +7,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../data/products_service.dart';
 import '../providers/products_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class ProductsScreen extends ConsumerWidget {
   const ProductsScreen({super.key});
 
@@ -16,23 +17,23 @@ class ProductsScreen extends ConsumerWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          backgroundColor: kColorBgSurface,
+          backgroundColor: context.tokens.bgSurface,
           elevation: 0,
           scrolledUnderElevation: 0,
-          title: const Text(
+          title: Text(
             'PRODUCTS',
             style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 17,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
-              color: kColorTextPrimary,
+              color: context.tokens.textPrimary,
             ),
           ),
-          bottom: const TabBar(
-            labelColor: kColorAccent,
-            unselectedLabelColor: kColorTextMuted,
-            indicatorColor: kColorAccent,
+          bottom: TabBar(
+            labelColor: Theme.of(context).colorScheme.primary,
+            unselectedLabelColor: context.tokens.textMuted,
+            indicatorColor: Theme.of(context).colorScheme.primary,
             indicatorSize: TabBarIndicatorSize.label,
             labelStyle: TextStyle(
               fontFamily: 'Rajdhani',
@@ -71,10 +72,10 @@ class _AllProductsTab extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
             const SizedBox(height: 12),
-            const Text('Failed to load products',
-                style: TextStyle(color: kColorTextSecondary)),
+            Text('Failed to load products',
+                style: TextStyle(color: context.tokens.textSecondary)),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => ref.invalidate(productsProvider),
@@ -85,16 +86,16 @@ class _AllProductsTab extends ConsumerWidget {
       ),
       data: (products) {
         if (products.isEmpty) {
-          return const Center(
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.storefront_outlined,
-                    color: kColorTextMuted, size: 40),
+                    color: context.tokens.textMuted, size: 40),
                 SizedBox(height: 12),
                 Text('No products available',
                     style:
-                        TextStyle(color: kColorTextSecondary, fontSize: 14)),
+                        TextStyle(color: context.tokens.textSecondary, fontSize: 14)),
               ],
             ),
           );
@@ -126,7 +127,7 @@ class _AllProductsTab extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -150,9 +151,9 @@ class _ProductCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,25 +172,25 @@ class _ProductCard extends StatelessWidget {
                             imageUrl: product.thumbnailUrl!,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
-                              color: kColorBgInput,
-                              child: const Center(
+                              color: context.tokens.bgInput,
+                              child: Center(
                                 child: Icon(Icons.image_outlined,
-                                    color: kColorTextMuted, size: 28),
+                                    color: context.tokens.textMuted, size: 28),
                               ),
                             ),
                             errorWidget: (_, __, ___) => Container(
-                              color: kColorBgInput,
-                              child: const Center(
+                              color: context.tokens.bgInput,
+                              child: Center(
                                 child: Icon(Icons.image_outlined,
-                                    color: kColorTextMuted, size: 28),
+                                    color: context.tokens.textMuted, size: 28),
                               ),
                             ),
                           )
                         : Container(
-                            color: kColorBgInput,
-                            child: const Center(
+                            color: context.tokens.bgInput,
+                            child: Center(
                               child: Icon(Icons.shopping_bag_outlined,
-                                  color: kColorTextMuted, size: 32),
+                                  color: context.tokens.textMuted, size: 32),
                             ),
                           ),
                     if (product.category != null)
@@ -236,8 +237,8 @@ class _ProductCard extends StatelessWidget {
                   // above — no duplicate here.)
                   Text(
                     product.title,
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -247,8 +248,8 @@ class _ProductCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     product.formattedPrice,
-                    style: const TextStyle(
-                      color: kColorAccent,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'Rajdhani',
@@ -286,29 +287,29 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
     final message = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kColorBgModal,
-        title: const Text(
+        backgroundColor: context.tokens.bgModal,
+        title: Text(
           'Send Inquiry',
-          style: TextStyle(color: kColorTextPrimary, fontFamily: 'Rajdhani',
+          style: TextStyle(color: context.tokens.textPrimary, fontFamily: 'Rajdhani',
               fontSize: 18, fontWeight: FontWeight.w700),
         ),
         content: TextField(
           controller: controller,
           maxLines: 4,
           autofocus: true,
-          style: const TextStyle(color: kColorTextPrimary),
+          style: TextStyle(color: context.tokens.textPrimary),
           decoration: kInputDecoration('Tell us what you need...'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: kColorTextMuted)),
+            child: Text('Cancel',
+                style: TextStyle(color: context.tokens.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Send',
-                style: TextStyle(color: kColorAccent)),
+            child: Text('Send',
+                style: TextStyle(color: Theme.of(context).colorScheme.primary)),
           ),
         ],
       ),
@@ -351,7 +352,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
               height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: kColorBorderCard,
+                color: context.tokens.borderCard,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -374,18 +375,18 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
           if (product.category != null)
             Text(
               product.category!.toUpperCase(),
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
-                color: kColorTextMuted,
+                color: context.tokens.textMuted,
               ),
             ),
           Text(
             product.title,
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontFamily: 'Rajdhani',
               fontSize: 22,
               fontWeight: FontWeight.w700,
@@ -398,8 +399,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
             children: [
               Text(
                 product.formattedPrice,
-                style: const TextStyle(
-                  color: kColorAccent,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'Rajdhani',
@@ -435,8 +436,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
             const SizedBox(height: 12),
             Text(
               product.description!,
-              style: const TextStyle(
-                  color: kColorTextSecondary, fontSize: 14, height: 1.5),
+              style: TextStyle(
+                  color: context.tokens.textSecondary, fontSize: 14, height: 1.5),
             ),
           ],
 
@@ -460,12 +461,12 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor:
-                        cta.type == 'primary' ? kColorAccent : kColorBgInput,
+                        cta.type == 'primary' ? Theme.of(context).colorScheme.primary : context.tokens.bgInput,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                       side: cta.type != 'primary'
-                          ? const BorderSide(color: kColorBorderCard)
+                          ? BorderSide(color: context.tokens.borderCard)
                           : BorderSide.none,
                     ),
                   ),
@@ -532,7 +533,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: kColorAccent,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -561,10 +562,10 @@ class _MyProductsTab extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
             const SizedBox(height: 12),
-            const Text('Failed to load inquiries',
-                style: TextStyle(color: kColorTextSecondary)),
+            Text('Failed to load inquiries',
+                style: TextStyle(color: context.tokens.textSecondary)),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => ref.invalidate(myProductsProvider),
@@ -575,16 +576,16 @@ class _MyProductsTab extends ConsumerWidget {
       ),
       data: (items) {
         if (items.isEmpty) {
-          return const Center(
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.inbox_outlined, color: kColorTextMuted, size: 40),
+                Icon(Icons.inbox_outlined, color: context.tokens.textMuted, size: 40),
                 SizedBox(height: 12),
                 Text(
                   "You haven't inquired about any products yet",
                   style:
-                      TextStyle(color: kColorTextSecondary, fontSize: 13),
+                      TextStyle(color: context.tokens.textSecondary, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -629,9 +630,9 @@ class _InquiredProductTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Row(
         children: [
@@ -656,18 +657,18 @@ class _InquiredProductTile extends StatelessWidget {
                 if (item.category != null)
                   Text(
                     item.category!.toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Rajdhani',
                       fontSize: 9,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.2,
-                      color: kColorTextMuted,
+                      color: context.tokens.textMuted,
                     ),
                   ),
                 Text(
                   item.title,
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -677,8 +678,8 @@ class _InquiredProductTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   item.formattedPrice,
-                  style: const TextStyle(
-                    color: kColorTextSecondary,
+                  style: TextStyle(
+                    color: context.tokens.textSecondary,
                     fontSize: 12,
                   ),
                 ),
@@ -717,12 +718,12 @@ class _PlaceholderBox extends StatelessWidget {
       width: 52,
       height: 52,
       decoration: BoxDecoration(
-        color: kColorBgInput,
+        color: context.tokens.bgInput,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Center(
+      child: Center(
         child: Icon(Icons.shopping_bag_outlined,
-            color: kColorTextMuted, size: 22),
+            color: context.tokens.textMuted, size: 22),
       ),
     );
   }

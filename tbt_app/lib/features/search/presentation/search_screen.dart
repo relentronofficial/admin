@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/routes.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../providers/search_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -86,12 +86,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         titleSpacing: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: TextField(
@@ -99,16 +99,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           focusNode: _focusNode,
           onChanged: _onTextChanged,
           onSubmitted: _submitSearch,
-          style: const TextStyle(color: kColorTextPrimary, fontSize: 15),
+          style: TextStyle(color: context.tokens.textPrimary, fontSize: 15),
           decoration: InputDecoration(
             hintText: 'Search workshops, courses…',
             hintStyle:
-                const TextStyle(color: kColorTextMuted, fontSize: 15),
+                TextStyle(color: context.tokens.textMuted, fontSize: 15),
             border: InputBorder.none,
             suffixIcon: _controller.text.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(Icons.close,
-                        color: kColorTextMuted, size: 20),
+                    icon: Icon(Icons.close,
+                        color: context.tokens.textMuted, size: 20),
                     onPressed: _clear,
                   )
                 : null,
@@ -157,15 +157,15 @@ class _RecentSearchesView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (loading) return const SizedBox.shrink();
     if (searches.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search, color: kColorTextMuted, size: 40),
+            Icon(Icons.search, color: context.tokens.textMuted, size: 40),
             SizedBox(height: 12),
             Text(
               'Search for workshops, courses, resources',
-              style: TextStyle(color: kColorTextSecondary, fontSize: 13),
+              style: TextStyle(color: context.tokens.textSecondary, fontSize: 13),
             ),
           ],
         ),
@@ -177,22 +177,22 @@ class _RecentSearchesView extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
         child: Row(
           children: [
-            const Text(
+            Text(
               'RECENT',
               style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
-                color: kColorTextMuted,
+                color: context.tokens.textMuted,
               ),
             ),
             const Spacer(),
             TextButton(
               onPressed: onClearAll,
-              child: const Text(
+              child: Text(
                 'Clear all',
-                style: TextStyle(color: kColorTextMuted, fontSize: 12),
+                style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
               ),
             ),
           ],
@@ -201,14 +201,14 @@ class _RecentSearchesView extends StatelessWidget {
       ...searches.map(
         (q) => ListTile(
           dense: true,
-          leading: const Icon(Icons.history,
-              color: kColorTextMuted, size: 18),
+          leading: Icon(Icons.history,
+              color: context.tokens.textMuted, size: 18),
           title: Text(q,
-              style: const TextStyle(
-                  color: kColorTextPrimary, fontSize: 14)),
+              style: TextStyle(
+                  color: context.tokens.textPrimary, fontSize: 14)),
           trailing: IconButton(
-            icon: const Icon(Icons.close,
-                color: kColorTextMuted, size: 18),
+            icon: Icon(Icons.close,
+                color: context.tokens.textMuted, size: 18),
             onPressed: () => onRemove(q),
           ),
           onTap: () => onTap(q),
@@ -249,10 +249,10 @@ class _ResultsView extends ConsumerWidget {
     return async.when(
       loading: () =>
           const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => const Center(
+      error: (_, __) => Center(
         child: Text(
           'Search failed. Try again.',
-          style: TextStyle(color: kColorTextSecondary),
+          style: TextStyle(color: context.tokens.textSecondary),
         ),
       ),
       data: (results) {
@@ -261,13 +261,13 @@ class _ResultsView extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.search_off,
-                    color: kColorTextMuted, size: 40),
+                Icon(Icons.search_off,
+                    color: context.tokens.textMuted, size: 40),
                 const SizedBox(height: 12),
                 Text(
                   'No results for "$query"',
-                  style: const TextStyle(
-                      color: kColorTextSecondary, fontSize: 13),
+                  style: TextStyle(
+                      color: context.tokens.textSecondary, fontSize: 13),
                 ),
               ],
             ),
@@ -360,12 +360,12 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Rajdhani',
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.5,
-          color: kColorTextMuted,
+          color: context.tokens.textMuted,
         ),
       ),
     );
@@ -409,23 +409,23 @@ class _ResultTile extends StatelessWidget {
                         imageUrl: thumbnailUrl!,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => Container(
-                          color: kColorBgInput,
+                          color: context.tokens.bgInput,
                           alignment: Alignment.center,
                           child: Icon(icon,
-                              color: kColorTextMuted, size: 18),
+                              color: context.tokens.textMuted, size: 18),
                         ),
                         errorWidget: (_, __, ___) => Container(
-                          color: kColorBgInput,
+                          color: context.tokens.bgInput,
                           alignment: Alignment.center,
                           child: Icon(icon,
-                              color: kColorTextMuted, size: 18),
+                              color: context.tokens.textMuted, size: 18),
                         ),
                       )
                     : Container(
-                        color: kColorBgInput,
+                        color: context.tokens.bgInput,
                         alignment: Alignment.center,
                         child:
-                            Icon(icon, color: kColorTextSecondary, size: 20),
+                            Icon(icon, color: context.tokens.textSecondary, size: 20),
                       ),
               ),
             ),
@@ -437,8 +437,8 @@ class _ResultTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
@@ -450,8 +450,8 @@ class _ResultTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle!,
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 11,
                         height: 1.35,
                       ),
@@ -463,8 +463,8 @@ class _ResultTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(Icons.chevron_right,
-                color: kColorTextMuted, size: 18),
+            Icon(Icons.chevron_right,
+                color: context.tokens.textMuted, size: 18),
           ],
         ),
       ),

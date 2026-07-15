@@ -314,6 +314,7 @@ _$WorkshopDetailImpl _$$WorkshopDetailImplFromJson(Map<String, dynamic> json) =>
                 json['learningProgress'] as Map<String, dynamic>,
               ),
       certificate: json['certificate'] as Map<String, dynamic>?,
+      sidebar: json['sidebar'] as Map<String, dynamic>?,
     );
 
 Map<String, dynamic> _$$WorkshopDetailImplToJson(
@@ -329,4 +330,5 @@ Map<String, dynamic> _$$WorkshopDetailImplToJson(
   'workshopFlowLabel': instance.workshopFlowLabel,
   'learningProgress': instance.learningProgress,
   'certificate': instance.certificate,
+  'sidebar': instance.sidebar,
 };

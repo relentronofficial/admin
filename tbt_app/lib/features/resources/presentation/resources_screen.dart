@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../shared/theme/design_constants.dart';
 import '../data/resources_service.dart';
 import '../providers/resources_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class ResourcesScreen extends ConsumerStatefulWidget {
   const ResourcesScreen({super.key});
 
@@ -42,28 +42,28 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
+        title: Text(
           'RESOURCES',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           IconButton(
             tooltip: _grid ? 'List view' : 'Grid view',
             icon: Icon(_grid ? Icons.view_list : Icons.grid_view,
-                color: kColorTextMuted, size: 20),
+                color: context.tokens.textMuted, size: 20),
             onPressed: () => setState(() => _grid = !_grid),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: kColorTextMuted, size: 20),
+            icon: Icon(Icons.refresh, color: context.tokens.textMuted, size: 20),
             onPressed: () =>
                 ref.invalidate(searchedResourcesProvider(_query)),
           ),
@@ -77,32 +77,32 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
               controller: _searchCtrl,
               onChanged: _onSearchChanged,
               style:
-                  const TextStyle(color: kColorTextPrimary, fontSize: 14),
+                  TextStyle(color: context.tokens.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 isDense: true,
-                prefixIcon: const Icon(Icons.search,
-                    color: kColorTextMuted, size: 18),
+                prefixIcon: Icon(Icons.search,
+                    color: context.tokens.textMuted, size: 18),
                 suffixIcon: _searchCtrl.text.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.close,
-                            color: kColorTextMuted, size: 18),
+                        icon: Icon(Icons.close,
+                            color: context.tokens.textMuted, size: 18),
                         onPressed: () {
                           _searchCtrl.clear();
                           _onSearchChanged('');
                         },
                       ),
                 hintText: 'Search resources…',
-                hintStyle: const TextStyle(color: kColorTextMuted),
+                hintStyle: TextStyle(color: context.tokens.textMuted),
                 filled: true,
-                fillColor: kColorBgInput,
+                fillColor: context.tokens.bgInput,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
@@ -116,11 +116,11 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline,
-                        color: kColorTextMuted, size: 40),
+                    Icon(Icons.error_outline,
+                        color: context.tokens.textMuted, size: 40),
                     const SizedBox(height: 12),
-                    const Text('Failed to load resources',
-                        style: TextStyle(color: kColorTextSecondary)),
+                    Text('Failed to load resources',
+                        style: TextStyle(color: context.tokens.textSecondary)),
                     const SizedBox(height: 12),
                     TextButton(
                       onPressed: () => ref
@@ -136,15 +136,15 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.folder_open_outlined,
-                            color: kColorTextMuted, size: 40),
+                        Icon(Icons.folder_open_outlined,
+                            color: context.tokens.textMuted, size: 40),
                         const SizedBox(height: 12),
                         Text(
                           _query.isEmpty
                               ? 'No resources available'
                               : 'No results for "$_query"',
-                          style: const TextStyle(
-                              color: kColorTextSecondary, fontSize: 14),
+                          style: TextStyle(
+                              color: context.tokens.textSecondary, fontSize: 14),
                         ),
                       ],
                     ),
@@ -262,20 +262,20 @@ class _ResourceTileState extends State<_ResourceTile> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Stack(
         children: [
           ListTile(
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            leading: _FileTypeIcon(fileType: res.fileType),
+            leading: _FileTypeIcon(context, fileType: res.fileType),
             title: Text(
               res.title,
               style: TextStyle(
-                color: locked ? kColorTextMuted : kColorTextPrimary,
+                color: locked ? context.tokens.textMuted : context.tokens.textPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -288,8 +288,8 @@ class _ResourceTileState extends State<_ResourceTile> {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       res.description!,
-                      style: const TextStyle(
-                          color: kColorTextMuted, fontSize: 11),
+                      style: TextStyle(
+                          color: context.tokens.textMuted, fontSize: 11),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -311,14 +311,14 @@ class _ResourceTileState extends State<_ResourceTile> {
               ],
             ),
             trailing: locked
-                ? const Icon(Icons.lock_outline,
-                    color: kColorTextMuted, size: 20)
+                ? Icon(Icons.lock_outline,
+                    color: context.tokens.textMuted, size: 20)
                 : _loading
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: kColorAccent),
+                            strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
                       )
                     : Row(
                         mainAxisSize: MainAxisSize.min,
@@ -330,13 +330,13 @@ class _ResourceTileState extends State<_ResourceTile> {
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(
                                   minWidth: 32, minHeight: 32),
-                              icon: const Icon(Icons.visibility_outlined,
-                                  color: kColorTextSecondary, size: 20),
+                              icon: Icon(Icons.visibility_outlined,
+                                  color: context.tokens.textSecondary, size: 20),
                               onPressed: widget.onPreview,
                             ),
                           const SizedBox(width: 4),
-                          const Icon(Icons.download_outlined,
-                              color: kColorAccent, size: 22),
+                          Icon(Icons.download_outlined,
+                              color: Theme.of(context).colorScheme.primary, size: 22),
                         ],
                       ),
             onTap: locked ? null : _handleTap,
@@ -379,7 +379,7 @@ class _ResourceTileState extends State<_ResourceTile> {
 // ── File type icon ────────────────────────────────────────────────────────────
 
 class _FileTypeIcon extends StatelessWidget {
-  const _FileTypeIcon({required this.fileType});
+  const _FileTypeIcon(BuildContext context, {required this.fileType});
 
   final String fileType;
 
@@ -399,7 +399,7 @@ class _FileTypeIcon extends StatelessWidget {
     return Icons.insert_drive_file_outlined;
   }
 
-  Color get _color {
+  Color _color(BuildContext context) {
     final t = fileType.toLowerCase();
     if (t.contains('pdf')) return const Color(0xFFdc2626);
     if (t.contains('video') || t.contains('mp4')) return const Color(0xFF7c3aed);
@@ -409,19 +409,20 @@ class _FileTypeIcon extends StatelessWidget {
     if (t.contains('doc') || t.contains('word')) return const Color(0xFF1d4ed8);
     if (t.contains('xls') || t.contains('sheet')) return const Color(0xFF16a34a);
     if (t.contains('ppt') || t.contains('slide')) return const Color(0xFFea580c);
-    return kColorTextMuted;
+    return context.tokens.textMuted;
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = _color(context);
     return Container(
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.12),
+        color: c.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Icon(_icon, color: _color, size: 22),
+      child: Icon(_icon, color: c, size: 22),
     );
   }
 }
@@ -436,13 +437,13 @@ class _MetaChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: kColorBgInput,
+        color: context.tokens.bgInput,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         label,
-        style: const TextStyle(
-          color: kColorTextMuted,
+        style: TextStyle(
+          color: context.tokens.textMuted,
           fontSize: 9,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.3,
@@ -488,21 +489,21 @@ class _ResourceGridCardState extends State<_ResourceGridCard> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _FileTypeIcon(fileType: r.fileType),
+            _FileTypeIcon(context, fileType: r.fileType),
             const SizedBox(height: 10),
             Text(
               r.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: r.locked ? kColorTextMuted : kColorTextPrimary,
+                color: r.locked ? context.tokens.textMuted : context.tokens.textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -514,8 +515,8 @@ class _ResourceGridCardState extends State<_ResourceGridCard> {
                   r.description!,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: kColorTextMuted,
+                  style: TextStyle(
+                    color: context.tokens.textMuted,
                     fontSize: 11,
                     height: 1.3,
                   ),
@@ -528,8 +529,8 @@ class _ResourceGridCardState extends State<_ResourceGridCard> {
                 _MetaChip(label: r.fileType.toUpperCase()),
                 const Spacer(),
                 if (r.locked)
-                  const Icon(Icons.lock_outline,
-                      color: kColorTextMuted, size: 16)
+                  Icon(Icons.lock_outline,
+                      color: context.tokens.textMuted, size: 16)
                 else if (_loading)
                   const SizedBox(
                     width: 16,
@@ -540,14 +541,14 @@ class _ResourceGridCardState extends State<_ResourceGridCard> {
                   if (r.previewUrl != null && r.previewUrl!.isNotEmpty)
                     InkWell(
                       onTap: widget.onPreview,
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 4),
                         child: Icon(Icons.visibility_outlined,
-                            color: kColorTextSecondary, size: 16),
+                            color: context.tokens.textSecondary, size: 16),
                       ),
                     ),
-                  const Icon(Icons.download_rounded,
-                      color: kColorAccent, size: 18),
+                  Icon(Icons.download_rounded,
+                      color: Theme.of(context).colorScheme.primary, size: 18),
                 ],
               ],
             ),

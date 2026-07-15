@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../shared/theme/design_constants.dart';
 
+import '../../../../shared/theme/theme_tokens.dart';
 /// Shown at `quizUnlockPercent` of video watched.
 /// Not dismissible — user must submit or the video has already ended.
 class QuizBottomSheet extends StatefulWidget {
@@ -51,8 +51,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
     return PopScope(
       canPop: false,
       child: Container(
-        decoration: const BoxDecoration(
-          color: kColorBgSurface,
+        decoration: BoxDecoration(
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
         child: _result != null ? _buildResult() : _buildQuiz(),
@@ -71,10 +71,10 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'QUIZ',
                   style: TextStyle(
-                    color: kColorAccent,
+                    color: Theme.of(context).colorScheme.primary,
                     fontFamily: 'Rajdhani',
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -90,8 +90,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
                   child: ElevatedButton(
                     onPressed: _allAnswered && !_submitting ? _submit : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: kColorAccent,
-                      disabledBackgroundColor: kColorBgInput,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      disabledBackgroundColor: context.tokens.bgInput,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -134,8 +134,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
         children: [
           Text(
             '${idx + 1}. ${q['question'] as String? ?? ''}',
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontSize: 14,
               fontWeight: FontWeight.w600,
               height: 1.4,
@@ -158,11 +158,11 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
                     horizontal: 14, vertical: 11),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? kColorAccent.withValues(alpha: 0.15)
-                      : kColorBgInput,
+                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+                      : context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: isSelected ? kColorAccent : kColorBorderCard,
+                    color: isSelected ? Theme.of(context).colorScheme.primary : context.tokens.borderCard,
                   ),
                 ),
                 child: Row(
@@ -172,8 +172,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
                           ? Icons.radio_button_checked
                           : Icons.radio_button_unchecked,
                       color: isSelected
-                          ? kColorAccent
-                          : kColorTextMuted,
+                          ? Theme.of(context).colorScheme.primary
+                          : context.tokens.textMuted,
                       size: 18,
                     ),
                     const SizedBox(width: 10),
@@ -182,8 +182,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
                         optText,
                         style: TextStyle(
                           color: isSelected
-                              ? kColorTextPrimary
-                              : kColorTextSecondary,
+                              ? context.tokens.textPrimary
+                              : context.tokens.textSecondary,
                           fontSize: 13,
                           height: 1.4,
                         ),
@@ -218,8 +218,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
           const SizedBox(height: 14),
           Text(
             passed ? 'Great work!' : 'Not quite',
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontFamily: 'Rajdhani',
               fontSize: 22,
               fontWeight: FontWeight.w700,
@@ -228,8 +228,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
           const SizedBox(height: 6),
           Text(
             'Score: $score%',
-            style: const TextStyle(
-              color: kColorTextSecondary,
+            style: TextStyle(
+              color: context.tokens.textSecondary,
               fontSize: 14,
             ),
           ),
@@ -237,8 +237,8 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
             const SizedBox(height: 6),
             Text(
               'Required: ${widget.passingScore}%',
-              style: const TextStyle(
-                color: kColorTextMuted,
+              style: TextStyle(
+                color: context.tokens.textMuted,
                 fontSize: 13,
               ),
             ),
@@ -249,7 +249,7 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
             child: ElevatedButton(
               onPressed: () => Navigator.of(context).pop(),
               style: ElevatedButton.styleFrom(
-                backgroundColor: kColorAccent,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -276,7 +276,7 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
           width: 36,
           height: 4,
           decoration: BoxDecoration(
-            color: kColorBorderCard,
+            color: context.tokens.borderCard,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -310,8 +310,8 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: kColorBgSurface,
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
@@ -326,10 +326,10 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         'QUICK CHECK',
                         style: TextStyle(
-                          color: kColorAccent,
+                          color: Theme.of(context).colorScheme.primary,
                           fontFamily: 'Rajdhani',
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -339,10 +339,10 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
                       const Spacer(),
                       TextButton(
                         onPressed: widget.onDismiss,
-                        child: const Text(
+                        child: Text(
                           'Skip',
                           style: TextStyle(
-                            color: kColorTextMuted,
+                            color: context.tokens.textMuted,
                             fontSize: 13,
                           ),
                         ),
@@ -357,8 +357,8 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
                     child: ElevatedButton(
                       onPressed: _allAnswered ? widget.onDismiss : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: kColorAccent,
-                        disabledBackgroundColor: kColorBgInput,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        disabledBackgroundColor: context.tokens.bgInput,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -393,8 +393,8 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
         children: [
           Text(
             q['question'] as String? ?? '',
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontSize: 14,
               fontWeight: FontWeight.w600,
               height: 1.4,
@@ -417,19 +417,19 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
                     horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? kColorAccent.withValues(alpha: 0.15)
-                      : kColorBgInput,
+                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+                      : context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: isSelected ? kColorAccent : kColorBorderCard,
+                    color: isSelected ? Theme.of(context).colorScheme.primary : context.tokens.borderCard,
                   ),
                 ),
                 child: Text(
                   optText,
                   style: TextStyle(
                     color: isSelected
-                        ? kColorTextPrimary
-                        : kColorTextSecondary,
+                        ? context.tokens.textPrimary
+                        : context.tokens.textSecondary,
                     fontSize: 13,
                   ),
                 ),
@@ -448,7 +448,7 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
           width: 36,
           height: 4,
           decoration: BoxDecoration(
-            color: kColorBorderCard,
+            color: context.tokens.borderCard,
             borderRadius: BorderRadius.circular(2),
           ),
         ),

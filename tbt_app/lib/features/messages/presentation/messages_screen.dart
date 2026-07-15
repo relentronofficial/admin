@@ -4,11 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/conversation.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../data/messages_service.dart';
 import '../providers/messages_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 // ── Relative time (shared with notifications) ─────────────────────────────────
 
 String _timeAgo(String? iso) {
@@ -67,29 +67,29 @@ class MessagesScreen extends ConsumerWidget {
         child: const Icon(Icons.edit, color: Colors.white),
       ),
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
-        title: const Text(
+        title: Text(
           'MESSAGES',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 18,
             fontWeight: FontWeight.w700,
             letterSpacing: 2,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
       ),
       body: convoAsync.when(
-        loading: () => _buildSkeleton(),
-        error: (e, _) => _buildError(() => ref.invalidate(conversationsProvider)),
+        loading: () => _buildSkeleton(context),
+        error: (e, _) => _buildError(context, () => ref.invalidate(conversationsProvider)),
         data: (conversations) {
-          if (conversations.isEmpty) return _buildEmpty();
+          if (conversations.isEmpty) return _buildEmpty(context);
           return RefreshIndicator(
             color: accent,
-            backgroundColor: kColorBgSurface,
+            backgroundColor: context.tokens.bgSurface,
             onRefresh: () async {
               ref.invalidate(conversationsProvider);
               await ref
@@ -100,7 +100,7 @@ class MessagesScreen extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: conversations.length,
               separatorBuilder: (_, __) =>
-                  const Divider(height: 1, color: kColorBorderCard, indent: 68),
+                  Divider(height: 1, color: context.tokens.borderCard, indent: 68),
               itemBuilder: (context, i) {
                 final c = conversations[i];
                 return Dismissible(
@@ -108,10 +108,10 @@ class MessagesScreen extends ConsumerWidget {
                   direction: DismissDirection.endToStart,
                   background: Container(
                     alignment: Alignment.centerRight,
-                    color: kColorBorderCard,
+                    color: context.tokens.borderCard,
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: const Icon(Icons.archive_outlined,
-                        color: kColorTextSecondary),
+                    child: Icon(Icons.archive_outlined,
+                        color: context.tokens.textSecondary),
                   ),
                   confirmDismiss: (_) async {
                     try {
@@ -207,7 +207,7 @@ class _ConversationTile extends StatelessWidget {
                         child: Text(
                           c.subject,
                           style: TextStyle(
-                            color: kColorTextPrimary,
+                            color: context.tokens.textPrimary,
                             fontSize: 14,
                             fontWeight:
                                 hasUnread ? FontWeight.w700 : FontWeight.w500,
@@ -221,7 +221,7 @@ class _ConversationTile extends StatelessWidget {
                         Text(
                           _timeAgo(c.lastMessageAt),
                           style: TextStyle(
-                            color: hasUnread ? accent : kColorTextMuted,
+                            color: hasUnread ? accent : context.tokens.textMuted,
                             fontSize: 11,
                             fontWeight: hasUnread
                                 ? FontWeight.w600
@@ -239,8 +239,8 @@ class _ConversationTile extends StatelessWidget {
                           preview,
                           style: TextStyle(
                             color: hasUnread
-                                ? kColorTextSecondary
-                                : kColorTextMuted,
+                                ? context.tokens.textSecondary
+                                : context.tokens.textMuted,
                             fontSize: 13,
                             fontWeight: hasUnread
                                 ? FontWeight.w500
@@ -256,13 +256,13 @@ class _ConversationTile extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
-                            color: kColorBgInput,
+                            color: context.tokens.bgInput,
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text(
+                          child: Text(
                             'CLOSED',
                             style: TextStyle(
-                              color: kColorTextMuted,
+                              color: context.tokens.textMuted,
                               fontSize: 9,
                               fontWeight: FontWeight.w700,
                               fontFamily: 'Rajdhani',
@@ -307,11 +307,11 @@ class _ConversationTile extends StatelessWidget {
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
-Widget _buildSkeleton() => ListView.separated(
+Widget _buildSkeleton(BuildContext context) => ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: 5,
       separatorBuilder: (_, __) =>
-          const Divider(height: 1, color: kColorBorderCard, indent: 68),
+          Divider(height: 1, color: context.tokens.borderCard, indent: 68),
       itemBuilder: (_, __) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -319,8 +319,8 @@ Widget _buildSkeleton() => ListView.separated(
             Container(
               width: 44,
               height: 44,
-              decoration: const BoxDecoration(
-                color: kColorBgInput,
+              decoration: BoxDecoration(
+                color: context.tokens.bgInput,
                 shape: BoxShape.circle,
               ),
             ),
@@ -329,9 +329,9 @@ Widget _buildSkeleton() => ListView.separated(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(height: 13, width: 140, color: kColorBgInput),
+                  Container(height: 13, width: 140, color: context.tokens.bgInput),
                   const SizedBox(height: 6),
-                  Container(height: 11, width: 220, color: kColorBgInput),
+                  Container(height: 11, width: 220, color: context.tokens.bgInput),
                 ],
               ),
             ),
@@ -342,30 +342,30 @@ Widget _buildSkeleton() => ListView.separated(
 
 // ── Error / empty ─────────────────────────────────────────────────────────────
 
-Widget _buildError(VoidCallback onRetry) => Center(
+Widget _buildError(BuildContext context, VoidCallback onRetry) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
           const SizedBox(height: 12),
-          const Text('Failed to load messages',
-              style: TextStyle(color: kColorTextSecondary)),
+          Text('Failed to load messages',
+              style: TextStyle(color: context.tokens.textSecondary)),
           const SizedBox(height: 12),
           TextButton(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
     );
 
-Widget _buildEmpty() => const Center(
+Widget _buildEmpty(BuildContext context) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.mail_outline, color: kColorTextMuted, size: 48),
+          Icon(Icons.mail_outline, color: context.tokens.textMuted, size: 48),
           SizedBox(height: 12),
           Text(
             'No messages yet',
             style: TextStyle(
-              color: kColorTextSecondary,
+              color: context.tokens.textSecondary,
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
@@ -373,7 +373,7 @@ Widget _buildEmpty() => const Center(
           SizedBox(height: 6),
           Text(
             'Your conversations will appear here',
-            style: TextStyle(color: kColorTextMuted, fontSize: 13),
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
           ),
         ],
       ),
@@ -415,10 +415,10 @@ class _NewConversationSheetState extends State<_NewConversationSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: inset),
       child: Container(
-        decoration: const BoxDecoration(
-          color: kColorBgSurface,
+        decoration: BoxDecoration(
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          border: Border(top: BorderSide(color: kColorBorderCard)),
+          border: Border(top: BorderSide(color: context.tokens.borderCard)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
         child: Column(
@@ -431,37 +431,37 @@ class _NewConversationSheetState extends State<_NewConversationSheet> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  color: kColorTextMuted.withValues(alpha: 0.5),
+                  color: context.tokens.textMuted.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-            const Text(
+            Text(
               'NEW CONVERSATION',
               style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.8,
-                color: kColorTextPrimary,
+                color: context.tokens.textPrimary,
               ),
             ),
             const SizedBox(height: 14),
             TextField(
               controller: _subjectCtrl,
               autofocus: true,
-              style: const TextStyle(color: kColorTextPrimary, fontSize: 14),
+              style: TextStyle(color: context.tokens.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: kColorBgInput,
+                fillColor: context.tokens.bgInput,
                 hintText: 'Subject',
-                hintStyle: const TextStyle(color: kColorTextMuted),
+                hintStyle: TextStyle(color: context.tokens.textMuted),
                 border: OutlineInputBorder(
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
@@ -470,18 +470,18 @@ class _NewConversationSheetState extends State<_NewConversationSheet> {
             TextField(
               controller: _bodyCtrl,
               maxLines: 5,
-              style: const TextStyle(color: kColorTextPrimary, fontSize: 14),
+              style: TextStyle(color: context.tokens.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: kColorBgInput,
+                fillColor: context.tokens.bgInput,
                 hintText: 'What can we help with?',
-                hintStyle: const TextStyle(color: kColorTextMuted),
+                hintStyle: TextStyle(color: context.tokens.textMuted),
                 border: OutlineInputBorder(
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
@@ -493,8 +493,8 @@ class _NewConversationSheetState extends State<_NewConversationSheet> {
                   child: OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: kColorTextSecondary,
-                      side: const BorderSide(color: kColorBorderCard),
+                      foregroundColor: context.tokens.textSecondary,
+                      side: BorderSide(color: context.tokens.borderCard),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),

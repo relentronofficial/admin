@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,9 +7,9 @@ import '../../features/auth/domain/member_status.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../providers/me_provider.dart';
 import '../providers/site_config_provider.dart';
-import '../theme/design_constants.dart';
 import '../theme/tbt_theme.dart';
 
+import '../../shared/theme/theme_tokens.dart';
 /// Routes that bypass the subscription gate entirely.
 const _exemptRoutes = {AppRoutes.products, AppRoutes.profile};
 
@@ -55,9 +55,10 @@ class _GateLoading extends StatelessWidget {
   const _GateLoading();
 
   @override
-  Widget build(BuildContext context) => const Scaffold(
+  Widget build(BuildContext context) => Scaffold(
         body: Center(
-          child: CircularProgressIndicator(color: kColorAccent),
+          child: CircularProgressIndicator(
+              color: Theme.of(context).colorScheme.primary),
         ),
       );
 }
@@ -90,7 +91,7 @@ class _InterceptorScaffold extends StatelessWidget {
           fontFamily: 'Rajdhani',
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
-                  color: kColorTextPrimary,
+                  color: context.tokens.textPrimary,
                   letterSpacing: 1.5,
                 ),
               ),
@@ -98,8 +99,8 @@ class _InterceptorScaffold extends StatelessWidget {
               Text(
                 body,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: kColorTextSecondary,
+                style: TextStyle(
+                  color: context.tokens.textSecondary,
                   fontSize: 14,
                   height: 1.5,
                 ),
@@ -140,9 +141,9 @@ class _PendingInterceptor extends ConsumerWidget {
               if (context.mounted) context.go(AppRoutes.login);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: kColorBgSurface,
-              foregroundColor: kColorTextPrimary,
-              side: const BorderSide(color: kColorBorderCard),
+              backgroundColor: context.tokens.bgSurface,
+              foregroundColor: context.tokens.textPrimary,
+              side: BorderSide(color: context.tokens.borderCard),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),

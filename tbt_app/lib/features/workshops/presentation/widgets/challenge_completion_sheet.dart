@@ -3,9 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/theme/design_constants.dart';
 import '../../data/workshops_service.dart';
 
+import '../../../../shared/theme/theme_tokens.dart';
 /// Renders the completion UI for a single challenge based on its
 /// backend-declared `type`. All 5 types funnel to
 /// [WorkshopsService.completeChallenge] with a type-appropriate
@@ -104,10 +104,10 @@ class _ChallengeCompletionSheetState
       maxChildSize: 0.95,
       minChildSize: 0.5,
       builder: (_, scrollController) => Container(
-        decoration: const BoxDecoration(
-          color: kColorBgSurface,
+        decoration: BoxDecoration(
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          border: Border(top: BorderSide(color: kColorBorderCard)),
+          border: Border(top: BorderSide(color: context.tokens.borderCard)),
         ),
         child: Column(
           children: [
@@ -130,7 +130,7 @@ class _ChallengeCompletionSheetState
           width: 40,
           height: 4,
           decoration: BoxDecoration(
-            color: kColorTextMuted.withValues(alpha: 0.5),
+            color: context.tokens.textMuted.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -146,7 +146,7 @@ class _ChallengeCompletionSheetState
           padding: const EdgeInsets.all(20),
           child: Text(
             _error ?? 'Could not load challenge',
-            style: const TextStyle(color: kColorTextMuted),
+            style: TextStyle(color: context.tokens.textMuted),
             textAlign: TextAlign.center,
           ),
         ),
@@ -202,26 +202,26 @@ class _ChallengeCompletionSheetState
 
 // ── Common heading + footer helpers ───────────────────────────────────────────
 
-Widget _headingBar(String label, String title) => Padding(
+Widget _headingBar(BuildContext context, String label, String title) => Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.8,
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             title,
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
@@ -231,6 +231,7 @@ Widget _headingBar(String label, String title) => Padding(
     );
 
 Widget _submitFooter({
+  required BuildContext context,
   required Color accent,
   required bool enabled,
   required bool submitting,
@@ -247,8 +248,8 @@ Widget _submitFooter({
           style: ElevatedButton.styleFrom(
             backgroundColor: accent,
             foregroundColor: Colors.white,
-            disabledBackgroundColor: kColorBgInput,
-            disabledForegroundColor: kColorTextMuted,
+            disabledBackgroundColor: context.tokens.bgInput,
+            disabledForegroundColor: context.tokens.textMuted,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
@@ -291,7 +292,7 @@ class _WatchBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _headingBar('WATCH CHALLENGE', title),
+        _headingBar(context, 'WATCH CHALLENGE', title),
         Expanded(
           child: Center(
             child: Padding(
@@ -301,11 +302,11 @@ class _WatchBody extends StatelessWidget {
                 children: [
                   Icon(Icons.play_circle_outline, color: accent, size: 56),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Watch the associated video, then mark this challenge complete.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        color: kColorTextSecondary, fontSize: 14, height: 1.5),
+                        color: context.tokens.textSecondary, fontSize: 14, height: 1.5),
                   ),
                 ],
               ),
@@ -313,6 +314,7 @@ class _WatchBody extends StatelessWidget {
           ),
         ),
         _submitFooter(
+          context: context,
           accent: accent,
           enabled: true,
           submitting: submitting,
@@ -364,7 +366,7 @@ class _QuizBodyState extends State<_QuizBody> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _headingBar('QUIZ CHALLENGE', widget.title),
+        _headingBar(context, 'QUIZ CHALLENGE', widget.title),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -379,8 +381,8 @@ class _QuizBodyState extends State<_QuizBody> {
                   const SizedBox(height: 8),
                   Text(
                     '${qi + 1}. ${q['question'] ?? ''}',
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       height: 1.4,
@@ -402,12 +404,12 @@ class _QuizBodyState extends State<_QuizBody> {
                           decoration: BoxDecoration(
                             color: picked
                                 ? widget.accent.withValues(alpha: 0.12)
-                                : kColorBgInput,
+                                : context.tokens.bgInput,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: picked
                                   ? widget.accent
-                                  : kColorBorderCard,
+                                  : context.tokens.borderCard,
                               width: 1.4,
                             ),
                           ),
@@ -419,7 +421,7 @@ class _QuizBodyState extends State<_QuizBody> {
                                     : Icons.radio_button_unchecked,
                                 color: picked
                                     ? widget.accent
-                                    : kColorTextMuted,
+                                    : context.tokens.textMuted,
                                 size: 18,
                               ),
                               const SizedBox(width: 10),
@@ -428,8 +430,8 @@ class _QuizBodyState extends State<_QuizBody> {
                                   txt,
                                   style: TextStyle(
                                     color: picked
-                                        ? kColorTextPrimary
-                                        : kColorTextSecondary,
+                                        ? context.tokens.textPrimary
+                                        : context.tokens.textSecondary,
                                     fontSize: 13.5,
                                     fontWeight: picked
                                         ? FontWeight.w600
@@ -449,6 +451,7 @@ class _QuizBodyState extends State<_QuizBody> {
           ),
         ),
         _submitFooter(
+          context: context,
           accent: widget.accent,
           enabled: _allAnswered,
           submitting: widget.submitting,
@@ -494,7 +497,7 @@ class _WrittenBodyState extends State<_WrittenBody> {
     final placeholder = widget.data['placeholder'] as String? ?? 'Your answer…';
     return Column(
       children: [
-        _headingBar('WRITTEN CHALLENGE', widget.title),
+        _headingBar(context, 'WRITTEN CHALLENGE', widget.title),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -504,8 +507,8 @@ class _WrittenBodyState extends State<_WrittenBody> {
                 if (prompt.isNotEmpty)
                   Text(
                     prompt,
-                    style: const TextStyle(
-                      color: kColorTextSecondary,
+                    style: TextStyle(
+                      color: context.tokens.textSecondary,
                       fontSize: 14,
                       height: 1.5,
                     ),
@@ -518,20 +521,20 @@ class _WrittenBodyState extends State<_WrittenBody> {
                     maxLines: null,
                     expands: true,
                     textAlignVertical: TextAlignVertical.top,
-                    style: const TextStyle(
-                        color: kColorTextPrimary, fontSize: 14),
+                    style: TextStyle(
+                        color: context.tokens.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: kColorBgInput,
+                      fillColor: context.tokens.bgInput,
                       hintText: placeholder,
-                      hintStyle: const TextStyle(color: kColorTextMuted),
+                      hintStyle: TextStyle(color: context.tokens.textMuted),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: kColorBorderCard),
+                        borderSide: BorderSide(color: context.tokens.borderCard),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: kColorBorderCard),
+                        borderSide: BorderSide(color: context.tokens.borderCard),
                       ),
                       contentPadding: const EdgeInsets.all(12),
                     ),
@@ -542,6 +545,7 @@ class _WrittenBodyState extends State<_WrittenBody> {
           ),
         ),
         _submitFooter(
+          context: context,
           accent: widget.accent,
           enabled: _ctrl.text.trim().isNotEmpty,
           submitting: widget.submitting,
@@ -590,7 +594,7 @@ class _MatchingBodyState extends State<_MatchingBody> {
     final rights = _shuffledRights;
     return Column(
       children: [
-        _headingBar('MATCHING CHALLENGE', widget.title),
+        _headingBar(context, 'MATCHING CHALLENGE', widget.title),
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
@@ -603,9 +607,9 @@ class _MatchingBodyState extends State<_MatchingBody> {
               return Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: kColorBgInput,
+                  color: context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: kColorBorderCard),
+                  border: Border.all(color: context.tokens.borderCard),
                 ),
                 child: Row(
                   children: [
@@ -613,15 +617,15 @@ class _MatchingBodyState extends State<_MatchingBody> {
                       flex: 4,
                       child: Text(
                         left,
-                        style: const TextStyle(
-                          color: kColorTextPrimary,
+                        style: TextStyle(
+                          color: context.tokens.textPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                    const Icon(Icons.arrow_forward,
-                        color: kColorTextMuted, size: 14),
+                    Icon(Icons.arrow_forward,
+                        color: context.tokens.textMuted, size: 14),
                     const SizedBox(width: 6),
                     Expanded(
                       flex: 5,
@@ -629,19 +633,19 @@ class _MatchingBodyState extends State<_MatchingBody> {
                         child: DropdownButton<String>(
                           value: _selected[lid],
                           isExpanded: true,
-                          hint: const Text(
+                          hint: Text(
                             'Match…',
                             style: TextStyle(
-                                color: kColorTextMuted, fontSize: 12),
+                                color: context.tokens.textMuted, fontSize: 12),
                           ),
-                          dropdownColor: kColorBgSurface,
+                          dropdownColor: context.tokens.bgSurface,
                           items: rights
                               .map((r) => DropdownMenuItem<String>(
                                     value: r['id'] as String? ?? '',
                                     child: Text(
                                       (r['right'] as String?) ?? '',
-                                      style: const TextStyle(
-                                        color: kColorTextPrimary,
+                                      style: TextStyle(
+                                        color: context.tokens.textPrimary,
                                         fontSize: 13,
                                       ),
                                       overflow: TextOverflow.ellipsis,
@@ -661,6 +665,7 @@ class _MatchingBodyState extends State<_MatchingBody> {
           ),
         ),
         _submitFooter(
+          context: context,
           accent: widget.accent,
           enabled: _selected.length == pairs.length,
           submitting: widget.submitting,
@@ -716,17 +721,18 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
     if (cards.isEmpty) {
       return Column(
         children: [
-          _headingBar('FLASHCARD CHALLENGE', widget.title),
+          _headingBar(context, 'FLASHCARD CHALLENGE', widget.title),
           Expanded(
             child: Center(
               child: Text(
                 'No cards',
                 style:
-                    const TextStyle(color: kColorTextMuted, fontSize: 14),
+                    TextStyle(color: context.tokens.textMuted, fontSize: 14),
               ),
             ),
           ),
           _submitFooter(
+            context: context,
             accent: widget.accent,
             enabled: true,
             submitting: widget.submitting,
@@ -741,7 +747,7 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
     final back = card['back'] as String? ?? '';
     return Column(
       children: [
-        _headingBar('FLASHCARD CHALLENGE', widget.title),
+        _headingBar(context, 'FLASHCARD CHALLENGE', widget.title),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
@@ -749,7 +755,7 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
               Text(
                 '${_index + 1} / ${cards.length}',
                 style:
-                    const TextStyle(color: kColorTextMuted, fontSize: 12),
+                    TextStyle(color: context.tokens.textMuted, fontSize: 12),
               ),
               const Spacer(),
               Text(
@@ -774,10 +780,10 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: kColorBgInput,
+                  color: context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _flipped ? widget.accent : kColorBorderCard,
+                    color: _flipped ? widget.accent : context.tokens.borderCard,
                     width: 1.4,
                   ),
                 ),
@@ -785,8 +791,8 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
                   child: Text(
                     _flipped ? back : front,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                       height: 1.4,
@@ -805,8 +811,8 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
                 child: OutlinedButton(
                   onPressed: () => setState(() => _flipped = !_flipped),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: kColorTextSecondary,
-                    side: const BorderSide(color: kColorBorderCard),
+                    foregroundColor: context.tokens.textSecondary,
+                    side: BorderSide(color: context.tokens.borderCard),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -819,6 +825,7 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
           ),
         ),
         _submitFooter(
+          context: context,
           accent: widget.accent,
           enabled: true,
           submitting: widget.submitting,

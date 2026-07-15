@@ -7,10 +7,10 @@ import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../shared/models/workshop.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../providers/workshops_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 // ── Delivery mode chip config ─────────────────────────────────────────────────
 
 ({Color bg, Color text}) _modeColors(DeliveryMode mode) => switch (mode) {
@@ -81,18 +81,18 @@ class _WorkshopsScreenState extends ConsumerState<WorkshopsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
-        title: const Text(
+        title: Text(
           'WORKSHOPS',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 18,
             fontWeight: FontWeight.w700,
             letterSpacing: 2,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
       ),
@@ -104,17 +104,17 @@ class _WorkshopsScreenState extends ConsumerState<WorkshopsScreen> {
             child: TextField(
               controller: _searchCtrl,
               onChanged: _onSearchChanged,
-              style: const TextStyle(color: kColorTextPrimary, fontSize: 14),
+              style: TextStyle(color: context.tokens.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Search workshops…',
                 hintStyle:
-                    const TextStyle(color: kColorTextMuted, fontSize: 14),
-                prefixIcon: const Icon(Icons.search,
-                    color: kColorTextMuted, size: 20),
+                    TextStyle(color: context.tokens.textMuted, fontSize: 14),
+                prefixIcon: Icon(Icons.search,
+                    color: context.tokens.textMuted, size: 20),
                 suffixIcon: _query.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.close,
-                            color: kColorTextMuted, size: 18),
+                        icon: Icon(Icons.close,
+                            color: context.tokens.textMuted, size: 18),
                         onPressed: () {
                           _searchCtrl.clear();
                           setState(() => _query = '');
@@ -122,16 +122,16 @@ class _WorkshopsScreenState extends ConsumerState<WorkshopsScreen> {
                       )
                     : null,
                 filled: true,
-                fillColor: kColorBgSurface,
+                fillColor: context.tokens.bgSurface,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -144,17 +144,17 @@ class _WorkshopsScreenState extends ConsumerState<WorkshopsScreen> {
           // List
           Expanded(
             child: workshopsAsync.when(
-              loading: () => _buildSkeleton(),
+              loading: () => _buildSkeleton(context),
               error: (e, _) =>
-                  _buildError(() => ref.invalidate(workshopsProvider)),
+                  _buildError(context, () => ref.invalidate(workshopsProvider)),
               data: (all) {
                 final workshops = _filter(all);
                 if (workshops.isEmpty) {
-                  return _buildEmpty(_query.isNotEmpty);
+                  return _buildEmpty(context, _query.isNotEmpty);
                 }
                 return RefreshIndicator(
                   color: accent,
-                  backgroundColor: kColorBgSurface,
+                  backgroundColor: context.tokens.bgSurface,
                   onRefresh: () async {
                     ref.invalidate(workshopsProvider);
                     await ref
@@ -211,8 +211,8 @@ class _WorkshopCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
-          border: Border.all(color: kColorBorderCard),
+          color: context.tokens.bgSurface,
+          border: Border.all(color: context.tokens.borderCard),
           borderRadius: BorderRadius.circular(12),
         ),
         clipBehavior: Clip.hardEdge,
@@ -228,8 +228,8 @@ class _WorkshopCard extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: w.thumbnailUrl!,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => const ColoredBox(
-                              color: kColorBgInput),
+                          placeholder: (_, __) => ColoredBox(
+                              color: context.tokens.bgInput),
                           errorWidget: (_, __, ___) =>
                               const _ThumbFallback(),
                         )
@@ -270,8 +270,8 @@ class _WorkshopCard extends StatelessWidget {
                           if (w.challengeCount > 0)
                             Text(
                               '${w.challengeCount} challenges',
-                              style: const TextStyle(
-                                color: kColorTextMuted,
+                              style: TextStyle(
+                                color: context.tokens.textMuted,
                                 fontSize: 11,
                               ),
                             ),
@@ -282,8 +282,8 @@ class _WorkshopCard extends StatelessWidget {
                       // Title
                       Text(
                         w.title,
-                        style: const TextStyle(
-                          color: kColorTextPrimary,
+                        style: TextStyle(
+                          color: context.tokens.textPrimary,
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           height: 1.3,
@@ -298,8 +298,8 @@ class _WorkshopCard extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           w.description!,
-                          style: const TextStyle(
-                            color: kColorTextMuted,
+                          style: TextStyle(
+                            color: context.tokens.textMuted,
                             fontSize: 13,
                             height: 1.4,
                           ),
@@ -354,11 +354,11 @@ class _ThumbFallback extends StatelessWidget {
   const _ThumbFallback();
 
   @override
-  Widget build(BuildContext context) => const ColoredBox(
-        color: kColorBgInput,
+  Widget build(BuildContext context) => ColoredBox(
+        color: context.tokens.bgInput,
         child: Center(
           child: Icon(Icons.play_circle_outline,
-              color: kColorTextMuted, size: 40),
+              color: context.tokens.textMuted, size: 40),
         ),
       );
 }
@@ -394,16 +394,16 @@ class _Chip extends StatelessWidget {
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────────
 
-Widget _buildSkeleton() => Shimmer.fromColors(
-      baseColor: kColorBgSurface,
-      highlightColor: kColorBgInput,
+Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
+      baseColor: context.tokens.bgSurface,
+      highlightColor: context.tokens.bgInput,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         itemCount: 4,
         itemBuilder: (_, __) => Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: kColorBgSurface,
+            color: context.tokens.bgSurface,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -412,7 +412,7 @@ Widget _buildSkeleton() => Shimmer.fromColors(
               // Thumbnail placeholder
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: Container(color: kColorBgInput),
+                child: Container(color: context.tokens.bgInput),
               ),
               Padding(
                 padding: const EdgeInsets.all(14),
@@ -420,15 +420,15 @@ Widget _buildSkeleton() => Shimmer.fromColors(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                        height: 16, width: 80, color: kColorBgInput),
+                        height: 16, width: 80, color: context.tokens.bgInput),
                     const SizedBox(height: 10),
                     Container(
                         height: 14,
                         width: double.infinity,
-                        color: kColorBgInput),
+                        color: context.tokens.bgInput),
                     const SizedBox(height: 6),
                     Container(
-                        height: 14, width: 200, color: kColorBgInput),
+                        height: 14, width: 200, color: context.tokens.bgInput),
                   ],
                 ),
               ),
@@ -440,34 +440,34 @@ Widget _buildSkeleton() => Shimmer.fromColors(
 
 // ── Error / empty states ──────────────────────────────────────────────────────
 
-Widget _buildError(VoidCallback onRetry) => Center(
+Widget _buildError(BuildContext context, VoidCallback onRetry) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
           const SizedBox(height: 12),
-          const Text('Failed to load workshops',
-              style: TextStyle(color: kColorTextSecondary)),
+          Text('Failed to load workshops',
+              style: TextStyle(color: context.tokens.textSecondary)),
           const SizedBox(height: 12),
           TextButton(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
     );
 
-Widget _buildEmpty(bool isSearch) => Center(
+Widget _buildEmpty(BuildContext context, bool isSearch) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             isSearch ? Icons.search_off : Icons.school_outlined,
-            color: kColorTextMuted,
+            color: context.tokens.textMuted,
             size: 48,
           ),
           const SizedBox(height: 12),
           Text(
             isSearch ? 'No workshops match your search' : 'No workshops yet',
-            style: const TextStyle(
-              color: kColorTextSecondary,
+            style: TextStyle(
+              color: context.tokens.textSecondary,
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),

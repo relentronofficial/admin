@@ -220,6 +220,10 @@ class WorkshopDetail with _$WorkshopDetail {
     WorkshopProgress? learningProgress,
     // Kept as map — fields consumed directly in CC-26+
     @JsonKey(name: 'certificate') Map<String, dynamic>? certificate,
+    // Raw pass-through: backend returns `sidebar.tabs: [{ id, label, order }]`
+    // (see backend workshop detail handler). Used to override the default
+    // tab labels (Q&A, Assignments, etc.) at render time.
+    @JsonKey(name: 'sidebar') Map<String, dynamic>? sidebar,
   }) = _WorkshopDetail;
 
   factory WorkshopDetail.fromJson(Map<String, dynamic> json) =>

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../config/ui_strings.dart';
-import '../../../../shared/theme/design_constants.dart';
 
+import '../../../../shared/theme/theme_tokens.dart';
 class ReflectionModal extends StatefulWidget {
   const ReflectionModal({
     super.key,
@@ -48,7 +48,7 @@ class _ReflectionModalState extends State<ReflectionModal> {
   Widget build(BuildContext context) {
     final s = widget.uiStrings;
     return Dialog(
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       child: Padding(
@@ -59,8 +59,8 @@ class _ReflectionModalState extends State<ReflectionModal> {
           children: [
             Text(
               s.reflectTitle ?? 'Your Reflection',
-              style: const TextStyle(
-                color: kColorTextPrimary,
+              style: TextStyle(
+                color: context.tokens.textPrimary,
                 fontFamily: 'Rajdhani',
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -69,8 +69,8 @@ class _ReflectionModalState extends State<ReflectionModal> {
             const SizedBox(height: 10),
             Text(
               _prompt,
-              style: const TextStyle(
-                color: kColorTextSecondary,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
                 fontSize: 13,
                 height: 1.45,
               ),
@@ -79,26 +79,26 @@ class _ReflectionModalState extends State<ReflectionModal> {
             TextField(
               controller: _controller,
               maxLines: 4,
-              style: const TextStyle(color: kColorTextPrimary, fontSize: 13),
+              style: TextStyle(color: context.tokens.textPrimary, fontSize: 13),
               decoration: InputDecoration(
                 hintText: s.reflectPlaceholder ?? 'Write your reflection…',
-                hintStyle: const TextStyle(
-                  color: kColorTextMuted,
+                hintStyle: TextStyle(
+                  color: context.tokens.textMuted,
                   fontSize: 13,
                 ),
                 filled: true,
-                fillColor: kColorBgInput,
+                fillColor: context.tokens.bgInput,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorBorderCard),
+                  borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: kColorAccent),
+                  borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 10),
@@ -112,8 +112,8 @@ class _ReflectionModalState extends State<ReflectionModal> {
                     onPressed: widget.onSkip,
                     child: Text(
                       s.reflectSkipLabel ?? 'Skip',
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 13,
                       ),
                     ),
@@ -124,7 +124,7 @@ class _ReflectionModalState extends State<ReflectionModal> {
                   child: ElevatedButton(
                     onPressed: _saved ? null : _save,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: kColorAccent,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
                       disabledBackgroundColor: Colors.green,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(

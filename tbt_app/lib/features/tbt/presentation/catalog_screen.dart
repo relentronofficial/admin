@@ -11,6 +11,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../data/catalog_service.dart';
 import '../providers/catalog_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class CatalogScreen extends ConsumerWidget {
   const CatalogScreen({super.key});
 
@@ -21,22 +22,22 @@ class CatalogScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
+        title: Text(
           'EXPLORE',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: kColorTextMuted, size: 20),
+            icon: Icon(Icons.refresh, color: context.tokens.textMuted, size: 20),
             onPressed: () {
               ref.invalidate(heroProvider);
               ref.invalidate(catalogSectionsProvider);
@@ -45,8 +46,8 @@ class CatalogScreen extends ConsumerWidget {
         ],
       ),
       body: RefreshIndicator(
-        color: kColorAccent,
-        backgroundColor: kColorBgSurface,
+        color: Theme.of(context).colorScheme.primary,
+        backgroundColor: context.tokens.bgSurface,
         onRefresh: () async {
           ref.invalidate(heroProvider);
           ref.invalidate(catalogSectionsProvider);
@@ -159,9 +160,9 @@ class _HeroBanner extends StatelessWidget {
         height: 200,
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -200,7 +201,7 @@ class _HeroBanner extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: kColorAccent,
+                        color: Theme.of(context).colorScheme.primary,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -241,7 +242,7 @@ class _HeroBanner extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
-                      color: kColorAccent,
+                      color: Theme.of(context).colorScheme.primary,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -290,12 +291,12 @@ class _ContentSection extends StatelessWidget {
                 Expanded(
                   child: Text(
                     section.title.toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Rajdhani',
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.5,
-                      color: kColorTextMuted,
+                      color: context.tokens.textMuted,
                     ),
                   ),
                 ),
@@ -310,13 +311,13 @@ class _ContentSection extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.lock_outline,
-                            color: kColorTextMuted, size: 10),
+                        Icon(Icons.lock_outline,
+                            color: context.tokens.textMuted, size: 10),
                         const SizedBox(width: 3),
                         Text(
                           section.lockLabel ?? 'Locked',
-                          style: const TextStyle(
-                            color: kColorTextMuted,
+                          style: TextStyle(
+                            color: context.tokens.textMuted,
                             fontSize: 9,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.3,
@@ -366,9 +367,9 @@ class _CatalogCard extends StatelessWidget {
         width: 140,
         margin: const EdgeInsets.only(right: 10),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -440,7 +441,7 @@ class _CatalogCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 5, vertical: 2),
                   decoration: BoxDecoration(
-                    color: kColorAccent.withValues(alpha: 0.85),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(3),
                   ),
                   child: Text(
@@ -498,10 +499,10 @@ class _ThumbnailPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: kColorBgInput,
-      child: const Center(
+      color: context.tokens.bgInput,
+      child: Center(
         child: Icon(Icons.play_circle_outline,
-            color: kColorTextSubtle, size: 30),
+            color: context.tokens.textSubtle, size: 30),
       ),
     );
   }
@@ -513,13 +514,13 @@ class _HeroShimmer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Shimmer.fromColors(
-      baseColor: kColorBgSurface,
-      highlightColor: kColorBgInput,
+      baseColor: context.tokens.bgSurface,
+      highlightColor: context.tokens.bgInput,
       child: Container(
         height: 200,
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(12),
         ),
       ),
@@ -536,14 +537,14 @@ class _SectionShimmer extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Shimmer.fromColors(
-            baseColor: kColorBgSurface,
-            highlightColor: kColorBgInput,
+            baseColor: context.tokens.bgSurface,
+            highlightColor: context.tokens.bgInput,
             child: Container(
               height: 14,
               width: 120,
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: kColorBgSurface,
+                color: context.tokens.bgSurface,
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
@@ -556,13 +557,13 @@ class _SectionShimmer extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               itemCount: 4,
               itemBuilder: (_, __) => Shimmer.fromColors(
-                baseColor: kColorBgSurface,
-                highlightColor: kColorBgInput,
+                baseColor: context.tokens.bgSurface,
+                highlightColor: context.tokens.bgInput,
                 child: Container(
                   width: 140,
                   margin: const EdgeInsets.only(right: 10),
                   decoration: BoxDecoration(
-                    color: kColorBgSurface,
+                    color: context.tokens.bgSurface,
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
@@ -590,11 +591,11 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Failed to load content',
-              style: TextStyle(color: kColorTextSecondary),
+              style: TextStyle(color: context.tokens.textSecondary),
             ),
             const SizedBox(height: 12),
             TextButton(onPressed: onRetry, child: const Text('Retry')),
@@ -610,18 +611,18 @@ class _EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
         padding: EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.video_library_outlined,
-                color: kColorTextMuted, size: 40),
+                color: context.tokens.textMuted, size: 40),
             SizedBox(height: 12),
             Text(
               'No content available',
-              style: TextStyle(color: kColorTextSecondary, fontSize: 14),
+              style: TextStyle(color: context.tokens.textSecondary, fontSize: 14),
             ),
           ],
         ),

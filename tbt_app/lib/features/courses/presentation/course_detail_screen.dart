@@ -11,12 +11,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/models/course.dart';
 import '../../../shared/models/lesson.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../data/courses_service.dart';
 import '../providers/courses_provider.dart';
 import 'widgets/practice_arena_modal.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class CourseDetailScreen extends ConsumerStatefulWidget {
   const CourseDetailScreen({super.key, required this.courseId});
 
@@ -82,7 +82,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Access request sent! We\'ll notify you shortly.'),
-            backgroundColor: Color(0xFF14532d),
+            backgroundColor: Color(0xFF16a34a),
           ),
         );
       }
@@ -116,22 +116,22 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: detailAsync.whenOrNull(
           data: (d) => Text(
             d.title,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Rajdhani',
               fontSize: 18,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
-              color: kColorTextPrimary,
+              color: context.tokens.textPrimary,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -139,8 +139,8 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
         ),
       ),
       body: detailAsync.when(
-        loading: () => _buildSkeleton(),
-        error: (e, _) => _buildError(
+        loading: () => _buildSkeleton(context),
+        error: (e, _) => _buildError(context, 
           () => ref.invalidate(courseDetailProvider(widget.courseId)),
         ),
         data: (course) {
@@ -194,11 +194,11 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
                         ),
                       ),
                     if (course.lessons.isEmpty)
-                      const SliverFillRemaining(
+                      SliverFillRemaining(
                         child: Center(
                           child: Text(
                             'No lessons yet',
-                            style: TextStyle(color: kColorTextMuted),
+                            style: TextStyle(color: context.tokens.textMuted),
                           ),
                         ),
                       )
@@ -277,7 +277,7 @@ class _HeroSection extends StatelessWidget {
                   imageUrl: course.thumbnailUrl!,
                   fit: BoxFit.cover,
                   placeholder: (_, __) =>
-                      const ColoredBox(color: kColorBgInput),
+                      ColoredBox(color: context.tokens.bgInput),
                   errorWidget: (_, __, ___) => const _ThumbnailFallback(),
                 )
               : const _ThumbnailFallback(),
@@ -289,8 +289,8 @@ class _HeroSection extends StatelessWidget {
             children: [
               Text(
                 course.title,
-                style: const TextStyle(
-                  color: kColorTextPrimary,
+                style: TextStyle(
+                  color: context.tokens.textPrimary,
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   height: 1.3,
@@ -300,8 +300,8 @@ class _HeroSection extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   course.instructor!.fullName,
-                  style: const TextStyle(
-                    color: kColorTextSecondary,
+                  style: TextStyle(
+                    color: context.tokens.textSecondary,
                     fontSize: 13,
                   ),
                 ),
@@ -311,8 +311,8 @@ class _HeroSection extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(
                   course.description!,
-                  style: const TextStyle(
-                    color: kColorTextSecondary,
+                  style: TextStyle(
+                    color: context.tokens.textSecondary,
                     fontSize: 13,
                     height: 1.5,
                   ),
@@ -339,7 +339,7 @@ class _HeroSection extends StatelessWidget {
                     icon: Icons.local_offer_outlined,
                     color: course.price == null || course.price == 0
                         ? const Color(0xFF22c55e)
-                        : kColorTextSecondary,
+                        : context.tokens.textSecondary,
                   ),
                 ],
               ),
@@ -359,14 +359,15 @@ class _HeroSection extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF14532d),
+                    // Green success tint — reads in both themes.
+                    color: const Color(0xFF16a34a).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Center(
                     child: Text(
                       'Enrolled — tap a lesson to begin',
                       style: TextStyle(
-                        color: Color(0xFF4ade80),
+                        color: Color(0xFF16a34a),
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -428,30 +429,32 @@ class _AccessCta extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Amber "Payment pending" banner — same alert semantics as the web.
+          // Amber "Payment pending" banner — 12% tint so it reads in both themes.
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF3d2600),
+              color: const Color(0xFFea580c).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFfb923c).withAlpha(64)),
+              border: Border.all(
+                  color: const Color(0xFFea580c).withValues(alpha: 0.3)),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFfb923c)),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFFea580c)),
                   ),
                 ),
-                SizedBox(width: 10),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'Payment pending — awaiting confirmation',
                     style: TextStyle(
-                      color: Color(0xFFf3f3f3),
+                      color: context.tokens.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),
@@ -495,10 +498,10 @@ class _AccessCta extends StatelessWidget {
       height: 44,
       child: ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
-          backgroundColor: accessRequested ? kColorBgInput : accent,
-          foregroundColor: accessRequested ? kColorTextMuted : Colors.white,
-          disabledBackgroundColor: kColorBgInput,
-          disabledForegroundColor: kColorTextMuted,
+          backgroundColor: accessRequested ? context.tokens.bgInput : accent,
+          foregroundColor: accessRequested ? context.tokens.textMuted : Colors.white,
+          disabledBackgroundColor: context.tokens.bgInput,
+          disabledForegroundColor: context.tokens.textMuted,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
@@ -543,7 +546,7 @@ class _MetaChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? kColorTextSecondary;
+    final c = color ?? context.tokens.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -563,11 +566,11 @@ class _ThumbnailFallback extends StatelessWidget {
   const _ThumbnailFallback();
 
   @override
-  Widget build(BuildContext context) => const ColoredBox(
-        color: kColorBgInput,
+  Widget build(BuildContext context) => ColoredBox(
+        color: context.tokens.bgInput,
         child: Center(
           child: Icon(Icons.play_circle_outline,
-              color: kColorTextMuted, size: 40),
+              color: context.tokens.textMuted, size: 40),
         ),
       );
 }
@@ -596,20 +599,20 @@ class _ProgressSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'LESSONS',
                 style: TextStyle(
                   fontFamily: 'Rajdhani',
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
-                  color: kColorTextMuted,
+                  color: context.tokens.textMuted,
                 ),
               ),
               Text(
                 '$completed / $total',
-                style: const TextStyle(
-                  color: kColorTextSecondary,
+                style: TextStyle(
+                  color: context.tokens.textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -622,7 +625,7 @@ class _ProgressSection extends StatelessWidget {
             child: LinearProgressIndicator(
               value: pct,
               minHeight: 4,
-              backgroundColor: kColorBgSurface,
+              backgroundColor: context.tokens.bgSurface,
               valueColor: AlwaysStoppedAnimation<Color>(accent),
             ),
           ),
@@ -658,8 +661,8 @@ class _LessonRow extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: kColorBorderCard)),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: context.tokens.borderCard)),
         ),
         child: Row(
           children: [
@@ -672,13 +675,13 @@ class _LessonRow extends StatelessWidget {
                       height: 24,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: kColorBorderInput),
+                        border: Border.all(color: context.tokens.borderInput),
                       ),
                       child: Center(
                         child: Text(
                           '${index + 1}',
-                          style: const TextStyle(
-                            color: kColorTextMuted,
+                          style: TextStyle(
+                            color: context.tokens.textMuted,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
@@ -694,7 +697,7 @@ class _LessonRow extends StatelessWidget {
                   Text(
                     lesson.title,
                     style: TextStyle(
-                      color: hasAccess ? kColorTextPrimary : kColorTextMuted,
+                      color: hasAccess ? context.tokens.textPrimary : context.tokens.textMuted,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
@@ -705,8 +708,8 @@ class _LessonRow extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       _durationLabel!,
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 11,
                       ),
                     ),
@@ -716,9 +719,9 @@ class _LessonRow extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             if (!hasAccess)
-              const Icon(Icons.lock_outline, color: kColorTextMuted, size: 16)
+              Icon(Icons.lock_outline, color: context.tokens.textMuted, size: 16)
             else
-              _typeIcon(lesson.type),
+              _typeIcon(context, lesson.type),
           ],
         ),
       ),
@@ -739,17 +742,17 @@ class _LessonRow extends StatelessWidget {
     return null;
   }
 
-  Widget _typeIcon(LessonType type) {
+  Widget _typeIcon(BuildContext context, LessonType type) {
     switch (type) {
       case LessonType.video:
-        return const Icon(Icons.play_circle_outline,
-            color: kColorTextMuted, size: 18);
+        return Icon(Icons.play_circle_outline,
+            color: context.tokens.textMuted, size: 18);
       case LessonType.assignment:
-        return const Icon(Icons.assignment_outlined,
-            color: kColorTextMuted, size: 18);
+        return Icon(Icons.assignment_outlined,
+            color: context.tokens.textMuted, size: 18);
       case LessonType.offer:
-        return const Icon(Icons.local_offer_outlined,
-            color: kColorTextMuted, size: 18);
+        return Icon(Icons.local_offer_outlined,
+            color: context.tokens.textMuted, size: 18);
     }
   }
 }
@@ -770,9 +773,9 @@ class _BottomTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: kColorBgSurface,
-        border: Border(top: BorderSide(color: kColorBorderCard)),
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        border: Border(top: BorderSide(color: context.tokens.borderCard)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -781,7 +784,7 @@ class _BottomTabs extends StatelessWidget {
             controller: tabController,
             indicatorColor: accent,
             labelColor: accent,
-            unselectedLabelColor: kColorTextMuted,
+            unselectedLabelColor: context.tokens.textMuted,
             labelStyle: const TextStyle(
               fontFamily: 'Rajdhani',
               fontWeight: FontWeight.w700,
@@ -832,10 +835,10 @@ class _LeaderboardTab extends ConsumerWidget {
       ),
       data: (lb) {
         if (lb.leaderboard.isEmpty) {
-          return const Center(
+          return Center(
             child: Text(
               'No entries yet',
-              style: TextStyle(color: kColorTextMuted, fontSize: 12),
+              style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
             ),
           );
         }
@@ -860,12 +863,12 @@ class _LeaderboardTab extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: isMe
                     ? accent.withValues(alpha: 0.12)
-                    : kColorBgInput,
+                    : context.tokens.bgInput,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: isMe
                       ? accent.withValues(alpha: 0.4)
-                      : kColorBorderCard,
+                      : context.tokens.borderCard,
                 ),
               ),
               child: Row(
@@ -875,7 +878,7 @@ class _LeaderboardTab extends ConsumerWidget {
                     child: Text(
                       '#${entry.rank}',
                       style: TextStyle(
-                        color: entry.rank <= 3 ? accent : kColorTextMuted,
+                        color: entry.rank <= 3 ? accent : context.tokens.textMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -888,12 +891,12 @@ class _LeaderboardTab extends ConsumerWidget {
                         ? CachedNetworkImageProvider(
                             entry.member!.profilePhotoUrl!)
                         : null,
-                    backgroundColor: kColorBgSurface,
+                    backgroundColor: context.tokens.bgSurface,
                     child: entry.member?.profilePhotoUrl == null
                         ? Text(
                             initials.isEmpty ? '?' : initials,
-                            style: const TextStyle(
-                              color: kColorTextSecondary,
+                            style: TextStyle(
+                              color: context.tokens.textSecondary,
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                             ),
@@ -905,7 +908,7 @@ class _LeaderboardTab extends ConsumerWidget {
                     child: Text(
                       name.isEmpty ? 'Member' : name,
                       style: TextStyle(
-                        color: isMe ? accent : kColorTextPrimary,
+                        color: isMe ? accent : context.tokens.textPrimary,
                         fontSize: 13,
                         fontWeight:
                             isMe ? FontWeight.w700 : FontWeight.w500,
@@ -917,7 +920,7 @@ class _LeaderboardTab extends ConsumerWidget {
                   Text(
                     '${entry.totalXp} XP',
                     style: TextStyle(
-                      color: isMe ? accent : kColorTextSecondary,
+                      color: isMe ? accent : context.tokens.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -952,16 +955,16 @@ class _BadgesTab extends ConsumerWidget {
       ),
       data: (badges) {
         if (badges.isEmpty) {
-          return const Center(
+          return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.military_tech_outlined,
-                    color: kColorTextMuted, size: 28),
+                    color: context.tokens.textMuted, size: 28),
                 SizedBox(height: 6),
                 Text(
                   'No badges earned yet',
-                  style: TextStyle(color: kColorTextMuted, fontSize: 12),
+                  style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -992,9 +995,9 @@ class _BadgeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: kColorBgInput,
+        color: context.tokens.bgInput,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       padding: const EdgeInsets.all(8),
       child: Column(
@@ -1006,23 +1009,23 @@ class _BadgeCard extends StatelessWidget {
                     imageUrl: badge.badge.imageUrl!,
                     fit: BoxFit.contain,
                     placeholder: (_, __) => const SizedBox(),
-                    errorWidget: (_, __, ___) => const Icon(
+                    errorWidget: (_, __, ___) => Icon(
                       Icons.military_tech,
-                      color: kColorTextMuted,
+                      color: context.tokens.textMuted,
                       size: 28,
                     ),
                   )
-                : const Icon(
+                : Icon(
                     Icons.military_tech,
-                    color: kColorTextMuted,
+                    color: context.tokens.textMuted,
                     size: 28,
                   ),
           ),
           const SizedBox(height: 4),
           Text(
             badge.badge.name,
-            style: const TextStyle(
-              color: kColorTextPrimary,
+            style: TextStyle(
+              color: context.tokens.textPrimary,
               fontSize: 10,
               fontWeight: FontWeight.w600,
               height: 1.2,
@@ -1034,7 +1037,7 @@ class _BadgeCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             _fmtDate(badge.earnedAt),
-            style: const TextStyle(color: kColorTextMuted, fontSize: 9),
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 9),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1200,9 +1203,9 @@ class _XpAndPracticeRow extends ConsumerWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: kColorBgSurface,
+                color: context.tokens.bgSurface,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: kColorBorderCard),
+                border: Border.all(color: context.tokens.borderCard),
               ),
               child: Row(
                 children: [
@@ -1210,8 +1213,8 @@ class _XpAndPracticeRow extends ConsumerWidget {
                   const SizedBox(width: 6),
                   Text(
                     '${xp?.totalXp ?? 0} XP',
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontFamily: 'Rajdhani',
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -1221,8 +1224,8 @@ class _XpAndPracticeRow extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Text(
                     '· ${xp?.episodesCompleted ?? 0}/${course.lessons.length} lessons',
-                    style: const TextStyle(
-                      color: kColorTextMuted,
+                    style: TextStyle(
+                      color: context.tokens.textMuted,
                       fontSize: 12,
                     ),
                   ),
@@ -1262,16 +1265,16 @@ class _XpAndPracticeRow extends ConsumerWidget {
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
-Widget _buildSkeleton() => Shimmer.fromColors(
-      baseColor: kColorBgSurface,
-      highlightColor: kColorBgInput,
+Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
+      baseColor: context.tokens.bgSurface,
+      highlightColor: context.tokens.bgInput,
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             AspectRatio(
               aspectRatio: 16 / 9,
-              child: Container(color: kColorBgSurface),
+              child: Container(color: context.tokens.bgSurface),
             ),
             const SizedBox(height: 16),
             Padding(
@@ -1282,16 +1285,16 @@ Widget _buildSkeleton() => Shimmer.fromColors(
                   Container(
                       height: 22,
                       width: double.infinity,
-                      color: kColorBgSurface),
+                      color: context.tokens.bgSurface),
                   const SizedBox(height: 8),
-                  Container(height: 14, width: 160, color: kColorBgSurface),
+                  Container(height: 14, width: 160, color: context.tokens.bgSurface),
                   const SizedBox(height: 12),
                   Container(
                       height: 14,
                       width: double.infinity,
-                      color: kColorBgSurface),
+                      color: context.tokens.bgSurface),
                   const SizedBox(height: 4),
-                  Container(height: 14, width: 200, color: kColorBgSurface),
+                  Container(height: 14, width: 200, color: context.tokens.bgSurface),
                 ],
               ),
             ),
@@ -1302,7 +1305,7 @@ Widget _buildSkeleton() => Shimmer.fromColors(
                 margin:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 height: 48,
-                color: kColorBgSurface,
+                color: context.tokens.bgSurface,
               ),
             ),
           ],
@@ -1312,14 +1315,14 @@ Widget _buildSkeleton() => Shimmer.fromColors(
 
 // ── Error state ───────────────────────────────────────────────────────────────
 
-Widget _buildError(VoidCallback onRetry) => Center(
+Widget _buildError(BuildContext context, VoidCallback onRetry) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
           const SizedBox(height: 12),
-          const Text('Failed to load course',
-              style: TextStyle(color: kColorTextSecondary)),
+          Text('Failed to load course',
+              style: TextStyle(color: context.tokens.textSecondary)),
           const SizedBox(height: 12),
           TextButton(onPressed: onRetry, child: const Text('Retry')),
         ],

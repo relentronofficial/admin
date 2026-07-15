@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../shared/models/lesson.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../providers/courses_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class BadgesScreen extends ConsumerWidget {
   const BadgesScreen({super.key});
 
@@ -16,26 +16,26 @@ class BadgesScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: kColorTextPrimary),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
+        title: Text(
           'MY BADGES',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: kColorTextMuted, size: 20),
+            icon: Icon(Icons.refresh, color: context.tokens.textMuted, size: 20),
             onPressed: () => ref.invalidate(earnedBadgesProvider),
           ),
         ],
@@ -46,11 +46,11 @@ class BadgesScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline,
-                  color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline,
+                  color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load badges',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load badges',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(earnedBadgesProvider),
@@ -106,9 +106,9 @@ class _BadgeCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: kColorBgSurface,
+        color: context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kColorBorderCard),
+        border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -135,8 +135,8 @@ class _BadgeCard extends StatelessWidget {
               children: [
                 Text(
                   info.name,
-                  style: const TextStyle(
-                    color: kColorTextPrimary,
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     height: 1.3,
@@ -149,13 +149,13 @@ class _BadgeCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.military_tech_outlined,
-                        size: 11, color: kColorAccent),
+                    Icon(Icons.military_tech_outlined,
+                        size: 11, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 3),
                     Text(
                       _formatDate(badge.earnedAt),
-                      style: const TextStyle(
-                        color: kColorTextMuted,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
                         fontSize: 10,
                       ),
                     ),
@@ -177,12 +177,12 @@ class _BadgePlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: kColorAccent.withValues(alpha: 0.1),
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
         shape: BoxShape.circle,
       ),
-      child: const Center(
+      child: Center(
         child: Icon(Icons.military_tech_outlined,
-            color: kColorAccent, size: 40),
+            color: Theme.of(context).colorScheme.primary, size: 40),
       ),
     );
   }
@@ -195,17 +195,17 @@ class _EmptyBadgesView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.military_tech_outlined,
-              color: kColorTextMuted, size: 56),
+              color: context.tokens.textMuted, size: 56),
           SizedBox(height: 16),
           Text(
             'No badges earned yet',
             style: TextStyle(
-              color: kColorTextSecondary,
+              color: context.tokens.textSecondary,
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
@@ -214,7 +214,7 @@ class _EmptyBadgesView extends StatelessWidget {
           Text(
             'Complete courses to earn your first badge',
             style: TextStyle(
-              color: kColorTextMuted,
+              color: context.tokens.textMuted,
               fontSize: 13,
             ),
           ),
@@ -239,11 +239,11 @@ class _BadgesShimmer extends StatelessWidget {
       ),
       itemCount: 6,
       itemBuilder: (_, __) => Shimmer.fromColors(
-        baseColor: kColorBgSurface,
-        highlightColor: kColorBgInput,
+        baseColor: context.tokens.bgSurface,
+        highlightColor: context.tokens.bgInput,
         child: Container(
           decoration: BoxDecoration(
-            color: kColorBgSurface,
+            color: context.tokens.bgSurface,
             borderRadius: BorderRadius.circular(10),
           ),
         ),

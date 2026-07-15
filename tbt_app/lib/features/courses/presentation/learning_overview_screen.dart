@@ -6,10 +6,10 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/course.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../providers/courses_provider.dart';
 
 
+import '../../../shared/theme/theme_tokens.dart';
 class LearningOverviewScreen extends ConsumerWidget {
   const LearningOverviewScreen({super.key});
 
@@ -37,27 +37,27 @@ class LearningOverviewScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
+        title: Text(
           'MY LEARNING',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 17,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.5,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
           TextButton.icon(
-            icon: const Icon(Icons.military_tech_outlined,
-                size: 16, color: kColorAccent),
-            label: const Text(
+            icon: Icon(Icons.military_tech_outlined,
+                size: 16, color: Theme.of(context).colorScheme.primary),
+            label: Text(
               'Badges',
               style: TextStyle(
-                color: kColorAccent,
+                color: Theme.of(context).colorScheme.primary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -73,11 +73,11 @@ class LearningOverviewScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline,
-                  color: kColorTextMuted, size: 40),
+              Icon(Icons.error_outline,
+                  color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              const Text('Failed to load courses',
-                  style: TextStyle(color: kColorTextSecondary)),
+              Text('Failed to load courses',
+                  style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(learningCoursesProvider),
@@ -102,8 +102,8 @@ class _EnrollmentsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      color: kColorAccent,
-      backgroundColor: kColorBgSurface,
+      color: Theme.of(context).colorScheme.primary,
+      backgroundColor: context.tokens.bgSurface,
       onRefresh: () async {
         // Force refetch by navigating up to provider — caller can invalidate
       },
@@ -115,17 +115,17 @@ class _EnrollmentsList extends StatelessWidget {
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: OutlinedButton.icon(
               onPressed: () => context.push(AppRoutes.courses),
-              icon: const Icon(Icons.explore_outlined,
-                  size: 16, color: kColorAccent),
-              label: const Text(
+              icon: Icon(Icons.explore_outlined,
+                  size: 16, color: Theme.of(context).colorScheme.primary),
+              label: Text(
                 'Browse All Courses',
                 style: TextStyle(
-                  color: kColorAccent,
+                  color: Theme.of(context).colorScheme.primary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: kColorAccent, width: 1),
+                side: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -136,7 +136,7 @@ class _EnrollmentsList extends StatelessWidget {
 
           // ── Section header ────────────────────────────────────────────
           if (enrollments.isNotEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
               child: Text(
                 'ENROLLED COURSES',
@@ -145,7 +145,7 @@ class _EnrollmentsList extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
-                  color: kColorTextMuted,
+                  color: context.tokens.textMuted,
                 ),
               ),
             ),
@@ -158,22 +158,22 @@ class _EnrollmentsList extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.school_outlined,
-                        color: kColorTextMuted, size: 48),
+                    Icon(Icons.school_outlined,
+                        color: context.tokens.textMuted, size: 48),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'No courses enrolled yet',
                       style: TextStyle(
-                        color: kColorTextSecondary,
+                        color: context.tokens.textSecondary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Browse the catalog to find your first course',
                       style: TextStyle(
-                        color: kColorTextMuted,
+                        color: context.tokens.textMuted,
                         fontSize: 13,
                       ),
                     ),
@@ -181,7 +181,7 @@ class _EnrollmentsList extends StatelessWidget {
                     ElevatedButton(
                       onPressed: () => context.push(AppRoutes.courses),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: kColorAccent,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -243,9 +243,9 @@ class _CourseEnrollmentCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
+          color: context.tokens.bgSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kColorBorderCard),
+          border: Border.all(color: context.tokens.borderCard),
         ),
         child: Row(
           children: [
@@ -278,8 +278,8 @@ class _CourseEnrollmentCard extends StatelessWidget {
                   children: [
                     Text(
                       course?.title ?? 'Untitled Course',
-                      style: const TextStyle(
-                        color: kColorTextPrimary,
+                      style: TextStyle(
+                        color: context.tokens.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
@@ -293,11 +293,11 @@ class _CourseEnrollmentCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(2),
                       child: LinearProgressIndicator(
                         value: progress,
-                        backgroundColor: kColorBorderCard,
+                        backgroundColor: context.tokens.borderCard,
                         valueColor: AlwaysStoppedAnimation<Color>(
                           isCompleted
                               ? const Color(0xFF16a34a)
-                              : kColorAccent,
+                              : Theme.of(context).colorScheme.primary,
                         ),
                         minHeight: 3,
                       ),
@@ -307,8 +307,8 @@ class _CourseEnrollmentCard extends StatelessWidget {
                       children: [
                         Text(
                           _formatProgress(enrollment.progressPercent),
-                          style: const TextStyle(
-                            color: kColorTextMuted,
+                          style: TextStyle(
+                            color: context.tokens.textMuted,
                             fontSize: 10,
                           ),
                         ),
@@ -317,8 +317,8 @@ class _CourseEnrollmentCard extends StatelessWidget {
                           const Icon(Icons.check_circle,
                               size: 14, color: Color(0xFF16a34a))
                         else
-                          const Icon(Icons.play_circle_outlined,
-                              size: 14, color: kColorAccent),
+                          Icon(Icons.play_circle_outlined,
+                              size: 14, color: Theme.of(context).colorScheme.primary),
                       ],
                     ),
                   ],
@@ -339,10 +339,10 @@ class _ThumbnailPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: kColorBgInput,
-      child: const Center(
+      color: context.tokens.bgInput,
+      child: Center(
         child: Icon(Icons.play_lesson_outlined,
-            color: kColorTextSubtle, size: 24),
+            color: context.tokens.textSubtle, size: 24),
       ),
     );
   }
@@ -357,13 +357,13 @@ class _EnrollmentsShimmer extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: 5,
       itemBuilder: (_, __) => Shimmer.fromColors(
-        baseColor: kColorBgSurface,
-        highlightColor: kColorBgInput,
+        baseColor: context.tokens.bgSurface,
+        highlightColor: context.tokens.bgInput,
         child: Container(
           height: 80,
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
-            color: kColorBgSurface,
+            color: context.tokens.bgSurface,
             borderRadius: BorderRadius.circular(10),
           ),
         ),

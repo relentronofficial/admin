@@ -7,7 +7,7 @@ part of 'history_provider.dart';
 // **************************************************************************
 
 String _$watchHistoryNotifierHash() =>
-    r'12a9d5cbd2f2aa6ddd1c955255da03bf05b1ad81';
+    r'8c549cb1aa1e3a193d3c6a4f61cd9142cbccd4ff';
 
 /// Copied from Dart SDK
 class _SystemHash {

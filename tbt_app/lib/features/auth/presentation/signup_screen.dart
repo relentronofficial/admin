@@ -7,6 +7,7 @@ import '../../../core/constants/routes.dart';
 import '../../../core/exceptions/app_exception.dart';
 import '../../../shared/api/services/auth_service.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
 
@@ -58,7 +59,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(msg),
-          backgroundColor: const Color(0xFFdc2626),
+          backgroundColor: Theme.of(context).colorScheme.primary,
         ),
       );
     } finally {
@@ -69,12 +70,12 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0f0f0f),
+      backgroundColor: context.tokens.bgPage,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0f0f0f),
+        backgroundColor: context.tokens.bgPage,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFf0f0f0)),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: () => context.go(AppRoutes.login),
         ),
       ),
@@ -93,7 +94,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           fontFamily: 'Rajdhani',
                     fontSize: 28,
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFFf0f0f0),
+                    color: context.tokens.textPrimary,
                     letterSpacing: 2,
                   ),
                 ),
@@ -104,7 +105,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           fontFamily: 'Rajdhani',
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFF606060),
+                    color: context.tokens.textMuted,
                     letterSpacing: 1,
                   ),
                 ),
@@ -116,7 +117,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 TextFormField(
                   controller: _nameController,
                   textCapitalization: TextCapitalization.words,
-                  style: const TextStyle(color: Color(0xFFf0f0f0)),
+                  style: TextStyle(color: context.tokens.textPrimary),
                   decoration: _inputDecoration('Enter your full name'),
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Full name is required'
@@ -131,7 +132,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  style: const TextStyle(color: Color(0xFFf0f0f0)),
+                  style: TextStyle(color: context.tokens.textPrimary),
                   decoration: _inputDecoration('Enter your phone number'),
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Phone number is required'
@@ -145,7 +146,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: Color(0xFFf0f0f0)),
+                  style: TextStyle(color: context.tokens.textPrimary),
                   decoration: _inputDecoration('Enter your email address'),
                 ),
                 const SizedBox(height: 20),
@@ -156,7 +157,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
-                  style: const TextStyle(color: Color(0xFFf0f0f0)),
+                  style: TextStyle(color: context.tokens.textPrimary),
                   decoration: _inputDecoration('Create a password').copyWith(
                     suffixIcon: IconButton(
                       tooltip: _obscurePassword ? 'Show password' : 'Hide password',
@@ -164,7 +165,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                         _obscurePassword
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
-                        color: const Color(0xFF606060),
+                        color: context.tokens.textMuted,
                         size: 20,
                       ),
                       onPressed: () =>
@@ -187,7 +188,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 TextFormField(
                   controller: _confirmController,
                   obscureText: _obscureConfirm,
-                  style: const TextStyle(color: Color(0xFFf0f0f0)),
+                  style: TextStyle(color: context.tokens.textPrimary),
                   decoration: _inputDecoration('Confirm your password').copyWith(
                     suffixIcon: IconButton(
                       tooltip: _obscureConfirm ? 'Show password' : 'Hide password',
@@ -195,7 +196,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                         _obscureConfirm
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
-                        color: const Color(0xFF606060),
+                        color: context.tokens.textMuted,
                         size: 20,
                       ),
                       onPressed: () =>
@@ -220,8 +221,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _submit,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFdc2626),
-                      disabledBackgroundColor: const Color(0xFF7f1111),
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -254,20 +255,20 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       'Already have an account? ',
                       style:
-                          TextStyle(color: Color(0xFF606060), fontSize: 14),
+                          TextStyle(color: context.tokens.textMuted, fontSize: 14),
                     ),
                     Semantics(
                       label: 'Sign In',
                       button: true,
                       child: GestureDetector(
                         onTap: () => context.go(AppRoutes.login),
-                        child: const Text(
+                        child: Text(
                           'Sign In',
                           style: TextStyle(
-                            color: Color(0xFFdc2626),
+                            color: Theme.of(context).colorScheme.primary,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
@@ -287,30 +288,30 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
   InputDecoration _inputDecoration(String hint) => InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF606060), fontSize: 14),
+        hintStyle: TextStyle(color: context.tokens.textMuted, fontSize: 14),
         filled: true,
-        fillColor: const Color(0xFF1a1a1a),
+        fillColor: context.tokens.bgInput,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+          borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+          borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFdc2626)),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFdc2626)),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFdc2626)),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
       );
 }
@@ -326,7 +327,7 @@ class _FieldLabel extends StatelessWidget {
           fontFamily: 'Rajdhani',
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: const Color(0xFF606060),
+          color: context.tokens.textMuted,
           letterSpacing: 1.5,
         ),
       );

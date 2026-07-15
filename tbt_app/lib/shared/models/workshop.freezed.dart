@@ -3669,7 +3669,11 @@ mixin _$WorkshopDetail {
   WorkshopProgress? get learningProgress =>
       throw _privateConstructorUsedError; // Kept as map — fields consumed directly in CC-26+
   @JsonKey(name: 'certificate')
-  Map<String, dynamic>? get certificate => throw _privateConstructorUsedError;
+  Map<String, dynamic>? get certificate => throw _privateConstructorUsedError; // Raw pass-through: backend returns `sidebar.tabs: [{ id, label, order }]`
+  // (see backend workshop detail handler). Used to override the default
+  // tab labels (Q&A, Assignments, etc.) at render time.
+  @JsonKey(name: 'sidebar')
+  Map<String, dynamic>? get sidebar => throw _privateConstructorUsedError;
 
   /// Serializes this WorkshopDetail to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -3699,6 +3703,7 @@ abstract class $WorkshopDetailCopyWith<$Res> {
     String? workshopFlowLabel,
     WorkshopProgress? learningProgress,
     @JsonKey(name: 'certificate') Map<String, dynamic>? certificate,
+    @JsonKey(name: 'sidebar') Map<String, dynamic>? sidebar,
   });
 
   $WorkshopProgressCopyWith<$Res>? get learningProgress;
@@ -3729,6 +3734,7 @@ class _$WorkshopDetailCopyWithImpl<$Res, $Val extends WorkshopDetail>
     Object? workshopFlowLabel = freezed,
     Object? learningProgress = freezed,
     Object? certificate = freezed,
+    Object? sidebar = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -3782,6 +3788,11 @@ class _$WorkshopDetailCopyWithImpl<$Res, $Val extends WorkshopDetail>
                     ? _value.certificate
                     : certificate // ignore: cast_nullable_to_non_nullable
                         as Map<String, dynamic>?,
+            sidebar:
+                freezed == sidebar
+                    ? _value.sidebar
+                    : sidebar // ignore: cast_nullable_to_non_nullable
+                        as Map<String, dynamic>?,
           )
           as $Val,
     );
@@ -3822,6 +3833,7 @@ abstract class _$$WorkshopDetailImplCopyWith<$Res>
     String? workshopFlowLabel,
     WorkshopProgress? learningProgress,
     @JsonKey(name: 'certificate') Map<String, dynamic>? certificate,
+    @JsonKey(name: 'sidebar') Map<String, dynamic>? sidebar,
   });
 
   @override
@@ -3852,6 +3864,7 @@ class __$$WorkshopDetailImplCopyWithImpl<$Res>
     Object? workshopFlowLabel = freezed,
     Object? learningProgress = freezed,
     Object? certificate = freezed,
+    Object? sidebar = freezed,
   }) {
     return _then(
       _$WorkshopDetailImpl(
@@ -3905,6 +3918,11 @@ class __$$WorkshopDetailImplCopyWithImpl<$Res>
                 ? _value._certificate
                 : certificate // ignore: cast_nullable_to_non_nullable
                     as Map<String, dynamic>?,
+        sidebar:
+            freezed == sidebar
+                ? _value._sidebar
+                : sidebar // ignore: cast_nullable_to_non_nullable
+                    as Map<String, dynamic>?,
       ),
     );
   }
@@ -3924,7 +3942,9 @@ class _$WorkshopDetailImpl implements _WorkshopDetail {
     this.workshopFlowLabel,
     this.learningProgress,
     @JsonKey(name: 'certificate') final Map<String, dynamic>? certificate,
-  }) : _certificate = certificate;
+    @JsonKey(name: 'sidebar') final Map<String, dynamic>? sidebar,
+  }) : _certificate = certificate,
+       _sidebar = sidebar;
 
   factory _$WorkshopDetailImpl.fromJson(Map<String, dynamic> json) =>
       _$$WorkshopDetailImplFromJson(json);
@@ -3960,9 +3980,26 @@ class _$WorkshopDetailImpl implements _WorkshopDetail {
     return EqualUnmodifiableMapView(value);
   }
 
+  // Raw pass-through: backend returns `sidebar.tabs: [{ id, label, order }]`
+  // (see backend workshop detail handler). Used to override the default
+  // tab labels (Q&A, Assignments, etc.) at render time.
+  final Map<String, dynamic>? _sidebar;
+  // Raw pass-through: backend returns `sidebar.tabs: [{ id, label, order }]`
+  // (see backend workshop detail handler). Used to override the default
+  // tab labels (Q&A, Assignments, etc.) at render time.
+  @override
+  @JsonKey(name: 'sidebar')
+  Map<String, dynamic>? get sidebar {
+    final value = _sidebar;
+    if (value == null) return null;
+    if (_sidebar is EqualUnmodifiableMapView) return _sidebar;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
+
   @override
   String toString() {
-    return 'WorkshopDetail(id: $id, title: $title, description: $description, thumbnailUrl: $thumbnailUrl, enrollmentStatus: $enrollmentStatus, backLabel: $backLabel, backUrl: $backUrl, workshopFlowLabel: $workshopFlowLabel, learningProgress: $learningProgress, certificate: $certificate)';
+    return 'WorkshopDetail(id: $id, title: $title, description: $description, thumbnailUrl: $thumbnailUrl, enrollmentStatus: $enrollmentStatus, backLabel: $backLabel, backUrl: $backUrl, workshopFlowLabel: $workshopFlowLabel, learningProgress: $learningProgress, certificate: $certificate, sidebar: $sidebar)';
   }
 
   @override
@@ -3988,7 +4025,8 @@ class _$WorkshopDetailImpl implements _WorkshopDetail {
             const DeepCollectionEquality().equals(
               other._certificate,
               _certificate,
-            ));
+            ) &&
+            const DeepCollectionEquality().equals(other._sidebar, _sidebar));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -4005,6 +4043,7 @@ class _$WorkshopDetailImpl implements _WorkshopDetail {
     workshopFlowLabel,
     learningProgress,
     const DeepCollectionEquality().hash(_certificate),
+    const DeepCollectionEquality().hash(_sidebar),
   );
 
   /// Create a copy of WorkshopDetail
@@ -4036,6 +4075,7 @@ abstract class _WorkshopDetail implements WorkshopDetail {
     final String? workshopFlowLabel,
     final WorkshopProgress? learningProgress,
     @JsonKey(name: 'certificate') final Map<String, dynamic>? certificate,
+    @JsonKey(name: 'sidebar') final Map<String, dynamic>? sidebar,
   }) = _$WorkshopDetailImpl;
 
   factory _WorkshopDetail.fromJson(Map<String, dynamic> json) =
@@ -4061,7 +4101,12 @@ abstract class _WorkshopDetail implements WorkshopDetail {
   WorkshopProgress? get learningProgress; // Kept as map — fields consumed directly in CC-26+
   @override
   @JsonKey(name: 'certificate')
-  Map<String, dynamic>? get certificate;
+  Map<String, dynamic>? get certificate; // Raw pass-through: backend returns `sidebar.tabs: [{ id, label, order }]`
+  // (see backend workshop detail handler). Used to override the default
+  // tab labels (Q&A, Assignments, etc.) at render time.
+  @override
+  @JsonKey(name: 'sidebar')
+  Map<String, dynamic>? get sidebar;
 
   /// Create a copy of WorkshopDetail
   /// with the given fields replaced by the non-null parameter values.

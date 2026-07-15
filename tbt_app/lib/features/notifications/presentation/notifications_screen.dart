@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/models/notification_item.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../providers/notifications_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 // ── Route resolver ────────────────────────────────────────────────────────────
 
 String _resolveNotificationRoute(NotificationItem n) {
@@ -163,18 +163,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kColorBgSurface,
+        backgroundColor: context.tokens.bgSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
-        title: const Text(
+        title: Text(
           'NOTIFICATIONS',
           style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 18,
             fontWeight: FontWeight.w700,
             letterSpacing: 2,
-            color: kColorTextPrimary,
+            color: context.tokens.textPrimary,
           ),
         ),
         actions: [
@@ -183,12 +183,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               onPressed: () => ref
                   .read(notificationsNotifierProvider.notifier)
                   .clearRead(),
-              child: const Text(
+              child: Text(
                 'Clear read',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: kColorTextSecondary,
+                  color: context.tokens.textSecondary,
                 ),
               ),
             ),
@@ -201,7 +201,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: globalUnread > 0 ? accent : kColorTextMuted,
+                color: globalUnread > 0 ? accent : context.tokens.textMuted,
               ),
             ),
           ),
@@ -209,8 +209,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ],
       ),
       body: notifAsync.when(
-        loading: () => _buildSkeleton(),
-        error: (e, _) => _buildError(() => ref.invalidate(notificationsNotifierProvider)),
+        loading: () => _buildSkeleton(context),
+        error: (e, _) => _buildError(
+            context, () => ref.invalidate(notificationsNotifierProvider)),
         data: (allItems) {
           final items = _unreadOnly
               ? allItems.where((n) => !n.isRead).toList()
@@ -233,7 +234,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   Widget _buildContent(
       BuildContext context, List<NotificationItem> items, Color accent) {
-    if (items.isEmpty) return _buildEmpty();
+    if (items.isEmpty) return _buildEmpty(context);
     final groups = _groupByDate(items);
     return _buildList(context, groups, accent);
   }
@@ -245,7 +246,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   ) {
     return RefreshIndicator(
       color: accent,
-      backgroundColor: kColorBgSurface,
+      backgroundColor: context.tokens.bgSurface,
       onRefresh: _onRefresh,
       child: ListView.builder(
         controller: _scrollCtrl,
@@ -332,17 +333,19 @@ class _FilterStrip extends StatelessWidget {
   final ValueChanged<bool> onChanged;
   final Color accent;
 
-  Widget _tab(String label, bool active, VoidCallback onTap, {int? badge}) {
+  Widget _tab(BuildContext context, String label, bool active,
+      VoidCallback onTap,
+      {int? badge}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: active ? accent.withValues(alpha: 0.15) : kColorBgInput,
+          color: active ? accent.withValues(alpha: 0.15) : context.tokens.bgInput,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: active ? accent : kColorBorderCard,
+            color: active ? accent : context.tokens.borderCard,
           ),
         ),
         child: Row(
@@ -351,7 +354,7 @@ class _FilterStrip extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color: active ? accent : kColorTextSecondary,
+                color: active ? accent : context.tokens.textSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.5,
@@ -364,7 +367,7 @@ class _FilterStrip extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: active ? accent : kColorTextMuted,
+                  color: active ? accent : context.tokens.textMuted,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -389,9 +392,10 @@ class _FilterStrip extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          _tab('All', !unreadOnly, () => onChanged(false)),
+          _tab(context, 'All', !unreadOnly, () => onChanged(false)),
           const SizedBox(width: 8),
-          _tab('Unread', unreadOnly, () => onChanged(true), badge: unreadCount),
+          _tab(context, 'Unread', unreadOnly, () => onChanged(true),
+              badge: unreadCount),
         ],
       ),
     );
@@ -409,12 +413,12 @@ class _SectionHeader extends StatelessWidget {
         padding: const EdgeInsets.only(top: 20, bottom: 8, left: 2),
         child: Text(
           label.toUpperCase(),
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Rajdhani',
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 2,
-            color: kColorTextMuted,
+            color: context.tokens.textMuted,
           ),
         ),
       );
@@ -440,9 +444,9 @@ class _NotifCard extends StatelessWidget {
     final isUnread = !n.isRead;
 
     final bg = isUnread
-        ? Color.alphaBlend(accent.withAlpha(13), kColorBgSurface)
-        : kColorBgSurface;
-    final borderColor = isUnread ? accent.withAlpha(64) : kColorBorderCard;
+        ? Color.alphaBlend(accent.withAlpha(13), context.tokens.bgSurface)
+        : context.tokens.bgSurface;
+    final borderColor = isUnread ? accent.withAlpha(64) : context.tokens.borderCard;
 
     return Semantics(
       label: '${n.title}: ${n.body}${isUnread ? ', unread' : ''}',
@@ -476,8 +480,8 @@ class _NotifCard extends StatelessWidget {
                 children: [
                   Text(
                     n.title,
-                    style: const TextStyle(
-                      color: kColorTextPrimary,
+                    style: TextStyle(
+                      color: context.tokens.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
@@ -486,8 +490,8 @@ class _NotifCard extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     n.body,
-                    style: const TextStyle(
-                      color: kColorTextSecondary,
+                    style: TextStyle(
+                      color: context.tokens.textSecondary,
                       fontSize: 13,
                       height: 1.4,
                     ),
@@ -521,8 +525,8 @@ class _NotifCard extends StatelessWidget {
                       ],
                       Text(
                         _timeAgo(n.createdAt),
-                        style: const TextStyle(
-                          color: kColorTextMuted,
+                        style: TextStyle(
+                          color: context.tokens.textMuted,
                           fontSize: 11,
                         ),
                       ),
@@ -552,15 +556,15 @@ class _NotifCard extends StatelessWidget {
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
-Widget _buildSkeleton() => ListView.builder(
+Widget _buildSkeleton(BuildContext context) => ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       itemCount: 6,
       itemBuilder: (_, __) => Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: kColorBgSurface,
-          border: Border.all(color: kColorBorderCard),
+          color: context.tokens.bgSurface,
+          border: Border.all(color: context.tokens.borderCard),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -570,7 +574,7 @@ Widget _buildSkeleton() => ListView.builder(
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: kColorBgInput,
+                color: context.tokens.bgInput,
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
@@ -579,11 +583,11 @@ Widget _buildSkeleton() => ListView.builder(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(height: 13, width: 180, color: kColorBgInput),
+                  Container(height: 13, width: 180, color: context.tokens.bgInput),
                   const SizedBox(height: 6),
-                  Container(height: 11, width: double.infinity, color: kColorBgInput),
+                  Container(height: 11, width: double.infinity, color: context.tokens.bgInput),
                   const SizedBox(height: 4),
-                  Container(height: 11, width: 120, color: kColorBgInput),
+                  Container(height: 11, width: 120, color: context.tokens.bgInput),
                 ],
               ),
             ),
@@ -594,15 +598,15 @@ Widget _buildSkeleton() => ListView.builder(
 
 // ── Error state ───────────────────────────────────────────────────────────────
 
-Widget _buildError(VoidCallback onRetry) => Center(
+Widget _buildError(BuildContext context, VoidCallback onRetry) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, color: kColorTextMuted, size: 40),
+          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Failed to load notifications',
-            style: TextStyle(color: kColorTextSecondary),
+            style: TextStyle(color: context.tokens.textSecondary),
           ),
           const SizedBox(height: 12),
           TextButton(onPressed: onRetry, child: const Text('Retry')),
@@ -612,24 +616,24 @@ Widget _buildError(VoidCallback onRetry) => Center(
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-Widget _buildEmpty() => const Center(
+Widget _buildEmpty(BuildContext context) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.notifications_none_outlined, color: kColorTextMuted, size: 48),
-          SizedBox(height: 12),
+          Icon(Icons.notifications_none_outlined, color: context.tokens.textMuted, size: 48),
+          const SizedBox(height: 12),
           Text(
             'No notifications yet',
             style: TextStyle(
-              color: kColorTextSecondary,
+              color: context.tokens.textSecondary,
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
             "You're all caught up!",
-            style: TextStyle(color: kColorTextMuted, fontSize: 13),
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
           ),
         ],
       ),

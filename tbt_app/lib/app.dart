@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -435,6 +436,17 @@ class _TbtAppState extends ConsumerState<TbtApp> {
         TbtTheme.defaults;
 
     final themeMode = ref.watch(themeModeProvider);
+    // Resolve effective brightness for OS chrome (status bar / nav bar).
+    // Doing it at the root ensures the system chrome flips together with
+    // MaterialApp themes when the user toggles the mode — no per-screen
+    // AnnotatedRegion required.
+    final effectiveBrightness = switch (themeMode) {
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.light => Brightness.light,
+      ThemeMode.system => MediaQuery.platformBrightnessOf(context),
+    };
+    SystemChrome.setSystemUIOverlayStyle(systemOverlayFor(effectiveBrightness));
+
     return MaterialApp.router(
       title: 'Tamil Business Tribe',
       debugShowCheckedModeBanner: false,

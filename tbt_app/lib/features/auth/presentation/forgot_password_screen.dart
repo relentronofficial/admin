@@ -10,6 +10,7 @@ import '../../../core/exceptions/app_exception.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class ForgotPasswordScreen extends ConsumerStatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -79,7 +80,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: const Color(0xFFdc2626),
+        backgroundColor: Theme.of(context).colorScheme.primary,
       ),
     );
   }
@@ -160,12 +161,12 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     final isLoading = ref.watch(authNotifierProvider).isLoading;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0f0f0f),
+      backgroundColor: context.tokens.bgPage,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0f0f0f),
+        backgroundColor: context.tokens.bgPage,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFf0f0f0)),
+          icon: Icon(Icons.arrow_back, color: context.tokens.textPrimary),
           onPressed: _onBack,
         ),
       ),
@@ -182,7 +183,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           fontFamily: 'Rajdhani',
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFFf0f0f0),
+                  color: context.tokens.textPrimary,
                   letterSpacing: 2,
                 ),
               ),
@@ -205,10 +206,10 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   Widget _buildStepOne(bool isLoading) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Enter your registered phone number to receive a reset code.',
             style:
-                TextStyle(color: Color(0xFFa0a0a0), fontSize: 14, height: 1.5),
+                TextStyle(color: context.tokens.textSecondary, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 32),
           _FieldLabel('PHONE NUMBER'),
@@ -217,7 +218,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             controller: _phoneController,
             keyboardType: TextInputType.phone,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: const TextStyle(color: Color(0xFFf0f0f0)),
+            style: TextStyle(color: context.tokens.textPrimary),
             decoration: _inputDecoration('Enter your phone number'),
           ),
           const SizedBox(height: 28),
@@ -245,8 +246,8 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         children: [
           Text(
             'Enter the 6-digit code sent to\n$_phone',
-            style: const TextStyle(
-                color: Color(0xFFa0a0a0), fontSize: 14, height: 1.5),
+            style: TextStyle(
+                color: context.tokens.textSecondary, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 32),
           Row(
@@ -275,19 +276,19 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             child: _resendSeconds > 0
                 ? Text(
                     'Resend in ${_resendSeconds}s',
-                    style: const TextStyle(
-                        color: Color(0xFF606060), fontSize: 13),
+                    style: TextStyle(
+                        color: context.tokens.textMuted, fontSize: 13),
                   )
                 : TextButton(
                     onPressed: _resendLoading ? null : _resendOtp,
                     style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFa0a0a0)),
+                        foregroundColor: context.tokens.textSecondary),
                     child: _resendLoading
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 14,
                             height: 14,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Color(0xFFa0a0a0)),
+                                strokeWidth: 2, color: context.tokens.textSecondary),
                           )
                         : const Text('Resend OTP',
                             style: TextStyle(fontSize: 13)),
@@ -301,10 +302,10 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   Widget _buildStepThree(bool isLoading) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Create a new password for your account.',
             style:
-                TextStyle(color: Color(0xFFa0a0a0), fontSize: 14, height: 1.5),
+                TextStyle(color: context.tokens.textSecondary, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 32),
           _FieldLabel('NEW PASSWORD'),
@@ -312,14 +313,14 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           TextField(
             controller: _newPasswordController,
             obscureText: _obscureNew,
-            style: const TextStyle(color: Color(0xFFf0f0f0)),
+            style: TextStyle(color: context.tokens.textPrimary),
             decoration: _inputDecoration('Enter new password').copyWith(
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureNew
                       ? Icons.visibility_off_outlined
                       : Icons.visibility_outlined,
-                  color: const Color(0xFF606060),
+                  color: context.tokens.textMuted,
                   size: 20,
                 ),
                 onPressed: () => setState(() => _obscureNew = !_obscureNew),
@@ -332,14 +333,14 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           TextField(
             controller: _confirmPasswordController,
             obscureText: _obscureConfirm,
-            style: const TextStyle(color: Color(0xFFf0f0f0)),
+            style: TextStyle(color: context.tokens.textPrimary),
             decoration: _inputDecoration('Confirm new password').copyWith(
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureConfirm
                       ? Icons.visibility_off_outlined
                       : Icons.visibility_outlined,
-                  color: const Color(0xFF606060),
+                  color: context.tokens.textMuted,
                   size: 20,
                 ),
                 onPressed: () =>
@@ -381,28 +382,28 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
 
   InputDecoration _inputDecoration(String hint) => InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF606060), fontSize: 14),
+        hintStyle: TextStyle(color: context.tokens.textMuted, fontSize: 14),
         filled: true,
-        fillColor: const Color(0xFF1a1a1a),
+        fillColor: context.tokens.bgInput,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+          borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+          borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFdc2626)),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
       );
 
   ButtonStyle get _buttonStyle => ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFFdc2626),
-        disabledBackgroundColor: const Color(0xFF7f1111),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         elevation: 0,
@@ -441,8 +442,8 @@ class _StepRow extends StatelessWidget {
               margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
               decoration: BoxDecoration(
                 color: active
-                    ? const Color(0xFFdc2626)
-                    : const Color(0xFF2a2a2a),
+                    ? Theme.of(context).colorScheme.primary
+                    : context.tokens.borderCard,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -462,7 +463,7 @@ class _FieldLabel extends StatelessWidget {
           fontFamily: 'Rajdhani',
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: const Color(0xFF606060),
+          color: context.tokens.textMuted,
           letterSpacing: 1.5,
         ),
       );
@@ -492,8 +493,8 @@ class _OtpBox extends StatelessWidget {
           maxLength: 1,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFFf0f0f0),
+          style: TextStyle(
+            color: context.tokens.textPrimary,
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
@@ -501,23 +502,23 @@ class _OtpBox extends StatelessWidget {
           decoration: InputDecoration(
             counterText: '',
             filled: true,
-            fillColor: const Color(0xFF1a1a1a),
+            fillColor: context.tokens.bgInput,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+              borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+              borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide:
-                  const BorderSide(color: Color(0xFFdc2626), width: 2),
+                  BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
             ),
             disabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF1a1a1a)),
+              borderSide: BorderSide(color: context.tokens.bgInput),
             ),
           ),
           onChanged: onChanged,

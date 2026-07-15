@@ -13,6 +13,7 @@ import '../../../shared/providers/site_config_provider.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
+import '../../../shared/theme/theme_tokens.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -146,9 +147,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    const Color(0xFFdc2626).withValues(alpha: 0.55),
+                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.55),
                     Colors.white.withValues(alpha: 0.10),
-                    const Color(0xFFdc2626).withValues(alpha: 0.35),
+                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(20),
@@ -177,7 +178,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           fontFamily: 'Rajdhani',
                       fontSize: 52,
                       fontWeight: FontWeight.w700,
-                      color: const Color(0xFFdc2626),
+                      color: Theme.of(context).colorScheme.primary,
                       letterSpacing: 6,
                     ),
                   ),
@@ -189,7 +190,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           fontFamily: 'Rajdhani',
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: const Color(0xFF606060),
+                      color: context.tokens.textMuted,
                       letterSpacing: 3,
                     ),
                   ),
@@ -206,17 +207,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFdc2626)
+                              color: Theme.of(context).colorScheme.primary
                                   .withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: const Color(0xFFdc2626),
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.error_outline,
-                                    color: Color(0xFFdc2626), size: 16),
+                                Icon(Icons.error_outline,
+                                    color: Theme.of(context).colorScheme.primary, size: 16),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -238,7 +239,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     focusNode: _phoneFocus,
                     keyboardType: TextInputType.phone,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    style: const TextStyle(color: Color(0xFFf0f0f0)),
+                    style: TextStyle(color: context.tokens.textPrimary),
                     decoration:
                         _inputDecoration('Enter your phone number', _phoneFocus.hasFocus),
                     validator: (v) =>
@@ -251,7 +252,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     controller: _passwordController,
                     focusNode: _passwordFocus,
                     obscureText: _obscurePassword,
-                    style: const TextStyle(color: Color(0xFFf0f0f0)),
+                    style: TextStyle(color: context.tokens.textPrimary),
                     decoration: _inputDecoration('Enter your password', _passwordFocus.hasFocus)
                         .copyWith(
                       suffixIcon: IconButton(
@@ -260,7 +261,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           _obscurePassword
                               ? Icons.visibility_off_outlined
                               : Icons.visibility_outlined,
-                          color: const Color(0xFF606060),
+                          color: context.tokens.textMuted,
                           size: 20,
                         ),
                         onPressed: () =>
@@ -276,7 +277,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     child: TextButton(
                       onPressed: () => context.go(AppRoutes.forgotPassword),
                       style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFa0a0a0),
+                        foregroundColor: context.tokens.textSecondary,
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                       ),
                       child: const Text('Forgot password?', style: TextStyle(fontSize: 13)),
@@ -288,8 +289,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     child: ElevatedButton(
                       onPressed: isLoading ? null : _submit,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFdc2626),
-                        disabledBackgroundColor: const Color(0xFF7f1111),
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -320,19 +321,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text(
+                      Text(
                         "Don't have an account? ",
-                        style: TextStyle(color: Color(0xFF606060), fontSize: 14),
+                        style: TextStyle(color: context.tokens.textMuted, fontSize: 14),
                       ),
                       Semantics(
                         label: 'Sign Up',
                         button: true,
                         child: GestureDetector(
                           onTap: () => context.go(AppRoutes.signup),
-                          child: const Text(
+                          child: Text(
                             'Sign Up',
                             style: TextStyle(
-                              color: Color(0xFFdc2626),
+                              color: Theme.of(context).colorScheme.primary,
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
@@ -377,32 +378,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   InputDecoration _inputDecoration(String hint, bool focused) =>
       InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF606060), fontSize: 14),
+        hintStyle: TextStyle(color: context.tokens.textMuted, fontSize: 14),
         filled: true,
         fillColor: focused
             ? const Color(0xFF221818) // subtle accent-tinted fill on focus
-            : const Color(0xFF1a1a1a),
+            : context.tokens.bgInput,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+          borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2a2a2a)),
+          borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFdc2626), width: 1.5),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFdc2626)),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFdc2626), width: 1.5),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
         ),
       );
 }
@@ -418,7 +419,7 @@ class _FieldLabel extends StatelessWidget {
           fontFamily: 'Rajdhani',
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: const Color(0xFF606060),
+          color: context.tokens.textMuted,
           letterSpacing: 1.5,
         ),
       );
