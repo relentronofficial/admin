@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/exceptions/app_exception.dart';
@@ -7,6 +9,14 @@ import '../theme/theme_tokens.dart';
 /// data provider fails. Distinguishes between network, server, session, and
 /// validation failures via the [AppException] hierarchy so users get an
 /// action-appropriate message + retry affordance.
+///
+/// Silent auto-retry: for transient failure types ([NetworkException],
+/// [UnauthorizedException]) the widget fires `onRetry` once, silently,
+/// ~800 ms after it's mounted. This picks up the common case where the
+/// refresh interceptor just finished rotating tokens or the network hiccup
+/// resolved between build cycles — the user sees the loading spinner come
+/// back instead of a dead-end error screen requiring a manual tap. The
+/// retry only fires once per widget instance, so we can't spin.
 ///
 /// Usage:
 /// ```dart
@@ -22,7 +32,7 @@ import '../theme/theme_tokens.dart';
 ///
 /// Pass any error object — `AppException` subtypes are formatted specially,
 /// everything else falls through to a generic "Failed to load" message.
-class AppErrorState extends StatelessWidget {
+class AppErrorState extends StatefulWidget {
   const AppErrorState({
     super.key,
     required this.error,
@@ -42,8 +52,42 @@ class AppErrorState extends StatelessWidget {
   /// while other sections succeeded).
   final bool compact;
 
+  @override
+  State<AppErrorState> createState() => _AppErrorStateState();
+}
+
+class _AppErrorStateState extends State<AppErrorState> {
+  Timer? _autoRetryTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleAutoRetryIfTransient();
+  }
+
+  @override
+  void dispose() {
+    _autoRetryTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Fire `onRetry` once, silently, for error types we know are transient.
+  /// Delay gives the refresh interceptor time to finish rotating tokens
+  /// (so `UnauthorizedException` on tab reload usually clears itself) and
+  /// avoids flash-of-error when the network hiccup lasted <1 s.
+  void _scheduleAutoRetryIfTransient() {
+    if (widget.onRetry == null) return;
+    final e = widget.error;
+    final isTransient = e is NetworkException || e is UnauthorizedException;
+    if (!isTransient) return;
+    _autoRetryTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      widget.onRetry?.call();
+    });
+  }
+
   ({IconData icon, String title, String subtitle}) _copyFor() {
-    final e = error;
+    final e = widget.error;
     if (e is NetworkException) {
       return (
         icon: Icons.wifi_off_outlined,
@@ -82,7 +126,7 @@ class AppErrorState extends StatelessWidget {
     }
     return (
       icon: Icons.error_outline,
-      title: fallbackTitle,
+      title: widget.fallbackTitle,
       subtitle: 'Something went wrong. Try again.',
     );
   }
@@ -92,7 +136,7 @@ class AppErrorState extends StatelessWidget {
     final copy = _copyFor();
     final t = context.tokens;
 
-    if (compact) {
+    if (widget.compact) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -105,8 +149,8 @@ class AppErrorState extends StatelessWidget {
                 style: TextStyle(color: t.textSecondary, fontSize: 13),
               ),
             ),
-            if (onRetry != null)
-              TextButton(onPressed: onRetry, child: const Text('Retry')),
+            if (widget.onRetry != null)
+              TextButton(onPressed: widget.onRetry, child: const Text('Retry')),
           ],
         ),
       );
@@ -139,10 +183,10 @@ class AppErrorState extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            if (onRetry != null) ...[
+            if (widget.onRetry != null) ...[
               const SizedBox(height: 16),
               TextButton(
-                onPressed: onRetry,
+                onPressed: widget.onRetry,
                 child: const Text('Try again'),
               ),
             ],
