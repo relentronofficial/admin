@@ -59,24 +59,55 @@ class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
 }
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
+//
+// Parity with tbt-user-web:
+//   Dark mode  → admin-configured `siteConfig.logoUrl` (white/brand logo)
+//                falling back to the bundled `tbt_logo.webp`.
+//   Light mode → bundled `tbt_logo_black.png` (the black wordmark). The
+//                admin's remote logo is the white version, so we always
+//                use the bundled black asset in light mode instead.
 
 class _Logo extends StatelessWidget {
   const _Logo({required this.logoUrl});
   final String? logoUrl;
 
+  static const _kLightLogoAsset = 'assets/images/tbt_logo_black.png';
+  static const _kDarkLogoAsset = 'assets/images/tbt_logo.webp';
+
   @override
   Widget build(BuildContext context) {
-    if (logoUrl != null && logoUrl!.isNotEmpty) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (isDark) {
+      // Dark mode: admin's remote logoUrl (usually white/brand). Fall back
+      // to the bundled white asset when the remote URL is empty or fails
+      // to load.
+      if (logoUrl != null && logoUrl!.isNotEmpty) {
+        return ExcludeSemantics(
+          child: CachedNetworkImage(
+            imageUrl: logoUrl!,
+            height: 28,
+            fit: BoxFit.contain,
+            placeholder: (_, __) =>
+                Image.asset(_kDarkLogoAsset, height: 28, fit: BoxFit.contain),
+            errorWidget: (_, __, ___) =>
+                Image.asset(_kDarkLogoAsset, height: 28, fit: BoxFit.contain),
+          ),
+        );
+      }
       return ExcludeSemantics(
-        child: CachedNetworkImage(
-          imageUrl: logoUrl!,
-          height: 28,
-          fit: BoxFit.contain,
-          errorWidget: (_, __, ___) => _FallbackLogo(),
-        ),
+        child: Image.asset(_kDarkLogoAsset,
+            height: 28, fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => _FallbackLogo()),
       );
     }
-    return ExcludeSemantics(child: _FallbackLogo());
+
+    // Light mode: bundled black wordmark, always.
+    return ExcludeSemantics(
+      child: Image.asset(_kLightLogoAsset,
+          height: 28, fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _FallbackLogo()),
+    );
   }
 }
 
