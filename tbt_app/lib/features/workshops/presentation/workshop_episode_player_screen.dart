@@ -3,16 +3,16 @@ import 'dart:convert';
 
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../core/constants/storage_keys.dart';
-import '../data/workshops_service.dart';
-
+import '../../../shared/theme/tbt_theme.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/video/tbt_video_player_config.dart';
+import '../data/workshops_service.dart';
 /// Workshop episode player. Mirror of `LessonPlayerScreen` for course lessons
 /// but posts progress via `postEpisodeProgress` and marks completion via
 /// `completeWorkshopEpisode` (no course enrollment involved).
@@ -58,8 +58,15 @@ class _WorkshopEpisodePlayerScreenState
   @override
   void dispose() {
     _progressTimer?.cancel();
-    _playerController?.removeEventsListener(_onBetterPlayerEvent);
-    _playerController?.dispose();
+    final ctrl = _playerController;
+    if (ctrl != null) {
+      ctrl.removeEventsListener(_onBetterPlayerEvent);
+      TbtVideoPlayerConfig.detachOrientationGuard(ctrl);
+      ctrl.dispose();
+    }
+    // Safety net: if the user backed out mid-fullscreen, restore
+    // portrait + system chrome so the next screen isn't landscape.
+    unawaited(TbtVideoPlayerConfig.restoreOrientationAndUi());
     super.dispose();
   }
 
@@ -101,26 +108,16 @@ class _WorkshopEpisodePlayerScreenState
       hlsUrl,
       videoFormat: BetterPlayerVideoFormat.hls,
     );
-    final config = BetterPlayerConfiguration(
-      autoPlay: true,
-      startAt: Duration(seconds: resumeAt),
-      aspectRatio: 16 / 9,
-      allowedScreenSleep: false,
-      deviceOrientationsAfterFullScreen: [DeviceOrientation.portraitUp],
-      controlsConfiguration: BetterPlayerControlsConfiguration(
-        controlBarColor: Colors.black87,
-        iconsColor: Colors.white,
-        progressBarPlayedColor: Theme.of(context).colorScheme.primary,
-        progressBarHandleColor: Theme.of(context).colorScheme.primary,
-        progressBarBufferedColor: Colors.white38,
-        progressBarBackgroundColor: Colors.white12,
-        enableSkips: false,
-        enableOverflowMenu: false,
+    final controller = BetterPlayerController(
+      TbtVideoPlayerConfig.build(
+        startAtSeconds: resumeAt,
+        accent: context.tbt.accent,
       ),
+      betterPlayerDataSource: source,
     );
-    final controller =
-        BetterPlayerController(config, betterPlayerDataSource: source);
     controller.addEventsListener(_onBetterPlayerEvent);
+    // Belt-and-suspenders fullscreen rotation lock — see factory doc.
+    TbtVideoPlayerConfig.attachOrientationGuard(controller);
     setState(() => _playerController = controller);
   }
 
@@ -284,8 +281,11 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
 
   @override
   Widget build(BuildContext context) {
+    // Theme-aware chrome. The area outside the 16:9 video rect flips
+    // with the theme; the letterboxing inside the AspectRatio stays
+    // black regardless (industry standard for video apps).
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: context.tokens.bgPage,
       body: SafeArea(
         child: Column(
           children: [
@@ -307,7 +307,7 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 48),
       child: ColoredBox(
-        color: Colors.black,
+        color: context.tokens.bgSurface,
         child: Row(
           children: [
             IconButton(

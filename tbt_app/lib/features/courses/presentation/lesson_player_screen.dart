@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,11 +11,12 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../../core/constants/storage_keys.dart';
 import '../../../shared/models/lesson.dart';
 import '../../../shared/providers/site_config_provider.dart';
+import '../../../shared/theme/tbt_theme.dart';
+import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/video/tbt_video_player_config.dart';
 import '../data/courses_service.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
-
-import '../../../shared/theme/theme_tokens.dart';
 class LessonPlayerScreen extends ConsumerStatefulWidget {
   const LessonPlayerScreen({
     super.key,
@@ -67,8 +67,16 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   @override
   void dispose() {
     _progressTimer?.cancel();
-    _playerController?.removeEventsListener(_onBetterPlayerEvent);
-    _playerController?.dispose();
+    final ctrl = _playerController;
+    if (ctrl != null) {
+      ctrl.removeEventsListener(_onBetterPlayerEvent);
+      TbtVideoPlayerConfig.detachOrientationGuard(ctrl);
+      ctrl.dispose();
+    }
+    // Safety net: if the user backed out while still in full-screen
+    // (Android back gesture, deep link redirect), restore portrait +
+    // system chrome so the next screen isn't stranded in landscape.
+    unawaited(TbtVideoPlayerConfig.restoreOrientationAndUi());
     super.dispose();
   }
 
@@ -115,31 +123,19 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
       videoFormat: BetterPlayerVideoFormat.hls,
     );
 
-    final config = BetterPlayerConfiguration(
-      autoPlay: true,
-      looping: false,
-      startAt: Duration(seconds: playback.resumeAtSeconds),
-      aspectRatio: 16 / 9,
-      fullScreenByDefault: false,
-      allowedScreenSleep: false,
-      deviceOrientationsAfterFullScreen: [DeviceOrientation.portraitUp],
-      controlsConfiguration: BetterPlayerControlsConfiguration(
-        controlBarColor: Colors.black87,
-        iconsColor: Colors.white,
-        progressBarPlayedColor: Theme.of(context).colorScheme.primary,
-        progressBarHandleColor: Theme.of(context).colorScheme.primary,
-        progressBarBufferedColor: Colors.white38,
-        progressBarBackgroundColor: Colors.white12,
-        enableSkips: false,
-        enableOverflowMenu: false,
-      ),
-    );
-
     final controller = BetterPlayerController(
-      config,
+      TbtVideoPlayerConfig.build(
+        startAtSeconds: playback.resumeAtSeconds,
+        accent: context.tbt.accent,
+      ),
       betterPlayerDataSource: dataSource,
     );
+    // Screen-specific progress + completion + quiz event handler.
     controller.addEventsListener(_onBetterPlayerEvent);
+    // Package-level orientation lock is unreliable on some Vivo/Xiaomi
+    // firmware — this guard re-applies landscape on the next frame
+    // after fullscreen opens (and portrait on exit). See factory doc.
+    TbtVideoPlayerConfig.attachOrientationGuard(controller);
 
     setState(() => _playerController = controller);
   }
@@ -509,8 +505,12 @@ window.addEventListener('message', function(e) {
 
   @override
   Widget build(BuildContext context) {
+    // Theme-aware scaffold + header — the area OUTSIDE the video rect
+    // flips with the app theme. The video letterboxing inside the
+    // `AspectRatio` (see `_buildPlayerContent`) stays black regardless
+    // of theme, which is the industry standard (YouTube / Netflix).
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: context.tokens.bgPage,
       body: SafeArea(
         child: Column(
           children: [
@@ -532,7 +532,7 @@ window.addEventListener('message', function(e) {
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 48),
       child: ColoredBox(
-      color: Colors.black,
+      color: context.tokens.bgSurface,
       child: Padding(
       padding: const EdgeInsets.only(right: 12),
       child: Row(
