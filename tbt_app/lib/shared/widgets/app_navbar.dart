@@ -90,6 +90,8 @@ class _Logo extends StatelessWidget {
             imageUrl: logoUrl!,
             height: 28,
             fit: BoxFit.contain,
+            memCacheHeight:
+                (28 * MediaQuery.devicePixelRatioOf(context)).round(),
             placeholder: (_, __) =>
                 Image.asset(_kDarkLogoAsset, height: 28, fit: BoxFit.contain),
             errorWidget: (_, __, ___) =>

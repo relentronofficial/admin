@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -53,6 +54,7 @@ import 'shared/theme/tbt_theme.dart';
 import 'shared/widgets/app_navbar.dart';
 import 'shared/widgets/bottom_tab_bar.dart';
 import 'shared/widgets/offline_banner.dart';
+import 'shared/widgets/side_nav_rail.dart';
 import 'shared/widgets/subscription_gate.dart';
 
 part 'app.g.dart';
@@ -542,6 +544,23 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
       darkTheme: buildDarkTheme(tbtTheme),
       themeMode: themeMode,
       routerConfig: router,
+      localizationsDelegates: AppL10n.localizationsDelegates,
+      supportedLocales: AppL10n.supportedLocales,
+      builder: (context, child) {
+        // Respect the user's OS-level text-size preference (accessibility
+        // large-text setting), but clamp at 1.4x so multi-line labels and
+        // fixed-height rows don't overflow. Larger scales cause clipping
+        // in dense list cards; clamping is standard practice.
+        final mq = MediaQuery.of(context);
+        final scale = mq.textScaler.clamp(
+          minScaleFactor: 0.85,
+          maxScaleFactor: 1.4,
+        );
+        return MediaQuery(
+          data: mq.copyWith(textScaler: scale),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }
@@ -602,8 +621,8 @@ class _AppShellState extends State<_AppShell> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        const SnackBar(
-          content: Text('Press back again to exit'),
+        SnackBar(
+          content: Text(AppL10n.of(context)!.backToExitPrompt),
           duration: _kExitConfirmWindow,
           behavior: SnackBarBehavior.floating,
         ),
@@ -612,6 +631,12 @@ class _AppShellState extends State<_AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Tablet breakpoint. 600dp is the Material 3 threshold that matches
+    // the "compact vs. medium" transition — anything wider gets the
+    // permanent nav rail, anything narrower keeps the bottom tab bar.
+    final width = MediaQuery.sizeOf(context).width;
+    final isTablet = width >= 600;
+
     // `canPop: false` tells the framework we're taking full control of the
     // pop gesture — `onPopInvokedWithResult` decides what actually happens.
     return PopScope(
@@ -622,8 +647,16 @@ class _AppShellState extends State<_AppShell> {
       },
       child: Scaffold(
         appBar: const AppNavbar(),
-        body: widget.child,
-        bottomNavigationBar: const AppBottomTabBar(),
+        body: isTablet
+            ? Row(
+                children: [
+                  const AppSideNavRail(),
+                  const VerticalDivider(width: 1, thickness: 1),
+                  Expanded(child: widget.child),
+                ],
+              )
+            : widget.child,
+        bottomNavigationBar: isTablet ? null : const AppBottomTabBar(),
       ),
     );
   }

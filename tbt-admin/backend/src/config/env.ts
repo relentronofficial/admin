@@ -61,6 +61,17 @@ const envSchema = z.object({
   WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
   CRON_SECRET: z.string().optional().or(z.literal('')),
+  // Deep-link app associations
+  //   ANDROID_APP_PACKAGE — the Flutter app's applicationId (e.g. com.tamilbusinesstribe.tbt_app)
+  //   ANDROID_APP_SHA256  — comma-separated SHA-256 fingerprints of the Android signing certs
+  //                         (Play App Signing cert + local release cert). Colon-separated hex.
+  //                         Get via: `keytool -list -v -keystore <keystore>` → "SHA256:..."
+  //   IOS_TEAM_ID         — Apple Developer Team ID (10-char string in Membership tab)
+  //   IOS_BUNDLE_ID       — iOS bundle identifier (matches Runner.xcodeproj)
+  ANDROID_APP_PACKAGE: z.string().optional().or(z.literal('')),
+  ANDROID_APP_SHA256: z.string().optional().or(z.literal('')),
+  IOS_TEAM_ID: z.string().optional().or(z.literal('')),
+  IOS_BUNDLE_ID: z.string().optional().or(z.literal('')),
 });
 
 const _env = envSchema.safeParse(process.env);

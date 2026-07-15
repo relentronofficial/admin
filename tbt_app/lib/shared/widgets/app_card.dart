@@ -30,6 +30,7 @@ class AppCard extends StatelessWidget {
     this.raised = false,
     this.borderColor,
     this.background,
+    this.semanticLabel,
   });
 
   final Widget child;
@@ -51,6 +52,11 @@ class AppCard extends StatelessWidget {
   /// (e.g. an "unread" notification with an accent-blended fill).
   final Color? background;
 
+  /// Screen-reader announcement for the whole card. When the card is
+  /// interactive ([onTap] set), pass a concise description of the
+  /// action ("Open workshop: How to sell online"). Skipped when null.
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -70,17 +76,20 @@ class AppCard extends StatelessWidget {
     final content = Padding(padding: padding, child: child);
 
     if (onTap == null) {
-      return Container(
+      final container = Container(
         margin: margin,
         decoration: decoration,
         child: content,
       );
+      return semanticLabel == null
+          ? container
+          : Semantics(label: semanticLabel, container: true, child: container);
     }
 
     // Wrapping in Material + InkWell requires a clip so the ripple stays
     // inside the rounded corner. `Material.type: transparency` avoids the
     // double-fill artifact when the parent already sets a background.
-    return Container(
+    final interactive = Container(
       margin: margin,
       decoration: decoration,
       clipBehavior: Clip.antiAlias,
@@ -93,6 +102,12 @@ class AppCard extends StatelessWidget {
           child: content,
         ),
       ),
+    );
+    return Semantics(
+      label: semanticLabel,
+      button: true,
+      container: true,
+      child: interactive,
     );
   }
 }

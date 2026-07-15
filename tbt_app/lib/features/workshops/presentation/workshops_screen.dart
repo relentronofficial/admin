@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../shared/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -217,16 +217,12 @@ class _WorkshopCard extends StatelessWidget {
                 // Thumbnail
                 AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: w.thumbnailUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: w.thumbnailUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => ColoredBox(
-                              color: context.tokens.bgInput),
-                          errorWidget: (_, __, ___) =>
-                              const _ThumbFallback(),
-                        )
-                      : const _ThumbFallback(),
+                  child: AppNetworkImage(
+                    url: w.thumbnailUrl,
+                    width: 480,
+                    fit: BoxFit.cover,
+                    fallbackIcon: Icons.videocam_outlined,
+                  ),
                 ),
 
                 // Content
@@ -335,21 +331,6 @@ class _WorkshopCard extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── Thumbnail fallback ────────────────────────────────────────────────────────
-
-class _ThumbFallback extends StatelessWidget {
-  const _ThumbFallback();
-
-  @override
-  Widget build(BuildContext context) => ColoredBox(
-        color: context.tokens.bgInput,
-        child: Center(
-          child: Icon(Icons.play_circle_outline,
-              color: context.tokens.textMuted, size: 40),
-        ),
-      );
 }
 
 // ── Small chip ────────────────────────────────────────────────────────────────

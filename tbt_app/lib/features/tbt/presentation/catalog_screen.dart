@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../shared/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -168,12 +168,11 @@ class _HeroBanner extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (slide.bgImageUrl != null)
-              CachedNetworkImage(
-                imageUrl: slide.bgImageUrl!,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
-              ),
+            AppNetworkImage(
+              url: slide.bgImageUrl,
+              width: 800,
+              fit: BoxFit.cover,
+            ),
             // Gradient overlay
             Container(
               decoration: BoxDecoration(
@@ -376,15 +375,12 @@ class _CatalogCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             // Thumbnail
-            if (item.thumbnailUrl != null)
-              CachedNetworkImage(
-                imageUrl: item.thumbnailUrl!,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) =>
-                    const _ThumbnailPlaceholder(),
-              )
-            else
-              const _ThumbnailPlaceholder(),
+            AppNetworkImage(
+              url: item.thumbnailUrl,
+              width: 400,
+              fit: BoxFit.cover,
+              fallbackIcon: Icons.play_circle_outline,
+            ),
 
             // Bottom gradient + info
             Positioned(
@@ -488,21 +484,6 @@ class _CatalogCard extends StatelessWidget {
           ],
         ),
       ),
-      ),
-    );
-  }
-}
-
-class _ThumbnailPlaceholder extends StatelessWidget {
-  const _ThumbnailPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: context.tokens.bgInput,
-      child: Center(
-        child: Icon(Icons.play_circle_outline,
-            color: context.tokens.textSubtle, size: 30),
       ),
     );
   }

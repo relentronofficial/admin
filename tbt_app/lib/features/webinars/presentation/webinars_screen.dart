@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +12,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/app_empty_state.dart';
 import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_network_image.dart';
 class WebinarsScreen extends ConsumerWidget {
   const WebinarsScreen({super.key});
 
@@ -114,15 +114,12 @@ class _WebinarCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (webinar.thumbnailUrl != null)
-                      CachedNetworkImage(
-                        imageUrl: webinar.thumbnailUrl!,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            const _ThumbPlaceholder(),
-                      )
-                    else
-                      const _ThumbPlaceholder(),
+                    AppNetworkImage(
+                      url: webinar.thumbnailUrl,
+                      width: 480,
+                      fit: BoxFit.cover,
+                      fallbackIcon: Icons.videocam_outlined,
+                    ),
                     if (webinar.isLive)
                       Positioned(
                         top: 8,
@@ -219,15 +216,3 @@ class _WebinarCard extends StatelessWidget {
   }
 }
 
-class _ThumbPlaceholder extends StatelessWidget {
-  const _ThumbPlaceholder();
-
-  @override
-  Widget build(BuildContext context) => Container(
-        color: context.tokens.bgInput,
-        child: Center(
-          child: Icon(Icons.videocam_outlined,
-              color: context.tokens.textSubtle, size: 32),
-        ),
-      );
-}

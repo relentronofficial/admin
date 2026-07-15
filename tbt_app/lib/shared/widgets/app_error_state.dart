@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/exceptions/app_exception.dart';
+import '../providers/connectivity_provider.dart';
 import '../theme/theme_tokens.dart';
 
 /// Shared error-state widget used by every list / detail screen when a
@@ -10,13 +13,21 @@ import '../theme/theme_tokens.dart';
 /// validation failures via the [AppException] hierarchy so users get an
 /// action-appropriate message + retry affordance.
 ///
-/// Silent auto-retry: for transient failure types ([NetworkException],
-/// [UnauthorizedException]) the widget fires `onRetry` once, silently,
-/// ~800 ms after it's mounted. This picks up the common case where the
-/// refresh interceptor just finished rotating tokens or the network hiccup
-/// resolved between build cycles — the user sees the loading spinner come
-/// back instead of a dead-end error screen requiring a manual tap. The
-/// retry only fires once per widget instance, so we can't spin.
+/// **Silent auto-retry** for transient failures:
+///
+///   * Fires `onRetry` once 800 ms after mount for [NetworkException]
+///     and [UnauthorizedException]. Covers the common case where the
+///     refresh interceptor just rotated tokens or the network hiccup
+///     resolved between build cycles.
+///   * On top of that, listens to [connectivityProvider] and fires
+///     `onRetry` the moment connectivity flips from offline → online,
+///     regardless of error type. So if the user was offline and comes
+///     back, the screen recovers itself instead of leaving a Retry
+///     button.
+///
+/// Both mechanisms are guarded to a single retry per widget instance
+/// — the widget rebuilds if the parent re-invokes it after a retry
+/// completes.
 ///
 /// Usage:
 /// ```dart
@@ -29,10 +40,7 @@ import '../theme/theme_tokens.dart';
 ///   data: (v) => …,
 /// )
 /// ```
-///
-/// Pass any error object — `AppException` subtypes are formatted specially,
-/// everything else falls through to a generic "Failed to load" message.
-class AppErrorState extends StatefulWidget {
+class AppErrorState extends ConsumerStatefulWidget {
   const AppErrorState({
     super.key,
     required this.error,
@@ -53,11 +61,12 @@ class AppErrorState extends StatefulWidget {
   final bool compact;
 
   @override
-  State<AppErrorState> createState() => _AppErrorStateState();
+  ConsumerState<AppErrorState> createState() => _AppErrorStateState();
 }
 
-class _AppErrorStateState extends State<AppErrorState> {
+class _AppErrorStateState extends ConsumerState<AppErrorState> {
   Timer? _autoRetryTimer;
+  bool _retried = false;
 
   @override
   void initState() {
@@ -80,60 +89,73 @@ class _AppErrorStateState extends State<AppErrorState> {
     final e = widget.error;
     final isTransient = e is NetworkException || e is UnauthorizedException;
     if (!isTransient) return;
-    _autoRetryTimer = Timer(const Duration(milliseconds: 800), () {
-      if (!mounted) return;
-      widget.onRetry?.call();
-    });
+    _autoRetryTimer = Timer(const Duration(milliseconds: 800), _fireRetryOnce);
   }
 
-  ({IconData icon, String title, String subtitle}) _copyFor() {
+  void _fireRetryOnce() {
+    if (!mounted || _retried) return;
+    _retried = true;
+    widget.onRetry?.call();
+  }
+
+  ({IconData icon, String title, String subtitle}) _copyFor(AppL10n l10n) {
     final e = widget.error;
     if (e is NetworkException) {
       return (
         icon: Icons.wifi_off_outlined,
-        title: 'Check your connection',
-        subtitle: 'We couldn\'t reach the server. Try again once you\'re back '
-            'online.',
+        title: l10n.errorCheckConnection,
+        subtitle: l10n.errorCheckConnectionSubtitle,
       );
     }
     if (e is UnauthorizedException) {
       return (
         icon: Icons.lock_outline,
-        title: 'Session expired',
-        subtitle: 'Please sign in again to continue.',
+        title: l10n.errorSessionExpired,
+        subtitle: l10n.errorSessionExpiredSubtitle,
       );
     }
     if (e is ForbiddenException) {
       return (
         icon: Icons.block_outlined,
-        title: 'Access not available',
+        title: l10n.errorAccessDenied,
         subtitle: e.message,
       );
     }
     if (e is ValidationException) {
       return (
         icon: Icons.error_outline,
-        title: 'Something\'s off',
+        title: l10n.errorFailedToLoad,
         subtitle: e.message,
       );
     }
     if (e is ServerException) {
       return (
         icon: Icons.cloud_off_outlined,
-        title: 'Server error',
-        subtitle: 'Something went wrong on our side. Try again in a moment.',
+        title: l10n.errorServer,
+        subtitle: l10n.errorServerSubtitle,
       );
     }
     return (
       icon: Icons.error_outline,
       title: widget.fallbackTitle,
-      subtitle: 'Something went wrong. Try again.',
+      subtitle: l10n.errorGeneric,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final copy = _copyFor();
+    // Fire onRetry the instant connectivity returns after being offline.
+    // Guarded via `_retried` so a flapping connection doesn't spin.
+    ref.listen<AsyncValue<bool>>(connectivityProvider, (previous, next) {
+      final wasOffline = previous?.valueOrNull == false;
+      final nowOnline = next.valueOrNull == true;
+      if (wasOffline && nowOnline) {
+        _fireRetryOnce();
+      }
+    });
+
+    final l10n = AppL10n.of(context)!;
+    final copy = _copyFor(l10n);
     final t = context.tokens;
 
     if (widget.compact) {
@@ -150,7 +172,10 @@ class _AppErrorStateState extends State<AppErrorState> {
               ),
             ),
             if (widget.onRetry != null)
-              TextButton(onPressed: widget.onRetry, child: const Text('Retry')),
+              TextButton(
+                onPressed: widget.onRetry,
+                child: Text(l10n.commonRetry),
+              ),
           ],
         ),
       );
@@ -187,7 +212,7 @@ class _AppErrorStateState extends State<AppErrorState> {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: widget.onRetry,
-                child: const Text('Try again'),
+                child: Text(l10n.commonTryAgain),
               ),
             ],
           ],

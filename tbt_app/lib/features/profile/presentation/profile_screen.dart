@@ -427,12 +427,15 @@ class _Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
+      final dpr = MediaQuery.devicePixelRatioOf(context);
       return ClipOval(
         child: CachedNetworkImage(
           imageUrl: avatarUrl!,
           width: 80,
           height: 80,
           fit: BoxFit.cover,
+          memCacheWidth: (80 * dpr).round(),
+          memCacheHeight: (80 * dpr).round(),
           placeholder: (_, __) => _Initials(name: name),
           errorWidget: (_, __, ___) => _Initials(name: name),
         ),

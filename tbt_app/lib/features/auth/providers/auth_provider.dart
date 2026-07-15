@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../shared/api/services/auth_service.dart';
 import '../../../shared/api/token_storage.dart';
+import '../../../shared/cache/response_cache.dart';
 import '../../../shared/providers/me_provider.dart';
 import '../../notifications/data/fcm_service.dart';
 import '../domain/auth_state.dart';
@@ -116,6 +117,9 @@ class AuthNotifier extends _$AuthNotifier {
 
   Future<void> logout() async {
     await ref.read(authServiceProvider).logout();
+    // Purge cached responses so the next user doesn't render the
+    // previous user's dashboard on first launch.
+    await ResponseCache.clear();
     ref.invalidate(meNotifierProvider);
     state = const AsyncValue.data(AuthState(step: AuthStep.idle));
   }

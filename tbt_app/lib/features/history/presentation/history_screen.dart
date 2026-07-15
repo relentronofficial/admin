@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../shared/widgets/app_network_image.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/watch_history_item.dart';
@@ -431,17 +431,12 @@ class _HistoryCard extends StatelessWidget {
                 topLeft: Radius.circular(AppRadius.md - 1),
                 bottomLeft: Radius.circular(AppRadius.md - 1),
               ),
-              child: SizedBox(
+              child: AppNetworkImage(
+                url: item.thumbnailUrl,
                 width: 100,
                 height: 90,
-                child: item.thumbnailUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: item.thumbnailUrl!,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            const _ThumbPlaceholder(),
-                      )
-                    : const _ThumbPlaceholder(),
+                fit: BoxFit.cover,
+                fallbackIcon: Icons.play_lesson_outlined,
               ),
             ),
 
@@ -565,21 +560,6 @@ class _HistoryCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ThumbPlaceholder extends StatelessWidget {
-  const _ThumbPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: context.tokens.bgInput,
-      child: Center(
-        child: Icon(Icons.play_lesson_outlined,
-            color: context.tokens.textSubtle, size: 24),
       ),
     );
   }

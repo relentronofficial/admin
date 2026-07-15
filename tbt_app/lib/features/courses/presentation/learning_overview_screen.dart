@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../shared/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -255,17 +255,12 @@ class _CourseEnrollmentCard extends StatelessWidget {
                 topLeft: Radius.circular(9),
                 bottomLeft: Radius.circular(9),
               ),
-              child: SizedBox(
+              child: AppNetworkImage(
+                url: course?.thumbnailUrl,
                 width: 90,
                 height: 80,
-                child: course?.thumbnailUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: course!.thumbnailUrl!,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            const _ThumbnailPlaceholder(),
-                      )
-                    : const _ThumbnailPlaceholder(),
+                fit: BoxFit.cover,
+                fallbackIcon: Icons.play_circle_outline,
               ),
             ),
 
@@ -328,21 +323,6 @@ class _CourseEnrollmentCard extends StatelessWidget {
           ],
         ),
       ),
-      ),
-    );
-  }
-}
-
-class _ThumbnailPlaceholder extends StatelessWidget {
-  const _ThumbnailPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: context.tokens.bgInput,
-      child: Center(
-        child: Icon(Icons.play_lesson_outlined,
-            color: context.tokens.textSubtle, size: 24),
       ),
     );
   }

@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../shared/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -610,17 +610,14 @@ class _ContentCard extends StatelessWidget {
                   const BorderRadius.vertical(top: Radius.circular(10)),
               child: Stack(
                 children: [
-                  SizedBox(
+                  AppNetworkImage(
+                    url: item.thumbnailUrl,
                     width: 172,
                     height: 96,
-                    child: item.thumbnailUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: item.thumbnailUrl!,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) =>
-                                _ThumbnailFallback(isCourse: isCourse),
-                          )
-                        : _ThumbnailFallback(isCourse: isCourse),
+                    fit: BoxFit.cover,
+                    fallbackIcon: isCourse
+                        ? Icons.school_outlined
+                        : Icons.play_circle_outline,
                   ),
                   // Type chip
                   Positioned(
@@ -699,25 +696,6 @@ class _ContentCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ThumbnailFallback extends StatelessWidget {
-  const _ThumbnailFallback({required this.isCourse});
-  final bool isCourse;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        color: context.tokens.bgInput,
-        child: Center(
-          child: ExcludeSemantics(
-            child: Icon(
-              isCourse ? Icons.play_circle_outline : Icons.event_outlined,
-              color: context.tokens.textSubtle,
-              size: 32,
-            ),
-          ),
-        ),
-      );
 }
 
 // ── Skeleton cards ────────────────────────────────────────────────────────────

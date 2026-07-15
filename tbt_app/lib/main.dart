@@ -12,6 +12,7 @@ import 'core/utils/device_id.dart';
 import 'core/utils/notification_router.dart';
 import 'features/notifications/data/fcm_service.dart';
 import 'firebase_options.dart';
+import 'shared/cache/response_cache.dart';
 import 'shared/providers/site_config_provider.dart';
 
 void main() async {
@@ -20,6 +21,10 @@ void main() async {
 
   // Set up local notification channel before anything else uses FCM.
   await initLocalNotifications();
+
+  // Open the shared response cache before any provider tries to read
+  // from it. Cheap — opens a single Hive box.
+  await ResponseCache.init();
 
   // Terminated state: resolve the tapped notification's route and stash it for
   // the router to consume once the user is authenticated.

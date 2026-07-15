@@ -194,9 +194,19 @@ void main() {
       expect(_store[kSecureRefreshToken], 'saved_refresh');
     });
 
-    test('clears tokens and passes error when refresh call throws', () async {
-      _store[kSecureAccessToken] = 'old_access';
-      _store[kSecureRefreshToken] = 'old_refresh';
+    // ── Session-preservation rule ────────────────────────────────────
+    // Only 401/403 from the refresh endpoint itself may wipe tokens.
+    // Every other failure (network, timeout, 5xx) is transient — the
+    // refresh token is still valid on the server, so keeping the local
+    // copy lets the very next request try again once the wire calms
+    // down. Regression tests below lock this contract in place.
+    //
+    // Background: an older `catch (_) => clearAll()` was silently
+    // signing users out on any transient hiccup. Fixed 2026-07-15.
+
+    test('keeps tokens on transient connectionError from refresh', () async {
+      _store[kSecureAccessToken] = 'access_before';
+      _store[kSecureRefreshToken] = 'refresh_before';
 
       when(() => mockDio.post<dynamic>(any(),
           options: any(named: 'options'))).thenThrow(DioException(
@@ -207,10 +217,111 @@ void main() {
       final interceptor = RefreshInterceptor(mockDio);
       await interceptor.onError(_make401('/api/user/me'), handler);
 
-      expect(_store[kSecureAccessToken], isNull);
-      expect(_store[kSecureRefreshToken], isNull);
+      expect(_store[kSecureAccessToken], 'access_before',
+          reason: 'connection error must not wipe access token');
+      expect(_store[kSecureRefreshToken], 'refresh_before',
+          reason: 'connection error must not wipe refresh token');
       verify(() => handler.next(any())).called(1);
       verifyNever(() => handler.resolve(any()));
+    });
+
+    test('keeps tokens on 5xx from refresh (server hiccup)', () async {
+      _store[kSecureAccessToken] = 'access_before';
+      _store[kSecureRefreshToken] = 'refresh_before';
+
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenThrow(DioException(
+        requestOptions: RequestOptions(path: kAuthRefresh),
+        response: Response(
+          requestOptions: RequestOptions(path: kAuthRefresh),
+          statusCode: 503,
+        ),
+        type: DioExceptionType.badResponse,
+      ));
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(_store[kSecureAccessToken], 'access_before',
+          reason: '503 must not wipe access token');
+      expect(_store[kSecureRefreshToken], 'refresh_before',
+          reason: '503 must not wipe refresh token');
+    });
+
+    test('keeps tokens on receiveTimeout from refresh', () async {
+      _store[kSecureAccessToken] = 'access_before';
+      _store[kSecureRefreshToken] = 'refresh_before';
+
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenThrow(DioException(
+        requestOptions: RequestOptions(path: kAuthRefresh),
+        type: DioExceptionType.receiveTimeout,
+      ));
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(_store[kSecureAccessToken], 'access_before');
+      expect(_store[kSecureRefreshToken], 'refresh_before');
+    });
+
+    test('wipes tokens ONLY when refresh returns 401', () async {
+      _store[kSecureAccessToken] = 'access_before';
+      _store[kSecureRefreshToken] = 'refresh_before';
+
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenThrow(DioException(
+        requestOptions: RequestOptions(path: kAuthRefresh),
+        response: Response(
+          requestOptions: RequestOptions(path: kAuthRefresh),
+          statusCode: 401,
+        ),
+        type: DioExceptionType.badResponse,
+      ));
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(_store[kSecureAccessToken], isNull,
+          reason: 'refresh-401 explicitly means "your refresh token is dead"');
+      expect(_store[kSecureRefreshToken], isNull);
+    });
+
+    test('wipes tokens ONLY when refresh returns 403', () async {
+      _store[kSecureAccessToken] = 'access_before';
+      _store[kSecureRefreshToken] = 'refresh_before';
+
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenThrow(DioException(
+        requestOptions: RequestOptions(path: kAuthRefresh),
+        response: Response(
+          requestOptions: RequestOptions(path: kAuthRefresh),
+          statusCode: 403,
+        ),
+        type: DioExceptionType.badResponse,
+      ));
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(_store[kSecureAccessToken], isNull);
+      expect(_store[kSecureRefreshToken], isNull);
+    });
+
+    test('keeps tokens on non-Dio programmer error during refresh', () async {
+      _store[kSecureAccessToken] = 'access_before';
+      _store[kSecureRefreshToken] = 'refresh_before';
+
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenThrow(StateError('boom'));
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(_store[kSecureAccessToken], 'access_before',
+          reason: 'Non-Dio errors are treated as transient — programmer bug '
+              'should never silently sign users out');
+      expect(_store[kSecureRefreshToken], 'refresh_before');
     });
   });
 }

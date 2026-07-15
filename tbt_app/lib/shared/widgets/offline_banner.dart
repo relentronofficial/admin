@@ -1,50 +1,27 @@
-import 'dart:async';
-
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class OfflineBanner extends StatefulWidget {
+import '../providers/connectivity_provider.dart';
+
+/// Persistent strip that renders at the top of the shell when the
+/// device is offline. Backed by [connectivityProvider] — a single
+/// source of truth reused by [AppErrorState] auto-retry logic so we
+/// don't spin up two competing connectivity listeners.
+class OfflineBanner extends ConsumerWidget {
   const OfflineBanner({super.key});
 
   @override
-  State<OfflineBanner> createState() => _OfflineBannerState();
-}
-
-class _OfflineBannerState extends State<OfflineBanner> {
-  StreamSubscription<List<ConnectivityResult>>? _sub;
-  bool _isOffline = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Seed with current state immediately.
-    Connectivity().checkConnectivity().then((results) {
-      if (mounted) setState(() => _isOffline = _offline(results));
-    });
-    _sub = Connectivity().onConnectivityChanged.listen((results) {
-      if (mounted) setState(() => _isOffline = _offline(results));
-    });
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  static bool _offline(List<ConnectivityResult> results) =>
-      results.isEmpty || results.every((r) => r == ConnectivityResult.none);
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_isOffline) return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final online = ref.watch(connectivityProvider).valueOrNull ?? true;
+    if (online) return const SizedBox.shrink();
     return Container(
       width: double.infinity,
       color: Colors.amber[800],
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-      child: const Text(
-        'You are offline',
-        style: TextStyle(
+      child: Text(
+        AppL10n.of(context)!.offlineBannerMessage,
+        style: const TextStyle(
           color: Colors.white,
           fontSize: 12,
           fontWeight: FontWeight.w600,

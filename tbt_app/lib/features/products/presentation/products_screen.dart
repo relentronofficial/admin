@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
+import '../../../shared/widgets/app_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -148,32 +150,12 @@ class _ProductCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    product.thumbnailUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: product.thumbnailUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => Container(
-                              color: context.tokens.bgInput,
-                              child: Center(
-                                child: Icon(Icons.image_outlined,
-                                    color: context.tokens.textMuted, size: 28),
-                              ),
-                            ),
-                            errorWidget: (_, __, ___) => Container(
-                              color: context.tokens.bgInput,
-                              child: Center(
-                                child: Icon(Icons.image_outlined,
-                                    color: context.tokens.textMuted, size: 28),
-                              ),
-                            ),
-                          )
-                        : Container(
-                            color: context.tokens.bgInput,
-                            child: Center(
-                              child: Icon(Icons.shopping_bag_outlined,
-                                  color: context.tokens.textMuted, size: 32),
-                            ),
-                          ),
+                    AppNetworkImage(
+                      url: product.thumbnailUrl,
+                      width: 300,
+                      fit: BoxFit.cover,
+                      fallbackIcon: Icons.shopping_bag_outlined,
+                    ),
                     if (product.category != null)
                       Positioned(
                         top: 6,
@@ -577,19 +559,14 @@ class _InquiredProductTile extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.md),
       child: Row(
         children: [
-          if (item.thumbnailUrl != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: CachedNetworkImage(
-                imageUrl: item.thumbnailUrl!,
-                width: 52,
-                height: 52,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => _PlaceholderBox(),
-              ),
-            )
-          else
-            _PlaceholderBox(),
+          AppNetworkImage(
+            url: item.thumbnailUrl,
+            width: 52,
+            height: 52,
+            fit: BoxFit.cover,
+            borderRadius: BorderRadius.circular(6),
+            fallbackIcon: Icons.shopping_bag_outlined,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -652,20 +629,3 @@ class _InquiredProductTile extends StatelessWidget {
   }
 }
 
-class _PlaceholderBox extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: context.tokens.bgInput,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Center(
-        child: Icon(Icons.shopping_bag_outlined,
-            color: context.tokens.textMuted, size: 22),
-      ),
-    );
-  }
-}

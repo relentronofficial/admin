@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../shared/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
@@ -117,14 +117,12 @@ class _BadgeCard extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: info.imageUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: info.imageUrl!,
-                      fit: BoxFit.contain,
-                      errorWidget: (_, __, ___) =>
-                          const _BadgePlaceholder(),
-                    )
-                  : const _BadgePlaceholder(),
+              child: AppNetworkImage(
+                url: info.imageUrl,
+                width: 200,
+                fit: BoxFit.contain,
+                fallbackIcon: Icons.emoji_events_outlined,
+              ),
             ),
           ),
 
@@ -165,24 +163,6 @@ class _BadgeCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _BadgePlaceholder extends StatelessWidget {
-  const _BadgePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Icon(Icons.military_tech_outlined,
-            color: Theme.of(context).colorScheme.primary, size: 40),
       ),
     );
   }

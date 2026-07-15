@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +13,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/app_empty_state.dart';
 import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_network_image.dart';
 import '../../../shared/widgets/app_skeleton.dart';
 class CoursesScreen extends ConsumerStatefulWidget {
   const CoursesScreen({super.key});
@@ -252,16 +252,12 @@ class _CourseCard extends StatelessWidget {
                 // Thumbnail
                 AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: c.thumbnailUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: c.thumbnailUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              ColoredBox(color: context.tokens.bgInput),
-                          errorWidget: (_, __, ___) =>
-                              const _ThumbFallback(),
-                        )
-                      : const _ThumbFallback(),
+                  child: AppNetworkImage(
+                    url: c.thumbnailUrl,
+                    width: 240,
+                    fit: BoxFit.cover,
+                    fallbackIcon: Icons.play_circle_outline,
+                  ),
                 ),
 
                 // Content
@@ -397,20 +393,6 @@ class _CourseCard extends StatelessWidget {
       );
 }
 
-// ── Thumbnail fallback ────────────────────────────────────────────────────────
-
-class _ThumbFallback extends StatelessWidget {
-  const _ThumbFallback();
-
-  @override
-  Widget build(BuildContext context) => ColoredBox(
-        color: context.tokens.bgInput,
-        child: Center(
-          child: Icon(Icons.play_circle_outline,
-              color: context.tokens.textMuted, size: 32),
-        ),
-      );
-}
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────────
 

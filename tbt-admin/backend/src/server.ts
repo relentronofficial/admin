@@ -160,6 +160,75 @@ async function bootstrap() {
     fastify.get('/', async () => ({ name: 'TBT Admin API', status: 'ok' }));
     fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
+    // ── Deep-link app-association files ─────────────────────────────
+    // Served at fixed well-known paths so Android/iOS can verify our
+    // domain owns the app. Must be served over HTTPS and return the
+    // exact content types listed below (iOS is picky).
+    //
+    // Values are derived from env vars — leave the vars unset in
+    // staging to serve an empty association if you don't want to
+    // enable Universal Links / App Links there yet.
+
+    // Android App Links
+    // Verified via: adb shell pm verify-app-links --re-verify <package>
+    fastify.get('/.well-known/assetlinks.json', async (_req, reply) => {
+      const pkg = env.ANDROID_APP_PACKAGE;
+      const fingerprintsRaw = env.ANDROID_APP_SHA256;
+      if (!pkg || !fingerprintsRaw) {
+        return reply.status(404).send([]);
+      }
+      const sha256_cert_fingerprints = fingerprintsRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const body = [
+        {
+          relation: [
+            'delegate_permission/common.handle_all_urls',
+            'delegate_permission/common.get_login_creds',
+          ],
+          target: {
+            namespace: 'android_app',
+            package_name: pkg,
+            sha256_cert_fingerprints,
+          },
+        },
+      ];
+      return reply
+        .header('Content-Type', 'application/json')
+        .header('Cache-Control', 'public, max-age=3600')
+        .send(body);
+    });
+
+    // iOS Universal Links (Apple App Site Association)
+    // File served with **no extension** and content-type application/json.
+    // Verified via: `swcutil dl -d app.tamilbusinesstribe.com` on a Mac.
+    fastify.get('/.well-known/apple-app-site-association', async (_req, reply) => {
+      const teamId = env.IOS_TEAM_ID;
+      const bundleId = env.IOS_BUNDLE_ID;
+      if (!teamId || !bundleId) {
+        return reply.status(404).send({});
+      }
+      const appID = `${teamId}.${bundleId}`;
+      const body = {
+        applinks: {
+          apps: [],
+          details: [
+            {
+              appIDs: [appID],
+              components: [
+                { '/': '/*', comment: 'Match every path on the domain' },
+              ],
+            },
+          ],
+        },
+      };
+      return reply
+        .header('Content-Type', 'application/json')
+        .header('Cache-Control', 'public, max-age=3600')
+        .send(body);
+    });
+
     const port = env.PORT;
     const host = '0.0.0.0';
 

@@ -1,0 +1,50 @@
+{
+  "@@locale": "en",
+
+  "appName": "Tamil Business Tribe",
+  "@appName": {
+    "description": "Application name shown in native title bars."
+  },
+
+  "commonRetry": "Retry",
+  "commonTryAgain": "Try again",
+  "commonCancel": "Cancel",
+  "commonSave": "Save",
+  "commonSubmit": "Submit",
+  "commonContinue": "Continue",
+  "commonOk": "OK",
+  "commonSignOut": "Sign out",
+  "commonBack": "Back",
+
+  "backToExitPrompt": "Press back again to exit",
+
+  "offlineBannerMessage": "You are offline",
+
+  "errorFailedToLoad": "Failed to load",
+  "errorCheckConnection": "Check your connection",
+  "errorCheckConnectionSubtitle": "We couldn't reach the server. Try again once you're back online.",
+  "errorSessionExpired": "Session expired",
+  "errorSessionExpiredSubtitle": "Please sign in again to continue.",
+  "errorServer": "Server error",
+  "errorServerSubtitle": "Something went wrong on our side. Try again in a moment.",
+  "errorAccessDenied": "Access not available",
+  "errorGeneric": "Something went wrong. Try again.",
+
+  "emptyStateNoNotifications": "No notifications yet",
+  "emptyStateNoNotificationsSubtitle": "You're all caught up!",
+  "emptyStateNoCourses": "No courses yet",
+  "emptyStateNoWorkshops": "No workshops available",
+  "emptyStateNoWebinars": "No webinars available",
+  "emptyStateNoEvents": "No events available",
+  "emptyStateNoResources": "No resources available",
+  "emptyStateNoProducts": "No products available",
+  "emptyStateNoHistory": "No watch history yet",
+
+  "authPhoneLabel": "Phone number",
+  "authPasswordLabel": "Password",
+  "authSignInAction": "Sign in",
+  "authForgotPassword": "Forgot password?",
+
+  "profileSignOutTitle": "Sign Out",
+  "profileSignOutConfirm": "Are you sure you want to sign out?"
+}

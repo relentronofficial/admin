@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../shared/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -399,35 +399,13 @@ class _ResultTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            ClipRRect(
+            AppNetworkImage(
+              url: thumbnailUrl,
+              width: 56,
+              height: 56,
+              fit: BoxFit.cover,
               borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: 56,
-                height: 56,
-                child: (thumbnailUrl != null && thumbnailUrl!.isNotEmpty)
-                    ? CachedNetworkImage(
-                        imageUrl: thumbnailUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
-                          color: context.tokens.bgInput,
-                          alignment: Alignment.center,
-                          child: Icon(icon,
-                              color: context.tokens.textMuted, size: 18),
-                        ),
-                        errorWidget: (_, __, ___) => Container(
-                          color: context.tokens.bgInput,
-                          alignment: Alignment.center,
-                          child: Icon(icon,
-                              color: context.tokens.textMuted, size: 18),
-                        ),
-                      )
-                    : Container(
-                        color: context.tokens.bgInput,
-                        alignment: Alignment.center,
-                        child:
-                            Icon(icon, color: context.tokens.textSecondary, size: 20),
-                      ),
-              ),
+              fallbackIcon: icon,
             ),
             const SizedBox(width: 12),
             Expanded(
