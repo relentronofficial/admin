@@ -13,6 +13,7 @@ import '../../../shared/providers/site_config_provider.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -152,7 +153,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(AppRadius.xl),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(19),
@@ -209,7 +210,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             decoration: BoxDecoration(
                               color: Theme.of(context).colorScheme.primary
                                   .withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(AppRadius.md),
                               border: Border.all(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -292,7 +293,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         backgroundColor: Theme.of(context).colorScheme.primary,
                         disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
                         ),
                         elevation: 0,
                       ),
@@ -386,23 +387,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
         ),
       );

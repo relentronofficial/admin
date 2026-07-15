@@ -7,7 +7,12 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/routes.dart';
 import '../providers/webinars_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_section_header.dart';
 class WebinarDetailScreen extends ConsumerWidget {
   const WebinarDetailScreen({super.key, required this.webinarId});
 
@@ -40,35 +45,23 @@ class WebinarDetailScreen extends ConsumerWidget {
       body: async.when(
         loading: () =>
             const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        error: (_, __) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline,
-                  color: context.tokens.textMuted, size: 40),
-              const SizedBox(height: 12),
-              Text('Failed to load webinar',
-                  style: TextStyle(color: context.tokens.textSecondary)),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => ref.invalidate(webinarProvider(webinarId)),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+        error: (e, _) => AppErrorState(
+          error: e,
+          fallbackTitle: 'Failed to load webinar',
+          onRetry: () => ref.invalidate(webinarProvider(webinarId)),
         ),
         data: (webinar) {
           final scheduled = webinar.parsedScheduledAt;
           final canJoin = webinar.isLive;
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (webinar.thumbnailUrl != null)
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
                       child: CachedNetworkImage(
@@ -84,7 +77,7 @@ class WebinarDetailScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
                     Expanded(
@@ -97,11 +90,11 @@ class WebinarDetailScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppSpacing.sm),
                     _StatusBadge(status: webinar.status, isLive: webinar.isLive),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 _InfoCard(
                   children: [
                     if (scheduled != null)
@@ -127,26 +120,13 @@ class WebinarDetailScreen extends ConsumerWidget {
                 ),
                 if (webinar.description != null &&
                     webinar.description!.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    'ABOUT',
-                    style: TextStyle(
-                      fontFamily: 'Rajdhani',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                      color: context.tokens.textMuted,
-                    ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    label: 'About',
+                    padding: EdgeInsets.only(bottom: AppSpacing.sm),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.tokens.bgSurface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: context.tokens.borderCard),
-                    ),
+                  AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.md + 2),
                     child: Text(
                       webinar.description!,
                       style: TextStyle(
@@ -157,47 +137,21 @@ class WebinarDetailScreen extends ConsumerWidget {
                     ),
                   ),
                 ],
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          canJoin ? Theme.of(context).colorScheme.primary : context.tokens.bgInput,
-                      foregroundColor:
-                          canJoin ? Colors.white : context.tokens.textMuted,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      disabledBackgroundColor: context.tokens.bgInput,
-                      disabledForegroundColor: context.tokens.textMuted,
-                    ),
-                    icon: Icon(
-                      canJoin
-                          ? Icons.play_circle_outline
-                          : (webinar.hasEnded
-                              ? Icons.replay
-                              : Icons.schedule),
-                      size: 18,
-                    ),
-                    label: Text(
-                      canJoin
-                          ? 'JOIN LIVE'
-                          : (webinar.hasEnded ? 'ENDED' : 'NOT YET LIVE'),
-                      style: const TextStyle(
-                        fontFamily: 'Rajdhani',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    onPressed: canJoin
-                        ? () => context.push(AppRoutes.webinarPath(webinar.id))
-                        : null,
-                  ),
+                const SizedBox(height: AppSpacing.xxl),
+                AppPrimaryButton(
+                  label: canJoin
+                      ? 'Join live'
+                      : (webinar.hasEnded ? 'Ended' : 'Not yet live'),
+                  icon: canJoin
+                      ? Icons.play_circle_outline
+                      : (webinar.hasEnded ? Icons.replay : Icons.schedule),
+                  size: AppButtonSize.lg,
+                  fullWidth: true,
+                  onPressed: canJoin
+                      ? () => context.push(AppRoutes.webinarPath(webinar.id))
+                      : null,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xxl),
               ],
             ),
           );
@@ -230,10 +184,13 @@ class _StatusBadge extends StatelessWidget {
     final c = _color(context);
     final label = isLive ? 'LIVE' : status.toUpperCase();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
       decoration: BoxDecoration(
         color: c.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
         label,
@@ -254,20 +211,14 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.tokens.bgSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.tokens.borderCard),
-      ),
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md + 2),
       child: Column(
         children: children
             .expand((w) => [
                   w,
                   if (w != children.last)
-                    Divider(color: context.tokens.borderCard, height: 20),
+                    Divider(color: context.tokens.borderCard, height: AppSpacing.xl),
                 ])
             .toList(),
       ),

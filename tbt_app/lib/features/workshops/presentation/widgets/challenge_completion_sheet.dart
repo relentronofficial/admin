@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/workshops_service.dart';
 
+import '../../../../shared/theme/design_tokens.dart';
 import '../../../../shared/theme/theme_tokens.dart';
 /// Renders the completion UI for a single challenge based on its
 /// backend-declared `type`. All 5 types funnel to
@@ -106,7 +107,7 @@ class _ChallengeCompletionSheetState
       builder: (_, scrollController) => Container(
         decoration: BoxDecoration(
           color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
           border: Border(top: BorderSide(color: context.tokens.borderCard)),
         ),
         child: Column(
@@ -774,14 +775,14 @@ class _FlashcardBodyState extends State<_FlashcardBody> {
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: InkWell(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
               onTap: () => setState(() => _flipped = !_flipped),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
                   color: context.tokens.bgInput,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
                   border: Border.all(
                     color: _flipped ? widget.accent : context.tokens.borderCard,
                     width: 1.4,

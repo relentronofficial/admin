@@ -10,6 +10,7 @@ import '../../../core/exceptions/app_exception.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
 class OtpScreen extends ConsumerStatefulWidget {
   const OtpScreen({
@@ -206,7 +207,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     elevation: 0,
                   ),
@@ -295,20 +296,20 @@ class _OtpBox extends StatelessWidget {
             filled: true,
             fillColor: context.tokens.bgInput,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide:
                   BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
             ),
             disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide(color: context.tokens.bgInput),
             ),
           ),

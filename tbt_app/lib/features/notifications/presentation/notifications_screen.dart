@@ -6,7 +6,13 @@ import '../../../shared/models/notification_item.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../providers/notifications_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_section_header.dart';
+import '../../../shared/widgets/app_skeleton.dart';
 // ── Route resolver ────────────────────────────────────────────────────────────
 
 String _resolveNotificationRoute(NotificationItem n) {
@@ -212,8 +218,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       ),
       body: notifAsync.when(
         loading: () => _buildSkeleton(context),
-        error: (e, _) => _buildError(
-            context, () => ref.invalidate(notificationsNotifierProvider)),
+        error: (e, _) => AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(notificationsNotifierProvider),
+        ),
         data: (allItems) {
           final items = _unreadOnly
               ? allItems.where((n) => !n.isRead).toList()
@@ -252,7 +260,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       onRefresh: _onRefresh,
       child: ListView.builder(
         controller: _scrollCtrl,
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.xxxl,
+        ),
         itemCount: _groupCount(groups) + (_loadingMore ? 1 : 0),
         itemBuilder: (context, index) =>
             _buildListItem(context, groups, index, accent),
@@ -276,7 +289,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     var cursor = 0;
     for (final g in groups) {
       if (index == cursor) {
-        return _SectionHeader(label: _dateGroupLabel(g.group));
+        return AppSectionHeader(
+          label: _dateGroupLabel(g.group),
+          padding: const EdgeInsets.only(
+            top: AppSpacing.xl,
+            bottom: AppSpacing.sm,
+            left: AppSpacing.xs,
+          ),
+        );
       }
       cursor++;
       for (final n in g.items) {
@@ -286,11 +306,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             direction: DismissDirection.endToStart,
             background: Container(
               alignment: Alignment.centerRight,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              margin: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              margin: const EdgeInsets.symmetric(vertical: AppSpacing.xs + 2),
               decoration: BoxDecoration(
                 color: const Color(0xFFdc2626),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
               child: const Icon(Icons.delete_outline, color: Colors.white),
             ),
@@ -404,28 +424,6 @@ class _FilterStrip extends StatelessWidget {
   }
 }
 
-// ── Section header ─────────────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 8, left: 2),
-        child: Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            fontFamily: 'Rajdhani',
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2,
-            color: context.tokens.textMuted,
-          ),
-        ),
-      );
-}
-
 // ── Notification card ─────────────────────────────────────────────────────────
 
 class _NotifCard extends StatelessWidget {
@@ -453,16 +451,12 @@ class _NotifCard extends StatelessWidget {
     return Semantics(
       label: '${n.title}: ${n.body}${isUnread ? ', unread' : ''}',
       button: true,
-      child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: borderColor),
-          borderRadius: BorderRadius.circular(12),
-        ),
+      child: AppCard(
+        margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+        padding: const EdgeInsets.all(AppSpacing.md + 2),
+        background: bg,
+        borderColor: borderColor,
+        onTap: onTap,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -471,11 +465,11 @@ class _NotifCard extends StatelessWidget {
               height: 36,
               decoration: BoxDecoration(
                 color: cfg.color.withAlpha(30),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
-              child: Icon(cfg.icon, color: cfg.color, size: 18),
+              child: Icon(cfg.icon, color: cfg.color, size: AppIconSize.sm),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -499,9 +493,9 @@ class _NotifCard extends StatelessWidget {
                     ),
                   ),
                   if (n.mediaType == 'image' && n.mediaUrl != null) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: AppSpacing.sm + 2),
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       child: Image.network(
                         n.mediaUrl!,
                         height: 140,
@@ -511,7 +505,7 @@ class _NotifCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpacing.xs + 2),
                   Row(
                     children: [
                       if (isUnread) ...[
@@ -523,7 +517,7 @@ class _NotifCard extends StatelessWidget {
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: AppSpacing.xs + 2),
                       ],
                       Text(
                         _timeAgo(n.createdAt),
@@ -533,7 +527,7 @@ class _NotifCard extends StatelessWidget {
                         ),
                       ),
                       if (n.actionUrl != null && n.actionUrl!.isNotEmpty) ...[
-                        const SizedBox(width: 8),
+                        const SizedBox(width: AppSpacing.sm),
                         Text(
                           'View →',
                           style: TextStyle(
@@ -551,92 +545,56 @@ class _NotifCard extends StatelessWidget {
           ],
         ),
       ),
-      ),
     );
   }
 }
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
-Widget _buildSkeleton(BuildContext context) => ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      itemCount: 6,
-      itemBuilder: (_, __) => Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          border: Border.all(color: context.tokens.borderCard),
-          borderRadius: BorderRadius.circular(12),
+Widget _buildSkeleton(BuildContext context) => AppSkeleton(
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.xxxl,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: context.tokens.bgInput,
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(height: 13, width: 180, color: context.tokens.bgInput),
-                  const SizedBox(height: 6),
-                  Container(height: 11, width: double.infinity, color: context.tokens.bgInput),
-                  const SizedBox(height: 4),
-                  Container(height: 11, width: 120, color: context.tokens.bgInput),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-// ── Error state ───────────────────────────────────────────────────────────────
-
-Widget _buildError(BuildContext context, VoidCallback onRetry) => Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
-          const SizedBox(height: 12),
-          Text(
-            'Failed to load notifications',
-            style: TextStyle(color: context.tokens.textSecondary),
+        itemCount: 6,
+        itemBuilder: (_, __) => Container(
+          margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+          padding: const EdgeInsets.all(AppSpacing.md + 2),
+          decoration: BoxDecoration(
+            color: context.tokens.bgSurface,
+            border: Border.all(color: context.tokens.borderCard),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
-          const SizedBox(height: 12),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
-        ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              AppSkeletonBlock(width: 36, height: 36, radius: AppRadius.md),
+              SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppSkeletonBlock(width: 180, height: 13),
+                    SizedBox(height: AppSpacing.sm - 2),
+                    AppSkeletonBlock(width: double.infinity, height: 11),
+                    SizedBox(height: AppSpacing.xs),
+                    AppSkeletonBlock(width: 120, height: 11),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-Widget _buildEmpty(BuildContext context) => Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.notifications_none_outlined, color: context.tokens.textMuted, size: 48),
-          const SizedBox(height: 12),
-          Text(
-            'No notifications yet',
-            style: TextStyle(
-              color: context.tokens.textSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "You're all caught up!",
-            style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
-          ),
-        ],
-      ),
+Widget _buildEmpty(BuildContext context) => const AppEmptyState(
+      icon: Icons.notifications_none_outlined,
+      title: 'No notifications yet',
+      subtitle: "You're all caught up!",
     );

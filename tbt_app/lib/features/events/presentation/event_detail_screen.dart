@@ -6,7 +6,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/events_service.dart';
 import '../providers/events_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_section_header.dart';
 class EventDetailScreen extends ConsumerStatefulWidget {
   const EventDetailScreen({super.key, required this.eventId});
 
@@ -84,27 +89,16 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       body: async.when(
         loading: () =>
             const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        error: (_, __) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
-              const SizedBox(height: 12),
-              Text('Failed to load event',
-                  style: TextStyle(color: context.tokens.textSecondary)),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => ref.invalidate(eventProvider(eventId)),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+        error: (e, _) => AppErrorState(
+          error: e,
+          fallbackTitle: 'Failed to load event',
+          onRetry: () => ref.invalidate(eventProvider(eventId)),
         ),
         data: (event) {
           final date = event.parsedDate;
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -122,12 +116,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppSpacing.sm),
                     _StatusBadge(status: event.status),
                   ],
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
 
                 // Info cards
                 _InfoCard(
@@ -169,26 +163,13 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
                 if (event.description != null &&
                     event.description!.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    'ABOUT THIS EVENT',
-                    style: TextStyle(
-                      fontFamily: 'Rajdhani',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                      color: context.tokens.textMuted,
-                    ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    label: 'About this event',
+                    padding: EdgeInsets.only(bottom: AppSpacing.sm),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.tokens.bgSurface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: context.tokens.borderCard),
-                    ),
+                  AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.md + 2),
                     child: Text(
                       event.description!,
                       style: TextStyle(
@@ -201,54 +182,22 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 ],
 
                 if (event.isUpcoming) ...[
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _registered
-                            ? const Color(0xFF16a34a)
-                            : Theme.of(context).colorScheme.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        disabledBackgroundColor:
-                            Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-                      ),
-                      icon: _registering
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Icon(
-                              _registered
-                                  ? Icons.check_circle_outline
-                                  : Icons.event_available,
-                              size: 18,
-                            ),
-                      label: Text(
-                        _registered ? 'REGISTERED' : 'REGISTER NOW',
-                        style: const TextStyle(
-                          fontFamily: 'Rajdhani',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      onPressed: (_registering || _registered)
-                          ? null
-                          : () => _register(event),
-                    ),
+                  const SizedBox(height: AppSpacing.xxl),
+                  AppPrimaryButton(
+                    label: _registered ? 'Registered' : 'Register now',
+                    icon: _registered
+                        ? Icons.check_circle_outline
+                        : Icons.event_available,
+                    size: AppButtonSize.lg,
+                    fullWidth: true,
+                    isLoading: _registering,
+                    onPressed: (_registering || _registered)
+                        ? null
+                        : () => _register(event),
                   ),
                 ],
 
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xxl),
               ],
             ),
           );
@@ -280,10 +229,13 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = _color(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
       decoration: BoxDecoration(
         color: c.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
         status.toUpperCase(),
@@ -305,17 +257,15 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.tokens.bgSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.tokens.borderCard),
-      ),
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md + 2),
       child: Column(
         children: children
-            .expand((w) => [w, if (w != children.last) Divider(color: context.tokens.borderCard, height: 20)])
+            .expand((w) => [
+                  w,
+                  if (w != children.last)
+                    Divider(color: context.tokens.borderCard, height: AppSpacing.xl),
+                ])
             .toList(),
       ),
     );

@@ -7,7 +7,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/resources_service.dart';
 import '../providers/resources_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
 class ResourcesScreen extends ConsumerStatefulWidget {
   const ResourcesScreen({super.key});
 
@@ -72,7 +76,12 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.xs + 2,
+            ),
             child: TextField(
               controller: _searchCtrl,
               onChanged: _onSearchChanged,
@@ -97,11 +106,11 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
                 filled: true,
                 fillColor: context.tokens.bgInput,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -112,52 +121,32 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
             child: async.when(
               loading: () => const Center(
                   child: CircularProgressIndicator(strokeWidth: 2)),
-              error: (_, __) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.error_outline,
-                        color: context.tokens.textMuted, size: 40),
-                    const SizedBox(height: 12),
-                    Text('Failed to load resources',
-                        style: TextStyle(color: context.tokens.textSecondary)),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => ref
-                          .invalidate(searchedResourcesProvider(_query)),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
+              error: (e, _) => AppErrorState(
+                error: e,
+                fallbackTitle: 'Failed to load resources',
+                onRetry: () =>
+                    ref.invalidate(searchedResourcesProvider(_query)),
               ),
               data: (items) {
                 if (items.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.folder_open_outlined,
-                            color: context.tokens.textMuted, size: 40),
-                        const SizedBox(height: 12),
-                        Text(
-                          _query.isEmpty
-                              ? 'No resources available'
-                              : 'No results for "$_query"',
-                          style: TextStyle(
-                              color: context.tokens.textSecondary, fontSize: 14),
-                        ),
-                      ],
-                    ),
+                  return AppEmptyState(
+                    icon: Icons.folder_open_outlined,
+                    title: _query.isEmpty
+                        ? 'No resources available'
+                        : 'No results for "$_query"',
+                    subtitle: _query.isEmpty
+                        ? 'Check back soon — your team will publish resources here.'
+                        : null,
                   );
                 }
                 if (_grid) {
                   return GridView.builder(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(AppSpacing.md),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
+                      mainAxisSpacing: AppSpacing.sm + 2,
+                      crossAxisSpacing: AppSpacing.sm + 2,
                       childAspectRatio: 0.9,
                     ),
                     itemCount: items.length,
@@ -169,7 +158,7 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
                   );
                 }
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                   itemCount: items.length,
                   itemBuilder: (_, i) => _ResourceTile(
                     resource: items[i],
@@ -259,13 +248,12 @@ class _ResourceTileState extends State<_ResourceTile> {
     final res = widget.resource;
     final locked = res.locked;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: context.tokens.bgSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.tokens.borderCard),
+    return AppCard(
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs + 1,
       ),
+      padding: EdgeInsets.zero,
       child: Stack(
         children: [
           ListTile(
@@ -346,7 +334,7 @@ class _ResourceTileState extends State<_ResourceTile> {
           if (locked)
             Positioned.fill(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
                 child: Container(
                   color: Colors.black.withValues(alpha: 0.35),
                   child: const Center(
@@ -483,21 +471,14 @@ class _ResourceGridCardState extends State<_ResourceGridCard> {
   @override
   Widget build(BuildContext context) {
     final r = widget.resource;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
       onTap: _tap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _FileTypeIcon(context, fileType: r.fileType),
-            const SizedBox(height: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _FileTypeIcon(context, fileType: r.fileType),
+          const SizedBox(height: AppSpacing.sm + 2),
             Text(
               r.title,
               maxLines: 2,
@@ -552,8 +533,7 @@ class _ResourceGridCardState extends State<_ResourceGridCard> {
                 ],
               ],
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

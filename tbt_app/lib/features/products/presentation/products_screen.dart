@@ -4,10 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/theme/design_constants.dart';
+import '../../../shared/theme/design_tokens.dart';
 import '../data/products_service.dart';
 import '../providers/products_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
 class ProductsScreen extends ConsumerWidget {
   const ProductsScreen({super.key});
 
@@ -68,36 +73,17 @@ class _AllProductsTab extends ConsumerWidget {
     return async.when(
       loading: () =>
           const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
-            const SizedBox(height: 12),
-            Text('Failed to load products',
-                style: TextStyle(color: context.tokens.textSecondary)),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => ref.invalidate(productsProvider),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
+      error: (e, _) => AppErrorState(
+        error: e,
+        fallbackTitle: 'Failed to load products',
+        onRetry: () => ref.invalidate(productsProvider),
       ),
       data: (products) {
         if (products.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.storefront_outlined,
-                    color: context.tokens.textMuted, size: 40),
-                SizedBox(height: 12),
-                Text('No products available',
-                    style:
-                        TextStyle(color: context.tokens.textSecondary, fontSize: 14)),
-              ],
-            ),
+          return const AppEmptyState(
+            icon: Icons.storefront_outlined,
+            title: 'No products available',
+            subtitle: 'Curated products from the team will appear here.',
           );
         }
 
@@ -105,11 +91,11 @@ class _AllProductsTab extends ConsumerWidget {
         final width = MediaQuery.of(context).size.width;
         final cols = width >= 600 ? 3 : 2;
         return GridView.builder(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(AppSpacing.md),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cols,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
+            crossAxisSpacing: AppSpacing.sm + 2,
+            mainAxisSpacing: AppSpacing.sm + 2,
             childAspectRatio: 0.72,
           ),
           itemCount: products.length,
@@ -129,7 +115,7 @@ class _AllProductsTab extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: context.tokens.bgSurface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (_) => _ProductDetailSheet(product: product, ref: ref),
     );
@@ -147,21 +133,16 @@ class _ProductCard extends StatelessWidget {
     return Semantics(
       label: product.title,
       button: true,
-      child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Thumbnail with category overlay (top-left) to match web.
             ClipRRect(
               borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(10)),
+                  const BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
               child: AspectRatio(
                 aspectRatio: 1.1,
                 child: Stack(
@@ -261,7 +242,6 @@ class _ProductCard extends StatelessWidget {
           ],
         ),
       ),
-      ),
     );
   }
 }
@@ -298,7 +278,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
           maxLines: 4,
           autofocus: true,
           style: TextStyle(color: context.tokens.textPrimary),
-          decoration: kInputDecoration('Tell us what you need...'),
+          decoration: inputDecorationOf(context, 'Tell us what you need...'),
         ),
         actions: [
           TextButton(
@@ -340,7 +320,12 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 20, 16, 24 + bottom),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.xl,
+        AppSpacing.lg,
+        AppSpacing.xxl + bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,7 +346,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
           // Thumbnail
           if (product.thumbnailUrl != null)
             ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               child: CachedNetworkImage(
                 imageUrl: product.thumbnailUrl!,
                 height: 180,
@@ -369,7 +354,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 fit: BoxFit.cover,
               ),
             ),
-          if (product.thumbnailUrl != null) const SizedBox(height: 16),
+          if (product.thumbnailUrl != null) const SizedBox(height: AppSpacing.lg),
 
           // Category + Title
           if (product.category != null)
@@ -485,63 +470,42 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
           ),
 
           // Inquire button
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: _submitted
-                ? Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF16a34a).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: const Color(0xFF16a34a).withValues(alpha: 0.4)),
+          if (_submitted)
+            Container(
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFF16a34a).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(
+                    color: const Color(0xFF16a34a).withValues(alpha: 0.4)),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_outline,
+                      color: Color(0xFF16a34a), size: AppIconSize.sm),
+                  SizedBox(width: AppSpacing.sm),
+                  Text(
+                    'Inquiry Sent',
+                    style: TextStyle(
+                      color: Color(0xFF16a34a),
+                      fontFamily: 'Rajdhani',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.check_circle_outline,
-                            color: Color(0xFF16a34a), size: 18),
-                        SizedBox(width: 8),
-                        Text(
-                          'Inquiry Sent',
-                          style: TextStyle(
-                            color: Color(0xFF16a34a),
-                            fontFamily: 'Rajdhani',
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ElevatedButton.icon(
-                    icon: _submitting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.send_outlined, size: 18),
-                    label: Text(
-                      _submitting ? 'Sending…' : 'Inquire',
-                      style: const TextStyle(
-                        fontFamily: 'Rajdhani',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: _submitting ? null : _openInquiryDialog,
                   ),
-          ),
+                ],
+              ),
+            )
+          else
+            AppPrimaryButton(
+              label: _submitting ? 'Sending…' : 'Inquire',
+              icon: Icons.send_outlined,
+              size: AppButtonSize.lg,
+              fullWidth: true,
+              isLoading: _submitting,
+              onPressed: _submitting ? null : _openInquiryDialog,
+            ),
         ],
       ),
     );
@@ -558,43 +522,22 @@ class _MyProductsTab extends ConsumerWidget {
     return async.when(
       loading: () =>
           const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
-            const SizedBox(height: 12),
-            Text('Failed to load inquiries',
-                style: TextStyle(color: context.tokens.textSecondary)),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => ref.invalidate(myProductsProvider),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
+      error: (e, _) => AppErrorState(
+        error: e,
+        fallbackTitle: 'Failed to load inquiries',
+        onRetry: () => ref.invalidate(myProductsProvider),
       ),
       data: (items) {
         if (items.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.inbox_outlined, color: context.tokens.textMuted, size: 40),
-                SizedBox(height: 12),
-                Text(
-                  "You haven't inquired about any products yet",
-                  style:
-                      TextStyle(color: context.tokens.textSecondary, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
+          return const AppEmptyState(
+            icon: Icons.inbox_outlined,
+            title: 'No inquiries yet',
+            subtitle: "Ask about any product and it'll appear here.",
           );
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
           itemCount: items.length,
           itemBuilder: (_, i) => _InquiredProductTile(item: items[i]),
         );
@@ -626,14 +569,12 @@ class _InquiredProductTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: context.tokens.bgSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.tokens.borderCard),
+    return AppCard(
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs + 1,
       ),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Row(
         children: [
           if (item.thumbnailUrl != null)

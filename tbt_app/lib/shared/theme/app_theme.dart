@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'design_tokens.dart';
 import 'tbt_theme.dart';
 
 // ── Light + dark palettes (mirror F:\admin\tbt-user-web\app\globals.css) ──────
@@ -180,7 +181,7 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
     cardTheme: CardThemeData(
       color: isDark ? ext.bgSurface : p.bgSurface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         side: BorderSide(color: p.borderCard),
       ),
       elevation: 0,
@@ -252,23 +253,23 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         borderSide: BorderSide(color: p.borderCard),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         borderSide: BorderSide(color: p.borderCard),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         borderSide: BorderSide(color: ext.accent),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         borderSide: BorderSide(color: ext.accent),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         borderSide: BorderSide(color: ext.accent),
       ),
     ),
@@ -280,7 +281,7 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
         foregroundColor: Colors.white,
         disabledBackgroundColor: ext.accent.withValues(alpha: 0.5),
         disabledForegroundColor: Colors.white.withValues(alpha: 0.75),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
         elevation: 0,
       ),
     ),
@@ -291,7 +292,7 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
       style: OutlinedButton.styleFrom(
         foregroundColor: p.textPrimary,
         side: BorderSide(color: p.borderCard),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       ),
     ),
     iconButtonTheme: IconButtonThemeData(
@@ -326,7 +327,7 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
       labelStyle: TextStyle(color: p.chipFg, fontSize: 12),
       secondaryLabelStyle: TextStyle(color: ext.accent, fontSize: 12),
       side: BorderSide(color: p.borderCard),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     ),
     switchTheme: SwitchThemeData(
@@ -342,7 +343,7 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
               : Colors.transparent),
       checkColor: WidgetStatePropertyAll(Colors.white),
       side: BorderSide(color: p.borderCard),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
     ),
     radioTheme: RadioThemeData(
       fillColor: WidgetStateProperty.resolveWith((states) =>
@@ -364,7 +365,7 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
     dialogTheme: DialogThemeData(
       backgroundColor: isDark ? const Color(0xFF141414) : p.bgSurface,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
       titleTextStyle: TextStyle(
         color: p.textPrimary,
         fontSize: 16,
@@ -389,13 +390,13 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
       color: isDark ? ext.bgSurface : p.bgSurface,
       surfaceTintColor: Colors.transparent,
       textStyle: TextStyle(color: p.textPrimary, fontSize: 13),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       elevation: 6,
     ),
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFFf0f0f0) : const Color(0xFF101010),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       textStyle: TextStyle(
         color: isDark ? const Color(0xFF101010) : Colors.white,
@@ -418,7 +419,7 @@ ThemeData _buildTheme(TbtTheme ext, _Palette p) {
       backgroundColor: p.snackBg,
       contentTextStyle: TextStyle(color: p.snackFg),
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
     ),
 
     // ── Tabs / Selection ───────────────────────────────────────────────────

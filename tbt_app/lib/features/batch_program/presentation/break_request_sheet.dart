@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/design_constants.dart';
+import '../../../shared/theme/design_tokens.dart';
 import '../data/batch_service.dart';
 import '../providers/batch_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_button.dart';
 /// Break request bottom sheet.
 ///
 /// The backend takes `startDay` / `endDay` as integer day numbers (1..totalDays),
@@ -241,7 +243,7 @@ class _BreakRequestSheetState extends ConsumerState<BreakRequestSheet> {
             controller: _reasonController,
             maxLines: 3,
             style: TextStyle(color: context.tokens.textPrimary),
-            decoration: kInputDecoration('Reason for taking a break…'),
+            decoration: inputDecorationOf(context, 'Reason for taking a break…'),
           ),
           if (_error != null) ...[
             const SizedBox(height: 10),
@@ -250,46 +252,19 @@ class _BreakRequestSheetState extends ConsumerState<BreakRequestSheet> {
               style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12),
             ),
           ],
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: _submitting ||
-                      _startDate == null ||
-                      _endDate == null ||
-                      !canPickDates
-                  ? null
-                  : _submit,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: context.tokens.bgInput,
-                disabledForegroundColor: context.tokens.textMuted,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              icon: _submitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.send, size: 16),
-              label: const Text(
-                'Submit Request',
-                style: TextStyle(
-                  fontFamily: 'Rajdhani',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
+          const SizedBox(height: AppSpacing.xl),
+          AppPrimaryButton(
+            label: 'Submit request',
+            icon: Icons.send,
+            size: AppButtonSize.lg,
+            fullWidth: true,
+            isLoading: _submitting,
+            onPressed: _submitting ||
+                    _startDate == null ||
+                    _endDate == null ||
+                    !canPickDates
+                ? null
+                : _submit,
           ),
         ],
       ),
@@ -336,13 +311,13 @@ class _DateField extends StatelessWidget {
         const SizedBox(height: 6),
         InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           child: Container(
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               color: context.tokens.bgInput,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(color: context.tokens.borderCard),
             ),
             child: Row(
@@ -384,7 +359,7 @@ class _NoBatchStartFallback extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: context.tokens.bgInput,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: context.tokens.borderCard),
       ),
       child: Column(

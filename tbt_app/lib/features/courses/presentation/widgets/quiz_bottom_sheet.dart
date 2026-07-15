@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 
+import '../../../../shared/theme/design_tokens.dart';
 import '../../../../shared/theme/theme_tokens.dart';
 /// Shown at `quizUnlockPercent` of video watched.
 /// Not dismissible — user must submit or the video has already ended.
@@ -94,7 +95,7 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
                       disabledBackgroundColor: context.tokens.bgInput,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                       ),
                     ),
                     child: _submitting
@@ -160,7 +161,7 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
                   color: isSelected
                       ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
                       : context.tokens.bgInput,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   border: Border.all(
                     color: isSelected ? Theme.of(context).colorScheme.primary : context.tokens.borderCard,
                   ),
@@ -252,7 +253,7 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
               ),
               child: const Text(
@@ -361,7 +362,7 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
                         disabledBackgroundColor: context.tokens.bgInput,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
                         ),
                       ),
                       child: const Text(
@@ -419,7 +420,7 @@ class _CueQuizBottomSheetState extends State<CueQuizBottomSheet> {
                   color: isSelected
                       ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
                       : context.tokens.bgInput,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   border: Border.all(
                     color: isSelected ? Theme.of(context).colorScheme.primary : context.tokens.borderCard,
                   ),

@@ -740,7 +740,7 @@ class _EditNameSection extends StatelessWidget {
             autofocus: true,
             enabled: !saving,
             style: TextStyle(color: context.tokens.textPrimary),
-            decoration: kInputDecoration('Your full name'),
+            decoration: inputDecorationOf(context, 'Your full name'),
           ),
         ],
       ),

@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:shimmer/shimmer.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/watch_history_item.dart';
 import '../providers/history_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_section_header.dart';
+import '../../../shared/widgets/app_skeleton.dart';
 // ── Filter tabs ───────────────────────────────────────────────────────────────
 
 const _filters = [
@@ -158,23 +163,11 @@ class _HistoryBody extends ConsumerWidget {
 
     return historyAsync.when(
       loading: () => const _HistoryShimmer(),
-      error: (_, __) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline,
-                color: context.tokens.textMuted, size: 40),
-            const SizedBox(height: 12),
-            Text('Failed to load history',
-                style: TextStyle(color: context.tokens.textSecondary)),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () =>
-                  ref.invalidate(watchHistoryNotifierProvider(filter)),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
+      error: (e, _) => AppErrorState(
+        error: e,
+        fallbackTitle: 'Failed to load history',
+        onRetry: () =>
+            ref.invalidate(watchHistoryNotifierProvider(filter)),
       ),
       data: (state) {
         if (state.items.isEmpty) {
@@ -249,11 +242,18 @@ class _HistoryBody extends ConsumerWidget {
                 key: ValueKey('history-${item.type}-$epId'),
                 direction: DismissDirection.endToStart,
                 background: Container(
-                  color: const Color(0xFFdc2626),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.xs + 1,
+                  ),
                   alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFdc2626),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
                   child: const Icon(Icons.delete_outline,
-                      color: Colors.white, size: 22),
+                      color: Colors.white, size: AppIconSize.md),
                 ),
                 onDismissed: (_) async {
                   try {
@@ -332,61 +332,37 @@ class _HistoryGroupHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final done = group.completed >= group.total;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  group.title,
-                  style: TextStyle(
-                    fontFamily: 'Rajdhani',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.8,
-                    color: context.tokens.textMuted,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  done
-                      ? '${group.total} completed'
-                      : '${group.completed} of ${group.total} completed',
-                  style: TextStyle(
-                    color: context.tokens.textMuted,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
+    return AppSectionHeader(
+      label: group.title,
+      subtitle: done
+          ? '${group.total} completed'
+          : '${group.completed} of ${group.total} completed',
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md + 2,
+        AppSpacing.lg,
+        AppSpacing.xs + 2,
+      ),
+      trailing: TextButton.icon(
+        onPressed: () => _continue(context),
+        icon: Icon(
+          done ? Icons.replay : Icons.play_arrow,
+          size: 14,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        label: Text(
+          done ? 'Rewatch' : 'Continue',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
           ),
-          TextButton.icon(
-            onPressed: () => _continue(context),
-            icon: Icon(
-              done ? Icons.replay : Icons.play_arrow,
-              size: 14,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            label: Text(
-              done ? 'Rewatch' : 'Continue',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
-        ],
+        ),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       ),
     );
   }
@@ -439,23 +415,21 @@ class _HistoryCard extends StatelessWidget {
     return Semantics(
       label: displayTitle,
       button: true,
-      child: GestureDetector(
-      onTap: () => _navigate(context),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
+      child: AppCard(
+        margin: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs + 1,
         ),
+        padding: EdgeInsets.zero,
+        onTap: () => _navigate(context),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Thumbnail
             ClipRRect(
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(9),
-                bottomLeft: Radius.circular(9),
+                topLeft: Radius.circular(AppRadius.md - 1),
+                bottomLeft: Radius.circular(AppRadius.md - 1),
               ),
               child: SizedBox(
                 width: 100,
@@ -474,7 +448,12 @@ class _HistoryCard extends StatelessWidget {
             // Info
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.sm + 2,
+                  AppSpacing.md,
+                  AppSpacing.sm + 2,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -587,7 +566,6 @@ class _HistoryCard extends StatelessWidget {
           ],
         ),
       ),
-      ),
     );
   }
 }
@@ -626,32 +604,10 @@ class _EmptyState extends StatelessWidget {
       'completed' => 'Complete a course or workshop to see it here',
       _ => 'Courses and workshops you watch will appear here',
     };
-
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.history, color: context.tokens.textMuted, size: 56),
-          const SizedBox(height: 16),
-          Text(
-            label,
-            style: TextStyle(
-              color: context.tokens.textSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            sub,
-            style: TextStyle(
-              color: context.tokens.textMuted,
-              fontSize: 13,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
+    return AppEmptyState(
+      icon: Icons.history,
+      title: label,
+      subtitle: sub,
     );
   }
 }
@@ -663,18 +619,19 @@ class _HistoryShimmer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: 6,
-      itemBuilder: (_, __) => Shimmer.fromColors(
-        baseColor: context.tokens.bgSurface,
-        highlightColor: context.tokens.bgInput,
-        child: Container(
+    return AppSkeleton(
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        itemCount: 6,
+        itemBuilder: (_, __) => Container(
           height: 90,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          margin: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs + 1,
+          ),
           decoration: BoxDecoration(
             color: context.tokens.bgSurface,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
         ),
       ),

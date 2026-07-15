@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../config/ui_strings.dart';
 
+import '../../../../shared/theme/design_tokens.dart';
 import '../../../../shared/theme/theme_tokens.dart';
 class ReflectionModal extends StatefulWidget {
   const ReflectionModal({
@@ -49,7 +50,9 @@ class _ReflectionModalState extends State<ReflectionModal> {
     final s = widget.uiStrings;
     return Dialog(
       backgroundColor: context.tokens.bgSurface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
@@ -89,15 +92,15 @@ class _ReflectionModalState extends State<ReflectionModal> {
                 filled: true,
                 fillColor: context.tokens.bgInput,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
@@ -128,7 +131,7 @@ class _ReflectionModalState extends State<ReflectionModal> {
                       disabledBackgroundColor: Colors.green,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                       ),
                     ),
                     child: Text(

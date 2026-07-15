@@ -8,7 +8,11 @@ import '../../../core/constants/routes.dart';
 import '../data/webinars_service.dart';
 import '../providers/webinars_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
 class WebinarsScreen extends ConsumerWidget {
   const WebinarsScreen({super.key});
 
@@ -45,37 +49,17 @@ class WebinarsScreen extends ConsumerWidget {
       body: async.when(
         loading: () =>
             const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        error: (_, __) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline,
-                  color: context.tokens.textMuted, size: 40),
-              const SizedBox(height: 12),
-              Text('Failed to load webinars',
-                  style: TextStyle(color: context.tokens.textSecondary)),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => ref.invalidate(webinarsProvider),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+        error: (e, _) => AppErrorState(
+          error: e,
+          fallbackTitle: 'Failed to load webinars',
+          onRetry: () => ref.invalidate(webinarsProvider),
         ),
         data: (webinars) {
           if (webinars.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.videocam_outlined,
-                      color: context.tokens.textMuted, size: 40),
-                  SizedBox(height: 12),
-                  Text('No webinars available',
-                      style: TextStyle(
-                          color: context.tokens.textSecondary, fontSize: 14)),
-                ],
-              ),
+            return const AppEmptyState(
+              icon: Icons.videocam_outlined,
+              title: 'No webinars available',
+              subtitle: 'Check back — new live sessions are announced regularly.',
             );
           }
           return RefreshIndicator(
@@ -86,7 +70,7 @@ class WebinarsScreen extends ConsumerWidget {
               await ref.read(webinarsProvider.future);
             },
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               itemCount: webinars.length,
               itemBuilder: (_, i) => _WebinarCard(
                 webinar: webinars[i],
@@ -114,17 +98,14 @@ class _WebinarCard extends StatelessWidget {
     return Semantics(
       label: webinar.title,
       button: true,
-      child: GestureDetector(
+      child: AppCard(
+        margin: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs + 1,
+        ),
+        padding: EdgeInsets.zero,
         onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          decoration: BoxDecoration(
-            color: context.tokens.bgSurface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: context.tokens.borderCard),
-          ),
-          clipBehavior: Clip.hardEdge,
-          child: Column(
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Thumbnail with LIVE / date overlay
@@ -176,7 +157,7 @@ class _WebinarCard extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -231,8 +212,7 @@ class _WebinarCard extends StatelessWidget {
                   ],
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );

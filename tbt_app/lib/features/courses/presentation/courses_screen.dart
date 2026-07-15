@@ -4,13 +4,17 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shimmer/shimmer.dart';
 
 import '../../../shared/models/course.dart';
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../providers/courses_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_skeleton.dart';
 class CoursesScreen extends ConsumerStatefulWidget {
   const CoursesScreen({super.key});
 
@@ -78,7 +82,12 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
         children: [
           // Search bar
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.sm,
+            ),
             child: TextField(
               controller: _searchCtrl,
               onChanged: _onSearchChanged,
@@ -104,7 +113,7 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
@@ -112,7 +121,7 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                   borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: accent),
                 ),
               ),
@@ -124,9 +133,12 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
             height: 40,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.xs,
+              ),
               itemCount: _levels.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.sm),
               itemBuilder: (_, i) {
                 final l = _levels[i];
                 final active = _level == l;
@@ -147,7 +159,7 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                     color: active ? accent : context.tokens.borderCard,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                 );
               },
@@ -158,8 +170,10 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
           Expanded(
             child: coursesAsync.when(
               loading: () => _buildSkeleton(context),
-              error: (e, _) => _buildError(
-                  context, () => ref.invalidate(coursesProvider)),
+              error: (e, _) => AppErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(coursesProvider),
+              ),
               data: (all) {
                 final courses = _filter(all);
                 if (courses.isEmpty) {
@@ -175,12 +189,17 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                         .catchError((_) => <Course>[]);
                   },
                   child: GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.xs,
+                      AppSpacing.lg,
+                      AppSpacing.xxxl,
+                    ),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
+                      mainAxisSpacing: AppSpacing.md,
+                      crossAxisSpacing: AppSpacing.md,
                       childAspectRatio: 0.72,
                     ),
                     itemCount: courses.length,
@@ -222,15 +241,9 @@ class _CourseCard extends StatelessWidget {
     return Semantics(
       label: '${c.title}${isLocked ? ', locked' : ''}',
       button: true,
-      child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          border: Border.all(color: context.tokens.borderCard),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        clipBehavior: Clip.hardEdge,
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        onTap: onTap,
         child: Stack(
           children: [
             Column(
@@ -347,7 +360,6 @@ class _CourseCard extends StatelessWidget {
           ],
         ),
       ),
-      ),
     );
   }
 
@@ -402,22 +414,25 @@ class _ThumbFallback extends StatelessWidget {
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────────
 
-Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
-      baseColor: context.tokens.bgSurface,
-      highlightColor: context.tokens.bgInput,
+Widget _buildSkeleton(BuildContext context) => AppSkeleton(
       child: GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.xs,
+          AppSpacing.lg,
+          AppSpacing.xxxl,
+        ),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
+          mainAxisSpacing: AppSpacing.md,
+          crossAxisSpacing: AppSpacing.md,
           childAspectRatio: 0.72,
         ),
         itemCount: 6,
         itemBuilder: (_, __) => Container(
           decoration: BoxDecoration(
             color: context.tokens.bgSurface,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,7 +442,7 @@ Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
                 child: Container(color: context.tokens.bgInput),
               ),
               Padding(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(AppSpacing.sm + 2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -435,7 +450,7 @@ Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
                         height: 13,
                         width: double.infinity,
                         color: context.tokens.bgInput),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.xs + 2),
                     Container(
                         height: 13, width: 80, color: context.tokens.bgInput),
                   ],
@@ -447,40 +462,12 @@ Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
       ),
     );
 
-// ── Error / empty states ──────────────────────────────────────────────────────
+// ── Empty state ───────────────────────────────────────────────────────────────
 
-Widget _buildError(BuildContext context, VoidCallback onRetry) => Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
-          const SizedBox(height: 12),
-          Text('Failed to load courses',
-              style: TextStyle(color: context.tokens.textSecondary)),
-          const SizedBox(height: 12),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
-        ],
-      ),
-    );
-
-Widget _buildEmpty(BuildContext context, bool isSearch) => Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isSearch ? Icons.search_off : Icons.school_outlined,
-            color: context.tokens.textMuted,
-            size: 48,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            isSearch ? 'No courses match your search' : 'No courses yet',
-            style: TextStyle(
-              color: context.tokens.textSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
+Widget _buildEmpty(BuildContext context, bool isSearch) => AppEmptyState(
+      icon: isSearch ? Icons.search_off : Icons.school_outlined,
+      title: isSearch ? 'No courses match your search' : 'No courses yet',
+      subtitle: isSearch
+          ? 'Try a broader keyword or clear the filter.'
+          : 'Newly published courses will appear here.',
     );

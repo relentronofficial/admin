@@ -13,7 +13,9 @@ import '../providers/batch_provider.dart';
 import 'break_request_sheet.dart';
 import 'widgets/batch_calendar.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_button.dart';
 class BatchProgramScreen extends ConsumerWidget {
   const BatchProgramScreen({super.key});
 
@@ -44,7 +46,7 @@ class BatchProgramScreen extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: context.tokens.bgSurface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (_) => BreakRequestSheet(
         totalDays: program.totalDays,
@@ -254,30 +256,18 @@ class BatchProgramScreen extends ConsumerWidget {
           final todayDay = _todayDayNumber(program);
           return SafeArea(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: SizedBox(
-                height: 48,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.today, size: 18),
-                  label: Text(
-                    "Today's Day — Day $todayDay",
-                    style: const TextStyle(
-                      fontFamily: 'Rajdhani',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () =>
-                      context.push(AppRoutes.batchDayPath(todayDay)),
-                ),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.lg,
+                AppSpacing.md,
+              ),
+              child: AppPrimaryButton(
+                label: "Today's day — Day $todayDay",
+                icon: Icons.today,
+                size: AppButtonSize.lg,
+                fullWidth: true,
+                onPressed: () => context.push(AppRoutes.batchDayPath(todayDay)),
               ),
             ),
           );
@@ -680,39 +670,14 @@ class _BatchCertDownloadButtonState
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: SizedBox(
-        width: double.infinity,
-        height: 44,
-        child: ElevatedButton.icon(
-          icon: _launching
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Icon(Icons.workspace_premium, size: 18),
-          label: const Text(
-            'Download Certificate',
-            style: TextStyle(
-              fontFamily: 'Rajdhani',
-              fontWeight: FontWeight.w700,
-              fontSize: 15,
-              letterSpacing: 0.5,
-            ),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFdc2626),
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          onPressed: _launching ? null : _download,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: AppPrimaryButton(
+        label: 'Download certificate',
+        icon: Icons.workspace_premium,
+        size: AppButtonSize.md,
+        fullWidth: true,
+        isLoading: _launching,
+        onPressed: _launching ? null : _download,
       ),
     );
   }

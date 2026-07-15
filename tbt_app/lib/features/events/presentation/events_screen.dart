@@ -9,7 +9,11 @@ import '../../../core/constants/routes.dart';
 import '../data/events_service.dart';
 import '../providers/events_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
 class EventsScreen extends ConsumerStatefulWidget {
   const EventsScreen({super.key});
 
@@ -65,7 +69,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.xs,
+            ),
             child: TextField(
               controller: _searchCtrl,
               onChanged: _onSearchChanged,
@@ -89,7 +98,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 filled: true,
                 fillColor: context.tokens.bgInput,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: context.tokens.borderCard),
                 ),
                 enabledBorder: OutlineInputBorder(
@@ -104,22 +113,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             child: async.when(
               loading: () => const Center(
                   child: CircularProgressIndicator(strokeWidth: 2)),
-              error: (_, __) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.error_outline,
-                        color: context.tokens.textMuted, size: 40),
-                    const SizedBox(height: 12),
-                    Text('Failed to load events',
-                        style: TextStyle(color: context.tokens.textSecondary)),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => ref.invalidate(eventsProvider),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
+              error: (e, _) => AppErrorState(
+                error: e,
+                fallbackTitle: 'Failed to load events',
+                onRetry: () => ref.invalidate(eventsProvider),
               ),
               data: (allEvents) {
                 final events = _query.isEmpty
@@ -131,26 +128,18 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                                 .contains(_query));
                       }).toList();
                 if (events.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.event_outlined,
-                            color: context.tokens.textMuted, size: 40),
-                        const SizedBox(height: 12),
-                        Text(
-                          _query.isEmpty
-                              ? 'No events available'
-                              : 'No events match "$_query"',
-                          style: TextStyle(
-                              color: context.tokens.textSecondary, fontSize: 14),
-                        ),
-                      ],
-                    ),
+                  return AppEmptyState(
+                    icon: Icons.event_outlined,
+                    title: _query.isEmpty
+                        ? 'No events available'
+                        : 'No events match "$_query"',
+                    subtitle: _query.isEmpty
+                        ? 'Upcoming sessions will show up here.'
+                        : null,
                   );
                 }
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                   itemCount: events.length,
                   itemBuilder: (_, i) => _EventCard(
                     event: events[i],
@@ -182,15 +171,13 @@ class _EventCard extends StatelessWidget {
     return Semantics(
       label: event.title,
       button: true,
-      child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
+      child: AppCard(
+        margin: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs + 1,
         ),
+        padding: EdgeInsets.zero,
+        onTap: onTap,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -274,13 +261,15 @@ class _EventCard extends StatelessWidget {
             ),
 
             Padding(
-              padding: EdgeInsets.only(right: 10, top: 14),
+              padding: const EdgeInsets.only(
+                right: AppSpacing.sm + 2,
+                top: AppSpacing.md + 2,
+              ),
               child: Icon(Icons.chevron_right,
-                  color: context.tokens.textMuted, size: 18),
+                  color: context.tokens.textMuted, size: AppIconSize.sm),
             ),
           ],
         ),
-      ),
       ),
     );
   }
@@ -295,11 +284,11 @@ class _DateBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 52,
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      margin: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs + 2),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
       ),
       child: Column(

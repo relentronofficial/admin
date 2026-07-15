@@ -8,10 +8,12 @@ import '../../../core/constants/routes.dart';
 import '../../../shared/models/watch_history_item.dart';
 import '../../../shared/providers/me_provider.dart';
 import '../../../shared/providers/site_config_provider.dart';
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/tbt_theme.dart';
-import '../providers/dashboard_providers.dart';
-
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_section_header.dart';
+import '../providers/dashboard_providers.dart';
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -54,34 +56,41 @@ class DashboardScreen extends ConsumerWidget {
                   data: (stats) => _StatsRow(stats: stats),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
 
                 // ── Quick links ───────────────────────────────────────────────
                 // Batch program has no bottom-tab entry, so surface it here
                 // (mirrors the web's top-nav "Task" link).
                 const _QuickLinksRow(),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xxl),
 
                 // ── Continue Watching ─────────────────────────────────────────
-                _SectionHeader(label: continueLabel),
-                const SizedBox(height: 12),
+                AppSectionHeader(label: continueLabel),
+                const SizedBox(height: AppSpacing.md),
                 continueAsync.when(
                   loading: () => _HorizontalSkeletonList(),
-                  error: (e, _) => _RetryError(
-                    onRetry: () => ref.invalidate(continueLearningProvider),
+                  error: (e, _) => Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg),
+                    child: AppErrorState(
+                      error: e,
+                      compact: true,
+                      onRetry: () =>
+                          ref.invalidate(continueLearningProvider),
+                    ),
                   ),
                   data: (items) => items.isEmpty
                       ? _EmptyRow()
                       : _HorizontalList(items: items),
                 ),
 
-                const SizedBox(height: 28),
+                const SizedBox(height: AppSpacing.xxl),
 
                 // ── Recently Watched (with All/In Progress/Completed pills) ──
                 _RecentlyWatched(sectionLabel: recentLabel),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: AppSpacing.xxxl),
               ],
             ),
           ),
@@ -444,27 +453,34 @@ class _RecentlyWatchedState extends ConsumerState<_RecentlyWatched> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionHeader(label: widget.sectionLabel),
-        const SizedBox(height: 8),
+        AppSectionHeader(label: widget.sectionLabel),
+        const SizedBox(height: AppSpacing.sm),
         SizedBox(
           height: 34,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
             children: [
               _pill('All', 'all', accent),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               _pill('In Progress', 'in_progress', accent),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               _pill('Completed', 'completed', accent),
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         async.when(
           loading: () => _HorizontalSkeletonList(),
-          error: (e, _) => _RetryError(
-            onRetry: () => ref.invalidate(watchHistoryProvider(_filter)),
+          error: (e, _) => Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: AppErrorState(
+              error: e,
+              compact: true,
+              onRetry: () =>
+                  ref.invalidate(watchHistoryProvider(_filter)),
+            ),
           ),
           data: (items) => items.isEmpty
               ? _EmptyRow()
@@ -500,26 +516,6 @@ class _RecentlyWatchedState extends ConsumerState<_RecentlyWatched> {
       ),
     );
   }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Text(
-          label.toUpperCase(),
-          style: TextStyle(
-          fontFamily: 'Rajdhani',
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: context.tokens.textMuted,
-            letterSpacing: 2,
-          ),
-        ),
-      );
 }
 
 // ── Horizontal content list ────────────────────────────────────────────────────
@@ -763,29 +759,3 @@ class _EmptyRow extends StatelessWidget {
       );
 }
 
-class _RetryError extends StatelessWidget {
-  const _RetryError({required this.onRetry});
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Text(
-              'Failed to load.',
-              style: TextStyle(color: context.tokens.textMuted, fontSize: 13),
-            ),
-            const SizedBox(width: 12),
-            TextButton(
-              onPressed: onRetry,
-              style: TextButton.styleFrom(
-                foregroundColor: context.tbt.accent,
-                minimumSize: const Size(48, 48),
-              ),
-              child: const Text('Retry', style: TextStyle(fontSize: 13)),
-            ),
-          ],
-        ),
-      );
-}

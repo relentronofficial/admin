@@ -15,6 +15,7 @@ import 'features/auth/presentation/signup_screen.dart';
 import 'features/auth/presentation/otp_screen.dart';
 import 'features/auth/presentation/forgot_password_screen.dart';
 import 'features/auth/providers/auth_provider.dart';
+import 'shared/api/services/auth_service.dart';
 import 'features/batch_program/presentation/batch_day_screen.dart';
 import 'features/batch_program/presentation/batch_program_screen.dart';
 import 'features/courses/presentation/badges_screen.dart';
@@ -393,8 +394,59 @@ class TbtApp extends ConsumerStatefulWidget {
   ConsumerState<TbtApp> createState() => _TbtAppState();
 }
 
-class _TbtAppState extends ConsumerState<TbtApp> {
+class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
   bool _deepLinkChecked = false;
+
+  /// Timestamp of the last successful token refresh (or authenticated boot).
+  /// Used to decide whether an `AppLifecycleState.resumed` warrants a
+  /// proactive refresh — access tokens have a 15-min TTL, so a refresh at
+  /// the 12-min mark keeps subsequent requests instant.
+  DateTime? _lastRefreshAt;
+  static const _kProactiveRefreshAfter = Duration(minutes: 12);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _lastRefreshAt = DateTime.now();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    _maybeProactiveRefresh();
+  }
+
+  /// If the app has been idle long enough that the access token is close to
+  /// expiry (or already expired), fire a background refresh so the very
+  /// next authenticated request doesn't have to go through the 401→refresh
+  /// dance. Failures are safe — `AuthService.refresh` follows the
+  /// session-preservation rule (only wipes on 401/403 from `/refresh`
+  /// itself), so a poor connection here never signs the user out.
+  Future<void> _maybeProactiveRefresh() async {
+    final authAsync = ref.read(authNotifierProvider);
+    if (authAsync.valueOrNull?.step != AuthStep.authenticated) return;
+    final last = _lastRefreshAt;
+    if (last != null &&
+        DateTime.now().difference(last) < _kProactiveRefreshAfter) {
+      return;
+    }
+    try {
+      await ref.read(authServiceProvider).refresh();
+      _lastRefreshAt = DateTime.now();
+      if (kDebugMode) debugPrint('[TbtApp] proactive refresh succeeded');
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[TbtApp] proactive refresh failed: $e (session kept)');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -411,8 +463,24 @@ class _TbtAppState extends ConsumerState<TbtApp> {
     // Wire FCM foreground + background-tap handlers once the router is ready.
     ref.read(fcmServiceProvider).initHandlers(router);
 
-    // Consume any pending deep-link stored from a terminated-state notification
-    // tap as soon as the user is authenticated.
+    // Consume any pending deep-link stored from a terminated-state
+    // notification tap as soon as the user is authenticated.
+    //
+    // Race guard rationale — the flow is fragile:
+    //   1. User taps a notification while the app is fully killed.
+    //   2. Android launches Flutter → the app decides its initial route
+    //      (usually `/dashboard` if the JWT cookies are still valid).
+    //   3. FCM's `getInitialMessage` fires and _fcmService_ writes the
+    //      target route into SharedPreferences (kPrefPendingDeepLink).
+    //   4. `AuthNotifier.build()` completes; we see `authenticated` and
+    //      run the consume logic below.
+    //
+    // Two things can break: (a) if we `router.go(route)` before the
+    // router's initial-render completes, GoRouter re-runs its redirect
+    // guard and can bounce us; (b) if the user is temporarily unauth
+    // (network hiccup during cold-start refresh) we skip the payload and
+    // it stays queued for the NEXT authenticated session — which is fine.
+    // The `_deepLinkChecked` flag ensures we only fire once per app lifetime.
     ref.listen<AsyncValue<AuthState>>(authNotifierProvider, (_, next) async {
       if (_deepLinkChecked) return;
       if (next.valueOrNull?.step != AuthStep.authenticated) return;
@@ -420,13 +488,33 @@ class _TbtAppState extends ConsumerState<TbtApp> {
       try {
         final prefs = await SharedPreferences.getInstance();
         final route = prefs.getString(kPrefPendingDeepLink);
-        if (route != null && route.isNotEmpty) {
-          await prefs.remove(kPrefPendingDeepLink);
-          // Allow the router to finish its initial render before navigating.
-          await Future<void>.delayed(const Duration(milliseconds: 300));
-          if (mounted) router.go(route);
+        if (route == null || route.isEmpty) {
+          if (kDebugMode) {
+            debugPrint('[TbtApp] no pending deep link on auth');
+          }
+          return;
         }
-      } catch (_) {}
+        // Clear the payload immediately so a second auth transition
+        // (e.g. a token refresh mid-session) doesn't replay it.
+        await prefs.remove(kPrefPendingDeepLink);
+        // Wait for the router's first frame — 300 ms is deliberately
+        // generous; on very old Android devices the initial redirect
+        // chain can take ~200 ms.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!mounted) {
+          if (kDebugMode) {
+            debugPrint('[TbtApp] widget unmounted before deep-link '
+                'navigate — route "$route" dropped');
+          }
+          return;
+        }
+        if (kDebugMode) debugPrint('[TbtApp] navigating to deep link: $route');
+        router.go(route);
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('[TbtApp] deep-link consume failed: $e\n$st');
+        }
+      }
     });
 
     final siteConfigAsync = ref.watch(siteConfigNotifierProvider);

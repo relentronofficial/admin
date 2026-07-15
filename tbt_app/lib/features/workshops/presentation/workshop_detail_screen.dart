@@ -17,12 +17,13 @@ import '../../../shared/api/upload_service.dart';
 import '../../../shared/models/workshop.dart';
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/socket/socket_events.dart';
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/tbt_theme.dart';
+import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_button.dart';
 import '../data/workshops_service.dart';
 import '../providers/workshops_provider.dart';
 import 'widgets/challenge_completion_sheet.dart';
-
-import '../../../shared/theme/theme_tokens.dart';
 // workshopId is the slug — route pattern is /workshops/:id but value is a slug.
 class WorkshopDetailScreen extends ConsumerStatefulWidget {
   const WorkshopDetailScreen({super.key, required this.workshopId});
@@ -376,7 +377,7 @@ class _AccessGateState extends ConsumerState<_AccessGate> {
                 ),
               ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xxl),
 
             Text(
               d.title,
@@ -433,37 +434,12 @@ class _AccessGateState extends ConsumerState<_AccessGate> {
                 ),
               )
             else
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _requesting ? null : _request,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.accent,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor:
-                        widget.accent.withAlpha(128),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _requesting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text(
-                          'Request Access',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                ),
+              AppPrimaryButton(
+                label: 'Request Access',
+                size: AppButtonSize.lg,
+                fullWidth: true,
+                isLoading: _requesting,
+                onPressed: _requesting ? null : _request,
               ),
           ],
         ),

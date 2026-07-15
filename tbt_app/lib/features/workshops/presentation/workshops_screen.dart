@@ -4,28 +4,25 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shimmer/shimmer.dart';
-
 import '../../../shared/models/workshop.dart';
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/tbt_theme.dart';
+import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_skeleton.dart';
 import '../providers/workshops_provider.dart';
 
-import '../../../shared/theme/theme_tokens.dart';
 // ── Delivery mode chip config ─────────────────────────────────────────────────
+// Chip pattern: single semantic accent per mode + 12% alpha fill so the same
+// chip reads correctly in both light and dark themes. See app-wide chip
+// convention documented in workshop_detail_screen.dart.
 
-({Color bg, Color text}) _modeColors(DeliveryMode mode) => switch (mode) {
-      DeliveryMode.online => (
-          bg: const Color(0xFF1e3a5f),
-          text: const Color(0xFF60a5fa)
-        ),
-      DeliveryMode.offline => (
-          bg: const Color(0xFF3d2600),
-          text: const Color(0xFFfb923c)
-        ),
-      DeliveryMode.hybrid => (
-          bg: const Color(0xFF2e1a47),
-          text: const Color(0xFFa78bfa)
-        ),
+Color _modeAccent(DeliveryMode mode) => switch (mode) {
+      DeliveryMode.online => const Color(0xFF3b82f6),  // blue-500
+      DeliveryMode.offline => const Color(0xFFea580c), // orange-600
+      DeliveryMode.hybrid => const Color(0xFF7c3aed),  // violet-600
     };
 
 String _modeLabel(DeliveryMode mode, String? label) {
@@ -145,8 +142,10 @@ class _WorkshopsScreenState extends ConsumerState<WorkshopsScreen> {
           Expanded(
             child: workshopsAsync.when(
               loading: () => _buildSkeleton(context),
-              error: (e, _) =>
-                  _buildError(context, () => ref.invalidate(workshopsProvider)),
+              error: (e, _) => AppErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(workshopsProvider),
+              ),
               data: (all) {
                 final workshops = _filter(all);
                 if (workshops.isEmpty) {
@@ -199,23 +198,17 @@ class _WorkshopCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final w = workshop;
-    final modeColors = _modeColors(w.deliveryMode);
+    final modeAccent = _modeAccent(w.deliveryMode);
     final isEnrolled = w.enrollmentStatus == 'active';
     final isCompleted = w.enrollmentStatus == 'completed';
 
     return Semantics(
       label: '${w.title}${w.locked ? ', locked' : ''}',
       button: true,
-      child: GestureDetector(
-      onTap: w.locked ? null : onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          border: Border.all(color: context.tokens.borderCard),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        clipBehavior: Clip.hardEdge,
+      child: AppCard(
+        margin: const EdgeInsets.only(bottom: AppSpacing.md),
+        padding: EdgeInsets.zero,
+        onTap: w.locked ? null : onTap,
         child: Stack(
           children: [
             Column(
@@ -238,7 +231,7 @@ class _WorkshopCard extends StatelessWidget {
 
                 // Content
                 Padding(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(AppSpacing.md),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -248,22 +241,19 @@ class _WorkshopCard extends StatelessWidget {
                           _Chip(
                             label: _modeLabel(
                                 w.deliveryMode, w.deliveryModeLabel),
-                            bg: modeColors.bg,
-                            fg: modeColors.text,
+                            accent: modeAccent,
                           ),
                           if (isEnrolled) ...[
-                            const SizedBox(width: 6),
-                            _Chip(
+                            const SizedBox(width: AppSpacing.xs),
+                            const _Chip(
                               label: 'Enrolled',
-                              bg: const Color(0xFF14532d),
-                              fg: const Color(0xFF4ade80),
+                              accent: Color(0xFF16a34a),
                             ),
                           ] else if (isCompleted) ...[
-                            const SizedBox(width: 6),
-                            _Chip(
+                            const SizedBox(width: AppSpacing.xs),
+                            const _Chip(
                               label: 'Completed',
-                              bg: const Color(0xFF1e3a5f),
-                              fg: const Color(0xFF60a5fa),
+                              accent: Color(0xFF3b82f6),
                             ),
                           ],
                           const Spacer(),
@@ -343,7 +333,6 @@ class _WorkshopCard extends StatelessWidget {
           ],
         ),
       ),
-      ),
     );
   }
 }
@@ -365,24 +354,28 @@ class _ThumbFallback extends StatelessWidget {
 
 // ── Small chip ────────────────────────────────────────────────────────────────
 
+/// Standard status chip. Renders `accent` as the foreground; background
+/// is auto-derived at 12% alpha so the chip reads on both light and
+/// dark surfaces (app-wide convention, matches workshop_detail).
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.bg, required this.fg});
+  const _Chip({required this.label, required this.accent});
   final String label;
-  final Color bg;
-  final Color fg;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs / 2,
+        ),
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(4),
+          color: accent.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: fg,
+            color: accent,
             fontSize: 10,
             fontWeight: FontWeight.w700,
             fontFamily: 'Rajdhani',
@@ -394,17 +387,20 @@ class _Chip extends StatelessWidget {
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────────
 
-Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
-      baseColor: context.tokens.bgSurface,
-      highlightColor: context.tokens.bgInput,
+Widget _buildSkeleton(BuildContext context) => AppSkeleton(
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.xs,
+          AppSpacing.lg,
+          AppSpacing.xxxl,
+        ),
         itemCount: 4,
         itemBuilder: (_, __) => Container(
-          margin: const EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: AppSpacing.md),
           decoration: BoxDecoration(
             color: context.tokens.bgSurface,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -415,20 +411,15 @@ Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
                 child: Container(color: context.tokens.bgInput),
               ),
               Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                        height: 16, width: 80, color: context.tokens.bgInput),
-                    const SizedBox(height: 10),
-                    Container(
-                        height: 14,
-                        width: double.infinity,
-                        color: context.tokens.bgInput),
-                    const SizedBox(height: 6),
-                    Container(
-                        height: 14, width: 200, color: context.tokens.bgInput),
+                  children: const [
+                    AppSkeletonBlock(width: 80, height: 16),
+                    SizedBox(height: AppSpacing.sm),
+                    AppSkeletonBlock(width: double.infinity, height: 14),
+                    SizedBox(height: AppSpacing.xs),
+                    AppSkeletonBlock(width: 200, height: 14),
                   ],
                 ),
               ),
@@ -438,40 +429,13 @@ Widget _buildSkeleton(BuildContext context) => Shimmer.fromColors(
       ),
     );
 
-// ── Error / empty states ──────────────────────────────────────────────────────
+// ── Empty state ───────────────────────────────────────────────────────────────
 
-Widget _buildError(BuildContext context, VoidCallback onRetry) => Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.error_outline, color: context.tokens.textMuted, size: 40),
-          const SizedBox(height: 12),
-          Text('Failed to load workshops',
-              style: TextStyle(color: context.tokens.textSecondary)),
-          const SizedBox(height: 12),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
-        ],
-      ),
-    );
-
-Widget _buildEmpty(BuildContext context, bool isSearch) => Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isSearch ? Icons.search_off : Icons.school_outlined,
-            color: context.tokens.textMuted,
-            size: 48,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            isSearch ? 'No workshops match your search' : 'No workshops yet',
-            style: TextStyle(
-              color: context.tokens.textSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
+Widget _buildEmpty(BuildContext context, bool isSearch) => AppEmptyState(
+      icon: isSearch ? Icons.search_off : Icons.school_outlined,
+      title: isSearch ? 'No workshops match your search' : 'No workshops yet',
+      subtitle: isSearch
+          ? 'Try a different keyword — the catalog updates as new '
+              'workshops are published.'
+          : 'New workshops are added regularly. Check back soon.',
     );

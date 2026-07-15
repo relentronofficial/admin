@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/constants/api.dart';
 import '../../core/exceptions/app_exception.dart';
@@ -12,7 +13,32 @@ import 'refresh_interceptor.dart';
 ///   1. [AuthInterceptor]    — attaches `Cookie: tbt_access=<token>`
 ///   2. [RefreshInterceptor] — retries on 401 after refreshing
 ///   3. [TbtLogInterceptor]  — debug-only request/response logging
+///
+/// ── Transport security ──────────────────────────────────────────────────
+///
+/// In release builds we assert the configured API base URL is https:// so a
+/// misconfigured build never accidentally sends session cookies over
+/// cleartext. Debug builds allow http:// so devs can point at
+/// `http://localhost:8000`.
+///
+/// Certificate pinning is intentionally NOT hard-coded here. Pinning to a
+/// specific SPKI hash without a paired rotation plan is a footgun — the day
+/// the certificate rotates (e.g. Cloud Run's managed cert renewal or an
+/// LB cert swap), every installed APK stops working until a fresh build
+/// ships to the store, which can take days. The industry-standard
+/// mitigation is pinning to the CA chain + shipping a fallback pin, ideally
+/// via `http_certificate_pinning` or a custom `HttpClientAdapter` — see
+/// `dio_client.dart` docstring for the wiring stub if / when a security
+/// team greenlights pinning with a rotation calendar.
 Dio createDioClient() {
+  if (kReleaseMode) {
+    assert(
+      kApiBaseUrl.startsWith('https://'),
+      'Refusing to construct a Dio client with a non-HTTPS base URL in a '
+      'release build (got "$kApiBaseUrl"). Rebuild with '
+      '`--dart-define=API_BASE_URL=https://…`.',
+    );
+  }
   final dio = Dio(
     BaseOptions(
       baseUrl: kApiBaseUrl,

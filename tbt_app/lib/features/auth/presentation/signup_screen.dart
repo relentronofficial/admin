@@ -7,6 +7,7 @@ import '../../../core/constants/routes.dart';
 import '../../../core/exceptions/app_exception.dart';
 import '../../../shared/api/services/auth_service.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -224,7 +225,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                       backgroundColor: Theme.of(context).colorScheme.primary,
                       disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                       ),
                       elevation: 0,
                     ),
@@ -294,23 +295,23 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
       );

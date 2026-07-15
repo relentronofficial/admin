@@ -10,6 +10,7 @@ import '../../../core/exceptions/app_exception.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
 class ForgotPasswordScreen extends ConsumerStatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -388,15 +389,15 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: context.tokens.borderCard),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
       );
@@ -504,20 +505,20 @@ class _OtpBox extends StatelessWidget {
             filled: true,
             fillColor: context.tokens.bgInput,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide(color: context.tokens.borderCard),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide:
                   BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
             ),
             disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide(color: context.tokens.bgInput),
             ),
           ),

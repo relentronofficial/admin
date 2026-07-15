@@ -16,7 +16,9 @@ import '../data/courses_service.dart';
 import '../providers/courses_provider.dart';
 import 'widgets/practice_arena_modal.dart';
 
+import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_button.dart';
 class CourseDetailScreen extends ConsumerStatefulWidget {
   const CourseDetailScreen({super.key, required this.courseId});
 
@@ -493,46 +495,15 @@ class _AccessCta extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      width: double.infinity,
-      height: 44,
-      child: ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: accessRequested ? context.tokens.bgInput : accent,
-          foregroundColor: accessRequested ? context.tokens.textMuted : Colors.white,
-          disabledBackgroundColor: context.tokens.bgInput,
-          disabledForegroundColor: context.tokens.textMuted,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          elevation: 0,
-        ),
-        onPressed: accessRequested || requesting ? null : onGetAccess,
-        icon: requesting
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : Icon(
-                hasExternalLink ? Icons.open_in_new : Icons.lock_outline,
-                size: 16,
-              ),
-        label: Text(
-          requesting
-              ? 'Processing…'
-              : (accessRequested ? 'Access Requested' : 'Get Access'),
-          style: const TextStyle(
-            fontFamily: 'Rajdhani',
-            fontWeight: FontWeight.w700,
-            fontSize: 15,
-            letterSpacing: 1,
-          ),
-        ),
-      ),
+    return AppPrimaryButton(
+      label: requesting
+          ? 'Processing…'
+          : (accessRequested ? 'Access requested' : 'Get access'),
+      icon: hasExternalLink ? Icons.open_in_new : Icons.lock_outline,
+      size: AppButtonSize.md,
+      fullWidth: true,
+      isLoading: requesting,
+      onPressed: accessRequested || requesting ? null : onGetAccess,
     );
   }
 }
@@ -1108,39 +1079,19 @@ class _CertificateCtaState extends ConsumerState<_CertificateCta> {
           data: (e) {
             if (!e.eligible) return null;
             return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: ElevatedButton.icon(
-                  icon: _launching
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.workspace_premium, size: 18),
-                  label: const Text(
-                    'Download Certificate',
-                    style: TextStyle(
-                      fontFamily: 'Rajdhani',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.accent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: _launching ? null : _download,
-                ),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.xs,
+                AppSpacing.lg,
+                AppSpacing.xs,
+              ),
+              child: AppPrimaryButton(
+                label: 'Download certificate',
+                icon: Icons.workspace_premium,
+                size: AppButtonSize.md,
+                fullWidth: true,
+                isLoading: _launching,
+                onPressed: _launching ? null : _download,
               ),
             );
           },

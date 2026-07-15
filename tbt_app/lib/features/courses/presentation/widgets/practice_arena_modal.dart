@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 
+import '../../../../shared/theme/design_tokens.dart';
 import '../../../../shared/theme/theme_tokens.dart';
 /// Client-only retrieval-practice mode. Shuffles quiz questions collected
 /// across every lesson in the course and lets the user answer them
@@ -81,7 +82,7 @@ class _PracticeArenaModalState extends State<PracticeArenaModal> {
       builder: (_, scrollController) => Container(
         decoration: BoxDecoration(
           color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
           border: Border(top: BorderSide(color: context.tokens.borderCard)),
         ),
         child: Column(

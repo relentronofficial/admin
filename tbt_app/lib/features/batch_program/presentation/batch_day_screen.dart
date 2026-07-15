@@ -1143,7 +1143,7 @@ class _AttendanceSection extends StatelessWidget {
                     controller: notesController,
                     style: TextStyle(
                         color: context.tokens.textPrimary, fontSize: 13),
-                    decoration: kInputDecoration('Notes (optional)'),
+                    decoration: inputDecorationOf(context, 'Notes (optional)'),
                     maxLines: 2,
                   ),
                   const SizedBox(height: 10),
