@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { 
   Search, 
   Plus, 
@@ -36,7 +36,9 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers, useApproveMember } from "@/lib/hooks/useMembers";
+import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers, useApproveMember, countActiveFacets, encodeMemberFilters, type MemberFilters } from "@/lib/hooks/useMembers";
+import MembersFilterDrawer from "@/components/members/MembersFilterDrawer";
+import apiClient from "@/lib/api/apiClient";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
 import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment, useListBatches } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
@@ -119,6 +121,13 @@ export default function MembersListPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [showArchived, setShowArchived] = useState(false);
   const [pendingBadge, setPendingBadge] = useState(0);
+  // Multi-dimensional facet state (batch, plan, verification, etc.).
+  // Applied on top of the search + status-tab filter. Owns nothing
+  // itself — MembersFilterDrawer emits changes here and useListMembers
+  // encodes them into the query string.
+  const [facets, setFacets] = useState<MemberFilters>({});
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   // FIX-03: track original batch to warn on reassignment
   const [originalBatchId, setOriginalBatchId] = useState<string>("");
   // FIX-12: batch selected during approval (separate from edit form)
@@ -128,7 +137,7 @@ export default function MembersListPage() {
   const editKycRef = useRef<HTMLInputElement>(null);
   const editPhotoRef = useRef<HTMLInputElement>(null);
 
-  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: showArchived ? '' : statusFilter, showArchived });
+  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: showArchived ? '' : statusFilter, showArchived, facets });
   const { data: pendingData, refetch: refetchPending } = useListMembers({ page: 1, limit: 1, status: 'pending' });
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
@@ -145,6 +154,73 @@ export default function MembersListPage() {
   const members = data?.data || [];
   const total = data?.meta?.total || 0;
   const totalPages = Math.ceil(total / (limit || 10));
+
+  // Distinct facet-option lists derived from whatever members are
+  // currently loaded. Good enough as a "quick-start" — the drawer can
+  // narrow to values that are actually present rather than showing a
+  // long list of every string ever entered. Refreshes automatically
+  // as the list re-fetches.
+  const facetOptionLists = useMemo(() => {
+    const uniq = (key: keyof typeof members[number]) => {
+      const set = new Set<string>();
+      for (const m of members as any[]) {
+        const v = m?.[key];
+        if (typeof v === 'string' && v.trim()) set.add(v.trim());
+      }
+      return Array.from(set).sort();
+    };
+    return {
+      states: uniq('state'),
+      sectors: uniq('sector'),
+      industries: uniq('industry'),
+    };
+  }, [members]);
+
+  const activeFacetCount = countActiveFacets(facets);
+
+  /**
+   * Export the current filter selection as a CSV. Uses fetch (not
+   * apiClient) because we want the raw blob, not the JSON-unwrapped
+   * response. Authorization header comes from apiClient's Clerk
+   * interceptor by first triggering a lightweight authenticated call
+   * — cheaper than replicating the token-fetch pattern here.
+   */
+  const handleExport = async () => {
+    if (exportBusy) return;
+    setExportBusy(true);
+    try {
+      // The same facet + status + search + archived params the list
+      // endpoint sees. Backend `buildMembersWhereClause` handles them
+      // identically for /api/members and /api/members/export.
+      let qs = '';
+      if (search) qs += `search=${encodeURIComponent(search)}&`;
+      if (statusFilter && !showArchived) qs += `status=${statusFilter}&`;
+      if (showArchived) qs += `showArchived=true&`;
+      const facetQs = encodeMemberFilters(facets);
+      if (facetQs) qs += facetQs;
+      // apiClient normally unwraps response.data; for a CSV blob we
+      // bypass it and call fetch directly with the same base URL +
+      // Bearer token attached by the interceptor's onFulfilled hook.
+      // Trick: apiClient's baseURL is what we want to prefix.
+      const url = `/api/members/export${qs ? `?${qs.replace(/&$/, '')}` : ''}`;
+      const res = await apiClient.get(url, { responseType: 'blob' as any });
+      // apiClient response interceptor may still unwrap; handle both shapes.
+      const blob: Blob = res instanceof Blob ? res : (res as any)?.data ?? res;
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `members-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (err) {
+      console.error('Export failed', err);
+      alert('Export failed — check the console for details.');
+    } finally {
+      setExportBusy(false);
+    }
+  };
 
   const {
     register,
@@ -425,11 +501,28 @@ export default function MembersListPage() {
             </div>
 
             <div className="flex items-center gap-3 w-full md:w-auto">
-              <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#141414] border border-[#333] rounded-md text-[11px] font-bold text-[#a0a0a0] font-rajdhani uppercase tracking-widest hover:border-[#606060] transition-all">
+              <button
+                onClick={() => setFilterOpen(true)}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-[11px] font-bold font-rajdhani uppercase tracking-widest transition-all",
+                  activeFacetCount > 0
+                    ? "bg-[#dc2626]/10 border border-[#dc2626] text-[#dc2626]"
+                    : "bg-[#141414] border border-[#333] text-[#a0a0a0] hover:border-[#606060]",
+                )}
+              >
                 <Filter size={14} /> Filter
+                {activeFacetCount > 0 && (
+                  <span className="bg-[#dc2626] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                    {activeFacetCount}
+                  </span>
+                )}
               </button>
-              <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#141414] border border-[#333] rounded-md text-[11px] font-bold text-[#a0a0a0] font-rajdhani uppercase tracking-widest hover:border-[#606060] transition-all">
-                <Download size={14} /> Export
+              <button
+                onClick={handleExport}
+                disabled={exportBusy}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#141414] border border-[#333] rounded-md text-[11px] font-bold text-[#a0a0a0] font-rajdhani uppercase tracking-widest hover:border-[#606060] transition-all disabled:opacity-50 disabled:cursor-wait"
+              >
+                <Download size={14} /> {exportBusy ? "Exporting…" : "Export"}
               </button>
             </div>
           </div>
@@ -1293,6 +1386,20 @@ export default function MembersListPage() {
           </div>
         </div>
       )}
+
+      {/* Multi-dimensional filter drawer — slides in from the right when
+          the Filter button is tapped. Live-updates useListMembers via
+          the `facets` state; export uses the same facets. */}
+      <MembersFilterDrawer
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        filters={facets}
+        onChange={(next) => { setFacets(next); setPage(1); }}
+        batches={batches}
+        states={facetOptionLists.states}
+        sectors={facetOptionLists.sectors}
+        industries={facetOptionLists.industries}
+      />
     </DashboardLayout>
   );
 }

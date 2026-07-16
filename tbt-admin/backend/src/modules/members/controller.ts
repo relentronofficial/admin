@@ -4,12 +4,73 @@ import { createMemberSchema, updateMemberSchema } from './schema.js';
 import { invalidateCache } from '../../lib/cache.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 
-export async function listMembersHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 10, search, status, showArchived } = request.query as any;
-  const skip = (page - 1) * limit;
+/**
+ * Compose a Prisma `where` clause from the members-list query params.
+ *
+ * Shared by [listMembersHandler] and [exportMembersHandler] so the two
+ * endpoints can never diverge on what "the current filter" means. Every
+ * dimension is optional and combinable — the intent is a
+ * multi-dimensional filter panel where users tick as many facets as
+ * they need and the query narrows accordingly.
+ *
+ * All multi-value dimensions accept either a repeated query param
+ * (`?batchId=a&batchId=b`) or a comma-separated string (`?batchId=a,b`).
+ * Both are normalised via [toArray] so the caller doesn't have to
+ * hand-parse them.
+ */
+function toArray(v: unknown): string[] {
+  if (v == null || v === '') return [];
+  if (Array.isArray(v)) return v.map(String).filter(Boolean);
+  return String(v).split(',').map((s) => s.trim()).filter(Boolean);
+}
 
-  const where: any = showArchived === 'true' ? { deletedAt: { not: null } } : { deletedAt: null };
+function toBool(v: unknown): boolean | undefined {
+  if (v === undefined || v === '' || v === null) return undefined;
+  if (v === true || v === 'true' || v === '1') return true;
+  if (v === false || v === 'false' || v === '0') return false;
+  return undefined;
+}
+
+/**
+ * Parse an ISO date string. Returns undefined on invalid input rather
+ * than throwing — the caller wants "no filter" behaviour, not a 500.
+ */
+function toDate(v: unknown): Date | undefined {
+  if (typeof v !== 'string' || !v) return undefined;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+export function buildMembersWhereClause(query: any): any {
+  const {
+    search,
+    status,           // single value (kept for backwards-compat with the tab bar)
+    showArchived,
+    batchId,          // multi
+    membershipPlan,   // multi
+    verificationStatus, // multi
+    gender,           // multi
+    state,            // multi
+    businessStage,    // multi
+    churnRisk,        // multi
+    currentTier,      // multi (numeric)
+    sector,           // multi
+    industry,         // multi
+    joinedFrom,       // ISO date
+    joinedTo,         // ISO date
+    hasMarketingTeam, // boolean
+    hasVideoEditing,  // boolean
+  } = query;
+
+  const where: any = showArchived === 'true'
+    ? { deletedAt: { not: null } }
+    : { deletedAt: null };
+
+  // Status tab (single-select at the top of the page) takes priority
+  // over any multi-select status filter to keep the tab UX intuitive.
   if (status && showArchived !== 'true') where.status = status;
+
+  // Text search across the identity fields most admins look for by.
   if (search) {
     where.OR = [
       { firstName: { contains: search, mode: 'insensitive' } },
@@ -19,6 +80,65 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
       { businessName: { contains: search, mode: 'insensitive' } },
     ];
   }
+
+  // Multi-select facets. Each dimension only narrows further — an empty
+  // list means "any value" for that facet.
+  const batchIds = toArray(batchId);
+  if (batchIds.length) where.batchId = { in: batchIds };
+
+  const plans = toArray(membershipPlan);
+  if (plans.length) where.membershipPlan = { in: plans };
+
+  const verifications = toArray(verificationStatus);
+  if (verifications.length) where.verificationStatus = { in: verifications };
+
+  const genders = toArray(gender);
+  if (genders.length) where.gender = { in: genders };
+
+  const states = toArray(state);
+  if (states.length) where.state = { in: states };
+
+  const businessStages = toArray(businessStage);
+  if (businessStages.length) where.businessStage = { in: businessStages };
+
+  const churnRisks = toArray(churnRisk);
+  if (churnRisks.length) where.churnRisk = { in: churnRisks };
+
+  const sectors = toArray(sector);
+  if (sectors.length) where.sector = { in: sectors };
+
+  const industries = toArray(industry);
+  if (industries.length) where.industry = { in: industries };
+
+  const tiers = toArray(currentTier)
+    .map((t) => Number(t))
+    .filter((n) => Number.isFinite(n));
+  if (tiers.length) where.currentTier = { in: tiers };
+
+  // Join date range. Prisma treats `gte`/`lte` independently so we can
+  // set either bound alone.
+  const fromDate = toDate(joinedFrom);
+  const toDateVal = toDate(joinedTo);
+  if (fromDate || toDateVal) {
+    where.createdAt = {};
+    if (fromDate) where.createdAt.gte = fromDate;
+    if (toDateVal) where.createdAt.lte = toDateVal;
+  }
+
+  const marketingTeam = toBool(hasMarketingTeam);
+  if (marketingTeam !== undefined) where.hasMarketingTeam = marketingTeam;
+
+  const videoEditing = toBool(hasVideoEditing);
+  if (videoEditing !== undefined) where.hasVideoEditing = videoEditing;
+
+  return where;
+}
+
+export async function listMembersHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { page = 1, limit = 10 } = request.query as any;
+  const skip = (page - 1) * limit;
+
+  const where = buildMembersWhereClause(request.query);
 
   const [members, total] = await Promise.all([
     request.server.prisma.member.findMany({
@@ -47,6 +167,62 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
   ]);
 
   return reply.send({ success: true, data: members, meta: { total, page, limit }, error: null });
+}
+
+/**
+ * GET /api/members/export
+ *
+ * Streams a CSV of every member matching the same filter set the list
+ * endpoint would return, unpaginated. Called by the Export button in
+ * the admin panel with the current filter query params.
+ */
+export async function exportMembersHandler(request: FastifyRequest, reply: FastifyReply) {
+  const where = buildMembersWhereClause(request.query);
+
+  const members = await request.server.prisma.member.findMany({
+    where: where as any,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      batch: { select: { name: true } },
+      accountManager: { select: { fullName: true } },
+    },
+  }) as any[];
+
+  // Header + rows. Escaping rules: wrap every cell in double-quotes,
+  // double any embedded double-quotes. Comma / newline safe.
+  const escape = (v: unknown): string => {
+    if (v == null) return '';
+    const s = String(v);
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const header = [
+    'Member ID', 'First Name', 'Last Name', 'Email', 'Phone', 'Status',
+    'Membership Plan', 'Verification', 'Batch', 'Account Manager',
+    'Business Name', 'City', 'State', 'Sector', 'Industry', 'Business Stage',
+    'Churn Risk', 'Health Score', 'Current Tier', 'Total Points',
+    'Joined', 'Last Active',
+  ];
+  const rows = members.map((m) => [
+    m.memberId, m.firstName, m.lastName ?? '', m.email, m.phone, m.status,
+    m.membershipPlan, m.verificationStatus,
+    m.batch?.name ?? '',
+    m.accountManager?.fullName ?? '',
+    m.businessName ?? '', m.city ?? '', m.state ?? '',
+    m.sector ?? '', m.industry ?? '', m.businessStage ?? '',
+    m.churnRisk, m.healthScore, m.currentTier, m.totalPoints,
+    m.createdAt?.toISOString?.() ?? '',
+    m.lastActiveAt?.toISOString?.() ?? '',
+  ]);
+
+  const csv = [header, ...rows]
+    .map((row) => row.map(escape).join(','))
+    .join('\r\n');
+
+  const filename = `members-${new Date().toISOString().slice(0, 10)}.csv`;
+  reply
+    .header('Content-Type', 'text/csv; charset=utf-8')
+    .header('Content-Disposition', `attachment; filename="${filename}"`);
+  return reply.send(csv);
 }
 
 export async function createMemberHandler(request: FastifyRequest, reply: FastifyReply) {

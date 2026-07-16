@@ -23,6 +23,7 @@ import {
   reviewAssignmentHandler,
   listAllAssignmentSubmissionsHandler,
   approveMemberHandler,
+  exportMembersHandler,
 } from './controller.js';
 import { adminRevokeMemberSessions } from '../user-auth/controller.js';
 
@@ -39,6 +40,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
   fastify.get('/managers', getManagersHandler);
   fastify.post('/managers', createManagerHandler);
   fastify.get('/badges/all', listAllBadgesHandler);
+  // CSV export — accepts the same filter query params as the list
+  // endpoint. Placed BEFORE `/` so no capture conflict.
+  fastify.get('/export', exportMembersHandler);
   fastify.get('/', listMembersHandler);
   fastify.post('/', createMemberHandler);
   fastify.get('/:id', getMemberHandler);
