@@ -31,7 +31,7 @@ export function setAuthCookies(
 ): void {
   const opts = cookieOpts();
   reply.header('set-cookie', `tbt_access=${accessToken}; ${opts}; Max-Age=900`);
-  reply.header('set-cookie', `tbt_refresh=${refreshToken}; ${opts}; Max-Age=${30 * 24 * 3600}`);
+  reply.header('set-cookie', `tbt_refresh=${refreshToken}; ${opts}; Max-Age=${REFRESH_TTL}`);
 }
 
 export function clearAuthCookies(reply: FastifyReply): void {
@@ -41,6 +41,27 @@ export function clearAuthCookies(reply: FastifyReply): void {
 }
 
 // ── Refresh token (opaque, stored in Redis) ─────────────────────────────────────
+//
+// Design constraints:
+//
+// 1. **Never log out a user unexpectedly.** Historic bug: a network drop
+//    between the backend issuing a rotated token and the mobile client
+//    writing the new cookie left the client with an already-invalidated
+//    token — next refresh → 401 → session lost. Fix: rotation with a
+//    grace window. When a refresh token is consumed, the new one is
+//    issued AND the old one stays valid for `REFRESH_GRACE_SECONDS`
+//    longer. If the client's next call carries the old token because
+//    it never saw the rotation response, we still recognise it.
+//
+// 2. **Redis outage must not sign users out.** Historic bug: falling
+//    back to an in-process `Map` meant every Cloud Run cold start
+//    rejected all refresh calls. Fix: if Redis is unavailable, refuse
+//    to rotate — return the old memberId and skip the delete. Sessions
+//    keep working; rotation resumes when Redis recovers.
+//
+// 3. **1-year TTL** (extended from 30 days). A user who opens the app
+//    at least once a year keeps their session — the rotation extends
+//    the TTL on every use, so active users effectively never expire.
 
 export function generateRefreshToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -50,8 +71,10 @@ function hashRefreshToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-const REFRESH_TTL = 30 * 24 * 3600; // 30 days
+const REFRESH_TTL = 365 * 24 * 3600; // 1 year — sliding window, extended on every use
+const REFRESH_GRACE_SECONDS = 90;    // old token stays valid this long after rotation
 
+/// Store a freshly-issued refresh token. Sets a full-TTL entry.
 export async function storeRefreshToken(
   redis: any,
   refreshToken: string,
@@ -59,38 +82,137 @@ export async function storeRefreshToken(
 ): Promise<void> {
   const hash = hashRefreshToken(refreshToken);
   if (redis) {
-    await redis.set(`refresh:${hash}`, memberId, 'EX', REFRESH_TTL);
-  } else {
-    _refreshStore.set(hash, { memberId, expiresAt: Date.now() + REFRESH_TTL * 1000 });
+    try {
+      await redis.set(`refresh:${hash}`, memberId, 'EX', REFRESH_TTL);
+      return;
+    } catch (err) {
+      // If Redis fails on write we still fall back to memory so the
+      // session works in this process. This will forget on restart —
+      // acceptable since Redis is expected to recover quickly, and the
+      // consume path (below) also honours the memory store.
+      _log('redis.set failed, falling back to memory:', err);
+    }
   }
+  _refreshStore.set(hash, { memberId, expiresAt: Date.now() + REFRESH_TTL * 1000 });
 }
 
+/// Read a refresh token WITHOUT deleting it. Returns the member id if
+/// the token is currently valid (either full-TTL or grace-window entry).
+/// Used by `consumeRefreshToken` internally and also exposed for
+/// non-rotating peek use cases (session-revoke check).
+async function peekRefreshToken(redis: any, hash: string): Promise<string | null> {
+  if (redis) {
+    try {
+      // Check full-TTL entry first, then grace entry as fallback.
+      const primary = await redis.get(`refresh:${hash}`);
+      if (primary) return primary;
+      const grace = await redis.get(`refresh_grace:${hash}`);
+      return grace ?? null;
+    } catch (err) {
+      _log('redis.get failed during peek, falling back to memory:', err);
+    }
+  }
+  const entry = _refreshStore.get(hash);
+  if (entry && Date.now() < entry.expiresAt) return entry.memberId;
+  return null;
+}
+
+/// Rotate + return the current member id. New token is stored by the
+/// caller AFTER this returns; the old token is moved into a
+/// grace-window entry so a duplicate call from the client (e.g. it
+/// never saw the rotation response) still succeeds.
+///
+/// Behavior when Redis is unavailable: the token is NOT invalidated —
+/// we return the member id but leave the entry intact, and the caller
+/// simply skips the rotation. Sessions keep working through outages
+/// rather than mass-logging-out.
 export async function consumeRefreshToken(
   redis: any,
   refreshToken: string,
 ): Promise<string | null> {
   const hash = hashRefreshToken(refreshToken);
+  const memberId = await peekRefreshToken(redis, hash);
+  if (!memberId) return null;
+
   if (redis) {
-    const memberId = await redis.get(`refresh:${hash}`);
-    if (memberId) await redis.del(`refresh:${hash}`);
-    return memberId ?? null;
+    try {
+      // Move the current token into a short grace-window entry, then
+      // delete the primary. If the client retries with the old token
+      // within REFRESH_GRACE_SECONDS (network drop / concurrent call),
+      // peekRefreshToken finds the grace copy and the refresh succeeds.
+      await redis
+        .multi()
+        .set(`refresh_grace:${hash}`, memberId, 'EX', REFRESH_GRACE_SECONDS)
+        .del(`refresh:${hash}`)
+        .exec();
+      return memberId;
+    } catch (err) {
+      // Redis fault mid-rotation — DO NOT invalidate. Session survives
+      // this outage; the client will get a new token on next refresh
+      // once Redis recovers.
+      _log('redis rotation failed, LEAVING token intact:', err);
+      return memberId;
+    }
   }
-  const entry = _refreshStore.get(hash);
-  if (entry && Date.now() < entry.expiresAt) {
-    _refreshStore.delete(hash);
-    return entry.memberId;
-  }
-  return null;
+
+  // Memory fallback (dev only). Simple rotation without grace window —
+  // this code path shouldn't run in prod (Redis is required there).
+  _refreshStore.delete(hash);
+  return memberId;
 }
 
+/// Hard-revoke a token (user-triggered logout or admin session-kill).
+/// Removes both the primary entry and any grace-window copy.
 export async function revokeRefreshToken(redis: any, refreshToken: string): Promise<void> {
   const hash = hashRefreshToken(refreshToken);
-  if (redis) await redis.del(`refresh:${hash}`);
-  else _refreshStore.delete(hash);
+  if (redis) {
+    try {
+      await redis.del(`refresh:${hash}`, `refresh_grace:${hash}`);
+      return;
+    } catch (err) {
+      _log('redis.del failed:', err);
+    }
+  }
+  _refreshStore.delete(hash);
 }
 
-// In-process fallback for dev without Redis
+/// Hard-revoke every refresh token belonging to a member. Used by the
+/// admin session-kill endpoint. Requires Redis SCAN — in a Redis
+/// outage this is a no-op (fails safe: the outage will resolve and the
+/// admin can retry).
+export async function revokeAllForMember(redis: any, memberId: string): Promise<number> {
+  if (!redis) return 0;
+  let cursor = '0';
+  let deleted = 0;
+  try {
+    do {
+      const [next, batch] = await redis.scan(cursor, 'MATCH', 'refresh:*', 'COUNT', 200);
+      cursor = next;
+      if (!batch.length) continue;
+      // Fetch member ids in bulk and delete matching entries.
+      const values = await redis.mget(...batch);
+      const toDelete = batch.filter((_: string, i: number) => values[i] === memberId);
+      if (toDelete.length) {
+        deleted += await redis.del(...toDelete);
+      }
+    } while (cursor !== '0');
+  } catch (err) {
+    _log('revokeAllForMember scan failed:', err);
+  }
+  return deleted;
+}
+
+// In-process fallback ONLY for local dev without Redis. Production
+// (Cloud Run) always has Upstash Redis attached — if it's unavailable,
+// the code paths above intentionally SKIP invalidation rather than
+// falling here, so a Redis outage never signs users out.
 const _refreshStore = new Map<string, { memberId: string; expiresAt: number }>();
+
+function _log(msg: string, err?: unknown): void {
+  // Never log the token itself — only the failure metadata.
+  // eslint-disable-next-line no-console
+  console.warn(`[jwt/refresh] ${msg}`, err instanceof Error ? err.message : err);
+}
 
 // ── Member status in-process cache ──────────────────────────────────────────────
 

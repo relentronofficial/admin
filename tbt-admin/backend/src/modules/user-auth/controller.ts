@@ -10,6 +10,7 @@ import {
   storeRefreshToken,
   consumeRefreshToken,
   revokeRefreshToken,
+  revokeAllForMember,
 } from '../../plugins/jwt.js';
 
 function getRedis(fastify: FastifyInstance): any {
@@ -213,6 +214,25 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
 }
 
 // POST /api/user-auth/refresh
+//
+// Session-preservation rules mirror the mobile client's expectations:
+//
+//   * 401  → refresh token invalid / revoked / expired. The mobile
+//            side wipes local tokens and lands on /login. Only send
+//            401 when we're certain the token is genuinely dead.
+//   * 403  → account is HARD-blocked (inactive / suspended / paused).
+//            Same effect on the client as 401.
+//   * 5xx  → transient backend problem. The mobile side KEEPS its
+//            tokens intact and retries. Never invalidate on our end
+//            in this case either — leave the refresh cookie alone.
+//   * 200  → success, new access + refresh cookies attached.
+//
+// Historic bug: this endpoint used to return 403 for any status
+// other than `active`. That included `pending` — meaning newly-
+// signed-up members would land, get logged out by their first
+// refresh, and bounce back to /login in a loop. Now we allow both
+// `active` and `pending` through (matches `authenticateUser`
+// middleware in plugins/jwt.ts).
 export async function refresh(fastify: FastifyInstance, request: any, reply: any) {
   const cookies = parseCookies(request.headers.cookie);
   const refreshToken = cookies['tbt_refresh'];
@@ -227,14 +247,34 @@ export async function refresh(fastify: FastifyInstance, request: any, reply: any
     return reply.status(401).send({ success: false, data: null, error: 'Invalid or expired refresh token' });
   }
 
-  const member = await fastify.prisma.member.findUnique({
-    where: { id: memberId },
-    select: { id: true, status: true } as any,
-  });
+  let member: { id: string; status: string } | null;
+  try {
+    member = (await fastify.prisma.member.findUnique({
+      where: { id: memberId },
+      select: { id: true, status: true } as any,
+    })) as any;
+  } catch (err: any) {
+    // DB blip — the refresh token WAS valid (peek+rotate succeeded).
+    // Return 5xx so the mobile client keeps its tokens and retries,
+    // rather than wrongly logging out because of an infra hiccup.
+    request.server.log.warn({ err: err.message }, 'refresh: member lookup failed');
+    return reply.status(503).send({ success: false, data: null, error: 'Service temporarily unavailable' });
+  }
 
-  if (!member || (member as any).status !== 'active') {
+  if (!member) {
+    // Account deleted → really invalid, clear cookies.
     clearAuthCookies(reply);
-    return reply.status(403).send({ success: false, data: null, error: 'Account not active' });
+    return reply.status(401).send({ success: false, data: null, error: 'Account not found' });
+  }
+
+  // Hard-block statuses actually invalidate the session.
+  // `pending` is intentionally NOT here — pending members can hold a
+  // valid session while the admin approves them; SubscriptionGate on
+  // the client surfaces the pending state via /me.
+  const HARD_BLOCKED = new Set(['inactive', 'suspended', 'paused']);
+  if (HARD_BLOCKED.has(member.status)) {
+    clearAuthCookies(reply);
+    return reply.status(403).send({ success: false, data: null, error: `Account is ${member.status}` });
   }
 
   await issueTokens(fastify, reply, memberId);
@@ -252,6 +292,51 @@ export async function logout(fastify: FastifyInstance, request: any, reply: any)
 
   clearAuthCookies(reply);
   return reply.send({ success: true, data: null });
+}
+
+// DELETE /api/user-auth/sessions  (member-facing: sign out on ALL devices)
+// Requires an authenticated member. Wipes every refresh token for this
+// member from Redis, so any other device holding a session will be
+// signed out on its next refresh.
+export async function revokeAllSessions(
+  fastify: FastifyInstance,
+  request: any,
+  reply: any,
+) {
+  const memberId = request.memberId as string | undefined;
+  if (!memberId) {
+    return reply
+      .status(401)
+      .send({ success: false, data: null, error: 'Unauthorized' });
+  }
+  const deleted = await revokeAllForMember(getRedis(fastify), memberId);
+  // Also clear THIS request's cookies so the caller gets a clean state.
+  clearAuthCookies(reply);
+  return reply.send({
+    success: true,
+    data: { revokedSessions: deleted },
+  });
+}
+
+// POST /api/members/:id/sessions/revoke  (admin-facing helper — exported
+// so the admin module can wire it under the Clerk-protected auth
+// middleware. Kills every session for a target member id.)
+export async function adminRevokeMemberSessions(
+  fastify: FastifyInstance,
+  request: any,
+  reply: any,
+) {
+  const targetId = (request.params as any)?.id as string | undefined;
+  if (!targetId) {
+    return reply
+      .status(400)
+      .send({ success: false, data: null, error: 'Member id required' });
+  }
+  const deleted = await revokeAllForMember(getRedis(fastify), targetId);
+  return reply.send({
+    success: true,
+    data: { memberId: targetId, revokedSessions: deleted },
+  });
 }
 
 // GET /api/user-auth/me  (protected by authenticateUser)

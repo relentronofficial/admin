@@ -10,6 +10,14 @@ export async function userAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/resend-otp', (req, reply) => controller.resendOtp(fastify, req, reply));
   fastify.post('/refresh', (req, reply) => controller.refresh(fastify, req, reply));
   fastify.post('/logout', (req, reply) => controller.logout(fastify, req, reply));
+  // Member-facing "sign out on all devices". Requires the current
+  // access token (authenticateUser) and kills every refresh token
+  // for the member across all devices — any other device holding a
+  // stale access token will lose access on its next refresh.
+  fastify.delete('/sessions', {
+    preHandler: [fastify.authenticateUser],
+    handler: (req, reply) => controller.revokeAllSessions(fastify, req, reply),
+  });
   fastify.get('/me', {
     preHandler: [fastify.authenticateUser],
     handler: (req, reply) => controller.me(fastify, req, reply),

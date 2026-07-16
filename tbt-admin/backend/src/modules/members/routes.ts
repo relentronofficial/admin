@@ -24,6 +24,7 @@ import {
   listAllAssignmentSubmissionsHandler,
   approveMemberHandler,
 } from './controller.js';
+import { adminRevokeMemberSessions } from '../user-auth/controller.js';
 
 export async function memberRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -43,6 +44,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
   fastify.get('/:id', getMemberHandler);
   fastify.put('/:id', updateMemberHandler);
   fastify.post('/:id/approve', approveMemberHandler);
+  // Admin can force-sign-out every device this member is signed in on.
+  // Useful when disabling a leaked account or after a support handoff.
+  fastify.post('/:id/sessions/revoke', (req, reply) =>
+    adminRevokeMemberSessions(fastify, req, reply));
   fastify.delete('/:id', deleteMemberHandler);
   fastify.get('/:id/progress', getMemberProgressHandler);
   fastify.get('/:id/badges', listMemberBadgesHandler);

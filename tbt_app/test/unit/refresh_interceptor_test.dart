@@ -323,5 +323,102 @@ void main() {
               'should never silently sign users out');
       expect(_store[kSecureRefreshToken], 'refresh_before');
     });
+
+    // ── Retry-with-backoff on transient failure ─────────────────────
+    // Refresh call must be retried up to 3 times before propagating a
+    // transient failure. Absorbs momentary network hiccups without
+    // requiring the user to see any error.
+
+    test('retries refresh up to 3 times on transient failures', () async {
+      _store[kSecureRefreshToken] = 'refresh_tok';
+
+      // First 2 attempts throw connectionError, 3rd attempt succeeds.
+      var callCount = 0;
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenAnswer((_) async {
+        callCount++;
+        if (callCount < 3) {
+          throw DioException(
+            requestOptions: RequestOptions(path: kAuthRefresh),
+            type: DioExceptionType.connectionError,
+          );
+        }
+        return Response<dynamic>(
+          requestOptions: RequestOptions(path: kAuthRefresh),
+          statusCode: 200,
+          headers: Headers.fromMap({
+            'set-cookie': [
+              'tbt_access=recovered_access; Path=/; HttpOnly',
+              'tbt_refresh=recovered_refresh; Path=/; HttpOnly',
+            ],
+          }),
+        );
+      });
+
+      when(() => mockDio.fetch<dynamic>(any())).thenAnswer((_) async =>
+          Response<dynamic>(
+            requestOptions: RequestOptions(path: '/api/user/me'),
+            statusCode: 200,
+          ));
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(callCount, 3, reason: 'must have retried twice before succeeding');
+      expect(_store[kSecureAccessToken], 'recovered_access');
+      expect(_store[kSecureRefreshToken], 'recovered_refresh');
+      verify(() => handler.resolve(any())).called(1);
+      verifyNever(() => handler.next(any()));
+    });
+
+    test('gives up after 3 transient failures but keeps tokens', () async {
+      _store[kSecureAccessToken] = 'access_before';
+      _store[kSecureRefreshToken] = 'refresh_before';
+
+      var callCount = 0;
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenAnswer((_) async {
+        callCount++;
+        throw DioException(
+          requestOptions: RequestOptions(path: kAuthRefresh),
+          type: DioExceptionType.receiveTimeout,
+        );
+      });
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(callCount, 3, reason: 'exactly _maxRefreshAttempts attempts');
+      expect(_store[kSecureAccessToken], 'access_before',
+          reason: 'transient failures never wipe');
+      expect(_store[kSecureRefreshToken], 'refresh_before');
+      verify(() => handler.next(any())).called(1);
+    });
+
+    test('does NOT retry on auth failure (401 from refresh)', () async {
+      _store[kSecureRefreshToken] = 'refresh_before';
+
+      var callCount = 0;
+      when(() => mockDio.post<dynamic>(any(),
+          options: any(named: 'options'))).thenAnswer((_) async {
+        callCount++;
+        throw DioException(
+          requestOptions: RequestOptions(path: kAuthRefresh),
+          response: Response(
+            requestOptions: RequestOptions(path: kAuthRefresh),
+            statusCode: 401,
+          ),
+          type: DioExceptionType.badResponse,
+        );
+      });
+
+      final interceptor = RefreshInterceptor(mockDio);
+      await interceptor.onError(_make401('/api/user/me'), handler);
+
+      expect(callCount, 1,
+          reason: 'auth failures are terminal — no point retrying');
+      expect(_store[kSecureRefreshToken], isNull,
+          reason: 'auth failure DOES wipe (server explicitly said dead)');
+    });
   });
 }
