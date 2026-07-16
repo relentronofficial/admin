@@ -27,6 +27,18 @@ class Lesson with _$Lesson {
     @Default(0) int resumeAtSeconds,
     @Default(0) int actualWatchedSecs,
     @Default(80) int quizUnlockPercent,
+    // Server-authoritative sequential-unlock state (2026-07-16).
+    // When true, the lesson is locked until the previous lesson meets
+    // the course's completion threshold. Default false so pre-fix
+    // backends (which don't return this field) don't gate anything.
+    @Default(false) bool locked,
+    // Server-computed completion from watched-fraction >= threshold.
+    // May diverge from `isCompleted` briefly when a new heartbeat
+    // has been posted but the client hasn't refetched; use this for
+    // display purposes and `isCompleted` for legacy compatibility.
+    @Default(false) bool completedByThreshold,
+    // 0..100, may be null if backend can't compute the exact fraction.
+    int? watchPercent,
   }) = _Lesson;
 
   factory Lesson.fromJson(Map<String, dynamic> json) =>

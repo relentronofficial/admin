@@ -60,7 +60,19 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
     'price', 'level', 'accessDurationDays', 'maxEnrollments',
     'xpPerEpisode', 'passingScorePercent', 'upsellCourseIds', 'crossSellCourseIds',
     'paymentLinkUrl',
+    // Sequential-unlock feature (2026-07-16) — admin can toggle the
+    // gate off for a specific course (e.g. a free preview course
+    // where any lesson should be watchable) and tune the completion
+    // threshold (a shorter promo course might use 80%; a strict
+    // certification course might use 100%).
+    'requireSequential', 'completionThresholdPercent',
   ].forEach(f => { if (body[f] !== undefined) data[f] = body[f]; });
+  // Clamp threshold to a sane range so an admin can't set it to 0
+  // (auto-completes on open) or > 100 (unreachable → nothing ever
+  // unlocks).
+  if (typeof data.completionThresholdPercent === 'number') {
+    data.completionThresholdPercent = Math.min(100, Math.max(50, Math.round(data.completionThresholdPercent)));
+  }
   if (body.order !== undefined) data.sortOrder = body.order;
   const course = await req.server.prisma.course.update({ where: { id }, data });
   return reply.send({ success: true, data: course, error: null });
@@ -455,4 +467,137 @@ export async function awardCourseBadgeHandler(req: FastifyRequest, reply: Fastif
     }).catch(() => {});
   }
   return reply.status(201).send({ success: true, data: award, error: null });
+}
+
+// ── Per-member progression admin controls ────────────────────────────
+// These endpoints let an admin manipulate a specific member's
+// progression through a specific course. All are Clerk-authenticated
+// via the parent module's preHandler (fastify.authenticate).
+//
+// The prompt calls out two operations by name — reset progress (start
+// over from lesson 1) and unlock all lessons (bypass sequential gate).
+// Implemented as two dedicated endpoints so audit logs / socket events
+// can be added later without conflating the two semantics.
+
+/**
+ * POST /api/courses/:id/members/:memberId/reset-progress
+ *
+ * Wipes every CourseEpisodeProgress row for (member, course) so the
+ * member restarts from lesson 1. Idempotent — running twice is a
+ * no-op if progress was already reset.
+ */
+export async function resetMemberCourseProgressHandler(
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id: courseId, memberId } = req.params as { id: string; memberId: string };
+
+  // Verify both exist so we return 404 rather than a silent 0-rows
+  // deletion that looks like success but did nothing.
+  const [course, member] = await Promise.all([
+    req.server.prisma.course.findUnique({ where: { id: courseId }, select: { id: true } }),
+    req.server.prisma.member.findUnique({ where: { id: memberId }, select: { id: true } }),
+  ]);
+  if (!course) return reply.status(404).send({ success: false, data: null, error: 'Course not found' });
+  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+
+  // Fetch episode ids first so the delete predicate is scoped to this
+  // course only (episodeId is unique across courses so a naive delete
+  // by memberId would wipe every course's progress).
+  const episodes = await req.server.prisma.courseEpisode.findMany({
+    where: { courseId },
+    select: { id: true },
+  });
+  const episodeIds = episodes.map((e) => e.id);
+
+  const deleted = await (req.server.prisma as any).courseEpisodeProgress.deleteMany({
+    where: { memberId, episodeId: { in: episodeIds } },
+  });
+
+  // Also clear the aggregate CourseEnrollment.progressPercentage so
+  // the dashboard doesn't report stale "50% complete" against a reset
+  // course. Non-fatal — this is a display aggregate; the truth lives
+  // in CourseEpisodeProgress.
+  await (req.server.prisma as any).courseEnrollment.updateMany({
+    where: { memberId, courseId },
+    data: { progressPercentage: 0, completedAt: null },
+  }).catch(() => {});
+
+  // Emit a user-side event so any open device flips the lesson list
+  // back to "only lesson 1 unlocked" without waiting for a refresh.
+  try {
+    req.server.io?.to(`user:${memberId}`).emit('course:progress_reset', { courseId });
+  } catch { /* non-fatal */ }
+
+  return reply.send({
+    success: true,
+    data: { courseId, memberId, deletedRows: deleted.count },
+    error: null,
+  });
+}
+
+/**
+ * POST /api/courses/:id/members/:memberId/unlock-all
+ *
+ * Inserts a completed=true CourseEpisodeProgress row for every episode
+ * in the course, effectively giving the member "all lessons unlocked"
+ * from now on regardless of the requireSequential setting. Existing
+ * progress rows are updated to completed; new rows are created with
+ * synthetic actualWatchedSecs so `computeLessonLockStates` also
+ * reports them as unlocked/completed.
+ */
+export async function unlockAllLessonsForMemberHandler(
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id: courseId, memberId } = req.params as { id: string; memberId: string };
+
+  const [course, member] = await Promise.all([
+    req.server.prisma.course.findUnique({ where: { id: courseId }, select: { id: true } }),
+    req.server.prisma.member.findUnique({ where: { id: memberId }, select: { id: true } }),
+  ]);
+  if (!course) return reply.status(404).send({ success: false, data: null, error: 'Course not found' });
+  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+
+  const episodes = await req.server.prisma.courseEpisode.findMany({
+    where: { courseId },
+    select: { id: true, durationSeconds: true },
+  });
+
+  const now = new Date();
+  // Sequential upserts (Prisma has no `createMany` with `onConflict` on
+  // Postgres via the JS client — but the loop is bounded by course
+  // size, and admin unlock operations aren't hot-path).
+  for (const ep of episodes) {
+    const dur = ep.durationSeconds ?? 0;
+    await (req.server.prisma as any).courseEpisodeProgress.upsert({
+      where: { memberId_episodeId: { memberId, episodeId: ep.id } },
+      create: {
+        memberId,
+        episodeId: ep.id,
+        completed: true,
+        completedAt: now,
+        lastWatchedSecs: dur,
+        actualWatchedSecs: dur,
+      },
+      update: {
+        completed: true,
+        completedAt: now,
+        // Bump actualWatchedSecs high enough that the threshold check
+        // in computeLessonLockStates always evaluates true, without
+        // clobbering an actual higher value from a real watch.
+        actualWatchedSecs: dur > 0 ? { set: dur } : undefined,
+      },
+    });
+  }
+
+  try {
+    req.server.io?.to(`user:${memberId}`).emit('course:lessons_unlocked', { courseId });
+  } catch { /* non-fatal */ }
+
+  return reply.send({
+    success: true,
+    data: { courseId, memberId, unlockedEpisodes: episodes.length },
+    error: null,
+  });
 }

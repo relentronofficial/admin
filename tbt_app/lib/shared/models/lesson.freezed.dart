@@ -34,7 +34,19 @@ mixin _$Lesson {
   bool get isCompleted => throw _privateConstructorUsedError;
   int get resumeAtSeconds => throw _privateConstructorUsedError;
   int get actualWatchedSecs => throw _privateConstructorUsedError;
-  int get quizUnlockPercent => throw _privateConstructorUsedError;
+  int get quizUnlockPercent =>
+      throw _privateConstructorUsedError; // Server-authoritative sequential-unlock state (2026-07-16).
+  // When true, the lesson is locked until the previous lesson meets
+  // the course's completion threshold. Default false so pre-fix
+  // backends (which don't return this field) don't gate anything.
+  bool get locked =>
+      throw _privateConstructorUsedError; // Server-computed completion from watched-fraction >= threshold.
+  // May diverge from `isCompleted` briefly when a new heartbeat
+  // has been posted but the client hasn't refetched; use this for
+  // display purposes and `isCompleted` for legacy compatibility.
+  bool get completedByThreshold =>
+      throw _privateConstructorUsedError; // 0..100, may be null if backend can't compute the exact fraction.
+  int? get watchPercent => throw _privateConstructorUsedError;
 
   /// Serializes this Lesson to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -65,6 +77,9 @@ abstract class $LessonCopyWith<$Res> {
     int resumeAtSeconds,
     int actualWatchedSecs,
     int quizUnlockPercent,
+    bool locked,
+    bool completedByThreshold,
+    int? watchPercent,
   });
 }
 
@@ -97,6 +112,9 @@ class _$LessonCopyWithImpl<$Res, $Val extends Lesson>
     Object? resumeAtSeconds = null,
     Object? actualWatchedSecs = null,
     Object? quizUnlockPercent = null,
+    Object? locked = null,
+    Object? completedByThreshold = null,
+    Object? watchPercent = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -170,6 +188,21 @@ class _$LessonCopyWithImpl<$Res, $Val extends Lesson>
                     ? _value.quizUnlockPercent
                     : quizUnlockPercent // ignore: cast_nullable_to_non_nullable
                         as int,
+            locked:
+                null == locked
+                    ? _value.locked
+                    : locked // ignore: cast_nullable_to_non_nullable
+                        as bool,
+            completedByThreshold:
+                null == completedByThreshold
+                    ? _value.completedByThreshold
+                    : completedByThreshold // ignore: cast_nullable_to_non_nullable
+                        as bool,
+            watchPercent:
+                freezed == watchPercent
+                    ? _value.watchPercent
+                    : watchPercent // ignore: cast_nullable_to_non_nullable
+                        as int?,
           )
           as $Val,
     );
@@ -199,6 +232,9 @@ abstract class _$$LessonImplCopyWith<$Res> implements $LessonCopyWith<$Res> {
     int resumeAtSeconds,
     int actualWatchedSecs,
     int quizUnlockPercent,
+    bool locked,
+    bool completedByThreshold,
+    int? watchPercent,
   });
 }
 
@@ -230,6 +266,9 @@ class __$$LessonImplCopyWithImpl<$Res>
     Object? resumeAtSeconds = null,
     Object? actualWatchedSecs = null,
     Object? quizUnlockPercent = null,
+    Object? locked = null,
+    Object? completedByThreshold = null,
+    Object? watchPercent = freezed,
   }) {
     return _then(
       _$LessonImpl(
@@ -303,6 +342,21 @@ class __$$LessonImplCopyWithImpl<$Res>
                 ? _value.quizUnlockPercent
                 : quizUnlockPercent // ignore: cast_nullable_to_non_nullable
                     as int,
+        locked:
+            null == locked
+                ? _value.locked
+                : locked // ignore: cast_nullable_to_non_nullable
+                    as bool,
+        completedByThreshold:
+            null == completedByThreshold
+                ? _value.completedByThreshold
+                : completedByThreshold // ignore: cast_nullable_to_non_nullable
+                    as bool,
+        watchPercent:
+            freezed == watchPercent
+                ? _value.watchPercent
+                : watchPercent // ignore: cast_nullable_to_non_nullable
+                    as int?,
       ),
     );
   }
@@ -326,6 +380,9 @@ class _$LessonImpl implements _Lesson {
     this.resumeAtSeconds = 0,
     this.actualWatchedSecs = 0,
     this.quizUnlockPercent = 80,
+    this.locked = false,
+    this.completedByThreshold = false,
+    this.watchPercent,
   });
 
   factory _$LessonImpl.fromJson(Map<String, dynamic> json) =>
@@ -368,10 +425,27 @@ class _$LessonImpl implements _Lesson {
   @override
   @JsonKey()
   final int quizUnlockPercent;
+  // Server-authoritative sequential-unlock state (2026-07-16).
+  // When true, the lesson is locked until the previous lesson meets
+  // the course's completion threshold. Default false so pre-fix
+  // backends (which don't return this field) don't gate anything.
+  @override
+  @JsonKey()
+  final bool locked;
+  // Server-computed completion from watched-fraction >= threshold.
+  // May diverge from `isCompleted` briefly when a new heartbeat
+  // has been posted but the client hasn't refetched; use this for
+  // display purposes and `isCompleted` for legacy compatibility.
+  @override
+  @JsonKey()
+  final bool completedByThreshold;
+  // 0..100, may be null if backend can't compute the exact fraction.
+  @override
+  final int? watchPercent;
 
   @override
   String toString() {
-    return 'Lesson(id: $id, title: $title, type: $type, hlsUrl: $hlsUrl, videoUrl: $videoUrl, videoType: $videoType, durationSeconds: $durationSeconds, duration: $duration, order: $order, hasQuiz: $hasQuiz, isCompleted: $isCompleted, resumeAtSeconds: $resumeAtSeconds, actualWatchedSecs: $actualWatchedSecs, quizUnlockPercent: $quizUnlockPercent)';
+    return 'Lesson(id: $id, title: $title, type: $type, hlsUrl: $hlsUrl, videoUrl: $videoUrl, videoType: $videoType, durationSeconds: $durationSeconds, duration: $duration, order: $order, hasQuiz: $hasQuiz, isCompleted: $isCompleted, resumeAtSeconds: $resumeAtSeconds, actualWatchedSecs: $actualWatchedSecs, quizUnlockPercent: $quizUnlockPercent, locked: $locked, completedByThreshold: $completedByThreshold, watchPercent: $watchPercent)';
   }
 
   @override
@@ -400,7 +474,12 @@ class _$LessonImpl implements _Lesson {
             (identical(other.actualWatchedSecs, actualWatchedSecs) ||
                 other.actualWatchedSecs == actualWatchedSecs) &&
             (identical(other.quizUnlockPercent, quizUnlockPercent) ||
-                other.quizUnlockPercent == quizUnlockPercent));
+                other.quizUnlockPercent == quizUnlockPercent) &&
+            (identical(other.locked, locked) || other.locked == locked) &&
+            (identical(other.completedByThreshold, completedByThreshold) ||
+                other.completedByThreshold == completedByThreshold) &&
+            (identical(other.watchPercent, watchPercent) ||
+                other.watchPercent == watchPercent));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -421,6 +500,9 @@ class _$LessonImpl implements _Lesson {
     resumeAtSeconds,
     actualWatchedSecs,
     quizUnlockPercent,
+    locked,
+    completedByThreshold,
+    watchPercent,
   );
 
   /// Create a copy of Lesson
@@ -453,6 +535,9 @@ abstract class _Lesson implements Lesson {
     final int resumeAtSeconds,
     final int actualWatchedSecs,
     final int quizUnlockPercent,
+    final bool locked,
+    final bool completedByThreshold,
+    final int? watchPercent,
   }) = _$LessonImpl;
 
   factory _Lesson.fromJson(Map<String, dynamic> json) = _$LessonImpl.fromJson;
@@ -484,7 +569,19 @@ abstract class _Lesson implements Lesson {
   @override
   int get actualWatchedSecs;
   @override
-  int get quizUnlockPercent;
+  int get quizUnlockPercent; // Server-authoritative sequential-unlock state (2026-07-16).
+  // When true, the lesson is locked until the previous lesson meets
+  // the course's completion threshold. Default false so pre-fix
+  // backends (which don't return this field) don't gate anything.
+  @override
+  bool get locked; // Server-computed completion from watched-fraction >= threshold.
+  // May diverge from `isCompleted` briefly when a new heartbeat
+  // has been posted but the client hasn't refetched; use this for
+  // display purposes and `isCompleted` for legacy compatibility.
+  @override
+  bool get completedByThreshold; // 0..100, may be null if backend can't compute the exact fraction.
+  @override
+  int? get watchPercent;
 
   /// Create a copy of Lesson
   /// with the given fields replaced by the non-null parameter values.

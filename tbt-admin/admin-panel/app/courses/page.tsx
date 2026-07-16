@@ -32,6 +32,11 @@ const EMPTY_COURSE = {
   requiredTier: "1", isActive: true, isPublished: true,
   price: "", accessDurationDays: "", maxEnrollments: "",
   xpPerEpisode: "10", passingScorePercent: "70",
+  // Sequential-unlock defaults — ON at 95% per the enterprise-LMS
+  // requirement. Admins can flip either on a per-course basis in the
+  // form below.
+  requireSequential: true,
+  completionThresholdPercent: "95",
   paymentLinkUrl: "",
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
@@ -163,6 +168,8 @@ export default function CoursesPage() {
       maxEnrollments: c.maxEnrollments != null ? String(c.maxEnrollments) : "",
       xpPerEpisode: String(c.xpPerEpisode ?? 10),
       passingScorePercent: String(c.passingScorePercent ?? 70),
+      requireSequential: c.requireSequential ?? true,
+      completionThresholdPercent: String(c.completionThresholdPercent ?? 95),
       upsellCourseIds: c.upsellCourseIds ?? [],
       crossSellCourseIds: c.crossSellCourseIds ?? [],
       paymentLinkUrl: c.paymentLinkUrl || "",
@@ -177,6 +184,9 @@ export default function CoursesPage() {
       ...courseForm, slug, requiredTier: Number(courseForm.requiredTier) || 1,
       xpPerEpisode: Number(courseForm.xpPerEpisode) || 10,
       passingScorePercent: Number(courseForm.passingScorePercent) || 70,
+      requireSequential: !!courseForm.requireSequential,
+      completionThresholdPercent: Math.min(100, Math.max(50,
+        Number(courseForm.completionThresholdPercent) || 95)),
     };
     payload.price = courseForm.price !== "" ? Number(courseForm.price) : null;
     payload.accessDurationDays = courseForm.accessDurationDays !== "" ? Number(courseForm.accessDurationDays) : null;
@@ -408,6 +418,46 @@ export default function CoursesPage() {
                     <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Pass Score %</label>
                     <input type="number" min="0" max="100" value={courseForm.passingScorePercent} onChange={e => setCourseField("passingScorePercent", e.target.value)}
                       className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Progression (sequential unlock) */}
+              <div className="border-t border-[#2a2a2a] pt-4">
+                <p className="text-[10px] text-[#dc2626] font-bold uppercase tracking-widest font-rajdhani mb-3">Progression</p>
+                <div className="grid grid-cols-2 gap-3 items-end">
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={courseForm.requireSequential}
+                        onChange={(e) => setCourseField("requireSequential", e.target.checked)}
+                        className="w-4 h-4 accent-[#dc2626]"
+                      />
+                      <span className="text-[11px] font-bold text-[#f0f0f0] uppercase tracking-widest font-rajdhani">
+                        Sequential Unlock
+                      </span>
+                    </label>
+                    <p className="text-[10px] text-[#666] mt-1 leading-snug">
+                      When on, each lesson is locked until the previous one is watched to the threshold.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
+                      Completion Threshold %
+                    </label>
+                    <input
+                      type="number"
+                      min="50"
+                      max="100"
+                      value={courseForm.completionThresholdPercent}
+                      onChange={(e) => setCourseField("completionThresholdPercent", e.target.value)}
+                      disabled={!courseForm.requireSequential}
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <p className="text-[10px] text-[#666] mt-1 leading-snug">
+                      Fraction of the video that must be watched to unlock the next lesson (50–100).
+                    </p>
                   </div>
                 </div>
               </div>

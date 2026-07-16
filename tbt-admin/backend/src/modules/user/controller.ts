@@ -1,6 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { generateBunnyToken } from '../../lib/bunnyToken.js';
+import {
+  computeLessonLockStates,
+  isEpisodeUnlocked,
+  type EpisodeForLockCheck,
+  type ProgressRow,
+} from '../../lib/lessonProgression.js';
 
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -496,9 +502,42 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   const LESSON_BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
 
+  // Compute the sequential-unlock verdict for every episode in one pass
+  // BEFORE mapping to the response shape, so we can splice the resulting
+  // {locked, completed, watchPercent} into each lesson object atomically
+  // (no chance of the map iterating out of order).
+  const episodesForLock: EpisodeForLockCheck[] = course.courseEpisodes.map((ep) => ({
+    id: ep.id,
+    order: ep.order ?? 0,
+    durationSeconds: ep.durationSeconds ?? null,
+  }));
+  const progressForLock: ProgressRow[] = course.courseEpisodes.flatMap((ep) => {
+    const p = ep.progress?.[0];
+    if (!p) return [];
+    return [{
+      episodeId: ep.id,
+      actualWatchedSecs: p.actualWatchedSecs ?? 0,
+      lastWatchedSecs: p.lastWatchedSecs ?? 0,
+      isCompleted: p.completed ?? false,
+    }];
+  });
+  const lockStatesByEpisode = new Map(
+    computeLessonLockStates(episodesForLock, progressForLock, {
+      requireSequential: (course as any).requireSequential ?? true,
+      completionThresholdPercent: (course as any).completionThresholdPercent ?? 95,
+    }).map((s) => [s.episodeId, s]),
+  );
+
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
-    let videoUrl = hasAccess ? ep.videoUrl : null;
+    const lockState = lockStatesByEpisode.get(ep.id);
+    const isLocked = lockState?.locked ?? false;
+    // Locked lessons never carry a playable URL. Even if a modified
+    // client sends the request, the server returns null — the URL is
+    // simply not there to intercept. Combined with the POST-progress
+    // guard, this makes it impossible for a client to play a locked
+    // video by API tampering.
+    let videoUrl = hasAccess && !isLocked ? ep.videoUrl : null;
     const isDrmEnabled = !!(ep as any).drmEnabled;
 
     // Derive bunnyId from explicit field or embedded URL
@@ -523,10 +562,11 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     }
 
     // HLS URL: only for non-DRM episodes. DRM episodes use the signed iframe URL above.
+    // Same lock check as videoUrl above — locked lessons carry no HLS.
     const cdn = env.BUNNY_CDN_URL
       ? (env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')
       : null;
-    const hlsUrl = hasAccess && !isDrmEnabled && bunnyId && cdn
+    const hlsUrl = hasAccess && !isLocked && !isDrmEnabled && bunnyId && cdn
       ? `${cdn}/${bunnyId}/playlist.m3u8`
       : null;
     return {
@@ -543,8 +583,16 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       actualWatchedSecs: prog?.actualWatchedSecs ?? 0,
       isCompleted: prog?.completed ?? false,
       hasQuiz: Array.isArray((ep as any).quizData?.questions) && (ep as any).quizData.questions.length > 0,
-      quizData: hasAccess ? ((ep as any).quizData ?? null) : null,
+      quizData: hasAccess && !isLocked ? ((ep as any).quizData ?? null) : null,
       quizUnlockPercent: (ep as any).quizUnlockPercent ?? 80,
+      // Sequential-unlock fields — see lib/lessonProgression.ts. `locked`
+      // authoritatively tells the client whether to show the lock icon;
+      // `watchPercent` drives the per-lesson progress bar without any
+      // client-side math.
+      locked: isLocked,
+      unlocked: lockState?.unlocked ?? true,
+      completedByThreshold: lockState?.completed ?? false,
+      watchPercent: lockState?.watchPercent ?? null,
     };
   });
 
@@ -568,6 +616,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     pendingPayment: pendingPayment ? { id: pendingPayment.id, paymentUrl: course.paymentLinkUrl ?? null } : null,
     xpPerEpisode: (course as any).xpPerEpisode ?? 10,
     passingScorePercent: (course as any).passingScorePercent ?? 70,
+    requireSequential: (course as any).requireSequential ?? true,
+    completionThresholdPercent: (course as any).completionThresholdPercent ?? 95,
     lessons,
     _count: { lessons: lessons.length, enrollments: course._count?.enrollments ?? 0 },
     upsellCourses,
@@ -946,6 +996,51 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   });
   if (!episode) return fail(reply, 404, 'Episode not found in this course');
 
+  // ── Sequential-unlock guard ──────────────────────────────────────
+  // Verify this lesson is currently unlocked for the member BEFORE
+  // writing any progress. A modified client that POSTs directly to a
+  // locked lesson gets a 403 — the lock is enforced at the API
+  // boundary, not just in the UI. Skipped when the course opts out
+  // of sequential unlock via `requireSequential = false`.
+  const courseUnlockCfg = await (request.server.prisma as any).course.findUnique({
+    where: { id: courseId },
+    select: { requireSequential: true, completionThresholdPercent: true },
+  }) as { requireSequential: boolean | null; completionThresholdPercent: number | null } | null;
+  const requireSequential = courseUnlockCfg?.requireSequential ?? true;
+  if (requireSequential) {
+    const allEpisodes = await request.server.prisma.courseEpisode.findMany({
+      where: { courseId, isVisible: true },
+      orderBy: { order: 'asc' },
+      select: { id: true, order: true, durationSeconds: true },
+    });
+    const allProgress = await (request.server.prisma as any).courseEpisodeProgress.findMany({
+      where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e) => e.id) } },
+      select: { episodeId: true, actualWatchedSecs: true, lastWatchedSecs: true, completed: true },
+    });
+    const unlocked = isEpisodeUnlocked(
+      episodeId,
+      allEpisodes.map((e) => ({
+        id: e.id,
+        order: e.order ?? 0,
+        durationSeconds: e.durationSeconds ?? null,
+      })),
+      allProgress.map((p: any) => ({
+        episodeId: p.episodeId,
+        actualWatchedSecs: p.actualWatchedSecs ?? 0,
+        lastWatchedSecs: p.lastWatchedSecs ?? 0,
+        isCompleted: p.completed ?? false,
+      })),
+      {
+        requireSequential: true,
+        completionThresholdPercent: courseUnlockCfg?.completionThresholdPercent ?? 95,
+      },
+    );
+    if (!unlocked) {
+      return fail(reply, 403,
+        'This lesson is locked. Complete the previous lesson to unlock it.');
+    }
+  }
+
   const now = new Date();
   
   // Safe increment of actualWatchedSecs (max 30s per heartbeat to prevent extreme skips)
@@ -992,15 +1087,33 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   const cumulativeActualSecs = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
 
+  // Server-authoritative completion. The trust model:
+  //   * A completion that's already been recorded stays completed
+  //     (idempotent — rewatching a completed lesson doesn't "un-complete").
+  //   * Otherwise, completion requires the cumulative *fraud-scrubbed*
+  //     watched seconds to exceed `threshold%` of the episode's real
+  //     duration. `safeDelta` is already capped at 30s per heartbeat
+  //     so a modified client can't skip to completion by sending
+  //     one huge delta.
+  //   * The client's `requestedCompletion` flag is IGNORED here — it
+  //     was previously trusted as a hint from the player's "ended"
+  //     event, but that's exactly the vector the prompt's security
+  //     requirement wants closed. Server decides completion, not
+  //     client.
+  //   * Fallback: when the episode has no `durationSeconds` recorded
+  //     (metadata missing), we still honor the client's flag AS A
+  //     LAST RESORT so pre-migration courses without duration data
+  //     don't become impossible to complete. Once metadata is
+  //     backfilled, the fallback goes cold naturally.
+  const thresholdFraction =
+    Math.max(0.5, Math.min(1, (courseUnlockCfg?.completionThresholdPercent ?? 95) / 100));
   if (existingProgress?.completed) {
     finalIsCompleted = true;
-  } else if (requestedCompletion === true && (cumulativeActualSecs >= 5 || (watchedSeconds ?? 0) > 0)) {
-    // Trust the client's explicit completion flag when there is any evidence of watching.
-    // The frontend only sends isCompleted=true on the player's ended event or after its own
-    // 85%-of-real-duration threshold — it never sends it for fresh page loads or seek events.
-    // Requiring at least 5 cumulative seconds OR a non-zero playhead prevents bare API calls
-    // with no watch data from triggering completion. Stored durationSeconds is intentionally
-    // NOT used here — it can be stale/wrong and would silently block legitimate completions.
+  } else if (episode.durationSeconds && episode.durationSeconds > 0) {
+    finalIsCompleted = cumulativeActualSecs / episode.durationSeconds >= thresholdFraction;
+  } else if (requestedCompletion === true && cumulativeActualSecs >= 5) {
+    // Legacy fallback — episode has no duration metadata. Trust the
+    // client's flag ONLY if there's some evidence of watching.
     finalIsCompleted = true;
   }
 

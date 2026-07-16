@@ -11,6 +11,7 @@ import {
   getCourseAnalyticsHandler, getCourseLeaderboardAdminHandler,
   listCourseBadgesHandler, createCourseBadgeHandler, updateCourseBadgeHandler,
   deleteCourseBadgeHandler, awardCourseBadgeHandler,
+  resetMemberCourseProgressHandler, unlockAllLessonsForMemberHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
@@ -44,6 +45,10 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/:id/badges/:badgeId', updateCourseBadgeHandler);
   fastify.delete('/:id/badges/:badgeId', deleteCourseBadgeHandler);
   fastify.post('/:id/badges/:badgeId/award', awardCourseBadgeHandler);
+
+  // Per-member progression controls (sequential-unlock admin overrides)
+  fastify.post('/:id/members/:memberId/reset-progress', resetMemberCourseProgressHandler);
+  fastify.post('/:id/members/:memberId/unlock-all', unlockAllLessonsForMemberHandler);
 
   // Episodes
   fastify.get('/:id/episodes', listCourseEpisodesHandler);

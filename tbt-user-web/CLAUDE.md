@@ -42,9 +42,12 @@ app/
     history/        # Watch history
     profile/        # Exempt from SubscriptionGate
   (player)/         # Full-screen video player — bare layout, no Navbar/Footer
+    episode/[workshopSlug]/[episodeId]/  # Workshop episode full-screen player
+    watch/[episodeId]/                   # Standalone episode watch page
   login/            # Custom LoginScreen — DO NOT MODIFY
   signup/           # Self-registration (SignupScreen) — DO NOT MODIFY
-  verify/           # Phone/OTP verification step
+  verify/           # Phone/OTP verification step (post-signup)
+  verify/course/[certId]/  # Public certificate verification — Server Component, revalidate: 3600
   loading/          # Standalone splash
 ```
 
@@ -80,7 +83,10 @@ Injects theme as CSS custom properties on `document.documentElement`.
 
 **CRITICAL**: Every user-visible string must come from `uiStrings` (or `config`). Zero hardcoded label strings in `(platform)` pages.
 
-### CSS Theme Tokens (injected at runtime — never hardcode)
+### CSS Theme Tokens
+Supports **light and dark themes**. `globals.css` defines `:root` (light defaults, active when `.dark` class is absent on `html`) and `.dark` (dark overrides). `SiteConfigProvider` injects accent/alert/success in both modes; `--color-bg-primary/surface` are injected in dark mode but removed in light mode so CSS fallbacks apply.
+
+Runtime-injected — never hardcode:
 ```
 --color-accent        # primary CTA / brand
 --color-alert         # warning
@@ -88,7 +94,18 @@ Injects theme as CSS custom properties on `document.documentElement`.
 --color-bg-primary    # page background
 --color-bg-surface    # card / surface
 ```
-Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(--color-accent) 30%, transparent)` for tints. `--color-locked: #4a4a4a` is the only static token.
+Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(--color-accent) 30%, transparent)` for tints.
+
+Additional semantic tokens from `globals.css` (safe to use directly):
+```
+--color-text-normal / --color-text-secondary / --color-text-subtle
+--color-surface-overlay / -xs / -md / -lg
+--color-navbar-bg / --color-modal-bg / --color-notif-bg
+```
+
+**Overlay text rule:** Text on dark image/video/banner gradients must always be white. Use `overlay-text` (headings) and `overlay-meta` (sub-text) CSS utility classes from `globals.css` — they force `color: #ffffff` with drop-shadow regardless of theme. Never use `text-foreground` or `color-text-normal` on dark gradients.
+
+`--color-locked: #4a4a4a` is the only static token.
 
 ### `SubscriptionGate` (`app/(platform)/SubscriptionGate.tsx`)
 Reads `useMe()`:
@@ -101,7 +118,7 @@ Paths `["/Products", "/profile"]` are exempt.
 ### Hook Files
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
-- `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
+- `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`
 - `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + `totalDays` + `attendance` + `breaks`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`)
 - `lib/hooks/useCourses.ts` — `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`
 - `lib/hooks/useEvents.ts` — events hooks

@@ -389,6 +389,12 @@ model Course {
   xpPerEpisode        Int      @default(10) @map("xp_per_episode")
   passingScorePercent Int      @default(70) @map("passing_score_percent")
   paymentLinkUrl      String?  @map("payment_link_url")
+  // Sequential-unlock feature (added 2026-07-16). When true, a lesson is
+  // locked until every previous lesson has been watched to at least
+  // `completionThresholdPercent` of its duration. Locked lessons refuse
+  // both playback (client hides them) and progress writes (backend 403s).
+  requireSequential          Boolean @default(true) @map("require_sequential")
+  completionThresholdPercent Int     @default(95)   @map("completion_threshold_percent")
 
   createdBy String?   @map("created_by") @db.Uuid
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

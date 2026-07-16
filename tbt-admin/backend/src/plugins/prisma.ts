@@ -29,6 +29,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Parallelize all table mutations — grouped per table so each table gets one ALTER statement
     await Promise.all([
       // courses — combine all ADD COLUMN into one statement (avoids 6 round-trips)
+      // require_sequential + completion_threshold_percent added 2026-07-16 for
+      // sequential-unlock feature. Default `true`/95 means every existing
+      // course opts into the new behaviour automatically — historical progress
+      // rows are preserved, but locked/unlocked status is recomputed live from
+      // the completion history on the next lesson-list read.
       prisma.$executeRawUnsafe(`
         ALTER TABLE courses
           ADD COLUMN IF NOT EXISTS payment_link_url TEXT,
@@ -37,7 +42,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS upsell_course_ids TEXT[] DEFAULT '{}',
           ADD COLUMN IF NOT EXISTS cross_sell_course_ids TEXT[] DEFAULT '{}',
           ADD COLUMN IF NOT EXISTS xp_per_episode INTEGER NOT NULL DEFAULT 10,
-          ADD COLUMN IF NOT EXISTS passing_score_percent INTEGER NOT NULL DEFAULT 70
+          ADD COLUMN IF NOT EXISTS passing_score_percent INTEGER NOT NULL DEFAULT 70,
+          ADD COLUMN IF NOT EXISTS require_sequential BOOLEAN NOT NULL DEFAULT true,
+          ADD COLUMN IF NOT EXISTS completion_threshold_percent INTEGER NOT NULL DEFAULT 95
       `),
       // course_episodes
       prisma.$executeRawUnsafe(`

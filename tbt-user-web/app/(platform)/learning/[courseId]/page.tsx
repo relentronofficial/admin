@@ -1838,7 +1838,16 @@ export default function CourseDetailPage({
             lessons.map((lesson, idx) => {
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
+              // Server-authoritative lock: backend returns `locked: true`
+              // on every episode strictly after the last-completed one
+              // (when the course has requireSequential enabled). Fall
+              // back to false so pre-fix backends don't gate anything.
+              const isLocked = (lesson as any).locked === true;
               const hasVideo = !!lesson.videoUrl;
+              // A locked lesson has no videoUrl (backend strips it) so
+              // hasVideo is already false. Combining with `!isLocked`
+              // makes the intent explicit at the tap site.
+              const canPlay = hasVideo && !isLocked;
               const duration = isActive && liveRealDuration > 0 ? liveRealDuration : (lesson.durationSeconds ?? 0);
               const activeLessonDuration = (isActive && activeDuration > 0 ? activeDuration : duration) ?? 0;
               const livePct = isActive && liveWatched > 0 && activeLessonDuration > 0
@@ -1848,11 +1857,15 @@ export default function CourseDetailPage({
               return (
                 <button
                   key={lesson.id}
-                  onClick={() => hasVideo && handleSelectLesson(lesson)}
-                  disabled={!hasVideo}
+                  onClick={() => canPlay && handleSelectLesson(lesson)}
+                  disabled={!canPlay}
+                  title={isLocked ? "Complete the previous lesson to unlock." : undefined}
+                  aria-disabled={!canPlay}
                   className={cn(
                     "w-full flex items-center gap-4 px-4 py-4 text-left transition-colors border-b last:border-b-0",
-                    hasVideo ? "cursor-pointer hover:opacity-90" : "cursor-default opacity-50"
+                    canPlay
+                      ? "cursor-pointer hover:opacity-90"
+                      : "cursor-not-allowed opacity-60",
                   )}
                   style={{
                     borderColor: "var(--color-border-subtle)",
@@ -1864,11 +1877,25 @@ export default function CourseDetailPage({
                   <span
                     className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
                     style={{
-                      background: isCompleted ? "var(--color-success)" : isActive ? "var(--color-accent)" : "var(--color-surface-overlay-lg)",
-                      color: isCompleted || isActive ? "#fff" : "var(--color-text-subtle)",
+                      background: isLocked
+                        ? "var(--color-surface-overlay-md)"
+                        : isCompleted
+                          ? "var(--color-success)"
+                          : isActive
+                            ? "var(--color-accent)"
+                            : "var(--color-surface-overlay-lg)",
+                      color: isLocked
+                        ? "var(--color-text-disabled)"
+                        : isCompleted || isActive
+                          ? "#fff"
+                          : "var(--color-text-subtle)",
                     }}
                   >
-                    {isCompleted ? <CheckCircle2 size={14} /> : idx + 1}
+                    {isLocked
+                      ? <Lock size={13} />
+                      : isCompleted
+                        ? <CheckCircle2 size={14} />
+                        : idx + 1}
                   </span>
 
                   <div className="flex-1 min-w-0">

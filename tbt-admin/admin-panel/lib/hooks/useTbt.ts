@@ -563,6 +563,48 @@ export const useApproveCoursePayment = (courseId: string) => {
   });
 };
 
+// ── Per-member progression admin controls ─────────────────────────────
+// Two mutations for the sequential-unlock feature. Both call
+// backend endpoints under /api/courses/:id/members/:memberId/... —
+// see backend/src/modules/courses/controller.ts.
+
+/** Wipes every CourseEpisodeProgress row for (member, course) so the
+ *  member restarts from lesson 1. Idempotent. */
+export const useResetMemberCourseProgress = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (memberId: string) => {
+      const res: any = await apiClient.post(
+        `/api/courses/${courseId}/members/${memberId}/reset-progress`,
+      );
+      return res?.data ?? null;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['course-enrollments', courseId] });
+      qc.invalidateQueries({ queryKey: ['member-progress'] });
+    },
+  });
+};
+
+/** Grants "all lessons unlocked" for the target member on this course
+ *  by writing completed=true rows for every episode. Effectively an
+ *  admin override of the sequential gate. */
+export const useUnlockAllLessonsForMember = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (memberId: string) => {
+      const res: any = await apiClient.post(
+        `/api/courses/${courseId}/members/${memberId}/unlock-all`,
+      );
+      return res?.data ?? null;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['course-enrollments', courseId] });
+      qc.invalidateQueries({ queryKey: ['member-progress'] });
+    },
+  });
+};
+
 // ── COURSE BADGES (admin) ─────────────────────────────────────────────
 
 export const useListCourseBadges = (courseId: string) =>

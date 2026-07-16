@@ -207,19 +207,43 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
                     else
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
-                          (_, i) => _LessonRow(
-                            lesson: course.lessons[i],
-                            index: i,
-                            isCompleted:
-                                completedIds.contains(course.lessons[i].id),
-                            hasAccess: course.hasAccess,
-                            accent: accent,
-                            onTap: course.hasAccess
-                                ? () => context.push(
-                                      '/learning/${widget.courseId}/${course.lessons[i].id}',
-                                    )
-                                : null,
-                          ),
+                          (_, i) {
+                            final lesson = course.lessons[i];
+                            final isLocked = lesson.locked;
+                            // Same policy as the web: locked lessons refuse
+                            // the tap entirely and show a SnackBar hint.
+                            // Only the backend can grant playback (via
+                            // returning a videoUrl); the client never
+                            // decides on its own.
+                            final canOpen = course.hasAccess && !isLocked;
+                            return _LessonRow(
+                              lesson: lesson,
+                              index: i,
+                              isCompleted:
+                                  completedIds.contains(lesson.id) ||
+                                  lesson.completedByThreshold,
+                              isLocked: isLocked,
+                              hasAccess: course.hasAccess,
+                              accent: accent,
+                              onTap: canOpen
+                                  ? () => context.push(
+                                        '/learning/${widget.courseId}/${lesson.id}',
+                                      )
+                                  : (isLocked
+                                      ? () {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Complete the previous lesson to unlock.',
+                                              ),
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                        }
+                                      : null),
+                            );
+                          },
                           childCount: course.lessons.length,
                         ),
                       ),
@@ -616,6 +640,7 @@ class _LessonRow extends StatelessWidget {
     required this.isCompleted,
     required this.hasAccess,
     required this.accent,
+    this.isLocked = false,
     this.onTap,
   });
 
@@ -624,6 +649,7 @@ class _LessonRow extends StatelessWidget {
   final bool isCompleted;
   final bool hasAccess;
   final Color accent;
+  final bool isLocked;
   final VoidCallback? onTap;
 
   @override
@@ -637,28 +663,39 @@ class _LessonRow extends StatelessWidget {
         ),
         child: Row(
           children: [
+            // Leading indicator: lock > completed > numbered dot.
+            // Priority matters — a completed lesson that then gets
+            // manually locked by an admin (rare) should visibly show
+            // the lock, not the checkmark.
             SizedBox(
               width: 32,
-              child: isCompleted
-                  ? Icon(Icons.check_circle, color: accent, size: 20)
-                  : Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: context.tokens.borderInput),
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            color: context.tokens.textMuted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+              child: isLocked
+                  ? Icon(
+                      Icons.lock_outline,
+                      color: context.tokens.textMuted,
+                      size: 20,
+                    )
+                  : isCompleted
+                      ? Icon(Icons.check_circle, color: accent, size: 20)
+                      : Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border:
+                                Border.all(color: context.tokens.borderInput),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                color: context.tokens.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -668,7 +705,11 @@ class _LessonRow extends StatelessWidget {
                   Text(
                     lesson.title,
                     style: TextStyle(
-                      color: hasAccess ? context.tokens.textPrimary : context.tokens.textMuted,
+                      // Muted colour for locked lessons — matches the
+                      // reduced-opacity treatment on the web.
+                      color: (hasAccess && !isLocked)
+                          ? context.tokens.textPrimary
+                          : context.tokens.textMuted,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),

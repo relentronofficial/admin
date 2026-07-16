@@ -23,6 +23,9 @@ _$LessonImpl _$$LessonImplFromJson(Map<String, dynamic> json) => _$LessonImpl(
   resumeAtSeconds: (json['resumeAtSeconds'] as num?)?.toInt() ?? 0,
   actualWatchedSecs: (json['actualWatchedSecs'] as num?)?.toInt() ?? 0,
   quizUnlockPercent: (json['quizUnlockPercent'] as num?)?.toInt() ?? 80,
+  locked: json['locked'] as bool? ?? false,
+  completedByThreshold: json['completedByThreshold'] as bool? ?? false,
+  watchPercent: (json['watchPercent'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$$LessonImplToJson(_$LessonImpl instance) =>
@@ -41,6 +44,9 @@ Map<String, dynamic> _$$LessonImplToJson(_$LessonImpl instance) =>
       'resumeAtSeconds': instance.resumeAtSeconds,
       'actualWatchedSecs': instance.actualWatchedSecs,
       'quizUnlockPercent': instance.quizUnlockPercent,
+      'locked': instance.locked,
+      'completedByThreshold': instance.completedByThreshold,
+      'watchPercent': instance.watchPercent,
     };
 
 const _$LessonTypeEnumMap = {
