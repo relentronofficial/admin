@@ -22,4 +22,11 @@ export async function userAuthRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticateUser],
     handler: (req, reply) => controller.me(fastify, req, reply),
   });
+
+  // Admin-only WhatsApp diagnostic. Protected by CRON_SECRET header
+  // (same pattern as the cron endpoints — no Clerk / member auth
+  // required, so support engineers can hit it during an incident
+  // without extra credentials).
+  fastify.get('/whatsapp-diagnostic',
+    (req, reply) => controller.whatsappDiagnostic(fastify, req, reply));
 }

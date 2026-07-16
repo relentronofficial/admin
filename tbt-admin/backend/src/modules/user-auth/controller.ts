@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { generateOtp, storeOtp, verifyAndConsumeOtp } from '../../lib/otp.js';
-import { sendOtpWhatsapp } from '../../lib/whatsapp.js';
+import { sendOtpWhatsapp, sendOtpWhatsappDiagnostic } from '../../lib/whatsapp.js';
 import { env } from '../../config/env.js';
 import {
   setAuthCookies,
@@ -361,6 +361,74 @@ export async function revokeAllSessions(
     success: true,
     data: { revokedSessions: deleted },
   });
+}
+
+// GET /api/user-auth/whatsapp-diagnostic?phone=<10-digits>
+//
+// Admin diagnostic endpoint — protected by CRON_SECRET header (same
+// pattern as the existing cron endpoints). Does a live send-OTP call
+// against the @zacx BSP and returns the raw response envelope so the
+// exact failure reason is visible without SSHing into Cloud Run.
+//
+// Never logs / returns the access token. Only the last 4 chars of the
+// token are echoed for correlation ("does the deployed token match
+// what I have in the zacx dashboard?").
+//
+// Usage:
+//   curl -H "x-cron-secret: $CRON_SECRET" \
+//     "https://tbt-backend-.../api/user-auth/whatsapp-diagnostic?phone=7010834661"
+export async function whatsappDiagnostic(
+  fastify: FastifyInstance,
+  request: any,
+  reply: any,
+) {
+  const secret = request.headers['x-cron-secret'];
+  if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {
+    return reply.status(401).send({ success: false, error: 'Unauthorized' });
+  }
+  const phone = (request.query?.phone as string) ?? '';
+  if (!phone || phone.length < 8) {
+    return reply.status(400).send({
+      success: false,
+      error: 'Missing or invalid ?phone=<digits> query parameter',
+    });
+  }
+
+  // Use a fixed OTP for the diagnostic call so nobody accidentally
+  // ends up logged in from a stray verification — this OTP is NOT
+  // stored in Redis, so it can't be verified against a subsequent
+  // /verify-otp call.
+  const diagnostic = await sendOtpWhatsappDiagnostic(phone, '000000');
+
+  // Attach a short human-readable hint so whoever's reading the
+  // response (probably the person triaging the outage) doesn't have
+  // to parse @zacx-specific status codes on the spot.
+  const hint = interpretationHint(diagnostic.interpreted);
+
+  return reply.send({
+    success: true,
+    data: {
+      ...diagnostic,
+      hint,
+    },
+  });
+}
+
+function interpretationHint(
+  interpreted: 'success' | 'bsp_rejected' | 'bad_credentials' | 'network_error' | 'not_configured',
+): string {
+  switch (interpreted) {
+    case 'success':
+      return 'BSP accepted the send. If the phone still didn\'t receive it, check @zacx delivery logs and Meta template approval status.';
+    case 'bsp_rejected':
+      return 'BSP rejected the send. Read `response.body` — typical causes: template not approved, template argument count mismatch, phone not opted in to WhatsApp Business, account balance depleted.';
+    case 'bad_credentials':
+      return '401/403 from BSP. WABA_ACCESS_TOKEN is invalid or expired — rotate it in the @zacx dashboard and update the Cloud Run secret.';
+    case 'network_error':
+      return 'Could not reach the BSP endpoint. Verify WABA_API_BASE_URL points at the correct @zacx host and Cloud Run has outbound network to it.';
+    case 'not_configured':
+      return 'One or more WABA_* env vars are missing on Cloud Run. See `configured` field.';
+  }
 }
 
 // POST /api/members/:id/sessions/revoke  (admin-facing helper — exported
