@@ -46,6 +46,8 @@ import { adminNotificationRoutes } from './modules/admin-notifications/routes.js
 import { batchReminderCronHandler } from './modules/user-batch/controller.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
+import { registerLowBalanceHandler } from './lib/whatsapp.js';
+import { createAdminNotification } from './lib/adminNotifications.js';
 
 async function bootstrap() {
   const fastify = Fastify({
@@ -80,6 +82,41 @@ async function bootstrap() {
     await fastify.register(jwtPlugin);
     await fastify.register(supabasePlugin);
     await fastify.register(socketPlugin);
+
+    // ── WhatsApp low-balance alert wiring ──────────────────────────
+    // When the BSP rejects a send with INSUFFICIENT_BALANCE, raise an
+    // admin_notifications entry AND emit an `admin:whatsapp_low_balance`
+    // socket event so the admin panel's bell shows a red badge in real
+    // time. Rate-limited to once per hour inside the helper itself so
+    // a burst of failed sends can't spam the panel.
+    //
+    // The handler is registered after prisma + socket are both ready
+    // so it can safely reference them.
+    registerLowBalanceHandler(async ({ status, body, at }) => {
+      fastify.log.warn(
+        { status, bodySnippet: body.slice(0, 200) },
+        '[WhatsApp] wallet balance depleted — raising admin alert',
+      );
+      // Write the notification row so the bell + list-view show it.
+      await createAdminNotification(fastify.prisma, {
+        title: 'WhatsApp OTP delivery halted',
+        body: 'The @zacx BSP wallet balance is exhausted. Users cannot '
+            + 'receive OTPs until the account is topped up. '
+            + `First failure detected at ${at.toISOString()}.`,
+        type: 'whatsapp_low_balance',
+        metadata: { bspStatus: status, detectedAt: at.toISOString() },
+      });
+      // Push to any admin panel currently connected so the badge
+      // updates without waiting for a refresh.
+      try {
+        fastify.io?.to('admin').emit('admin:whatsapp_low_balance', {
+          bspStatus: status,
+          at: at.toISOString(),
+        });
+      } catch (err) {
+        fastify.log.warn({ err }, 'admin socket emit failed (non-fatal)');
+      }
+    });
 
     // Strip trailing slashes — browsers send origins without them but env vars often include one
     const normalizeOrigin = (u: string) => u.replace(/\/+$/, '');

@@ -92,6 +92,18 @@ function AuthInterceptor() {
       socket.on('admin:workshop_access_request', () => { invalidateAdminNotifs(); });
       socket.on('admin:course_access_request', () => { invalidateAdminNotifs(); });
       socket.on('admin:member_joined', () => { invalidateAdminNotifs(); });
+      // Fires when the @zacx BSP returns INSUFFICIENT_BALANCE — no
+      // more OTPs can be delivered until the wallet is topped up.
+      // Show a persistent error toast (not the default success/info
+      // colour) so it's impossible to miss.
+      socket.on('admin:whatsapp_low_balance', () => {
+        toast.error(
+          'WhatsApp OTP delivery halted — @zacx wallet balance exhausted. '
+          + 'Top up at zacx.com to restore user logins.',
+          { duration: 15000 },
+        );
+        invalidateAdminNotifs();
+      });
     });
     return () => {
       mounted = false;
@@ -101,6 +113,7 @@ function AuthInterceptor() {
         s.off('admin:workshop_access_request');
         s.off('admin:course_access_request');
         s.off('admin:member_joined');
+        s.off('admin:whatsapp_low_balance');
       });
     };
   }, [isLoaded, queryClient]);

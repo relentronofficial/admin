@@ -1,5 +1,72 @@
 import { env } from '../config/env.js';
 
+// ── Low-balance side-channel ────────────────────────────────────────────────
+//
+// The BSP returns HTTP 402 with body `{ code: 'INSUFFICIENT_BALANCE', ... }`
+// once the @zacx wallet is empty. Every OTP send after that fails silently
+// as far as the user is concerned — the mobile client just shows "Failed to
+// send OTP" without any signal to the operator that the account is out of
+// funds. This module raises an admin-side alert the first time it sees a
+// low-balance rejection so the ops team finds out from a red banner in
+// their console instead of from a wave of customer complaints.
+//
+// The alert path is decoupled from the caller — `sendOtpWhatsapp` /
+// `sendWhatsappMessage` stay pure boolean-returning functions. Server boot
+// wires a handler via [registerLowBalanceHandler] that writes to
+// `admin_notifications` and emits a socket event; when no handler is
+// registered (unit tests, dev boot without full plugin stack) the detection
+// is a no-op.
+
+/// Fires when the BSP explicitly reports insufficient balance. Called at
+/// most once per [_lowBalanceCooldown] window to avoid flooding the admin
+/// panel with duplicate banners during a burst of failed sends.
+export type LowBalanceHandler = (details: {
+  status: number;
+  body: string;
+  at: Date;
+}) => void | Promise<void>;
+
+let _lowBalanceHandler: LowBalanceHandler | null = null;
+let _lastLowBalanceAlert = 0;
+const _lowBalanceCooldown = 60 * 60 * 1000; // 1 hour
+
+export function registerLowBalanceHandler(handler: LowBalanceHandler): void {
+  _lowBalanceHandler = handler;
+}
+
+/// Inspect a BSP response and, if it indicates the wallet is empty,
+/// dispatch the low-balance alert (subject to the once-per-hour cooldown).
+/// Returns true when the response WAS a low-balance signal, so the caller
+/// can log it explicitly.
+function detectAndAlertLowBalance(status: number, body: string): boolean {
+  // BSPs vary in how they signal this. Cover the common shapes:
+  //   * HTTP 402 (RFC "Payment Required")
+  //   * Any status with body containing "INSUFFICIENT_BALANCE" (the @zacx
+  //     shape observed 2026-07-16)
+  //   * "insufficient balance" case-insensitive (safety net for BSPs that
+  //     use a different code but the same wording)
+  const isLowBalance =
+    status === 402 ||
+    body.includes('INSUFFICIENT_BALANCE') ||
+    /insufficient\s+balance/i.test(body);
+  if (!isLowBalance) return false;
+
+  const now = Date.now();
+  if (now - _lastLowBalanceAlert < _lowBalanceCooldown) return true;
+  _lastLowBalanceAlert = now;
+
+  const handler = _lowBalanceHandler;
+  if (handler) {
+    // Fire-and-forget — the caller is on the OTP hot path and shouldn't
+    // wait on the admin-notif write. Errors are swallowed so a broken
+    // handler can't fault the OTP call.
+    Promise.resolve(handler({ status, body, at: new Date() })).catch((err) => {
+      console.warn('[WhatsApp] low-balance handler threw:', err);
+    });
+  }
+  return true;
+}
+
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   if (digits.length === 12 && digits.startsWith('91')) return digits;
@@ -39,6 +106,7 @@ export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boole
 
     if (!res.ok) {
       console.error('[WhatsApp] send failed', res.status, body);
+      detectAndAlertLowBalance(res.status, body);
       return false;
     }
 
@@ -47,6 +115,7 @@ export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boole
       // Success: { "status": "success", "data": { "messageId": "..." } }
       if (json?.status !== 'success' || !json?.data?.messageId) {
         console.error('[WhatsApp] unexpected response', body);
+        detectAndAlertLowBalance(res.status, body);
         return false;
       }
     } catch {
@@ -202,7 +271,12 @@ export async function sendWhatsappMessage(phone: string, message: string): Promi
         template: { name: env.WABA_TEMPLATE_NAME, language: env.WABA_TEMPLATE_LANGUAGE, body: [message] },
       }),
     });
-    return res.ok;
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      detectAndAlertLowBalance(res.status, body);
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }

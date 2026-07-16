@@ -33,6 +33,13 @@ export function resolveNotificationRoute(notification: {
     case "announcement":
       return "/app-notifications";
 
+    // WhatsApp OTP wallet is empty on the @zacx BSP. No dedicated
+    // billing page in the admin panel — surface the full notification
+    // detail so ops can read the description and act (top up on
+    // zacx.com). Sits alongside `announcement` in behaviour.
+    case "whatsapp_low_balance":
+      return "/app-notifications";
+
     default:
       return "/dashboard";
   }
