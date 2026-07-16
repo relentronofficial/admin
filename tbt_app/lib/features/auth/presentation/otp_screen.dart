@@ -46,22 +46,30 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     super.initState();
     _startResendTimer();
 
-    // Pre-fill the 6 boxes if the backend passed us an OTP directly.
+    // Pre-fill the 6 boxes if the backend passed us an OTP directly
+    // (a dev/staging convenience when WhatsApp delivery is
+    // unavailable — the backend echoes the OTP in the response body
+    // so testing engineers don't have to babysit a phone).
+    //
+    // **We intentionally do NOT auto-submit** even when the boxes are
+    // pre-filled. The historical auto-submit was a UX shortcut that
+    // silently collapsed the two-step login flow whenever the backend
+    // fell back to inline OTP — the user would enter their password
+    // and be logged in without ever seeing the OTP screen, defeating
+    // the 2FA affordance. Now the user always taps "Verify" so:
+    //   * The OTP step is always visible (matches user expectation).
+    //   * A backend that misconfigures the inline-OTP fallback into
+    //     production can't silently bypass 2FA on real user devices.
+    //   * Developers still get the pre-filled boxes for convenience.
     final pre = widget.prefillOtp;
     if (pre != null && pre.length == 6 && RegExp(r'^\d{6}$').hasMatch(pre)) {
       for (var i = 0; i < 6; i++) {
         _controllers[i].text = pre[i];
       }
-      // Auto-submit after first frame so the user just sees the verify
-      // spinner without manual tapping.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _submit();
-      });
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _focusNodes[0].requestFocus(),
-      );
     }
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _focusNodes[0].requestFocus(),
+    );
   }
 
   @override

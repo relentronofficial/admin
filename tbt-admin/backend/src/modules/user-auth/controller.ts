@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { generateOtp, storeOtp, verifyAndConsumeOtp } from '../../lib/otp.js';
 import { sendOtpWhatsapp } from '../../lib/whatsapp.js';
+import { env } from '../../config/env.js';
 import {
   setAuthCookies,
   clearAuthCookies,
@@ -33,6 +34,38 @@ async function issueTokens(fastify: FastifyInstance, reply: any, memberId: strin
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(getRedis(fastify), refreshToken, memberId);
   setAuthCookies(reply, accessToken, refreshToken);
+}
+
+/// Decides what to put in the `otp` field of an OTP-issuing endpoint's
+/// response body.
+///
+///   * **`sent === true`** → WhatsApp delivered successfully.
+///     Return `undefined` so the mobile / web client shows the OTP
+///     entry screen and the user copies the code from WhatsApp.
+///   * **`sent === false` AND non-production** → WhatsApp delivery
+///     failed but we're in dev / staging — return the OTP so the
+///     testing engineer can proceed without a real phone. Mobile
+///     pre-fills the boxes (but does NOT auto-submit; the user still
+///     taps Verify — see otp_screen.dart).
+///   * **`sent === false` AND production** → WhatsApp is genuinely
+///     broken for a real user. Return `undefined` so the mobile
+///     surfaces "OTP delivery failed, try resending" instead of
+///     silently leaking the OTP into the response body (which older
+///     mobile builds auto-submitted, bypassing 2FA entirely).
+///
+/// A separate `delivered` boolean is included in the response so the
+/// client can distinguish "OTP is on the way" from "delivery failed,
+/// user should press Resend".
+function otpResponseFields(sent: boolean, otp: string): {
+  otp?: string;
+  delivered: boolean;
+} {
+  const isProduction = env.NODE_ENV === 'production';
+  if (sent) return { delivered: true };
+  return {
+    delivered: false,
+    ...(isProduction ? {} : { otp }),
+  };
 }
 
 function normalizePhoneForLookup(raw: string): string[] {
@@ -72,8 +105,11 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
     const sent = await sendOtpWhatsapp(m.phone, otp);
-    fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated (first login)');
-    return reply.send({ success: true, data: { step: 'first_login', phone: m.phone, otp: sent ? undefined : otp } });
+    fastify.log.info({ phone: m.phone, sent }, 'OTP generated (first login)');
+    return reply.send({
+      success: true,
+      data: { step: 'first_login', phone: m.phone, ...otpResponseFields(sent, otp) },
+    });
   }
 
   // Password required for returning users
@@ -90,14 +126,20 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
     const sent = await sendOtpWhatsapp(m.phone, otp);
-    return reply.send({ success: true, data: { step: 'reset_password', phone: m.phone, otp: sent ? undefined : otp } });
+    return reply.send({
+      success: true,
+      data: { step: 'reset_password', phone: m.phone, ...otpResponseFields(sent, otp) },
+    });
   }
 
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
   const sent = await sendOtpWhatsapp(m.phone, otp);
-  fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated');
-  return reply.send({ success: true, data: { step: 'otp_required', phone: m.phone, otp: sent ? undefined : otp } });
+  fastify.log.info({ phone: m.phone, sent }, 'OTP generated');
+  return reply.send({
+    success: true,
+    data: { step: 'otp_required', phone: m.phone, ...otpResponseFields(sent, otp) },
+  });
 }
 
 // POST /api/user-auth/verify-otp
@@ -187,9 +229,12 @@ export async function forgotPassword(fastify: FastifyInstance, request: any, rep
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
   const sent = await sendOtpWhatsapp(m.phone, otp);
-  fastify.log.info({ phone: m.phone, otp, sent }, 'OTP generated (forgot password)');
+  fastify.log.info({ phone: m.phone, sent }, 'OTP generated (forgot password)');
 
-  return reply.send({ success: true, data: { step: 'reset_password', phone: m.phone, otp: sent ? undefined : otp } });
+  return reply.send({
+    success: true,
+    data: { step: 'reset_password', phone: m.phone, ...otpResponseFields(sent, otp) },
+  });
 }
 
 // POST /api/user-auth/resend-otp
