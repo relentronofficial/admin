@@ -110,3 +110,11 @@ const String kSearch = '/api/user/search';
 // ── Upload ─────────────────────────────────────────────────────────────────────
 const String kUploadPresignedUrl = '/api/upload/presigned-url';
 const String kUploadBunnyVideoCreate = '/api/upload/bunny-video-create';
+
+// ── AI Content Buddy ───────────────────────────────────────────────────────────
+const String kAiCreate = '/api/ai/content/create';
+const String kAiConversations = '/api/ai/conversations';
+// /api/ai/conversations/:id — PATCH rename, DELETE — built at call site
+// /api/ai/conversations/:id/messages — built at call site
+const String kAiSaved = '/api/ai/saved';
+// /api/ai/saved/:id — PATCH, DELETE — built at call site

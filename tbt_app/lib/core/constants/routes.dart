@@ -37,6 +37,7 @@ class AppRoutes {
   static const String webinar = '/live/:webinarId'; // standalone webinar
   static const String workshopEpisode =
       '/workshops/:workshopSlug/episode/:episodeId';
+  static const String aiContent = '/ai-content';
 
   // Path builders
   static String workshopDetailPath(String id) => '/workshops/$id';
@@ -88,4 +89,5 @@ class RouteNames {
   static const String liveCall = 'live-call';
   static const String webinar = 'webinar';
   static const String workshopEpisode = 'workshop-episode';
+  static const String aiContent = 'ai-content';
 }

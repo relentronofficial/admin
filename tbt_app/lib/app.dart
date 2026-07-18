@@ -43,6 +43,7 @@ import 'features/tbt/presentation/catalog_screen.dart';
 import 'features/workshops/presentation/workshop_detail_screen.dart';
 import 'features/workshops/presentation/workshop_episode_player_screen.dart';
 import 'features/workshops/presentation/workshops_screen.dart';
+import 'features/ai_content/presentation/ai_content_screen.dart';
 import 'features/batch_program/providers/batch_provider.dart';
 import 'features/courses/providers/courses_provider.dart';
 import 'features/workshops/providers/workshops_provider.dart';
@@ -312,6 +313,11 @@ List<RouteBase> _buildRoutes() => [
         path: AppRoutes.history,
         name: RouteNames.history,
         builder: (_, __) => const HistoryScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.aiContent,
+        name: RouteNames.aiContent,
+        builder: (_, __) => const AIContentScreen(),
       ),
 
       // ── Outside shell — Events ─────────────────────────────────────────────
