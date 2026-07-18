@@ -366,6 +366,7 @@ model Member {
   aiConversations       AIConversation[]
   savedAiContent        SavedAIContent[]
   aiUsageCounters       AIUsageCounter[]
+  podcastEpisodeProgress PodcastEpisodeProgress[] @relation("MemberPodcastEpisodeProgress")
 
   @@map("members")
 }
@@ -2557,4 +2558,85 @@ model AIUsageCounter {
 
   @@id([memberId, windowType, windowStart])
   @@map("ai_usage_counters")
+}
+
+// ── Podcasts (2026-07-18) ─────────────────────────────────────────
+// Ported from the co-worker's admin-app podcast module. Same shape
+// as their FULL_MIGRATION.sql — member_id UUID FK swaps in for the
+// per-device anon user_id. See modules/podcasts/ for the API.
+model PodcastCategory {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String    @db.VarChar(255)
+  slug      String    @unique @db.VarChar(255)
+  status    String    @default("active") @db.VarChar(50)
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  episodes  PodcastEpisode[]
+
+  @@map("podcast_categories")
+}
+
+model PodcastSeries {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String    @db.VarChar(255)
+  slug        String    @unique @db.VarChar(255)
+  description String?
+  coverImage  String?   @map("cover_image")
+  status      String    @default("active") @db.VarChar(50)
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  episodes    PodcastEpisode[]
+
+  @@map("podcast_series")
+}
+
+model PodcastEpisode {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title           String    @db.VarChar(255)
+  slug            String    @unique @db.VarChar(255)
+  description     String?
+  categoryId      String?   @map("category_id") @db.Uuid
+  seriesId        String?   @map("series_id") @db.Uuid
+  coverImage      String?   @map("cover_image")
+  audioUrl        String    @map("audio_url")
+  durationSeconds Int       @default(0) @map("duration_seconds")
+  speaker         String?   @db.VarChar(255)
+  tags            String[]  @default([])
+  isFeatured      Boolean   @default(false) @map("is_featured")
+  status          String    @default("active") @db.VarChar(50)
+  publishDate     DateTime  @default(now()) @map("publish_date") @db.Timestamptz(6)
+  sortOrder       Int       @default(0) @map("sort_order")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category        PodcastCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  series          PodcastSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  progress        PodcastEpisodeProgress[]
+
+  @@index([categoryId])
+  @@index([seriesId])
+  @@index([status])
+  @@map("podcast_episodes")
+}
+
+// Named PodcastEpisodeProgress (mapped to podcast_episode_progress table)
+// because a legacy PodcastProgress model + podcast_progress table already
+// exists in this schema (scaffolded years ago, never wired). Renaming
+// avoids a destructive DROP of the empty legacy table.
+model PodcastEpisodeProgress {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId               String   @map("member_id") @db.Uuid
+  episodeId              String   @map("episode_id") @db.Uuid
+  currentPositionSeconds Int      @default(0) @map("current_position_seconds")
+  totalDurationSeconds   Int      @default(0) @map("total_duration_seconds")
+  completed              Boolean  @default(false)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member                 Member         @relation("MemberPodcastEpisodeProgress", fields: [memberId], references: [id], onDelete: Cascade)
+  episode                PodcastEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, episodeId])
+  @@index([memberId, updatedAt(sort: Desc)])
+  @@map("podcast_episode_progress")
 }

@@ -338,6 +338,92 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           PRIMARY KEY (member_id, window_type, window_start)
         )
       `),
+      // ── Podcasts (2026-07-18) ─────────────────────────────────────
+      // Ported from co-worker's FULL_MIGRATION.sql lines 106-193.
+      // Adapted for our stack: `member_id UUID` FK to members (was
+      // `user_id TEXT` anon UUID). Slugs kept unique per table; sort
+      // order + status VARCHAR match the admin CRUD contract; tags
+      // stored as TEXT[] (native Postgres array) for cheap ANY() filters.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS podcast_categories (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS podcast_series (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          title VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          description TEXT,
+          cover_image TEXT,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS podcast_episodes (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          title VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          description TEXT,
+          category_id UUID REFERENCES podcast_categories(id) ON DELETE SET NULL,
+          series_id UUID REFERENCES podcast_series(id) ON DELETE SET NULL,
+          cover_image TEXT,
+          audio_url TEXT NOT NULL,
+          duration_seconds INTEGER NOT NULL DEFAULT 0,
+          speaker VARCHAR(255),
+          tags TEXT[] NOT NULL DEFAULT '{}',
+          is_featured BOOLEAN NOT NULL DEFAULT false,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          publish_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_podcast_episodes_category ON podcast_episodes(category_id);
+        CREATE INDEX IF NOT EXISTS idx_podcast_episodes_series ON podcast_episodes(series_id);
+        CREATE INDEX IF NOT EXISTS idx_podcast_episodes_status ON podcast_episodes(status);
+      `),
+      // NOTE: named `podcast_episode_progress` (not `podcast_progress`)
+      // because the primary schema has an older, unused `podcast_progress`
+      // table + Prisma model dating back to a scaffolded-but-never-wired
+      // podcast attempt (FK to `podcasts`, no episodes). Renaming here
+      // avoids a destructive DROP of that legacy table and keeps the
+      // old Prisma model compiling untouched.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS podcast_episode_progress (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          episode_id UUID NOT NULL REFERENCES podcast_episodes(id) ON DELETE CASCADE,
+          current_position_seconds INTEGER NOT NULL DEFAULT 0,
+          total_duration_seconds INTEGER NOT NULL DEFAULT 0,
+          completed BOOLEAN NOT NULL DEFAULT false,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (member_id, episode_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_podcast_episode_progress_member ON podcast_episode_progress(member_id, updated_at DESC);
+      `),
+      // Seed default categories — matches co-worker's FULL_MIGRATION.sql
+      // line 188. Idempotent via slug ON CONFLICT. First-time admins
+      // see a populated dropdown instead of an empty one; existing
+      // slugs are preserved untouched.
+      prisma.$executeRawUnsafe(`
+        INSERT INTO podcast_categories (name, slug, status, sort_order) VALUES
+          ('Mindset', 'mindset', 'active', 1),
+          ('Business', 'business', 'active', 2),
+          ('Growth', 'growth', 'active', 3),
+          ('Leadership', 'leadership', 'active', 4)
+        ON CONFLICT (slug) DO NOTHING
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

@@ -45,6 +45,7 @@ import { userBatchRoutes } from './modules/user-batch/routes.js';
 import { adminNotificationRoutes } from './modules/admin-notifications/routes.js';
 import { mastersRoutes } from './modules/masters/routes.js';
 import { aiRoutes } from './modules/ai/routes.js';
+import { podcastRoutes } from './modules/podcasts/routes.js';
 import { batchReminderCronHandler } from './modules/user-batch/controller.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
@@ -179,6 +180,7 @@ async function bootstrap() {
     await fastify.register(adminNotificationRoutes, { prefix: '/api/admin-notifications' });
     await fastify.register(mastersRoutes, { prefix: '/api/masters' });
     await fastify.register(aiRoutes, { prefix: '/api/ai' });
+    await fastify.register(podcastRoutes, { prefix: '/api/podcasts' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
