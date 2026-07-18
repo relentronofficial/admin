@@ -26,6 +26,7 @@ import {
   GraduationCap,
   CheckSquare,
   Bot,
+  Headphones,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -48,6 +49,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Content Sections", href: "/content-sections", icon: Layers },
       { name: "Courses", href: "/courses", icon: BookOpen },
       { name: "Workshops", href: "/workshops", icon: Clapperboard },
+      { name: "Podcasts", href: "/podcasts", icon: Headphones },
       { name: "Resources", href: "/app-resources", icon: FileText },
       { name: "Products", href: "/products", icon: ShoppingBag },
     ],
