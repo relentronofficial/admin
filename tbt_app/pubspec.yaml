@@ -43,6 +43,14 @@ dependencies:
   webview_flutter: ^4.10.0
   video_player: ^2.9.2
 
+  # ── Audio ─────────────────────────────────────────────────────────────────
+  # just_audio for podcast playback. Chosen over audioplayers because
+  # its background_playback + lockscreen integration story is more mature
+  # and matches the co-worker's original implementation. If we later add
+  # OS-level media-session controls (lockscreen play/pause), pair with
+  # `audio_service` — not needed for the initial release.
+  just_audio: ^0.9.42
+
   # ── Real-time ─────────────────────────────────────────────────────────────
   socket_io_client: ^3.0.2
   livekit_client: ^2.4.0

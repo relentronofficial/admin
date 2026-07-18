@@ -44,6 +44,10 @@ import 'features/workshops/presentation/workshop_detail_screen.dart';
 import 'features/workshops/presentation/workshop_episode_player_screen.dart';
 import 'features/workshops/presentation/workshops_screen.dart';
 import 'features/ai_content/presentation/ai_content_screen.dart';
+import 'features/podcasts/presentation/podcasts_screen.dart';
+import 'features/podcasts/presentation/podcast_series_screen.dart';
+import 'features/podcasts/presentation/podcast_player_screen.dart';
+import 'features/podcasts/presentation/podcast_mini_player.dart';
 import 'features/batch_program/providers/batch_provider.dart';
 import 'features/courses/providers/courses_provider.dart';
 import 'features/workshops/providers/workshops_provider.dart';
@@ -318,6 +322,25 @@ List<RouteBase> _buildRoutes() => [
         path: AppRoutes.aiContent,
         name: RouteNames.aiContent,
         builder: (_, __) => const AIContentScreen(),
+      ),
+
+      // ── Outside shell — Podcasts ───────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.podcasts,
+        name: RouteNames.podcasts,
+        builder: (_, __) => const PodcastsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.podcastSeriesDetail,
+        name: RouteNames.podcastSeriesDetail,
+        builder: (_, state) => PodcastSeriesScreen(
+          seriesId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.podcastPlayer,
+        name: RouteNames.podcastPlayer,
+        builder: (_, __) => const PodcastPlayerScreen(),
       ),
 
       // ── Outside shell — Events ─────────────────────────────────────────────
@@ -669,7 +692,15 @@ class _AppShellState extends State<_AppShell> {
                 ],
               )
             : widget.child,
-        bottomNavigationBar: isTablet ? null : const AppBottomTabBar(),
+        bottomNavigationBar: isTablet
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  PodcastMiniPlayer(),
+                  AppBottomTabBar(),
+                ],
+              ),
       ),
     );
   }

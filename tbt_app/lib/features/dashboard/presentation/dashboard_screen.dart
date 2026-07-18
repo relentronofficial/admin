@@ -366,7 +366,14 @@ class _QuickLinksRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(child: SizedBox()),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.headset_mic_outlined,
+                  label: 'Podcasts',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.podcasts),
+                ),
+              ),
               const SizedBox(width: 10),
               const Expanded(child: SizedBox()),
             ],

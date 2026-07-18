@@ -38,6 +38,11 @@ class AppRoutes {
   static const String workshopEpisode =
       '/workshops/:workshopSlug/episode/:episodeId';
   static const String aiContent = '/ai-content';
+  static const String podcasts = '/podcasts';
+  static const String podcastSeriesDetail = '/podcasts/series/:id';
+  static const String podcastPlayer = '/podcasts/player';
+
+  static String podcastSeriesDetailPath(String id) => '/podcasts/series/$id';
 
   // Path builders
   static String workshopDetailPath(String id) => '/workshops/$id';
@@ -90,4 +95,7 @@ class RouteNames {
   static const String webinar = 'webinar';
   static const String workshopEpisode = 'workshop-episode';
   static const String aiContent = 'ai-content';
+  static const String podcasts = 'podcasts';
+  static const String podcastSeriesDetail = 'podcast-series-detail';
+  static const String podcastPlayer = 'podcast-player';
 }

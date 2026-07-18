@@ -118,3 +118,13 @@ const String kAiConversations = '/api/ai/conversations';
 // /api/ai/conversations/:id/messages — built at call site
 const String kAiSaved = '/api/ai/saved';
 // /api/ai/saved/:id — PATCH, DELETE — built at call site
+
+// ── Podcasts ───────────────────────────────────────────────────────────────────
+const String kPodcastCategories = '/api/podcasts/categories';
+const String kPodcastEpisodes = '/api/podcasts/episodes';
+// /api/podcasts/episodes/:id — built at call site
+const String kPodcastSeries = '/api/podcasts/series';
+// /api/podcasts/series/:id — built at call site
+const String kPodcastContinueListening = '/api/podcasts/continue-listening';
+const String kPodcastProgress = '/api/podcasts/progress';
+const String kPodcastMarkCompleted = '/api/podcasts/mark-completed';
