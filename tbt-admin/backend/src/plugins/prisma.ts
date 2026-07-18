@@ -283,6 +283,61 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ALTER TABLE members
           ADD COLUMN IF NOT EXISTS business_type TEXT
       `),
+      // ── AI Content Buddy (2026-07-18) ─────────────────────────────
+      // Claude-backed chat assistant for members (text/voice/image →
+      // generated content). Ported from co-worker's admin-app but
+      // adapted for our stack: `member_id UUID` (FK to members) instead
+      // of `user_id TEXT` (anon UUID), matches our JWT-cookie auth
+      // model. Rate limits (30/day + 10/min) enforced in-app via the
+      // ai_usage_counters composite-PK table. See modules/ai/.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ai_conversations (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          title TEXT NOT NULL DEFAULT 'New Conversation',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_conversations_member ON ai_conversations(member_id, updated_at DESC);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ai_messages (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          conversation_id UUID NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+          sender TEXT NOT NULL CHECK (sender IN ('user', 'assistant')),
+          message TEXT NOT NULL,
+          input_type TEXT NOT NULL CHECK (input_type IN ('text', 'voice', 'image')),
+          image_url TEXT,
+          content_type TEXT,
+          language TEXT,
+          tone TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation ON ai_messages(conversation_id, created_at);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS saved_ai_content (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          conversation_id UUID REFERENCES ai_conversations(id) ON DELETE SET NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          category TEXT NOT NULL DEFAULT 'other'
+            CHECK (category IN ('social_media', 'advertisement', 'business', 'personal', 'video_script', 'email', 'other')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_saved_ai_content_member ON saved_ai_content(member_id, created_at DESC);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ai_usage_counters (
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          window_type TEXT NOT NULL CHECK (window_type IN ('day', 'minute')),
+          window_start TIMESTAMPTZ NOT NULL,
+          count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (member_id, window_type, window_start)
+        )
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
