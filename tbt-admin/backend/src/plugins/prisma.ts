@@ -424,6 +424,85 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ('Leadership', 'leadership', 'active', 4)
         ON CONFLICT (slug) DO NOTHING
       `),
+      // ── E-books (2026-07-18) ──────────────────────────────────────
+      // Ported from co-worker's FULL_MIGRATION.sql lines 206-266.
+      // Same adaptations as podcasts: member_id UUID FK to members,
+      // no RLS (backend enforces auth). Book PDFs live in R2 via the
+      // shared upload flow.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_categories (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebooks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          title VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          description TEXT,
+          author VARCHAR(255),
+          category_id UUID REFERENCES ebook_categories(id) ON DELETE SET NULL,
+          cover_image TEXT,
+          pdf_url TEXT,
+          content_url TEXT,
+          total_pages INTEGER NOT NULL DEFAULT 0,
+          reading_time VARCHAR(50),
+          is_featured BOOLEAN NOT NULL DEFAULT false,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          publish_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_ebooks_category ON ebooks(category_id);
+        CREATE INDEX IF NOT EXISTS idx_ebooks_status ON ebooks(status);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_banners (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          title VARCHAR(255) NOT NULL,
+          subtitle TEXT,
+          background_image TEXT,
+          button_text VARCHAR(100),
+          button_link TEXT,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_bookmarks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          book_id UUID NOT NULL REFERENCES ebooks(id) ON DELETE CASCADE,
+          page_number INTEGER,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (member_id, book_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ebook_bookmarks_member ON ebook_bookmarks(member_id, created_at DESC);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_progress (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          book_id UUID NOT NULL REFERENCES ebooks(id) ON DELETE CASCADE,
+          current_page INTEGER NOT NULL DEFAULT 0,
+          total_pages INTEGER NOT NULL DEFAULT 0,
+          progress_percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
+          completed BOOLEAN NOT NULL DEFAULT false,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (member_id, book_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ebook_progress_member ON ebook_progress(member_id, updated_at DESC);
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

@@ -367,6 +367,8 @@ model Member {
   savedAiContent        SavedAIContent[]
   aiUsageCounters       AIUsageCounter[]
   podcastEpisodeProgress PodcastEpisodeProgress[] @relation("MemberPodcastEpisodeProgress")
+  ebookBookmarks        EbookBookmark[]
+  ebookProgress         EbookProgress[]
 
   @@map("members")
 }
@@ -2618,6 +2620,96 @@ model PodcastEpisode {
   @@index([seriesId])
   @@index([status])
   @@map("podcast_episodes")
+}
+
+// ── E-books (2026-07-18) ──────────────────────────────────────────
+// Ported from co-worker's admin-app ebook module. Same auth swap as
+// podcasts — member_id UUID FK, dual auth (admin CRUD + member consume).
+model EbookCategory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.VarChar(255)
+  slug      String   @unique @db.VarChar(255)
+  status    String   @default("active") @db.VarChar(50)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  books     Ebook[]
+
+  @@map("ebook_categories")
+}
+
+model Ebook {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title        String   @db.VarChar(255)
+  slug         String   @unique @db.VarChar(255)
+  description  String?
+  author       String?  @db.VarChar(255)
+  categoryId   String?  @map("category_id") @db.Uuid
+  coverImage   String?  @map("cover_image")
+  pdfUrl       String?  @map("pdf_url")
+  contentUrl   String?  @map("content_url")
+  totalPages   Int      @default(0) @map("total_pages")
+  readingTime  String?  @map("reading_time") @db.VarChar(50)
+  isFeatured   Boolean  @default(false) @map("is_featured")
+  sortOrder    Int      @default(0) @map("sort_order")
+  publishDate  DateTime @default(now()) @map("publish_date") @db.Timestamptz(6)
+  status       String   @default("active") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  bookmarks    EbookBookmark[]
+  progress     EbookProgress[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@map("ebooks")
+}
+
+model EbookBanner {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title           String   @db.VarChar(255)
+  subtitle        String?
+  backgroundImage String?  @map("background_image")
+  buttonText      String?  @map("button_text") @db.VarChar(100)
+  buttonLink      String?  @map("button_link")
+  status          String   @default("active") @db.VarChar(50)
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("ebook_banners")
+}
+
+model EbookBookmark {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId   String   @map("member_id") @db.Uuid
+  bookId     String   @map("book_id") @db.Uuid
+  pageNumber Int?     @map("page_number")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  member     Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  book       Ebook  @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, bookId])
+  @@index([memberId, createdAt(sort: Desc)])
+  @@map("ebook_bookmarks")
+}
+
+model EbookProgress {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId            String   @map("member_id") @db.Uuid
+  bookId              String   @map("book_id") @db.Uuid
+  currentPage         Int      @default(0) @map("current_page")
+  totalPages          Int      @default(0) @map("total_pages")
+  progressPercentage  Decimal  @default(0) @map("progress_percentage") @db.Decimal(5, 2)
+  completed           Boolean  @default(false)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member              Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  book                Ebook  @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, bookId])
+  @@index([memberId, updatedAt(sort: Desc)])
+  @@map("ebook_progress")
 }
 
 // Named PodcastEpisodeProgress (mapped to podcast_episode_progress table)
