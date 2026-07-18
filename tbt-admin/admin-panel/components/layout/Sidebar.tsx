@@ -25,6 +25,7 @@ import {
   ClipboardCheck,
   GraduationCap,
   CheckSquare,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -56,6 +57,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     items: [
       { name: "Notifications", href: "/app-notifications", icon: Bell },
       { name: "Messages",      href: "/messages",          icon: MessageSquare },
+      { name: "AI Content",    href: "/ai-content",        icon: Bot },
     ],
   },
   {
