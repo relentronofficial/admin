@@ -26,9 +26,11 @@ interface Props {
    *  Enum-typed dimensions are hardcoded below since the enum values are
    *  known at compile time. */
   batches: Array<{ id: string; name: string }>;
-  states: string[];       // distinct values found across members
+  states: string[];       // master + distinct values found across members
   sectors: string[];
   industries: string[];
+  cities?: string[];      // master-backed city list
+  businessTypes?: string[]; // master-backed business-type list
 }
 
 // Enum options — kept in one place so the drawer can't drift from the
@@ -78,6 +80,8 @@ export default function MembersFilterDrawer({
   states,
   sectors,
   industries,
+  cities = [],
+  businessTypes = [],
 }: Props) {
   // Local staging state — allows a smooth "type-then-apply" flow for
   // the date inputs without spamming the useListMembers query with a
@@ -223,6 +227,24 @@ export default function MembersFilterDrawer({
               selected={staged.state ?? []}
               onToggle={(v) => toggleStr("state", v)}
               emptyLabel="No state data on members yet."
+            />
+          </Facet>
+
+          <Facet label="City">
+            <ChipGroup
+              options={cities.map((s) => ({ label: s, value: s }))}
+              selected={staged.city ?? []}
+              onToggle={(v) => toggleStr("city", v)}
+              emptyLabel="No cities configured yet."
+            />
+          </Facet>
+
+          <Facet label="Business Type">
+            <ChipGroup
+              options={businessTypes.map((s) => ({ label: s, value: s }))}
+              selected={staged.businessType ?? []}
+              onToggle={(v) => toggleStr("businessType", v)}
+              emptyLabel="No business types configured yet."
             />
           </Facet>
 

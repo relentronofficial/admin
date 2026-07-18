@@ -12,6 +12,10 @@ export const createMemberSchema = z.object({
   city: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().optional(),
+  // 2026-07-16: new master-linked field. Free string on the row;
+  // controller auto-inserts the value into `business_types` master
+  // table on save so it shows up in the autocomplete dropdown.
+  businessType: z.string().optional(),
   businessName: z.string().optional(),
   businessEstablishedOn: z.string().optional().nullable(),
   productServiceType: z.string().optional(),

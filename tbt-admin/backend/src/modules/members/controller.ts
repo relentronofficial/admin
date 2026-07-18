@@ -3,6 +3,54 @@ import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
 import { invalidateCache } from '../../lib/cache.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { normalizeMasterName } from '../masters/controller.js';
+
+/**
+ * Ensure a member-supplied city / state / businessType value is present
+ * in the corresponding master table. Called from create + update so
+ * every new value the admin types shows up in the autocomplete
+ * dropdown for future members without a separate "add to masters"
+ * click.
+ *
+ * The value stored on the member row is the RAW value the admin typed
+ * (which the controller has already normalized via normalizeMasterName
+ * before this point). The master row uses the same normalized string
+ * as a canonical form, deduplicated case-insensitively at the DB
+ * unique-index level.
+ *
+ * Failure is non-fatal — a hiccup writing to the master shouldn't
+ * block the primary member save, because the master is a mirror for
+ * autocomplete, not part of the referential integrity of the member.
+ */
+async function ensureMasterEntry(
+  prisma: any,
+  kind: 'city' | 'state' | 'businessType',
+  value: string,
+): Promise<void> {
+  const normalized = normalizeMasterName(value);
+  if (!normalized) return;
+  const delegate =
+    kind === 'city' ? prisma.city :
+    kind === 'state' ? prisma.state :
+    prisma.businessType;
+  try {
+    const existing = await delegate.findFirst({
+      where: { name: { equals: normalized, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (!existing) {
+      await delegate.create({ data: { name: normalized } }).catch(() => {
+        // Concurrent create raced — swallow. The unique index has
+        // already made the other request win; nothing to do here.
+      });
+    }
+  } catch (err) {
+    // Silently degrade. Log at debug so infra teams can see it during
+    // a real incident but users don't get their save blocked.
+    // (We already have Sentry catching thrown errors globally.)
+    console.warn('[members] ensureMasterEntry failed', kind, err);
+  }
+}
 
 /**
  * Compose a Prisma `where` clause from the members-list query params.
@@ -110,6 +158,42 @@ export function buildMembersWhereClause(query: any): any {
   const industries = toArray(industry);
   if (industries.length) where.industry = { in: industries };
 
+  // 2026-07-16 businessType + city facets. Prisma's `in` filter is
+  // case-sensitive, but historical rows may have different casing
+  // ("chennai" vs "Chennai") — the master table normalizes going
+  // forward, but old rows can miss. Build an OR of case-insensitive
+  // equals so both new and old rows match reliably. The OR is
+  // composed via AND with any existing search-OR so the two don't
+  // clobber each other.
+  const orGroups: any[] = [];
+  const businessTypes = toArray((query as any).businessType);
+  if (businessTypes.length) {
+    orGroups.push({
+      OR: businessTypes.map((v) => ({
+        businessType: { equals: v, mode: 'insensitive' as const },
+      })),
+    });
+  }
+  const cities = toArray((query as any).city);
+  if (cities.length) {
+    orGroups.push({
+      OR: cities.map((v) => ({
+        city: { equals: v, mode: 'insensitive' as const },
+      })),
+    });
+  }
+  if (orGroups.length) {
+    // If there's already a top-level OR (from search), fold it into
+    // the AND array so all facets combine correctly.
+    const existingOr = where.OR;
+    delete where.OR;
+    where.AND = [
+      ...(where.AND ?? []),
+      ...(existingOr ? [{ OR: existingOr }] : []),
+      ...orGroups,
+    ];
+  }
+
   const tiers = toArray(currentTier)
     .map((t) => Number(t))
     .filter((n) => Number.isFinite(n));
@@ -198,16 +282,17 @@ export async function exportMembersHandler(request: FastifyRequest, reply: Fasti
   const header = [
     'Member ID', 'First Name', 'Last Name', 'Email', 'Phone', 'Status',
     'Membership Plan', 'Verification', 'Batch', 'Account Manager',
-    'Business Name', 'City', 'State', 'Sector', 'Industry', 'Business Stage',
-    'Churn Risk', 'Health Score', 'Current Tier', 'Total Points',
-    'Joined', 'Last Active',
+    'Business Name', 'Business Type', 'City', 'State', 'Sector', 'Industry',
+    'Business Stage', 'Churn Risk', 'Health Score', 'Current Tier',
+    'Total Points', 'Joined', 'Last Active',
   ];
   const rows = members.map((m) => [
     m.memberId, m.firstName, m.lastName ?? '', m.email, m.phone, m.status,
     m.membershipPlan, m.verificationStatus,
     m.batch?.name ?? '',
     m.accountManager?.fullName ?? '',
-    m.businessName ?? '', m.city ?? '', m.state ?? '',
+    m.businessName ?? '', (m as any).businessType ?? '',
+    m.city ?? '', m.state ?? '',
     m.sector ?? '', m.industry ?? '', m.businessStage ?? '',
     m.churnRisk, m.healthScore, m.currentTier, m.totalPoints,
     m.createdAt?.toISOString?.() ?? '',
@@ -305,6 +390,18 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
       }
       throw prismaErr;
     }
+
+    // Mirror the location/business values into their master tables so
+    // the next admin opening the dropdowns sees this member's values
+    // as autocomplete suggestions. Fire-and-forget — a failure here
+    // does not block the member save.
+    void Promise.all([
+      member.city ? ensureMasterEntry(request.server.prisma, 'city', member.city) : null,
+      member.state ? ensureMasterEntry(request.server.prisma, 'state', member.state) : null,
+      (member as any).businessType
+        ? ensureMasterEntry(request.server.prisma, 'businessType', (member as any).businessType)
+        : null,
+    ]).catch(() => { /* logged inside ensureMasterEntry */ });
 
     const joinedFullName = member.firstName + ' ' + (member.lastName ?? '');
     request.server.io.to('admin').emit('admin:member_joined', {
@@ -467,6 +564,17 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       where: { id },
       data
     });
+
+    // Same master-mirror as createMember. Only fires when the field
+    // was actually included in the update payload — untouched fields
+    // stay out of the master too.
+    void Promise.all([
+      (data as any).city ? ensureMasterEntry(request.server.prisma, 'city', (data as any).city) : null,
+      (data as any).state ? ensureMasterEntry(request.server.prisma, 'state', (data as any).state) : null,
+      (data as any).businessType
+        ? ensureMasterEntry(request.server.prisma, 'businessType', (data as any).businessType)
+        : null,
+    ]).catch(() => { /* logged inside ensureMasterEntry */ });
 
     // If a paid plan + end date are provided, deactivate old subscriptions and create a new one
     const effectivePlan = data.membershipPlan;

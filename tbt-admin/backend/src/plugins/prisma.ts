@@ -235,6 +235,54 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `),
+      // ── Master data tables (2026-07-16) ───────────────────────────
+      // Cities / states / business types shared across members. Each
+      // has a unique index on lower(name) for case-insensitive dedup
+      // ("Chennai", "chennai", "CHENNAI" collapse to one entry).
+      // Names are stored in canonical title-cased form via the create
+      // handlers, but the unique index makes the dedup guarantee
+      // enforced at the DB level regardless of what upstream code
+      // does. Members store city/state/businessType as plain strings
+      // (not FK) — the master tables are for autocomplete + admin
+      // visibility, not referential integrity. See
+      // backend/src/modules/masters/ for the API.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS cities (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS cities_name_lower_uniq ON cities (lower(name));
+        CREATE INDEX IF NOT EXISTS cities_name_lower_search ON cities (lower(name) text_pattern_ops);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS states (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS states_name_lower_uniq ON states (lower(name));
+        CREATE INDEX IF NOT EXISTS states_name_lower_search ON states (lower(name) text_pattern_ops);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS business_types (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS business_types_name_lower_uniq ON business_types (lower(name));
+        CREATE INDEX IF NOT EXISTS business_types_name_lower_search ON business_types (lower(name) text_pattern_ops);
+      `),
+      // Add business_type as a plain string on members (matches the
+      // existing city/state pattern — no FK, just a value the master
+      // list mirrors for autocomplete).
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS business_type TEXT
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
@@ -250,6 +298,36 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       .catch((err) => {
         fastify.log.warn('⚠️ Course backfill (is_published) failed (non-fatal):', err);
       });
+
+    // Master-data seed: harvest distinct city + state values from
+    // existing members into the master tables. Idempotent — the
+    // ON CONFLICT clause preserves whatever's already there. Runs
+    // AFTER the CREATE TABLE block above so the target tables exist
+    // and BEFORE any request lands so the first admin who opens the
+    // city dropdown sees historical values, not an empty list.
+    //
+    // Deliberately does NOT touch member.city / member.state — those
+    // values remain untouched on the row. The master table is a
+    // parallel index of "values that have been used", not a source
+    // of truth.
+    await Promise.all([
+      prisma.$executeRawUnsafe(`
+        INSERT INTO cities (name)
+        SELECT DISTINCT INITCAP(TRIM(city))
+        FROM members
+        WHERE city IS NOT NULL AND TRIM(city) <> ''
+        ON CONFLICT (lower(name)) DO NOTHING
+      `),
+      prisma.$executeRawUnsafe(`
+        INSERT INTO states (name)
+        SELECT DISTINCT INITCAP(TRIM(state))
+        FROM members
+        WHERE state IS NOT NULL AND TRIM(state) <> ''
+        ON CONFLICT (lower(name)) DO NOTHING
+      `),
+    ]).catch((err) => {
+      fastify.log.warn('⚠️ Master-data seed failed (non-fatal):', err);
+    });
 
     // Nav item inserts (run after table locks from above are released)
     await Promise.all([

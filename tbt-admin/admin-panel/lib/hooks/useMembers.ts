@@ -22,6 +22,8 @@ export interface MemberFilters {
   verificationStatus?: string[];
   gender?: string[];
   state?: string[];
+  city?: string[];
+  businessType?: string[];
   businessStage?: string[];
   churnRisk?: string[];
   currentTier?: number[];
@@ -52,6 +54,8 @@ export function encodeMemberFilters(f: MemberFilters | undefined): string {
   pushArr('verificationStatus', f.verificationStatus);
   pushArr('gender', f.gender);
   pushArr('state', f.state);
+  pushArr('city', f.city);
+  pushArr('businessType', f.businessType);
   pushArr('businessStage', f.businessStage);
   pushArr('churnRisk', f.churnRisk);
   pushArr('currentTier', f.currentTier);
@@ -73,6 +77,8 @@ export function countActiveFacets(f: MemberFilters | undefined): number {
   if (f.verificationStatus?.length) n++;
   if (f.gender?.length) n++;
   if (f.state?.length) n++;
+  if (f.city?.length) n++;
+  if (f.businessType?.length) n++;
   if (f.businessStage?.length) n++;
   if (f.churnRisk?.length) n++;
   if (f.currentTier?.length) n++;

@@ -23,6 +23,11 @@ import { useCreateMember, useGetManagers } from "@/lib/hooks/useMembers";
 import { AccountManagerSelect } from "@/components/members/AccountManagerSelect";
 import { useListBatches } from "@/lib/hooks/useTbt";
 import { useClerk } from "@clerk/nextjs";
+import CreatableSelect from "@/components/shared/CreatableSelect";
+import {
+  useCities, useStates, useBusinessTypes,
+  useCreateCity, useCreateState, useCreateBusinessType,
+} from "@/lib/hooks/useMasters";
 
 const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline"];
 
@@ -36,6 +41,7 @@ const memberSchema = z.object({
   phone: z.string().min(10, "Must be 10 digits").max(10, "Must be 10 digits"),
   city: z.string().optional(),
   state: z.string().optional(),
+  businessType: z.string().optional(),
   pincode: z.string().length(6, "Must be 6 digits").optional().or(z.literal("")),
   businessName: z.string().optional(),
   businessEstablishedOn: z.string().optional(),
@@ -86,6 +92,16 @@ export default function AddMemberPage() {
   const batches = (batchesData as any)?.data || [];
   const createMember = useCreateMember();
   const uploadImage = useUploadImage();
+
+  // Master-data lists power the City / State / BusinessType dropdowns.
+  // Cached for 5 min inside the hook so opening the form multiple
+  // times doesn't refetch.
+  const { data: cities, isLoading: citiesLoading } = useCities();
+  const { data: states, isLoading: statesLoading } = useStates();
+  const { data: businessTypes, isLoading: businessTypesLoading } = useBusinessTypes();
+  const createCity = useCreateCity();
+  const createState = useCreateState();
+  const createBusinessType = useCreateBusinessType();
 
   const {
     register,
@@ -274,11 +290,37 @@ export default function AddMemberPage() {
               <div className="flex gap-6">
                 <div className="w-[35%]">
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">City</label>
-                  <input {...register("city")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                  <Controller
+                    name="city"
+                    control={control}
+                    render={({ field }) => (
+                      <CreatableSelect
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        options={cities ?? []}
+                        onCreate={(name) => createCity.mutateAsync(name)}
+                        isLoading={citiesLoading}
+                        placeholder="Search or add city…"
+                      />
+                    )}
+                  />
                 </div>
                 <div className="w-[35%]">
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">State</label>
-                  <input {...register("state")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                  <Controller
+                    name="state"
+                    control={control}
+                    render={({ field }) => (
+                      <CreatableSelect
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        options={states ?? []}
+                        onCreate={(name) => createState.mutateAsync(name)}
+                        isLoading={statesLoading}
+                        placeholder="Search or add state…"
+                      />
+                    )}
+                  />
                 </div>
                 <div className="w-[30%]">
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Pincode</label>
@@ -302,6 +344,23 @@ export default function AddMemberPage() {
                 <div>
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Name</label>
                   <input {...register("businessName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Type</label>
+                  <Controller
+                    name="businessType"
+                    control={control}
+                    render={({ field }) => (
+                      <CreatableSelect
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        options={businessTypes ?? []}
+                        onCreate={(name) => createBusinessType.mutateAsync(name)}
+                        isLoading={businessTypesLoading}
+                        placeholder="Search or add business type…"
+                      />
+                    )}
+                  />
                 </div>
                 <div>
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Established On</label>

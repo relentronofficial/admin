@@ -44,7 +44,12 @@ import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadg
 import { cn } from "@/lib/utils";
 import { format, isValid } from "date-fns";
 import { toast } from "react-hot-toast";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
+import CreatableSelect from "@/components/shared/CreatableSelect";
+import {
+  useCities, useStates, useBusinessTypes,
+  useCreateCity, useCreateState, useCreateBusinessType,
+} from "@/lib/hooks/useMasters";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
@@ -69,6 +74,7 @@ const memberUpdateSchema = z.object({
   phone: z.string().optional().or(z.literal("")),
   city: z.string().optional().or(z.literal("")),
   state: z.string().optional().or(z.literal("")),
+  businessType: z.string().optional().or(z.literal("")),
   pincode: z.string().optional().or(z.literal("")),
   businessName: z.string().optional().or(z.literal("")),
   businessEstablishedOn: z.string().optional().or(z.literal("")).nullable(),
@@ -171,10 +177,40 @@ export default function MembersListPage() {
     };
     return {
       states: uniq('state'),
+      cities: uniq('city'),
+      businessTypes: uniq('businessType' as any),
       sectors: uniq('sector'),
       industries: uniq('industry'),
     };
   }, [members]);
+
+  // Master-data lists power the City / State / BusinessType dropdowns
+  // in both the edit modal below and the filter drawer at the bottom.
+  const { data: cities, isLoading: citiesLoading } = useCities();
+  const { data: states, isLoading: statesLoading } = useStates();
+  const { data: businessTypes, isLoading: businessTypesLoading } = useBusinessTypes();
+  const createCity = useCreateCity();
+  const createState = useCreateState();
+  const createBusinessType = useCreateBusinessType();
+
+  /**
+   * Union master-data lists (authoritative) with distinct values found
+   * on the currently loaded members. Master is the source of truth but
+   * we merge to catch any brand-new value a page hasn't refreshed yet.
+   */
+  const filterFacetLists = useMemo(() => {
+    const merge = (masterNames: string[], derived: string[]) => {
+      const set = new Set<string>();
+      for (const s of masterNames) if (s?.trim()) set.add(s.trim());
+      for (const s of derived) if (s?.trim()) set.add(s.trim());
+      return Array.from(set).sort((a, b) => a.localeCompare(b));
+    };
+    return {
+      states: merge((states ?? []).map((o) => o.name), facetOptionLists.states),
+      cities: merge((cities ?? []).map((o) => o.name), facetOptionLists.cities),
+      businessTypes: merge((businessTypes ?? []).map((o) => o.name), facetOptionLists.businessTypes),
+    };
+  }, [states, cities, businessTypes, facetOptionLists]);
 
   const activeFacetCount = countActiveFacets(facets);
 
@@ -228,6 +264,7 @@ export default function MembersListPage() {
     reset,
     watch,
     setValue,
+    control,
     formState: { errors, isSubmitting: isUpdating }
   } = useForm<MemberUpdateInput>({
     resolver: zodResolver(memberUpdateSchema)
@@ -276,6 +313,7 @@ export default function MembersListPage() {
         phone: editingMember.phone || "",
         city: editingMember.city || "",
         state: editingMember.state || "",
+        businessType: editingMember.businessType || "",
         pincode: editingMember.pincode || "",
         businessName: editingMember.businessName || "",
         businessEstablishedOn: editingMember.businessEstablishedOn ? new Date(editingMember.businessEstablishedOn).toISOString().split('T')[0] : "",
@@ -939,11 +977,37 @@ export default function MembersListPage() {
                     <div className="grid grid-cols-3 gap-5">
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">City</label>
-                        <input {...register("city")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                        <Controller
+                          name="city"
+                          control={control}
+                          render={({ field }) => (
+                            <CreatableSelect
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              options={cities ?? []}
+                              onCreate={(name) => createCity.mutateAsync(name)}
+                              isLoading={citiesLoading}
+                              placeholder="Search or add city…"
+                            />
+                          )}
+                        />
                       </div>
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">State</label>
-                        <input {...register("state")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                        <Controller
+                          name="state"
+                          control={control}
+                          render={({ field }) => (
+                            <CreatableSelect
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              options={states ?? []}
+                              onCreate={(name) => createState.mutateAsync(name)}
+                              isLoading={statesLoading}
+                              placeholder="Search or add state…"
+                            />
+                          )}
+                        />
                       </div>
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Pincode</label>
@@ -962,6 +1026,25 @@ export default function MembersListPage() {
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Name</label>
                         <input {...register("businessName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Type</label>
+                        <Controller
+                          name="businessType"
+                          control={control}
+                          render={({ field }) => (
+                            <CreatableSelect
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              options={businessTypes ?? []}
+                              onCreate={(name) => createBusinessType.mutateAsync(name)}
+                              isLoading={businessTypesLoading}
+                              placeholder="Search or add business type…"
+                            />
+                          )}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-5">
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Established On</label>
                         <input type="date" {...register("businessEstablishedOn")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm color-scheme-dark" />
@@ -1396,7 +1479,9 @@ export default function MembersListPage() {
         filters={facets}
         onChange={(next) => { setFacets(next); setPage(1); }}
         batches={batches}
-        states={facetOptionLists.states}
+        states={filterFacetLists.states}
+        cities={filterFacetLists.cities}
+        businessTypes={filterFacetLists.businessTypes}
         sectors={facetOptionLists.sectors}
         industries={facetOptionLists.industries}
       />

@@ -253,6 +253,11 @@ model Member {
   state                 String?
   pincode               String?
   businessName          String?            @map("business_name")
+  // 2026-07-16: master-linked but stored as a plain string on the row.
+  // Master values live in the `business_types` table; the string here
+  // is what's shown to the user. Not an FK — see plugins/prisma.ts
+  // for the rationale (matches city/state pattern, zero-risk backfill).
+  businessType          String?            @map("business_type")
   businessEstablishedOn DateTime?          @map("business_established_on") @db.Date
   productServiceType    String?            @map("product_service_type")
   instagramLink         String?            @map("instagram_link")
@@ -2447,4 +2452,43 @@ model LiveCallTemplate {
   createdAt                   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("live_call_templates")
+}
+
+// ── Master data (2026-07-16) ─────────────────────────────────────────
+// Shared vocabulary for member profile fields — city, state, business
+// type. Enforced case-insensitive unique via a lower(name) index
+// declared in backend/src/plugins/prisma.ts startup SQL. Prisma
+// unfortunately can't express the functional-index UNIQUE constraint
+// directly, so the model here only declares the raw `name` column;
+// the actual dedup guarantee lives on the DB side.
+//
+// Members store city/state/businessType as plain strings on the row.
+// The master tables are for autocomplete + admin visibility, not FK
+// integrity — see plugins/prisma.ts for the rationale.
+
+model City {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("cities")
+}
+
+model State {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("states")
+}
+
+model BusinessType {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("business_types")
 }
