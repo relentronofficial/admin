@@ -503,6 +503,103 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         );
         CREATE INDEX IF NOT EXISTS idx_ebook_progress_member ON ebook_progress(member_id, updated_at DESC);
       `),
+      // ── Helpdesk / Support Center (2026-07-20) ────────────────────
+      // Ported from co-worker's FULL_MIGRATION.sql lines 432-495.
+      // Named `helpdesk_*` (not `support_*`) because the primary has a
+      // scaffolded SupportTicket + SupportMessage model with a totally
+      // different shape (member-only, priority enum, message thread).
+      // Renaming avoids the collision non-destructively.
+      // Tickets now include an optional member_id FK — when submitted
+      // by an authenticated member the row remembers who, but the
+      // name/email/phone fields survive for anonymous submissions from
+      // future public help center pages.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_settings (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          title VARCHAR(255) NOT NULL DEFAULT 'Support Center',
+          subtitle TEXT,
+          whatsapp_number VARCHAR(50),
+          phone_number VARCHAR(50),
+          email VARCHAR(255),
+          website_url TEXT,
+          support_timing VARCHAR(255),
+          address TEXT,
+          button_text VARCHAR(100) NOT NULL DEFAULT 'Contact Us',
+          banner_image TEXT,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_categories (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          description TEXT,
+          icon TEXT,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_faqs (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          question VARCHAR(500) NOT NULL,
+          answer TEXT NOT NULL,
+          category_id UUID REFERENCES helpdesk_categories(id) ON DELETE SET NULL,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_helpdesk_faqs_category ON helpdesk_faqs(category_id);
+        CREATE INDEX IF NOT EXISTS idx_helpdesk_faqs_status ON helpdesk_faqs(status);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_tickets (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID REFERENCES members(id) ON DELETE SET NULL,
+          name VARCHAR(255) NOT NULL,
+          email VARCHAR(255) NOT NULL,
+          phone VARCHAR(50),
+          subject VARCHAR(255) NOT NULL,
+          category_id UUID REFERENCES helpdesk_categories(id) ON DELETE SET NULL,
+          message TEXT NOT NULL,
+          attachment_url TEXT,
+          admin_notes TEXT,
+          status VARCHAR(50) NOT NULL DEFAULT 'new'
+            CHECK (status IN ('new', 'in_progress', 'resolved', 'closed')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_helpdesk_tickets_status ON helpdesk_tickets(status);
+        CREATE INDEX IF NOT EXISTS idx_helpdesk_tickets_member ON helpdesk_tickets(member_id, created_at DESC);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_feedback (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID REFERENCES members(id) ON DELETE SET NULL,
+          name VARCHAR(255),
+          email VARCHAR(255),
+          rating INTEGER CHECK (rating IS NULL OR (rating BETWEEN 1 AND 5)),
+          message TEXT NOT NULL,
+          status VARCHAR(50) NOT NULL DEFAULT 'new'
+            CHECK (status IN ('new', 'in_progress', 'resolved', 'closed')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_helpdesk_feedback_status ON helpdesk_feedback(status);
+      `),
+      // Seed default helpdesk settings row so first-time admins see a
+      // populated form. Idempotent — only inserts if the table is empty.
+      prisma.$executeRawUnsafe(`
+        INSERT INTO helpdesk_settings (title, subtitle, button_text, status)
+        SELECT 'Support Center', 'We are here to help.', 'Contact Us', 'active'
+        WHERE NOT EXISTS (SELECT 1 FROM helpdesk_settings)
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

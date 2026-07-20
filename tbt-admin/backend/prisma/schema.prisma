@@ -369,6 +369,8 @@ model Member {
   podcastEpisodeProgress PodcastEpisodeProgress[] @relation("MemberPodcastEpisodeProgress")
   ebookBookmarks        EbookBookmark[]
   ebookProgress         EbookProgress[]
+  helpdeskTickets       HelpdeskTicket[]   @relation("MemberHelpdeskTickets")
+  helpdeskFeedback      HelpdeskFeedback[] @relation("MemberHelpdeskFeedback")
 
   @@map("members")
 }
@@ -2620,6 +2622,99 @@ model PodcastEpisode {
   @@index([seriesId])
   @@index([status])
   @@map("podcast_episodes")
+}
+
+// ── Helpdesk / Support Center (2026-07-20) ────────────────────────
+// Ported from co-worker's admin-app support module. Named `Helpdesk*`
+// (mapped to helpdesk_* tables) to avoid collision with primary's
+// scaffolded SupportTicket + SupportMessage model.
+model HelpdeskSettings {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title          String   @default("Support Center") @db.VarChar(255)
+  subtitle       String?
+  whatsappNumber String?  @map("whatsapp_number") @db.VarChar(50)
+  phoneNumber    String?  @map("phone_number") @db.VarChar(50)
+  email          String?  @db.VarChar(255)
+  websiteUrl     String?  @map("website_url")
+  supportTiming  String?  @map("support_timing") @db.VarChar(255)
+  address        String?
+  buttonText     String   @default("Contact Us") @map("button_text") @db.VarChar(100)
+  bannerImage    String?  @map("banner_image")
+  status         String   @default("active") @db.VarChar(50)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("helpdesk_settings")
+}
+
+model HelpdeskCategory {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(255)
+  description String?
+  icon        String?
+  status      String   @default("active") @db.VarChar(50)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  faqs        HelpdeskFaq[]
+  tickets     HelpdeskTicket[]
+
+  @@map("helpdesk_categories")
+}
+
+model HelpdeskFaq {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  question   String   @db.VarChar(500)
+  answer     String
+  categoryId String?  @map("category_id") @db.Uuid
+  status     String   @default("active") @db.VarChar(50)
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category   HelpdeskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([categoryId])
+  @@index([status])
+  @@map("helpdesk_faqs")
+}
+
+model HelpdeskTicket {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId      String?  @map("member_id") @db.Uuid
+  name          String   @db.VarChar(255)
+  email         String   @db.VarChar(255)
+  phone         String?  @db.VarChar(50)
+  subject       String   @db.VarChar(255)
+  categoryId    String?  @map("category_id") @db.Uuid
+  message       String
+  attachmentUrl String?  @map("attachment_url")
+  adminNotes    String?  @map("admin_notes")
+  status        String   @default("new") @db.VarChar(50)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member        Member?           @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
+  category      HelpdeskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([memberId, createdAt(sort: Desc)])
+  @@map("helpdesk_tickets")
+}
+
+model HelpdeskFeedback {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String?  @map("member_id") @db.Uuid
+  name      String?  @db.VarChar(255)
+  email     String?  @db.VarChar(255)
+  rating    Int?
+  message   String
+  status    String   @default("new") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member    Member?  @relation("MemberHelpdeskFeedback", fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("helpdesk_feedback")
 }
 
 // ── E-books (2026-07-18) ──────────────────────────────────────────
