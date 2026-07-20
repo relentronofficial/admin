@@ -129,6 +129,14 @@ const String kPodcastContinueListening = '/api/podcasts/continue-listening';
 const String kPodcastProgress = '/api/podcasts/progress';
 const String kPodcastMarkCompleted = '/api/podcasts/mark-completed';
 
+// ── Support / Helpdesk ────────────────────────────────────────────────────────
+const String kHelpdeskSettings = '/api/helpdesk/settings';
+const String kHelpdeskCategories = '/api/helpdesk/categories';
+const String kHelpdeskFaqs = '/api/helpdesk/faqs';
+const String kHelpdeskTickets = '/api/helpdesk/tickets';
+const String kHelpdeskMyTickets = '/api/helpdesk/tickets/mine';
+const String kHelpdeskFeedback = '/api/helpdesk/feedback';
+
 // ── E-books ────────────────────────────────────────────────────────────────────
 const String kEbookCategories = '/api/ebooks/categories';
 const String kEbookFeatured = '/api/ebooks/featured';

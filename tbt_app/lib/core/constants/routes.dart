@@ -53,6 +53,12 @@ class AppRoutes {
   static String ebookDetailPath(String id) => '/ebooks/$id';
   static String ebookReaderPath(String id) => '/ebooks/$id/read';
 
+  // Support
+  static const String support = '/support';
+  static const String supportContact = '/support/contact';
+  static const String supportFeedback = '/support/feedback';
+  static const String supportMyTickets = '/support/my-tickets';
+
   // Path builders
   static String workshopDetailPath(String id) => '/workshops/$id';
   static String conversationPath(String id) => '/messages/$id';
@@ -111,4 +117,8 @@ class RouteNames {
   static const String ebookDetail = 'ebook-detail';
   static const String ebookReader = 'ebook-reader';
   static const String ebookBookmarks = 'ebook-bookmarks';
+  static const String support = 'support';
+  static const String supportContact = 'support-contact';
+  static const String supportFeedback = 'support-feedback';
+  static const String supportMyTickets = 'support-my-tickets';
 }

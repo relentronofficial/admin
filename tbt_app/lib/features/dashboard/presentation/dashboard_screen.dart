@@ -385,6 +385,23 @@ class _QuickLinksRow extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.help_outline,
+                  label: 'Support',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.support),
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(child: SizedBox()),
+              const SizedBox(width: 10),
+              const Expanded(child: SizedBox()),
+            ],
+          ),
         ],
       ),
     );

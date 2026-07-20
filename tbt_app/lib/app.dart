@@ -52,6 +52,10 @@ import 'features/ebooks/presentation/ebooks_screen.dart';
 import 'features/ebooks/presentation/ebook_detail_screen.dart';
 import 'features/ebooks/presentation/ebook_reader_screen.dart';
 import 'features/ebooks/presentation/ebook_bookmarks_screen.dart';
+import 'features/support/presentation/support_screen.dart';
+import 'features/support/presentation/support_contact_screen.dart';
+import 'features/support/presentation/support_feedback_screen.dart';
+import 'features/support/presentation/support_my_tickets_screen.dart';
 import 'features/batch_program/providers/batch_provider.dart';
 import 'features/courses/providers/courses_provider.dart';
 import 'features/workshops/providers/workshops_provider.dart';
@@ -367,6 +371,28 @@ List<RouteBase> _buildRoutes() => [
         path: AppRoutes.ebookReader,
         name: RouteNames.ebookReader,
         builder: (_, state) => EbookReaderScreen(bookId: state.pathParameters['id']!),
+      ),
+
+      // ── Outside shell — Support ────────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.support,
+        name: RouteNames.support,
+        builder: (_, __) => const SupportScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.supportContact,
+        name: RouteNames.supportContact,
+        builder: (_, __) => const SupportContactScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.supportFeedback,
+        name: RouteNames.supportFeedback,
+        builder: (_, __) => const SupportFeedbackScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.supportMyTickets,
+        name: RouteNames.supportMyTickets,
+        builder: (_, __) => const SupportMyTicketsScreen(),
       ),
 
       // ── Outside shell — Events ─────────────────────────────────────────────
