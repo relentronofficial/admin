@@ -56,6 +56,7 @@ import 'features/support/presentation/support_screen.dart';
 import 'features/support/presentation/support_contact_screen.dart';
 import 'features/support/presentation/support_feedback_screen.dart';
 import 'features/support/presentation/support_my_tickets_screen.dart';
+import 'features/gamification/presentation/tbt_points_screen.dart';
 import 'features/batch_program/providers/batch_provider.dart';
 import 'features/courses/providers/courses_provider.dart';
 import 'features/workshops/providers/workshops_provider.dart';
@@ -393,6 +394,13 @@ List<RouteBase> _buildRoutes() => [
         path: AppRoutes.supportMyTickets,
         name: RouteNames.supportMyTickets,
         builder: (_, __) => const SupportMyTicketsScreen(),
+      ),
+
+      // ── Outside shell — TBT Points ─────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.tbtPoints,
+        name: RouteNames.tbtPoints,
+        builder: (_, __) => const TbtPointsScreen(),
       ),
 
       // ── Outside shell — Events ─────────────────────────────────────────────

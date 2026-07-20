@@ -129,6 +129,12 @@ const String kPodcastContinueListening = '/api/podcasts/continue-listening';
 const String kPodcastProgress = '/api/podcasts/progress';
 const String kPodcastMarkCompleted = '/api/podcasts/mark-completed';
 
+// ── TBT Gamification ─────────────────────────────────────────────────────────
+const String kTbtPath = '/api/tbt/path';
+const String kTbtLevels = '/api/tbt/levels';
+const String kTbtLeaderboard = '/api/tbt/leaderboard';
+// /api/tbt/tasks/:id/complete — built at call site
+
 // ── Support / Helpdesk ────────────────────────────────────────────────────────
 const String kHelpdeskSettings = '/api/helpdesk/settings';
 const String kHelpdeskCategories = '/api/helpdesk/categories';

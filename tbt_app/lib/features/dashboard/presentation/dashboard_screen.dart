@@ -397,7 +397,14 @@ class _QuickLinksRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(child: SizedBox()),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.emoji_events_outlined,
+                  label: 'TBT Points',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.tbtPoints),
+                ),
+              ),
               const SizedBox(width: 10),
               const Expanded(child: SizedBox()),
             ],
