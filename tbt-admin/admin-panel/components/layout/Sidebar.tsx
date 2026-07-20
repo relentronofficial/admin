@@ -50,6 +50,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Courses", href: "/courses", icon: BookOpen },
       { name: "Workshops", href: "/workshops", icon: Clapperboard },
       { name: "Podcasts", href: "/podcasts", icon: Headphones },
+      { name: "E-Books", href: "/ebooks", icon: BookOpen },
       { name: "Resources", href: "/app-resources", icon: FileText },
       { name: "Products", href: "/products", icon: ShoppingBag },
     ],

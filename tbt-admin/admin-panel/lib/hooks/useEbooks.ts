@@ -1,0 +1,212 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
+
+/** Admin hooks for /api/ebooks/admin/*. */
+
+export interface EbookCategory {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  sortOrder: number;
+}
+export interface EbookBanner {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  backgroundImage: string | null;
+  buttonText: string | null;
+  buttonLink: string | null;
+  status: string;
+  sortOrder: number;
+}
+export interface Ebook {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  author: string | null;
+  categoryId: string | null;
+  coverImage: string | null;
+  pdfUrl: string | null;
+  contentUrl: string | null;
+  totalPages: number;
+  readingTime: string | null;
+  isFeatured: boolean;
+  sortOrder: number;
+  publishDate: string;
+  status: string;
+  category?: { id: string; name: string; slug: string } | null;
+}
+export interface EbookDashboard {
+  totalBooks: number;
+  activeBooks: number;
+  inactiveBooks: number;
+  categories: number;
+  banners: number;
+  bookmarks: number;
+  activeReaders: number;
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────
+export const useEbookDashboard = () =>
+  useQuery({
+    queryKey: ["ebooks", "dashboard"],
+    queryFn: async (): Promise<EbookDashboard> => {
+      const res: any = await apiClient.get("/api/ebooks/admin/dashboard");
+      return res?.data;
+    },
+    staleTime: 30_000,
+  });
+
+// ── Categories ────────────────────────────────────────────────────
+export const useListEbookCategories = () =>
+  useQuery({
+    queryKey: ["ebooks", "categories"],
+    queryFn: async (): Promise<EbookCategory[]> => {
+      const res: any = await apiClient.get("/api/ebooks/admin/categories");
+      return res?.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+export const useCreateEbookCategory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<EbookCategory>) => {
+      const res: any = await apiClient.post("/api/ebooks/admin/categories", data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+export const useUpdateEbookCategory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<EbookCategory> }) => {
+      const res: any = await apiClient.put(`/api/ebooks/admin/categories/${id}`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+export const useDeleteEbookCategory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/ebooks/admin/categories/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+// ── Books ─────────────────────────────────────────────────────────
+export const useListEbooks = (params: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  categoryId?: string;
+  status?: string;
+} = {}) =>
+  useQuery({
+    queryKey: ["ebooks", "books", params],
+    queryFn: async () => {
+      const q = new URLSearchParams();
+      if (params.page) q.set("page", String(params.page));
+      if (params.limit) q.set("limit", String(params.limit));
+      if (params.search) q.set("search", params.search);
+      if (params.categoryId) q.set("categoryId", params.categoryId);
+      if (params.status) q.set("status", params.status);
+      const res: any = await apiClient.get(`/api/ebooks/admin/books?${q.toString()}`);
+      return res as { data: Ebook[]; meta: { total: number; page: number; limit: number } };
+    },
+    placeholderData: (prev) => prev,
+  });
+
+export const useCreateEbook = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<Ebook>) => {
+      const res: any = await apiClient.post("/api/ebooks/admin/books", data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+export const useUpdateEbook = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Ebook> }) => {
+      const res: any = await apiClient.put(`/api/ebooks/admin/books/${id}`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+export const useToggleEbookStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res: any = await apiClient.put(`/api/ebooks/admin/books/${id}/toggle-status`);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+export const useDeleteEbook = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/ebooks/admin/books/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+// ── Banners ───────────────────────────────────────────────────────
+export const useListEbookBanners = () =>
+  useQuery({
+    queryKey: ["ebooks", "banners"],
+    queryFn: async (): Promise<EbookBanner[]> => {
+      const res: any = await apiClient.get("/api/ebooks/admin/banners");
+      return res?.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+export const useCreateEbookBanner = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<EbookBanner>) => {
+      const res: any = await apiClient.post("/api/ebooks/admin/banners", data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+export const useUpdateEbookBanner = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<EbookBanner> }) => {
+      const res: any = await apiClient.put(`/api/ebooks/admin/banners/${id}`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+export const useDeleteEbookBanner = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/ebooks/admin/banners/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
