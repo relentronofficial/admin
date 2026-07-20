@@ -129,6 +129,10 @@ const String kPodcastContinueListening = '/api/podcasts/continue-listening';
 const String kPodcastProgress = '/api/podcasts/progress';
 const String kPodcastMarkCompleted = '/api/podcasts/mark-completed';
 
+// ── Morning Ritual (Module 8B) ───────────────────────────────────────────────
+const String kRitualHabits = '/api/rituals/habits';
+const String kRitualButtons = '/api/rituals/buttons';
+
 // ── TBT Gamification ─────────────────────────────────────────────────────────
 const String kTbtPath = '/api/tbt/path';
 const String kTbtLevels = '/api/tbt/levels';

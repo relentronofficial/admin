@@ -14,6 +14,8 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_error_state.dart';
 import '../../../shared/widgets/app_section_header.dart';
 import '../providers/dashboard_providers.dart';
+import 'widgets/home_carousel.dart';
+import 'widgets/morning_ritual_card.dart';
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -48,6 +50,14 @@ class DashboardScreen extends ConsumerWidget {
                   meAsync: meAsync,
                   welcomeLabel: welcomeLabel,
                 ),
+
+                const SizedBox(height: AppSpacing.md),
+
+                // ── Home carousel (Module 8C — hero slides) ─────────────────
+                const HomeCarousel(),
+
+                // ── Morning Ritual (Module 8B/C — habits) ───────────────────
+                const MorningRitualCard(),
 
                 // ── Stats row ─────────────────────────────────────────────────
                 statsAsync.when(
