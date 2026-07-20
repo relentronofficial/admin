@@ -51,6 +51,15 @@ dependencies:
   # `audio_service` — not needed for the initial release.
   just_audio: ^0.9.42
 
+  # ── PDF ───────────────────────────────────────────────────────────────────
+  # flutter_pdfview for the in-app e-book reader. MIT-licensed (unlike
+  # syncfusion_flutter_pdfviewer which needs a commercial license above the
+  # community threshold). Provides native page-turn UX + onPageChanged
+  # events which we hook into the /api/ebooks/progress endpoint to persist
+  # the last-read page.
+  flutter_pdfview: ^1.4.0
+  http: ^1.2.2  # used to download PDFs to a local cache before opening
+
   # ── Real-time ─────────────────────────────────────────────────────────────
   socket_io_client: ^3.0.2
   livekit_client: ^2.4.0

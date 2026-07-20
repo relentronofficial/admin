@@ -375,7 +375,14 @@ class _QuickLinksRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(child: SizedBox()),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.menu_book_outlined,
+                  label: 'E-Books',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.ebooks),
+                ),
+              ),
             ],
           ),
         ],

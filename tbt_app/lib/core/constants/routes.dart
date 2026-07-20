@@ -44,6 +44,15 @@ class AppRoutes {
 
   static String podcastSeriesDetailPath(String id) => '/podcasts/series/$id';
 
+  // E-books
+  static const String ebooks = '/ebooks';
+  static const String ebookDetail = '/ebooks/:id';
+  static const String ebookReader = '/ebooks/:id/read';
+  static const String ebookBookmarks = '/ebooks/bookmarks';
+
+  static String ebookDetailPath(String id) => '/ebooks/$id';
+  static String ebookReaderPath(String id) => '/ebooks/$id/read';
+
   // Path builders
   static String workshopDetailPath(String id) => '/workshops/$id';
   static String conversationPath(String id) => '/messages/$id';
@@ -98,4 +107,8 @@ class RouteNames {
   static const String podcasts = 'podcasts';
   static const String podcastSeriesDetail = 'podcast-series-detail';
   static const String podcastPlayer = 'podcast-player';
+  static const String ebooks = 'ebooks';
+  static const String ebookDetail = 'ebook-detail';
+  static const String ebookReader = 'ebook-reader';
+  static const String ebookBookmarks = 'ebook-bookmarks';
 }

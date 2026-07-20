@@ -128,3 +128,15 @@ const String kPodcastSeries = '/api/podcasts/series';
 const String kPodcastContinueListening = '/api/podcasts/continue-listening';
 const String kPodcastProgress = '/api/podcasts/progress';
 const String kPodcastMarkCompleted = '/api/podcasts/mark-completed';
+
+// ── E-books ────────────────────────────────────────────────────────────────────
+const String kEbookCategories = '/api/ebooks/categories';
+const String kEbookFeatured = '/api/ebooks/featured';
+const String kEbookBanners = '/api/ebooks/banners';
+const String kEbookLibrary = '/api/ebooks/library';
+// /api/ebooks/books/:id — built at call site
+const String kEbookBookmarks = '/api/ebooks/bookmarks';
+// /api/ebooks/bookmarks/:bookId — built at call site
+const String kEbookProgress = '/api/ebooks/progress';
+// /api/ebooks/progress/:bookId — built at call site
+const String kEbookContinueReading = '/api/ebooks/continue-reading';

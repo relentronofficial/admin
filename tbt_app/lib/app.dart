@@ -48,6 +48,10 @@ import 'features/podcasts/presentation/podcasts_screen.dart';
 import 'features/podcasts/presentation/podcast_series_screen.dart';
 import 'features/podcasts/presentation/podcast_player_screen.dart';
 import 'features/podcasts/presentation/podcast_mini_player.dart';
+import 'features/ebooks/presentation/ebooks_screen.dart';
+import 'features/ebooks/presentation/ebook_detail_screen.dart';
+import 'features/ebooks/presentation/ebook_reader_screen.dart';
+import 'features/ebooks/presentation/ebook_bookmarks_screen.dart';
 import 'features/batch_program/providers/batch_provider.dart';
 import 'features/courses/providers/courses_provider.dart';
 import 'features/workshops/providers/workshops_provider.dart';
@@ -341,6 +345,28 @@ List<RouteBase> _buildRoutes() => [
         path: AppRoutes.podcastPlayer,
         name: RouteNames.podcastPlayer,
         builder: (_, __) => const PodcastPlayerScreen(),
+      ),
+
+      // ── Outside shell — E-books ────────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.ebooks,
+        name: RouteNames.ebooks,
+        builder: (_, __) => const EbooksScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.ebookBookmarks,
+        name: RouteNames.ebookBookmarks,
+        builder: (_, __) => const EbookBookmarksScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.ebookDetail,
+        name: RouteNames.ebookDetail,
+        builder: (_, state) => EbookDetailScreen(bookId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: AppRoutes.ebookReader,
+        name: RouteNames.ebookReader,
+        builder: (_, state) => EbookReaderScreen(bookId: state.pathParameters['id']!),
       ),
 
       // ── Outside shell — Events ─────────────────────────────────────────────
