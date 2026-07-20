@@ -121,37 +121,66 @@ class _WelcomeHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            welcomeLabel,
-            style: TextStyle(
-              color: context.tokens.textMuted,
-              fontSize: 13,
-              letterSpacing: 0.5,
-            ),
+          Row(
+            children: [
+              // Vertical accent bar — subtle nod to the redesigned
+              // login glass card; anchors the greeting without
+              // dominating the layout.
+              Container(
+                width: 3,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [accent, accent.withValues(alpha: 0.2)],
+                  ),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      welcomeLabel,
+                      style: TextStyle(
+                        color: context.tokens.textMuted,
+                        fontSize: 12,
+                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    if (name.isNotEmpty)
+                      Text(
+                        name.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Rajdhani',
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: context.tokens.textPrimary,
+                          letterSpacing: 2,
+                          height: 1.1,
+                        ),
+                      )
+                    else
+                      Container(
+                        width: 140,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: context.tokens.bgSurface,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          if (name.isNotEmpty)
-            Text(
-              name.toUpperCase(),
-              style: TextStyle(
-          fontFamily: 'Rajdhani',
-                fontSize: 26,
-                fontWeight: FontWeight.w700,
-                color: context.tokens.textPrimary,
-                letterSpacing: 2,
-              ),
-            )
-          else
-            Container(
-              width: 140,
-              height: 28,
-              decoration: BoxDecoration(
-                color: context.tokens.bgSurface,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          const SizedBox(height: 4),
-          Container(height: 2, width: 40, color: accent),
         ],
       ),
     );
@@ -280,7 +309,11 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ── Quick links (batch program / more) ───────────────────────────────────────
+// ── Quick links — grouped into three logical clusters ───────────────────────
+//
+// Module 7 refresh: the previous flat 3×4 grid of 11 unlabelled tiles
+// was becoming a wall of icons. Three grouped sections give members
+// a mental map of what the app does without adding scroll length.
 
 class _QuickLinksRow extends StatelessWidget {
   const _QuickLinksRow();
@@ -291,56 +324,28 @@ class _QuickLinksRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Your Journey ─────────────────────────────────────────
+          const _GroupLabel('YOUR JOURNEY'),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: _QuickTile(
                   icon: Icons.calendar_month_outlined,
-                  label: 'Task',
+                  label: 'Task Path',
                   accent: accent,
-                  onTap: () =>
-                      GoRouter.of(context).push(AppRoutes.batchProgram),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.batchProgram),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _QuickTile(
-                  icon: Icons.school_outlined,
-                  label: 'Courses',
+                  icon: Icons.emoji_events_outlined,
+                  label: 'TBT Points',
                   accent: accent,
-                  onTap: () => GoRouter.of(context).push(AppRoutes.courses),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickTile(
-                  icon: Icons.folder_open_outlined,
-                  label: 'Resources',
-                  accent: accent,
-                  onTap: () => GoRouter.of(context).push(AppRoutes.resources),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickTile(
-                  icon: Icons.event_outlined,
-                  label: 'Events',
-                  accent: accent,
-                  onTap: () => GoRouter.of(context).push(AppRoutes.events),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickTile(
-                  icon: Icons.videocam_outlined,
-                  label: 'Webinars',
-                  accent: accent,
-                  onTap: () => GoRouter.of(context).push(AppRoutes.webinars),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.tbtPoints),
                 ),
               ),
               const SizedBox(width: 10),
@@ -354,15 +359,19 @@ class _QuickLinksRow extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 18),
+
+          // ── Learn ────────────────────────────────────────────────
+          const _GroupLabel('LEARN'),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: _QuickTile(
-                  icon: Icons.auto_awesome,
-                  label: 'Content Buddy AI',
+                  icon: Icons.school_outlined,
+                  label: 'Courses',
                   accent: accent,
-                  onTap: () => GoRouter.of(context).push(AppRoutes.aiContent),
+                  onTap: () => GoRouter.of(context).push(AppRoutes.courses),
                 ),
               ),
               const SizedBox(width: 10),
@@ -390,6 +399,58 @@ class _QuickLinksRow extends StatelessWidget {
             children: [
               Expanded(
                 child: _QuickTile(
+                  icon: Icons.folder_open_outlined,
+                  label: 'Resources',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.resources),
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(child: SizedBox()),
+              const SizedBox(width: 10),
+              const Expanded(child: SizedBox()),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          // ── Engage ───────────────────────────────────────────────
+          const _GroupLabel('ENGAGE'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.event_outlined,
+                  label: 'Events',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.events),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.videocam_outlined,
+                  label: 'Webinars',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.webinars),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.auto_awesome,
+                  label: 'Buddy AI',
+                  accent: accent,
+                  onTap: () => GoRouter.of(context).push(AppRoutes.aiContent),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickTile(
                   icon: Icons.help_outline,
                   label: 'Support',
                   accent: accent,
@@ -397,20 +458,47 @@ class _QuickLinksRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: _QuickTile(
-                  icon: Icons.emoji_events_outlined,
-                  label: 'TBT Points',
-                  accent: accent,
-                  onTap: () => GoRouter.of(context).push(AppRoutes.tbtPoints),
-                ),
-              ),
+              const Expanded(child: SizedBox()),
               const SizedBox(width: 10),
               const Expanded(child: SizedBox()),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+// Subtle section label above each cluster.
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.tbt.accent;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 3,
+          height: 12,
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Rajdhani',
+            color: context.tokens.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2.2,
+          ),
+        ),
+      ],
     );
   }
 }
