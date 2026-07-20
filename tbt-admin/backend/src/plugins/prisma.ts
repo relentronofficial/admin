@@ -600,6 +600,93 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         SELECT 'Support Center', 'We are here to help.', 'Contact Us', 'active'
         WHERE NOT EXISTS (SELECT 1 FROM helpdesk_settings)
       `),
+      // ── TBT Gamification (2026-07-20) ─────────────────────────────
+      // Ported from co-worker's FULL_MIGRATION.sql lines 551-654.
+      // Adapted: user_id TEXT → member_id UUID FK. Table names kept
+      // as-is (`tbt_*` namespace) — no collision with primary's
+      // generic `tasks` / `points_ledger` / `badges` tables since
+      // these are TBT-90day-journey specific.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS tbt_activity_log (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          points INTEGER NOT NULL DEFAULT 0,
+          source VARCHAR(50) NOT NULL DEFAULT 'task_completion',
+          activity_date DATE NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')::DATE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member ON tbt_activity_log(member_id);
+        CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member_date ON tbt_activity_log(member_id, activity_date);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS tbt_levels (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          level_number INTEGER NOT NULL UNIQUE,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          required_points INTEGER NOT NULL,
+          reward VARCHAR(255),
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS tbt_tasks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          task_order INTEGER NOT NULL UNIQUE,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          required_action VARCHAR(255),
+          reward_points INTEGER NOT NULL DEFAULT 0,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_tbt_tasks_order ON tbt_tasks(task_order);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS tbt_task_completions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          task_id UUID NOT NULL REFERENCES tbt_tasks(id) ON DELETE CASCADE,
+          completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (member_id, task_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_tbt_task_completions_member ON tbt_task_completions(member_id);
+      `),
+      // Seed levels + tasks — matches co-worker's FULL_MIGRATION.sql
+      // seeds exactly. ON CONFLICT keeps admin-edited values intact.
+      prisma.$executeRawUnsafe(`
+        INSERT INTO tbt_levels (level_number, name, description, required_points, reward, sort_order) VALUES
+          (1, 'Starter', 'Complete your first tasks and get the ball rolling.', 200, 'Bronze Badge', 1),
+          (2, 'Builder', 'Keep the momentum going with consistent daily progress.', 300, 'Silver Badge', 2),
+          (3, 'Achiever', 'Turn consistency into real, visible business results.', 500, 'Gold Badge', 3),
+          (4, 'Momentum Maker', 'Push through the mid-program grind and compound your gains.', 800, 'Platinum Badge', 4),
+          (5, 'Elite Performer', 'Join the top tier of consistently high-performing members.', 1200, 'Elite Badge', 5),
+          (6, 'Legend', 'Complete the full journey and cement your status as a TBT Legend.', 2000, 'Legend Trophy', 6)
+        ON CONFLICT (level_number) DO NOTHING
+      `),
+      prisma.$executeRawUnsafe(`
+        INSERT INTO tbt_tasks (task_order, title, description, required_action, reward_points, status, sort_order) VALUES
+          (1, 'Attend Onboarding Call',
+            'Attend the live onboarding kick-off session or watch the video replay to align on the core 90-day execution framework.',
+            'Complete your onboarding profile and join the community groups.', 250, 'active', 1),
+          (2, 'Define Your Customer Segment',
+            'Define the high-value target audience for your product. Focus on psychological triggers, spending capacity, and pain points that align with your unique value proposition.',
+            'Fill in the Customer Segment section of your Business Model Canvas.', 500, 'active', 2),
+          (3, 'Conduct 5 Customer Interviews',
+            'Validate the core problem statement with potential target clients and record feedback. Gather qualitative data regarding their constraints.',
+            'Complete 5 customer interviews and summarize the feedback.', 300, 'active', 3),
+          (4, 'Launch Landing Page MVP',
+            'Create a simple landing page showcasing the offer value proposition and signup form. Collect early subscriber signups.',
+            'Publish your landing page and share the link.', 400, 'active', 4),
+          (5, 'Submit Step 4 Milestone',
+            'Consolidate all learnings, customer interviews, and MVP landing page analytics into the final execution summary.',
+            'Submit your consolidated milestone summary.', 500, 'active', 5)
+        ON CONFLICT (task_order) DO NOTHING
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

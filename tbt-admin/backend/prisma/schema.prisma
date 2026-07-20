@@ -371,6 +371,8 @@ model Member {
   ebookProgress         EbookProgress[]
   helpdeskTickets       HelpdeskTicket[]   @relation("MemberHelpdeskTickets")
   helpdeskFeedback      HelpdeskFeedback[] @relation("MemberHelpdeskFeedback")
+  tbtActivityLog        TbtActivityLog[]   @relation("MemberTbtActivityLog")
+  tbtTaskCompletions    TbtTaskCompletion[] @relation("MemberTbtTaskCompletion")
 
   @@map("members")
 }
@@ -2622,6 +2624,68 @@ model PodcastEpisode {
   @@index([seriesId])
   @@index([status])
   @@map("podcast_episodes")
+}
+
+// ── TBT Gamification (2026-07-20) ─────────────────────────────────
+// Ported from co-worker's admin-app. Table names kept as `tbt_*` —
+// no collision with primary's generic tasks/points_ledger/badges.
+// See modules/gamification/ for the API.
+model TbtActivityLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId     String   @map("member_id") @db.Uuid
+  points       Int      @default(0)
+  source       String   @default("task_completion") @db.VarChar(50)
+  activityDate DateTime @default(now()) @map("activity_date") @db.Date
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  member       Member   @relation("MemberTbtActivityLog", fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([memberId, activityDate])
+  @@map("tbt_activity_log")
+}
+
+model TbtLevel {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  levelNumber    Int      @unique @map("level_number")
+  name           String   @db.VarChar(255)
+  description    String?
+  requiredPoints Int      @map("required_points")
+  reward         String?  @db.VarChar(255)
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("tbt_levels")
+}
+
+model TbtTask {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskOrder      Int      @unique @map("task_order")
+  title          String   @db.VarChar(255)
+  description    String?
+  requiredAction String?  @map("required_action") @db.VarChar(255)
+  rewardPoints   Int      @default(0) @map("reward_points")
+  status         String   @default("active") @db.VarChar(50)
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completions    TbtTaskCompletion[]
+
+  @@index([taskOrder])
+  @@map("tbt_tasks")
+}
+
+model TbtTaskCompletion {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId    String   @map("member_id") @db.Uuid
+  taskId      String   @map("task_id") @db.Uuid
+  completedAt DateTime @default(now()) @map("completed_at") @db.Timestamptz(6)
+  member      Member   @relation("MemberTbtTaskCompletion", fields: [memberId], references: [id], onDelete: Cascade)
+  task        TbtTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, taskId])
+  @@index([memberId])
+  @@map("tbt_task_completions")
 }
 
 // ── Helpdesk / Support Center (2026-07-20) ────────────────────────
