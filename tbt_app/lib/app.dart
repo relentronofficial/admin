@@ -14,6 +14,7 @@ import 'features/notifications/data/fcm_service.dart';
 import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/signup_screen.dart';
 import 'features/auth/presentation/otp_screen.dart';
+import 'features/auth/presentation/video_splash_screen.dart';
 import 'features/auth/presentation/forgot_password_screen.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'shared/api/services/auth_service.dart';
@@ -77,6 +78,7 @@ part 'app.g.dart';
 // ── Route guards ───────────────────────────────────────────────────────────────
 
 const _publicPaths = {
+  AppRoutes.splash,
   AppRoutes.login,
   AppRoutes.signup,
   AppRoutes.verify,
@@ -110,7 +112,7 @@ GoRouter appRouter(Ref ref) {
   // /.well-known/apple-app-site-association at app.tamilbusinesstribe.com.
   // Android App Links require /.well-known/assetlinks.json at the same host.
   final router = GoRouter(
-    initialLocation: AppRoutes.login,
+    initialLocation: AppRoutes.splash,
     debugLogDiagnostics: kDebugMode,
     refreshListenable: notifier,
     redirect: (context, state) {
@@ -156,6 +158,13 @@ GoRouter appRouter(Ref ref) {
 }
 
 List<RouteBase> _buildRoutes() => [
+      // ── Splash ────────────────────────────────────────────────────────────
+      GoRoute(
+        path: AppRoutes.splash,
+        name: RouteNames.splash,
+        builder: (_, __) => const VideoSplashScreen(),
+      ),
+
       // ── Auth ──────────────────────────────────────────────────────────────
       GoRoute(
         path: AppRoutes.login,

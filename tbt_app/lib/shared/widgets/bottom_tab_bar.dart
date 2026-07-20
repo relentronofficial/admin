@@ -8,17 +8,17 @@ import '../theme/tbt_theme.dart';
 
 import '../../shared/theme/theme_tokens.dart';
 /// Persistent bottom tab bar for the authenticated shell.
-/// 5 tabs: Dashboard · Explore · Workshops · Notifications · Profile.
+/// 5 tabs: Home · Courses · Webinars · Alerts · Profile (Module 8A).
 class AppBottomTabBar extends ConsumerWidget {
   const AppBottomTabBar({super.key});
 
   static const _tabs = [
     (path: AppRoutes.dashboard, icon: Icons.home_outlined,
         activeIcon: Icons.home),
-    (path: AppRoutes.tbt, icon: Icons.play_circle_outline,
-        activeIcon: Icons.play_circle),
-    (path: AppRoutes.workshops, icon: Icons.event_outlined,
-        activeIcon: Icons.event),
+    (path: AppRoutes.courses, icon: Icons.school_outlined,
+        activeIcon: Icons.school),
+    (path: AppRoutes.webinars, icon: Icons.videocam_outlined,
+        activeIcon: Icons.videocam),
     (path: AppRoutes.notifications, icon: Icons.notifications_outlined,
         activeIcon: Icons.notifications),
     (path: AppRoutes.profile, icon: Icons.person_outline,
@@ -32,8 +32,8 @@ class AppBottomTabBar extends ConsumerWidget {
 
     final labels = [
       uiStrings?.dashboardWelcome != null ? 'Home' : 'Home',
-      'Explore',
-      'Workshops',
+      'Courses',
+      'Webinars',
       'Alerts',
       'Profile',
     ];
