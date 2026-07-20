@@ -71,6 +71,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "UI Strings", href: "/settings/ui-strings", icon: Type },
       { name: "Tiers", href: "/tiers", icon: Trophy },
       { name: "Badges", href: "/display-badges", icon: Award },
+      { name: "TBT Gamification", href: "/gamification", icon: Award },
     ],
   },
   {
