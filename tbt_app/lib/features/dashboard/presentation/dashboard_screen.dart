@@ -17,6 +17,7 @@ import '../providers/dashboard_providers.dart';
 import 'widgets/achievement_composer.dart';
 import 'widgets/home_carousel.dart';
 import 'widgets/home_header.dart';
+import 'widgets/home_menu_grid.dart';
 import 'widgets/morning_ritual_card.dart';
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -32,11 +33,40 @@ class DashboardScreen extends ConsumerWidget {
     final continueLabel = uiStrings?.continueWatchingLabel ?? 'Continue Watching';
     final recentLabel = uiStrings?.recentlyWatchedLabel ?? 'Recently Watched';
 
+    // Module 9G — pixel-perfect port of co-worker's PostPopupScreen.
+    // Reference: co-worker/moble app/lib/main.dart:3008-3135.
+    // Section order (matches co-worker line 3095-3123):
+    //   Fixed header
+    //   Greeting "Hi, [Name]"
+    //   AchievementComposer
+    //   HomeCarousel (mentor poster card)
+    //   MorningRitualCard
+    //   HomeMenuGrid (6-tile 2×3)
+    // Legacy helper widgets (_WelcomeHeader / _StatsRow / _QuickLinksRow /
+    // _RecentlyWatched etc.) are kept in the file below unused; safe to
+    // delete on the next cleanup pass. Continue-watching / recently-
+    // watched / stats-row are intentionally NOT rendered — they don't
+    // appear on the co-worker's home page.
+    final name = ((meAsync.valueOrNull as dynamic)?.name as String?) ?? '';
+    // Legacy providers/labels intentionally not consumed here — the
+    // co-worker's home page doesn't render stats / continue-watching /
+    // recently-watched. Kept above so pull-to-refresh still invalidates
+    // them (in case the sections re-appear on a later screen).
+    // ignore: unused_local_variable
+    final _unusedWatches = [
+      statsAsync,
+      continueAsync,
+      welcomeLabel,
+      continueLabel,
+      recentLabel,
+    ];
+
     return Scaffold(
       body: Column(
         children: [
           // ── Fixed home header (Module 9B — port of co-worker's) ───────
           const HomeHeader(),
+
           Expanded(
             child: RefreshIndicator(
               color: context.tbt.accent,
@@ -44,82 +74,62 @@ class DashboardScreen extends ConsumerWidget {
               onRefresh: () async {
                 ref.invalidate(dashboardStatsProvider);
                 ref.invalidate(continueLearningProvider);
-                ref.invalidate(watchHistoryProvider('all'));
               },
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Welcome ───────────────────────────────────────────────
-                    _WelcomeHeader(
-                      meAsync: meAsync,
-                      welcomeLabel: welcomeLabel,
-                    ),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 500),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ── Greeting: "Hi, [Name]" (co-worker main.dart:3100) ─
+                        Text(
+                          name.isEmpty ? 'Hi,' : 'Hi, ${_firstName(name)}',
+                          style: TextStyle(
+                            color: context.tokens.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
 
-                    const SizedBox(height: AppSpacing.md),
+                        // ── Achievement composer (Module 9C) ────────────
+                        const AchievementComposer(),
+                        const SizedBox(height: 24),
 
-                    // ── Achievement composer (Module 9C — post to community) ─
-                    const AchievementComposer(),
+                        // ── Mentor Poster Card / Home Carousel (Module 8C) ─
+                        const HomeCarousel(),
+                        const SizedBox(height: 16),
 
-                    const SizedBox(height: AppSpacing.md),
+                        // ── Morning Ritual (Module 8B/C) ────────────────
+                        const MorningRitualCard(),
+                        const SizedBox(height: 24),
 
-                    // ── Home carousel (Module 8C — hero slides) ─────────────
-                    const HomeCarousel(),
-
-                    // ── Morning Ritual (Module 8B/C — habits) ───────────────
-                    const MorningRitualCard(),
-
-                // ── Stats row ─────────────────────────────────────────────────
-                statsAsync.when(
-                  loading: () => _StatsRowSkeleton(),
-                  error: (_, __) => const SizedBox.shrink(),
-                  data: (stats) => _StatsRow(stats: stats),
-                ),
-
-                const SizedBox(height: AppSpacing.lg),
-
-                // ── Quick links ───────────────────────────────────────────────
-                // Batch program has no bottom-tab entry, so surface it here
-                // (mirrors the web's top-nav "Task" link).
-                const _QuickLinksRow(),
-
-                const SizedBox(height: AppSpacing.xxl),
-
-                // ── Continue Watching ─────────────────────────────────────────
-                AppSectionHeader(label: continueLabel),
-                const SizedBox(height: AppSpacing.md),
-                continueAsync.when(
-                  loading: () => _HorizontalSkeletonList(),
-                  error: (e, _) => Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg),
-                    child: AppErrorState(
-                      error: e,
-                      compact: true,
-                      onRetry: () =>
-                          ref.invalidate(continueLearningProvider),
+                        // ── 2×3 menu grid (Module 9G) ───────────────────
+                        // Community · Courses · Podcast · Workshop · E-Book · Task
+                        const HomeMenuGrid(),
+                      ],
                     ),
                   ),
-                  data: (items) => items.isEmpty
-                      ? _EmptyRow()
-                      : _HorizontalList(items: items),
                 ),
-
-                const SizedBox(height: AppSpacing.xxl),
-
-                // ── Recently Watched (with All/In Progress/Completed pills) ──
-                _RecentlyWatched(sectionLabel: recentLabel),
-
-                const SizedBox(height: AppSpacing.xxxl),
-              ],
-            ),
-          ),
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Extract the first name from a full name string. Falls back to the
+  /// whole string if there's only one word.
+  String _firstName(String full) {
+    final trimmed = full.trim();
+    if (trimmed.isEmpty) return '';
+    final space = trimmed.indexOf(' ');
+    return space < 0 ? trimmed : trimmed.substring(0, space);
   }
 }
 
