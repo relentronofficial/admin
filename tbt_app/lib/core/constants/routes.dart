@@ -64,6 +64,7 @@ class AppRoutes {
 
   // TBT Gamification
   static const String tbtPoints = '/tbt-points';
+  static const String wins = '/wins';
 
   // Path builders
   static String workshopDetailPath(String id) => '/workshops/$id';
@@ -129,4 +130,5 @@ class RouteNames {
   static const String supportFeedback = 'support-feedback';
   static const String supportMyTickets = 'support-my-tickets';
   static const String tbtPoints = 'tbt-points';
+  static const String wins = 'wins';
 }

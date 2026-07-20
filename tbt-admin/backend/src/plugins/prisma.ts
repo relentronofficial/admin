@@ -687,6 +687,15 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
             'Submit your consolidated milestone summary.', 500, 'active', 5)
         ON CONFLICT (task_order) DO NOTHING
       `),
+      // ── Community posts extensions (Module 9A) ─────────────────────
+      // Two flags the co-worker's home-page composer needs:
+      //   is_mentor   → post authored by a mentor (visual badge)
+      //   is_approved → moderation flag; only approved posts show in feed
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE community_posts
+          ADD COLUMN IF NOT EXISTS is_mentor BOOLEAN NOT NULL DEFAULT false,
+          ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT true
+      `),
       // ── Morning Ritual (2026-07-20, Module 8B) ─────────────────────
       // Ported from co-worker's FULL_MIGRATION.sql lines 305-342.
       // No member FK — habits are global; each member's daily yes/no

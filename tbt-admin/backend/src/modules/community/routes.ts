@@ -5,16 +5,42 @@ import {
   getPostHandler,
   deletePostHandler,
   pinPostHandler,
-  getCommentsHandler
+  getCommentsHandler,
+  memberListFeedHandler,
+  memberSubmitPostHandler,
+  adminApprovePostHandler,
 } from './controller.js';
 
+/**
+ * Community routes at `/api/community`.
+ *
+ *   * `/api/community/admin/*` — Clerk auth. Full CRUD + moderation.
+ *   * `/api/community/*`       — JWT-cookie auth. Members list the
+ *                                 approved feed and submit new posts.
+ *
+ * Admin routes moved under `/admin` prefix in Module 9A. Nothing
+ * external called them yet so the URL change is safe.
+ */
 export async function communityRoutes(fastify: FastifyInstance) {
-  fastify.addHook('preHandler', fastify.authenticate);
+  // ── Admin (Clerk) ───────────────────────────────────────────────
+  fastify.register(
+    async (adminScope) => {
+      adminScope.addHook('preHandler', adminScope.authenticate);
+      adminScope.get('/posts', listPostsHandler);
+      adminScope.post('/posts', createPostHandler);
+      adminScope.get('/posts/:id', getPostHandler);
+      adminScope.delete('/posts/:id', deletePostHandler);
+      adminScope.put('/posts/:id/pin', pinPostHandler);
+      adminScope.put('/posts/:id/approve', adminApprovePostHandler);
+      adminScope.get('/posts/:id/comments', getCommentsHandler);
+    },
+    { prefix: '/admin' },
+  );
 
-  fastify.get('/posts', listPostsHandler);
-  fastify.post('/posts', createPostHandler);
-  fastify.get('/posts/:id', getPostHandler);
-  fastify.delete('/posts/:id', deletePostHandler);
-  fastify.put('/posts/:id/pin', pinPostHandler);
-  fastify.get('/posts/:id/comments', getCommentsHandler);
+  // ── Member (JWT cookie) ─────────────────────────────────────────
+  fastify.register(async (userScope) => {
+    userScope.addHook('preHandler', userScope.authenticateUser);
+    userScope.get('/feed', memberListFeedHandler);
+    userScope.post('/feed', memberSubmitPostHandler);
+  });
 }

@@ -14,7 +14,9 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_error_state.dart';
 import '../../../shared/widgets/app_section_header.dart';
 import '../providers/dashboard_providers.dart';
+import 'widgets/achievement_composer.dart';
 import 'widgets/home_carousel.dart';
+import 'widgets/home_header.dart';
 import 'widgets/morning_ritual_card.dart';
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -31,33 +33,42 @@ class DashboardScreen extends ConsumerWidget {
     final recentLabel = uiStrings?.recentlyWatchedLabel ?? 'Recently Watched';
 
     return Scaffold(
-      body: SafeArea(
-        child: RefreshIndicator(
-          color: context.tbt.accent,
-          backgroundColor: context.tokens.bgSurface,
-          onRefresh: () async {
-            ref.invalidate(dashboardStatsProvider);
-            ref.invalidate(continueLearningProvider);
-            ref.invalidate(watchHistoryProvider('all'));
-          },
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Welcome ───────────────────────────────────────────────────
-                _WelcomeHeader(
-                  meAsync: meAsync,
-                  welcomeLabel: welcomeLabel,
-                ),
+      body: Column(
+        children: [
+          // ── Fixed home header (Module 9B — port of co-worker's) ───────
+          const HomeHeader(),
+          Expanded(
+            child: RefreshIndicator(
+              color: context.tbt.accent,
+              backgroundColor: context.tokens.bgSurface,
+              onRefresh: () async {
+                ref.invalidate(dashboardStatsProvider);
+                ref.invalidate(continueLearningProvider);
+                ref.invalidate(watchHistoryProvider('all'));
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Welcome ───────────────────────────────────────────────
+                    _WelcomeHeader(
+                      meAsync: meAsync,
+                      welcomeLabel: welcomeLabel,
+                    ),
 
-                const SizedBox(height: AppSpacing.md),
+                    const SizedBox(height: AppSpacing.md),
 
-                // ── Home carousel (Module 8C — hero slides) ─────────────────
-                const HomeCarousel(),
+                    // ── Achievement composer (Module 9C — post to community) ─
+                    const AchievementComposer(),
 
-                // ── Morning Ritual (Module 8B/C — habits) ───────────────────
-                const MorningRitualCard(),
+                    const SizedBox(height: AppSpacing.md),
+
+                    // ── Home carousel (Module 8C — hero slides) ─────────────
+                    const HomeCarousel(),
+
+                    // ── Morning Ritual (Module 8B/C — habits) ───────────────
+                    const MorningRitualCard(),
 
                 // ── Stats row ─────────────────────────────────────────────────
                 statsAsync.when(
@@ -104,7 +115,9 @@ class DashboardScreen extends ConsumerWidget {
               ],
             ),
           ),
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }

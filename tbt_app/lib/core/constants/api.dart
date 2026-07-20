@@ -133,6 +133,9 @@ const String kPodcastMarkCompleted = '/api/podcasts/mark-completed';
 const String kRitualHabits = '/api/rituals/habits';
 const String kRitualButtons = '/api/rituals/buttons';
 
+// ── Community feed (Module 9A) ───────────────────────────────────────────────
+const String kCommunityFeed = '/api/community/feed';
+
 // ── TBT Gamification ─────────────────────────────────────────────────────────
 const String kTbtPath = '/api/tbt/path';
 const String kTbtLevels = '/api/tbt/levels';

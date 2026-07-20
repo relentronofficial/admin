@@ -28,22 +28,22 @@ class AppSideNavRail extends ConsumerWidget {
       label: 'Home',
     ),
     (
+      path: AppRoutes.wins,
+      icon: Icons.emoji_events_outlined,
+      activeIcon: Icons.emoji_events,
+      label: 'Wins',
+    ),
+    (
+      path: AppRoutes.podcasts,
+      icon: Icons.mic_none_outlined,
+      activeIcon: Icons.mic,
+      label: 'Voice of Sakthi',
+    ),
+    (
       path: AppRoutes.courses,
       icon: Icons.school_outlined,
       activeIcon: Icons.school,
       label: 'Courses',
-    ),
-    (
-      path: AppRoutes.webinars,
-      icon: Icons.videocam_outlined,
-      activeIcon: Icons.videocam,
-      label: 'Webinars',
-    ),
-    (
-      path: AppRoutes.notifications,
-      icon: Icons.notifications_outlined,
-      activeIcon: Icons.notifications,
-      label: 'Alerts',
     ),
     (
       path: AppRoutes.profile,

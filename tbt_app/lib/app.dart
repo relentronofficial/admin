@@ -58,6 +58,7 @@ import 'features/support/presentation/support_contact_screen.dart';
 import 'features/support/presentation/support_feedback_screen.dart';
 import 'features/support/presentation/support_my_tickets_screen.dart';
 import 'features/gamification/presentation/tbt_points_screen.dart';
+import 'features/gamification/presentation/wins_screen.dart';
 import 'features/batch_program/providers/batch_provider.dart';
 import 'features/courses/providers/courses_provider.dart';
 import 'features/workshops/providers/workshops_provider.dart';
@@ -236,6 +237,11 @@ List<RouteBase> _buildRoutes() => [
             path: AppRoutes.profile,
             name: RouteNames.profile,
             builder: (_, __) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.wins,
+            name: RouteNames.wins,
+            builder: (_, __) => const WinsScreen(),
           ),
         ],
       ),
@@ -742,6 +748,11 @@ class _AppShellState extends State<_AppShell> {
     final width = MediaQuery.sizeOf(context).width;
     final isTablet = width >= 600;
 
+    // Dashboard renders its own custom HomeHeader (Module 9B), so hide
+    // the shell AppNavbar there to avoid two stacked headers.
+    final currentPath = GoRouterState.of(context).uri.path;
+    final hideAppNavbar = currentPath == AppRoutes.dashboard;
+
     // `canPop: false` tells the framework we're taking full control of the
     // pop gesture — `onPopInvokedWithResult` decides what actually happens.
     return PopScope(
@@ -751,7 +762,7 @@ class _AppShellState extends State<_AppShell> {
         _handleBack();
       },
       child: Scaffold(
-        appBar: const AppNavbar(),
+        appBar: hideAppNavbar ? null : const AppNavbar(),
         body: isTablet
             ? Row(
                 children: [

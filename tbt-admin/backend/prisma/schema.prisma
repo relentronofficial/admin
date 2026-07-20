@@ -787,6 +787,8 @@ model Post {
   mediaUrls      String[] @map("media_urls")
   isPinned       Boolean  @default(false) @map("is_pinned")
   isAnnouncement Boolean  @default(false) @map("is_announcement")
+  isMentor       Boolean  @default(false) @map("is_mentor")
+  isApproved     Boolean  @default(true) @map("is_approved")
   likesCount     Int      @default(0) @map("likes_count")
   commentsCount  Int      @default(0) @map("comments_count")
   status         String   @default("active")
