@@ -687,6 +687,48 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
             'Submit your consolidated milestone summary.', 500, 'active', 5)
         ON CONFLICT (task_order) DO NOTHING
       `),
+      // ── Morning Ritual (2026-07-20, Module 8B) ─────────────────────
+      // Ported from co-worker's FULL_MIGRATION.sql lines 305-342.
+      // No member FK — habits are global; each member's daily yes/no
+      // answers stay client-side (not persisted).
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS habits (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          icon VARCHAR(100) NOT NULL DEFAULT 'fa-sun',
+          raw_question TEXT NOT NULL,
+          highlight_word VARCHAR(255) NOT NULL DEFAULT '',
+          subtitle VARCHAR(255) NOT NULL DEFAULT '',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS buttons_config (
+          id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+          yes_label VARCHAR(100) NOT NULL DEFAULT 'Yes',
+          not_yet_label VARCHAR(100) NOT NULL DEFAULT 'Not Yet',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      // Seed 5 default habits so first-run mobile users see the ritual.
+      prisma.$executeRawUnsafe(`
+        INSERT INTO habits (icon, raw_question, highlight_word, subtitle, sort_order)
+        SELECT * FROM (VALUES
+          ('fa-sun', 'Did you write your morning pages?', 'morning pages', 'Build clarity. Boost focus. Start your day right.', 1),
+          ('fa-spa', 'Did you meditate for 10 minutes?', 'for 10 minutes', 'Calm your mind. Find presence. Center yourself.', 2),
+          ('fa-bullseye', 'Did you plan your daily goals?', 'daily goals', 'Prioritize tasks. Direct your energy. Stay productive.', 3),
+          ('fa-dumbbell', 'Did you exercise or stretch today?', 'stretch today', 'Activate your body. Boost energy. Stay healthy.', 4),
+          ('fa-coffee', 'Did you eat a healthy breakfast?', 'healthy breakfast', 'Nourish your body. Fuel your mind for the day.', 5)
+        ) AS seed(icon, raw_question, highlight_word, subtitle, sort_order)
+        WHERE NOT EXISTS (SELECT 1 FROM habits)
+      `),
+      prisma.$executeRawUnsafe(`
+        INSERT INTO buttons_config (id, yes_label, not_yet_label)
+        VALUES ('default', 'Yes', 'Not Yet')
+        ON CONFLICT (id) DO NOTHING
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

@@ -2626,6 +2626,33 @@ model PodcastEpisode {
   @@map("podcast_episodes")
 }
 
+// ── Morning Ritual (2026-07-20, Module 8B) ────────────────────────
+// Ported from co-worker's home-page habits + buttons_config. Global
+// (no member FK) — same 5 questions for everyone. Members' daily
+// yes/no answers stay client-side.
+model Habit {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  icon          String   @default("fa-sun") @db.VarChar(100)
+  rawQuestion   String   @map("raw_question")
+  highlightWord String   @default("") @map("highlight_word") @db.VarChar(255)
+  subtitle      String   @default("") @db.VarChar(255)
+  sortOrder     Int      @default(0) @map("sort_order")
+  status        String   @default("active") @db.VarChar(50)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("habits")
+}
+
+model ButtonsConfig {
+  id           String   @id @default("default") @db.VarChar(50)
+  yesLabel     String   @default("Yes") @map("yes_label") @db.VarChar(100)
+  notYetLabel  String   @default("Not Yet") @map("not_yet_label") @db.VarChar(100)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("buttons_config")
+}
+
 // ── TBT Gamification (2026-07-20) ─────────────────────────────────
 // Ported from co-worker's admin-app. Table names kept as `tbt_*` —
 // no collision with primary's generic tasks/points_ledger/badges.

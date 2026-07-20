@@ -49,6 +49,7 @@ import { podcastRoutes } from './modules/podcasts/routes.js';
 import { ebookRoutes } from './modules/ebooks/routes.js';
 import { helpdeskRoutes } from './modules/helpdesk/routes.js';
 import { gamificationRoutes } from './modules/gamification/routes.js';
+import { ritualsRoutes } from './modules/rituals/routes.js';
 import { batchReminderCronHandler } from './modules/user-batch/controller.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
@@ -187,6 +188,7 @@ async function bootstrap() {
     await fastify.register(ebookRoutes, { prefix: '/api/ebooks' });
     await fastify.register(helpdeskRoutes, { prefix: '/api/helpdesk' });
     await fastify.register(gamificationRoutes, { prefix: '/api/tbt' });
+    await fastify.register(ritualsRoutes, { prefix: '/api/rituals' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);

@@ -27,6 +27,7 @@ import {
   CheckSquare,
   Bot,
   Headphones,
+  Sun,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -72,6 +73,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Tiers", href: "/tiers", icon: Trophy },
       { name: "Badges", href: "/display-badges", icon: Award },
       { name: "TBT Gamification", href: "/gamification", icon: Award },
+      { name: "Morning Ritual", href: "/rituals", icon: Sun },
     ],
   },
   {
