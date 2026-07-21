@@ -318,6 +318,11 @@ model Member {
   comments              Comment[]
   likes                 Like[]
   postBookmarks         PostBookmark[]
+  // Item #21 follow graph — these two are the reverse sides of
+  // MemberConnection. Relation names are required because both point
+  // at Member (Prisma needs the disambiguation).
+  following             MemberConnection[] @relation("MemberFollowers")
+  followers             MemberConnection[] @relation("MemberFollowing")
   supportTickets        SupportTicket[]
   rewardRedemptions     RewardRedemption[]
   badges                MemberBadge[]
@@ -881,6 +886,25 @@ model Like {
 
   @@unique([memberId, postId, commentId])
   @@map("community_likes")
+}
+
+// ── Member follow graph (v2 speckit item #21) ──────────────────────
+// Each row = follower follows following. Unique constraint enforces
+// one direction per (follower, following) pair. Powers the "Following"
+// filter tab, follower/following counts, and the Follow button state.
+model MemberConnection {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  follower  Member @relation("MemberFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  following Member @relation("MemberFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("member_connections")
 }
 
 // ── Community post bookmarks (v2 speckit item #16) ─────────────────

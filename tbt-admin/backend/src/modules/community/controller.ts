@@ -25,14 +25,33 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
       // filter here.
       where.memberId = memberId;
       break;
-    case 'following':
-      // Not yet wired — return an empty page.
-      return reply.send({
-        success: true,
-        data: [],
-        meta: { total: 0, page: Number(page), limit: Number(limit) },
-        error: null,
+    case 'following': {
+      // Item #21: return posts by anyone the caller follows.
+      if (!memberId) {
+        return reply.send({
+          success: true,
+          data: [],
+          meta: { total: 0, page: Number(page), limit: Number(limit) },
+          error: null,
+        });
+      }
+      const conns = await request.server.prisma.memberConnection.findMany({
+        where: { followerId: memberId },
+        select: { followingId: true },
       });
+      const followingIds = conns.map((c) => c.followingId);
+      if (followingIds.length === 0) {
+        return reply.send({
+          success: true,
+          data: [],
+          meta: { total: 0, page: Number(page), limit: Number(limit) },
+          error: null,
+        });
+      }
+      where.isApproved = true;
+      where.memberId = { in: followingIds };
+      break;
+    }
     case 'all':
     default:
       where.isApproved = true;
@@ -424,7 +443,9 @@ export async function memberGetProfileHandler(
     });
   }
 
-  const [postsCount, recent] = await Promise.all([
+  const callerId = request.memberId;
+  const [postsCount, recent, followersCount, followingCount, isFollowingRow] =
+      await Promise.all([
     request.server.prisma.post.count({
       where: { memberId: id, isApproved: true, status: 'active' },
     }),
@@ -439,6 +460,18 @@ export async function memberGetProfileHandler(
         createdAt: true,
       },
     }),
+    request.server.prisma.memberConnection.count({
+      where: { followingId: id },
+    }),
+    request.server.prisma.memberConnection.count({
+      where: { followerId: id },
+    }),
+    callerId && callerId !== id
+        ? request.server.prisma.memberConnection.findFirst({
+            where: { followerId: callerId, followingId: id },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
   ]);
 
   return reply.send({
@@ -446,12 +479,140 @@ export async function memberGetProfileHandler(
     data: {
       member,
       postsCount,
-      // Follow counts wired to 0 until member_connections lands (#21).
-      followersCount: 0,
-      followingCount: 0,
-      isFollowing: false,
+      followersCount,
+      followingCount,
+      isFollowing: isFollowingRow != null,
       recentPosts: recent,
     },
+    error: null,
+  });
+}
+
+// ── Member: follow / unfollow (item #21) ─────────────────────────────
+// Toggle create/delete of a MemberConnection row. Blocks self-follow.
+export async function memberToggleFollowHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const followerId = request.memberId!;
+  if (followerId === id) {
+    return reply.status(400).send({
+      success: false,
+      data: null,
+      error: {
+        code: 'invalid_input',
+        message: 'You cannot follow yourself.',
+      },
+    });
+  }
+
+  const existing = await request.server.prisma.memberConnection.findFirst({
+    where: { followerId, followingId: id },
+    select: { id: true },
+  });
+  if (existing) {
+    await request.server.prisma.memberConnection.delete({
+      where: { id: existing.id },
+    });
+    return reply.send({
+      success: true,
+      data: { following: false },
+      error: null,
+    });
+  }
+  // Verify the target exists before creating a dangling row.
+  const target = await request.server.prisma.member.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!target) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: { code: 'not_found', message: 'Member not found.' },
+    });
+  }
+  await request.server.prisma.memberConnection.create({
+    data: { followerId, followingId: id },
+  });
+  return reply.send({
+    success: true,
+    data: { following: true },
+    error: null,
+  });
+}
+
+// ── Member: list followers (people who follow :id) ─────────────────
+export async function memberListFollowersHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const { page = '1', limit = '50' } = request.query as Record<string, string>;
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+  const [rows, total] = await Promise.all([
+    request.server.prisma.memberConnection.findMany({
+      where: { followingId: id },
+      orderBy: { createdAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+      include: {
+        follower: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profilePhotoUrl: true,
+          },
+        },
+      },
+    }),
+    request.server.prisma.memberConnection.count({ where: { followingId: id } }),
+  ]);
+  const members = rows.map((r) => r.follower).filter((m): m is NonNullable<typeof m> => m != null);
+  return reply.send({
+    success: true,
+    data: members,
+    meta: { total, page: pageNum, limit: limitNum },
+    error: null,
+  });
+}
+
+// ── Member: list people I follow ────────────────────────────────────
+export async function memberListFollowingHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const memberId = request.memberId!;
+  const { page = '1', limit = '50' } = request.query as Record<string, string>;
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+  const [rows, total] = await Promise.all([
+    request.server.prisma.memberConnection.findMany({
+      where: { followerId: memberId },
+      orderBy: { createdAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+      include: {
+        following: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profilePhotoUrl: true,
+          },
+        },
+      },
+    }),
+    request.server.prisma.memberConnection.count({ where: { followerId: memberId } }),
+  ]);
+  const members = rows.map((r) => r.following).filter((m): m is NonNullable<typeof m> => m != null);
+  return reply.send({
+    success: true,
+    data: members,
+    meta: { total, page: pageNum, limit: limitNum },
     error: null,
   });
 }
