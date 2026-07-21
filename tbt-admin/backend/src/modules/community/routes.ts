@@ -13,6 +13,7 @@ import {
   memberAddCommentHandler,
   memberDeleteCommentHandler,
   memberListPostLikersHandler,
+  memberDeleteOwnPostHandler,
   adminApprovePostHandler,
 } from './controller.js';
 
@@ -48,6 +49,7 @@ export async function communityRoutes(fastify: FastifyInstance) {
     userScope.get('/feed', memberListFeedHandler);
     userScope.post('/feed', memberSubmitPostHandler);
     userScope.post('/posts/:id/like', memberToggleLikeHandler);
+    userScope.delete('/posts/:id', memberDeleteOwnPostHandler);
     userScope.get('/posts/:id/likers', memberListPostLikersHandler);
     userScope.get('/posts/:id/comments', memberListCommentsHandler);
     userScope.post('/posts/:id/comments', memberAddCommentHandler);

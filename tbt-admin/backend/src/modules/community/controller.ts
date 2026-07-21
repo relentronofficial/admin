@@ -267,6 +267,38 @@ export async function memberListPostLikersHandler(
   });
 }
 
+// ── Member: delete own post (item #8/#24) ───────────────────────────
+// Mirrors the admin delete endpoint but scoped to the caller. Returns
+// 403 if the post exists but doesn't belong to the caller (rather than
+// 404 — which would leak that other members' post IDs exist).
+export async function memberDeleteOwnPostHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const post = await request.server.prisma.post.findUnique({
+    where: { id },
+    select: { id: true, memberId: true },
+  });
+  if (!post) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: { code: 'not_found', message: 'Post not found.' },
+    });
+  }
+  if (post.memberId !== memberId) {
+    return reply.status(403).send({
+      success: false,
+      data: null,
+      error: { code: 'forbidden', message: 'Not your post.' },
+    });
+  }
+  await request.server.prisma.post.delete({ where: { id } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
 // ── Member: delete own comment ─────────────────────────────────────
 export async function memberDeleteCommentHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id, commentId } = request.params as { id: string; commentId: string };
