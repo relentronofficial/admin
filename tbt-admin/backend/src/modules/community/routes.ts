@@ -16,6 +16,8 @@ import {
   memberDeleteOwnPostHandler,
   memberToggleBookmarkHandler,
   memberListBookmarksHandler,
+  memberToggleCommentLikeHandler,
+  memberGetProfileHandler,
   adminApprovePostHandler,
 } from './controller.js';
 
@@ -58,5 +60,7 @@ export async function communityRoutes(fastify: FastifyInstance) {
     userScope.get('/posts/:id/comments', memberListCommentsHandler);
     userScope.post('/posts/:id/comments', memberAddCommentHandler);
     userScope.delete('/posts/:id/comments/:commentId', memberDeleteCommentHandler);
+    userScope.post('/comments/:commentId/like', memberToggleCommentLikeHandler);
+    userScope.get('/members/:id/profile', memberGetProfileHandler);
   });
 }

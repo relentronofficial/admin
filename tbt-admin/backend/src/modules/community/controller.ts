@@ -234,9 +234,12 @@ export async function memberToggleLikeHandler(request: FastifyRequest, reply: Fa
 }
 
 // ── Member: list comments on a post ────────────────────────────────
-// Returns flat list ordered oldest first (thread-friendly for scroll).
+// Returns flat list ordered oldest first. Each row includes:
+//   * `parentCommentId` (item #18) so client can render 2-level threads
+//   * `likesCount` + `isLikedByMe` (item #19) so client can show hearts
 export async function memberListCommentsHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
+  const memberId = request.memberId;
   const comments = await request.server.prisma.comment.findMany({
     where: { postId: id },
     orderBy: { createdAt: 'asc' },
@@ -246,14 +249,83 @@ export async function memberListCommentsHandler(request: FastifyRequest, reply: 
       },
     },
   });
-  return reply.send({ success: true, data: comments, error: null });
+
+  // Batch fetch which of these comments the caller has liked. No N+1.
+  const likedIds = new Set<string>();
+  if (memberId && comments.length > 0) {
+    try {
+      const likes = await request.server.prisma.like.findMany({
+        where: {
+          memberId,
+          commentId: { in: comments.map((c) => c.id) },
+        },
+        select: { commentId: true },
+      });
+      for (const l of likes) {
+        if (l.commentId) likedIds.add(l.commentId);
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'comment list: like-enrichment failed');
+    }
+  }
+
+  const enriched = comments.map((c) => ({
+    ...c,
+    isLikedByMe: likedIds.has(c.id),
+  }));
+
+  return reply.send({ success: true, data: enriched, error: null });
+}
+
+// ── Member: toggle like on a comment (item #19) ────────────────────
+// Mirrors memberToggleLikeHandler but keyed on commentId. Same
+// atomicity pattern (create/delete Like row + inc/dec
+// Comment.likesCount in a single transaction).
+export async function memberToggleCommentLikeHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { commentId } = request.params as { commentId: string };
+  const memberId = request.memberId!;
+
+  const existing = await request.server.prisma.like.findFirst({
+    where: { memberId, commentId },
+    select: { id: true },
+  });
+
+  const result = await request.server.prisma.$transaction(async (tx) => {
+    if (existing) {
+      await tx.like.delete({ where: { id: existing.id } });
+      const c = await tx.comment.update({
+        where: { id: commentId },
+        data: { likesCount: { decrement: 1 } },
+        select: { likesCount: true },
+      });
+      return { liked: false, likesCount: Math.max(0, c.likesCount) };
+    } else {
+      await tx.like.create({ data: { memberId, commentId } });
+      const c = await tx.comment.update({
+        where: { id: commentId },
+        data: { likesCount: { increment: 1 } },
+        select: { likesCount: true },
+      });
+      return { liked: true, likesCount: c.likesCount };
+    }
+  });
+
+  return reply.send({ success: true, data: result, error: null });
 }
 
 // ── Member: add a comment to a post ────────────────────────────────
+// Item #18: accepts optional `parentCommentId` to make it a reply.
+// Threading is capped at 2 levels — if the parent is already a reply,
+// we reparent to the grandparent so deeply-nested threads flatten to
+// a single level (Threads / Instagram convention).
 export async function memberAddCommentHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
   const body = (request.body as any) ?? {};
   const content = String(body.content ?? '').trim();
+  const rawParentId = body.parentCommentId as string | undefined;
   if (content.length === 0 || content.length > 2000) {
     return reply.status(400).send({
       success: false,
@@ -275,9 +347,36 @@ export async function memberAddCommentHandler(request: FastifyRequest, reply: Fa
     });
   }
 
+  // Resolve `parentCommentId` — cap at 2 levels, verify same-post.
+  let effectiveParentId: string | null = null;
+  if (rawParentId) {
+    const parent = await request.server.prisma.comment.findUnique({
+      where: { id: rawParentId },
+      select: { id: true, postId: true, parentCommentId: true },
+    });
+    if (!parent || parent.postId !== id) {
+      return reply.status(400).send({
+        success: false,
+        data: null,
+        error: {
+          code: 'invalid_input',
+          message: 'Parent comment not found on this post.',
+        },
+      });
+    }
+    // Flatten a would-be level-3 reply to level 2 by reparenting to
+    // the grandparent — matches Threads / Instagram semantics.
+    effectiveParentId = parent.parentCommentId ?? parent.id;
+  }
+
   const created = await request.server.prisma.$transaction(async (tx) => {
     const comment = await tx.comment.create({
-      data: { postId: id, memberId, content },
+      data: {
+        postId: id,
+        memberId,
+        content,
+        parentCommentId: effectiveParentId,
+      },
       include: {
         member: {
           select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
@@ -292,6 +391,69 @@ export async function memberAddCommentHandler(request: FastifyRequest, reply: Fa
   });
 
   return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+// ── Member: profile card data (item #20) ────────────────────────────
+// Powers the author-profile bottom sheet. Aggregates: member row +
+// counts (posts / followers / following — follows are stubbed at 0
+// until item #21 lands member_connections) + 3 recent post covers for
+// the "Recent posts" thumbnail strip.
+export async function memberGetProfileHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const member = await request.server.prisma.member.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      profilePhotoUrl: true,
+      businessName: true,
+      businessType: true,
+      city: true,
+      state: true,
+    },
+  });
+  if (!member) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: { code: 'not_found', message: 'Member not found.' },
+    });
+  }
+
+  const [postsCount, recent] = await Promise.all([
+    request.server.prisma.post.count({
+      where: { memberId: id, isApproved: true, status: 'active' },
+    }),
+    request.server.prisma.post.findMany({
+      where: { memberId: id, isApproved: true, status: 'active' },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+      select: {
+        id: true,
+        mediaUrls: true,
+        content: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  return reply.send({
+    success: true,
+    data: {
+      member,
+      postsCount,
+      // Follow counts wired to 0 until member_connections lands (#21).
+      followersCount: 0,
+      followingCount: 0,
+      isFollowing: false,
+      recentPosts: recent,
+    },
+    error: null,
+  });
 }
 
 // ── Member: paginated likers on a post (item #6) ────────────────────
