@@ -14,6 +14,8 @@ import {
   memberDeleteCommentHandler,
   memberListPostLikersHandler,
   memberDeleteOwnPostHandler,
+  memberToggleBookmarkHandler,
+  memberListBookmarksHandler,
   adminApprovePostHandler,
 } from './controller.js';
 
@@ -49,6 +51,8 @@ export async function communityRoutes(fastify: FastifyInstance) {
     userScope.get('/feed', memberListFeedHandler);
     userScope.post('/feed', memberSubmitPostHandler);
     userScope.post('/posts/:id/like', memberToggleLikeHandler);
+    userScope.post('/posts/:id/bookmark', memberToggleBookmarkHandler);
+    userScope.get('/bookmarks', memberListBookmarksHandler);
     userScope.delete('/posts/:id', memberDeleteOwnPostHandler);
     userScope.get('/posts/:id/likers', memberListPostLikersHandler);
     userScope.get('/posts/:id/comments', memberListCommentsHandler);

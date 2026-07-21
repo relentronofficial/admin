@@ -160,9 +160,32 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
     }
   }
 
+  // Item #16: batch bookmark state per post. Single query for all
+  // posts. Wrapped in try/catch same pattern as likes/comments — the
+  // feed still renders if the bookmark table has a hiccup.
+  const bookmarkedIds = new Set<string>();
+  if (memberId && posts.length > 0) {
+    try {
+      const bookmarks = await request.server.prisma.postBookmark.findMany({
+        where: {
+          memberId,
+          postId: { in: posts.map((p) => p.id) },
+        },
+        select: { postId: true },
+      });
+      for (const b of bookmarks) bookmarkedIds.add(b.postId);
+    } catch (err) {
+      request.log.warn(
+        { err },
+        'community feed: bookmark-enrichment failed',
+      );
+    }
+  }
+
   const enriched = posts.map((p) => ({
     ...p,
     isLikedByMe: likedIds.has(p.id),
+    isBookmarkedByMe: bookmarkedIds.has(p.id),
     firstLiker: firstLikerByPost.get(p.id) ?? null,
     topComment: topCommentByPost.get(p.id) ?? null,
   }));
@@ -312,6 +335,108 @@ export async function memberListPostLikersHandler(
   return reply.send({
     success: true,
     data: members,
+    meta: { total, page: pageNum, limit: limitNum },
+    error: null,
+  });
+}
+
+// ── Member: toggle bookmark on a post (item #16) ───────────────────
+// Same idempotent create-or-delete pattern as the like toggle. Doesn't
+// mutate the post itself — bookmarks are purely a per-member index.
+export async function memberToggleBookmarkHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const memberId = request.memberId!;
+
+  const existing = await request.server.prisma.postBookmark.findFirst({
+    where: { memberId, postId: id },
+    select: { id: true },
+  });
+
+  if (existing) {
+    await request.server.prisma.postBookmark.delete({
+      where: { id: existing.id },
+    });
+    return reply.send({
+      success: true,
+      data: { bookmarked: false },
+      error: null,
+    });
+  } else {
+    // Verify the post exists before creating a dangling bookmark row.
+    const post = await request.server.prisma.post.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!post) {
+      return reply.status(404).send({
+        success: false,
+        data: null,
+        error: { code: 'not_found', message: 'Post not found.' },
+      });
+    }
+    await request.server.prisma.postBookmark.create({
+      data: { memberId, postId: id },
+    });
+    return reply.send({
+      success: true,
+      data: { bookmarked: true },
+      error: null,
+    });
+  }
+}
+
+// ── Member: list my bookmarked posts (item #16) ────────────────────
+export async function memberListBookmarksHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const memberId = request.memberId!;
+  const { page = '1', limit = '20' } = request.query as Record<string, string>;
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
+
+  const [rows, total] = await Promise.all([
+    request.server.prisma.postBookmark.findMany({
+      where: { memberId },
+      orderBy: { createdAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+      include: {
+        post: {
+          include: {
+            member: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profilePhotoUrl: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    request.server.prisma.postBookmark.count({ where: { memberId } }),
+  ]);
+
+  // Flatten to a post array with `isBookmarkedByMe: true` baked in so
+  // the mobile can reuse the same CommunityPost model.
+  const posts = rows
+    .filter((r) => r.post != null)
+    .map((r) => ({
+      ...r.post,
+      isBookmarkedByMe: true,
+      // isLikedByMe / firstLiker / topComment are intentionally NOT
+      // computed on the saved-posts page — it's a lightweight list.
+      // The full feed enrichment fires only on the main feed handler.
+    }));
+
+  return reply.send({
+    success: true,
+    data: posts,
     meta: { total, page: pageNum, limit: limitNum },
     error: null,
   });

@@ -317,6 +317,7 @@ model Member {
   posts                 Post[]
   comments              Comment[]
   likes                 Like[]
+  postBookmarks         PostBookmark[]
   supportTickets        SupportTicket[]
   rewardRedemptions     RewardRedemption[]
   badges                MemberBadge[]
@@ -796,10 +797,11 @@ model Post {
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  member   Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  comments Comment[]
-  likes    Like[]
-  polls    Poll[]
+  member    Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  comments  Comment[]
+  likes     Like[]
+  polls     Poll[]
+  bookmarks PostBookmark[]
 
   @@map("community_posts")
 }
@@ -879,6 +881,24 @@ model Like {
 
   @@unique([memberId, postId, commentId])
   @@map("community_likes")
+}
+
+// ── Community post bookmarks (v2 speckit item #16) ─────────────────
+// Each row = one member has saved one post. Unique constraint enforces
+// "one bookmark per (member, post)" so the toggle idempotently
+// creates-or-deletes without racing.
+model PostBookmark {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, postId])
+  @@index([memberId])
+  @@map("community_post_bookmarks")
 }
 
 model Banner {
