@@ -81,6 +81,10 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
   io.on('connection', (socket) => {
     if (socket.data.role === 'member') {
       socket.join(`user:${socket.data.memberId}`);
+      // Item #30: every connected member joins the shared 'community'
+      // room so the feed can fan-out new posts / likes / comments
+      // without per-socket tracking.
+      socket.join('community');
       fastify.log.info(`Member ${socket.data.memberId} connected (${socket.id})`);
     }
     if (socket.data.role === 'admin') {

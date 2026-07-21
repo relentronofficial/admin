@@ -23,6 +23,7 @@ import {
   memberListFollowingHandler,
   memberReportPostHandler,
   memberSearchHandler,
+  memberHashtagFeedHandler,
   adminListReportsHandler,
   adminUpdateReportHandler,
   adminApprovePostHandler,
@@ -76,5 +77,6 @@ export async function communityRoutes(fastify: FastifyInstance) {
     userScope.get('/members/me/following', memberListFollowingHandler);
     userScope.post('/posts/:id/report', memberReportPostHandler);
     userScope.get('/members/search', memberSearchHandler);
+    userScope.get('/hashtag/:tag/feed', memberHashtagFeedHandler);
   });
 }

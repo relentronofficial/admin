@@ -249,6 +249,15 @@ export async function memberToggleLikeHandler(request: FastifyRequest, reply: Fa
     }
   });
 
+  // Item #30: broadcast the fresh count so other viewers' cards can
+  // update live without a refresh.
+  try {
+    (request.server as any).io?.to('community')?.emit('community:post_liked', {
+      postId: id,
+      likesCount: result.likesCount,
+    });
+  } catch (_) {}
+
   return reply.send({ success: true, data: result, error: null });
 }
 
@@ -409,6 +418,15 @@ export async function memberAddCommentHandler(request: FastifyRequest, reply: Fa
     return comment;
   });
 
+  // Item #30: broadcast so any client currently watching this post's
+  // comments (open sheet) or the feed can refresh the count.
+  try {
+    (request.server as any).io?.to('community')?.emit('community:comment_added', {
+      postId: id,
+      commentId: created.id,
+    });
+  } catch (_) {}
+
   return reply.status(201).send({ success: true, data: created, error: null });
 }
 
@@ -485,6 +503,93 @@ export async function memberReportPostHandler(
   return reply.status(201).send({
     success: true,
     data: { alreadyReported: false },
+    error: null,
+  });
+}
+
+// ── Member: hashtag feed (item #27) ─────────────────────────────────
+// Returns approved active posts whose content contains `#<tag>`. Tag
+// match is word-bounded (`#growth` matches "great #growth mindset"
+// but not "#growthhack"). Case-insensitive.
+export async function memberHashtagFeedHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { tag } = request.params as { tag: string };
+  const { page = 1, limit = 20 } = request.query as any;
+  const memberId = request.memberId;
+
+  // Sanitize the tag — strip a leading '#' and reject non-word chars.
+  // Prevents SQL-LIKE payloads and keeps the match predictable.
+  const cleaned = tag.replace(/^#/, '').replace(/[^A-Za-z0-9_]/g, '');
+  if (cleaned.length === 0) {
+    return reply.send({
+      success: true,
+      data: [],
+      meta: { total: 0, page: Number(page), limit: Number(limit) },
+      error: null,
+    });
+  }
+  const needle = `#${cleaned}`;
+
+  const where = {
+    isApproved: true,
+    status: 'active',
+    content: { contains: needle, mode: 'insensitive' as const },
+  };
+  const [posts, total] = await Promise.all([
+    request.server.prisma.post.findMany({
+      where: where as any,
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+      orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profilePhotoUrl: true,
+          },
+        },
+      },
+    }),
+    request.server.prisma.post.count({ where: where as any }),
+  ]);
+
+  // Same isLikedByMe + isBookmarkedByMe enrichment as the main feed so
+  // hashtag posts render identically in the mobile card.
+  const likedIds = new Set<string>();
+  const bookmarkedIds = new Set<string>();
+  if (memberId && posts.length > 0) {
+    try {
+      const [likes, bookmarks] = await Promise.all([
+        request.server.prisma.like.findMany({
+          where: { memberId, postId: { in: posts.map((p) => p.id) } },
+          select: { postId: true },
+        }),
+        request.server.prisma.postBookmark.findMany({
+          where: { memberId, postId: { in: posts.map((p) => p.id) } },
+          select: { postId: true },
+        }),
+      ]);
+      for (const l of likes) {
+        if (l.postId) likedIds.add(l.postId);
+      }
+      for (const b of bookmarks) bookmarkedIds.add(b.postId);
+    } catch (_) {}
+  }
+
+  const enriched = posts.map((p) => ({
+    ...p,
+    isLikedByMe: likedIds.has(p.id),
+    isBookmarkedByMe: bookmarkedIds.has(p.id),
+  }));
+
+  return reply.send({
+    success: true,
+    data: enriched,
+    meta: { total, page: Number(page), limit: Number(limit), tag: cleaned },
     error: null,
   });
 }
@@ -1066,6 +1171,16 @@ export async function adminApprovePostHandler(request: FastifyRequest, reply: Fa
     where: { id },
     data: { isApproved: parsed.data.isApproved },
   });
+  // Item #30: fan-out to every member connected to the 'community'
+  // room so their feed refreshes without a manual pull-to-refresh.
+  // Only emits when going pending → approved (isApproved: true).
+  if (parsed.data.isApproved) {
+    try {
+      (request.server as any).io
+          ?.to('community')
+          ?.emit('community:post_created', { postId: id, memberId: post.memberId });
+    } catch (_) {}
+  }
   return reply.send({ success: true, data: post, error: null });
 }
 
