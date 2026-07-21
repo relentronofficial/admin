@@ -26,6 +26,7 @@ import {
   useDeleteTbtTask,
   useTbtLeaderboard,
   useGrantPoints,
+  useTbtActivityLog,
   type TbtLevel,
   type TbtTask,
 } from "@/lib/hooks/useGamification";
@@ -41,6 +42,7 @@ import {
   Trash2,
   Crown,
   Zap,
+  History,
 } from "lucide-react";
 
 const labelCls =
@@ -61,7 +63,7 @@ function StatChip({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-type Tab = "tasks" | "levels" | "leaderboard";
+type Tab = "tasks" | "levels" | "leaderboard" | "activity";
 
 export default function GamificationPage() {
   const [tab, setTab] = useState<Tab>("tasks");
@@ -98,6 +100,7 @@ export default function GamificationPage() {
               { id: "tasks", label: "Task Path", icon: ListChecks },
               { id: "levels", label: "Levels", icon: Award },
               { id: "leaderboard", label: "Leaderboard", icon: Crown },
+              { id: "activity", label: "Activity Log", icon: History },
             ] as { id: Tab; label: string; icon: any }[]
           ).map((t) => {
             const Icon = t.icon;
@@ -122,6 +125,7 @@ export default function GamificationPage() {
         {tab === "tasks" && <TasksTab />}
         {tab === "levels" && <LevelsTab />}
         {tab === "leaderboard" && <LeaderboardTab />}
+        {tab === "activity" && <ActivityLogTab />}
       </div>
     </DashboardLayout>
   );
@@ -783,5 +787,171 @@ function ModalActions({
         {submitLabel ?? (isEdit ? "Save" : "Create")}
       </button>
     </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// ACTIVITY LOG
+// ────────────────────────────────────────────────────────────────
+
+function ActivityLogTab() {
+  const [period, setPeriod] = useState<"all" | "week" | "month">("all");
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const { data, isLoading, isFetching } = useTbtActivityLog({
+    period,
+    page,
+    limit,
+  });
+  const rows = data?.data ?? [];
+  const total = data?.meta?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  const setPeriodAndReset = (p: "all" | "week" | "month") => {
+    setPeriod(p);
+    setPage(1);
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] text-[#888]">
+          {total.toLocaleString()} activity row{total === 1 ? "" : "s"}
+        </span>
+        <div className="flex items-center gap-1">
+          {(
+            [
+              { id: "all" as const, label: "All Time" },
+              { id: "week" as const, label: "This Week" },
+              { id: "month" as const, label: "This Month" },
+            ]
+          ).map((p) => {
+            const active = period === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setPeriodAndReset(p.id)}
+                className={
+                  "text-[10px] font-bold uppercase tracking-widest font-rajdhani px-3 py-1.5 rounded-md border " +
+                  (active
+                    ? "bg-[#dc2626]/15 text-[#dc2626] border-[#dc2626]"
+                    : "bg-[#181818] text-[#888] border-[#2a2a2a] hover:text-white")
+                }
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[1fr_2fr_1fr_1fr] px-4 py-2.5 border-b border-[#2a2a2a] text-[9px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">
+          <div>When</div>
+          <div>Member</div>
+          <div className="text-right">Points</div>
+          <div className="text-right">Source</div>
+        </div>
+        {isLoading ? (
+          <div className="p-8 text-center text-[#666]">
+            <Loader2 className="inline animate-spin" size={16} />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="p-8 text-center text-[#666] text-[12px]">
+            No activity in this period.
+          </div>
+        ) : (
+          rows.map((r) => {
+            const memberName = r.member
+              ? [r.member.firstName, r.member.lastName]
+                  .filter((s): s is string => !!s && s.length > 0)
+                  .join(" ")
+                  .trim() || "Unknown"
+              : "Unknown";
+            const when = new Date(r.createdAt);
+            const whenStr =
+              when.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              }) +
+              " · " +
+              when.toLocaleTimeString(undefined, {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            return (
+              <div
+                key={r.id}
+                className="grid grid-cols-[1fr_2fr_1fr_1fr] px-4 py-3 border-b border-[#2a2a2a] last:border-b-0 items-center text-[12px]"
+              >
+                <div className="text-[#a0a0a0]">{whenStr}</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-[#2a2a2a] flex-shrink-0 overflow-hidden flex items-center justify-center">
+                    {r.member?.profilePhotoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={r.member.profilePhotoUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-[10px] text-[#666] font-bold">
+                        {memberName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-white truncate">{memberName}</span>
+                </div>
+                <div className="text-right">
+                  <span
+                    className={
+                      "text-[11px] font-bold px-2 py-0.5 rounded font-rajdhani " +
+                      (r.points >= 0
+                        ? "bg-yellow-500/10 text-yellow-400"
+                        : "bg-red-500/10 text-red-400")
+                    }
+                  >
+                    {r.points >= 0 ? "+" : ""}
+                    {r.points}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] px-2 py-0.5 rounded uppercase tracking-widest font-rajdhani font-bold bg-white/5 text-[#888]">
+                    {r.source}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-3 text-[11px] text-[#888]">
+          <span>
+            Page {page} of {totalPages}
+            {isFetching && (
+              <Loader2 className="inline animate-spin ml-2" size={12} />
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1.5 rounded-md bg-[#181818] border border-[#2a2a2a] text-[10px] font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-3 py-1.5 rounded-md bg-[#181818] border border-[#2a2a2a] text-[10px] font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

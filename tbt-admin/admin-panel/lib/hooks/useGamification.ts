@@ -154,3 +154,48 @@ export const useGrantPoints = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tbt"] }),
   });
 };
+
+// ── Activity Log ──────────────────────────────────────────────────
+export interface ActivityLogRow {
+  id: string;
+  memberId: string;
+  points: number;
+  source: string;
+  activityDate: string;
+  createdAt: string;
+  member: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    profilePhotoUrl: string | null;
+  } | null;
+}
+export interface ActivityLogPage {
+  data: ActivityLogRow[];
+  meta: { total: number; page: number; limit: number };
+}
+
+export const useTbtActivityLog = (params: {
+  period?: "all" | "week" | "month";
+  memberId?: string;
+  source?: string;
+  page?: number;
+  limit?: number;
+}) =>
+  useQuery({
+    queryKey: ["tbt", "activity-log", params],
+    queryFn: async (): Promise<ActivityLogPage> => {
+      const q = new URLSearchParams();
+      if (params.period) q.set("period", params.period);
+      if (params.memberId) q.set("memberId", params.memberId);
+      if (params.source) q.set("source", params.source);
+      if (params.page) q.set("page", String(params.page));
+      if (params.limit) q.set("limit", String(params.limit));
+      const res: any = await apiClient.get(
+        `/api/tbt/admin/activity-log?${q.toString()}`,
+      );
+      // The interceptor unwraps to `{ success, data, meta, error }`.
+      return { data: res?.data ?? [], meta: res?.meta ?? { total: 0, page: 1, limit: 50 } };
+    },
+    staleTime: 20_000,
+  });

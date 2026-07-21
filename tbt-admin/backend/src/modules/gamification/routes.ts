@@ -12,6 +12,7 @@ import {
   adminDeleteTaskHandler,
   adminLeaderboardHandler,
   adminGrantPointsHandler,
+  adminActivityLogHandler,
   // member
   myPathHandler,
   completeTaskHandler,
@@ -44,6 +45,7 @@ export async function gamificationRoutes(fastify: FastifyInstance) {
 
       adminScope.get('/leaderboard', adminLeaderboardHandler);
       adminScope.post('/grant', adminGrantPointsHandler);
+      adminScope.get('/activity-log', adminActivityLogHandler);
     },
     { prefix: '/admin' },
   );

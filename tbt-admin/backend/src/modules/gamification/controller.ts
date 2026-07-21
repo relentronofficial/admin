@@ -360,11 +360,24 @@ export async function listLevelsHandler(req: FastifyRequest, reply: FastifyReply
 }
 
 export async function leaderboardHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { limit = '20' } = req.query as Record<string, string>;
+  const { limit = '20', period = 'all' } = req.query as Record<string, string>;
   const l = Math.min(100, Math.max(1, Number(limit) || 20));
+
+  // Compute the activityDate lower-bound for the period filter.
+  // `week` → last 7 calendar days; `month` → last 30 days; `all` → no filter.
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let since: Date | null = null;
+  if (period === 'week') {
+    since = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+  } else if (period === 'month') {
+    since = new Date(startOfToday.getTime() - 29 * 24 * 60 * 60 * 1000);
+  }
+
   const grouped = await req.server.prisma.tbtActivityLog.groupBy({
     by: ['memberId'],
     _sum: { points: true },
+    where: since ? { activityDate: { gte: since } } : undefined,
     orderBy: { _sum: { points: 'desc' } },
     take: l,
   });
@@ -384,4 +397,69 @@ export async function leaderboardHandler(req: FastifyRequest, reply: FastifyRepl
     member: byId.get(g.memberId) ?? null,
   }));
   return ok(reply, rows);
+}
+
+/**
+ * Admin activity-log view. Returns paginated activity_log entries with
+ * member info joined in. Supports filters:
+ *   * memberId=<uuid>
+ *   * source=<task_completion|manual|...>
+ *   * period=all|week|month (default all)
+ *   * page, limit
+ */
+export async function adminActivityLogHandler(
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const {
+    memberId,
+    source,
+    period = 'all',
+    page = '1',
+    limit = '50',
+  } = req.query as Record<string, string>;
+
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let since: Date | null = null;
+  if (period === 'week') {
+    since = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+  } else if (period === 'month') {
+    since = new Date(startOfToday.getTime() - 29 * 24 * 60 * 60 * 1000);
+  }
+
+  const where: Record<string, unknown> = {};
+  if (memberId) where.memberId = memberId;
+  if (source) where.source = source;
+  if (since) where.activityDate = { gte: since };
+
+  const [rows, total] = await Promise.all([
+    req.server.prisma.tbtActivityLog.findMany({
+      where: where as any,
+      orderBy: { createdAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profilePhotoUrl: true,
+          },
+        },
+      },
+    }),
+    req.server.prisma.tbtActivityLog.count({ where: where as any }),
+  ]);
+
+  return reply.send({
+    success: true,
+    data: rows,
+    meta: { total, page: pageNum, limit: limitNum },
+    error: null,
+  });
 }
