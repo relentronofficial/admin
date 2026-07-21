@@ -21,19 +21,26 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
   ]);
 
   // Attach `isLikedByMe` per post — a single query joined in memory
-  // avoids N+1. Only included when memberId is present (always true for
-  // this route since it's JWT-gated).
+  // avoids N+1. Wrapped in try/catch so any Prisma-side hiccup on the
+  // Like table degrades gracefully to `isLikedByMe: false` instead of
+  // taking down the whole feed.
   const memberId = request.memberId;
-  let likedIds = new Set<string>();
+  const likedIds = new Set<string>();
   if (memberId && posts.length > 0) {
-    const likes = await request.server.prisma.like.findMany({
-      where: {
-        memberId,
-        postId: { in: posts.map((p) => p.id) },
-      },
-      select: { postId: true },
-    });
-    likedIds = new Set(likes.map((l) => l.postId!).filter(Boolean));
+    try {
+      const likes = await request.server.prisma.like.findMany({
+        where: {
+          memberId,
+          postId: { in: posts.map((p) => p.id) },
+        },
+        select: { postId: true },
+      });
+      for (const l of likes) {
+        if (l.postId) likedIds.add(l.postId);
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'community feed: like-enrichment failed');
+    }
   }
   const enriched = posts.map((p) => ({
     ...p,
