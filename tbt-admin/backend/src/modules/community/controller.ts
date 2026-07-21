@@ -80,10 +80,13 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
   // the feed batch — no N+1. Ordered by createdAt asc so "first liker"
   // === "earliest liker", which matches LinkedIn's "Liked by <first
   // person> and N others" convention.
-  const firstLikerByPost = new Map<
-    string,
-    { id: string; firstName: string | null; lastName: string | null; profilePhotoUrl: string | null }
-  >();
+  type MemberRef = {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    profilePhotoUrl: string | null;
+  };
+  const firstLikerByPost = new Map<string, MemberRef>();
   if (posts.length > 0) {
     try {
       const likes = await request.server.prisma.like.findMany({
@@ -111,10 +114,57 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
     }
   }
 
+  // Item #11: batch top-comment per post. Same no-N+1 pattern — one
+  // findMany + dedupe in memory. Ordered by createdAt asc so "top" is
+  // the oldest comment (feed-first pattern, matches how LinkedIn shows
+  // it — encourages engagement with early commenters).
+  type TopComment = {
+    id: string;
+    content: string;
+    createdAt: Date;
+    member: MemberRef | null;
+  };
+  const topCommentByPost = new Map<string, TopComment>();
+  if (posts.length > 0) {
+    try {
+      const comments = await request.server.prisma.comment.findMany({
+        where: { postId: { in: posts.map((p) => p.id) } },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          postId: true,
+          content: true,
+          createdAt: true,
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePhotoUrl: true,
+            },
+          },
+        },
+      });
+      for (const c of comments) {
+        if (c.postId && !topCommentByPost.has(c.postId)) {
+          topCommentByPost.set(c.postId, {
+            id: c.id,
+            content: c.content,
+            createdAt: c.createdAt,
+            member: c.member,
+          });
+        }
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'community feed: top-comment enrichment failed');
+    }
+  }
+
   const enriched = posts.map((p) => ({
     ...p,
     isLikedByMe: likedIds.has(p.id),
     firstLiker: firstLikerByPost.get(p.id) ?? null,
+    topComment: topCommentByPost.get(p.id) ?? null,
   }));
 
   return reply.send({
