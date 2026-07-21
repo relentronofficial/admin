@@ -1,8 +1,10 @@
-// Base URL injected at build time:
+// Base URL — defaults to production Cloud Run so shipped APKs work
+// without any --dart-define. Override for local dev:
 //   flutter run --dart-define=API_BASE_URL=http://localhost:8000
-//   flutter build appbundle --dart-define=API_BASE_URL=https://api.tamilbusinesstribe.com
-const String kApiBaseUrl =
-    String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8000');
+const String kApiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: 'https://tbt-backend-464464507912.asia-south1.run.app',
+);
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
 const String kAuthLogin = '/api/user-auth/login';
