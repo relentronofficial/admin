@@ -323,6 +323,8 @@ model Member {
   // at Member (Prisma needs the disambiguation).
   following             MemberConnection[] @relation("MemberFollowers")
   followers             MemberConnection[] @relation("MemberFollowing")
+  // Item #25 reports filed by this member.
+  postReports           PostReport[]
   supportTickets        SupportTicket[]
   rewardRedemptions     RewardRedemption[]
   badges                MemberBadge[]
@@ -807,6 +809,7 @@ model Post {
   likes     Like[]
   polls     Poll[]
   bookmarks PostBookmark[]
+  reports   PostReport[]
 
   @@map("community_posts")
 }
@@ -905,6 +908,29 @@ model MemberConnection {
   @@index([followerId])
   @@index([followingId])
   @@map("member_connections")
+}
+
+// ── Community post reports (v2 speckit item #25) ────────────────────
+// Members flag inappropriate posts here; admins triage from the
+// /community → Reports tab. Status lifecycle: pending → resolved OR
+// pending → dismissed. Posts are NOT auto-hidden — moderation stays
+// human-in-the-loop.
+model PostReport {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  postId     String   @map("post_id") @db.Uuid
+  reporterId String   @map("reporter_id") @db.Uuid
+  reason     String   @db.VarChar(50)
+  detail     String?
+  status     String   @default("pending") @db.VarChar(20)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporter Member @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([postId])
+  @@map("community_post_reports")
 }
 
 // ── Community post bookmarks (v2 speckit item #16) ─────────────────

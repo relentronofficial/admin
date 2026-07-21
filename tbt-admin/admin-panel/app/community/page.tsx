@@ -13,7 +13,10 @@ import {
   usePinCommunityPost,
   useDeleteCommunityPost,
   useListPostComments,
+  useListCommunityReports,
+  useUpdateCommunityReport,
   type CommunityPost,
+  type CommunityReport,
 } from "@/lib/hooks/useCommunity";
 import { toast } from "react-hot-toast";
 import {
@@ -27,9 +30,10 @@ import {
   MessageSquare,
   Heart,
   Clock,
+  Flag,
 } from "lucide-react";
 
-type Tab = "all" | "pending" | "approved";
+type Tab = "all" | "pending" | "approved" | "reports";
 
 export default function CommunityPage() {
   const [tab, setTab] = useState<Tab>("pending");
@@ -78,6 +82,7 @@ export default function CommunityPage() {
               { id: "pending", label: "Pending Review" },
               { id: "approved", label: "Approved" },
               { id: "all", label: "All Posts" },
+              { id: "reports", label: "Reports" },
             ] as { id: Tab; label: string }[]
           ).map((t) => {
             const active = tab === t.id;
@@ -103,7 +108,9 @@ export default function CommunityPage() {
           })}
         </div>
 
-        {isLoading ? (
+        {tab === "reports" ? (
+          <ReportsTab />
+        ) : isLoading ? (
           <div className="p-16 text-center text-[#666]">
             <Loader2 className="inline animate-spin" size={20} />
           </div>
@@ -119,7 +126,7 @@ export default function CommunityPage() {
           </div>
         )}
 
-        {total > limit && (
+        {tab !== "reports" && total > limit && (
           <div className="flex items-center justify-between mt-4 text-[11px] text-[#888]">
             <span>
               Page {page} of {Math.max(1, Math.ceil(total / limit))}
@@ -372,6 +379,201 @@ function StatChip({ label, value }: { label: string; value: string | number }) {
         {label}
       </div>
       <div className="text-lg font-bold text-white tracking-tight">{value}</div>
+    </div>
+  );
+}
+
+// ── Reports moderation (item #25) ─────────────────────────────────
+
+function ReportsTab() {
+  const [status, setStatus] = useState<
+    "pending" | "resolved" | "dismissed" | "all"
+  >("pending");
+  const { data, isLoading } = useListCommunityReports({ status, limit: 100 });
+  const rows = data?.data ?? [];
+  const update = useUpdateCommunityReport();
+
+  const setStatusAndRefresh = (
+    s: "pending" | "resolved" | "dismissed" | "all",
+  ) => setStatus(s);
+
+  return (
+    <>
+      <div className="flex items-center gap-1 mb-3">
+        {(
+          [
+            { id: "pending" as const, label: "Pending" },
+            { id: "resolved" as const, label: "Resolved" },
+            { id: "dismissed" as const, label: "Dismissed" },
+            { id: "all" as const, label: "All" },
+          ]
+        ).map((s) => {
+          const active = status === s.id;
+          return (
+            <button
+              key={s.id}
+              onClick={() => setStatusAndRefresh(s.id)}
+              className={
+                "text-[10px] font-bold uppercase tracking-widest font-rajdhani px-3 py-1.5 rounded-md border " +
+                (active
+                  ? "bg-[#dc2626]/15 text-[#dc2626] border-[#dc2626]"
+                  : "bg-[#181818] text-[#888] border-[#2a2a2a] hover:text-white")
+              }
+            >
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {isLoading ? (
+        <div className="p-16 text-center text-[#666]">
+          <Loader2 className="inline animate-spin" size={20} />
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="p-16 text-center text-[#666] text-[13px]">
+          No {status === "all" ? "" : status + " "}reports.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {rows.map((r) => (
+            <ReportCard
+              key={r.id}
+              report={r}
+              busy={update.isPending}
+              onResolve={async (next) => {
+                try {
+                  await update.mutateAsync({ id: r.id, status: next });
+                  toast.success(
+                    next === "resolved" ? "Marked resolved" : "Dismissed",
+                  );
+                } catch (err: any) {
+                  toast.error(
+                    err?.response?.data?.error?.message ?? "Failed",
+                  );
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReportCard({
+  report,
+  busy,
+  onResolve,
+}: {
+  report: CommunityReport;
+  busy: boolean;
+  onResolve: (next: "resolved" | "dismissed" | "pending") => void;
+}) {
+  const reporterName = report.reporter
+    ? [report.reporter.firstName, report.reporter.lastName]
+        .filter((s): s is string => !!s && s.length > 0)
+        .join(" ")
+        .trim() || "Unknown"
+    : "Anonymous";
+  const authorName = report.post?.member
+    ? [report.post.member.firstName, report.post.member.lastName]
+        .filter((s): s is string => !!s && s.length > 0)
+        .join(" ")
+        .trim() || "Unknown"
+    : "Unknown";
+  const when = new Date(report.createdAt);
+  const whenStr =
+    when.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+    " · " +
+    when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-[#dc2626]/15 border border-[#dc2626]/40 flex items-center justify-center flex-shrink-0">
+          <Flag size={18} className="text-[#dc2626]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-[10px] px-2 py-0.5 rounded uppercase tracking-widest font-rajdhani font-bold bg-[#dc2626]/10 text-[#dc2626]">
+              {report.reason}
+            </span>
+            <span
+              className={
+                "text-[10px] px-2 py-0.5 rounded uppercase tracking-widest font-rajdhani font-bold " +
+                (report.status === "pending"
+                  ? "bg-orange-500/10 text-orange-400"
+                  : report.status === "resolved"
+                    ? "bg-green-500/10 text-green-400"
+                    : "bg-white/5 text-[#888]")
+              }
+            >
+              {report.status}
+            </span>
+            <span className="text-[11px] text-[#666] ml-auto flex items-center gap-1">
+              <Clock size={11} /> {whenStr}
+            </span>
+          </div>
+          <div className="text-[12px] text-[#a0a0a0] mb-2">
+            Reported by <span className="text-white font-bold">{reporterName}</span>
+          </div>
+          {report.detail && (
+            <div className="text-[13px] text-[#d0d0d0] italic mb-3 pl-3 border-l-2 border-[#2a2a2a]">
+              &ldquo;{report.detail}&rdquo;
+            </div>
+          )}
+          {report.post && (
+            <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg p-3 mb-3">
+              <div className="text-[11px] text-[#666] mb-1">
+                Post by <span className="text-white">{authorName}</span>
+              </div>
+              <div className="text-[13px] text-[#d0d0d0] whitespace-pre-wrap leading-relaxed">
+                {report.post.content}
+              </div>
+              {report.post.mediaUrls.length > 0 && (
+                <div className="flex gap-2 mt-2">
+                  {report.post.mediaUrls.slice(0, 3).map((u, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={u}
+                      alt=""
+                      className="w-16 h-16 rounded object-cover border border-[#2a2a2a]"
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {report.status === "pending" && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onResolve("resolved")}
+                disabled={busy}
+                className="text-[11px] px-3 py-1.5 rounded bg-green-500/15 text-green-400 hover:bg-green-500/25 font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <Check size={12} /> Mark resolved
+              </button>
+              <button
+                onClick={() => onResolve("dismissed")}
+                disabled={busy}
+                className="text-[11px] px-3 py-1.5 rounded bg-[#0f0f0f] border border-[#2a2a2a] text-[#888] hover:text-white font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <X size={12} /> Dismiss
+              </button>
+            </div>
+          )}
+          {report.status !== "pending" && (
+            <button
+              onClick={() => onResolve("pending")}
+              disabled={busy}
+              className="text-[11px] px-3 py-1.5 rounded bg-[#0f0f0f] border border-[#2a2a2a] text-[#888] hover:text-white font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40"
+            >
+              Reopen
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

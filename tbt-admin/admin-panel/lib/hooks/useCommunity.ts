@@ -127,6 +127,74 @@ export interface CommunityComment {
   member: CommunityMember | null;
 }
 
+// ── Reports (item #25) ────────────────────────────────────────────
+
+export interface CommunityReport {
+  id: string;
+  postId: string;
+  reporterId: string;
+  reason: string;
+  detail: string | null;
+  status: string; // "pending" | "resolved" | "dismissed"
+  createdAt: string;
+  resolvedAt: string | null;
+  reporter: CommunityMember | null;
+  post: {
+    id: string;
+    content: string;
+    mediaUrls: string[];
+    createdAt: string;
+    member: CommunityMember | null;
+  } | null;
+}
+
+export const useListCommunityReports = (params: {
+  status?: "pending" | "resolved" | "dismissed" | "all";
+  page?: number;
+  limit?: number;
+}) =>
+  useQuery({
+    queryKey: ["community", "reports", params],
+    queryFn: async (): Promise<{
+      data: CommunityReport[];
+      meta: { total: number; page: number; limit: number };
+    }> => {
+      const q = new URLSearchParams();
+      if (params.status) q.set("status", params.status);
+      if (params.page) q.set("page", String(params.page));
+      if (params.limit) q.set("limit", String(params.limit));
+      const res: any = await apiClient.get(
+        `/api/community/admin/reports?${q.toString()}`,
+      );
+      return {
+        data: res?.data ?? [],
+        meta: res?.meta ?? { total: 0, page: 1, limit: 50 },
+      };
+    },
+    staleTime: 20_000,
+  });
+
+export const useUpdateCommunityReport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: "resolved" | "dismissed" | "pending";
+    }) => {
+      const res: any = await apiClient.put(
+        `/api/community/admin/reports/${id}`,
+        { status },
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["community", "reports"] }),
+  });
+};
+
 export const useListPostComments = (postId: string | null) =>
   useQuery({
     queryKey: ["community", "comments", postId],

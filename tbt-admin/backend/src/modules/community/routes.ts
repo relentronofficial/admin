@@ -21,6 +21,10 @@ import {
   memberToggleFollowHandler,
   memberListFollowersHandler,
   memberListFollowingHandler,
+  memberReportPostHandler,
+  memberSearchHandler,
+  adminListReportsHandler,
+  adminUpdateReportHandler,
   adminApprovePostHandler,
 } from './controller.js';
 
@@ -46,6 +50,8 @@ export async function communityRoutes(fastify: FastifyInstance) {
       adminScope.put('/posts/:id/pin', pinPostHandler);
       adminScope.put('/posts/:id/approve', adminApprovePostHandler);
       adminScope.get('/posts/:id/comments', getCommentsHandler);
+      adminScope.get('/reports', adminListReportsHandler);
+      adminScope.put('/reports/:id', adminUpdateReportHandler);
     },
     { prefix: '/admin' },
   );
@@ -68,5 +74,7 @@ export async function communityRoutes(fastify: FastifyInstance) {
     userScope.post('/members/:id/follow', memberToggleFollowHandler);
     userScope.get('/members/:id/followers', memberListFollowersHandler);
     userScope.get('/members/me/following', memberListFollowingHandler);
+    userScope.post('/posts/:id/report', memberReportPostHandler);
+    userScope.get('/members/search', memberSearchHandler);
   });
 }

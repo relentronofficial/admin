@@ -412,6 +412,207 @@ export async function memberAddCommentHandler(request: FastifyRequest, reply: Fa
   return reply.status(201).send({ success: true, data: created, error: null });
 }
 
+// ── Member: report a post (item #25) ─────────────────────────────────
+// Creates a PostReport row. Idempotent per (post, reporter, reason) —
+// a member reporting the same post twice for the same reason is a
+// no-op (avoids inflating counts).
+const REPORT_REASONS = new Set([
+  'spam',
+  'harassment',
+  'inappropriate',
+  'misinformation',
+  'other',
+]);
+
+export async function memberReportPostHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const reporterId = request.memberId!;
+  const body = (request.body as any) ?? {};
+  const reason = String(body.reason ?? '').toLowerCase().trim();
+  const detail = body.detail ? String(body.detail).trim().slice(0, 500) : null;
+
+  if (!REPORT_REASONS.has(reason)) {
+    return reply.status(400).send({
+      success: false,
+      data: null,
+      error: {
+        code: 'invalid_input',
+        message: 'Reason must be one of: spam, harassment, inappropriate, misinformation, other.',
+      },
+    });
+  }
+
+  const post = await request.server.prisma.post.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!post) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: { code: 'not_found', message: 'Post not found.' },
+    });
+  }
+
+  const existing = await request.server.prisma.postReport.findFirst({
+    where: { postId: id, reporterId, reason, status: 'pending' },
+    select: { id: true },
+  });
+  if (existing) {
+    return reply.send({
+      success: true,
+      data: { alreadyReported: true },
+      error: null,
+    });
+  }
+
+  await request.server.prisma.postReport.create({
+    data: { postId: id, reporterId, reason, detail },
+  });
+
+  // Broadcast to admin room so the moderation dashboard can badge
+  // "N new reports" live. Non-fatal if the socket plugin is missing.
+  try {
+    (request.server as any).io?.to('admin')?.emit('admin:post_reported', {
+      postId: id,
+      reason,
+    });
+  } catch (_) {}
+
+  return reply.status(201).send({
+    success: true,
+    data: { alreadyReported: false },
+    error: null,
+  });
+}
+
+// ── Member: search other members (item #26) ─────────────────────────
+// Powers @mention autocomplete + generic member picker. Case-insensitive
+// prefix match on firstName/lastName. Excludes the caller.
+export async function memberSearchHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const memberId = request.memberId;
+  const { q = '', limit = '10' } = request.query as Record<string, string>;
+  const query = q.trim();
+  if (query.length < 1) {
+    return reply.send({ success: true, data: [], error: null });
+  }
+  const limitNum = Math.min(30, Math.max(1, Number(limit) || 10));
+
+  const rows = await request.server.prisma.member.findMany({
+    where: {
+      AND: [
+        { id: memberId ? { not: memberId } : undefined },
+        {
+          OR: [
+            { firstName: { contains: query, mode: 'insensitive' } },
+            { lastName: { contains: query, mode: 'insensitive' } },
+          ],
+        },
+      ],
+    },
+    orderBy: { firstName: 'asc' },
+    take: limitNum,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      profilePhotoUrl: true,
+    },
+  });
+  return reply.send({ success: true, data: rows, error: null });
+}
+
+// ── Admin: list post reports (item #25) ─────────────────────────────
+export async function adminListReportsHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { status = 'pending', page = '1', limit = '50' } =
+      request.query as Record<string, string>;
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+  const where: any = {};
+  if (status !== 'all') where.status = status;
+
+  const [rows, total] = await Promise.all([
+    request.server.prisma.postReport.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+      include: {
+        reporter: {
+          select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+        },
+        post: {
+          select: {
+            id: true,
+            content: true,
+            mediaUrls: true,
+            createdAt: true,
+            member: {
+              select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+            },
+          },
+        },
+      },
+    }),
+    request.server.prisma.postReport.count({ where }),
+  ]);
+
+  return reply.send({
+    success: true,
+    data: rows,
+    meta: { total, page: pageNum, limit: limitNum },
+    error: null,
+  });
+}
+
+// ── Admin: resolve or dismiss a report (item #25) ────────────────────
+export async function adminUpdateReportHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const body = (request.body as any) ?? {};
+  const status = String(body.status ?? '').toLowerCase();
+  if (!['resolved', 'dismissed', 'pending'].includes(status)) {
+    return reply.status(400).send({
+      success: false,
+      data: null,
+      error: {
+        code: 'invalid_input',
+        message: 'Status must be resolved, dismissed, or pending.',
+      },
+    });
+  }
+  try {
+    const updated = await request.server.prisma.postReport.update({
+      where: { id },
+      data: {
+        status,
+        resolvedAt: status === 'pending' ? null : new Date(),
+      },
+    });
+    return reply.send({ success: true, data: updated, error: null });
+  } catch (err: any) {
+    if (err?.code === 'P2025') {
+      return reply.status(404).send({
+        success: false,
+        data: null,
+        error: { code: 'not_found', message: 'Report not found.' },
+      });
+    }
+    throw err;
+  }
+}
+
 // ── Member: profile card data (item #20) ────────────────────────────
 // Powers the author-profile bottom sheet. Aggregates: member row +
 // counts (posts / followers / following — follows are stubbed at 0
