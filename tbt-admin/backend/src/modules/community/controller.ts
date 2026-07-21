@@ -75,9 +75,46 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
       request.log.warn({ err }, 'community feed: like-enrichment failed');
     }
   }
+
+  // Item #6: batch first-liker per post. Single query for all posts in
+  // the feed batch — no N+1. Ordered by createdAt asc so "first liker"
+  // === "earliest liker", which matches LinkedIn's "Liked by <first
+  // person> and N others" convention.
+  const firstLikerByPost = new Map<
+    string,
+    { id: string; firstName: string | null; lastName: string | null; profilePhotoUrl: string | null }
+  >();
+  if (posts.length > 0) {
+    try {
+      const likes = await request.server.prisma.like.findMany({
+        where: { postId: { in: posts.map((p) => p.id) } },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          postId: true,
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePhotoUrl: true,
+            },
+          },
+        },
+      });
+      for (const l of likes) {
+        if (l.postId && !firstLikerByPost.has(l.postId) && l.member) {
+          firstLikerByPost.set(l.postId, l.member);
+        }
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'community feed: first-liker enrichment failed');
+    }
+  }
+
   const enriched = posts.map((p) => ({
     ...p,
     isLikedByMe: likedIds.has(p.id),
+    firstLiker: firstLikerByPost.get(p.id) ?? null,
   }));
 
   return reply.send({
@@ -182,6 +219,52 @@ export async function memberAddCommentHandler(request: FastifyRequest, reply: Fa
   });
 
   return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+// ── Member: paginated likers on a post (item #6) ────────────────────
+// Powers the "N others" tap on the engagement summary line — shows
+// everyone who liked the post, oldest first (matches "first liker"
+// convention on the feed line).
+export async function memberListPostLikersHandler(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { id } = request.params as { id: string };
+  const { page = '1', limit = '50' } = request.query as Record<string, string>;
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+
+  const [likes, total] = await Promise.all([
+    request.server.prisma.like.findMany({
+      where: { postId: id },
+      orderBy: { createdAt: 'asc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profilePhotoUrl: true,
+          },
+        },
+      },
+    }),
+    request.server.prisma.like.count({ where: { postId: id } }),
+  ]);
+
+  // Return the flat member list; skip any orphaned rows.
+  const members = likes
+    .map((l) => l.member)
+    .filter((m): m is NonNullable<typeof m> => m != null);
+
+  return reply.send({
+    success: true,
+    data: members,
+    meta: { total, page: pageNum, limit: limitNum },
+    error: null,
+  });
 }
 
 // ── Member: delete own comment ─────────────────────────────────────
