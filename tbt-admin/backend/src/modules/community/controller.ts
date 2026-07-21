@@ -2,12 +2,46 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createPostSchema, updatePostPinSchema, submitPostSchema, approvePostSchema } from './schema.js';
 
 // ── Member-facing: submit + list approved feed (Module 9A) ─────────
+//
+// Filters (v2, item #3):
+//   * `all` (default) — approved active posts
+//   * `mentors`       — approved + isMentor=true
+//   * `mine`          — memberId=me (any status, including pending so the
+//                        author sees their own not-yet-approved posts)
+//   * `following`     — posts by members I follow; returns [] until
+//                        the member_connections table lands (item #21)
 export async function memberListFeedHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 20 } = request.query as any;
-  const where = { isApproved: true, status: 'active' };
+  const { page = 1, limit = 20, filter = 'all' } = request.query as any;
+  const memberId = request.memberId;
+
+  const where: Record<string, unknown> = { status: 'active' };
+  switch (filter) {
+    case 'mentors':
+      where.isApproved = true;
+      where.isMentor = true;
+      break;
+    case 'mine':
+      // Author sees their own posts including pending — no isApproved
+      // filter here.
+      where.memberId = memberId;
+      break;
+    case 'following':
+      // Not yet wired — return an empty page.
+      return reply.send({
+        success: true,
+        data: [],
+        meta: { total: 0, page: Number(page), limit: Number(limit) },
+        error: null,
+      });
+    case 'all':
+    default:
+      where.isApproved = true;
+      break;
+  }
+
   const [posts, total] = await Promise.all([
     request.server.prisma.post.findMany({
-      where,
+      where: where as any,
       skip: (Number(page) - 1) * Number(limit),
       take: Number(limit),
       orderBy: [{ isPinned: 'desc' }, { isMentor: 'desc' }, { createdAt: 'desc' }],
@@ -17,14 +51,13 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
         },
       },
     }),
-    request.server.prisma.post.count({ where }),
+    request.server.prisma.post.count({ where: where as any }),
   ]);
 
   // Attach `isLikedByMe` per post — a single query joined in memory
   // avoids N+1. Wrapped in try/catch so any Prisma-side hiccup on the
   // Like table degrades gracefully to `isLikedByMe: false` instead of
   // taking down the whole feed.
-  const memberId = request.memberId;
   const likedIds = new Set<string>();
   if (memberId && posts.length > 0) {
     try {
