@@ -59,6 +59,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
   {
     label: "Communication",
     items: [
+      { name: "Community",     href: "/community",         icon: Users },
       { name: "Notifications", href: "/app-notifications", icon: Bell },
       { name: "Messages",      href: "/messages",          icon: MessageSquare },
       { name: "AI Content",    href: "/ai-content",        icon: Bot },

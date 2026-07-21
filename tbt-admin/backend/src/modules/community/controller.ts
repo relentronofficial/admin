@@ -19,12 +19,157 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
     }),
     request.server.prisma.post.count({ where }),
   ]);
+
+  // Attach `isLikedByMe` per post — a single query joined in memory
+  // avoids N+1. Only included when memberId is present (always true for
+  // this route since it's JWT-gated).
+  const memberId = request.memberId;
+  let likedIds = new Set<string>();
+  if (memberId && posts.length > 0) {
+    const likes = await request.server.prisma.like.findMany({
+      where: {
+        memberId,
+        postId: { in: posts.map((p) => p.id) },
+      },
+      select: { postId: true },
+    });
+    likedIds = new Set(likes.map((l) => l.postId!).filter(Boolean));
+  }
+  const enriched = posts.map((p) => ({
+    ...p,
+    isLikedByMe: likedIds.has(p.id),
+  }));
+
   return reply.send({
     success: true,
-    data: posts,
+    data: enriched,
     meta: { total, page: Number(page), limit: Number(limit) },
     error: null,
   });
+}
+
+// ── Member: toggle like on a post ──────────────────────────────────
+// Idempotent from the user's PoV: if already liked → unlike; else like.
+// Keeps `likesCount` in sync via a transaction so no race conditions.
+export async function memberToggleLikeHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const memberId = request.memberId!;
+
+  const existing = await request.server.prisma.like.findFirst({
+    where: { memberId, postId: id },
+    select: { id: true },
+  });
+
+  const result = await request.server.prisma.$transaction(async (tx) => {
+    if (existing) {
+      await tx.like.delete({ where: { id: existing.id } });
+      const post = await tx.post.update({
+        where: { id },
+        data: { likesCount: { decrement: 1 } },
+        select: { likesCount: true },
+      });
+      return { liked: false, likesCount: Math.max(0, post.likesCount) };
+    } else {
+      await tx.like.create({ data: { memberId, postId: id } });
+      const post = await tx.post.update({
+        where: { id },
+        data: { likesCount: { increment: 1 } },
+        select: { likesCount: true },
+      });
+      return { liked: true, likesCount: post.likesCount };
+    }
+  });
+
+  return reply.send({ success: true, data: result, error: null });
+}
+
+// ── Member: list comments on a post ────────────────────────────────
+// Returns flat list ordered oldest first (thread-friendly for scroll).
+export async function memberListCommentsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const comments = await request.server.prisma.comment.findMany({
+    where: { postId: id },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      member: {
+        select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+      },
+    },
+  });
+  return reply.send({ success: true, data: comments, error: null });
+}
+
+// ── Member: add a comment to a post ────────────────────────────────
+export async function memberAddCommentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const body = (request.body as any) ?? {};
+  const content = String(body.content ?? '').trim();
+  if (content.length === 0 || content.length > 2000) {
+    return reply.status(400).send({
+      success: false,
+      data: null,
+      error: { code: 'invalid_input', message: 'Comment must be 1–2000 characters.' },
+    });
+  }
+  const memberId = request.memberId!;
+
+  const post = await request.server.prisma.post.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!post) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: { code: 'not_found', message: 'Post not found.' },
+    });
+  }
+
+  const created = await request.server.prisma.$transaction(async (tx) => {
+    const comment = await tx.comment.create({
+      data: { postId: id, memberId, content },
+      include: {
+        member: {
+          select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+        },
+      },
+    });
+    await tx.post.update({
+      where: { id },
+      data: { commentsCount: { increment: 1 } },
+    });
+    return comment;
+  });
+
+  return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+// ── Member: delete own comment ─────────────────────────────────────
+export async function memberDeleteCommentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id, commentId } = request.params as { id: string; commentId: string };
+  const memberId = request.memberId!;
+
+  const existing = await request.server.prisma.comment.findFirst({
+    where: { id: commentId, postId: id, memberId },
+    select: { id: true, postId: true },
+  });
+  if (!existing) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: { code: 'not_found', message: 'Comment not found or not yours.' },
+    });
+  }
+
+  await request.server.prisma.$transaction(async (tx) => {
+    await tx.comment.delete({ where: { id: commentId } });
+    await tx.post.update({
+      where: { id: existing.postId },
+      data: { commentsCount: { decrement: 1 } },
+    });
+  });
+
+  return reply.send({ success: true, data: null, error: null });
 }
 
 export async function memberSubmitPostHandler(request: FastifyRequest, reply: FastifyReply) {
