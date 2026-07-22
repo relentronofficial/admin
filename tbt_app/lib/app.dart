@@ -45,6 +45,8 @@ import 'features/workshops/presentation/workshop_detail_screen.dart';
 import 'features/workshops/presentation/workshop_episode_player_screen.dart';
 import 'features/workshops/presentation/workshops_screen.dart';
 import 'features/ai_content/presentation/ai_content_screen.dart';
+import 'features/community/presentation/community_screen.dart';
+import 'features/community/presentation/saved_posts_screen.dart';
 import 'features/podcasts/presentation/podcasts_screen.dart';
 import 'features/podcasts/presentation/podcast_series_screen.dart';
 import 'features/podcasts/presentation/podcast_player_screen.dart';
@@ -73,6 +75,7 @@ import 'shared/widgets/bottom_tab_bar.dart';
 import 'shared/widgets/offline_banner.dart';
 import 'shared/widgets/side_nav_rail.dart';
 import 'shared/widgets/subscription_gate.dart';
+import 'shared/widgets/tbt_app_drawer.dart';
 
 part 'app.g.dart';
 
@@ -192,57 +195,90 @@ List<RouteBase> _buildRoutes() => [
         builder: (_, __) => const ForgotPasswordScreen(),
       ),
 
-      // ── Shell (persistent bottom nav) ──────────────────────────────────────
-      ShellRoute(
-        builder: (_, __, child) => _AppShell(
+      // ── Persistent bottom-nav shell (StatefulShellRoute) ───────────────────
+      // Each branch owns its own Navigator stack — tab switches don't
+      // erase the previous tab's history, and system back on a non-home
+      // tab returns to Home before exiting the app instead of quitting
+      // outright (the old ShellRoute + `context.go` combo replaced the
+      // stack on every tab tap, causing the "back closes app" bug).
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) => _AppShell(
+          navigationShell: navigationShell,
           child: Column(
             children: [
               const OfflineBanner(),
-              Expanded(child: SubscriptionGate(child: child)),
+              Expanded(child: SubscriptionGate(child: navigationShell)),
             ],
           ),
         ),
-        routes: [
-          GoRoute(
-            path: AppRoutes.dashboard,
-            name: RouteNames.dashboard,
-            builder: (_, __) => const DashboardScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.tbt,
-            name: RouteNames.tbt,
-            builder: (_, __) => const CatalogScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.workshops,
-            name: RouteNames.workshops,
-            builder: (_, __) => const WorkshopsScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.search,
-            name: RouteNames.search,
-            builder: (_, __) => const SearchScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.notifications,
-            name: RouteNames.notifications,
-            builder: (_, __) => const NotificationsScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.messages,
-            name: RouteNames.messages,
-            builder: (_, __) => const MessagesScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.profile,
-            name: RouteNames.profile,
-            builder: (_, __) => const ProfileScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.wins,
-            name: RouteNames.wins,
-            builder: (_, __) => const WinsScreen(),
-          ),
+        branches: [
+          // Branch 0 — HOME. Root /dashboard; sub-routes are secondary
+          // pages that share the bottom bar (TBT catalog, workshops list,
+          // search, notifications, messages).
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: AppRoutes.dashboard,
+              name: RouteNames.dashboard,
+              builder: (_, __) => const DashboardScreen(),
+            ),
+            GoRoute(
+              path: AppRoutes.tbt,
+              name: RouteNames.tbt,
+              builder: (_, __) => const CatalogScreen(),
+            ),
+            GoRoute(
+              path: AppRoutes.workshops,
+              name: RouteNames.workshops,
+              builder: (_, __) => const WorkshopsScreen(),
+            ),
+            GoRoute(
+              path: AppRoutes.search,
+              name: RouteNames.search,
+              builder: (_, __) => const SearchScreen(),
+            ),
+            GoRoute(
+              path: AppRoutes.notifications,
+              name: RouteNames.notifications,
+              builder: (_, __) => const NotificationsScreen(),
+            ),
+            GoRoute(
+              path: AppRoutes.messages,
+              name: RouteNames.messages,
+              builder: (_, __) => const MessagesScreen(),
+            ),
+          ]),
+          // Branch 1 — WINS.
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: AppRoutes.wins,
+              name: RouteNames.wins,
+              builder: (_, __) => const WinsScreen(),
+            ),
+          ]),
+          // Branch 2 — Voice of Sakthi (podcasts).
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: AppRoutes.podcasts,
+              name: RouteNames.podcasts,
+              builder: (_, __) => const PodcastsScreen(),
+            ),
+          ]),
+          // Branch 3 — COURSES (catalog listing).
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: AppRoutes.courses,
+              name: RouteNames.courses,
+              builder: (_, __) => const CoursesScreen(),
+            ),
+          ]),
+          // Branch 4 — PROFILE.
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: AppRoutes.profile,
+              name: RouteNames.profile,
+              builder: (_, __) => const ProfileScreen(),
+            ),
+          ]),
         ],
       ),
 
@@ -274,12 +310,7 @@ List<RouteBase> _buildRoutes() => [
         ),
       ),
 
-      // ── Outside shell — Courses ────────────────────────────────────────────
-      GoRoute(
-        path: AppRoutes.courses,
-        name: RouteNames.courses,
-        builder: (_, __) => const CoursesScreen(),
-      ),
+      // (Courses now lives inside the StatefulShellRoute branches above.)
 
       // ── Outside shell — Learning ───────────────────────────────────────────
       GoRoute(
@@ -348,12 +379,19 @@ List<RouteBase> _buildRoutes() => [
         builder: (_, __) => const AIContentScreen(),
       ),
 
-      // ── Outside shell — Podcasts ───────────────────────────────────────────
+      // ── Outside shell — Community feed ────────────────────────────────────
       GoRoute(
-        path: AppRoutes.podcasts,
-        name: RouteNames.podcasts,
-        builder: (_, __) => const PodcastsScreen(),
+        path: AppRoutes.community,
+        name: RouteNames.community,
+        builder: (_, __) => const CommunityScreen(),
       ),
+      GoRoute(
+        path: AppRoutes.communitySaved,
+        name: RouteNames.communitySaved,
+        builder: (_, __) => const SavedPostsScreen(),
+      ),
+
+      // ── Outside shell — Podcasts (root /podcasts now inside shell) ────────
       GoRoute(
         path: AppRoutes.podcastSeriesDetail,
         name: RouteNames.podcastSeriesDetail,
@@ -669,9 +707,110 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
         );
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: scale),
-          child: child ?? const SizedBox.shrink(),
+          // Global back-button handler — wraps every route (both inside
+          // the ShellRoute and the top-level detail screens like
+          // /podcasts/player, /learning/*, /ebooks/*). Without this the
+          // Android back gesture on outside-shell routes would fall
+          // through to the OS and close the app when the router stack
+          // is empty.
+          child: _GlobalBackGate(child: child ?? const SizedBox.shrink()),
         );
       },
+    );
+  }
+}
+
+// ── Global back-button gate ───────────────────────────────────────────────────
+//
+// Wraps every route (inside AND outside the ShellRoute) so the Android
+// system back / gesture always follows platform-standard behavior:
+//
+//   1. If GoRouter can pop (a pushed detail screen) → pop.
+//   2. Else if we're not on /dashboard → jump to /dashboard.
+//   3. Else on /dashboard → "back to exit" pattern (double tap
+//      within 2 s to actually leave the app).
+//
+// This is layered ABOVE the shell's own PopScope. When both are in the
+// tree the innermost (the shell's) intercepts first — this outer gate
+// only fires for routes rendered outside the shell.
+
+class _GlobalBackGate extends StatefulWidget {
+  const _GlobalBackGate({required this.child});
+  final Widget child;
+
+  @override
+  State<_GlobalBackGate> createState() => _GlobalBackGateState();
+}
+
+class _GlobalBackGateState extends State<_GlobalBackGate> {
+  DateTime? _lastBackPress;
+  static const _kExitConfirmWindow = Duration(seconds: 2);
+
+  /// Paths that live inside the `StatefulShellRoute` — `_AppShell` owns
+  /// their back handling. Flutter fires EVERY registered PopScope on the
+  /// current ModalRoute (not just the innermost), so if we ran on these
+  /// paths too we'd double-navigate and confuse the shell into exiting.
+  /// Kept in sync with the branch definitions in `_buildRoutes`.
+  static const _kShellPaths = {
+    AppRoutes.dashboard,
+    AppRoutes.tbt,
+    AppRoutes.workshops,
+    AppRoutes.search,
+    AppRoutes.notifications,
+    AppRoutes.messages,
+    AppRoutes.wins,
+    AppRoutes.podcasts,
+    AppRoutes.courses,
+    AppRoutes.profile,
+  };
+
+  Future<void> _handleGlobalBack() async {
+    final currentPath = GoRouterState.of(context).uri.path;
+    // Inside the shell → let `_AppShell` be the single source of truth.
+    if (_kShellPaths.contains(currentPath)) return;
+
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
+      router.pop();
+      return;
+    }
+
+    if (currentPath != AppRoutes.dashboard) {
+      context.go(AppRoutes.dashboard);
+      return;
+    }
+
+    final now = DateTime.now();
+    final lastPress = _lastBackPress;
+    if (lastPress != null &&
+        now.difference(lastPress) < _kExitConfirmWindow) {
+      await SystemNavigator.pop();
+      return;
+    }
+
+    _lastBackPress = now;
+    if (!mounted) return;
+    final l10n = AppL10n.of(context);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(l10n?.backToExitPrompt ?? 'Press back again to exit'),
+          duration: _kExitConfirmWindow,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleGlobalBack();
+      },
+      child: widget.child,
     );
   }
 }
@@ -679,8 +818,12 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
 // ── Authenticated shell ───────────────────────────────────────────────────────
 
 class _AppShell extends StatefulWidget {
-  const _AppShell({required this.child});
+  const _AppShell({required this.navigationShell, required this.child});
 
+  /// The stateful shell that manages branch navigators. Passed through to
+  /// [AppBottomTabBar] so tab taps jump between branches (preserving each
+  /// branch's stack) instead of replacing the whole router stack.
+  final StatefulNavigationShell navigationShell;
   final Widget child;
 
   @override
@@ -699,12 +842,11 @@ class _AppShellState extends State<_AppShell> {
   /// Handles hardware / gesture back on the authenticated shell.
   ///
   /// Order of preference:
-  ///   1. If GoRouter has a route to pop (a `push`ed detail screen sitting on
-  ///      top of a shell tab), let it pop.
-  ///   2. Else if we're not on the home tab, jump to home so back always
-  ///      converges on `/dashboard` before quitting — matches the behaviour
-  ///      of every major Android app.
-  ///   3. Else on `/dashboard`, require two back presses within
+  ///   1. If the active branch's Navigator has a route to pop (a `push`ed
+  ///      detail screen), let it pop.
+  ///   2. Else if we're not on the Home branch, jump to Home so back always
+  ///      converges on `/dashboard` before quitting.
+  ///   3. Else on Home branch, require two back presses within
   ///      [_kExitConfirmWindow] to exit; first press just shows a snackbar.
   Future<void> _handleBack() async {
     final router = GoRouter.of(context);
@@ -713,9 +855,8 @@ class _AppShellState extends State<_AppShell> {
       return;
     }
 
-    final currentPath = GoRouterState.of(context).uri.path;
-    if (currentPath != AppRoutes.dashboard) {
-      context.go(AppRoutes.dashboard);
+    if (widget.navigationShell.currentIndex != 0) {
+      widget.navigationShell.goBranch(0);
       return;
     }
 
@@ -762,11 +903,13 @@ class _AppShellState extends State<_AppShell> {
         _handleBack();
       },
       child: Scaffold(
+        drawer: isTablet ? null : const TbtAppDrawer(),
+        drawerEdgeDragWidth: 24,
         appBar: hideAppNavbar ? null : const AppNavbar(),
         body: isTablet
             ? Row(
                 children: [
-                  const AppSideNavRail(),
+                  AppSideNavRail(navigationShell: widget.navigationShell),
                   const VerticalDivider(width: 1, thickness: 1),
                   Expanded(child: widget.child),
                 ],
@@ -776,9 +919,9 @@ class _AppShellState extends State<_AppShell> {
             ? null
             : Column(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
-                  PodcastMiniPlayer(),
-                  AppBottomTabBar(),
+                children: [
+                  const PodcastMiniPlayer(),
+                  AppBottomTabBar(navigationShell: widget.navigationShell),
                 ],
               ),
       ),

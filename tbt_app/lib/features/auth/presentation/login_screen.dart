@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -11,31 +9,25 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/routes.dart';
 import '../../../core/exceptions/app_exception.dart';
 import '../../../shared/providers/site_config_provider.dart';
+import '../../../shared/theme/design_tokens.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
-import '../../../shared/theme/design_tokens.dart';
-
-/// Dark-cyan glassmorphism login (Module 5 redesign).
+/// Login screen — flat black + red.
 ///
-/// Preserved from the previous implementation:
-///   * Form fields (phone + password), validation, submit → OTP flow
+/// Preserved:
+///   * Phone + password form with validation
 ///   * Inline error banner
-///   * Background slideshow / mobile-specific bg / gradient fallback
+///   * Background image (slideshow → mobile-specific → shared) from
+///     site config, so the admin can swap the mobile login backdrop
+///     from /settings/site without shipping a new APK
 ///   * Show/hide password toggle
 ///   * Forgot-password + Sign-up links
-///
-/// New visual layer:
-///   * Ambient animated cyan gradient orbs behind the scrim
-///   * Cyan gradient-border glass card with beefier backdrop blur
-///   * Cyan-tinted focus glow on inputs
-///   * Cyan halo on the primary CTA
-///
-/// The accent cyan is scoped to this screen only — the app-wide
-/// TBT red accent is unchanged everywhere else.
-const Color _kCyanAccent = Color(0xFF06d6f6);
-const Color _kCyanDeep = Color(0xFF0891b2);
-const Color _kBgDeep = Color(0xFF040910);
+const Color _kRed = Color(0xFFDC2626);
+const Color _kRedDeep = Color(0xFFB91C1C);
+const Color _kBg = Color(0xFF000000);
+const Color _kCard = Color(0xFF141414);
+const Color _kBorder = Color(0xFF2A2A2A);
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -44,8 +36,7 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen>
-    with TickerProviderStateMixin {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -56,11 +47,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   int _bgIndex = 0;
   Timer? _bgTimer;
 
-  // Slow orbit controller for the ambient background orbs. Kept at a
-  // long duration + low fps by design — this is decorative, not
-  // gameplay; we don't want it eating CPU on lower-end devices.
-  late final AnimationController _ambientCtl;
-
   @override
   void initState() {
     super.initState();
@@ -68,20 +54,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _passwordFocus.addListener(() => setState(() {}));
     _bgTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted) return;
-      final imgs = ref.read(siteConfigNotifierProvider).valueOrNull?.loginBgImages;
+      final imgs =
+          ref.read(siteConfigNotifierProvider).valueOrNull?.loginBgImages;
       if (imgs == null || imgs.length < 2) return;
       setState(() => _bgIndex = (_bgIndex + 1) % imgs.length);
     });
-    _ambientCtl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 22),
-    )..repeat();
   }
 
   @override
   void dispose() {
     _bgTimer?.cancel();
-    _ambientCtl.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
     _phoneFocus.dispose();
@@ -89,9 +71,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     super.dispose();
   }
 
-  /// Returns the current background image URL from siteConfig; null =
-  /// fall through to the animated gradient. Same resolution order as
-  /// before the redesign: slideshow entry → mobile-specific → shared.
+  /// Background image URL from siteConfig. Precedence:
+  ///   1. Slideshow entry (rotates every 6 s)
+  ///   2. Mobile-specific url
+  ///   3. Shared (desktop) url
+  /// Returns null when no bg is configured → falls back to solid black.
   String? _currentBgUrl() {
     final cfg = ref.watch(siteConfigNotifierProvider).valueOrNull;
     if (cfg == null) return null;
@@ -137,69 +121,64 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     final isLoading = ref.watch(authNotifierProvider).isLoading;
     final bgUrl = _currentBgUrl();
-    final size = MediaQuery.of(context).size;
 
     return Scaffold(
+      backgroundColor: _kBg,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Layer 1: background image or deep-cyan gradient ────
+          // ── Layer 1: background image (admin-configurable) or solid black.
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 900),
+            duration: const Duration(milliseconds: 600),
             child: bgUrl != null && bgUrl.isNotEmpty
                 ? CachedNetworkImage(
                     key: ValueKey(bgUrl),
                     imageUrl: bgUrl,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => _gradientFallback(),
-                    errorWidget: (_, __, ___) => _gradientFallback(),
+                    placeholder: (_, __) => const ColoredBox(color: _kBg),
+                    errorWidget: (_, __, ___) => const ColoredBox(color: _kBg),
                   )
-                : _gradientFallback(),
+                : const ColoredBox(color: _kBg),
           ),
-          // ── Layer 2: ambient orbs (only when NO bg image, so we
-          // don't over-decorate a photo the admin uploaded).
-          if (bgUrl == null || bgUrl.isEmpty)
-            AnimatedBuilder(
-              animation: _ambientCtl,
-              builder: (ctx, _) => CustomPaint(
-                painter: _AmbientOrbsPainter(_ambientCtl.value),
-                size: size,
+          // ── Layer 2: dark scrim so bg image doesn't drown the form.
+          //           Skipped when no bg image so the pure black stays clean.
+          if (bgUrl != null && bgUrl.isNotEmpty)
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xCC000000),
+                    Color(0xE6000000),
+                  ],
+                ),
               ),
             ),
-          // ── Layer 3: dark scrim so any bg image stays legible ──
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.45),
-                  Colors.black.withValues(alpha: 0.72),
-                ],
-              ),
-            ),
-          ),
-          // ── Layer 4: the glass card ────────────────────────────
+          // ── Layer 3: card.
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-                child: _GlassCard(
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SizedBox(height: 8),
-                        // Brand mark — cyan gradient text via ShaderMask
-                        ShaderMask(
-                          shaderCallback: (rect) => const LinearGradient(
-                            colors: [_kCyanAccent, Colors.white, _kCyanDeep],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ).createShader(rect),
-                          child: const Text(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _kCard,
+                      borderRadius: BorderRadius.circular(AppRadius.xl),
+                      border: Border.all(color: _kBorder),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 30),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 4),
+                          // TBT wordmark
+                          const Text(
                             'TBT',
                             textAlign: TextAlign.center,
                             style: TextStyle(
@@ -211,180 +190,166 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               height: 1,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'TAMIL BUSINESS TRIBE',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Rajdhani',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.55),
-                            letterSpacing: 4,
+                          const SizedBox(height: 8),
+                          Text(
+                            'TAMIL BUSINESS TRIBE',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Rajdhani',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.55),
+                              letterSpacing: 4,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        // Thin cyan divider line to anchor the mark
-                        Center(
-                          child: Container(
+                          Container(
                             width: 42,
                             height: 2,
-                            margin: const EdgeInsets.only(top: 6, bottom: 24),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [
-                                  Colors.transparent,
-                                  _kCyanAccent,
-                                  Colors.transparent,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
+                            margin: const EdgeInsets.symmetric(vertical: 20),
+                            color: _kRed,
                           ),
-                        ),
-                        // ── Inline error banner ─────────────────
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 220),
-                          child: _errorBanner == null
-                              ? const SizedBox.shrink()
-                              : Container(
-                                  key: const ValueKey('login-error'),
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFdc2626)
-                                        .withValues(alpha: 0.12),
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.md),
-                                    border: Border.all(
-                                      color: const Color(0xFFf87171)
-                                          .withValues(alpha: 0.4),
+                          // ── Inline error banner
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 220),
+                            child: _errorBanner == null
+                                ? const SizedBox.shrink()
+                                : Container(
+                                    key: const ValueKey('login-error'),
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          _kRed.withValues(alpha: 0.12),
+                                      borderRadius:
+                                          BorderRadius.circular(AppRadius.md),
+                                      border: Border.all(
+                                        color:
+                                            _kRed.withValues(alpha: 0.5),
+                                      ),
                                     ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.error_outline,
-                                          color: Color(0xFFf87171), size: 16),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _errorBanner!,
-                                          style: const TextStyle(
-                                            color: Color(0xFFf0d0d0),
-                                            fontSize: 13,
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.error_outline,
+                                            color: _kRed, size: 16),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            _errorBanner!,
+                                            style: const TextStyle(
+                                              color: Color(0xFFF0D0D0),
+                                              fontSize: 13,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                        ),
-                        _FieldLabel('PHONE NUMBER'),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _phoneController,
-                          focusNode: _phoneFocus,
-                          keyboardType: TextInputType.phone,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly
-                          ],
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 14),
-                          decoration: _inputDecoration(
-                              'Enter your phone number', _phoneFocus.hasFocus,
-                              icon: Icons.phone_outlined),
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Phone number is required'
-                              : null,
-                        ),
-                        const SizedBox(height: 18),
-                        _FieldLabel('PASSWORD'),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _passwordController,
-                          focusNode: _passwordFocus,
-                          obscureText: _obscurePassword,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 14),
-                          decoration: _inputDecoration(
-                                  'Enter your password',
-                                  _passwordFocus.hasFocus,
-                                  icon: Icons.lock_outline)
-                              .copyWith(
-                            suffixIcon: IconButton(
-                              tooltip: _obscurePassword
-                                  ? 'Show password'
-                                  : 'Hide password',
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                                color: Colors.white.withValues(alpha: 0.55),
-                                size: 20,
-                              ),
-                              onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword),
-                            ),
                           ),
-                          validator: (v) => (v == null || v.isEmpty)
-                              ? 'Password is required'
-                              : null,
-                        ),
-                        const SizedBox(height: 4),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () =>
-                                context.go(AppRoutes.forgotPassword),
-                            style: TextButton.styleFrom(
-                              foregroundColor:
-                                  _kCyanAccent.withValues(alpha: 0.9),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 8),
-                            ),
-                            child: const Text('Forgot password?',
-                                style: TextStyle(fontSize: 13)),
+                          _FieldLabel('PHONE NUMBER'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _phoneController,
+                            focusNode: _phoneFocus,
+                            keyboardType: TextInputType.phone,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 14),
+                            decoration: _inputDecoration(
+                                'Enter your phone number',
+                                _phoneFocus.hasFocus,
+                                icon: Icons.phone_outlined),
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Phone number is required'
+                                : null,
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        // ── Primary CTA — cyan halo + gradient fill ─
-                        _CyanCta(
-                          onPressed: isLoading ? null : _submit,
-                          isLoading: isLoading,
-                          label: 'SIGN IN',
-                        ),
-                        const SizedBox(height: 26),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "Don't have an account? ",
-                              style: TextStyle(
-                                  color:
-                                      Colors.white.withValues(alpha: 0.55),
-                                  fontSize: 14),
-                            ),
-                            Semantics(
-                              label: 'Sign Up',
-                              button: true,
-                              child: GestureDetector(
-                                onTap: () => context.go(AppRoutes.signup),
-                                child: const Text(
-                                  'Sign Up',
-                                  style: TextStyle(
-                                    color: _kCyanAccent,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                          const SizedBox(height: 18),
+                          _FieldLabel('PASSWORD'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _passwordController,
+                            focusNode: _passwordFocus,
+                            obscureText: _obscurePassword,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 14),
+                            decoration: _inputDecoration(
+                                    'Enter your password',
+                                    _passwordFocus.hasFocus,
+                                    icon: Icons.lock_outline)
+                                .copyWith(
+                              suffixIcon: IconButton(
+                                tooltip: _obscurePassword
+                                    ? 'Show password'
+                                    : 'Hide password',
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  size: 20,
                                 ),
+                                onPressed: () => setState(() =>
+                                    _obscurePassword = !_obscurePassword),
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                      ],
+                            validator: (v) => (v == null || v.isEmpty)
+                                ? 'Password is required'
+                                : null,
+                          ),
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () =>
+                                  context.go(AppRoutes.forgotPassword),
+                              style: TextButton.styleFrom(
+                                foregroundColor: _kRed,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 8),
+                              ),
+                              child: const Text('Forgot password?',
+                                  style: TextStyle(fontSize: 13)),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _RedCta(
+                            onPressed: isLoading ? null : _submit,
+                            isLoading: isLoading,
+                            label: 'SIGN IN',
+                          ),
+                          const SizedBox(height: 26),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                "Don't have an account? ",
+                                style: TextStyle(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.55),
+                                    fontSize: 14),
+                              ),
+                              Semantics(
+                                label: 'Sign Up',
+                                button: true,
+                                child: GestureDetector(
+                                  onTap: () => context.go(AppRoutes.signup),
+                                  child: const Text(
+                                    'Sign Up',
+                                    style: TextStyle(
+                                      color: _kRed,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -396,21 +361,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _gradientFallback() => Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(-0.4, -0.5),
-            radius: 1.4,
-            colors: [
-              Color(0xFF0e2c3a), // dim teal
-              Color(0xFF071620), // navy
-              _kBgDeep, // near-black
-            ],
-            stops: [0.0, 0.5, 1.0],
-          ),
-        ),
-      );
-
   InputDecoration _inputDecoration(String hint, bool focused,
       {IconData? icon}) {
     return InputDecoration(
@@ -421,99 +371,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           ? Icon(
               icon,
               size: 18,
-              color: focused
-                  ? _kCyanAccent
-                  : Colors.white.withValues(alpha: 0.55),
+              color:
+                  focused ? _kRed : Colors.white.withValues(alpha: 0.55),
             )
           : null,
       filled: true,
-      fillColor: focused
-          ? _kCyanAccent.withValues(alpha: 0.06)
-          : Colors.white.withValues(alpha: 0.04),
+      fillColor: const Color(0xFF1A1A1A),
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+        borderSide: const BorderSide(color: _kBorder),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+        borderSide: const BorderSide(color: _kBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: _kCyanAccent, width: 1.5),
+        borderSide: const BorderSide(color: _kRed, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: Color(0xFFf87171)),
+        borderSide: const BorderSide(color: _kRed),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: Color(0xFFf87171), width: 1.5),
+        borderSide: const BorderSide(color: _kRed, width: 1.5),
       ),
-      errorStyle: const TextStyle(color: Color(0xFFf87171), fontSize: 11),
+      errorStyle: const TextStyle(color: _kRed, fontSize: 11),
     );
   }
 }
 
-// ── Glass card wrapper ────────────────────────────────────────────
+// ── Red CTA — flat button, no halo ────────────────────────────────
 
-class _GlassCard extends StatelessWidget {
-  const _GlassCard({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 400),
-      child: Container(
-        padding: const EdgeInsets.all(1.5),
-        decoration: BoxDecoration(
-          // Cyan gradient border — top-left glow, bottom-right shadow
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              _kCyanAccent.withValues(alpha: 0.55),
-              Colors.white.withValues(alpha: 0.12),
-              _kCyanDeep.withValues(alpha: 0.35),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          boxShadow: [
-            BoxShadow(
-              color: _kCyanAccent.withValues(alpha: 0.15),
-              blurRadius: 40,
-              spreadRadius: -6,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(19),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(19),
-              ),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-              child: child,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Cyan CTA with animated halo ───────────────────────────────────
-
-class _CyanCta extends StatelessWidget {
-  const _CyanCta({
+class _RedCta extends StatelessWidget {
+  const _RedCta({
     required this.onPressed,
     required this.isLoading,
     required this.label,
@@ -526,124 +420,42 @@ class _CyanCta extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 50,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          boxShadow: onPressed == null
-              ? const []
-              : [
-                  BoxShadow(
-                    color: _kCyanAccent.withValues(alpha: 0.35),
-                    blurRadius: 24,
-                    spreadRadius: -4,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-        ),
-        child: ElevatedButton(
-          onPressed: onPressed,
-          style: ElevatedButton.styleFrom(
-            padding: EdgeInsets.zero,
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-          ).copyWith(
-            backgroundColor: WidgetStateProperty.resolveWith((states) {
-              // Ripple base
-              return Colors.transparent;
-            }),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _kRed,
+          disabledBackgroundColor: Colors.white.withValues(alpha: 0.08),
+          disabledForegroundColor: Colors.white.withValues(alpha: 0.4),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: onPressed == null
-                    ? [
-                        Colors.white.withValues(alpha: 0.08),
-                        Colors.white.withValues(alpha: 0.08),
-                      ]
-                    : const [_kCyanAccent, _kCyanDeep],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+        ).copyWith(
+          overlayColor: WidgetStateProperty.all(_kRedDeep.withValues(alpha: 0.3)),
+        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: 'Rajdhani',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: 3,
+                ),
               ),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            child: Container(
-              alignment: Alignment.center,
-              child: isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      style: const TextStyle(
-                        fontFamily: 'Rajdhani',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: 3,
-                      ),
-                    ),
-            ),
-          ),
-        ),
       ),
     );
   }
-}
-
-// ── Ambient orbs painter ──────────────────────────────────────────
-// Two overlapping soft radial gradients that drift slowly. Only
-// rendered when there's no admin-uploaded background image (see
-// build() above). Repaint frequency is limited by the parent
-// AnimationController's 22 s duration → about 3 repaints per second.
-
-class _AmbientOrbsPainter extends CustomPainter {
-  _AmbientOrbsPainter(this.t);
-  final double t; // 0..1, cycles smoothly
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final theta = t * 2 * math.pi;
-    final w = size.width;
-    final h = size.height;
-
-    // Orb A — cyan-teal, orbits upper region
-    final cx1 = w * (0.30 + 0.15 * math.sin(theta));
-    final cy1 = h * (0.28 + 0.10 * math.cos(theta * 0.8));
-    final r1 = math.max(w, h) * 0.55;
-    final paint1 = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          _kCyanAccent.withValues(alpha: 0.28),
-          _kCyanAccent.withValues(alpha: 0.0),
-        ],
-      ).createShader(Rect.fromCircle(center: Offset(cx1, cy1), radius: r1));
-    canvas.drawCircle(Offset(cx1, cy1), r1, paint1);
-
-    // Orb B — deeper cyan, orbits lower region, opposite phase
-    final cx2 = w * (0.72 + 0.12 * math.cos(theta + math.pi / 3));
-    final cy2 = h * (0.78 + 0.10 * math.sin(theta * 1.2 + math.pi / 4));
-    final r2 = math.max(w, h) * 0.5;
-    final paint2 = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          _kCyanDeep.withValues(alpha: 0.32),
-          _kCyanDeep.withValues(alpha: 0.0),
-        ],
-      ).createShader(Rect.fromCircle(center: Offset(cx2, cy2), radius: r2));
-    canvas.drawCircle(Offset(cx2, cy2), r2, paint2);
-  }
-
-  @override
-  bool shouldRepaint(covariant _AmbientOrbsPainter oldDelegate) =>
-      oldDelegate.t != t;
 }
 
 // ── Field label ──────────────────────────────────────────────────
