@@ -100,8 +100,21 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     return reply.status(403).send({ success: false, data: null, error: `Account is ${m.status}. Please contact admin.` });
   }
 
-  // No password set yet — first login, send OTP to set password
+  // Account has no passwordHash yet (first-time member, or admin-created
+  // without a password). We only send the "set your password" OTP when the
+  // client explicitly asked for it by submitting an EMPTY password field.
+  // If the client sent a non-empty password, they're trying to authenticate
+  // against a hash that doesn't exist — reject as invalid credentials to
+  // prevent a "any password → OTP → session" bypass on passwordless accounts.
   if (!m.passwordHash) {
+    if (password && password.length > 0) {
+      fastify.log.warn({ phone: m.phone }, 'Login: password submitted for passwordless account — returning 401');
+      return reply.status(401).send({
+        success: false,
+        data: null,
+        error: 'Invalid phone or password',
+      });
+    }
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
     const sent = await sendOtpWhatsapp(m.phone, otp);
