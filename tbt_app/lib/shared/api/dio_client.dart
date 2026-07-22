@@ -82,7 +82,11 @@ AppException mapDioError(DioException e) {
       ? (data['error'] ?? data['message'])?.toString()
       : null;
 
-  if (status == 401) return const UnauthorizedException();
+  if (status == 401) {
+    return backendMsg != null && backendMsg.isNotEmpty
+        ? UnauthorizedException(backendMsg)
+        : const UnauthorizedException();
+  }
   if (status == 403) {
     return backendMsg != null && backendMsg.isNotEmpty
         ? ForbiddenException(backendMsg)

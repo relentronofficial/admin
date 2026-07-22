@@ -119,16 +119,18 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
 
   const valid = await bcrypt.compare(password, m.passwordHash);
 
-  // Stale hash — admin may have changed password in Clerk without syncing DB.
-  // Automatically trigger OTP reset so the user can set a new password without support.
+  // SECURITY: bcrypt mismatch MUST return 401. A prior "auto-heal stale hash"
+  // shortcut (commit 46144dd6) silently sent an OTP on any wrong password
+  // and the follow-up OTP verify issued session cookies — which meant anyone
+  // who could receive the target phone's OTP could log in with any password.
+  // Users who genuinely forgot their password must use the Forgot Password
+  // flow (POST /api/user-auth/forgot-password) which they trigger explicitly.
   if (!valid) {
-    fastify.log.warn({ phone: m.phone }, 'Login: bcrypt mismatch — forcing OTP-based password reset');
-    const otp = generateOtp();
-    await storeOtp(getRedis(fastify), m.phone, otp);
-    const sent = await sendOtpWhatsapp(m.phone, otp);
-    return reply.send({
-      success: true,
-      data: { step: 'reset_password', phone: m.phone, ...otpResponseFields(sent, otp) },
+    fastify.log.warn({ phone: m.phone }, 'Login: bcrypt mismatch — returning 401');
+    return reply.status(401).send({
+      success: false,
+      data: null,
+      error: 'Invalid phone or password',
     });
   }
 
