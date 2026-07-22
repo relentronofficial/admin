@@ -24,6 +24,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../data/workshops_service.dart';
 import '../providers/workshops_provider.dart';
 import 'widgets/challenge_completion_sheet.dart';
+import '../../../shared/widgets/app_loader.dart';
 // workshopId is the slug — route pattern is /workshops/:id but value is a slug.
 class WorkshopDetailScreen extends ConsumerStatefulWidget {
   const WorkshopDetailScreen({super.key, required this.workshopId});
@@ -740,7 +741,7 @@ class _FlowTab extends ConsumerWidget {
 
     return flowAsync.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          const AppLoader.center(),
       error: (_, __) => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1308,7 +1309,7 @@ class _QaTabState extends ConsumerState<_QaTab> {
 
     return qaAsync.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          const AppLoader.center(),
       error: (_, __) => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1816,7 +1817,7 @@ class _LiveCallsTabState extends ConsumerState<_LiveCallsTab> {
 
     return flowAsync.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          const AppLoader.center(),
       error: (_, __) => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2335,7 +2336,7 @@ class _AssignmentsTab extends ConsumerWidget {
 
     return assignmentsAsync.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          const AppLoader.center(),
       error: (_, __) => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

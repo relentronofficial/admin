@@ -6,6 +6,7 @@ import '../../../core/constants/routes.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../providers/ebook_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// List of member's bookmarked books. Tap → book detail.
 class EbookBookmarksScreen extends ConsumerWidget {
@@ -24,7 +25,7 @@ class EbookBookmarksScreen extends ConsumerWidget {
             style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: kColorAccent)),
+        loading: () => const AppLoader.center(),
         error: (_, __) => Center(
           child: Text('Could not load bookmarks.',
               style: TextStyle(color: tokens.textSecondary)),

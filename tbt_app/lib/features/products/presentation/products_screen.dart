@@ -15,6 +15,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/app_empty_state.dart';
 import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_loader.dart';
 class ProductsScreen extends ConsumerWidget {
   const ProductsScreen({super.key});
 
@@ -87,7 +88,7 @@ class _AllProductsTabState extends ConsumerState<_AllProductsTab>
 
     return async.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          const AppLoader.center(),
       error: (e, _) => AppErrorState(
         error: e,
         fallbackTitle: 'Failed to load products',
@@ -531,7 +532,7 @@ class _MyProductsTabState extends ConsumerState<_MyProductsTab>
 
     return async.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          const AppLoader.center(),
       error: (e, _) => AppErrorState(
         error: e,
         fallbackTitle: 'Failed to load inquiries',

@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/socket/socket_events.dart';
+import '../../../shared/theme/status_bar_scope.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../../workshops/data/workshops_service.dart';
 
@@ -21,6 +22,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import 'sheets/chapters_sheet.dart';
 import 'sheets/participants_sheet.dart';
 import 'sheets/waiting_room_overlay.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 enum _CallStatus { loading, connecting, connected, error, permissionDenied }
 
@@ -467,7 +469,8 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
   Widget build(BuildContext context) {
     final accent = context.tbt.accent;
 
-    return Scaffold(
+    return StatusBarScope.overDarkBackground(
+      child: Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: const Color(0xFF111111),
@@ -592,6 +595,7 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
             ),
         ],
       ),
+    ),
     );
   }
 
@@ -920,7 +924,7 @@ class _ResourcesSheetState extends ConsumerState<_ResourcesSheet> {
     return _sheetShell(context, 
       label: 'PRE-SESSION RESOURCES',
       body: _loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          ? const AppLoader.center()
           : _error != null
               ? Center(
                   child: Text('Could not load resources',
@@ -1039,7 +1043,7 @@ class _LiveQaSheetState extends ConsumerState<_LiveQaSheet> {
     return _sheetShell(context, 
       label: 'LIVE Q&A',
       body: _loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          ? const AppLoader.center()
           : (_items?.isEmpty ?? true)
               ? Center(
                   child: Text('No questions yet — be first!',
@@ -1203,7 +1207,7 @@ class _PollsSheetState extends ConsumerState<_PollsSheet> {
     return _sheetShell(context, 
       label: 'LIVE POLLS',
       body: _loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          ? const AppLoader.center()
           : (_polls?.isEmpty ?? true)
               ? Center(
                   child: Text('No active polls',

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../providers/support_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// List of tickets the current member has submitted.
 class SupportMyTicketsScreen extends ConsumerWidget {
@@ -23,7 +24,7 @@ class SupportMyTicketsScreen extends ConsumerWidget {
             style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: kColorAccent)),
+        loading: () => const AppLoader.center(),
         error: (_, __) => Center(
           child: Text('Could not load tickets.',
               style: TextStyle(color: tokens.textSecondary)),

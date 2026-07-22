@@ -9,6 +9,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../data/podcast_player_controller.dart';
 import '../domain/podcast_models.dart';
 import '../providers/podcast_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// Podcasts landing / browse screen. Continue-listening row at top,
 /// featured series carousel, category chip filter, episode grid.
@@ -64,7 +65,17 @@ class _ContinueListeningSection extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _SectionHeader(label: 'Continue Listening'),
+              _SectionHeader(
+                label: 'Continue Listening',
+                onSeeAll: () {
+                  // Scrolls the user to the full episode list below.
+                  Scrollable.ensureVisible(
+                    context,
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+              ),
               const SizedBox(height: 10),
               SizedBox(
                 height: 96,
@@ -167,7 +178,7 @@ class _FeaturedSeriesSection extends ConsumerWidget {
     return async.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: CircularProgressIndicator(color: kColorAccent)),
+        child: const AppLoader.center(),
       ),
       error: (_, __) => const SizedBox.shrink(),
       data: (list) {
@@ -177,7 +188,17 @@ class _FeaturedSeriesSection extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _SectionHeader(label: 'Series'),
+              _SectionHeader(
+                label: 'Series',
+                onSeeAll: () {
+                  // Clear category so the episode list shows everything,
+                  // then scroll to it — series don't have a dedicated
+                  // "browse all" screen yet, so pointing to episodes is
+                  // the closest match.
+                  ref.read(selectedCategorySlugProvider.notifier).state =
+                      null;
+                },
+              ),
               const SizedBox(height: 10),
               SizedBox(
                 height: 170,
@@ -329,7 +350,7 @@ class _EpisodesGrid extends ConsumerWidget {
     return async.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
-        child: Center(child: CircularProgressIndicator(color: kColorAccent)),
+        child: const AppLoader.center(),
       ),
       error: (e, _) => Padding(
         padding: const EdgeInsets.all(24),
@@ -450,18 +471,62 @@ String _formatDuration(int seconds) {
 // ── Small helpers ──────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label});
+  const _SectionHeader({required this.label, this.onSeeAll});
   final String label;
+  final VoidCallback? onSeeAll;
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: TextStyle(
-        color: context.tokens.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1.2,
-      ),
+    final tokens = context.tokens;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Small red accent bar to the left of the label — the same
+        // "chapter marker" affordance used across the co-worker's app.
+        Container(
+          width: 3,
+          height: 14,
+          decoration: BoxDecoration(
+            color: kColorAccent,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: tokens.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+        if (onSeeAll != null)
+          InkWell(
+            onTap: onSeeAll,
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Row(
+                children: [
+                  Text(
+                    'See all',
+                    style: TextStyle(
+                      color: kColorAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  const Icon(Icons.chevron_right,
+                      color: kColorAccent, size: 16),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

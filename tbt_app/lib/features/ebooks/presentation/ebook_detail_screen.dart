@@ -9,6 +9,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../data/ebook_service.dart';
 import '../domain/ebook_models.dart';
 import '../providers/ebook_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// E-book detail — cover, description, meta, Read + Bookmark actions.
 class EbookDetailScreen extends ConsumerWidget {
@@ -22,7 +23,7 @@ class EbookDetailScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: tokens.bgPage,
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: kColorAccent)),
+        loading: () => const AppLoader.center(),
         error: (e, _) => Scaffold(
           appBar: AppBar(backgroundColor: tokens.bgSurface, elevation: 0),
           body: Center(

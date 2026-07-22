@@ -7,6 +7,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../data/tbt_service.dart';
 import '../domain/tbt_models.dart';
 import '../providers/tbt_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// TBT Points landing:
 ///   * level badge + total points + progress-to-next-level
@@ -31,7 +32,7 @@ class TbtPointsScreen extends ConsumerWidget {
       ),
       body: async.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(color: kColorAccent)),
+            const AppLoader.center(),
         error: (e, _) => Center(
           child: Text('Could not load your progress.',
               style: TextStyle(color: tokens.textSecondary)),
@@ -473,7 +474,7 @@ class _LeaderboardPreview extends ConsumerWidget {
           async.when(
             loading: () => const Padding(
               padding: EdgeInsets.symmetric(vertical: 20),
-              child: Center(child: CircularProgressIndicator(color: kColorAccent)),
+              child: const AppLoader.center(),
             ),
             error: (_, __) => Text(
               'Could not load leaderboard.',

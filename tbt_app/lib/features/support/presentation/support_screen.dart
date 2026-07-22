@@ -7,6 +7,7 @@ import '../../../core/constants/routes.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../providers/support_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// Support landing screen. Contact channels + FAQ browser +
 /// entry points for ticket submission and feedback.
@@ -252,7 +253,7 @@ class _SupportScreenState extends ConsumerState<SupportScreen> {
             faqs.when(
               loading: () => const Padding(
                 padding: EdgeInsets.symmetric(vertical: 32),
-                child: Center(child: CircularProgressIndicator(color: kColorAccent)),
+                child: const AppLoader.center(),
               ),
               error: (_, __) => Padding(
                 padding: const EdgeInsets.all(24),

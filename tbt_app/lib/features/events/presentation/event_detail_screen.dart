@@ -12,6 +12,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/app_error_state.dart';
 import '../../../shared/widgets/app_section_header.dart';
+import '../../../shared/widgets/app_loader.dart';
 class EventDetailScreen extends ConsumerStatefulWidget {
   const EventDetailScreen({super.key, required this.eventId});
 
@@ -88,7 +89,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       ),
       body: async.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            const AppLoader.center(),
         error: (e, _) => AppErrorState(
           error: e,
           fallbackTitle: 'Failed to load event',

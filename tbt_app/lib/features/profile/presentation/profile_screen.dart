@@ -13,6 +13,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../providers/profile_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_loader.dart';
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -224,7 +225,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
       body: meAsync.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            const AppLoader.center(),
         error: (e, __) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,

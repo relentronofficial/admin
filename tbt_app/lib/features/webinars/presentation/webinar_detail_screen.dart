@@ -13,6 +13,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/app_error_state.dart';
 import '../../../shared/widgets/app_section_header.dart';
+import '../../../shared/widgets/app_loader.dart';
 class WebinarDetailScreen extends ConsumerWidget {
   const WebinarDetailScreen({super.key, required this.webinarId});
 
@@ -44,7 +45,7 @@ class WebinarDetailScreen extends ConsumerWidget {
       ),
       body: async.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            const AppLoader.center(),
         error: (e, _) => AppErrorState(
           error: e,
           fallbackTitle: 'Failed to load webinar',

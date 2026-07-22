@@ -7,6 +7,7 @@ import '../../data/workshops_service.dart';
 
 import '../../../../shared/theme/design_tokens.dart';
 import '../../../../shared/theme/theme_tokens.dart';
+import '../../../../shared/widgets/app_loader.dart';
 /// Renders the completion UI for a single challenge based on its
 /// backend-declared `type`. All 5 types funnel to
 /// [WorkshopsService.completeChallenge] with a type-appropriate
@@ -139,7 +140,7 @@ class _ChallengeCompletionSheetState
 
   Widget _body() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+      return const AppLoader.center();
     }
     if (_error != null || _challenge == null) {
       return Center(

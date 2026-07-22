@@ -7,6 +7,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../domain/tbt_models.dart';
 import '../providers/tbt_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// WINS — the leaderboard screen. Direct port of the co-worker's
 /// `_LeaderboardTab` (main.dart:4514–5037).
@@ -157,7 +158,7 @@ class _WinsScreenState extends ConsumerState<WinsScreen>
       backgroundColor: tokens.bgPage,
       body: async.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(color: kColorAccent)),
+            const AppLoader.center(),
         error: (err, __) => _ErrorState(
           error: err,
           onRetry: () => ref.invalidate(tbtLeaderboardProvider),

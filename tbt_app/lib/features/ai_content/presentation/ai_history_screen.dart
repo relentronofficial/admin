@@ -6,6 +6,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../data/ai_content_service.dart';
 import '../providers/ai_content_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// Past AI conversations. Tap one → pops with the conversation id so
 /// the chat screen switches to it. Long-press → rename or delete.
@@ -70,7 +71,7 @@ class _AIHistoryScreenState extends ConsumerState<AIHistoryScreen> {
           ),
           Expanded(
             child: async.when(
-              loading: () => const Center(child: CircularProgressIndicator(color: kColorAccent)),
+              loading: () => const AppLoader.center(),
               error: (e, _) => Center(
                 child: Text('Could not load history.',
                     style: TextStyle(color: tokens.textSecondary)),

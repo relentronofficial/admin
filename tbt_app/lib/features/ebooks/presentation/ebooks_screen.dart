@@ -8,6 +8,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../domain/ebook_models.dart';
 import '../providers/ebook_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// E-books landing screen: banners row, continue-reading, featured
 /// grid, category filter, full library.
@@ -423,7 +424,7 @@ class _LibraryGrid extends ConsumerWidget {
     return async.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
-        child: Center(child: CircularProgressIndicator(color: kColorAccent)),
+        child: const AppLoader.center(),
       ),
       error: (e, _) => Padding(
         padding: const EdgeInsets.all(24),

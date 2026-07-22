@@ -10,6 +10,7 @@ import '../domain/ai_models.dart';
 import '../providers/ai_content_providers.dart';
 import 'ai_history_screen.dart';
 import 'ai_saved_content_screen.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// Content Buddy AI chat screen. Single-pane: message list on top,
 /// composer at the bottom. Tap the ≡ icon to browse past
@@ -334,7 +335,7 @@ class _AIContentScreenState extends ConsumerState<AIContentScreen> {
         children: [
           Expanded(
             child: serverMessages.when(
-              loading: () => const Center(child: CircularProgressIndicator(color: kColorAccent)),
+              loading: () => const AppLoader.center(),
               error: (err, _) => Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),

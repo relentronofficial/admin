@@ -11,6 +11,7 @@ import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../data/ebook_service.dart';
 import '../providers/ebook_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// In-app PDF reader powered by `flutter_pdfview`.
 ///
@@ -160,7 +161,7 @@ class _EbookReaderScreenState extends ConsumerState<EbookReaderScreen> {
       body: _error != null
           ? _ErrorState(message: _error!)
           : _localPath == null
-              ? const Center(child: CircularProgressIndicator(color: kColorAccent))
+              ? const AppLoader.center()
               : PDFView(
                   filePath: _localPath!,
                   autoSpacing: true,

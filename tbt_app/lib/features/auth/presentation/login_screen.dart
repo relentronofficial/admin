@@ -10,6 +10,7 @@ import '../../../core/constants/routes.dart';
 import '../../../core/exceptions/app_exception.dart';
 import '../../../shared/providers/site_config_provider.dart';
 import '../../../shared/theme/design_tokens.dart';
+import '../../../shared/theme/status_bar_scope.dart';
 import '../domain/auth_state.dart';
 import '../providers/auth_provider.dart';
 
@@ -122,7 +123,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isLoading = ref.watch(authNotifierProvider).isLoading;
     final bgUrl = _currentBgUrl();
 
-    return Scaffold(
+    return StatusBarScope.overDarkBackground(
+      child: Scaffold(
       backgroundColor: _kBg,
       body: Stack(
         fit: StackFit.expand,
@@ -358,6 +360,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

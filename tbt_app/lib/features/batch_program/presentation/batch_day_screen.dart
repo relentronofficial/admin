@@ -13,6 +13,7 @@ import '../data/batch_service.dart';
 import '../providers/batch_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_loader.dart';
 class BatchDayScreen extends ConsumerStatefulWidget {
   const BatchDayScreen({super.key, required this.day});
 
@@ -360,7 +361,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
             ),
       body: dayAsync.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            const AppLoader.center(),
         error: (_, __) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,

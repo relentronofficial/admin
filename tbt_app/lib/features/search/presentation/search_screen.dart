@@ -9,6 +9,7 @@ import '../../../core/constants/routes.dart';
 import '../providers/search_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_loader.dart';
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -248,7 +249,7 @@ class _ResultsView extends ConsumerWidget {
 
     return async.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          const AppLoader.center(),
       error: (_, __) => Center(
         child: Text(
           'Search failed. Try again.',

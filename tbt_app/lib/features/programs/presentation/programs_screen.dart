@@ -7,6 +7,7 @@ import '../data/programs_service.dart';
 import '../providers/programs_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
+import '../../../shared/widgets/app_loader.dart';
 class ProgramsScreen extends ConsumerWidget {
   const ProgramsScreen({super.key});
 
@@ -38,7 +39,7 @@ class ProgramsScreen extends ConsumerWidget {
       ),
       body: async.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            const AppLoader.center(),
         error: (_, __) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,

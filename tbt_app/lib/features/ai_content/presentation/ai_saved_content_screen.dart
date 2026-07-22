@@ -8,6 +8,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../data/ai_content_service.dart';
 import '../domain/ai_models.dart';
 import '../providers/ai_content_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// Library of saved AI-generated snippets. Category filter chip row on
 /// top, list below. Tap → view; long-press → edit / delete.
@@ -57,7 +58,7 @@ class _AISavedContentScreenState extends ConsumerState<AISavedContentScreen> {
           ),
           Expanded(
             child: async.when(
-              loading: () => const Center(child: CircularProgressIndicator(color: kColorAccent)),
+              loading: () => const AppLoader.center(),
               error: (e, _) => Center(
                 child: Text('Could not load saved snippets.',
                     style: TextStyle(color: tokens.textSecondary)),

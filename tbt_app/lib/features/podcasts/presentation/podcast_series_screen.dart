@@ -9,6 +9,7 @@ import '../../../shared/theme/theme_tokens.dart';
 import '../data/podcast_player_controller.dart';
 import '../domain/podcast_models.dart';
 import '../providers/podcast_providers.dart';
+import '../../../shared/widgets/app_loader.dart';
 
 /// Series detail — hero cover, series description, episode list.
 class PodcastSeriesScreen extends ConsumerWidget {
@@ -23,7 +24,7 @@ class PodcastSeriesScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: tokens.bgPage,
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: kColorAccent)),
+        loading: () => const AppLoader.center(),
         error: (e, _) => Center(
           child: Text('Could not load series.', style: TextStyle(color: tokens.textSecondary)),
         ),

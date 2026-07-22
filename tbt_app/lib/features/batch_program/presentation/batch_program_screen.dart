@@ -16,6 +16,7 @@ import 'widgets/batch_calendar.dart';
 import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_loader.dart';
 class BatchProgramScreen extends ConsumerWidget {
   const BatchProgramScreen({super.key});
 
@@ -144,7 +145,7 @@ class BatchProgramScreen extends ConsumerWidget {
       ),
       body: programAsync.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            const AppLoader.center(),
         error: (_, __) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
