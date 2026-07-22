@@ -111,12 +111,12 @@ class AuthService {
   /// this method is for proactive refresh (e.g. on app resume) and unit
   /// testing.
   ///
-  /// Session-preservation rule (mirrors [RefreshInterceptor]):
-  ///   * 401 / 403 from the refresh endpoint → server explicitly says the
-  ///     refresh token is invalid. Wipe tokens; caller decides how to
-  ///     surface the sign-out.
-  ///   * Any other failure (network / timeout / 5xx) → keep tokens intact
-  ///     and rethrow so the caller can retry when the network is back.
+  /// Session-preservation rule: the session persists until the user
+  /// MANUALLY logs out. Refresh failures — transient (network / 5xx) or
+  /// server-declared auth failure (401/403 from /refresh) — never wipe
+  /// tokens. The caller receives the mapped error and can decide how to
+  /// surface it, but the stored tokens remain so a later attempt can
+  /// succeed and the router doesn't unexpectedly kick the user to /login.
   Future<void> refresh() async {
     final refreshToken = await TokenStorage.readRefreshToken();
     if (refreshToken == null) throw const UnauthorizedException();
@@ -136,20 +136,9 @@ class AuthService {
       if (newAccess != null) await TokenStorage.writeAccessToken(newAccess);
       if (newRefresh != null) await TokenStorage.writeRefreshToken(newRefresh);
     } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status == 401 || status == 403) {
-        // Server-declared invalid refresh token — clear the session so the
-        // next cold start lands on /login.
-        if (kDebugMode) {
-          debugPrint('[AuthService.refresh] server returned $status — '
-              'clearing tokens');
-        }
-        await TokenStorage.clearAll();
-      } else {
-        if (kDebugMode) {
-          debugPrint('[AuthService.refresh] transient failure '
-              '(${e.type}, status=$status) — KEEPING tokens');
-        }
+      if (kDebugMode) {
+        debugPrint('[AuthService.refresh] failed '
+            '(${e.type}, status=${e.response?.statusCode}) — KEEPING tokens');
       }
       throw mapDioError(e);
     }

@@ -110,14 +110,15 @@ class RefreshInterceptor extends Interceptor {
           _retryQueue(newAccess);
           handler.resolve(retried);
         case _RefreshAuthFailure():
-          // Server explicitly declared the refresh token dead. Wipe and
-          // surface — the router redirect guard will land the user on
-          // /login on the next navigation.
-          _log('refresh returned auth failure — clearing session');
+          // Per product decision: session persists until the user MANUALLY
+          // logs out. Even when the server declares the refresh token dead
+          // (401/403 from /refresh), we keep the tokens on disk and just
+          // surface the original 401 to the caller. Individual screens
+          // render their own error state; the user retains the option to
+          // log out from the drawer / profile if they truly want to end
+          // the session.
+          _log('refresh returned auth failure — KEEPING tokens per policy');
           AuthEventLog.record(AuthEventType.interceptorRefreshAuthFailure);
-          await TokenStorage.clearAll();
-          AuthEventLog.record(AuthEventType.tokensCleared,
-              detail: 'reason=interceptor auth failure');
           _drainQueue(err);
           handler.next(err);
         case _RefreshTransientFailure(:final lastError):
