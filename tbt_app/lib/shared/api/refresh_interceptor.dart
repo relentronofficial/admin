@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/constants/api.dart';
 import 'auth_event_log.dart';
+import 'session_state.dart';
 import 'token_storage.dart';
 
 /// Catches 401 responses, pauses in-flight requests, refreshes the session,
@@ -47,9 +48,16 @@ import 'token_storage.dart';
 /// side's own retry loop can safely re-attempt without invalidating
 /// the session mid-recovery.
 class RefreshInterceptor extends Interceptor {
-  RefreshInterceptor(this._dio);
+  RefreshInterceptor(this._dio, {this.onSessionState});
 
   final Dio _dio;
+
+  /// Optional listener wired to `sessionStateProvider` — the interceptor
+  /// calls this after every refresh outcome so the UI can react without
+  /// inspecting Dio directly.
+  final void Function(SessionState)? onSessionState;
+
+  void _emitSession(SessionState state) => onSessionState?.call(state);
 
   // Coalesces concurrent 401s onto a single refresh call.
   bool _refreshing = false;
@@ -103,6 +111,7 @@ class RefreshInterceptor extends Interceptor {
             AuthEventType.interceptorRefreshSuccess,
             tokenTail: AuthEventLog.tokenFingerprint(newAccess),
           );
+          _emitSession(SessionState.live);
           // Retry original request with the fresh access token.
           err.requestOptions.headers['Cookie'] =
               'tbt_access=${newAccess ?? ''}';
@@ -110,28 +119,29 @@ class RefreshInterceptor extends Interceptor {
           _retryQueue(newAccess);
           handler.resolve(retried);
         case _RefreshAuthFailure():
-          // Per product decision: session persists until the user MANUALLY
-          // logs out. Even when the server declares the refresh token dead
-          // (401/403 from /refresh), we keep the tokens on disk and just
-          // surface the original 401 to the caller. Individual screens
-          // render their own error state; the user retains the option to
-          // log out from the drawer / profile if they truly want to end
-          // the session.
-          _log('refresh returned auth failure — KEEPING tokens per policy');
+          // Server explicitly declared the refresh token dead. Signal
+          // `revoked` so the router can redirect to /login with the
+          // current path preserved as `?redirect=` — the router owns
+          // the actual token wipe so it happens exactly once, right
+          // before we route out. We do NOT clear tokens here.
+          _log('refresh returned auth failure — signalling REVOKED');
           AuthEventLog.record(AuthEventType.interceptorRefreshAuthFailure);
+          _emitSession(SessionState.revoked);
           _drainQueue(err);
           handler.next(err);
         case _RefreshTransientFailure(:final lastError):
           // Every attempt hit a transient error (network / 5xx). The
           // refresh token is still valid on the server as far as we
-          // know; KEEP tokens so a later request can try again.
+          // know; keep tokens + signal `offline` so the UI can show a
+          // subtle reconnecting banner instead of "session expired".
           _log('refresh exhausted retries (last: ${lastError.type}, status='
-              '${lastError.response?.statusCode}) — KEEPING tokens');
+              '${lastError.response?.statusCode}) — signalling OFFLINE');
           AuthEventLog.record(
             AuthEventType.interceptorRefreshTransientFailure,
             detail: 'last=${lastError.type} status='
                 '${lastError.response?.statusCode}',
           );
+          _emitSession(SessionState.offline);
           _drainQueue(err);
           handler.next(err);
       }

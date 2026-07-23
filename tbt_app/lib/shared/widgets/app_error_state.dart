@@ -108,10 +108,18 @@ class _AppErrorStateState extends ConsumerState<AppErrorState> {
       );
     }
     if (e is UnauthorizedException) {
+      // A 401 that reaches this widget is either (a) transient — the
+      // refresh interceptor is about to retry it and the auto-retry
+      // below will resolve it, or (b) a truly revoked session, in
+      // which case the router's `sessionState == revoked` guard has
+      // already redirected to /login before we ever render. Either
+      // way, the "SESSION EXPIRED" copy is misleading — pick a softer
+      // "trouble reaching the server" wording. The `_copyFor` -> icon
+      // stays a subtle wifi-ish glyph to hint at the transient nature.
       return (
-        icon: Icons.lock_outline,
-        title: l10n.errorSessionExpired,
-        subtitle: l10n.errorSessionExpiredSubtitle,
+        icon: Icons.sync_problem_outlined,
+        title: l10n.errorFailedToLoad,
+        subtitle: l10n.errorCheckConnectionSubtitle,
       );
     }
     if (e is ForbiddenException) {

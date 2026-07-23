@@ -11,6 +11,8 @@ import 'core/constants/routes.dart';
 import 'core/constants/storage_keys.dart';
 import 'features/auth/domain/auth_state.dart';
 import 'features/notifications/data/fcm_service.dart';
+import 'shared/api/session_state.dart';
+import 'shared/api/token_storage.dart';
 import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/signup_screen.dart';
 import 'features/auth/presentation/otp_screen.dart';
@@ -103,6 +105,19 @@ GoRouter appRouter(Ref ref) {
     notifier.notify();
   });
 
+  // React to session-state transitions from the refresh pipeline. When
+  // the server declares the refresh token dead we clear tokens exactly
+  // once here (so screens can't race on token reads mid-transition)
+  // and nudge the router to re-evaluate. The redirect callback below
+  // reads sessionStateProvider synchronously and sends the user to
+  // /login with the current path preserved as `?redirect=`.
+  ref.listen<SessionState>(sessionStateProvider, (prev, next) async {
+    if (prev != SessionState.revoked && next == SessionState.revoked) {
+      await TokenStorage.clearAll();
+    }
+    notifier.notify();
+  });
+
   // GoRouter handles incoming deep links from the OS automatically (both HTTPS
   // Universal Links and tbt:// custom-scheme URLs) by matching the path against
   // the route table defined in _buildRoutes(). The auth redirect guard runs on
@@ -122,6 +137,7 @@ GoRouter appRouter(Ref ref) {
     refreshListenable: notifier,
     redirect: (context, state) {
       final authAsync = ref.read(authNotifierProvider);
+      final sessionState = ref.read(sessionStateProvider);
 
       // Don't redirect while the auth state is still loading.
       if (authAsync.isLoading) return null;
@@ -130,6 +146,15 @@ GoRouter appRouter(Ref ref) {
           authAsync.valueOrNull?.step == AuthStep.authenticated;
       final path = state.uri.path;
       final isPublic = _publicPaths.contains(path);
+
+      // Guard 0 — server-declared session revocation. Route to /login
+      // with the current path preserved so the user lands right back
+      // where they were after signing in again. Tokens were already
+      // cleared by the sessionState listener above.
+      if (sessionState == SessionState.revoked && !isPublic) {
+        final encoded = Uri.encodeComponent(state.uri.toString());
+        return '${AppRoutes.login}?redirect=$encoded&reason=expired';
+      }
 
       // Guard 1 — unauthenticated + non-public route → login
       if (!isAuth && !isPublic) {

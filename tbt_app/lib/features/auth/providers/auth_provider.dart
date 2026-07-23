@@ -1,7 +1,9 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../shared/api/services/auth_service.dart';
+import '../../../shared/api/session_state.dart';
 import '../../../shared/api/token_storage.dart';
 import '../../../shared/cache/response_cache.dart';
 import '../../../shared/providers/me_provider.dart';
@@ -40,10 +42,24 @@ class AuthNotifier extends _$AuthNotifier {
       if (refresh != null && access == null) {
         try {
           await ref.read(authServiceProvider).refresh();
+          // Cold-start refresh succeeded → session is confirmed live.
+          ref.read(sessionStateProvider.notifier).state = SessionState.live;
         } catch (e, st) {
+          // Emit into the session state machine so the router / UI know
+          // the flavor of the failure. A 401/403 here means the server
+          // declared the refresh token dead — the router will route to
+          // /login (with return path preserved) via its sessionState
+          // listener. Any other failure is treated as transient offline
+          // — the app enters authenticated optimistically and the UI
+          // shows a reconnecting banner.
+          final isDioAuthFailure = e is DioException &&
+              (e.response?.statusCode == 401 || e.response?.statusCode == 403);
+          ref.read(sessionStateProvider.notifier).state = isDioAuthFailure
+              ? SessionState.revoked
+              : SessionState.offline;
           if (kDebugMode) {
             debugPrint('[AuthNotifier.build] cold-start refresh failed: $e\n$st'
-                ' — KEEPING tokens, entering authenticated optimistically');
+                ' — sessionState=${isDioAuthFailure ? 'revoked' : 'offline'}');
           }
         }
       }
@@ -94,6 +110,10 @@ class AuthNotifier extends _$AuthNotifier {
       return AuthState(step: AuthStep.authenticated, member: member);
     });
     if (state.valueOrNull?.step == AuthStep.authenticated) {
+      // Fresh login → session is live; clear any prior offline/revoked
+      // signal so the reconnecting banner / expired-session prompt
+      // don't linger from a previous run.
+      ref.read(sessionStateProvider.notifier).state = SessionState.live;
       _registerFcm();
     }
   }
@@ -104,6 +124,10 @@ class AuthNotifier extends _$AuthNotifier {
     // previous user's dashboard on first launch.
     await ResponseCache.clear();
     ref.invalidate(meNotifierProvider);
+    // Intentional logout — reset the session-state machine so nothing
+    // downstream misreads the state as "revoked" and pops the
+    // expired-session dialog on top of the login screen.
+    ref.read(sessionStateProvider.notifier).state = SessionState.live;
     state = const AsyncValue.data(AuthState(step: AuthStep.idle));
   }
 
