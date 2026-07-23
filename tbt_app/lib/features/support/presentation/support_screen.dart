@@ -1,23 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../domain/support_models.dart';
 import '../providers/support_providers.dart';
-import '../../../shared/widgets/app_loader.dart';
 
-/// Support landing screen. Contact channels + FAQ browser +
-/// entry points for ticket submission and feedback.
+/// Support Center landing — hero banner + quick actions + topic chips
+/// + FAQs + recent tickets, matching the co-worker's layout.
+///
+/// Bottom sheets for Call Us and FAQ answers keep the flow inline;
+/// Raise Ticket, Feedback, and View All Tickets push to the existing
+/// dedicated screens.
+///
+/// The [focusFaqId] deep-link (fed by a notification tap or the
+/// `?faqId=...` router param) scrolls the target FAQ into view and
+/// pre-opens its answer sheet.
 class SupportScreen extends ConsumerStatefulWidget {
   const SupportScreen({super.key, this.focusFaqId});
-
-  /// Optional deep-link — when a notification tap opens Support with a
-  /// specific FAQ id in the query string, expand + highlight that FAQ
-  /// even if it isn't in the current filter/search view. Fetched via
-  /// [faqByIdProvider] so a hidden-by-filter FAQ still surfaces.
   final String? focusFaqId;
 
   @override
@@ -25,17 +29,15 @@ class SupportScreen extends ConsumerStatefulWidget {
 }
 
 class _SupportScreenState extends ConsumerState<SupportScreen> {
-  final _searchCtl = TextEditingController();
   final GlobalKey _focusedFaqKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    // Scroll to the focused FAQ after the first frame renders. 500 ms
-    // gives the FAQ list network round-trip a chance to complete before
-    // we look for the target key — good enough on all test networks.
     if (widget.focusFaqId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
+        // Give the FAQ list network round-trip a chance to complete
+        // before we look for the target key.
         await Future<void>.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
         final ctx = _focusedFaqKey.currentContext;
@@ -46,342 +48,273 @@ class _SupportScreenState extends ConsumerState<SupportScreen> {
             curve: Curves.easeOutCubic,
             alignment: 0.15,
           );
+          // Also auto-open the answer sheet so the notification lands
+          // on the actual content, not just a highlighted card.
+          if (!mounted) return;
+          final ext = await ref.read(faqByIdProvider(widget.focusFaqId!).future);
+          if (ext != null && mounted) _openFaqSheet(ext);
         }
       });
     }
   }
 
-  @override
-  void dispose() {
-    _searchCtl.dispose();
-    super.dispose();
+  Future<void> _refresh() async {
+    ref.invalidate(helpdeskSettingsProvider);
+    ref.invalidate(supportCategoriesProvider);
+    ref.invalidate(faqsProvider);
+    ref.invalidate(myTicketsProvider);
   }
 
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
+  Future<void> _launchTel(String number) async {
+    final uri = Uri(scheme: 'tel', path: number);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Future<void> _launchWhatsapp(String number) async {
+    // Strip everything except digits so `+91 94444 88888` still opens.
+    final clean = number.replaceAll(RegExp(r'[^\d]'), '');
+    final uri = Uri.parse('https://wa.me/$clean');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _openCallUsSheet(HelpdeskSettings? settings) {
     final tokens = context.tokens;
-    final settings = ref.watch(helpdeskSettingsProvider);
-    final categories = ref.watch(supportCategoriesProvider);
-    final selectedCategory = ref.watch(selectedFaqCategoryProvider);
-    final faqs = ref.watch(faqsProvider);
-
-    return Scaffold(
-      backgroundColor: tokens.bgPage,
-      appBar: AppBar(
-        backgroundColor: tokens.bgSurface,
-        elevation: 0,
-        title: settings.when(
-          loading: () => const Text('Support',
-              style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
-          error: (_, __) => const Text('Support',
-              style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
-          data: (s) => Text(
-            s?.title ?? 'Support',
-            style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700),
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'My tickets',
-            icon: const Icon(Icons.receipt_long, color: Colors.white),
-            onPressed: () => GoRouter.of(context).push(AppRoutes.supportMyTickets),
-          ),
-        ],
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: tokens.bgSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(helpdeskSettingsProvider);
-          ref.invalidate(supportCategoriesProvider);
-          ref.invalidate(faqsProvider);
-        },
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 100),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Subtitle + banner ───────────────────────────────────
-            settings.maybeWhen(
-              data: (s) => s == null
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Text(
-                        s.subtitle ?? 'We are here to help.',
-                        style: TextStyle(color: tokens.textSecondary, fontSize: 13, height: 1.5),
-                      ),
-                    ),
-              orElse: () => const SizedBox.shrink(),
+            const SizedBox(height: 10),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: tokens.borderCard,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-
-            // ── Contact channels ────────────────────────────────────
-            settings.maybeWhen(
-              data: (s) {
-                if (s == null) return const SizedBox.shrink();
-                final channels = <_ChannelData>[
-                  if (s.whatsappNumber != null && s.whatsappNumber!.isNotEmpty)
-                    _ChannelData(
-                      icon: Icons.chat,
-                      label: 'WhatsApp',
-                      value: s.whatsappNumber!,
-                      onTap: () => _openUrl(
-                          'https://wa.me/${s.whatsappNumber!.replaceAll(RegExp(r'\D'), '')}'),
-                    ),
-                  if (s.phoneNumber != null && s.phoneNumber!.isNotEmpty)
-                    _ChannelData(
-                      icon: Icons.call,
-                      label: 'Call',
-                      value: s.phoneNumber!,
-                      onTap: () => _openUrl('tel:${s.phoneNumber}'),
-                    ),
-                  if (s.email != null && s.email!.isNotEmpty)
-                    _ChannelData(
-                      icon: Icons.email_outlined,
-                      label: 'Email',
-                      value: s.email!,
-                      onTap: () => _openUrl('mailto:${s.email}'),
-                    ),
-                ];
-                if (channels.isEmpty) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                  child: Row(
-                    children: channels
-                        .map((c) => Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
-                                child: _ChannelTile(data: c),
-                              ),
-                            ))
-                        .toList(),
-                  ),
-                );
-              },
-              orElse: () => const SizedBox.shrink(),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ── Action buttons ──────────────────────────────────────
+            const SizedBox(height: 20),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () =>
-                          GoRouter.of(context).push(AppRoutes.supportContact),
-                      icon: const Icon(Icons.mail_outline, size: 18),
-                      label: const Text('CONTACT US'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: kColorAccent,
-                        minimumSize: const Size.fromHeight(44),
-                      ),
+                  Text(
+                    'Contact Support',
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () =>
-                          GoRouter.of(context).push(AppRoutes.supportFeedback),
-                      icon: Icon(Icons.rate_review_outlined, size: 18, color: tokens.textPrimary),
-                      label: Text('FEEDBACK',
-                          style: TextStyle(color: tokens.textPrimary)),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: tokens.borderCard),
-                        minimumSize: const Size.fromHeight(44),
-                      ),
+                  if ((settings?.supportTiming ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      settings!.supportTiming!,
+                      style: TextStyle(color: tokens.textMuted, fontSize: 12),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            // ── FAQ search ──────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Text(
-                'FAQs',
-                style: TextStyle(
-                  color: tokens.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                ),
+            const SizedBox(height: 16),
+            if ((settings?.phoneNumber ?? '').isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.phone_rounded, color: Color(0xFF27AE60)),
+                title: Text('Call Helpline',
+                    style: TextStyle(color: tokens.textPrimary)),
+                subtitle: Text(settings!.phoneNumber!,
+                    style: TextStyle(color: tokens.textMuted)),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _launchTel(settings.phoneNumber!);
+                },
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: TextField(
-                controller: _searchCtl,
-                onChanged: (v) => ref.read(faqSearchProvider.notifier).state = v.trim(),
-                style: TextStyle(color: tokens.textPrimary, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Search FAQs…',
-                  hintStyle: TextStyle(color: tokens.textMuted, fontSize: 14),
-                  prefixIcon: Icon(Icons.search, size: 18, color: tokens.textSecondary),
-                  filled: true,
-                  fillColor: tokens.bgInput,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: tokens.borderInput),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: tokens.borderInput),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: kColorAccent),
-                  ),
-                ),
+            if ((settings?.phoneNumber ?? '').isNotEmpty &&
+                (settings?.whatsappNumber ?? '').isNotEmpty)
+              Divider(color: tokens.borderCard, height: 1),
+            if ((settings?.whatsappNumber ?? '').isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.chat_rounded, color: Color(0xFF25D366)),
+                title: Text('Chat on WhatsApp',
+                    style: TextStyle(color: tokens.textPrimary)),
+                subtitle: Text(settings!.whatsappNumber!,
+                    style: TextStyle(color: tokens.textMuted)),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _launchWhatsapp(settings.whatsappNumber!);
+                },
               ),
-            ),
-
-            // ── Category chips ──────────────────────────────────────
-            categories.maybeWhen(
-              data: (cats) => cats.isEmpty
-                  ? const SizedBox.shrink()
-                  : SizedBox(
-                      height: 34,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          _CategoryChip(
-                            label: 'All',
-                            selected: selectedCategory == null,
-                            onTap: () => ref
-                                .read(selectedFaqCategoryProvider.notifier)
-                                .state = null,
-                          ),
-                          ...cats.map(
-                            (c) => _CategoryChip(
-                              label: c.name,
-                              selected: selectedCategory == c.id,
-                              onTap: () => ref
-                                  .read(selectedFaqCategoryProvider.notifier)
-                                  .state = c.id,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-              orElse: () => const SizedBox.shrink(),
-            ),
-
-            const SizedBox(height: 12),
-
-            // ── FAQ list ────────────────────────────────────────────
-            faqs.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.symmetric(vertical: 32),
-                child: const AppLoader.center(),
+            if ((settings?.email ?? '').isNotEmpty)
+              ListTile(
+                leading: Icon(Icons.email_rounded, color: kColorAccent),
+                title: Text('Email us',
+                    style: TextStyle(color: tokens.textPrimary)),
+                subtitle: Text(settings!.email!,
+                    style: TextStyle(color: tokens.textMuted)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  final uri = Uri(scheme: 'mailto', path: settings.email);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri);
+                  }
+                },
               ),
-              error: (_, __) => Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: Text('Could not load FAQs.',
-                      style: TextStyle(color: tokens.textSecondary)),
-                ),
-              ),
-              data: (list) {
-                // If a specific FAQ was targeted by a deep-link but isn't
-                // in the filtered list (e.g. category or search removed
-                // it), fetch it standalone and prepend so the notification
-                // still lands on real content.
-                final focusedId = widget.focusFaqId;
-                var display = list;
-                if (focusedId != null && !list.any((f) => f.id == focusedId)) {
-                  final extra = ref.watch(faqByIdProvider(focusedId));
-                  final extraFaq = extra.asData?.value;
-                  if (extraFaq != null) display = [extraFaq, ...list];
-                }
-                if (display.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Center(
-                      child: Text(
-                        'No FAQs match.',
-                        style: TextStyle(color: tokens.textSecondary),
-                      ),
-                    ),
-                  );
-                }
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: display
-                        .map((f) => _FaqTile(
-                              key: f.id == focusedId ? _focusedFaqKey : null,
-                              faq: f,
-                              highlight: f.id == focusedId,
-                            ))
-                        .toList(),
-                  ),
-                );
-              },
-            ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
     );
   }
-}
 
-class _ChannelData {
-  const _ChannelData({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-  final IconData icon;
-  final String label;
-  final String value;
-  final VoidCallback onTap;
-}
+  void _openFaqSheet(Faq faq) {
+    final tokens = context.tokens;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: tokens.bgSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: tokens.borderCard,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                faq.question,
+                style: TextStyle(
+                  color: tokens.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                faq.answer,
+                style: TextStyle(
+                  color: tokens.textSecondary,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-class _ChannelTile extends StatelessWidget {
-  const _ChannelTile({required this.data});
-  final _ChannelData data;
+  IconData _mapCategoryIcon(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('payment') || n.contains('bill') || n.contains('subscription')) {
+      return Icons.account_balance_wallet_outlined;
+    }
+    if (n.contains('tech') || n.contains('login') || n.contains('lag') ||
+        n.contains('record') || n.contains('video')) {
+      return Icons.play_circle_outline_rounded;
+    }
+    if (n.contains('comm') || n.contains('group') || n.contains('rule') ||
+        n.contains('spam') || n.contains('abuse')) {
+      return Icons.groups_outlined;
+    }
+    return Icons.help_outline_rounded;
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
-    return Material(
-      color: tokens.bgSurface,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: data.onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-          child: Column(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: kColorAccent.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(data.icon, color: kColorAccent, size: 18),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                data.label,
-                style: TextStyle(
-                  color: tokens.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+    final settings = ref.watch(helpdeskSettingsProvider).valueOrNull;
+
+    return Scaffold(
+      backgroundColor: tokens.bgPage,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          color: kColorAccent,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              SliverToBoxAdapter(child: _Header(settings: settings)),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                sliver: SliverList.list(
+                  children: [
+                    _HeroBanner(settings: settings),
+                    const SizedBox(height: 28),
+                    _SectionLabel(text: 'QUICK ACTIONS'),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _QuickTile(
+                            icon: Icons.confirmation_num_outlined,
+                            label: 'Raise Ticket',
+                            onTap: () => context.push(AppRoutes.supportContact),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _QuickTile(
+                            icon: Icons.phone_in_talk_outlined,
+                            label: 'Call Us',
+                            onTap: () => _openCallUsSheet(settings),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _QuickTile(
+                            icon: Icons.rate_review_outlined,
+                            label: 'Feedback',
+                            onTap: () => context.push(AppRoutes.supportFeedback),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    _SectionLabel(text: 'BROWSE HELP TOPICS'),
+                    const SizedBox(height: 12),
+                    const _CategoryChipsRow(),
+                    const SizedBox(height: 16),
+                    _FaqList(
+                      focusFaqId: widget.focusFaqId,
+                      focusedFaqKey: _focusedFaqKey,
+                      onTap: _openFaqSheet,
+                      mapIcon: _mapCategoryIcon,
+                    ),
+                    const SizedBox(height: 28),
+                    _RecentTicketsHeader(
+                      onViewAll: () => context.push(AppRoutes.supportMyTickets),
+                    ),
+                    const SizedBox(height: 12),
+                    const _RecentTicketsList(),
+                    const SizedBox(height: 24),
+                  ],
                 ),
               ),
             ],
@@ -392,87 +325,620 @@ class _ChannelTile extends StatelessWidget {
   }
 }
 
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.label, required this.selected, required this.onTap});
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+// ── Header ─────────────────────────────────────────────────────────
+
+class _Header extends StatelessWidget {
+  const _Header({required this.settings});
+  final HelpdeskSettings? settings;
+
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: ChoiceChip(
-        label: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.white : const Color(0xFFa0a0a0),
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(Icons.arrow_back, color: tokens.textPrimary),
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              } else {
+                context.go(AppRoutes.dashboard);
+              }
+            },
           ),
-        ),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        backgroundColor: kColorBgSurface,
-        selectedColor: kColorAccent,
-        side: BorderSide(color: selected ? kColorAccent : kColorBorderCard),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          const SizedBox(width: 4),
+          Text(
+            settings?.title ?? 'Support Center',
+            style: TextStyle(
+              color: tokens.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const Spacer(),
+        ],
       ),
     );
   }
 }
 
-class _FaqTile extends StatelessWidget {
-  const _FaqTile({super.key, required this.faq, this.highlight = false});
-  final dynamic faq;
-  final bool highlight;
+// ── Hero banner ────────────────────────────────────────────────────
+
+class _HeroBanner extends StatelessWidget {
+  const _HeroBanner({required this.settings});
+  final HelpdeskSettings? settings;
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
+    final subtitle = settings?.subtitle;
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: tokens.bgSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: highlight ? kColorAccent : tokens.borderCard,
-          width: highlight ? 1.5 : 1,
-        ),
-        boxShadow: highlight
-            ? [
-                BoxShadow(
-                  color: kColorAccent.withValues(alpha: 0.20),
-                  blurRadius: 12,
-                  spreadRadius: 0,
-                ),
-              ]
-            : null,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: tokens.borderCard),
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          dividerColor: Colors.transparent,
-          expansionTileTheme: const ExpansionTileThemeData(iconColor: kColorAccent),
-        ),
-        child: ExpansionTile(
-          initiallyExpanded: highlight,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          title: Text(
-            faq.question,
-            style: TextStyle(
-              color: tokens.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              height: 1.3,
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            child: Container(color: kColorAccent),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 22, 16, 22),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        subtitle == null || subtitle.isEmpty
+                            ? 'How can we help\nyou?'
+                            : subtitle,
+                        style: TextStyle(
+                          color: tokens.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _OnlinePill(),
+              ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OnlinePill extends StatelessWidget {
+  const _OnlinePill();
+  @override
+  Widget build(BuildContext context) {
+    const green = Color(0xFF27AE60);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: green.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          _PulseDot(),
+          SizedBox(width: 6),
+          Text(
+            'SUPPORT\nONLINE',
+            style: TextStyle(
+              color: green,
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              height: 1.1,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PulseDot extends StatefulWidget {
+  const _PulseDot();
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctl,
+      builder: (_, __) {
+        final t = _ctl.value; // 0..1
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: const Color(0xFF27AE60),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF27AE60).withValues(alpha: 0.4 * (1 - t)),
+                blurRadius: 6 + 8 * t,
+                spreadRadius: 1 + 3 * t,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Section label ──────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.text});
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xFFFFB088),
+        fontSize: 11.5,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.0,
+      ),
+    );
+  }
+}
+
+// ── Quick action tile ──────────────────────────────────────────────
+
+class _QuickTile extends StatelessWidget {
+  const _QuickTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: tokens.borderCard),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: kColorAccent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: kColorAccent.withValues(alpha: 0.25)),
+              ),
+              child: Icon(icon, color: kColorAccent, size: 22),
+            ),
+            const SizedBox(height: 18),
             Text(
-              faq.answer,
-              style: TextStyle(color: tokens.textSecondary, fontSize: 13, height: 1.5),
+              label,
+              style: TextStyle(
+                color: tokens.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Category chips ─────────────────────────────────────────────────
+
+class _CategoryChipsRow extends ConsumerWidget {
+  const _CategoryChipsRow();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final cats = ref.watch(supportCategoriesProvider).valueOrNull ?? const [];
+    final selected = ref.watch(selectedFaqCategoryProvider);
+
+    if (cats.isEmpty) return const SizedBox.shrink();
+
+    // Include an "All" pill so users can browse everything.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          _Chip(
+            label: 'All',
+            selected: selected == null,
+            onTap: () =>
+                ref.read(selectedFaqCategoryProvider.notifier).state = null,
+            tokens: tokens,
+          ),
+          for (final c in cats) ...[
+            _Chip(
+              label: c.name,
+              selected: selected == c.id,
+              onTap: () =>
+                  ref.read(selectedFaqCategoryProvider.notifier).state = c.id,
+              tokens: tokens,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.tokens,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final ThemeTokens tokens;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? kColorAccent : tokens.borderCard,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? tokens.textPrimary : tokens.textSecondary,
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── FAQ list ───────────────────────────────────────────────────────
+
+class _FaqList extends ConsumerWidget {
+  const _FaqList({
+    required this.focusFaqId,
+    required this.focusedFaqKey,
+    required this.onTap,
+    required this.mapIcon,
+  });
+  final String? focusFaqId;
+  final GlobalKey focusedFaqKey;
+  final void Function(Faq faq) onTap;
+  final IconData Function(String) mapIcon;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final faqs = ref.watch(faqsProvider);
+    return faqs.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator(color: kColorAccent)),
+      ),
+      error: (_, __) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: Text('Could not load FAQs.',
+              style: TextStyle(color: tokens.textSecondary)),
+        ),
+      ),
+      data: (list) {
+        // Merge the deep-linked FAQ if it isn't in the current filter view.
+        var display = list;
+        if (focusFaqId != null && !list.any((f) => f.id == focusFaqId)) {
+          final extra = ref.watch(faqByIdProvider(focusFaqId!)).asData?.value;
+          if (extra != null) display = [extra, ...list];
+        }
+        if (display.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: Text('No FAQs available in this topic yet.',
+                  style: TextStyle(color: tokens.textSecondary)),
+            ),
+          );
+        }
+        return Column(
+          children: [
+            for (final f in display)
+              _FaqRow(
+                key: f.id == focusFaqId ? focusedFaqKey : null,
+                faq: f,
+                icon: mapIcon(f.category?.name ?? ''),
+                highlight: f.id == focusFaqId,
+                onTap: () => onTap(f),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _FaqRow extends StatelessWidget {
+  const _FaqRow({
+    super.key,
+    required this.faq,
+    required this.icon,
+    required this.highlight,
+    required this.onTap,
+  });
+  final Faq faq;
+  final IconData icon;
+  final bool highlight;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: highlight ? kColorAccent : tokens.borderCard,
+            width: highlight ? 1.5 : 1,
+          ),
+          boxShadow: highlight
+              ? [
+                  BoxShadow(
+                    color: kColorAccent.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: kColorAccent, size: 20),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                faq.question,
+                style: TextStyle(
+                  color: tokens.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded,
+                color: tokens.textMuted, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Recent tickets ─────────────────────────────────────────────────
+
+class _RecentTicketsHeader extends StatelessWidget {
+  const _RecentTicketsHeader({required this.onViewAll});
+  final VoidCallback onViewAll;
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _SectionLabel(text: 'MY RECENT TICKETS'),
+        GestureDetector(
+          onTap: onViewAll,
+          child: Text(
+            'VIEW ALL',
+            style: TextStyle(
+              color: kColorAccent,
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecentTicketsList extends ConsumerWidget {
+  const _RecentTicketsList();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final async = ref.watch(myTicketsProvider);
+    return async.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (list) {
+        if (list.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: tokens.bgSurface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: tokens.borderCard),
+            ),
+            child: Center(
+              child: Text(
+                'No tickets yet — raise one when you need help.',
+                style: TextStyle(color: tokens.textSecondary, fontSize: 13),
+              ),
+            ),
+          );
+        }
+        final preview = list.take(3).toList();
+        return Column(
+          children: [
+            for (final t in preview)
+              _TicketPreviewCard(ticket: t),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TicketPreviewCard extends StatelessWidget {
+  const _TicketPreviewCard({required this.ticket});
+  final SupportTicket ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return GestureDetector(
+      onTap: () => context.push(AppRoutes.supportMyTickets),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: tokens.borderCard),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: tokens.bgInput,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.description_outlined,
+                  color: tokens.textSecondary, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ticket.subject,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    DateFormat.MMMd().add_jm().format(ticket.createdAt),
+                    style: TextStyle(color: tokens.textMuted, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _StatusPill(status: ticket.status),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.status});
+  final String status;
+  @override
+  Widget build(BuildContext context) {
+    final map = {
+      'new': (const Color(0xFF60A5FA), 'New'),
+      'in_progress': (const Color(0xFFFACC15), 'In Progress'),
+      'resolved': (const Color(0xFF4ADE80), 'Resolved'),
+      'closed': (const Color(0xFFA0A0A0), 'Closed'),
+    };
+    final (color, label) = map[status] ?? (const Color(0xFFA0A0A0), status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.4,
         ),
       ),
     );
