@@ -23,12 +23,20 @@ class EbooksScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: tokens.bgSurface,
         elevation: 0,
-        title: const Text('E-Books',
-            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+        iconTheme: IconThemeData(color: tokens.textPrimary),
+        // Title and actions must respect the token — hardcoding
+        // Colors.white made them invisible on the light-theme white
+        // bgSurface (which is why only the back arrow was visible
+        // on-device).
+        title: Text('E-Books',
+            style: TextStyle(
+                color: tokens.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
             tooltip: 'Bookmarks',
-            icon: const Icon(Icons.bookmark_border, color: Colors.white),
+            icon: Icon(Icons.bookmark_border, color: tokens.textPrimary),
             onPressed: () => GoRouter.of(context).push(AppRoutes.ebookBookmarks),
           ),
         ],
@@ -435,15 +443,7 @@ class _LibraryGrid extends ConsumerWidget {
       ),
       data: (books) {
         if (books.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.all(32),
-            child: Center(
-              child: Text(
-                'No books yet.',
-                style: TextStyle(color: context.tokens.textSecondary),
-              ),
-            ),
-          );
+          return const _LibraryEmptyState();
         }
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -486,6 +486,82 @@ class _SectionHeader extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w800,
         letterSpacing: 1.2,
+      ),
+    );
+  }
+}
+
+class _LibraryEmptyState extends StatelessWidget {
+  const _LibraryEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 40, 24, 40),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Column(
+            children: [
+              Container(
+                width: 78,
+                height: 78,
+                decoration: BoxDecoration(
+                  color: kColorAccent.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: kColorAccent.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.menu_book_rounded,
+                  color: kColorAccent,
+                  size: 36,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Your library is empty',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: tokens.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ebooks curated for Tamil Business Tribe members will '
+                'show up here. Check back soon, or explore the '
+                'community’s current programs in the meantime.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: tokens.textSecondary,
+                  fontSize: 13,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 20),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    GoRouter.of(context).push(AppRoutes.courses),
+                icon: const Icon(Icons.school_outlined, size: 18),
+                label: const Text('Browse Courses'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kColorAccent,
+                  side: const BorderSide(color: kColorAccent),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 22, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
