@@ -118,6 +118,15 @@ class AuthNotifier extends _$AuthNotifier {
     }
   }
 
+  /// Called by the router's sessionState listener when the server
+  /// declares the refresh token dead. Flips this notifier to `idle`
+  /// so the router's public-route auto-bounce (Guard 2) doesn't put
+  /// the user right back on the page they were revoked out of. Tokens
+  /// are cleared by the caller; we just mirror the state.
+  void markRevoked() {
+    state = const AsyncValue.data(AuthState(step: AuthStep.idle));
+  }
+
   Future<void> logout() async {
     await ref.read(authServiceProvider).logout();
     // Purge cached responses so the next user doesn't render the

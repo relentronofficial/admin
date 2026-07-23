@@ -106,14 +106,20 @@ GoRouter appRouter(Ref ref) {
   });
 
   // React to session-state transitions from the refresh pipeline. When
-  // the server declares the refresh token dead we clear tokens exactly
-  // once here (so screens can't race on token reads mid-transition)
-  // and nudge the router to re-evaluate. The redirect callback below
-  // reads sessionStateProvider synchronously and sends the user to
-  // /login with the current path preserved as `?redirect=`.
+  // the server declares the refresh token dead we (1) clear tokens
+  // exactly once, and (2) flip AuthNotifier to `idle` so the router's
+  // Guard 2 doesn't bounce the user back to the pre-revocation path
+  // via the `?redirect=` param. Without this the two auth signals
+  // disagree — sessionState says revoked, authNotifier still says
+  // authenticated — and GoRouter detects a redirect loop
+  // (/dashboard → /login?redirect=/dashboard → /dashboard).
   ref.listen<SessionState>(sessionStateProvider, (prev, next) async {
     if (prev != SessionState.revoked && next == SessionState.revoked) {
       await TokenStorage.clearAll();
+      // Flip AuthNotifier to idle so both auth signals agree. Tokens
+      // are already cleared, so any caller that re-reads them will
+      // get null anyway.
+      ref.read(authNotifierProvider.notifier).markRevoked();
     }
     notifier.notify();
   });
