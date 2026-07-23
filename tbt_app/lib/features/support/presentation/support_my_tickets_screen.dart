@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/constants/routes.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../providers/support_providers.dart';
@@ -50,10 +52,16 @@ class SupportMyTicketsScreen extends ConsumerWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (ctx, i) {
                 final t = list[i];
-                return Container(
+                return Material(
+                  color: tokens.bgSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => context
+                        .push(AppRoutes.supportTicketDetailPath(t.id)),
+                    child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: tokens.bgSurface,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: tokens.borderCard),
                   ),
@@ -64,7 +72,7 @@ class SupportMyTicketsScreen extends ConsumerWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              t.subject,
+                              '${t.displayId} · ${t.subject}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -147,6 +155,8 @@ class SupportMyTicketsScreen extends ConsumerWidget {
                         ),
                       ],
                     ],
+                  ),
+                ),
                   ),
                 );
               },

@@ -59,6 +59,7 @@ import 'features/support/presentation/support_screen.dart';
 import 'features/support/presentation/support_contact_screen.dart';
 import 'features/support/presentation/support_feedback_screen.dart';
 import 'features/support/presentation/support_my_tickets_screen.dart';
+import 'features/support/presentation/support_ticket_detail_screen.dart';
 import 'features/gamification/presentation/tbt_points_screen.dart';
 import 'features/gamification/presentation/wins_screen.dart';
 import 'features/batch_program/providers/batch_provider.dart';
@@ -449,6 +450,12 @@ List<RouteBase> _buildRoutes() => [
         path: AppRoutes.supportMyTickets,
         name: RouteNames.supportMyTickets,
         builder: (_, __) => const SupportMyTicketsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.supportTicketDetail,
+        builder: (_, state) => SupportTicketDetailScreen(
+          ticketId: state.pathParameters['id']!,
+        ),
       ),
 
       // ── Outside shell — TBT Points ─────────────────────────────────────────

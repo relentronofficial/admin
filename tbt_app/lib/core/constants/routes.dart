@@ -61,10 +61,16 @@ class AppRoutes {
   static const String supportContact = '/support/contact';
   static const String supportFeedback = '/support/feedback';
   static const String supportMyTickets = '/support/my-tickets';
+  static const String supportTicketDetail = '/support/ticket/:id';
+  static String supportTicketDetailPath(String id) => '/support/ticket/$id';
 
   // TBT Gamification
   static const String tbtPoints = '/tbt-points';
   static const String wins = '/wins';
+
+  // Community
+  static const String community = '/community';
+  static const String communitySaved = '/community/saved';
 
   // Path builders
   static String workshopDetailPath(String id) => '/workshops/$id';
@@ -131,4 +137,6 @@ class RouteNames {
   static const String supportMyTickets = 'support-my-tickets';
   static const String tbtPoints = 'tbt-points';
   static const String wins = 'wins';
+  static const String community = 'community';
+  static const String communitySaved = 'community-saved';
 }

@@ -102,36 +102,98 @@ class SupportTicket {
     required this.message,
     required this.status,
     required this.createdAt,
+    required this.priority,
+    this.displayNumber,
+    this.preferredContact,
     this.category,
     this.attachmentUrl,
+    this.attachmentUrls = const [],
     this.adminReply,
     this.adminRepliedAt,
+    this.replies = const [],
   });
   final String id;
+  final int? displayNumber;
   final String subject;
   final String message;
   final String status; // new | in_progress | resolved | closed
+  final String priority; // low | medium | high
+  final String? preferredContact; // email | whatsapp | phone
   final DateTime createdAt;
   final SupportCategoryRef? category;
   final String? attachmentUrl;
+  final List<String> attachmentUrls;
   final String? adminReply;
   final DateTime? adminRepliedAt;
+  final List<SupportReply> replies;
 
   bool get hasAdminReply => adminReply != null && adminReply!.trim().isNotEmpty;
 
+  /// Formatted ticket ID for display — `#TBT-1234`. Falls back to the
+  /// truncated UUID if a display number isn't set yet (unusual — only
+  /// happens on rows created before the sequence rollout).
+  String get displayId {
+    if (displayNumber != null) return '#TBT-$displayNumber';
+    final short = id.replaceAll('-', '').substring(0, 6).toUpperCase();
+    return '#TBT-$short';
+  }
+
   factory SupportTicket.fromJson(Map<String, dynamic> j) => SupportTicket(
         id: j['id'] as String,
+        displayNumber: j['displayNumber'] as int?,
         subject: j['subject'] as String,
         message: j['message'] as String,
         status: (j['status'] as String?) ?? 'new',
+        priority: (j['priority'] as String?) ?? 'medium',
+        preferredContact: j['preferredContact'] as String?,
         createdAt: DateTime.parse(j['createdAt'] as String),
         category: j['category'] != null
             ? SupportCategoryRef.fromJson(j['category'] as Map<String, dynamic>)
             : null,
         attachmentUrl: j['attachmentUrl'] as String?,
+        attachmentUrls: () {
+          final raw = j['attachmentUrls'];
+          if (raw is List) {
+            return raw.whereType<String>().toList();
+          }
+          return const <String>[];
+        }(),
         adminReply: j['adminReply'] as String?,
         adminRepliedAt: j['adminRepliedAt'] != null
             ? DateTime.tryParse(j['adminRepliedAt'] as String)
             : null,
+        replies: () {
+          final raw = j['replies'];
+          if (raw is List) {
+            return raw
+                .whereType<Map<String, dynamic>>()
+                .map(SupportReply.fromJson)
+                .toList();
+          }
+          return const <SupportReply>[];
+        }(),
+      );
+}
+
+class SupportReply {
+  const SupportReply({
+    required this.id,
+    required this.body,
+    required this.isFromAdmin,
+    required this.createdAt,
+    this.authorName,
+  });
+  final String id;
+  final String body;
+  final bool isFromAdmin;
+  final DateTime createdAt;
+  final String? authorName;
+
+  factory SupportReply.fromJson(Map<String, dynamic> j) => SupportReply(
+        id: j['id'] as String,
+        body: j['body'] as String,
+        isFromAdmin: (j['isFromAdmin'] as bool?) ?? false,
+        createdAt: DateTime.parse(j['createdAt'] as String),
+        authorName: j['authorName'] as String?,
       );
 }

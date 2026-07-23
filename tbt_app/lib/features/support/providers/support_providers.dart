@@ -40,3 +40,17 @@ final faqByIdProvider =
     FutureProvider.autoDispose.family<Faq?, String>((ref, id) async {
   return ref.watch(supportServiceProvider).getFaqById(id);
 });
+
+/// Single ticket + reply thread. Family-keyed by ticket id.
+/// `autoDispose` so the thread state is dropped when the detail screen
+/// closes, and re-fetched fresh on the next open (so a new admin reply
+/// isn't stale).
+final ticketDetailProvider =
+    FutureProvider.autoDispose.family<SupportTicket?, String>((ref, id) async {
+  return ref.watch(supportServiceProvider).getMyTicketDetail(id);
+});
+
+/// Which status the My Tickets filter tabs are currently showing.
+/// `'all'` shows everything; otherwise matches one of the four ticket
+/// statuses.
+final myTicketsFilterProvider = StateProvider<String>((_) => 'all');
