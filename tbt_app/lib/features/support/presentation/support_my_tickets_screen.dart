@@ -89,6 +89,63 @@ class SupportMyTicketsScreen extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: tokens.textSecondary, fontSize: 12, height: 1.4),
                       ),
+                      if (t.hasAdminReply) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: kColorAccent.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: kColorAccent.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.reply,
+                                    size: 12,
+                                    color: kColorAccent,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'ADMIN REPLIED',
+                                    style: TextStyle(
+                                      color: kColorAccent,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  if (t.adminRepliedAt != null)
+                                    Text(
+                                      DateFormat.MMMd()
+                                          .add_jm()
+                                          .format(t.adminRepliedAt!),
+                                      style: TextStyle(
+                                        color: tokens.textMuted,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                t.adminReply!,
+                                style: TextStyle(
+                                  color: tokens.textPrimary,
+                                  fontSize: 12.5,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );

@@ -45,6 +45,8 @@ export interface HelpdeskTicket {
   message: string;
   attachmentUrl: string | null;
   adminNotes: string | null;
+  adminReply: string | null;
+  adminRepliedAt: string | null;
   status: "new" | "in_progress" | "resolved" | "closed";
   createdAt: string;
   updatedAt: string;
@@ -232,6 +234,20 @@ export const useUpdateTicketStatus = () => {
         status,
         adminNotes,
       });
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
+  });
+};
+
+export const useReplyHelpdeskTicket = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reply }: { id: string; reply: string }) => {
+      const res: any = await apiClient.post(
+        `/api/helpdesk/admin/tickets/${id}/reply`,
+        { reply },
+      );
       return res?.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),

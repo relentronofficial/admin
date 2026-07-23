@@ -103,6 +103,9 @@ class SupportTicket {
     required this.status,
     required this.createdAt,
     this.category,
+    this.attachmentUrl,
+    this.adminReply,
+    this.adminRepliedAt,
   });
   final String id;
   final String subject;
@@ -110,6 +113,11 @@ class SupportTicket {
   final String status; // new | in_progress | resolved | closed
   final DateTime createdAt;
   final SupportCategoryRef? category;
+  final String? attachmentUrl;
+  final String? adminReply;
+  final DateTime? adminRepliedAt;
+
+  bool get hasAdminReply => adminReply != null && adminReply!.trim().isNotEmpty;
 
   factory SupportTicket.fromJson(Map<String, dynamic> j) => SupportTicket(
         id: j['id'] as String,
@@ -119,6 +127,11 @@ class SupportTicket {
         createdAt: DateTime.parse(j['createdAt'] as String),
         category: j['category'] != null
             ? SupportCategoryRef.fromJson(j['category'] as Map<String, dynamic>)
+            : null,
+        attachmentUrl: j['attachmentUrl'] as String?,
+        adminReply: j['adminReply'] as String?,
+        adminRepliedAt: j['adminRepliedAt'] != null
+            ? DateTime.tryParse(j['adminRepliedAt'] as String)
             : null,
       );
 }

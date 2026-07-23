@@ -30,6 +30,14 @@ export function resolveNotificationRoute(notification: {
     case "day_submitted":
       return m.batchId ? `/batches/${m.batchId}` : "/batches";
 
+    case "helpdesk_ticket":
+      return m.ticketId ? `/support?tab=tickets&id=${m.ticketId}` : "/support?tab=tickets";
+
+    case "helpdesk_feedback":
+      return m.feedbackId
+        ? `/support?tab=feedback&id=${m.feedbackId}`
+        : "/support?tab=feedback";
+
     case "announcement":
       return "/app-notifications";
 

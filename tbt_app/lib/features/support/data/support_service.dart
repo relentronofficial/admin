@@ -31,6 +31,23 @@ class SupportService {
     }
   }
 
+  /// Fetches a single active FAQ by id — used by notification deep-links
+  /// so a tap on a "helpful FAQ" notification lands on Support with the
+  /// specific FAQ expanded/highlighted.
+  Future<Faq?> getFaqById(String id) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('$kHelpdeskFaqs/$id');
+      final data = res.data?['data'];
+      if (data == null) return null;
+      return Faq.fromJson(data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      // 404 is expected when the FAQ was deactivated after the notification
+      // was queued — treat as null rather than surfacing an error.
+      if (e.response?.statusCode == 404) return null;
+      throw mapDioError(e);
+    }
+  }
+
   Future<List<Faq>> listFaqs({String? categoryId, String? search}) async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(

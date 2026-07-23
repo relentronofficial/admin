@@ -62,6 +62,12 @@ export const updateTicketStatusSchema = z.object({
   adminNotes: z.string().optional().nullable(),
 });
 
+// Admin posts a member-visible reply. Sending an empty string clears
+// the reply; a non-empty value overwrites any previous reply.
+export const replyTicketSchema = z.object({
+  reply: z.string().max(5000),
+});
+
 // ── Feedback ────────────────────────────────────────────────────
 export const submitFeedbackSchema = z.object({
   name: z.string().max(255).optional().nullable(),

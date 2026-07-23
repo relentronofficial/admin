@@ -12,13 +12,44 @@ import '../../../shared/widgets/app_loader.dart';
 /// Support landing screen. Contact channels + FAQ browser +
 /// entry points for ticket submission and feedback.
 class SupportScreen extends ConsumerStatefulWidget {
-  const SupportScreen({super.key});
+  const SupportScreen({super.key, this.focusFaqId});
+
+  /// Optional deep-link — when a notification tap opens Support with a
+  /// specific FAQ id in the query string, expand + highlight that FAQ
+  /// even if it isn't in the current filter/search view. Fetched via
+  /// [faqByIdProvider] so a hidden-by-filter FAQ still surfaces.
+  final String? focusFaqId;
+
   @override
   ConsumerState<SupportScreen> createState() => _SupportScreenState();
 }
 
 class _SupportScreenState extends ConsumerState<SupportScreen> {
   final _searchCtl = TextEditingController();
+  final GlobalKey _focusedFaqKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    // Scroll to the focused FAQ after the first frame renders. 500 ms
+    // gives the FAQ list network round-trip a chance to complete before
+    // we look for the target key — good enough on all test networks.
+    if (widget.focusFaqId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        if (!mounted) return;
+        final ctx = _focusedFaqKey.currentContext;
+        if (ctx != null) {
+          await Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+            alignment: 0.15,
+          );
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -263,7 +294,18 @@ class _SupportScreenState extends ConsumerState<SupportScreen> {
                 ),
               ),
               data: (list) {
-                if (list.isEmpty) {
+                // If a specific FAQ was targeted by a deep-link but isn't
+                // in the filtered list (e.g. category or search removed
+                // it), fetch it standalone and prepend so the notification
+                // still lands on real content.
+                final focusedId = widget.focusFaqId;
+                var display = list;
+                if (focusedId != null && !list.any((f) => f.id == focusedId)) {
+                  final extra = ref.watch(faqByIdProvider(focusedId));
+                  final extraFaq = extra.asData?.value;
+                  if (extraFaq != null) display = [extraFaq, ...list];
+                }
+                if (display.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.all(32),
                     child: Center(
@@ -277,7 +319,13 @@ class _SupportScreenState extends ConsumerState<SupportScreen> {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
-                    children: list.map((f) => _FaqTile(faq: f)).toList(),
+                    children: display
+                        .map((f) => _FaqTile(
+                              key: f.id == focusedId ? _focusedFaqKey : null,
+                              faq: f,
+                              highlight: f.id == focusedId,
+                            ))
+                        .toList(),
                   ),
                 );
               },
@@ -376,8 +424,9 @@ class _CategoryChip extends StatelessWidget {
 }
 
 class _FaqTile extends StatelessWidget {
-  const _FaqTile({required this.faq});
+  const _FaqTile({super.key, required this.faq, this.highlight = false});
   final dynamic faq;
+  final bool highlight;
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -386,7 +435,19 @@ class _FaqTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: tokens.bgSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderCard),
+        border: Border.all(
+          color: highlight ? kColorAccent : tokens.borderCard,
+          width: highlight ? 1.5 : 1,
+        ),
+        boxShadow: highlight
+            ? [
+                BoxShadow(
+                  color: kColorAccent.withValues(alpha: 0.20),
+                  blurRadius: 12,
+                  spreadRadius: 0,
+                ),
+              ]
+            : null,
       ),
       child: Theme(
         data: Theme.of(context).copyWith(
@@ -394,6 +455,7 @@ class _FaqTile extends StatelessWidget {
           expansionTileTheme: const ExpansionTileThemeData(iconColor: kColorAccent),
         ),
         child: ExpansionTile(
+          initiallyExpanded: highlight,
           tilePadding: const EdgeInsets.symmetric(horizontal: 12),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           title: Text(

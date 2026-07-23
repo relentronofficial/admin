@@ -32,6 +32,7 @@ import {
   useListHelpdeskTickets,
   useGetHelpdeskTicket,
   useUpdateTicketStatus,
+  useReplyHelpdeskTicket,
   useDeleteHelpdeskTicket,
   useListHelpdeskFeedback,
   useUpdateFeedbackStatus,
@@ -107,7 +108,27 @@ type Tab = "tickets" | "feedback" | "faqs" | "categories" | "settings";
 
 export default function SupportPage() {
   const [tab, setTab] = useState<Tab>("tickets");
+  const [initialTicketId, setInitialTicketId] = useState<string | null>(null);
+  const [initialFeedbackId, setInitialFeedbackId] = useState<string | null>(null);
   const { data: stats } = useHelpdeskDashboard();
+
+  // Read ?tab= + ?id= injected by the topbar notification bell so a
+  // click on a helpdesk_ticket / helpdesk_feedback notification lands
+  // on the right tab with the row auto-selected. Clear the query
+  // string afterwards so back-navigation doesn't re-fire.
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab");
+    const idParam = params.get("id");
+    if (tabParam === "tickets" || tabParam === "feedback") {
+      setTab(tabParam as Tab);
+      if (idParam) {
+        if (tabParam === "tickets") setInitialTicketId(idParam);
+        else setInitialFeedbackId(idParam);
+      }
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   return (
     <DashboardLayout>
@@ -168,8 +189,8 @@ export default function SupportPage() {
           })}
         </div>
 
-        {tab === "tickets" && <TicketsTab />}
-        {tab === "feedback" && <FeedbackTab />}
+        {tab === "tickets" && <TicketsTab initialSelectedId={initialTicketId} />}
+        {tab === "feedback" && <FeedbackTab initialSelectedId={initialFeedbackId} />}
         {tab === "faqs" && <FaqsTab />}
         {tab === "categories" && <CategoriesTab />}
         {tab === "settings" && <SettingsTab />}
@@ -182,11 +203,14 @@ export default function SupportPage() {
 // TICKETS
 // ────────────────────────────────────────────────────────────────
 
-function TicketsTab() {
+function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }) {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
+  React.useEffect(() => {
+    if (initialSelectedId) setSelectedId(initialSelectedId);
+  }, [initialSelectedId]);
   const { data, isLoading } = useListHelpdeskTickets({
     page,
     limit: 25,
@@ -310,12 +334,15 @@ function TicketDetailPanel({
 }) {
   const { data: ticket, isLoading } = useGetHelpdeskTicket(ticketId);
   const updateStatus = useUpdateTicketStatus();
+  const postReply = useReplyHelpdeskTicket();
   const del = useDeleteHelpdeskTicket();
   const [notes, setNotes] = useState("");
+  const [reply, setReply] = useState("");
 
   React.useEffect(() => {
     setNotes(ticket?.adminNotes ?? "");
-  }, [ticket?.id, ticket?.adminNotes]);
+    setReply(ticket?.adminReply ?? "");
+  }, [ticket?.id, ticket?.adminNotes, ticket?.adminReply]);
 
   if (!ticketId) {
     return (
@@ -347,6 +374,15 @@ function TicketDetailPanel({
       toast.success("Notes saved");
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message ?? "Save failed");
+    }
+  };
+
+  const onSendReply = async () => {
+    try {
+      await postReply.mutateAsync({ id: ticket.id, reply });
+      toast.success(reply.trim() ? "Reply sent" : "Reply cleared");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Reply failed");
     }
   };
 
@@ -428,6 +464,31 @@ function TicketDetailPanel({
         </div>
 
         <div>
+          <label className={labelCls}>
+            Reply to Member{ticket.adminRepliedAt && (
+              <span className="ml-2 text-[9px] font-normal text-[#888] normal-case tracking-normal">
+                sent {format(new Date(ticket.adminRepliedAt), "d MMM yyyy, HH:mm")}
+              </span>
+            )}
+          </label>
+          <textarea
+            className={textareaCls}
+            value={reply}
+            placeholder="Type a reply the member will see in their My Tickets…"
+            onChange={(e) => setReply(e.target.value)}
+          />
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              onClick={onSendReply}
+              disabled={postReply.isPending}
+              className="px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40"
+            >
+              {postReply.isPending ? "Sending…" : ticket.adminReply ? "Update Reply" : "Send Reply"}
+            </button>
+          </div>
+        </div>
+
+        <div>
           <label className={labelCls}>Admin Notes (internal)</label>
           <textarea
             className={textareaCls}
@@ -459,9 +520,12 @@ function TicketDetailPanel({
 // FEEDBACK
 // ────────────────────────────────────────────────────────────────
 
-function FeedbackTab() {
+function FeedbackTab({ initialSelectedId }: { initialSelectedId?: string | null }) {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  // FeedbackTab shows a flat list — highlight the row matching the
+  // initialSelectedId (from a notification tap) so admins can find it.
+  const highlightedId = initialSelectedId ?? null;
   const { data, isLoading } = useListHelpdeskFeedback({ page, limit: 25, status: statusFilter });
   const updateStatus = useUpdateFeedbackStatus();
   const del = useDeleteHelpdeskFeedback();
@@ -519,7 +583,15 @@ function FeedbackTab() {
           </div>
         )}
         {rows.map((f) => (
-          <div key={f.id} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+          <div
+            key={f.id}
+            className={
+              "bg-[#181818] border rounded-xl p-4 " +
+              (highlightedId === f.id
+                ? "border-[#dc2626] ring-2 ring-[#dc2626]/30"
+                : "border-[#2a2a2a]")
+            }
+          >
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-semibold text-white truncate">

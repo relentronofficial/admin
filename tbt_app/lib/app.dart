@@ -431,7 +431,9 @@ List<RouteBase> _buildRoutes() => [
       GoRoute(
         path: AppRoutes.support,
         name: RouteNames.support,
-        builder: (_, __) => const SupportScreen(),
+        builder: (_, state) => SupportScreen(
+          focusFaqId: state.uri.queryParameters['faqId'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.supportContact,

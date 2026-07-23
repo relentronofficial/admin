@@ -11,6 +11,7 @@
  */
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { createAdminNotification } from '../../lib/adminNotifications.js';
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -19,6 +20,7 @@ import {
   updateSettingsSchema,
   submitTicketSchema,
   updateTicketStatusSchema,
+  replyTicketSchema,
   submitFeedbackSchema,
   updateFeedbackStatusSchema,
 } from './schema.js';
@@ -245,6 +247,71 @@ export async function adminUpdateTicketStatusHandler(req: FastifyRequest, reply:
   }
 }
 
+/**
+ * Admin posts a member-visible reply to a ticket. When the reply is
+ * non-empty, the ticket status auto-flips to 'in_progress' (if still
+ * 'new') and the member (if linked) receives a socket + notification
+ * so they know an admin responded.
+ */
+export async function adminReplyTicketHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = replyTicketSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  const trimmedReply = parsed.data.reply.trim();
+  const isClearing = trimmedReply.length === 0;
+  try {
+    const before = await req.server.prisma.helpdeskTicket.findUnique({
+      where: { id },
+      select: { status: true, memberId: true, subject: true },
+    });
+    if (!before) return fail(reply, 404, 'not_found', 'Ticket not found.');
+
+    const updated = await req.server.prisma.helpdeskTicket.update({
+      where: { id },
+      data: {
+        adminReply: isClearing ? null : trimmedReply,
+        adminRepliedAt: isClearing ? null : new Date(),
+        // Auto-advance 'new' → 'in_progress' when admin first responds.
+        // Don't touch already-resolved / already-in_progress tickets.
+        ...(isClearing || before.status !== 'new'
+          ? {}
+          : { status: 'in_progress' }),
+      },
+      include: ticketInclude,
+    });
+
+    // Notify the member (if this ticket is linked to a member row)
+    // — mirrors the admin_notifications pattern but on the member side.
+    if (!isClearing && before.memberId) {
+      req.server.io.to(`user:${before.memberId}`).emit('notification', {
+        type: 'helpdesk_reply',
+        title: 'Support replied to your ticket',
+        body: before.subject,
+        metadata: { ticketId: id },
+      });
+      try {
+        await req.server.prisma.notification.create({
+          data: {
+            memberId: before.memberId,
+            // NotificationType enum has no helpdesk-specific value; use
+            // `system` and carry the semantic subtype in `data`.
+            type: 'system',
+            title: 'Support replied to your ticket',
+            body: before.subject,
+            data: { kind: 'helpdesk_reply', ticketId: id } as any,
+          },
+        });
+      } catch (err) {
+        req.server.log.warn({ err, ticketId: id }, 'Failed to persist helpdesk_reply notification');
+      }
+    }
+    return ok(reply, updated);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Ticket not found.');
+    throw err;
+  }
+}
+
 export async function adminDeleteTicketHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as { id: string };
   try {
@@ -392,6 +459,19 @@ export async function listFaqsHandler(req: FastifyRequest, reply: FastifyReply) 
   return ok(reply, rows);
 }
 
+/** Single-FAQ fetch by id — powers notification / deep-link handling on
+ *  the member side. 404s inactive FAQs so a notification pointing to a
+ *  deprecated FAQ doesn't render stale content. */
+export async function getFaqByIdHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const row = await req.server.prisma.helpdeskFaq.findFirst({
+    where: { id, status: 'active' },
+    include: faqInclude,
+  });
+  if (!row) return fail(reply, 404, 'not_found', 'FAQ not found.');
+  return ok(reply, row);
+}
+
 export async function submitTicketHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = submitTicketSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
@@ -401,6 +481,20 @@ export async function submitTicketHandler(req: FastifyRequest, reply: FastifyRep
       memberId: req.memberId ?? null,
       status: 'new',
     },
+  });
+  // Notify admins in real time — DB row for the notification bell +
+  // socket event for any admin currently viewing /support.
+  req.server.io.to('admin').emit('admin:helpdesk_ticket', {
+    ticketId: created.id,
+    subject: created.subject,
+    submitterName: created.name,
+    createdAt: created.createdAt,
+  });
+  void createAdminNotification(req.server.prisma, {
+    title: 'New Support Ticket',
+    body: `${created.name}: ${created.subject}`,
+    type: 'helpdesk_ticket',
+    metadata: { ticketId: created.id },
   });
   return reply.status(201).send({ success: true, data: created, error: null });
 }
@@ -424,6 +518,20 @@ export async function submitFeedbackHandler(req: FastifyRequest, reply: FastifyR
       memberId: req.memberId ?? null,
       status: 'new',
     },
+  });
+  const displayName = created.name && created.name.length > 0 ? created.name : 'A member';
+  req.server.io.to('admin').emit('admin:helpdesk_feedback', {
+    feedbackId: created.id,
+    rating: created.rating,
+    createdAt: created.createdAt,
+  });
+  void createAdminNotification(req.server.prisma, {
+    title: 'New Feedback Received',
+    body: created.rating != null
+      ? `${displayName} rated ${created.rating}/5`
+      : `${displayName} submitted feedback`,
+    type: 'helpdesk_feedback',
+    metadata: { feedbackId: created.id },
   });
   return reply.status(201).send({ success: true, data: created, error: null });
 }

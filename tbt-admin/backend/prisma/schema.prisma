@@ -2843,21 +2843,23 @@ model HelpdeskFaq {
 }
 
 model HelpdeskTicket {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId      String?  @map("member_id") @db.Uuid
-  name          String   @db.VarChar(255)
-  email         String   @db.VarChar(255)
-  phone         String?  @db.VarChar(50)
-  subject       String   @db.VarChar(255)
-  categoryId    String?  @map("category_id") @db.Uuid
-  message       String
-  attachmentUrl String?  @map("attachment_url")
-  adminNotes    String?  @map("admin_notes")
-  status        String   @default("new") @db.VarChar(50)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  member        Member?           @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
-  category      HelpdeskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId       String?   @map("member_id") @db.Uuid
+  name           String    @db.VarChar(255)
+  email          String    @db.VarChar(255)
+  phone          String?   @db.VarChar(50)
+  subject        String    @db.VarChar(255)
+  categoryId     String?   @map("category_id") @db.Uuid
+  message        String
+  attachmentUrl  String?   @map("attachment_url")
+  adminNotes     String?   @map("admin_notes")
+  adminReply     String?   @map("admin_reply")
+  adminRepliedAt DateTime? @map("admin_replied_at") @db.Timestamptz(6)
+  status         String    @default("new") @db.VarChar(50)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member         Member?           @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
+  category       HelpdeskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([memberId, createdAt(sort: Desc)])

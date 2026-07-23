@@ -15,6 +15,7 @@ import {
   adminListTicketsHandler,
   adminGetTicketHandler,
   adminUpdateTicketStatusHandler,
+  adminReplyTicketHandler,
   adminDeleteTicketHandler,
   adminListFeedbackHandler,
   adminUpdateFeedbackStatusHandler,
@@ -23,6 +24,7 @@ import {
   getSettingsHandler,
   listActiveCategoriesHandler,
   listFaqsHandler,
+  getFaqByIdHandler,
   submitTicketHandler,
   myTicketsHandler,
   submitFeedbackHandler,
@@ -57,6 +59,7 @@ export async function helpdeskRoutes(fastify: FastifyInstance) {
       adminScope.get('/tickets', adminListTicketsHandler);
       adminScope.get('/tickets/:id', adminGetTicketHandler);
       adminScope.patch('/tickets/:id/status', adminUpdateTicketStatusHandler);
+      adminScope.post('/tickets/:id/reply', adminReplyTicketHandler);
       adminScope.delete('/tickets/:id', adminDeleteTicketHandler);
 
       adminScope.get('/feedback', adminListFeedbackHandler);
@@ -73,6 +76,7 @@ export async function helpdeskRoutes(fastify: FastifyInstance) {
     userScope.get('/settings', getSettingsHandler);
     userScope.get('/categories', listActiveCategoriesHandler);
     userScope.get('/faqs', listFaqsHandler);
+    userScope.get('/faqs/:id', getFaqByIdHandler);
     userScope.post('/tickets', submitTicketHandler);
     userScope.get('/tickets/mine', myTicketsHandler);
     userScope.post('/feedback', submitFeedbackHandler);

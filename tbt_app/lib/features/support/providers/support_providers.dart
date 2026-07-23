@@ -31,3 +31,12 @@ final myTicketsProvider =
     FutureProvider.autoDispose<List<SupportTicket>>((ref) async {
   return ref.watch(supportServiceProvider).myTickets();
 });
+
+/// Family provider for a single FAQ id — used by SupportScreen when
+/// opened with a `focusFaqId` deep-link so the target FAQ can be scrolled
+/// into view / expanded even if it doesn't appear in the first page of
+/// the standard list.
+final faqByIdProvider =
+    FutureProvider.autoDispose.family<Faq?, String>((ref, id) async {
+  return ref.watch(supportServiceProvider).getFaqById(id);
+});
