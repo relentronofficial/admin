@@ -24,8 +24,12 @@ class PodcastsScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: tokens.bgSurface,
         elevation: 0,
-        title: const Text('Podcasts',
-            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+        iconTheme: IconThemeData(color: tokens.textPrimary),
+        title: Text('Podcasts',
+            style: TextStyle(
+                color: tokens.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700)),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
