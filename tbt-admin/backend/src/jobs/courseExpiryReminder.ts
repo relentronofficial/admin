@@ -62,7 +62,7 @@ export function startCourseExpiryReminderJob(prisma: PrismaClient, log: { info: 
 
   const queue = new Queue(QUEUE_NAME, { connection });
 
-  new Worker(
+  const worker = new Worker(
     QUEUE_NAME,
     async (job) => {
       if (job.name === JOB_ID) {
@@ -71,6 +71,28 @@ export function startCourseExpiryReminderJob(prisma: PrismaClient, log: { info: 
     },
     { connection },
   );
+
+  // Swallow ioredis reconnect noise. When Upstash has intermittent
+  // TCP timeouts (a recurring reality — see logs), the underlying
+  // ioredis clients on Queue + Worker fire unhandled `error` events
+  // every ~30s. Without listeners, Node prints them to stderr and
+  // Cloud Run buckets them as ERROR severity, drowning real errors.
+  // We downgrade to warn so we still see them if we go looking, but
+  // they don't pollute the error stream / alerts.
+  //
+  // Rate-limited: only log the FIRST error in a 5-minute window per
+  // instance so we don't just move the noise from stderr to stdout.
+  let lastLoggedAt = 0;
+  const errorHandler = (source: string) => (err: unknown) => {
+    const now = Date.now();
+    if (now - lastLoggedAt > 5 * 60 * 1000) {
+      lastLoggedAt = now;
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn(`[course-expiry-job] Redis ${source} reconnecting — ${msg}`);
+    }
+  };
+  queue.on('error', errorHandler('queue'));
+  worker.on('error', errorHandler('worker'));
 
   // upsertJobScheduler is idempotent — safe to call on every startup
   queue.upsertJobScheduler(JOB_ID, { pattern: CRON_PATTERN }).then(() => {
