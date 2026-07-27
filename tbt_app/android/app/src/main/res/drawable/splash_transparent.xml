@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Transparent shape used as `android:windowSplashScreenAnimatedIcon`
+  on Android 12+ (values-v31 / values-night-v31 LaunchTheme). Without
+  this Android would default to painting @mipmap/ic_launcher on the
+  splash background, which conflicts with our own in-app
+  VideoSplashScreen. Painting a fully transparent shape lets the
+  system splash render only the background color while the Flutter
+  engine boots; the app icon is not shown twice.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+</shape>
