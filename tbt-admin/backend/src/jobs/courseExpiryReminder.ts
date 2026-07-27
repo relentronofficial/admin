@@ -53,10 +53,24 @@ export function startCourseExpiryReminderJob(prisma: PrismaClient, log: { info: 
     return;
   }
 
+  // Cap reconnect attempts. Upstash's TCP endpoint is regularly
+  // unreachable from Cloud Run asia-south1 (ETIMEDOUT). Without a
+  // cap, ioredis retries forever on a ~30s cadence and spams logs.
+  // After MAX_RETRIES failed attempts we return null → ioredis
+  // stops trying and emits a single `end` event. The daily cron
+  // won't fire from this instance, but the identical work is
+  // reachable via POST /api/cron/course-expiry-reminder (Cloud
+  // Scheduler / external trigger), so nothing is silently lost.
+  const MAX_RETRIES = 5;
   const connection = {
     url: redisUrl,
-    maxRetriesPerRequest: null as null,
+    maxRetriesPerRequest: null as null, // required by BullMQ for blocking commands
     enableReadyCheck: false,
+    retryStrategy: (times: number) => {
+      if (times > MAX_RETRIES) return null; // give up
+      return Math.min(times * 500, 3000);
+    },
+    reconnectOnError: () => false,
     ...(redisUrl.startsWith('rediss://') ? { tls: {} } : {}),
   };
 
@@ -72,32 +86,27 @@ export function startCourseExpiryReminderJob(prisma: PrismaClient, log: { info: 
     { connection },
   );
 
-  // Swallow ioredis reconnect noise. When Upstash has intermittent
-  // TCP timeouts (a recurring reality — see logs), the underlying
-  // ioredis clients on Queue + Worker fire unhandled `error` events
-  // every ~30s. Without listeners, Node prints them to stderr and
-  // Cloud Run buckets them as ERROR severity, drowning real errors.
-  // We downgrade to warn so we still see them if we go looking, but
-  // they don't pollute the error stream / alerts.
-  //
-  // Rate-limited: only log the FIRST error in a 5-minute window per
-  // instance so we don't just move the noise from stderr to stdout.
-  let lastLoggedAt = 0;
+  // Attach error listeners so ioredis errors don't become unhandled
+  // stderr writes (which Cloud Run would bucket as ERROR severity).
+  // Log at most once per source; further errors during the retry
+  // window are silent, and after the retry cap the connection ends
+  // altogether.
+  const loggedFor = new Set<string>();
   const errorHandler = (source: string) => (err: unknown) => {
-    const now = Date.now();
-    if (now - lastLoggedAt > 5 * 60 * 1000) {
-      lastLoggedAt = now;
-      const msg = err instanceof Error ? err.message : String(err);
-      log.warn(`[course-expiry-job] Redis ${source} reconnecting — ${msg}`);
-    }
+    if (loggedFor.has(source)) return;
+    loggedFor.add(source);
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`[course-expiry-job] Redis ${source} unreachable — ${msg}. Falling back to HTTP cron endpoint.`);
   };
   queue.on('error', errorHandler('queue'));
   worker.on('error', errorHandler('worker'));
 
-  // upsertJobScheduler is idempotent — safe to call on every startup
+  // upsertJobScheduler is idempotent — safe to call on every startup.
+  // Wrapped so a Redis outage during startup doesn't crash the server.
   queue.upsertJobScheduler(JOB_ID, { pattern: CRON_PATTERN }).then(() => {
     log.info(`[course-expiry-job] Scheduled — daily 08:00 IST (${CRON_PATTERN} UTC)`);
   }).catch((err: any) => {
-    log.error({ err }, '[course-expiry-job] Failed to schedule');
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`[course-expiry-job] Could not schedule BullMQ cron — ${msg}. Use POST /api/cron/course-expiry-reminder instead.`);
   });
 }
