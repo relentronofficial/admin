@@ -336,12 +336,15 @@ async function bootstrap() {
         fastify.log.warn({ err }, '[bunny-sync] Failed — will retry on next startup');
       }
 
-      // Start BullMQ course-expiry reminder (daily at 08:00 IST)
+      // Start BullMQ course-expiry reminder (daily at 08:00 IST).
+      // Async: probes Upstash TCP first and short-circuits if
+      // unreachable. Fire-and-forget with a swallow — failures are
+      // already logged inside the job.
       startCourseExpiryReminderJob(fastify.prisma, {
         info: (msg) => fastify.log.info(msg),
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),
-      });
+      }).catch(() => { /* logged internally */ });
     });
 
     // Graceful Shutdown
