@@ -179,17 +179,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           const SizedBox(height: 4),
-                          // TBT wordmark
-                          const Text(
-                            'TBT',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: 'Rajdhani',
-                              fontSize: 54,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 8,
-                              height: 1,
+                          // Brand logo — replaces the old "TBT" wordmark.
+                          // Force the dark-theme asset directly instead of
+                          // AppLogo's Theme.of(context) lookup, since the
+                          // login card always sits on a black background
+                          // regardless of the app's active themeMode.
+                          Center(
+                            child: Image.asset(
+                              'assets/images/TBT C Pvt Final logo-04.png',
+                              width: 180,
+                              height: 72,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Text(
+                                'TBT',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'Rajdhani',
+                                  fontSize: 54,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: 8,
+                                  height: 1,
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),

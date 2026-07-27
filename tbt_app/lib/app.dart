@@ -711,14 +711,21 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
     final themeMode = ref.watch(themeModeProvider);
     // Resolve effective brightness for OS chrome (status bar / nav bar).
     // Doing it at the root ensures the system chrome flips together with
-    // MaterialApp themes when the user toggles the mode — no per-screen
-    // AnnotatedRegion required.
+    // MaterialApp themes when the user toggles the mode.
     final effectiveBrightness = switch (themeMode) {
       ThemeMode.dark => Brightness.dark,
       ThemeMode.light => Brightness.light,
       ThemeMode.system => MediaQuery.platformBrightnessOf(context),
     };
+    // Belt: imperative one-shot so cold-start / hot-reload has a sane
+    // overlay before the first frame renders.
     SystemChrome.setSystemUIOverlayStyle(systemOverlayFor(effectiveBrightness));
+    // Braces: the AnnotatedRegion below wraps every route so the OS
+    // chrome is guaranteed to re-apply the theme default whenever a
+    // screen-level StatusBarScope (login, splash, video players) pops
+    // off the stack. Without this, popping a locked-dark overlay
+    // could leave stale white icons on a light theme page.
+    final rootOverlay = systemOverlayFor(effectiveBrightness);
 
     return MaterialApp.router(
       title: 'Tamil Business Tribe',
@@ -747,13 +754,23 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
         );
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: scale),
-          // Global back-button handler — wraps every route (both inside
-          // the ShellRoute and the top-level detail screens like
-          // /podcasts/player, /learning/*, /ebooks/*). Without this the
-          // Android back gesture on outside-shell routes would fall
-          // through to the OS and close the app when the router stack
-          // is empty.
-          child: _GlobalBackGate(child: child ?? const SizedBox.shrink()),
+          // AnnotatedRegion is the widget-tree-based OS-chrome control.
+          // Placing it here — above _GlobalBackGate — ensures every
+          // route inherits the theme-appropriate overlay by default.
+          // Screens like login/splash/video-players nest their own
+          // StatusBarScope inside; when those unmount, the framework
+          // walks back up the tree, finds THIS region, and restores
+          // the theme default automatically.
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: rootOverlay,
+            // Global back-button handler — wraps every route (both
+            // inside the ShellRoute and the top-level detail screens
+            // like /podcasts/player, /learning/*, /ebooks/*). Without
+            // this the Android back gesture on outside-shell routes
+            // would fall through to the OS and close the app when
+            // the router stack is empty.
+            child: _GlobalBackGate(child: child ?? const SizedBox.shrink()),
+          ),
         );
       },
     );
