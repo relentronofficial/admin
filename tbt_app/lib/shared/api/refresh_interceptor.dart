@@ -119,14 +119,26 @@ class RefreshInterceptor extends Interceptor {
           _retryQueue(newAccess);
           handler.resolve(retried);
         case _RefreshAuthFailure():
-          // Server explicitly declared the refresh token dead. Signal
-          // `revoked` so the router can redirect to /login with the
-          // current path preserved as `?redirect=` — the router owns
-          // the actual token wipe so it happens exactly once, right
-          // before we route out. We do NOT clear tokens here.
-          _log('refresh returned auth failure — signalling REVOKED');
+          // Product decision: the session persists until the user
+          // MANUALLY logs out. A 401/403 from /refresh can happen for
+          // reasons other than "the refresh token is truly dead" —
+          // e.g. the grace-window entry expired between two racing
+          // refreshes, an Upstash inconsistency, or a moment when the
+          // backend can't see the token in the current Redis instance.
+          // Silently kicking the user to /login mid-session was
+          // causing repeated "logged out suddenly" reports.
+          //
+          // Instead we treat this the same as a transient failure:
+          // signal OFFLINE, keep tokens, surface the original error to
+          // the caller so the screen can show its own retry state.
+          // The next authenticated request will re-trigger this whole
+          // pipeline; if the server keeps rejecting, the reconnecting
+          // banner stays up but the user is still in-app and can log
+          // out manually if they want to.
+          _log('refresh returned auth failure — signalling OFFLINE '
+              '(session preserved per product policy)');
           AuthEventLog.record(AuthEventType.interceptorRefreshAuthFailure);
-          _emitSession(SessionState.revoked);
+          _emitSession(SessionState.offline);
           _drainQueue(err);
           handler.next(err);
         case _RefreshTransientFailure(:final lastError):

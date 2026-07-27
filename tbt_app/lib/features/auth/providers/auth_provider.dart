@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -45,21 +44,18 @@ class AuthNotifier extends _$AuthNotifier {
           // Cold-start refresh succeeded → session is confirmed live.
           ref.read(sessionStateProvider.notifier).state = SessionState.live;
         } catch (e, st) {
-          // Emit into the session state machine so the router / UI know
-          // the flavor of the failure. A 401/403 here means the server
-          // declared the refresh token dead — the router will route to
-          // /login (with return path preserved) via its sessionState
-          // listener. Any other failure is treated as transient offline
-          // — the app enters authenticated optimistically and the UI
-          // shows a reconnecting banner.
-          final isDioAuthFailure = e is DioException &&
-              (e.response?.statusCode == 401 || e.response?.statusCode == 403);
-          ref.read(sessionStateProvider.notifier).state = isDioAuthFailure
-              ? SessionState.revoked
-              : SessionState.offline;
+          // Product decision: the session persists until the user
+          // MANUALLY logs out. Any refresh failure at cold-start —
+          // transient (network, 5xx) OR server-declared 401/403 —
+          // maps to OFFLINE. Tokens stay put; the app enters
+          // authenticated optimistically and per-request refresh
+          // will retry once the server / network settles. If the
+          // server truly rejects for good, the user still has to
+          // hit "Log out" themselves.
+          ref.read(sessionStateProvider.notifier).state = SessionState.offline;
           if (kDebugMode) {
             debugPrint('[AuthNotifier.build] cold-start refresh failed: $e\n$st'
-                ' — sessionState=${isDioAuthFailure ? 'revoked' : 'offline'}');
+                ' — sessionState=offline (tokens preserved)');
           }
         }
       }

@@ -16,13 +16,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 ///                  attempt is expected to recover. Screens should
 ///                  show a subtle "Reconnecting…" banner instead of
 ///                  redirecting anywhere.
-///   * `revoked`  — the last refresh was explicitly denied by the
-///                  backend (401/403 on POST /api/user-auth/refresh).
-///                  The refresh token is dead. Tokens must be cleared
-///                  and the user must sign in again. The router
-///                  redirects to `/login?redirect=<return>` and a
-///                  one-shot "session expired" dialog surfaces the
-///                  reason so the flip isn't silent.
+///   * `revoked`  — reserved. NOT set automatically anymore. Per the
+///                  product decision documented on `AuthNotifier.build`,
+///                  the session persists until the user MANUALLY logs
+///                  out; refresh 401/403 no longer flips this state
+///                  because Redis/Upstash blips were causing spurious
+///                  mid-session logouts. Left in the enum in case a
+///                  future admin-forced session-kill (via socket
+///                  event, say) needs to route the user through the
+///                  same "session expired" flow. The router still
+///                  handles this state defensively if something sets
+///                  it, but nothing in the client currently does.
 enum SessionState { live, offline, revoked }
 
 /// Global signal — read anywhere, updated from the auth pipeline.
