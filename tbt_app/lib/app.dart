@@ -12,7 +12,6 @@ import 'core/constants/storage_keys.dart';
 import 'features/auth/domain/auth_state.dart';
 import 'features/notifications/data/fcm_service.dart';
 import 'shared/api/session_state.dart';
-import 'shared/api/token_storage.dart';
 import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/signup_screen.dart';
 import 'features/auth/presentation/otp_screen.dart';
@@ -105,22 +104,18 @@ GoRouter appRouter(Ref ref) {
     notifier.notify();
   });
 
-  // React to session-state transitions from the refresh pipeline. When
-  // the server declares the refresh token dead we (1) clear tokens
-  // exactly once, and (2) flip AuthNotifier to `idle` so the router's
-  // Guard 2 doesn't bounce the user back to the pre-revocation path
-  // via the `?redirect=` param. Without this the two auth signals
-  // disagree — sessionState says revoked, authNotifier still says
-  // authenticated — and GoRouter detects a redirect loop
-  // (/dashboard → /login?redirect=/dashboard → /dashboard).
-  ref.listen<SessionState>(sessionStateProvider, (prev, next) async {
-    if (prev != SessionState.revoked && next == SessionState.revoked) {
-      await TokenStorage.clearAll();
-      // Flip AuthNotifier to idle so both auth signals agree. Tokens
-      // are already cleared, so any caller that re-reads them will
-      // get null anyway.
-      ref.read(authNotifierProvider.notifier).markRevoked();
-    }
+  // Historically this listener cleared tokens + flipped AuthNotifier
+  // to idle whenever sessionState turned `revoked`. That auto-clear
+  // path was the source of "session expired suddenly" reports — an
+  // Upstash blip or 401 from /refresh would take the whole session
+  // down. Auto-revocation was removed everywhere in the pipeline;
+  // the enum value stays reserved for a future admin-forced kill.
+  //
+  // What's left is a pure UI signal — just re-notify the router so
+  // it re-evaluates guards on state change. Tokens are NEVER cleared
+  // here anymore; the only paths that clear tokens are the explicit
+  // user-triggered `logout()` in AuthService.
+  ref.listen<SessionState>(sessionStateProvider, (_, __) {
     notifier.notify();
   });
 
@@ -143,7 +138,6 @@ GoRouter appRouter(Ref ref) {
     refreshListenable: notifier,
     redirect: (context, state) {
       final authAsync = ref.read(authNotifierProvider);
-      final sessionState = ref.read(sessionStateProvider);
 
       // Don't redirect while the auth state is still loading.
       if (authAsync.isLoading) return null;
@@ -153,14 +147,14 @@ GoRouter appRouter(Ref ref) {
       final path = state.uri.path;
       final isPublic = _publicPaths.contains(path);
 
-      // Guard 0 — server-declared session revocation. Route to /login
-      // with the current path preserved so the user lands right back
-      // where they were after signing in again. Tokens were already
-      // cleared by the sessionState listener above.
-      if (sessionState == SessionState.revoked && !isPublic) {
-        final encoded = Uri.encodeComponent(state.uri.toString());
-        return '${AppRoutes.login}?redirect=$encoded&reason=expired';
-      }
+      // Guard 0 — REMOVED. Previously auto-routed to /login when
+      // sessionState was revoked. Auto-revocation was removed
+      // upstream to fix "session expired suddenly" reports, so this
+      // guard could never legitimately fire anymore and became a
+      // footgun (any accidental future flip would still boot the
+      // user). Only Guards 1 & 2 remain: idle → /login, authed on
+      // /login → dashboard. Manual logout goes through /logout →
+      // idle → Guard 1.
 
       // Guard 1 — unauthenticated + non-public route → login
       if (!isAuth && !isPublic) {
