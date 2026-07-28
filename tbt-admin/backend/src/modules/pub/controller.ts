@@ -422,3 +422,37 @@ export async function pubCourseCertVerifyHandler(req: FastifyRequest, reply: Fas
     error: null,
   });
 }
+
+// ── Legal pages (Terms & Conditions / Privacy Policy) ─────────────────
+// Public endpoint — no auth. Fetches from the legal_pages table (seeded
+// at startup with placeholder bodies for 'terms' and 'privacy'). Slug
+// must match one of the seeded rows; admin can edit body_markdown via
+// direct DB access until a management UI is built.
+
+export async function pubLegalPageHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { slug } = req.params as { slug: string };
+  reply.header('Cache-Control', 'public, max-age=600, stale-while-revalidate=60');
+
+  const rows = await req.server.prisma.$queryRawUnsafe<
+    Array<{ slug: string; title: string; body_markdown: string; updated_at: Date }>
+  >(
+    'SELECT slug, title, body_markdown, updated_at FROM legal_pages WHERE slug = $1 LIMIT 1',
+    slug,
+  );
+
+  if (rows.length === 0) {
+    return reply.status(404).send({ success: false, data: null, error: 'Not found' });
+  }
+
+  const row = rows[0]!;
+  return reply.send({
+    success: true,
+    data: {
+      slug: row.slug,
+      title: row.title,
+      bodyMarkdown: row.body_markdown,
+      updatedAt: row.updated_at.toISOString(),
+    },
+    error: null,
+  });
+}

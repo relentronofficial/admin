@@ -1,8 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../../core/constants/routes.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../../../features/notifications/data/notifications_service.dart';
 import '../../../shared/api/services/members_service.dart';
@@ -10,7 +13,10 @@ import '../../../shared/models/member.dart';
 import '../../../shared/providers/me_provider.dart';
 import '../../../shared/providers/theme_mode_provider.dart';
 import '../../../shared/theme/design_constants.dart';
+import '../data/profile_extras_service.dart';
 import '../providers/profile_provider.dart';
+import 'widgets/membership_card.dart';
+import 'widgets/profile_tabs.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_loader.dart';
@@ -141,6 +147,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _shareProfile(Member member) async {
+    final name = member.name;
+    final url = 'https://app.tamilbusinesstribe.com/profile/${member.id}';
+    final text = 'Check out $name on Tamil Business Tribe — $url';
+    await Share.share(text, subject: name);
+  }
+
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -213,11 +226,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ],
                       )
-                    : IconButton(
-                        icon: Icon(Icons.edit_outlined,
-                            color: context.tokens.textPrimary, size: 20),
-                        tooltip: 'Edit name',
-                        onPressed: () => _enterEdit(member),
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.share_outlined,
+                                color: context.tokens.textPrimary, size: 20),
+                            tooltip: 'Share profile',
+                            onPressed: () => _shareProfile(member),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.edit_outlined,
+                                color: context.tokens.textPrimary, size: 20),
+                            tooltip: 'Edit name',
+                            onPressed: () => _enterEdit(member),
+                          ),
+                        ],
                       ),
               ) ??
               const SizedBox.shrink(),
@@ -250,7 +274,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               uploading: _uploadingAvatar,
               onTap: _pickAvatar,
             ),
-            const SizedBox(height: 24),
+            const _HeroInfoBar(),
+            const SizedBox(height: 20),
+            // ── Signature membership card + tabbed sections ──────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _MembershipCardFromRaw(member: member),
+            ),
+            const SizedBox(height: 22),
+            _ProfileTabsFromRaw(
+              onEditBusiness: () async {
+                final ok = await showModalBottomSheet<bool>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const _EditPersonalInfoSheet(),
+                );
+                if (ok == true) ref.invalidate(meNotifierProvider);
+              },
+            ),
+            const SizedBox(height: 22),
+            // ── Personal info (existing) ────────────────────────────────
             if (_editMode)
               _EditNameSection(
                 controller: _nameController,
@@ -297,7 +341,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const _DevicesSection(),
             const SizedBox(height: 24),
             const _ThemeToggleTile(),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
+            // ── Legal + connections settings tiles ──────────────────────
+            _SettingsLinkTile(
+              icon: Icons.people_alt_outlined,
+              label: 'Connections',
+              onTap: () => context.push(AppRoutes.profileConnections),
+            ),
+            _SettingsLinkTile(
+              icon: Icons.gavel_outlined,
+              label: 'Terms & Conditions',
+              onTap: () => context.push(AppRoutes.legalTerms),
+            ),
+            _SettingsLinkTile(
+              icon: Icons.privacy_tip_outlined,
+              label: 'Privacy Policy',
+              onTap: () => context.push(AppRoutes.legalPrivacy),
+            ),
+            const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: OutlinedButton.icon(
@@ -323,12 +384,327 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
           ];
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 40),
-            itemCount: listItems.length,
-            itemBuilder: (_, i) => listItems[i],
+          return RefreshIndicator(
+            color: Theme.of(context).colorScheme.primary,
+            onRefresh: () async {
+              ref.invalidate(meNotifierProvider);
+              ref.invalidate(myConnectionsProvider);
+              ref.invalidate(myPostsProvider);
+              // Wait for me to refetch so pull spinner has a real end.
+              // Swallow errors — the underlying providers will surface
+              // failure states in-line; the spinner just needs to end.
+              try {
+                await ref.read(meNotifierProvider.future);
+              } catch (_) {
+                // ignore — error state already visible via meNotifierProvider
+              }
+            },
+            child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 40),
+              itemCount: listItems.length,
+              itemBuilder: (_, i) => listItems[i],
+            ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ── Hero info bar — role, location, ONLINE pill, decorative hero badges.
+// Reads via fetchRawProfile so it doesn't require the /me DTO to change.
+
+class _HeroInfoBar extends ConsumerStatefulWidget {
+  const _HeroInfoBar();
+
+  @override
+  ConsumerState<_HeroInfoBar> createState() => _HeroInfoBarState();
+}
+
+class _HeroInfoBarState extends ConsumerState<_HeroInfoBar> {
+  Map<String, dynamic>? _raw;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await fetchRawProfile(ref);
+      if (mounted) setState(() => _raw = data);
+    } catch (_) {}
+  }
+
+  bool _isOnline(Map<String, dynamic> data) {
+    final last = data['lastActiveAt'] as String?;
+    if (last == null) return false;
+    final dt = DateTime.tryParse(last);
+    if (dt == null) return false;
+    return DateTime.now().difference(dt).inMinutes < 15;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final data = _raw ?? const <String, dynamic>{};
+    final role = (data['role'] as String?)?.trim() ?? '';
+    final city = (data['city'] as String?)?.trim() ?? '';
+    final state = (data['state'] as String?)?.trim() ?? '';
+    final location = [
+      if (city.isNotEmpty) city,
+      if (state.isNotEmpty) state,
+    ].join(', ');
+    final online = _isOnline(data);
+    final subLine = <String>[
+      if (role.isNotEmpty) role,
+      if (location.isNotEmpty) location,
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 8),
+      child: Column(
+        children: [
+          if (subLine.isNotEmpty)
+            Text(
+              subLine,
+              style: TextStyle(
+                color: tokens.textSecondary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (online
+                          ? const Color(0xFF22C55E)
+                          : tokens.textMuted)
+                      .withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: online
+                            ? const Color(0xFF22C55E)
+                            : tokens.textMuted,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      online ? 'ONLINE' : 'OFFLINE',
+                      style: TextStyle(
+                        color: online
+                            ? const Color(0xFF22C55E)
+                            : tokens.textMuted,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const _HeroBadge(label: '10X GROWTH', color: Color(0xFFE50914)),
+              const SizedBox(width: 6),
+              const _HeroBadge(label: 'PILLAR', color: Color(0xFFF59E0B)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroBadge extends StatelessWidget {
+  const _HeroBadge({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontFamily: 'Rajdhani',
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.4,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Membership card + tabs shell — pull raw profile once, share among children.
+
+class _MembershipCardFromRaw extends ConsumerStatefulWidget {
+  const _MembershipCardFromRaw({required this.member});
+  final Member member;
+
+  @override
+  ConsumerState<_MembershipCardFromRaw> createState() =>
+      _MembershipCardFromRawState();
+}
+
+class _MembershipCardFromRawState
+    extends ConsumerState<_MembershipCardFromRaw> {
+  Map<String, dynamic>? _raw;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await fetchRawProfile(ref);
+      if (mounted) setState(() => _raw = data);
+    } catch (_) {
+      // fail silent — card still renders with fallbacks
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = _raw ?? const <String, dynamic>{};
+    final subscription = raw['subscription'] as Map<String, dynamic>?;
+    String? expiryLabel;
+    final endDate = subscription?['endDate'] as String?;
+    if (endDate != null && endDate.isNotEmpty) {
+      final dt = DateTime.tryParse(endDate);
+      if (dt != null) {
+        expiryLabel =
+            '${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+      }
+    }
+    final printedMemberId =
+        (raw['memberId'] as String?) ?? widget.member.id;
+    final plan = widget.member.membershipPlan;
+    return MembershipCard(
+      name: widget.member.name,
+      memberId: printedMemberId,
+      avatarUrl: widget.member.avatarUrl,
+      plan: plan,
+      businessName: (raw['businessName'] as String?) ??
+          (raw['business_name'] as String?),
+      expiryLabel: expiryLabel,
+    );
+  }
+}
+
+class _ProfileTabsFromRaw extends ConsumerStatefulWidget {
+  const _ProfileTabsFromRaw({required this.onEditBusiness});
+  final VoidCallback onEditBusiness;
+
+  @override
+  ConsumerState<_ProfileTabsFromRaw> createState() =>
+      _ProfileTabsFromRawState();
+}
+
+class _ProfileTabsFromRawState extends ConsumerState<_ProfileTabsFromRaw> {
+  Map<String, dynamic>? _raw;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await fetchRawProfile(ref);
+      if (mounted) setState(() => _raw = data);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_raw == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 30),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    return ProfileTabs(
+      rawProfile: _raw!,
+      onEditBusiness: widget.onEditBusiness,
+    );
+  }
+}
+
+// ── Settings link tile (legal / connections shortcuts) ───────────────────────
+
+class _SettingsLinkTile extends StatelessWidget {
+  const _SettingsLinkTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: tokens.bgSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: tokens.borderCard),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: tokens.textSecondary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: tokens.textMuted, size: 20),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1111,6 +1487,12 @@ class _EditPersonalInfoSheetState
   final _goal90 = TextEditingController();
   final _businessEstablished = TextEditingController();
   final _dob = TextEditingController();
+  // 2026-07-28 — extended business fields for the Business tab
+  final _role = TextEditingController();
+  final _industry = TextEditingController();
+  final _teamSize = TextEditingController();
+  final _registeredOffice = TextEditingController();
+  final _targetNetwork = TextEditingController();
   bool _loading = true;
   bool _saving = false;
 
@@ -1135,6 +1517,11 @@ class _EditPersonalInfoSheetState
       _goal90,
       _businessEstablished,
       _dob,
+      _role,
+      _industry,
+      _teamSize,
+      _registeredOffice,
+      _targetNetwork,
     ]) {
       c.dispose();
     }
@@ -1160,6 +1547,14 @@ class _EditPersonalInfoSheetState
       _businessEstablished.text =
           estabRaw.contains('T') ? estabRaw.split('T').first : estabRaw;
       _dob.text = (data['dob'] as String?) ?? '';
+      _role.text = (data['role'] as String?) ?? '';
+      _industry.text = (data['industry'] as String?) ?? '';
+      _teamSize.text = (data['teamSize'] as String?) ?? '';
+      _registeredOffice.text = (data['registeredOffice'] as String?) ??
+          (data['businessAddress'] as String?) ??
+          '';
+      _targetNetwork.text =
+          (data['targetNetworkDescription'] as String?) ?? '';
       setState(() => _loading = false);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -1182,6 +1577,11 @@ class _EditPersonalInfoSheetState
         'goalAfter90Days': _goal90.text.trim(),
         'businessEstablishedOn': _businessEstablished.text.trim(),
         'dob': _dob.text.trim(),
+        'role': _role.text.trim(),
+        'industry': _industry.text.trim(),
+        'teamSize': _teamSize.text.trim(),
+        'registeredOffice': _registeredOffice.text.trim(),
+        'targetNetworkDescription': _targetNetwork.text.trim(),
       });
       if (mounted) Navigator.of(context).pop(true);
     } catch (_) {
@@ -1308,13 +1708,18 @@ class _EditPersonalInfoSheetState
                     readOnly: true, onTap: _pickDob),
                 _field('City', _city),
                 _field('State', _state),
+                _field('Role (e.g. Founder)', _role),
                 _field('Business name', _businessName),
+                _field('Industry', _industry),
+                _field('Team size (e.g. 1-5)', _teamSize),
+                _field('Registered office', _registeredOffice),
                 _field('Product / Service type', _productService),
                 _field('Annual turnover', _annualTurnover),
                 _field('GST number', _gstNumber),
                 _field('Business established on', _businessEstablished,
                     readOnly: true, onTap: _pickBusinessEstablished),
                 _field('Goal after 90 days', _goal90),
+                _field('Target network description', _targetNetwork),
                 const SizedBox(height: 6),
                 Row(
                   children: [

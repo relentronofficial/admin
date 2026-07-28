@@ -39,6 +39,8 @@ import 'features/messages/presentation/messages_screen.dart';
 import 'features/notifications/presentation/notifications_screen.dart';
 import 'features/products/presentation/products_screen.dart';
 import 'features/profile/presentation/profile_screen.dart';
+import 'features/profile/presentation/connections_screen.dart';
+import 'features/profile/presentation/legal_page_screen.dart';
 import 'features/resources/presentation/resources_screen.dart';
 import 'features/search/presentation/search_screen.dart';
 import 'features/tbt/presentation/catalog_screen.dart';
@@ -306,6 +308,23 @@ List<RouteBase> _buildRoutes() => [
             ),
           ]),
         ],
+      ),
+
+      // ── Outside shell — Profile extras (2026-07-28) ────────────────────────
+      GoRoute(
+        path: AppRoutes.profileConnections,
+        name: RouteNames.profileConnections,
+        builder: (_, __) => const ConnectionsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.legalTerms,
+        name: RouteNames.legalTerms,
+        builder: (_, __) => const LegalPageScreen(slug: 'terms'),
+      ),
+      GoRoute(
+        path: AppRoutes.legalPrivacy,
+        name: RouteNames.legalPrivacy,
+        builder: (_, __) => const LegalPageScreen(slug: 'privacy'),
       ),
 
       // ── Outside shell — Workshop detail ────────────────────────────────────

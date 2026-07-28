@@ -18,6 +18,12 @@ const String kAuthSignup = '/api/user-auth/signup';
 // ── User / Profile ─────────────────────────────────────────────────────────────
 const String kUserMe = '/api/user/me';
 const String kUserFcmToken = '/api/user/fcm-token';
+const String kUserMyConnections = '/api/user/me/connections';
+const String kUserMyPosts = '/api/user/me/posts';
+
+// ── Legal (Terms & Conditions / Privacy Policy) ──────────────────────────────
+// Fetched via `/api/pub/legal/:slug` — slug is one of `terms` / `privacy`.
+const String kPubLegal = '/api/pub/legal';
 
 // ── Public Config ──────────────────────────────────────────────────────────────
 const String kConfigSite = '/api/pub/config/site';

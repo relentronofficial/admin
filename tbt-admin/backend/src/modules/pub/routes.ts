@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { pubSiteConfigHandler, pubNavItemsHandler, pubUiStringsHandler, pubMemberSyncHandler, livekitWebhookHandler, pubSessionCheckHandler, pubHomeHeroHandler, pubHomeSectionsHandler, pubCourseCertVerifyHandler } from './controller.js';
+import { pubSiteConfigHandler, pubNavItemsHandler, pubUiStringsHandler, pubMemberSyncHandler, livekitWebhookHandler, pubSessionCheckHandler, pubHomeHeroHandler, pubHomeSectionsHandler, pubCourseCertVerifyHandler, pubLegalPageHandler } from './controller.js';
 
 export async function pubRoutes(fastify: FastifyInstance) {
   fastify.get('/config/site', pubSiteConfigHandler);
@@ -9,6 +9,7 @@ export async function pubRoutes(fastify: FastifyInstance) {
   fastify.get('/home/hero', pubHomeHeroHandler);
   fastify.get('/home/sections', pubHomeSectionsHandler);
   fastify.post('/auth/sync', pubMemberSyncHandler);
+  fastify.get('/legal/:slug', pubLegalPageHandler);
 
   // LiveKit webhook — accepts raw text/string body for HMAC verification
   fastify.addContentTypeParser('application/webhook+json', { parseAs: 'string' }, (req, body, done) => {

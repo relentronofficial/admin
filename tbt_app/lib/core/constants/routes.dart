@@ -72,6 +72,11 @@ class AppRoutes {
   static const String community = '/community';
   static const String communitySaved = '/community/saved';
 
+  // Profile extras (2026-07-28)
+  static const String profileConnections = '/profile/connections';
+  static const String legalTerms = '/legal/terms';
+  static const String legalPrivacy = '/legal/privacy';
+
   // Path builders
   static String workshopDetailPath(String id) => '/workshops/$id';
   static String conversationPath(String id) => '/messages/$id';
@@ -139,4 +144,7 @@ class RouteNames {
   static const String wins = 'wins';
   static const String community = 'community';
   static const String communitySaved = 'community-saved';
+  static const String profileConnections = 'profile-connections';
+  static const String legalTerms = 'legal-terms';
+  static const String legalPrivacy = 'legal-privacy';
 }

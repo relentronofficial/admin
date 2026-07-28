@@ -146,6 +146,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
       where: { id: request.memberId },
       select: {
         id: true,
+        memberId: true,
         firstName: true,
         lastName: true,
         email: true,
@@ -158,11 +159,24 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
         city: true,
         state: true,
         businessName: true,
+        businessType: true,
+        businessAddress: true,
+        businessEstablishedOn: true,
+        productServiceType: true,
+        annualTurnover: true,
+        goalAfter90Days: true,
+        gstNumber: true,
+        industry: true,
+        role: true,
+        teamSize: true,
+        registeredOffice: true,
+        targetNetworkDescription: true,
         totalPoints: true,
         currentStreak: true,
         healthScore: true,
         notificationPrefs: true,
         batchId: true,
+        lastActiveAt: true,
         displayBadges: {
           select: {
             badge: { select: { id: true, label: true, color: true, bgColor: true } },
@@ -264,6 +278,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 
   const mePayload = {
     id: member.id,
+    memberId: (member as any).memberId ?? null,
     name: [member.firstName, member.lastName].filter(Boolean).join(' '),
     firstName: member.firstName,
     lastName: member.lastName ?? null,
@@ -277,7 +292,24 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     city: member.city ?? null,
     state: member.state ?? null,
     businessName: member.businessName ?? null,
+    businessType: (member as any).businessType ?? null,
+    businessAddress: (member as any).businessAddress ?? null,
+    businessEstablishedOn: (member as any).businessEstablishedOn
+      ? (member as any).businessEstablishedOn.toISOString().split('T')[0]
+      : null,
+    productServiceType: (member as any).productServiceType ?? null,
+    annualTurnover: (member as any).annualTurnover ?? null,
+    goalAfter90Days: (member as any).goalAfter90Days ?? null,
+    gstNumber: (member as any).gstNumber ?? null,
+    industry: (member as any).industry ?? null,
+    role: (member as any).role ?? null,
+    teamSize: (member as any).teamSize ?? null,
+    registeredOffice: (member as any).registeredOffice ?? null,
+    targetNetworkDescription: (member as any).targetNetworkDescription ?? null,
     batchId: member.batchId ?? null,
+    lastActiveAt: (member as any).lastActiveAt
+      ? (member as any).lastActiveAt.toISOString()
+      : null,
     totalPoints: member.totalPoints,
     currentStreak: member.currentStreak,
     healthScore: member.healthScore,
@@ -300,14 +332,24 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 }
 
 export async function updateMeHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { firstName, lastName, phone, dob, city, state, businessName } = request.body as {
-    firstName?: string;
-    lastName?: string;
-    phone?: string;
-    dob?: string | null;
-    city?: string | null;
-    state?: string | null;
-    businessName?: string | null;
+  const body = request.body as Record<string, unknown>;
+  const {
+    firstName, lastName, phone, dob, city, state, businessName,
+    // Extended business + personal fields (2026-07-28) — previously
+    // several of these were sent by the mobile edit sheet and silently
+    // dropped here; picking them up so the sheet actually persists.
+    industry, businessType, businessAddress, businessEstablishedOn,
+    productServiceType, annualTurnover, goalAfter90Days, gstNumber,
+    role, teamSize, registeredOffice, targetNetworkDescription,
+  } = body as {
+    firstName?: string; lastName?: string; phone?: string;
+    dob?: string | null; city?: string | null; state?: string | null;
+    businessName?: string | null; industry?: string | null;
+    businessType?: string | null; businessAddress?: string | null;
+    businessEstablishedOn?: string | null; productServiceType?: string | null;
+    annualTurnover?: string | null; goalAfter90Days?: string | null;
+    gstNumber?: string | null; role?: string | null; teamSize?: string | null;
+    registeredOffice?: string | null; targetNetworkDescription?: string | null;
   };
 
   const data: Record<string, unknown> = {};
@@ -318,6 +360,22 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
   if (city !== undefined) data.city = city?.trim() || null;
   if (state !== undefined) data.state = state?.trim() || null;
   if (businessName !== undefined) data.businessName = businessName?.trim() || null;
+  if (industry !== undefined) data.industry = industry?.trim() || null;
+  if (businessType !== undefined) data.businessType = businessType?.trim() || null;
+  if (businessAddress !== undefined) data.businessAddress = businessAddress?.trim() || null;
+  if (businessEstablishedOn !== undefined) {
+    data.businessEstablishedOn = businessEstablishedOn ? new Date(businessEstablishedOn) : null;
+  }
+  if (productServiceType !== undefined) data.productServiceType = productServiceType?.trim() || null;
+  if (annualTurnover !== undefined) data.annualTurnover = annualTurnover?.trim() || null;
+  if (goalAfter90Days !== undefined) data.goalAfter90Days = goalAfter90Days?.trim() || null;
+  if (gstNumber !== undefined) data.gstNumber = gstNumber?.trim() || null;
+  if (role !== undefined) data.role = role?.trim() || null;
+  if (teamSize !== undefined) data.teamSize = teamSize?.trim() || null;
+  if (registeredOffice !== undefined) data.registeredOffice = registeredOffice?.trim() || null;
+  if (targetNetworkDescription !== undefined) {
+    data.targetNetworkDescription = targetNetworkDescription?.trim() || null;
+  }
 
   if (Object.keys(data).length === 0) return fail(reply, 400, 'No fields to update');
 
@@ -4986,4 +5044,62 @@ export async function searchHandler(request: FastifyRequest, reply: FastifyReply
     episodes: episodes.map((e: any) => ({ id: e.id, title: e.title, courseId: e.courseId })),
     resources: resources.map((r) => ({ id: r.id, title: r.title, fileType: r.fileType ?? null })),
   });
+}
+
+// ── Profile: connections + own posts ──────────────────────────────────────────
+
+export async function getMyConnectionsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const rows = await request.server.prisma.memberConnection.findMany({
+    where: { followerId: request.memberId! },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+    select: {
+      following: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          profilePhotoUrl: true,
+          role: true,
+          businessName: true,
+        },
+      },
+    },
+  });
+  const items = rows.map((r) => ({
+    id: r.following.id,
+    name: [r.following.firstName, r.following.lastName].filter(Boolean).join(' '),
+    avatarUrl: r.following.profilePhotoUrl ?? null,
+    role: (r.following as any).role ?? null,
+    businessName: r.following.businessName ?? null,
+  }));
+  return ok(reply, items);
+}
+
+export async function getMyPostsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { limit = 20 } = request.query as { limit?: number };
+  const posts = await request.server.prisma.post.findMany({
+    where: { memberId: request.memberId! },
+    orderBy: { createdAt: 'desc' },
+    take: Number(limit),
+    select: {
+      id: true,
+      content: true,
+      mediaUrls: true,
+      createdAt: true,
+      isApproved: true,
+      likesCount: true,
+      commentsCount: true,
+    },
+  });
+  const items = posts.map((p) => ({
+    id: p.id,
+    content: p.content,
+    mediaUrls: p.mediaUrls ?? [],
+    createdAt: p.createdAt.toISOString(),
+    isApproved: p.isApproved,
+    likeCount: p.likesCount,
+    commentCount: p.commentsCount,
+  }));
+  return ok(reply, items);
 }

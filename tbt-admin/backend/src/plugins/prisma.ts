@@ -140,6 +140,29 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS description TEXT`),
       prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS admin_reply TEXT`),
       prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS admin_replied_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS priority VARCHAR(20) NOT NULL DEFAULT 'medium'`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS preferred_contact VARCHAR(20)`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS attachment_urls JSONB`),
+      // Auto-numbering — sequence starts at 1001 so ticket IDs look like
+      // #TBT-1001 instead of #TBT-1 from day one.
+      prisma.$executeRawUnsafe(`CREATE SEQUENCE IF NOT EXISTS helpdesk_ticket_display_seq START 1001`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS display_number INT`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ALTER COLUMN display_number SET DEFAULT nextval('helpdesk_ticket_display_seq')`),
+      // Backfill display_number for pre-existing rows so every historical
+      // ticket also gets a printable ID.
+      prisma.$executeRawUnsafe(`UPDATE helpdesk_tickets SET display_number = nextval('helpdesk_ticket_display_seq') WHERE display_number IS NULL`),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_ticket_replies (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          ticket_id UUID NOT NULL REFERENCES helpdesk_tickets(id) ON DELETE CASCADE,
+          body TEXT NOT NULL,
+          is_from_admin BOOLEAN NOT NULL DEFAULT false,
+          author_name VARCHAR(255),
+          member_id UUID,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS helpdesk_ticket_replies_ticket_id_created_at_idx ON helpdesk_ticket_replies(ticket_id, created_at)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS snapshot_days INT`),
@@ -284,6 +307,32 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`
         ALTER TABLE members
           ADD COLUMN IF NOT EXISTS business_type TEXT
+      `),
+      // Extended profile fields (2026-07-28) — role, team_size,
+      // registered_office, target_network_description power the
+      // Business tab of the enriched profile page.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS role TEXT,
+          ADD COLUMN IF NOT EXISTS team_size TEXT,
+          ADD COLUMN IF NOT EXISTS registered_office TEXT,
+          ADD COLUMN IF NOT EXISTS target_network_description TEXT
+      `),
+      // Legal pages (2026-07-28) — Terms & Conditions / Privacy Policy
+      // markdown bodies. Slug-based lookup via /api/pub/legal/:slug.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS legal_pages (
+          slug VARCHAR(50) PRIMARY KEY,
+          title TEXT NOT NULL,
+          body_markdown TEXT NOT NULL DEFAULT '',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        INSERT INTO legal_pages (slug, title, body_markdown) VALUES
+          ('terms', 'Terms & Conditions', 'By using Tamil Business Tribe you agree to our terms. Full terms will appear here.'),
+          ('privacy', 'Privacy Policy', 'We respect your privacy. Full privacy policy will appear here.')
+        ON CONFLICT (slug) DO NOTHING
       `),
       // ── AI Content Buddy (2026-07-18) ─────────────────────────────
       // Claude-backed chat assistant for members (text/voice/image →

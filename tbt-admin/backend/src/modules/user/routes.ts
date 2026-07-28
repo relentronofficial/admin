@@ -88,6 +88,8 @@ import {
   getMyInquiredProductsHandler,
   listUserProgramsHandler,
   getUserProgramHandler,
+  getMyConnectionsHandler,
+  getMyPostsHandler,
 } from './controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -99,6 +101,8 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.patch('/me', updateMeHandler);
   fastify.patch('/me/avatar', updateAvatarHandler);
   fastify.post('/me/avatar-presign', avatarPresignHandler);
+  fastify.get('/me/connections', getMyConnectionsHandler);
+  fastify.get('/me/posts', getMyPostsHandler);
 
   // ── Courses ────────────────────────────────────────────────────────────────
   fastify.get('/courses', listUserCoursesHandler);

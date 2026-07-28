@@ -276,6 +276,10 @@ model Member {
   sector                String?
   industry              String?
   subIndustry           String?            @map("sub_industry")
+  role                  String?
+  teamSize              String?            @map("team_size")
+  registeredOffice      String?            @map("registered_office")
+  targetNetworkDescription String?         @map("target_network_description")
   businessStage         BusinessStage?     @map("business_stage")
   currentChallenges     String[]           @map("current_challenges")
   notes                 String?
@@ -2843,27 +2847,51 @@ model HelpdeskFaq {
 }
 
 model HelpdeskTicket {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId       String?   @map("member_id") @db.Uuid
-  name           String    @db.VarChar(255)
-  email          String    @db.VarChar(255)
-  phone          String?   @db.VarChar(50)
-  subject        String    @db.VarChar(255)
-  categoryId     String?   @map("category_id") @db.Uuid
-  message        String
-  attachmentUrl  String?   @map("attachment_url")
-  adminNotes     String?   @map("admin_notes")
-  adminReply     String?   @map("admin_reply")
-  adminRepliedAt DateTime? @map("admin_replied_at") @db.Timestamptz(6)
-  status         String    @default("new") @db.VarChar(50)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  member         Member?           @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
-  category       HelpdeskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId         String?   @map("member_id") @db.Uuid
+  name             String    @db.VarChar(255)
+  email            String    @db.VarChar(255)
+  phone            String?   @db.VarChar(50)
+  subject          String    @db.VarChar(255)
+  categoryId       String?   @map("category_id") @db.Uuid
+  message          String
+  attachmentUrl    String?   @map("attachment_url")
+  attachmentUrls   Json?     @map("attachment_urls")
+  adminNotes       String?   @map("admin_notes")
+  adminReply       String?   @map("admin_reply")
+  adminRepliedAt   DateTime? @map("admin_replied_at") @db.Timestamptz(6)
+  priority         String    @default("medium") @map("priority") @db.VarChar(20)
+  preferredContact String?   @map("preferred_contact") @db.VarChar(20)
+  displayNumber    Int?      @map("display_number")
+  status           String    @default("new") @db.VarChar(50)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member           Member?             @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
+  category         HelpdeskCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  replies          HelpdeskTicketReply[]
 
   @@index([status])
   @@index([memberId, createdAt(sort: Desc)])
   @@map("helpdesk_tickets")
+}
+
+/// Threaded replies on a support ticket. `isFromAdmin` distinguishes
+/// admin (Clerk-authed) responses from member follow-ups. Both sides
+/// keep the ticket alive; a resolved ticket that receives a member
+/// reply is auto-flipped back to 'in_progress' (see controller).
+model HelpdeskTicketReply {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId    String   @map("ticket_id") @db.Uuid
+  body        String
+  isFromAdmin Boolean  @default(false) @map("is_from_admin")
+  authorName  String?  @map("author_name") @db.VarChar(255)
+  memberId    String?  @map("member_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("helpdesk_ticket_replies")
 }
 
 model HelpdeskFeedback {

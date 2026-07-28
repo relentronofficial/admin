@@ -88,6 +88,9 @@ dependencies:
   # ── Splash ────────────────────────────────────────────────────────────────
   flutter_native_splash: ^2.4.3
 
+  # ── Profile: QR code on the Membership Card back-face ─────────────────────
+  qr_flutter: ^4.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
