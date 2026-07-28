@@ -320,6 +320,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `),
       // Legal pages (2026-07-28) — Terms & Conditions / Privacy Policy
       // markdown bodies. Slug-based lookup via /api/pub/legal/:slug.
+      // Sequenced with .then(...) so the INSERT doesn't race the CREATE
+      // TABLE (both would run in parallel inside this Promise.all).
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS legal_pages (
           slug VARCHAR(50) PRIMARY KEY,
@@ -327,13 +329,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           body_markdown TEXT NOT NULL DEFAULT '',
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `),
-      prisma.$executeRawUnsafe(`
+      `).then(() => prisma.$executeRawUnsafe(`
         INSERT INTO legal_pages (slug, title, body_markdown) VALUES
           ('terms', 'Terms & Conditions', 'By using Tamil Business Tribe you agree to our terms. Full terms will appear here.'),
           ('privacy', 'Privacy Policy', 'We respect your privacy. Full privacy policy will appear here.')
         ON CONFLICT (slug) DO NOTHING
-      `),
+      `)),
       // ── AI Content Buddy (2026-07-18) ─────────────────────────────
       // Claude-backed chat assistant for members (text/voice/image →
       // generated content). Ported from co-worker's admin-app but
