@@ -658,6 +658,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       // as-is (`tbt_*` namespace) — no collision with primary's
       // generic `tasks` / `points_ledger` / `badges` tables since
       // these are TBT-90day-journey specific.
+      // Prisma's $executeRawUnsafe runs each call as a single prepared
+      // statement — statements after the first `;` are silently dropped.
+      // Split every DDL into its own call so all of them actually run.
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS tbt_activity_log (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -666,18 +669,26 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           source VARCHAR(50) NOT NULL DEFAULT 'task_completion',
           activity_date DATE NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')::DATE,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-        CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member ON tbt_activity_log(member_id);
-        CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member_date ON tbt_activity_log(member_id, activity_date);
-        -- reference_id: enables idempotent backfill of legacy point sources
-        -- (workshop episodes / challenges / assignments / course XP). Partial
-        -- unique index means task_completion rows (which set no ref) are
-        -- unaffected and can still stack multiple entries per member.
-        ALTER TABLE tbt_activity_log ADD COLUMN IF NOT EXISTS reference_id UUID;
-        CREATE UNIQUE INDEX IF NOT EXISTS uniq_tbt_activity_log_member_source_ref
-          ON tbt_activity_log(member_id, source, reference_id)
-          WHERE reference_id IS NOT NULL;
+        )
       `),
+      prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member ON tbt_activity_log(member_id)`,
+      ),
+      prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member_date ON tbt_activity_log(member_id, activity_date)`,
+      ),
+      // reference_id: enables idempotent backfill of legacy point sources
+      // (workshop episodes / challenges / assignments / course XP). Partial
+      // unique index means task_completion rows (which set no ref) are
+      // unaffected and can still stack multiple entries per member.
+      prisma.$executeRawUnsafe(
+        `ALTER TABLE tbt_activity_log ADD COLUMN IF NOT EXISTS reference_id UUID`,
+      ),
+      prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS uniq_tbt_activity_log_member_source_ref
+           ON tbt_activity_log(member_id, source, reference_id)
+           WHERE reference_id IS NOT NULL`,
+      ),
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS tbt_levels (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
