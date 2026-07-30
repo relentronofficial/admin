@@ -53,7 +53,18 @@ class AuthService {
 
   Future<void> logout() async {
     try {
-      await _dio.post<dynamic>(kAuthLogout);
+      // Attach the refresh cookie explicitly so the server can revoke it
+      // from Redis. Without this the token would linger on the backend
+      // until its 30-day TTL, letting another actor on the same account
+      // continue to refresh with a stolen copy. `AuthInterceptor` skips
+      // /api/user-auth/* so the caller's Cookie header is preserved.
+      final refresh = await TokenStorage.readRefreshToken();
+      await _dio.post<dynamic>(
+        kAuthLogout,
+        options: refresh != null
+            ? Options(headers: {'Cookie': 'tbt_refresh=$refresh'})
+            : null,
+      );
     } on DioException catch (_) {
       // Ignore server errors — always clear local tokens.
     } finally {
