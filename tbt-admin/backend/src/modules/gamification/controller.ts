@@ -27,6 +27,7 @@ import {
   updateTaskSchema,
   grantPointsSchema,
 } from './schema.js';
+import { computeMemberStats } from '../../lib/tbtStats.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
   return reply.send({ success: true, data, error: null, ...extra });
@@ -209,41 +210,23 @@ export async function adminDashboardHandler(req: FastifyRequest, reply: FastifyR
 // ────────────────────────────────────────────────────────────────
 
 async function _fetchMemberSummary(prisma: any, memberId: string) {
-  const [tasks, completions, activityRows, levels] = await Promise.all([
+  // Points + streak are computed by the shared helper so this endpoint
+  // and the profile stats row (backed by /api/user/me) always agree.
+  // The helper backfills legacy workshop/challenge/assignment/course_xp
+  // events into `tbt_activity_log` on first read, so old activity
+  // counts even though it never wrote to the ledger.
+  const stats = await computeMemberStats(prisma, memberId);
+  const totalPoints = stats.totalPoints;
+  const streak = stats.currentStreak;
+
+  const [tasks, completions, levels] = await Promise.all([
     prisma.tbtTask.findMany({
       where: { status: 'active' },
       orderBy: [{ sortOrder: 'asc' }, { taskOrder: 'asc' }],
     }),
     prisma.tbtTaskCompletion.findMany({ where: { memberId } }),
-    prisma.tbtActivityLog.findMany({
-      where: { memberId },
-      select: { points: true, activityDate: true },
-      orderBy: { activityDate: 'desc' },
-    }),
     prisma.tbtLevel.findMany({ orderBy: { requiredPoints: 'asc' } }),
   ]);
-
-  const totalPoints = (activityRows as Array<{ points: number }>).reduce(
-    (a, r) => a + (r.points ?? 0),
-    0,
-  );
-
-  // Daily streak — consecutive distinct activity_date values back
-  // from today. Matches the co-worker's rule 1:1.
-  const distinctDates = new Set<string>();
-  for (const r of activityRows as Array<{ activityDate: Date }>) {
-    const d = new Date(r.activityDate);
-    distinctDates.add(`${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`);
-  }
-  let streak = 0;
-  const today = new Date();
-  for (let i = 0; i < 366; i++) {
-    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
-    const key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
-    if (distinctDates.has(key)) streak++;
-    else if (i === 0) continue; // today can be empty and still allow yesterday
-    else break;
-  }
 
   // Level = highest requirement met.
   const sortedLevels = (levels as Array<any>).sort((a, b) => a.requiredPoints - b.requiredPoints);

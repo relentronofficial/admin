@@ -669,6 +669,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         );
         CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member ON tbt_activity_log(member_id);
         CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_member_date ON tbt_activity_log(member_id, activity_date);
+        -- reference_id: enables idempotent backfill of legacy point sources
+        -- (workshop episodes / challenges / assignments / course XP). Partial
+        -- unique index means task_completion rows (which set no ref) are
+        -- unaffected and can still stack multiple entries per member.
+        ALTER TABLE tbt_activity_log ADD COLUMN IF NOT EXISTS reference_id UUID;
+        CREATE UNIQUE INDEX IF NOT EXISTS uniq_tbt_activity_log_member_source_ref
+          ON tbt_activity_log(member_id, source, reference_id)
+          WHERE reference_id IS NOT NULL;
       `),
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS tbt_levels (

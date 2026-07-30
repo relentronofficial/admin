@@ -18,6 +18,7 @@ import {
   notifyQuizPassed,
 } from '../../lib/courseNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { computeMemberStats } from '../../lib/tbtStats.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -46,45 +47,33 @@ async function recalculateMemberStats(prisma: any, memberId: string, redis?: any
   if (!allowed) return;
 
   try {
+    // Points + streak now come from the single `tbt_activity_log`
+    // source of truth (see lib/tbtStats.ts). The helper lazily
+    // backfills workshop/challenge/assignment/course_xp events into
+    // the ledger, so this endpoint and the TBT Points screen always
+    // agree.
+    const { totalPoints, currentStreak } = await computeMemberStats(prisma, memberId);
+
+    // Health score still uses episode-completion ratio + recency (not
+    // point-based), so keep its own light-weight query.
     const [
-      completedWorkshopEpisodes,
-      completedChallenges,
-      submittedAssignments,
       totalWorkshopEpisodes,
-      member,
-      courseXpResult,
+      completedWorkshopEpisodes,
       completedCourseEpisodes,
       totalCourseEpisodes,
+      member,
     ] = await Promise.all([
-      prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
-      prisma.memberChallengeProgress.count({ where: { memberId, status: 'completed' } }),
-      prisma.assignmentSubmission.count({ where: { memberId } }),
       prisma.memberEpisodeProgress.count({ where: { memberId } }),
-      prisma.member.findUnique({ where: { id: memberId }, select: { currentStreak: true, lastActiveAt: true } }),
-      prisma.memberXP.aggregate({ where: { memberId }, _sum: { amount: true } }).catch(() => ({ _sum: { amount: 0 } })),
+      prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
       (prisma as any).courseEpisodeProgress.count({ where: { memberId, completed: true } }).catch(() => 0),
       (prisma as any).courseEpisodeProgress.count({ where: { memberId } }).catch(() => 0),
+      prisma.member.findUnique({ where: { id: memberId }, select: { lastActiveAt: true } }),
     ]);
-
-    const workshopPoints = (completedWorkshopEpisodes as number) * 10 + (completedChallenges as number) * 25 + (submittedAssignments as number) * 15;
-    const courseXp = (courseXpResult as any)?._sum?.amount ?? 0;
-    const totalPoints = workshopPoints + courseXp;
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const lastActive = member?.lastActiveAt ? new Date((member.lastActiveAt as Date).getTime()) : null;
     const lastActiveDay = lastActive ? new Date(lastActive.getFullYear(), lastActive.getMonth(), lastActive.getDate()) : null;
-
-    let currentStreak = member?.currentStreak ?? 0;
-    if (!lastActiveDay) {
-      currentStreak = 1;
-    } else {
-      const daysDiff = Math.floor((today.getTime() - lastActiveDay.getTime()) / 86_400_000);
-      if (daysDiff === 0) { /* same day — no change */ }
-      else if (daysDiff === 1) { currentStreak = currentStreak + 1; }
-      else { currentStreak = 1; }
-    }
-
     const daysSinceActive = lastActiveDay ? Math.floor((today.getTime() - lastActiveDay.getTime()) / 86_400_000) : 999;
     const recencyScore = daysSinceActive === 0 ? 40 : daysSinceActive <= 1 ? 35 : daysSinceActive <= 3 ? 25 : daysSinceActive <= 7 ? 15 : daysSinceActive <= 30 ? 5 : 0;
     const totalEpisodes = (totalWorkshopEpisodes as number) + (totalCourseEpisodes as number);
