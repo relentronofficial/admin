@@ -103,6 +103,10 @@ class _ConnectionRow extends StatelessWidget {
                   width: 44,
                   height: 44,
                   fit: BoxFit.cover,
+                  memCacheWidth:
+                      (44 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  memCacheHeight:
+                      (44 * MediaQuery.devicePixelRatioOf(context)).round(),
                   errorWidget: (_, __, ___) => _initials(context),
                 )
               : _initials(context),

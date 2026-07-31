@@ -156,8 +156,20 @@ class AuthService {
   }
 
   /// Returns the authenticated member's profile — typed [Member].
-  /// Used by [MeNotifier] and [AuthNotifier] after successful auth events.
+  /// Kept for callers that only need the typed shape; internally
+  /// delegates to [getMeWithRaw] so we don't fetch twice.
   Future<Member> getMe() async {
+    final (:member, raw: _) = await getMeWithRaw();
+    return member;
+  }
+
+  /// Fetches `/api/user/me` once and returns both the typed [Member]
+  /// AND the raw JSON payload. The raw map exposes extended fields
+  /// (`currentStreak`, `totalPoints`, `businessName`, `sections`, …)
+  /// that don't fit the [Member] shape and were previously fetched by
+  /// re-hitting the endpoint. Consumers should read them via
+  /// `rawMeProvider` so both shapes are backed by a single network call.
+  Future<({Member member, Map<String, dynamic> raw})> getMeWithRaw() async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(kUserMe);
       final raw = res.data?['data'] as Map<String, dynamic>?;
@@ -173,7 +185,7 @@ class AuthService {
         final composed = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
         normalized['name'] = composed.isEmpty ? 'Member' : composed;
       }
-      return Member.fromJson(normalized);
+      return (member: Member.fromJson(normalized), raw: raw);
     } on DioException catch (e) {
       throw mapDioError(e);
     }

@@ -228,6 +228,16 @@ class _TbtAppDrawerState extends ConsumerState<TbtAppDrawer>
                                             width: 42,
                                             height: 42,
                                             fit: BoxFit.cover,
+                                            memCacheWidth: (42 *
+                                                    MediaQuery
+                                                        .devicePixelRatioOf(
+                                                            context))
+                                                .round(),
+                                            memCacheHeight: (42 *
+                                                    MediaQuery
+                                                        .devicePixelRatioOf(
+                                                            context))
+                                                .round(),
                                             errorWidget: (_, __, ___) =>
                                                 _avatarFallback(),
                                           )

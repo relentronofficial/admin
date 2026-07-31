@@ -34,11 +34,12 @@ Future<void> updateProfileFields(
   ref.invalidate(meNotifierProvider);
 }
 
-/// Fetches the raw member JSON via GET /api/user/me. Used to pre-fill the
-/// extended edit form with fields not currently exposed in [Member].
-Future<Map<String, dynamic>> fetchRawProfile(WidgetRef ref) async {
-  final res = await ref.read(dioProvider).get<Map<String, dynamic>>(kUserMe);
-  return (res.data?['data'] as Map<String, dynamic>?) ?? {};
+/// Raw member JSON — used to pre-fill the extended edit form and to
+/// read fields not exposed by [Member] (`currentStreak`, `totalPoints`,
+/// `businessName`, `sections`, …). Reads from the shared
+/// [rawMeProvider] so we don't re-hit `/api/user/me` per consumer.
+Future<Map<String, dynamic>> fetchRawProfile(WidgetRef ref) {
+  return ref.read(rawMeProvider.future);
 }
 
 /// Uploads [bytes] to R2 and patches the member's avatarUrl.

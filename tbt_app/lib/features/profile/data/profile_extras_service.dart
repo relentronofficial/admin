@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api.dart';
 import '../../../shared/api/dio_provider.dart';
+import '../../../shared/providers/me_provider.dart';
 
 class ProfileConnection {
   const ProfileConnection({
@@ -93,6 +94,45 @@ final myConnectionsProvider =
       .map(ProfileConnection.fromJson)
       .toList();
   return list;
+});
+
+/// Typed snapshot of the three profile stat tiles: Daily Streak /
+/// Connections / TBT Points. Mirrors co-worker's TbtPointsService.
+/// fetchProfileStats() shape.
+class ProfileStats {
+  const ProfileStats({
+    required this.dailyStreak,
+    required this.connections,
+    required this.tbtPoints,
+  });
+
+  final int dailyStreak;
+  final int connections;
+  final int tbtPoints;
+
+  static const empty =
+      ProfileStats(dailyStreak: 0, connections: 0, tbtPoints: 0);
+}
+
+/// Live stats provider — composes the cached [rawMeProvider] (backed
+/// by `meNotifierProvider`'s single `/api/user/me` fetch) with
+/// [myConnectionsProvider]. No independent HTTP calls; invalidating
+/// either upstream provider re-derives this one. Backend recalculates
+/// `currentStreak` + `totalPoints` on every `/api/user/me` hit
+/// (throttled 60s per member), so pull-to-refresh gets fresh numbers.
+final profileStatsProvider =
+    FutureProvider.autoDispose<ProfileStats>((ref) async {
+  final results = await Future.wait([
+    ref.watch(rawMeProvider.future),
+    ref.watch(myConnectionsProvider.future),
+  ]);
+  final me = results[0] as Map<String, dynamic>;
+  final conns = results[1] as List<ProfileConnection>;
+  return ProfileStats(
+    dailyStreak: (me['currentStreak'] as num?)?.toInt() ?? 0,
+    connections: conns.length,
+    tbtPoints: (me['totalPoints'] as num?)?.toInt() ?? 0,
+  );
 });
 
 /// Fetches the member's own community posts (for the My Wins tab).

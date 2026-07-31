@@ -486,9 +486,13 @@ class _PodiumAvatar extends StatelessWidget {
         ),
       );
     }
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cachePx = (size * dpr).round().clamp(1, 2000);
     return CachedNetworkImage(
       imageUrl: photo,
       fit: BoxFit.cover,
+      memCacheWidth: cachePx,
+      memCacheHeight: cachePx,
       placeholder: (_, __) => Container(color: tokens.bgInput),
       errorWidget: (_, __, ___) => Container(
         color: tokens.bgInput,
@@ -613,6 +617,10 @@ class _RankListItem extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: row.memberPhoto!,
                       fit: BoxFit.cover,
+                      memCacheWidth:
+                          (40 * MediaQuery.devicePixelRatioOf(context)).round(),
+                      memCacheHeight:
+                          (40 * MediaQuery.devicePixelRatioOf(context)).round(),
                       placeholder: (_, __) =>
                           Container(color: tokens.bgInput),
                       errorWidget: (_, __, ___) => Container(

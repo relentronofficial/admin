@@ -185,69 +185,72 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final meAsync = ref.watch(meNotifierProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: isDark
+          ? const [Color(0xFF0F0F11), Color(0xFF050505)]
+          : const [Color(0xFFF5F5F5), Color(0xFFE5E5EA)],
+    );
+    final textColor = isDark ? Colors.white : Colors.black;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: context.tokens.bgSurface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: Text(
-          'PROFILE',
-          style: TextStyle(
-            fontFamily: 'Rajdhani',
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.5,
-            color: context.tokens.textPrimary,
-          ),
-        ),
-        actions: [
-          meAsync.whenOrNull(
-                data: (member) => _editMode
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton(
-                            onPressed: _savingName ? null : _cancelEdit,
-                            child: Text('Cancel',
-                                style: TextStyle(color: context.tokens.textMuted)),
-                          ),
-                          TextButton(
-                            onPressed: _savingName ? null : _saveName,
-                            child: _savingName
-                                ? SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
-                                  )
-                                : Text('Save',
-                                    style: TextStyle(color: Theme.of(context).colorScheme.primary)),
-                          ),
-                        ],
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      body: Container(
+        decoration: BoxDecoration(gradient: bgGradient),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // ── Custom header (co-worker style, no AppBar) ────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.arrow_back_ios_new_rounded,
+                          size: 20, color: textColor),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'Elite Profile',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                    meAsync.whenOrNull(
+                          data: (member) => IconButton(
                             icon: Icon(Icons.share_outlined,
-                                color: context.tokens.textPrimary, size: 20),
+                                size: 20, color: textColor),
                             tooltip: 'Share profile',
                             onPressed: () => _shareProfile(member),
                           ),
-                          IconButton(
-                            icon: Icon(Icons.edit_outlined,
-                                color: context.tokens.textPrimary, size: 20),
-                            tooltip: 'Edit name',
-                            onPressed: () => _enterEdit(member),
-                          ),
-                        ],
-                      ),
-              ) ??
-              const SizedBox.shrink(),
-        ],
+                        ) ??
+                        const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+              // Body scroll
+              Expanded(
+                child: _buildBody(meAsync),
+              ),
+            ],
+          ),
+        ),
       ),
-      body: meAsync.when(
+    );
+  }
+
+  Widget _buildBody(AsyncValue<Member> meAsync) {
+    return meAsync.when(
         loading: () =>
             const AppLoader.center(),
         error: (e, __) => Center(
@@ -268,20 +271,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
         ),
         data: (member) {
-          final listItems = <Widget>[
-            _AvatarSection(
+          final children = <Widget>[
+            const SizedBox(height: 16),
+            // ── Hero (avatar with gradient ring + name + role + ONLINE + badges)
+            _HeroSection(
               member: member,
               uploading: _uploadingAvatar,
-              onTap: _pickAvatar,
+              onTapAvatar: _pickAvatar,
             ),
-            const _HeroInfoBar(),
-            const SizedBox(height: 20),
-            // ── Signature membership card + tabbed sections ──────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _MembershipCardFromRaw(member: member),
-            ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
+            // ── Stats row (Streak · Connections · Points)
+            const _StatsRowNew(),
+            const SizedBox(height: 28),
+            // ── Signature membership card
+            _MembershipCardFromRaw(member: member),
+            const SizedBox(height: 28),
+            // ── 3-tab layout (Business / My Wins / Trophies)
             _ProfileTabsFromRaw(
               onEditBusiness: () async {
                 final ok = await showModalBottomSheet<bool>(
@@ -293,31 +298,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 if (ok == true) ref.invalidate(meNotifierProvider);
               },
             ),
-            const SizedBox(height: 22),
-            // ── Personal info (existing) ────────────────────────────────
-            if (_editMode)
-              _EditNameSection(
-                controller: _nameController,
-                saving: _savingName,
-              )
-            else
-              _InfoSection(member: member),
-            if (!_editMode) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('Edit Personal Info'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: context.tokens.textSecondary,
-                    side: BorderSide(color: context.tokens.borderCard),
-                    minimumSize: const Size.fromHeight(40),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () async {
+            const SizedBox(height: 28),
+            // ── Settings block (wraps existing profile-adjacent sections)
+            _SettingsGroup(
+              children: [
+                _SettingsLinkRow(
+                  icon: Icons.person_rounded,
+                  label: 'My Account',
+                  onTap: () async {
                     final ok = await showModalBottomSheet<bool>(
                       context: context,
                       isScrollControlled: true,
@@ -327,101 +315,106 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     if (ok == true) ref.invalidate(meNotifierProvider);
                   },
                 ),
-              ),
-            ],
+                _SettingsLinkRow(
+                  icon: Icons.people_alt_rounded,
+                  label: 'Connections',
+                  onTap: () =>
+                      context.push(AppRoutes.profileConnections),
+                ),
+                _SettingsLinkRow(
+                  icon: Icons.gavel_rounded,
+                  label: 'Terms & Conditions',
+                  onTap: () => context.push(AppRoutes.legalTerms),
+                ),
+                _SettingsLinkRow(
+                  icon: Icons.privacy_tip_rounded,
+                  label: 'Privacy Policy',
+                  onTap: () => context.push(AppRoutes.legalPrivacy),
+                ),
+                _SettingsThemeRow(),
+              ],
+            ),
             const SizedBox(height: 16),
-            const _StatsStrip(),
-            const SizedBox(height: 24),
+            // Retained backend-driven sections (below settings so they
+            // don't clutter the hero — kept because they surface DB
+            // truth: subscription, tiers, notif prefs, devices).
             const _SubscriptionSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             const _TiersSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             const _NotificationPrefsSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             const _DevicesSection(),
             const SizedBox(height: 24),
-            const _ThemeToggleTile(),
-            const SizedBox(height: 16),
-            // ── Legal + connections settings tiles ──────────────────────
-            _SettingsLinkTile(
-              icon: Icons.people_alt_outlined,
-              label: 'Connections',
-              onTap: () => context.push(AppRoutes.profileConnections),
-            ),
-            _SettingsLinkTile(
-              icon: Icons.gavel_outlined,
-              label: 'Terms & Conditions',
-              onTap: () => context.push(AppRoutes.legalTerms),
-            ),
-            _SettingsLinkTile(
-              icon: Icons.privacy_tip_outlined,
-              label: 'Privacy Policy',
-              onTap: () => context.push(AppRoutes.legalPrivacy),
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.logout, size: 18),
-                label: const Text(
-                  'Sign Out',
-                  style: TextStyle(
-                    fontFamily: 'Rajdhani',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    letterSpacing: 0.5,
-                  ),
+            _SettingsGroup(
+              children: [
+                _SettingsLinkRow(
+                  icon: Icons.logout_rounded,
+                  label: 'Sign Out',
+                  danger: true,
+                  onTap: _logout,
                 ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.primary,
-                  side: BorderSide(color: Theme.of(context).colorScheme.primary),
-                  minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: _logout,
-              ),
+              ],
             ),
+            const SizedBox(height: 40),
           ];
           return RefreshIndicator(
-            color: Theme.of(context).colorScheme.primary,
+            color: const Color(0xFFD30814),
             onRefresh: () async {
               ref.invalidate(meNotifierProvider);
               ref.invalidate(myConnectionsProvider);
               ref.invalidate(myPostsProvider);
-              // Wait for me to refetch so pull spinner has a real end.
-              // Swallow errors — the underlying providers will surface
-              // failure states in-line; the spinner just needs to end.
+              ref.invalidate(profileStatsProvider);
               try {
-                await ref.read(meNotifierProvider.future);
-              } catch (_) {
-                // ignore — error state already visible via meNotifierProvider
-              }
+                await Future.wait([
+                  ref.read(meNotifierProvider.future),
+                  ref.read(profileStatsProvider.future),
+                ]);
+              } catch (_) {}
             },
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 40),
-              itemCount: listItems.length,
-              itemBuilder: (_, i) => listItems[i],
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: children,
+                    ),
+                  ),
+                ),
+              ),
             ),
           );
         },
-      ),
-    );
+      );
   }
 }
 
-// ── Hero info bar — role, location, ONLINE pill, decorative hero badges.
-// Reads via fetchRawProfile so it doesn't require the /me DTO to change.
+// ── Hero section — gradient-ring avatar + name + role/location + ONLINE
+//    pill + hero badge pills (10X Growth Club / Pillar of Sakthi).
+//    Matches co-worker's design spec.
 
-class _HeroInfoBar extends ConsumerStatefulWidget {
-  const _HeroInfoBar();
+class _HeroSection extends ConsumerStatefulWidget {
+  const _HeroSection({
+    required this.member,
+    required this.uploading,
+    required this.onTapAvatar,
+  });
+
+  final Member member;
+  final bool uploading;
+  final VoidCallback onTapAvatar;
 
   @override
-  ConsumerState<_HeroInfoBar> createState() => _HeroInfoBarState();
+  ConsumerState<_HeroSection> createState() => _HeroSectionState();
 }
 
-class _HeroInfoBarState extends ConsumerState<_HeroInfoBar> {
+class _HeroSectionState extends ConsumerState<_HeroSection> {
   Map<String, dynamic>? _raw;
 
   @override
@@ -447,7 +440,9 @@ class _HeroInfoBarState extends ConsumerState<_HeroInfoBar> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = context.tokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black;
+    final subText = textColor.withValues(alpha: 0.6);
     final data = _raw ?? const <String, dynamic>{};
     final role = (data['role'] as String?)?.trim() ?? '';
     final city = (data['city'] as String?)?.trim() ?? '';
@@ -457,72 +452,189 @@ class _HeroInfoBarState extends ConsumerState<_HeroInfoBar> {
       if (state.isNotEmpty) state,
     ].join(', ');
     final online = _isOnline(data);
-    final subLine = <String>[
-      if (role.isNotEmpty) role,
-      if (location.isNotEmpty) location,
-    ].join(' · ');
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 8),
-      child: Column(
-        children: [
-          if (subLine.isNotEmpty)
-            Text(
-              subLine,
-              style: TextStyle(
-                color: tokens.textSecondary,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-              ),
+
+    return Column(
+      children: [
+        // Avatar stack — outer gradient ring + inner bg + avatar image
+        GestureDetector(
+          onTap: widget.uploading ? null : widget.onTapAvatar,
+          child: SizedBox(
+            width: 96,
+            height: 96,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFD30814),
+                        Color(0xFFFF5E62),
+                        Color(0xFFFFD97D),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFD30814).withValues(alpha: 0.40),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 90,
+                  height: 90,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDark
+                        ? const Color(0xFF0F0F11)
+                        : Colors.white,
+                  ),
+                ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(44),
+                  child: SizedBox(
+                    width: 84,
+                    height: 84,
+                    child: (widget.member.avatarUrl != null &&
+                            widget.member.avatarUrl!.isNotEmpty)
+                        ? CachedNetworkImage(
+                            imageUrl: widget.member.avatarUrl!,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) =>
+                                _initialsFallback(context),
+                          )
+                        : _initialsFallback(context),
+                  ),
+                ),
+                if (widget.uploading)
+                  Container(
+                    width: 84,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(44),
+                    ),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                if (online)
+                  Positioned(
+                    bottom: 2,
+                    right: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF27AE60),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF0F0F11)
+                              : Colors.white,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const Text(
+                        'ONLINE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          const SizedBox(height: 8),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          widget.member.name.isEmpty ? 'Member' : widget.member.name,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: textColor,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            letterSpacing: -0.5,
+          ),
+        ),
+        if (role.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            role,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: subText,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+        if (location.isNotEmpty) ...[
+          const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: (online
-                          ? const Color(0xFF22C55E)
-                          : tokens.textMuted)
-                      .withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: online
-                            ? const Color(0xFF22C55E)
-                            : tokens.textMuted,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      online ? 'ONLINE' : 'OFFLINE',
-                      style: TextStyle(
-                        color: online
-                            ? const Color(0xFF22C55E)
-                            : tokens.textMuted,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ],
-                ),
+              const Icon(Icons.location_on_rounded,
+                  size: 14, color: Color(0xFFD30814)),
+              const SizedBox(width: 4),
+              Text(
+                location,
+                style: TextStyle(color: subText, fontSize: 12),
               ),
-              const SizedBox(width: 8),
-              const _HeroBadge(label: '10X GROWTH', color: Color(0xFFE50914)),
-              const SizedBox(width: 6),
-              const _HeroBadge(label: 'PILLAR', color: Color(0xFFF59E0B)),
             ],
           ),
         ],
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            _HeroBadge(
+              label: '10X Growth Club',
+              color: Color(0xFFD30814),
+            ),
+            SizedBox(width: 8),
+            _HeroBadge(
+              label: 'Pillar of Sakthi',
+              color: Color(0xFFD4AF37),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _initialsFallback(BuildContext context) {
+    final parts = widget.member.name.trim().split(RegExp(r'\s+'));
+    final initials = parts.isEmpty || parts.first.isEmpty
+        ? '?'
+        : parts.length == 1
+            ? parts.first[0].toUpperCase()
+            : '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return Container(
+      color: const Color(0xFF48484A),
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white70,
+          fontSize: 32,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -536,20 +648,327 @@ class _HeroBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontFamily: 'Rajdhani',
-          fontSize: 9.5,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.4,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.stars_rounded, color: color, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Stats row — 3 items (Daily Streak · Connections · TBT Points) with
+//    vertical dividers between them. Wrapped in card decoration.
+
+class _StatsRowNew extends ConsumerWidget {
+  const _StatsRowNew();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF141416) : Colors.white;
+    final border = isDark ? const Color(0xFF232326) : const Color(0xFFE5E5EA);
+    final text = isDark ? Colors.white : Colors.black;
+    final subText = text.withValues(alpha: 0.6);
+
+    // Reactive: any invalidation of profileStatsProvider (pull-to-refresh,
+    // or one of its inner providers) triggers a rebuild with fresh numbers.
+    final statsAsync = ref.watch(profileStatsProvider);
+    final stats = statsAsync.valueOrNull ?? ProfileStats.empty;
+    final streak = stats.dailyStreak;
+    final connections = stats.connections;
+    final points = stats.tbtPoints;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _stat(
+            icon: Icons.whatshot_rounded,
+            iconColor: const Color(0xFFFF5E3A),
+            value: '$streak',
+            label: 'Daily Streak',
+            text: text,
+            subText: subText,
+          ),
+          Container(height: 32, width: 1, color: border),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => context.push(AppRoutes.profileConnections),
+            child: _stat(
+              icon: Icons.people_alt_rounded,
+              iconColor: const Color(0xFF2F80ED),
+              value: '$connections',
+              label: 'Connections',
+              text: text,
+              subText: subText,
+            ),
+          ),
+          Container(height: 32, width: 1, color: border),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => context.push(AppRoutes.tbtPoints),
+            child: _stat(
+              icon: Icons.stars_rounded,
+              iconColor: const Color(0xFFFFD97D),
+              value: '$points',
+              label: 'TBT Points',
+              text: text,
+              subText: subText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat({
+    required IconData icon,
+    required Color iconColor,
+    required String value,
+    required String label,
+    required Color text,
+    required Color subText,
+  }) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: iconColor, size: 16),
+            const SizedBox(width: 4),
+            Text(
+              value,
+              style: TextStyle(
+                color: text,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: subText,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Settings block — outer container with row list. Each row is a
+//    _SettingsLinkRow (icon + label + chevron). Custom dark toggle
+//    row for theme.
+
+class _SettingsGroup extends StatelessWidget {
+  const _SettingsGroup({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF141416) : Colors.white;
+    final border = isDark ? const Color(0xFF232326) : const Color(0xFFE5E5EA);
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      rows.add(children[i]);
+      if (i < children.length - 1) {
+        rows.add(Divider(
+          height: 1,
+          indent: 16,
+          endIndent: 16,
+          color: border,
+        ));
+      }
+    }
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: border),
+      ),
+      child: Column(children: rows),
+    );
+  }
+}
+
+class _SettingsLinkRow extends StatelessWidget {
+  const _SettingsLinkRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final text = isDark ? Colors.white : Colors.black;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFFD30814), size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: danger ? const Color(0xFFD30814) : text,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (!danger)
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: text.withValues(alpha: 0.7),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsThemeRow extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
+    final isDark = mode == ThemeMode.dark;
+    final text = isDark ? Colors.white : Colors.black;
+    final subText = text.withValues(alpha: 0.6);
+    final screenW = MediaQuery.of(context).size.width;
+    final pillW = screenW * 0.13;
+    final pillH = screenW * 0.07;
+    final knobD = screenW * 0.055;
+    return InkWell(
+      onTap: () => ref
+          .read(themeModeProvider.notifier)
+          .setMode(isDark ? ThemeMode.light : ThemeMode.dark),
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Row(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+              child: Icon(
+                isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                key: ValueKey(isDark),
+                color: const Color(0xFFD30814),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isDark ? 'Dark mode' : 'Light mode',
+                    style: TextStyle(
+                      color: text,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Toggle app appearance',
+                    style: TextStyle(color: subText, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              width: pillW,
+              height: pillH,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFFD30814)
+                    : const Color(0xFF9E9E9E),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: (isDark
+                            ? const Color(0xFFD30814)
+                            : const Color(0xFF9E9E9E))
+                        .withValues(alpha: 0.30),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    left: isDark ? pillW - knobD - 4 : 4,
+                    child: Container(
+                      width: knobD,
+                      height: knobD,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        isDark
+                            ? Icons.nights_stay_rounded
+                            : Icons.wb_sunny_rounded,
+                        size: knobD * 0.6,
+                        color: const Color(0xFFD30814),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

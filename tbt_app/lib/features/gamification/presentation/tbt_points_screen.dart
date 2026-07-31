@@ -546,6 +546,10 @@ class _LeaderTile extends StatelessWidget {
                 width: 26,
                 height: 26,
                 fit: BoxFit.cover,
+                memCacheWidth:
+                    (26 * MediaQuery.devicePixelRatioOf(context)).round(),
+                memCacheHeight:
+                    (26 * MediaQuery.devicePixelRatioOf(context)).round(),
                 errorWidget: (_, __, ___) => Container(
                   width: 26,
                   height: 26,

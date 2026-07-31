@@ -353,6 +353,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 height: 180,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                memCacheHeight:
+                    (180 * MediaQuery.devicePixelRatioOf(context)).round(),
               ),
             ),
           if (product.thumbnailUrl != null) const SizedBox(height: AppSpacing.lg),

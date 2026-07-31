@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/constants/api.dart';
 import '../../core/exceptions/app_exception.dart';
 import 'auth_interceptor.dart';
+import 'dedup_interceptor.dart';
 import 'log_interceptor.dart';
 import 'refresh_interceptor.dart';
 import 'session_state.dart';
@@ -11,9 +12,10 @@ import 'session_state.dart';
 /// Creates and returns the app's configured [Dio] instance.
 ///
 /// Interceptor order:
-///   1. [AuthInterceptor]    — attaches `Cookie: tbt_access=<token>`
-///   2. [RefreshInterceptor] — retries on 401 after refreshing
-///   3. [TbtLogInterceptor]  — debug-only request/response logging
+///   1. [DedupInterceptor]   — short-circuits duplicate in-flight GETs
+///   2. [AuthInterceptor]    — attaches `Cookie: tbt_access=<token>`
+///   3. [RefreshInterceptor] — retries on 401 after refreshing
+///   4. [TbtLogInterceptor]  — debug-only request/response logging
 ///
 /// ── Transport security ──────────────────────────────────────────────────
 ///
@@ -58,6 +60,7 @@ Dio createDioClient({void Function(SessionState)? onSessionState}) {
   );
 
   dio.interceptors.addAll([
+    DedupInterceptor(),
     AuthInterceptor(),
     RefreshInterceptor(dio, onSessionState: onSessionState),
     TbtLogInterceptor(),

@@ -14,7 +14,9 @@ import 'core/utils/device_id.dart';
 import 'core/utils/notification_router.dart';
 import 'features/notifications/data/fcm_service.dart';
 import 'firebase_options.dart';
+import 'shared/api/token_storage.dart';
 import 'shared/cache/response_cache.dart';
+import 'shared/providers/me_provider.dart';
 import 'shared/providers/site_config_provider.dart';
 
 void main() async {
@@ -60,6 +62,14 @@ void main() async {
   await getOrCreateDeviceId();
 
   final container = ProviderContainer();
+
+  // Prefetch member profile in parallel with the public config fetches
+  // when a session token is present — cuts the auth waterfall on cold
+  // start (previously every authenticated screen paid the round-trip
+  // for /api/user/me on first render). Skipped when there's no token
+  // so we don't fire a guaranteed-401 for logged-out users.
+  final hasSession = (await TokenStorage.readAccessToken()) != null;
+
   await Future.wait([
     container
         .read(siteConfigNotifierProvider.future)
@@ -73,6 +83,11 @@ void main() async {
         .read(uiStringsNotifierProvider.future)
         .then((_) {})
         .catchError((_) {}),
+    if (hasSession)
+      container
+          .read(meNotifierProvider.future)
+          .then((_) {})
+          .catchError((_) {}),
   ]);
 
   runApp(UncontrolledProviderScope(container: container, child: const TbtApp()));

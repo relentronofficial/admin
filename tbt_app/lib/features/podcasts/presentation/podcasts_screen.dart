@@ -559,6 +559,8 @@ class _Cover extends StatelessWidget {
         child: Icon(fallback, color: const Color(0xFF444444), size: size / 3),
       );
     }
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cachePx = (size * dpr).round().clamp(1, 2000);
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: CachedNetworkImage(
@@ -566,6 +568,8 @@ class _Cover extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
+        memCacheWidth: cachePx,
+        memCacheHeight: cachePx,
         placeholder: (_, __) => Container(width: size, height: size, color: kColorBgInput),
         errorWidget: (_, __, ___) => Container(
           width: size,

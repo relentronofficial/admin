@@ -172,22 +172,31 @@ class _SupportTicketDetailScreenState
                     color: kColorAccent,
                     onRefresh: () async =>
                         ref.invalidate(ticketDetailProvider(widget.ticketId)),
-                    child: ListView(
+                    // Lazy-built so long threads (dozens of replies) don't
+                    // instantiate every bubble upfront. Layout:
+                    //   0                  → header card
+                    //   1                  → original message bubble
+                    //   2 .. 2+replies-1   → reply bubbles
+                    child: ListView.builder(
                       controller: _scrollCtl,
                       physics: const AlwaysScrollableScrollPhysics(
                         parent: BouncingScrollPhysics(),
                       ),
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                      children: [
-                        _TicketHeaderCard(ticket: t),
-                        const SizedBox(height: 16),
-                        _OriginalMessageBubble(ticket: t),
-                        for (final r in t.replies) ...[
-                          const SizedBox(height: 12),
-                          _ReplyBubble(reply: r),
-                        ],
-                        const SizedBox(height: 8),
-                      ],
+                      itemCount: 2 + t.replies.length,
+                      itemBuilder: (_, i) {
+                        if (i == 0) return _TicketHeaderCard(ticket: t);
+                        if (i == 1) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: _OriginalMessageBubble(ticket: t),
+                          );
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: _ReplyBubble(reply: t.replies[i - 2]),
+                        );
+                      },
                     ),
                   ),
                 ),

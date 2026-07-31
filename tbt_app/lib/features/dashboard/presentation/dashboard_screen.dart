@@ -7,13 +7,15 @@ import 'package:shimmer/shimmer.dart';
 import '../../../core/constants/routes.dart';
 import '../../../shared/models/watch_history_item.dart';
 import '../../../shared/providers/me_provider.dart';
-import '../../../shared/providers/site_config_provider.dart';
 import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_error_state.dart';
 import '../../../shared/widgets/app_section_header.dart';
+import '../../../shared/widgets/tbt_app_drawer.dart';
+import '../data/rituals_service.dart';
 import '../providers/dashboard_providers.dart';
+import '../providers/home_hero_provider.dart';
 import 'widgets/achievement_composer.dart';
 import 'widgets/home_carousel.dart';
 import 'widgets/home_header.dart';
@@ -25,13 +27,6 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final meAsync = ref.watch(meNotifierProvider);
-    final uiStrings = ref.watch(uiStringsNotifierProvider).valueOrNull;
-    final statsAsync = ref.watch(dashboardStatsProvider);
-    final continueAsync = ref.watch(continueLearningProvider);
-
-    final welcomeLabel = uiStrings?.dashboardWelcome ?? 'Welcome back';
-    final continueLabel = uiStrings?.continueWatchingLabel ?? 'Continue Watching';
-    final recentLabel = uiStrings?.recentlyWatchedLabel ?? 'Recently Watched';
 
     // Module 9G — pixel-perfect port of co-worker's PostPopupScreen.
     // Reference: co-worker/moble app/lib/main.dart:3008-3135.
@@ -42,38 +37,48 @@ class DashboardScreen extends ConsumerWidget {
     //   HomeCarousel (mentor poster card)
     //   MorningRitualCard
     //   HomeMenuGrid (6-tile 2×3)
-    // Legacy helper widgets (_WelcomeHeader / _StatsRow / _QuickLinksRow /
-    // _RecentlyWatched etc.) are kept in the file below unused; safe to
-    // delete on the next cleanup pass. Continue-watching / recently-
-    // watched / stats-row are intentionally NOT rendered — they don't
-    // appear on the co-worker's home page.
+    //
+    // dashboardStatsProvider + continueLearningProvider used to be
+    // watched here "in case the sections come back later" — dropped in
+    // P0-3 because the watches actually fired the HTTP calls per
+    // dashboard visit for data the home page never rendered. If those
+    // sections return, watch them from the widget that renders them so
+    // the fetch is scoped to a real consumer.
     final name = ((meAsync.valueOrNull as dynamic)?.name as String?) ?? '';
-    // Legacy providers/labels intentionally not consumed here — the
-    // co-worker's home page doesn't render stats / continue-watching /
-    // recently-watched. Kept above so pull-to-refresh still invalidates
-    // them (in case the sections re-appear on a later screen).
-    // ignore: unused_local_variable
-    final _unusedWatches = [
-      statsAsync,
-      continueAsync,
-      welcomeLabel,
-      continueLabel,
-      recentLabel,
-    ];
 
     return Scaffold(
+      drawer: const TbtAppDrawer(),
+      drawerEdgeDragWidth: 24,
       body: Column(
         children: [
           // ── Fixed home header (Module 9B — port of co-worker's) ───────
-          const HomeHeader(),
+          // Pass the member down so HomeHeader's avatar doesn't spin up
+          // its own duplicate meNotifierProvider subscription.
+          HomeHeader(member: meAsync.valueOrNull),
 
           Expanded(
             child: RefreshIndicator(
               color: context.tbt.accent,
               backgroundColor: context.tokens.bgSurface,
               onRefresh: () async {
+                // Invalidate every provider a section on this screen
+                // actually renders — previously only the two dashboard
+                // providers were invalidated (which nothing here even
+                // watches). Now the greeting, mentor carousel, and
+                // morning-ritual card all pick up fresh data on pull.
+                ref.invalidate(meNotifierProvider);
+                ref.invalidate(homeHeroProvider);
+                ref.invalidate(habitsProvider);
+                ref.invalidate(buttonsConfigProvider);
+                // Kept for backwards-safety in case the legacy sections
+                // come back — no-op today because nothing watches them.
                 ref.invalidate(dashboardStatsProvider);
                 ref.invalidate(continueLearningProvider);
+                // Keep the spinner up until the member refresh actually
+                // resolves so users see the greeting rebuild.
+                try {
+                  await ref.read(meNotifierProvider.future);
+                } catch (_) {}
               },
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),

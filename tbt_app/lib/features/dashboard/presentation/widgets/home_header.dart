@@ -4,9 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/routes.dart';
-import '../../../../shared/providers/me_provider.dart';
+import '../../../../shared/models/member.dart';
 import '../../../../shared/theme/design_constants.dart';
 import '../../../../shared/theme/theme_tokens.dart';
+import '../../../../shared/widgets/app_logo.dart';
 import '../../../gamification/providers/tbt_providers.dart';
 import '../../../notifications/providers/notifications_provider.dart' as notifs;
 
@@ -22,11 +23,17 @@ import '../../../notifications/providers/notifications_provider.dart' as notifs;
 /// Fixed 70-px height. Uses a maxWidth 500 constraint so it looks
 /// balanced on tablets. Matches the co-worker's PostPopupScreen header
 /// (main.dart:3018–3080).
-class HomeHeader extends ConsumerWidget {
-  const HomeHeader({super.key});
+/// Member is prop-drilled from [DashboardScreen] (which already
+/// watches [meNotifierProvider]) so the profile avatar doesn't need to
+/// spin up its own subscription. Cuts one duplicate provider watcher
+/// and one avoidable rebuild cascade whenever the member updates.
+class HomeHeader extends StatelessWidget {
+  const HomeHeader({super.key, this.member});
+
+  final Member? member;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
       child: Container(
@@ -48,76 +55,9 @@ class HomeHeader extends ConsumerWidget {
                     ),
                   ),
 
-                  // Centered logo
-                  Expanded(
-                    child: Center(
-                      child: RichText(
-                        text: const TextSpan(
-                          children: [
-                            TextSpan(
-                              text: 'T',
-                              style: TextStyle(
-                                fontFamily: 'Rajdhani',
-                                color: kColorAccent,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'AMIL ',
-                              style: TextStyle(
-                                fontFamily: 'Rajdhani',
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'B',
-                              style: TextStyle(
-                                fontFamily: 'Rajdhani',
-                                color: kColorAccent,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'USINESS ',
-                              style: TextStyle(
-                                fontFamily: 'Rajdhani',
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'T',
-                              style: TextStyle(
-                                fontFamily: 'Rajdhani',
-                                color: kColorAccent,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'RIBE',
-                              style: TextStyle(
-                                fontFamily: 'Rajdhani',
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  // Centered logo — asset-based wordmark (dark/light aware)
+                  const Expanded(
+                    child: Center(child: AppLogo.appBar()),
                   ),
 
                   // Streak · Notification · Avatar
@@ -125,7 +65,7 @@ class HomeHeader extends ConsumerWidget {
                   const SizedBox(width: 12),
                   const _NotificationBell(),
                   const SizedBox(width: 12),
-                  const _ProfileAvatar(),
+                  _ProfileAvatar(member: member),
                 ],
               ),
             ),
@@ -142,16 +82,39 @@ class _MenuIcon extends StatelessWidget {
   const _MenuIcon();
   @override
   Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    return Container(
+    // Three stacked left-aligned lines — direct port of co-worker's
+    // `_buildCustomMenuIcon` (main.dart:3681). Widths 22 / 16 / 11 px,
+    // height 2 px, radius 1, 5 px spacing between lines.
+    final color = context.tokens.textPrimary;
+    return SizedBox(
       width: 34,
       height: 34,
-      decoration: BoxDecoration(
-        color: tokens.bgSurface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tokens.borderCard),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 2,
+            decoration:
+                BoxDecoration(color: color, borderRadius: BorderRadius.circular(1)),
+          ),
+          const SizedBox(height: 5),
+          Container(
+            width: 16,
+            height: 2,
+            decoration:
+                BoxDecoration(color: color, borderRadius: BorderRadius.circular(1)),
+          ),
+          const SizedBox(height: 5),
+          Container(
+            width: 11,
+            height: 2,
+            decoration:
+                BoxDecoration(color: color, borderRadius: BorderRadius.circular(1)),
+          ),
+        ],
       ),
-      child: Icon(Icons.menu, color: tokens.textPrimary, size: 18),
     );
   }
 }
@@ -162,41 +125,45 @@ class _StreakChip extends ConsumerWidget {
   const _StreakChip();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Reuses TBT path daily streak (already computed backend-side).
     final path = ref.watch(tbtPathProvider);
     final streak = path.valueOrNull?.dailyStreak ?? 0;
     return Container(
-      width: 34,
-      height: 34,
+      width: 32,
+      height: 32,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: context.tokens.bgSurface.withValues(alpha: 0.6),
-        border: Border.all(color: context.tokens.borderCard),
+        color: context.tokens.bgPage.withValues(alpha: 0.3),
+        border: Border.all(color: context.tokens.borderCard, width: 1.0),
       ),
       child: Stack(
         alignment: Alignment.center,
         children: [
           ShaderMask(
             shaderCallback: (r) => const LinearGradient(
-              colors: [Color(0xFFff416c), Color(0xFFff4b2b)],
+              colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)],
               begin: Alignment.bottomCenter,
               end: Alignment.topCenter,
             ).createShader(r),
-            child: const Icon(Icons.whatshot_rounded, color: Colors.white, size: 20),
+            child: const Icon(
+              Icons.whatshot_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
           ),
-          if (streak > 0)
-            Positioned(
-              bottom: 2,
-              child: Text(
-                streak > 99 ? '99' : '$streak',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  shadows: [Shadow(color: Colors.black, blurRadius: 3, offset: Offset(0, 1))],
-                ),
+          Positioned(
+            bottom: 2,
+            child: Text(
+              streak > 99 ? '99' : '$streak',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                shadows: [
+                  Shadow(color: Colors.black, blurRadius: 3, offset: Offset(0, 1)),
+                ],
               ),
             ),
+          ),
         ],
       ),
     );
@@ -209,45 +176,44 @@ class _NotificationBell extends ConsumerWidget {
   const _NotificationBell();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Reuse the existing notifications provider count if available;
-    // fall back gracefully.
     final unread = ref.watch(notifs.unreadNotifCountNotifierProvider);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => GoRouter.of(context).push(AppRoutes.notifications),
-      child: SizedBox(
-        width: 34,
-        height: 34,
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            Icon(Icons.notifications_outlined, color: context.tokens.textPrimary, size: 22),
-            if (unread > 0)
-              Positioned(
-                top: 4,
-                right: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: kColorAccent,
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(color: context.tokens.bgPage, width: 1.5),
-                  ),
-                  constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                  child: Text(
-                    unread > 9 ? '9+' : '$unread',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                    ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(
+            Icons.notifications_outlined,
+            color: context.tokens.textPrimary,
+            size: 22,
+          ),
+          if (unread > 0)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                constraints: const BoxConstraints(
+                  minWidth: 14,
+                  minHeight: 14,
+                ),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFD30814),
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  unread > 9 ? '9+' : '$unread',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -255,34 +221,44 @@ class _NotificationBell extends ConsumerWidget {
 
 // ── Profile avatar ──────────────────────────────────────────────────
 
-class _ProfileAvatar extends ConsumerWidget {
-  const _ProfileAvatar();
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({this.member});
+  final Member? member;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final me = ref.watch(meNotifierProvider).valueOrNull;
-    final photoUrl = (me as dynamic)?.profilePhotoUrl as String?;
-    final initial = ((me as dynamic)?.firstName as String?)?.trim().isNotEmpty == true
-        ? ((me as dynamic).firstName as String)[0].toUpperCase()
-        : '?';
+  Widget build(BuildContext context) {
+    final photoUrl = member?.avatarUrl;
+    final rawName = member?.name.trim() ?? '';
+    final initial = rawName.isNotEmpty ? rawName[0].toUpperCase() : '?';
+    // Co-worker spec: 24×24 image inside 1.5 px ring of #D30814
+    // (main.dart:3812). Total footprint ~27 px including ring.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => GoRouter.of(context).push(AppRoutes.profile),
       child: Container(
-        width: 34,
-        height: 34,
+        padding: const EdgeInsets.all(1.5),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: kColorAccent, width: 1.5),
+          border: Border.all(color: const Color(0xFFD30814), width: 1.5),
         ),
-        child: ClipOval(
-          child: photoUrl != null && photoUrl.isNotEmpty
-              ? CachedNetworkImage(
-                  imageUrl: photoUrl,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(color: context.tokens.bgSurface),
-                  errorWidget: (_, __, ___) => _AvatarFallback(initial: initial),
-                )
-              : _AvatarFallback(initial: initial),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: photoUrl != null && photoUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: photoUrl,
+                    fit: BoxFit.cover,
+                    memCacheWidth:
+                        (24 * MediaQuery.devicePixelRatioOf(context)).round(),
+                    memCacheHeight:
+                        (24 * MediaQuery.devicePixelRatioOf(context)).round(),
+                    placeholder: (_, __) => Container(color: context.tokens.bgSurface),
+                    errorWidget: (_, __, ___) => _AvatarFallback(initial: initial),
+                  )
+                : _AvatarFallback(initial: initial),
+          ),
         ),
       ),
     );
