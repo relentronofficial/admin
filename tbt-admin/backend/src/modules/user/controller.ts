@@ -40,53 +40,73 @@ async function logActivity(prisma: any, memberId: string, action: string, metada
   }).catch(() => {});
 }
 
+// Per-process singleflight for member stats recomputation. Closes the
+// race window where N concurrent /api/user/me requests all pass the
+// Redis SET NX check before the throttle key materialises and each
+// fires the full computeMemberStats backfill — previously 7 concurrent
+// hits caused 4×7 = 28 INSERTs on tbt_activity_log for a single member.
+// With the map, the first caller runs the compute and every other
+// caller in the same tick awaits the same Promise.
+const _recalcInflight = new Map<string, Promise<void>>();
+
 async function recalculateMemberStats(prisma: any, memberId: string, redis?: any): Promise<void> {
-  // Throttle: at most once per minute per member to avoid hammering on every heartbeat
-  const throttleKey = `stats:recalc:${memberId}`;
-  const allowed = await cacheNxSet(redis ?? null, throttleKey, 60);
-  if (!allowed) return;
+  const existing = _recalcInflight.get(memberId);
+  if (existing) return existing;
 
-  try {
-    // Points + streak now come from the single `tbt_activity_log`
-    // source of truth (see lib/tbtStats.ts). The helper lazily
-    // backfills workshop/challenge/assignment/course_xp events into
-    // the ledger, so this endpoint and the TBT Points screen always
-    // agree.
-    const { totalPoints, currentStreak } = await computeMemberStats(prisma, memberId);
+  const promise = (async () => {
+    // Throttle: at most once per minute per member across processes.
+    // The in-memory map above handles the intra-process race; Redis
+    // covers cross-instance calls and the 60-second re-run window.
+    const throttleKey = `stats:recalc:${memberId}`;
+    const allowed = await cacheNxSet(redis ?? null, throttleKey, 60);
+    if (!allowed) return;
 
-    // Health score still uses episode-completion ratio + recency (not
-    // point-based), so keep its own light-weight query.
-    const [
-      totalWorkshopEpisodes,
-      completedWorkshopEpisodes,
-      completedCourseEpisodes,
-      totalCourseEpisodes,
-      member,
-    ] = await Promise.all([
-      prisma.memberEpisodeProgress.count({ where: { memberId } }),
-      prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
-      (prisma as any).courseEpisodeProgress.count({ where: { memberId, completed: true } }).catch(() => 0),
-      (prisma as any).courseEpisodeProgress.count({ where: { memberId } }).catch(() => 0),
-      prisma.member.findUnique({ where: { id: memberId }, select: { lastActiveAt: true } }),
-    ]);
+    try {
+      // Points + streak now come from the single `tbt_activity_log`
+      // source of truth (see lib/tbtStats.ts). The helper lazily
+      // backfills workshop/challenge/assignment/course_xp events into
+      // the ledger, so this endpoint and the TBT Points screen always
+      // agree.
+      const { totalPoints, currentStreak } = await computeMemberStats(prisma, memberId);
 
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const lastActive = member?.lastActiveAt ? new Date((member.lastActiveAt as Date).getTime()) : null;
-    const lastActiveDay = lastActive ? new Date(lastActive.getFullYear(), lastActive.getMonth(), lastActive.getDate()) : null;
-    const daysSinceActive = lastActiveDay ? Math.floor((today.getTime() - lastActiveDay.getTime()) / 86_400_000) : 999;
-    const recencyScore = daysSinceActive === 0 ? 40 : daysSinceActive <= 1 ? 35 : daysSinceActive <= 3 ? 25 : daysSinceActive <= 7 ? 15 : daysSinceActive <= 30 ? 5 : 0;
-    const totalEpisodes = (totalWorkshopEpisodes as number) + (totalCourseEpisodes as number);
-    const completedEpisodes = (completedWorkshopEpisodes as number) + (completedCourseEpisodes as number);
-    const completionScore = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 40) : 0;
-    const streakScore = Math.min(20, currentStreak);
-    const healthScore = recencyScore + completionScore + streakScore;
+      // Health score still uses episode-completion ratio + recency (not
+      // point-based), so keep its own light-weight query.
+      const [
+        totalWorkshopEpisodes,
+        completedWorkshopEpisodes,
+        completedCourseEpisodes,
+        totalCourseEpisodes,
+        member,
+      ] = await Promise.all([
+        prisma.memberEpisodeProgress.count({ where: { memberId } }),
+        prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
+        (prisma as any).courseEpisodeProgress.count({ where: { memberId, completed: true } }).catch(() => 0),
+        (prisma as any).courseEpisodeProgress.count({ where: { memberId } }).catch(() => 0),
+        prisma.member.findUnique({ where: { id: memberId }, select: { lastActiveAt: true } }),
+      ]);
 
-    await prisma.member.update({
-      where: { id: memberId },
-      data: { totalPoints, currentStreak, healthScore, lastActiveAt: now },
-    });
-  } catch { /* fire-and-forget */ }
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const lastActive = member?.lastActiveAt ? new Date((member.lastActiveAt as Date).getTime()) : null;
+      const lastActiveDay = lastActive ? new Date(lastActive.getFullYear(), lastActive.getMonth(), lastActive.getDate()) : null;
+      const daysSinceActive = lastActiveDay ? Math.floor((today.getTime() - lastActiveDay.getTime()) / 86_400_000) : 999;
+      const recencyScore = daysSinceActive === 0 ? 40 : daysSinceActive <= 1 ? 35 : daysSinceActive <= 3 ? 25 : daysSinceActive <= 7 ? 15 : daysSinceActive <= 30 ? 5 : 0;
+      const totalEpisodes = (totalWorkshopEpisodes as number) + (totalCourseEpisodes as number);
+      const completedEpisodes = (completedWorkshopEpisodes as number) + (completedCourseEpisodes as number);
+      const completionScore = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 40) : 0;
+      const streakScore = Math.min(20, currentStreak);
+      const healthScore = recencyScore + completionScore + streakScore;
+
+      await prisma.member.update({
+        where: { id: memberId },
+        data: { totalPoints, currentStreak, healthScore, lastActiveAt: now },
+      });
+    } catch { /* fire-and-forget */ }
+  })();
+
+  _recalcInflight.set(memberId, promise);
+  promise.finally(() => _recalcInflight.delete(memberId));
+  return promise;
 }
 
 function parseUserAgent(ua: string | undefined | null): {
