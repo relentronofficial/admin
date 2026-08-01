@@ -26,6 +26,7 @@ import {
   useUpdateEbookBanner,
   useDeleteEbookBanner,
   useEbookAnalytics,
+  useEbookBookmarksForBook,
   useListEbookReviews,
   useUpdateEbookReviewStatus,
   useBulkImportEbooks,
@@ -33,6 +34,7 @@ import {
   type Ebook,
   type EbookBanner,
   type EbookReview,
+  type EbookBookmarkRow,
   type BulkImportRow,
   type BulkImportDryRunResult,
 } from "@/lib/hooks/useEbooks";
@@ -725,7 +727,7 @@ function BookForm({
   const [status, setStatus] = useState(initial?.status ?? "active");
   const [sortOrder, setSortOrder] = useState(initial?.sortOrder ?? 0);
   const [batchIds, setBatchIds] = useState<string[]>(initial?.batchIds ?? []);
-  const [tab, setTab] = useState<"edit" | "analytics">("edit");
+  const [tab, setTab] = useState<"edit" | "analytics" | "bookmarks">("edit");
   const slugTouchedRef = useRef(isEdit);
 
   const coverUpload = useCoverUploader((url) => setCoverImage(url), "ebooks/covers");
@@ -779,7 +781,7 @@ function BookForm({
     <Modal onClose={onClose} title={isEdit ? "Edit Book" : "New Book"} wide>
       {isEdit && (
         <div className="flex gap-1 mb-3 border-b border-[#2a2a2a]">
-          {(["edit", "analytics"] as const).map((t) => (
+          {(["edit", "analytics", "bookmarks"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -790,13 +792,19 @@ function BookForm({
                   : "text-[#606060] border-transparent hover:text-[#a0a0a0]"
               }`}
             >
-              {t === "edit" ? "Edit" : "Analytics"}
+              {t === "edit"
+                ? "Edit"
+                : t === "analytics"
+                ? "Analytics"
+                : "Bookmarks"}
             </button>
           ))}
         </div>
       )}
       {isEdit && tab === "analytics" ? (
         <BookAnalyticsPanel bookId={initial!.id} onClose={onClose} />
+      ) : isEdit && tab === "bookmarks" ? (
+        <BookBookmarksPanel bookId={initial!.id} onClose={onClose} />
       ) : (
       <>
       <div className="grid grid-cols-2 gap-3">
@@ -1037,6 +1045,95 @@ function BookAnalyticsPanel({ bookId, onClose }: { bookId: string; onClose: () =
           </div>
         ))}
       </div>
+      <div className="flex justify-end mt-4">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm hover:bg-[#222]"
+        >
+          Close
+        </button>
+      </div>
+    </>
+  );
+}
+
+function BookBookmarksPanel({
+  bookId,
+  onClose,
+}: {
+  bookId: string;
+  onClose: () => void;
+}) {
+  const { data, isLoading, error } = useEbookBookmarksForBook(bookId);
+  const rows = data ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="py-12 flex items-center justify-center text-[#a0a0a0] gap-2">
+        <Loader2 size={16} className="animate-spin" />
+        <span className="text-sm">Loading bookmarks…</span>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="py-12 text-center text-sm text-[#a0a0a0]">
+        Could not load bookmarks.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="text-[11px] text-[#606060] mb-3 flex items-center gap-2">
+        <span className="uppercase tracking-widest font-rajdhani font-bold">
+          Members who bookmarked
+        </span>
+        <span className="text-white">· {rows.length}</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="py-8 text-center text-[12px] text-[#606060]">
+          No bookmarks yet.
+        </div>
+      ) : (
+        <div className="max-h-[420px] overflow-y-auto rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] divide-y divide-[#2a2a2a]">
+          {rows.map((b: EbookBookmarkRow) => (
+            <div
+              key={b.id}
+              className="px-3 py-2.5 flex items-center gap-3 text-[12px]"
+            >
+              {b.member?.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={b.member.avatarUrl}
+                  alt=""
+                  className="w-8 h-8 rounded-full object-cover border border-[#2a2a2a]"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-[#2a2a2a] flex items-center justify-center text-[#a0a0a0] text-[11px] font-bold">
+                  {b.member?.name?.[0]?.toUpperCase() ?? "?"}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-white font-medium truncate">
+                  {b.member?.name ?? "Member"}
+                </div>
+                <div className="text-[11px] text-[#606060]">
+                  {b.pageNumber
+                    ? `Page ${b.pageNumber}`
+                    : "no page saved"}
+                </div>
+              </div>
+              <div className="text-[11px] text-[#606060] whitespace-nowrap">
+                {new Date(b.createdAt).toLocaleDateString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex justify-end mt-4">
         <button
           type="button"

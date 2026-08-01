@@ -16,6 +16,7 @@ import {
   adminDeleteBannerHandler,
   adminDashboardHandler,
   adminBookAnalyticsHandler,
+  adminBookBookmarksHandler,
   adminListReviewsHandler,
   adminUpdateReviewStatusHandler,
   adminBulkImportBooksHandler,
@@ -61,6 +62,7 @@ export async function ebookRoutes(fastify: FastifyInstance) {
       adminScope.put('/books/:id/toggle-status', adminToggleBookStatusHandler);
       adminScope.delete('/books/:id', adminDeleteBookHandler);
       adminScope.get('/books/:id/analytics', adminBookAnalyticsHandler);
+      adminScope.get('/books/:id/bookmarks', adminBookBookmarksHandler);
       adminScope.post('/books/bulk-import', adminBulkImportBooksHandler);
 
       adminScope.get('/banners', adminListBannersHandler);

@@ -104,6 +104,31 @@ export const useEbookAnalytics = (bookId: string | null) =>
     staleTime: 30_000,
   });
 
+export interface EbookBookmarkRow {
+  id: string;
+  pageNumber: number | null;
+  createdAt: string;
+  member: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  } | null;
+}
+
+// Members who bookmarked a specific book. Ordered newest first.
+export const useEbookBookmarksForBook = (bookId: string | null) =>
+  useQuery({
+    queryKey: ["ebooks", "bookmarks", bookId],
+    queryFn: async (): Promise<EbookBookmarkRow[]> => {
+      const res: any = await apiClient.get(
+        `/api/ebooks/admin/books/${bookId}/bookmarks`,
+      );
+      return res?.data ?? [];
+    },
+    enabled: !!bookId,
+    staleTime: 30_000,
+  });
+
 // ── Reviews (moderation) ─────────────────────────────────────────
 export const useListEbookReviews = (params: {
   status?: "pending" | "approved" | "rejected" | "all";

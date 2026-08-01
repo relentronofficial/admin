@@ -394,6 +394,55 @@ export async function adminDashboardHandler(req: FastifyRequest, reply: FastifyR
   });
 }
 
+// Per-book bookmark list — surfaces which members bookmarked a given
+// book and on which page. Ordered newest bookmark first. Small
+// enough to page in-memory for now; add pagination if a book ever
+// accumulates thousands of bookmarks.
+export async function adminBookBookmarksHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+
+  const book = await req.server.prisma.ebook.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!book) return fail(reply, 404, 'not_found', 'Book not found.');
+
+  const rows = await req.server.prisma.ebookBookmark.findMany({
+    where: { bookId: id },
+    include: {
+      member: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          profilePhotoUrl: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return ok(
+    reply,
+    rows.map((r) => ({
+      id: r.id,
+      pageNumber: r.pageNumber,
+      createdAt: r.createdAt,
+      member: r.member
+        ? {
+            id: r.member.id,
+            name:
+              [r.member.firstName, r.member.lastName]
+                .filter(Boolean)
+                .join(' ')
+                .trim() || 'Member',
+            avatarUrl: r.member.profilePhotoUrl,
+          }
+        : null,
+    })),
+  );
+}
+
 // Per-book analytics — one row per admin call. Small enough to
 // compute inline (5-6 aggregates); no worker/cron needed. viewCount
 // is returned from the Ebook.viewCount column added by P1-6; until
