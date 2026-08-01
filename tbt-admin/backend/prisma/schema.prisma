@@ -2942,6 +2942,10 @@ model Ebook {
   sortOrder    Int      @default(0) @map("sort_order")
   publishDate  DateTime @default(now()) @map("publish_date") @db.Timestamptz(6)
   status       String   @default("active") @db.VarChar(50)
+  // Per-batch access control (matches Workshop.batchIds pattern).
+  // null → available to all members; [] → hidden from everyone;
+  // [batchId, …] → only members whose batchId is in the array.
+  batchIds     Json?    @map("batch_ids")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)

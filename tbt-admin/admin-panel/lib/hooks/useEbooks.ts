@@ -36,6 +36,9 @@ export interface Ebook {
   sortOrder: number;
   publishDate: string;
   status: string;
+  // Per-batch access. null / omitted → all members; [id, ...] →
+  // restrict to those batches only.
+  batchIds?: string[] | null;
   category?: { id: string; name: string; slug: string } | null;
 }
 export interface EbookDashboard {

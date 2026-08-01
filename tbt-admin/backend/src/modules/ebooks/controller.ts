@@ -113,12 +113,15 @@ export async function adminListBooksHandler(req: FastifyRequest, reply: FastifyR
 export async function adminCreateBookHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = createBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, ...rest } = parsed.data;
+  const { publishDate, batchIds, ...rest } = parsed.data;
   try {
     const created = await req.server.prisma.ebook.create({
       data: {
         ...rest,
         ...(publishDate ? { publishDate: new Date(publishDate) } : {}),
+        // Empty array is treated as "no restriction" — persist as null
+        // so downstream comparisons stay simple (matches workshop pattern).
+        batchIds: batchIds && batchIds.length > 0 ? (batchIds as any) : null,
       },
       include: bookInclude,
     });
@@ -133,13 +136,18 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
   const { id } = req.params as { id: string };
   const parsed = updateBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, ...rest } = parsed.data;
+  const { publishDate, batchIds, ...rest } = parsed.data;
   try {
     const updated = await req.server.prisma.ebook.update({
       where: { id },
       data: {
         ...rest,
         ...(publishDate ? { publishDate: new Date(publishDate) } : {}),
+        // Only touch batchIds when the caller sent the key at all,
+        // so a partial PATCH that omits batchIds doesn't clobber it.
+        ...(batchIds !== undefined
+          ? { batchIds: batchIds && batchIds.length > 0 ? (batchIds as any) : null }
+          : {}),
       },
       include: bookInclude,
     });
@@ -265,14 +273,38 @@ function publishedFilter(): any {
   };
 }
 
+// Per-batch access: null → unrestricted, [] → hidden, [id, ...] →
+// only members whose batchId is in the array can open. Never removes
+// the row from the list — matches how workshops render locked cards.
+function isBookLocked(bookBatchIds: unknown, memberBatchId: string | null): boolean {
+  const list = Array.isArray(bookBatchIds) ? (bookBatchIds as string[]) : null;
+  if (!list || list.length === 0) return false;
+  if (!memberBatchId) return true;
+  return !list.includes(memberBatchId);
+}
+
+async function getMemberBatchId(req: FastifyRequest): Promise<string | null> {
+  if (!req.memberId) return null;
+  const m = await req.server.prisma.member.findUnique({
+    where: { id: req.memberId },
+    select: { batchId: true },
+  });
+  return m?.batchId ?? null;
+}
+
 export async function listFeaturedBooksHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberBatchId = await getMemberBatchId(req);
   const rows = await req.server.prisma.ebook.findMany({
     where: { status: 'active', isFeatured: true, AND: [publishedFilter()] },
     include: bookInclude,
     orderBy: [{ sortOrder: 'asc' }, { publishDate: 'desc' }],
     take: 12,
   });
-  return ok(reply, rows);
+  const decorated = rows.map((r) => ({
+    ...r,
+    locked: isBookLocked((r as any).batchIds, memberBatchId),
+  }));
+  return ok(reply, decorated);
 }
 
 export async function listBannersHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -315,6 +347,7 @@ export async function listLibraryHandler(req: FastifyRequest, reply: FastifyRepl
   }
   if (featured === 'true') where.isFeatured = true;
 
+  const memberBatchId = await getMemberBatchId(req);
   const [rows, total] = await Promise.all([
     req.server.prisma.ebook.findMany({
       where,
@@ -325,9 +358,13 @@ export async function listLibraryHandler(req: FastifyRequest, reply: FastifyRepl
     }),
     req.server.prisma.ebook.count({ where }),
   ]);
+  const decorated = rows.map((r) => ({
+    ...r,
+    locked: isBookLocked((r as any).batchIds, memberBatchId),
+  }));
   return reply.send({
     success: true,
-    data: rows,
+    data: decorated,
     meta: { total, page: p, limit: l },
     error: null,
   });
@@ -340,6 +377,19 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
     include: bookInclude,
   });
   if (!book) return fail(reply, 404, 'not_found', 'Book not found.');
+
+  // Batch access: only enforce when the book actually opts into
+  // restriction. Members without a batchId get locked out of any
+  // restricted book (they haven't been placed in a cohort yet).
+  const memberBatchId = await getMemberBatchId(req);
+  if (isBookLocked((book as any).batchIds, memberBatchId)) {
+    return fail(
+      reply,
+      403,
+      'batch_restricted',
+      'This book is available only to members in specific batches.',
+    );
+  }
 
   const [progress, bookmark] = await Promise.all([
     req.server.prisma.ebookProgress.findUnique({

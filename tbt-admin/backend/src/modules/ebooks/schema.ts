@@ -31,6 +31,9 @@ export const createBookSchema = z.object({
   sortOrder: z.number().int().optional(),
   publishDate: z.string().datetime().optional(),
   status: statusSchema.optional(),
+  // Per-batch access control — omit / send null = available to all;
+  // send [uuid, ...] = restrict to those batches only.
+  batchIds: z.array(z.string().uuid()).optional().nullable(),
 });
 export const updateBookSchema = createBookSchema.partial();
 

@@ -113,6 +113,7 @@ class Ebook {
     this.category,
     this.progress,
     this.bookmark,
+    this.locked = false,
   });
 
   final String id;
@@ -132,6 +133,11 @@ class Ebook {
   final EbookCategoryRef? category;
   final EbookProgress? progress;
   final EbookBookmark? bookmark;
+
+  /// True when the backend flagged this book as batch-restricted and
+  /// the current member's batch isn't in the allowlist. Members can
+  /// still see the card in the library but tapping through gets a 403.
+  final bool locked;
 
   factory Ebook.fromJson(Map<String, dynamic> j) => Ebook(
         id: j['id'] as String,
@@ -157,6 +163,7 @@ class Ebook {
         bookmark: j['bookmark'] != null
             ? EbookBookmark.fromJson(j['bookmark'] as Map<String, dynamic>)
             : null,
+        locked: (j['locked'] as bool?) ?? false,
       );
 }
 

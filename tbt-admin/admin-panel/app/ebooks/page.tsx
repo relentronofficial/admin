@@ -30,6 +30,7 @@ import {
   type EbookBanner,
 } from "@/lib/hooks/useEbooks";
 import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+import { useListBatches } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import {
   BookOpen,
@@ -702,10 +703,15 @@ function BookForm({
   const [isFeatured, setIsFeatured] = useState(initial?.isFeatured ?? false);
   const [status, setStatus] = useState(initial?.status ?? "active");
   const [sortOrder, setSortOrder] = useState(initial?.sortOrder ?? 0);
+  const [batchIds, setBatchIds] = useState<string[]>(initial?.batchIds ?? []);
   const slugTouchedRef = useRef(isEdit);
 
   const coverUpload = useCoverUploader((url) => setCoverImage(url), "ebooks/covers");
   const pdfUpload = usePdfUploader((url) => setPdfUrl(url));
+
+  // For the per-batch access chip picker.
+  const { data: batchesData } = useListBatches();
+  const batches = (batchesData as any)?.data ?? (batchesData as any) ?? [];
 
   const submit = async () => {
     if (!title.trim() || !slug.trim()) {
@@ -730,6 +736,8 @@ function BookForm({
       isFeatured,
       status,
       sortOrder,
+      // null = available to all members, [id, ...] = restricted.
+      batchIds: batchIds.length > 0 ? batchIds : null,
     };
     try {
       if (isEdit) {
@@ -865,6 +873,61 @@ function BookForm({
             onChange={(e) => setSortOrder(Number(e.target.value) || 0)}
           />
         </div>
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>
+          Batch Access{" "}
+          <span className="text-[#666] normal-case font-normal">
+            (leave empty = all members)
+          </span>
+        </label>
+        {batches.length === 0 ? (
+          <p className="text-[#666] text-xs">No batches found.</p>
+        ) : (
+          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+            {batches.map((b: any) => {
+              const checked = batchIds.includes(b.id);
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() =>
+                    setBatchIds((curr) =>
+                      checked
+                        ? curr.filter((id) => id !== b.id)
+                        : [...curr, b.id],
+                    )
+                  }
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all text-sm ${
+                    checked
+                      ? "bg-[#dc2626]/10 border-[#dc2626]/40 text-white"
+                      : "bg-[#1a1a1a] border-[#2a2a2a] text-[#a0a0a0] hover:border-[#444]"
+                  }`}
+                >
+                  <span
+                    className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center ${
+                      checked
+                        ? "bg-[#dc2626] border-[#dc2626]"
+                        : "border-[#555]"
+                    }`}
+                  >
+                    {checked && (
+                      <span className="text-white text-[10px] font-bold leading-none">
+                        ✓
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-medium">{b.name}</span>
+                  {!b.isActive && (
+                    <span className="ml-auto text-[10px] text-[#666] uppercase tracking-wider">
+                      Inactive
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <ModalActions onClose={onClose} onSubmit={submit} busy={create.isPending || update.isPending} isEdit={isEdit} />
     </Modal>
