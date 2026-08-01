@@ -423,6 +423,72 @@ export async function pubCourseCertVerifyHandler(req: FastifyRequest, reply: Fas
   });
 }
 
+// ── Public ebook preview ──────────────────────────────────────────────
+// No auth. Powers the tbt-user-web /ebook/[slug] page a member sees
+// after tapping "Share" on a book in the mobile app. Returns only the
+// public-safe metadata (title, author, cover, description) — no
+// bookmarks, progress, batch-restricted content, or PDF URL. Publish-
+// date gating still applies so future-dated books stay hidden until
+// their scheduled time. Returns 404 for restricted books rather than
+// leaking their existence to the wider internet.
+
+export async function pubEbookPreviewHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { slug } = req.params as { slug: string };
+  const now = new Date();
+  // Ebook.publishDate is non-nullable in the schema (default now()),
+  // so a simple lte-now check covers "already published".
+  const book = await req.server.prisma.ebook.findFirst({
+    where: {
+      slug,
+      status: 'active',
+      publishDate: { lte: now },
+    },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      description: true,
+      author: true,
+      coverImage: true,
+      readingTime: true,
+      totalPages: true,
+      publishDate: true,
+      category: { select: { name: true } },
+      authorRef: { select: { name: true, slug: true, photoUrl: true } },
+      series: { select: { title: true, slug: true } },
+      seriesNumber: true,
+    },
+  });
+  if (!book) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: 'Book not found',
+    });
+  }
+  // Hide books that opt into batch-restriction from the public
+  // preview — the share URL is a footgun for confidential cohort
+  // material otherwise. Cast is fine: batchIds is Json? in Prisma,
+  // never selected above but we re-fetch to be explicit.
+  const restricted = await req.server.prisma.ebook.findFirst({
+    where: { slug },
+    select: { batchIds: true },
+  });
+  const list = Array.isArray(restricted?.batchIds)
+    ? (restricted!.batchIds as unknown as string[])
+    : null;
+  if (list && list.length > 0) {
+    return reply.status(404).send({
+      success: false,
+      data: null,
+      error: 'Book not found',
+    });
+  }
+
+  reply.header('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
+  return reply.send({ success: true, data: book, error: null });
+}
+
 // ── Legal pages (Terms & Conditions / Privacy Policy) ─────────────────
 // Public endpoint — no auth. Fetches from the legal_pages table (seeded
 // at startup with placeholder bodies for 'terms' and 'privacy'). Slug

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { pubSiteConfigHandler, pubNavItemsHandler, pubUiStringsHandler, pubMemberSyncHandler, livekitWebhookHandler, pubSessionCheckHandler, pubHomeHeroHandler, pubHomeSectionsHandler, pubCourseCertVerifyHandler, pubLegalPageHandler } from './controller.js';
+import { pubSiteConfigHandler, pubNavItemsHandler, pubUiStringsHandler, pubMemberSyncHandler, livekitWebhookHandler, pubSessionCheckHandler, pubHomeHeroHandler, pubHomeSectionsHandler, pubCourseCertVerifyHandler, pubLegalPageHandler, pubEbookPreviewHandler } from './controller.js';
 
 export async function pubRoutes(fastify: FastifyInstance) {
   fastify.get('/config/site', pubSiteConfigHandler);
@@ -18,4 +18,5 @@ export async function pubRoutes(fastify: FastifyInstance) {
   fastify.post('/workshops/livekit/webhook', livekitWebhookHandler);
 
   fastify.get('/certificates/course/:certId', pubCourseCertVerifyHandler);
+  fastify.get('/ebooks/:slug', pubEbookPreviewHandler);
 }

@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/theme/design_constants.dart';
@@ -38,6 +39,27 @@ class EbookDetailScreen extends ConsumerWidget {
               foregroundColor: Colors.white,
               expandedHeight: 260,
               pinned: true,
+              actions: [
+                IconButton(
+                  tooltip: 'Share',
+                  icon: const Icon(Icons.share_rounded),
+                  onPressed: () async {
+                    // Public web preview page at
+                    // https://app.tamilbusinesstribe.com/ebook/<slug>.
+                    // Recipient sees a card with cover + description
+                    // and a CTA to open the book in the app.
+                    final url =
+                        'https://app.tamilbusinesstribe.com/ebook/${book.slug}';
+                    final by = (book.author != null && book.author!.isNotEmpty)
+                        ? ' by ${book.author}'
+                        : '';
+                    await Share.share(
+                      'Check out "${book.title}"$by on Tamil Business Tribe — $url',
+                      subject: book.title,
+                    );
+                  },
+                ),
+              ],
               flexibleSpace: FlexibleSpaceBar(
                 background: _HeroCover(coverUrl: book.coverImage),
               ),
