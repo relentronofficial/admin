@@ -2963,6 +2963,9 @@ model Ebook {
   // Optional FK to a managed author record. The legacy `author` string
   // stays for uncategorised rows so mass linking can happen lazily.
   authorId     String?   @map("author_id")   @db.Uuid
+  // Lifetime "opens" of the detail endpoint from members. Powers the
+  // trending row on the ebooks home. Bumped inside getBookHandler.
+  viewCount    Int       @default(0) @map("view_count")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)

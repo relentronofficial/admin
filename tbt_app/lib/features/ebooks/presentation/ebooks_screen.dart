@@ -50,6 +50,7 @@ class EbooksScreen extends ConsumerWidget {
           ref.invalidate(ebookBannersProvider);
           ref.invalidate(continueReadingProvider);
           ref.invalidate(ebookReadingStreakProvider);
+          ref.invalidate(trendingBooksProvider);
         },
         child: ListView(
           padding: const EdgeInsets.only(bottom: 100),
@@ -57,6 +58,7 @@ class EbooksScreen extends ConsumerWidget {
             _BannersRow(),
             _ContinueReadingRow(),
             _FeaturedGrid(),
+            _TrendingRow(),
             _CategoryChipsRow(),
             _LibraryGrid(),
           ],
@@ -307,6 +309,77 @@ class _ContinueTile extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Trending row (top-N by lifetime view count) ────────────────────
+
+class _TrendingRow extends ConsumerWidget {
+  const _TrendingRow();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(trendingBooksProvider);
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (books) {
+        if (books.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SectionHeader(label: 'Trending'),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 168,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: books.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (ctx, i) => _TrendingTile(book: books[i]),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TrendingTile extends StatelessWidget {
+  const _TrendingTile({required this.book});
+  final Ebook book;
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return SizedBox(
+      width: 100,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () =>
+            GoRouter.of(context).push(AppRoutes.ebookDetailPath(book.id)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _BookCover(url: book.coverImage, width: 100, height: 130),
+            const SizedBox(height: 6),
+            Text(
+              book.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: tokens.textPrimary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+              ),
+            ),
+          ],
         ),
       ),
     );

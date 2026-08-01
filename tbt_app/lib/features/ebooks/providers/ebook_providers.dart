@@ -33,6 +33,13 @@ final featuredBooksProvider =
   return ref.watch(ebookServiceProvider).listFeatured();
 });
 
+// ── Trending books (top-N by lifetime view count) ────────────────
+final trendingBooksProvider =
+    FutureProvider.autoDispose<List<Ebook>>((ref) async {
+  ref.keepAlive();
+  return ref.watch(ebookServiceProvider).listTrending(limit: 10);
+});
+
 // ── Banners ──────────────────────────────────────────────────────
 final ebookBannersProvider =
     FutureProvider.autoDispose<List<EbookBanner>>((ref) async {

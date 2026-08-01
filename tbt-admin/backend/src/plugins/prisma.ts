@@ -142,6 +142,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE ebooks ADD COLUMN IF NOT EXISTS series_id UUID`),
       prisma.$executeRawUnsafe(`ALTER TABLE ebooks ADD COLUMN IF NOT EXISTS series_number INT`),
       prisma.$executeRawUnsafe(`ALTER TABLE ebooks ADD COLUMN IF NOT EXISTS author_id UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE ebooks ADD COLUMN IF NOT EXISTS view_count INT NOT NULL DEFAULT 0`),
       prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS visibility JSONB`),
       prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS description TEXT`),
       prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS admin_reply TEXT`),

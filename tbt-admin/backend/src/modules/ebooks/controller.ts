@@ -619,7 +619,7 @@ export async function adminBookAnalyticsHandler(req: FastifyRequest, reply: Fast
 
   const book = await req.server.prisma.ebook.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, viewCount: true },
   });
   if (!book) return fail(reply, 404, 'not_found', 'Book not found.');
 
@@ -656,7 +656,7 @@ export async function adminBookAnalyticsHandler(req: FastifyRequest, reply: Fast
     avgPageReached,
     totalBookmarks,
     activeReaders30d: activeReaders30d.length,
-    viewCount: 0,
+    viewCount: book.viewCount,
   });
 }
 
@@ -870,6 +870,14 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
     ? Number(ratingAgg._avg.rating.toFixed(2))
     : 0;
   const reviewCount = ratingAgg._count.rating;
+  // Fire-and-forget view-count bump. Powers the trending row + the
+  // admin per-book analytics tab. Never blocks the response, never
+  // fails the detail read on a hiccup. Lifetime counter for now;
+  // a 30-day windowed variant can layer on top later.
+  req.server.prisma.ebook
+    .update({ where: { id }, data: { viewCount: { increment: 1 } } })
+    .catch((err) => req.log.warn({ err }, 'ebook: viewCount bump failed'));
+
   return ok(reply, {
     ...maskExpiredPin(book as any),
     progress: progress ?? null,
@@ -879,6 +887,33 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
     myReview: myReview ?? null,
     seriesSiblings: siblings,
   });
+}
+
+// Trending books — top N by lifetime view count. Publish + batch
+// gating apply, same as the library. `locked` decoration lets the
+// mobile UI show restricted cards without breaking the list.
+export async function listTrendingBooksHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { limit = '10' } = req.query as Record<string, string>;
+  const l = Math.min(50, Math.max(1, Number(limit) || 10));
+
+  const memberBatchId = await getMemberBatchId(req);
+  const rows = await req.server.prisma.ebook.findMany({
+    where: {
+      status: 'active',
+      // A book with zero views isn't "trending" — filter them out
+      // so the row doesn't fall back to random alphabetical order.
+      viewCount: { gt: 0 },
+      AND: [publishedFilter()],
+    },
+    include: bookInclude,
+    orderBy: [{ viewCount: 'desc' }, { publishDate: 'desc' }],
+    take: l,
+  });
+  const decorated = rows.map((r) => ({
+    ...maskExpiredPin(r as any),
+    locked: isBookLocked((r as any).batchIds, memberBatchId),
+  }));
+  return ok(reply, decorated);
 }
 
 // One review per (member, book). Re-submitting overwrites the previous

@@ -216,6 +216,25 @@ class EbookService {
       throw mapDioError(e);
     }
   }
+
+  /// Top-N most-viewed books across the whole library. Powers the
+  /// "Trending" strip on the ebooks home. Backend hides zero-view
+  /// rows so the strip never falls back to random alphabetical order.
+  Future<List<Ebook>> listTrending({int limit = 10}) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/ebooks/trending',
+        queryParameters: {'limit': limit},
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(Ebook.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 }
 
 final ebookServiceProvider = Provider<EbookService>(
