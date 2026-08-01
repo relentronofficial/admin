@@ -250,6 +250,56 @@ export async function adminDashboardHandler(req: FastifyRequest, reply: FastifyR
   });
 }
 
+// Per-book analytics — one row per admin call. Small enough to
+// compute inline (5-6 aggregates); no worker/cron needed. viewCount
+// is returned from the Ebook.viewCount column added by P1-6; until
+// that lands, it stays at 0 for every book.
+export async function adminBookAnalyticsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+
+  const book = await req.server.prisma.ebook.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!book) return fail(reply, 404, 'not_found', 'Book not found.');
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const [totalOpens, completedCount, totalBookmarks, activeReaders30d, pageAgg] =
+    await Promise.all([
+      req.server.prisma.ebookProgress.count({ where: { bookId: id } }),
+      req.server.prisma.ebookProgress.count({
+        where: { bookId: id, completed: true },
+      }),
+      req.server.prisma.ebookBookmark.count({ where: { bookId: id } }),
+      req.server.prisma.ebookProgress.findMany({
+        where: { bookId: id, updatedAt: { gte: thirtyDaysAgo } },
+        distinct: ['memberId'],
+        select: { memberId: true },
+      }),
+      req.server.prisma.ebookProgress.aggregate({
+        where: { bookId: id },
+        _avg: { currentPage: true },
+      }),
+    ]);
+
+  const avgPageReached = pageAgg._avg.currentPage
+    ? Math.round(pageAgg._avg.currentPage)
+    : 0;
+  const completionRate =
+    totalOpens > 0 ? completedCount / totalOpens : 0;
+
+  return ok(reply, {
+    totalOpens,
+    completedCount,
+    completionRate,
+    avgPageReached,
+    totalBookmarks,
+    activeReaders30d: activeReaders30d.length,
+    viewCount: 0,
+  });
+}
+
 // ────────────────────────────────────────────────────────────────
 // MEMBER-FACING
 // ────────────────────────────────────────────────────────────────

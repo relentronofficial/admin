@@ -25,6 +25,7 @@ import {
   useCreateEbookBanner,
   useUpdateEbookBanner,
   useDeleteEbookBanner,
+  useEbookAnalytics,
   type EbookCategory,
   type Ebook,
   type EbookBanner,
@@ -704,6 +705,7 @@ function BookForm({
   const [status, setStatus] = useState(initial?.status ?? "active");
   const [sortOrder, setSortOrder] = useState(initial?.sortOrder ?? 0);
   const [batchIds, setBatchIds] = useState<string[]>(initial?.batchIds ?? []);
+  const [tab, setTab] = useState<"edit" | "analytics">("edit");
   const slugTouchedRef = useRef(isEdit);
 
   const coverUpload = useCoverUploader((url) => setCoverImage(url), "ebooks/covers");
@@ -755,6 +757,28 @@ function BookForm({
 
   return (
     <Modal onClose={onClose} title={isEdit ? "Edit Book" : "New Book"} wide>
+      {isEdit && (
+        <div className="flex gap-1 mb-3 border-b border-[#2a2a2a]">
+          {(["edit", "analytics"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest font-rajdhani border-b-2 -mb-px transition ${
+                tab === t
+                  ? "text-white border-[#dc2626]"
+                  : "text-[#606060] border-transparent hover:text-[#a0a0a0]"
+              }`}
+            >
+              {t === "edit" ? "Edit" : "Analytics"}
+            </button>
+          ))}
+        </div>
+      )}
+      {isEdit && tab === "analytics" ? (
+        <BookAnalyticsPanel bookId={initial!.id} onClose={onClose} />
+      ) : (
+      <>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>Title</label>
@@ -930,7 +954,79 @@ function BookForm({
         )}
       </div>
       <ModalActions onClose={onClose} onSubmit={submit} busy={create.isPending || update.isPending} isEdit={isEdit} />
+      </>
+      )}
     </Modal>
+  );
+}
+
+function BookAnalyticsPanel({ bookId, onClose }: { bookId: string; onClose: () => void }) {
+  const { data, isLoading, error } = useEbookAnalytics(bookId);
+
+  if (isLoading) {
+    return (
+      <div className="py-12 flex items-center justify-center text-[#a0a0a0] gap-2">
+        <Loader2 size={16} className="animate-spin" />
+        <span className="text-sm">Loading analytics…</span>
+      </div>
+    );
+  }
+  if (error || !data) {
+    return (
+      <div className="py-12 text-center text-sm text-[#a0a0a0]">
+        Could not load analytics.
+      </div>
+    );
+  }
+
+  const tiles: Array<{ label: string; value: string; hint?: string }> = [
+    { label: "Total opens", value: `${data.totalOpens}` },
+    { label: "Completed", value: `${data.completedCount}` },
+    {
+      label: "Completion rate",
+      value: `${Math.round(data.completionRate * 100)}%`,
+    },
+    { label: "Avg. page reached", value: `${data.avgPageReached}` },
+    { label: "Total bookmarks", value: `${data.totalBookmarks}` },
+    {
+      label: "Active readers (30d)",
+      value: `${data.activeReaders30d}`,
+    },
+    { label: "View count", value: `${data.viewCount}`, hint: "P1-6" },
+  ];
+
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-3 py-2">
+        {tiles.map((t) => (
+          <div
+            key={t.label}
+            className="rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] p-4"
+          >
+            <div className="text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani flex items-center gap-1">
+              <span>{t.label}</span>
+              {t.hint && (
+                <span className="text-[#3a3a3a] normal-case font-normal">
+                  · {t.hint}
+                </span>
+              )}
+            </div>
+            <div className="mt-2 text-2xl font-bold text-white">
+              {t.value}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end mt-4">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm hover:bg-[#222]"
+        >
+          Close
+        </button>
+      </div>
+    </>
   );
 }
 

@@ -51,6 +51,16 @@ export interface EbookDashboard {
   activeReaders: number;
 }
 
+export interface EbookAnalytics {
+  totalOpens: number;
+  completedCount: number;
+  completionRate: number;    // 0..1
+  avgPageReached: number;
+  totalBookmarks: number;
+  activeReaders30d: number;
+  viewCount: number;
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────
 export const useEbookDashboard = () =>
   useQuery({
@@ -59,6 +69,20 @@ export const useEbookDashboard = () =>
       const res: any = await apiClient.get("/api/ebooks/admin/dashboard");
       return res?.data;
     },
+    staleTime: 30_000,
+  });
+
+// Per-book analytics — pull only when a modal actually needs them.
+export const useEbookAnalytics = (bookId: string | null) =>
+  useQuery({
+    queryKey: ["ebooks", "analytics", bookId],
+    queryFn: async (): Promise<EbookAnalytics> => {
+      const res: any = await apiClient.get(
+        `/api/ebooks/admin/books/${bookId}/analytics`,
+      );
+      return res?.data;
+    },
+    enabled: !!bookId,
     staleTime: 30_000,
   });
 
