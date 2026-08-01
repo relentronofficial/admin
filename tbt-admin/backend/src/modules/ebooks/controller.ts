@@ -18,6 +18,8 @@ import {
   submitReviewSchema,
   reviewStatusSchema,
   bulkImportBooksSchema,
+  createSeriesSchema,
+  updateSeriesSchema,
 } from './schema.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
@@ -29,6 +31,7 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
 
 const bookInclude = {
   category: { select: { id: true, name: true, slug: true } },
+  series: { select: { id: true, title: true, slug: true, coverUrl: true } },
 };
 
 // ────────────────────────────────────────────────────────────────
@@ -116,7 +119,8 @@ export async function adminListBooksHandler(req: FastifyRequest, reply: FastifyR
 export async function adminCreateBookHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = createBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, pinnedAt, pinnedUntil, ...rest } = parsed.data;
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, ...rest } =
+    parsed.data;
   try {
     const created = await req.server.prisma.ebook.create({
       data: {
@@ -127,6 +131,8 @@ export async function adminCreateBookHandler(req: FastifyRequest, reply: Fastify
         batchIds: batchIds && batchIds.length > 0 ? (batchIds as any) : null,
         pinnedAt: pinnedAt ? new Date(pinnedAt) : null,
         pinnedUntil: pinnedUntil ? new Date(pinnedUntil) : null,
+        seriesId: seriesId ?? null,
+        seriesNumber: seriesNumber ?? null,
       },
       include: bookInclude,
     });
@@ -141,7 +147,8 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
   const { id } = req.params as { id: string };
   const parsed = updateBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, pinnedAt, pinnedUntil, ...rest } = parsed.data;
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, ...rest } =
+    parsed.data;
   try {
     const updated = await req.server.prisma.ebook.update({
       where: { id },
@@ -160,6 +167,10 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
           : {}),
         ...(pinnedUntil !== undefined
           ? { pinnedUntil: pinnedUntil ? new Date(pinnedUntil) : null }
+          : {}),
+        ...(seriesId !== undefined ? { seriesId: seriesId ?? null } : {}),
+        ...(seriesNumber !== undefined
+          ? { seriesNumber: seriesNumber ?? null }
           : {}),
       },
       include: bookInclude,
@@ -192,6 +203,61 @@ export async function adminDeleteBookHandler(req: FastifyRequest, reply: Fastify
     return ok(reply, null);
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Book not found.');
+    throw err;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// SERIES — admin
+// ────────────────────────────────────────────────────────────────
+export async function adminListSeriesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.ebookSeries.findMany({
+    orderBy: { title: 'asc' },
+    include: { _count: { select: { books: true } } },
+  });
+  return ok(reply, rows);
+}
+
+export async function adminCreateSeriesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const parsed = createSeriesSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const created = await req.server.prisma.ebookSeries.create({ data: parsed.data });
+    return reply.status(201).send({ success: true, data: created, error: null });
+  } catch (err: any) {
+    if (err?.code === 'P2002')
+      return fail(reply, 409, 'duplicate_slug', 'Series slug already in use.');
+    throw err;
+  }
+}
+
+export async function adminUpdateSeriesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = updateSeriesSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const updated = await req.server.prisma.ebookSeries.update({
+      where: { id },
+      data: parsed.data,
+    });
+    return ok(reply, updated);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Series not found.');
+    if (err?.code === 'P2002')
+      return fail(reply, 409, 'duplicate_slug', 'Series slug already in use.');
+    throw err;
+  }
+}
+
+export async function adminDeleteSeriesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  try {
+    // Set-null cascade in the schema clears seriesId on child books;
+    // the row itself deletes cleanly.
+    await req.server.prisma.ebookSeries.delete({ where: { id } });
+    return ok(reply, null);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Series not found.');
     throw err;
   }
 }
@@ -668,7 +734,7 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
     );
   }
 
-  const [progress, bookmark, ratingAgg, myReview] = await Promise.all([
+  const [progress, bookmark, ratingAgg, myReview, siblings] = await Promise.all([
     req.server.prisma.ebookProgress.findUnique({
       where: { memberId_bookId: { memberId: req.memberId!, bookId: id } },
     }),
@@ -687,6 +753,27 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
       where: { memberId_bookId: { memberId: req.memberId!, bookId: id } },
       select: { rating: true, reviewText: true, status: true, updatedAt: true },
     }),
+    // Sibling books in the same series (excluding the current one),
+    // ordered by seriesNumber so the "Part 2 of N" UI can render a
+    // clean next/previous strip.
+    (book as any).seriesId
+      ? req.server.prisma.ebook.findMany({
+          where: {
+            seriesId: (book as any).seriesId,
+            status: 'active',
+            NOT: { id },
+            AND: [publishedFilter()],
+          },
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            coverImage: true,
+            seriesNumber: true,
+          },
+          orderBy: { seriesNumber: 'asc' },
+        })
+      : Promise.resolve([]),
   ]);
   const averageRating = ratingAgg._avg.rating
     ? Number(ratingAgg._avg.rating.toFixed(2))
@@ -699,6 +786,7 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
     averageRating,
     reviewCount,
     myReview: myReview ?? null,
+    seriesSiblings: siblings,
   });
 }
 

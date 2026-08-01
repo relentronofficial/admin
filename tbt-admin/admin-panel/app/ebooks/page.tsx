@@ -30,6 +30,10 @@ import {
   useListEbookReviews,
   useUpdateEbookReviewStatus,
   useBulkImportEbooks,
+  useListEbookSeries,
+  useCreateEbookSeries,
+  useUpdateEbookSeries,
+  useDeleteEbookSeries,
   type EbookCategory,
   type Ebook,
   type EbookBanner,
@@ -37,6 +41,7 @@ import {
   type EbookBookmarkRow,
   type BulkImportRow,
   type BulkImportDryRunResult,
+  type EbookSeries,
 } from "@/lib/hooks/useEbooks";
 import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListBatches } from "@/lib/hooks/useTbt";
@@ -82,7 +87,7 @@ function StatChip({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-type Tab = "books" | "banners" | "categories" | "reviews";
+type Tab = "books" | "banners" | "categories" | "series" | "reviews";
 
 export default function EbooksPage() {
   const [tab, setTab] = useState<Tab>("books");
@@ -117,6 +122,7 @@ export default function EbooksPage() {
               { id: "books", label: "Books", icon: BookOpen },
               { id: "banners", label: "Banners", icon: ImageIcon },
               { id: "categories", label: "Categories", icon: Layers },
+              { id: "series", label: "Series", icon: FileText },
               { id: "reviews", label: "Reviews", icon: Star },
             ] as { id: Tab; label: string; icon: any }[]
           ).map((t) => {
@@ -142,6 +148,7 @@ export default function EbooksPage() {
         {tab === "books" && <BooksTab />}
         {tab === "banners" && <BannersTab />}
         {tab === "categories" && <CategoriesTab />}
+        {tab === "series" && <SeriesTab />}
         {tab === "reviews" && <ReviewsTab />}
       </div>
     </DashboardLayout>
@@ -735,8 +742,15 @@ function BookForm({
   const [pinnedUntil, setPinnedUntil] = useState<string>(
     initial?.pinnedUntil ? initial.pinnedUntil.slice(0, 16) : "",
   );
+  const [seriesId, setSeriesId] = useState<string>(initial?.seriesId ?? "");
+  const [seriesNumber, setSeriesNumber] = useState<string>(
+    initial?.seriesNumber != null ? String(initial.seriesNumber) : "",
+  );
   const [tab, setTab] = useState<"edit" | "analytics" | "bookmarks">("edit");
   const slugTouchedRef = useRef(isEdit);
+
+  // Series picker source (small list, cached).
+  const { data: seriesList } = useListEbookSeries();
 
   const coverUpload = useCoverUploader((url) => setCoverImage(url), "ebooks/covers");
   const pdfUpload = usePdfUploader((url) => setPdfUrl(url));
@@ -774,6 +788,9 @@ function BookForm({
       // .datetime() validation. Empty string means "no pin".
       pinnedAt: pinnedAt ? new Date(pinnedAt).toISOString() : null,
       pinnedUntil: pinnedUntil ? new Date(pinnedUntil).toISOString() : null,
+      seriesId: seriesId || null,
+      seriesNumber:
+        seriesId && seriesNumber ? Number(seriesNumber) : null,
     };
     try {
       if (isEdit) {
@@ -935,6 +952,40 @@ function BookForm({
             className={inputCls}
             value={sortOrder}
             onChange={(e) => setSortOrder(Number(e.target.value) || 0)}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-[2fr_1fr] gap-3 mt-3">
+        <div>
+          <label className={labelCls}>
+            Series{" "}
+            <span className="text-[#666] normal-case font-normal">
+              (leave empty = standalone book)
+            </span>
+          </label>
+          <select
+            className={inputCls}
+            value={seriesId}
+            onChange={(e) => setSeriesId(e.target.value)}
+          >
+            <option value="">— none —</option>
+            {(seriesList ?? []).map((s: EbookSeries) => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Part #</label>
+          <input
+            type="number"
+            min={1}
+            className={inputCls}
+            value={seriesNumber}
+            onChange={(e) => setSeriesNumber(e.target.value)}
+            disabled={!seriesId}
+            placeholder={seriesId ? "1" : "—"}
           />
         </div>
       </div>
@@ -1445,6 +1496,207 @@ function parseCsvToRows(text: string): BulkImportRow[] {
     });
   }
   return out;
+}
+
+// ── Series (multi-part books) tab ─────────────────────────────────
+
+function SeriesTab() {
+  const { data: rows, isLoading } = useListEbookSeries();
+  const [editing, setEditing] = useState<EbookSeries | null>(null);
+  const [creating, setCreating] = useState(false);
+  const del = useDeleteEbookSeries();
+
+  const onDelete = async (id: string, bookCount: number) => {
+    const msg =
+      bookCount > 0
+        ? `Delete this series? ${bookCount} book${bookCount === 1 ? "" : "s"} will keep working but lose the series link.`
+        : "Delete this series?";
+    if (!confirm(msg)) return;
+    try {
+      await del.mutateAsync(id);
+      toast.success("Series deleted");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Delete failed");
+    }
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] text-[#888]">
+          {rows?.length ?? 0} serie{(rows?.length ?? 0) === 1 ? "" : "s"}
+        </span>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani px-3 py-2 rounded-lg"
+        >
+          <Plus size={12} /> New Series
+        </button>
+      </div>
+
+      <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[1fr_1fr_100px_120px] px-4 py-3 border-b border-[#2a2a2a] text-[10px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">
+          <span>Title</span>
+          <span>Slug</span>
+          <span>Books</span>
+          <span className="text-right">Actions</span>
+        </div>
+        {isLoading && (
+          <div className="p-8 text-center text-[#666]">
+            <Loader2 className="inline animate-spin" size={16} />
+          </div>
+        )}
+        {!isLoading && (rows?.length ?? 0) === 0 && (
+          <div className="p-8 text-center text-[#666] text-[12px]">
+            No series yet.
+          </div>
+        )}
+        {rows?.map((s) => (
+          <div
+            key={s.id}
+            className="grid grid-cols-[1fr_1fr_100px_120px] px-4 py-3 border-b border-[#2a2a2a]/50 last:border-b-0 items-center hover:bg-white/[0.02]"
+          >
+            <span className="text-[13px] text-white font-medium">
+              {s.title}
+            </span>
+            <span className="text-[12px] text-[#888] font-mono truncate">
+              {s.slug}
+            </span>
+            <span className="text-[12px] text-[#888]">
+              {s._count?.books ?? 0}
+            </span>
+            <div className="flex items-center gap-1 justify-end">
+              <button
+                onClick={() => setEditing(s)}
+                className="p-1.5 rounded hover:bg-white/5 text-[#a0a0a0]"
+                title="Edit"
+              >
+                <Edit2 size={13} />
+              </button>
+              <button
+                onClick={() => onDelete(s.id, s._count?.books ?? 0)}
+                className="p-1.5 rounded hover:bg-red-500/10 text-red-400"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {(creating || editing) && (
+        <SeriesForm
+          initial={editing ?? undefined}
+          onClose={() => {
+            setEditing(null);
+            setCreating(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function SeriesForm({
+  initial,
+  onClose,
+}: {
+  initial?: EbookSeries;
+  onClose: () => void;
+}) {
+  const create = useCreateEbookSeries();
+  const update = useUpdateEbookSeries();
+  const isEdit = !!initial;
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [slug, setSlug] = useState(initial?.slug ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [coverUrl, setCoverUrl] = useState(initial?.coverUrl ?? "");
+  const slugTouchedRef = useRef(isEdit);
+  const coverUpload = useCoverUploader(
+    (url) => setCoverUrl(url),
+    "ebooks/series",
+  );
+
+  const submit = async () => {
+    if (!title.trim() || !slug.trim()) {
+      toast.error("Title and slug are required.");
+      return;
+    }
+    const data = {
+      title,
+      slug,
+      description: description || null,
+      coverUrl: coverUrl || null,
+    };
+    try {
+      if (isEdit) {
+        await update.mutateAsync({ id: initial!.id, data });
+        toast.success("Series updated");
+      } else {
+        await create.mutateAsync(data);
+        toast.success("Series created");
+      }
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Save failed");
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title={isEdit ? "Edit Series" : "New Series"}>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Title</label>
+          <input
+            className={inputCls}
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (!slugTouchedRef.current) setSlug(toSlug(e.target.value));
+            }}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Slug</label>
+          <input
+            className={inputCls}
+            value={slug}
+            onChange={(e) => {
+              slugTouchedRef.current = true;
+              setSlug(toSlug(e.target.value));
+            }}
+          />
+        </div>
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>Description</label>
+        <textarea
+          className={textareaCls}
+          value={description ?? ""}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>Cover Image</label>
+        {coverUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={coverUrl}
+            alt=""
+            className="w-32 h-40 object-cover rounded mb-2"
+          />
+        )}
+        {coverUpload.render}
+      </div>
+      <ModalActions
+        onClose={onClose}
+        onSubmit={submit}
+        busy={create.isPending || update.isPending}
+        isEdit={isEdit}
+      />
+    </Modal>
+  );
 }
 
 // ── Reviews moderation tab ────────────────────────────────────────

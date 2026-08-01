@@ -20,6 +20,17 @@ export interface EbookBanner {
   status: string;
   sortOrder: number;
 }
+export interface EbookSeries {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  coverUrl: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  _count?: { books: number };
+}
+
 export interface Ebook {
   id: string;
   title: string;
@@ -36,6 +47,15 @@ export interface Ebook {
   sortOrder: number;
   publishDate: string;
   status: string;
+  // Multi-part series. seriesId is null for standalone books.
+  seriesId?: string | null;
+  seriesNumber?: number | null;
+  series?: {
+    id: string;
+    title: string;
+    slug: string;
+    coverUrl: string | null;
+  } | null;
   // Per-batch access. null / omitted → all members; [id, ...] →
   // restrict to those batches only.
   batchIds?: string[] | null;
@@ -282,6 +302,68 @@ export const useDeleteEbookCategory = () => {
       await apiClient.delete(`/api/ebooks/admin/categories/${id}`);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ebooks"] }),
+  });
+};
+
+// ── Series ────────────────────────────────────────────────────────
+export const useListEbookSeries = () =>
+  useQuery({
+    queryKey: ["ebooks", "series"],
+    queryFn: async (): Promise<EbookSeries[]> => {
+      const res: any = await apiClient.get("/api/ebooks/admin/series");
+      return res?.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+export const useCreateEbookSeries = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<EbookSeries>) => {
+      const res: any = await apiClient.post(
+        "/api/ebooks/admin/series",
+        data,
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["ebooks", "series"] }),
+  });
+};
+
+export const useUpdateEbookSeries = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<EbookSeries>;
+    }) => {
+      const res: any = await apiClient.put(
+        `/api/ebooks/admin/series/${id}`,
+        data,
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["ebooks", "series"] }),
+  });
+};
+
+export const useDeleteEbookSeries = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/ebooks/admin/series/${id}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ebooks", "series"] });
+      // Deleted series set-null-cascades on child books; refresh so
+      // the books tab reflects the cleared seriesId.
+      qc.invalidateQueries({ queryKey: ["ebooks", "books"] });
+    },
   });
 };
 

@@ -20,6 +20,10 @@ import {
   adminListReviewsHandler,
   adminUpdateReviewStatusHandler,
   adminBulkImportBooksHandler,
+  adminListSeriesHandler,
+  adminCreateSeriesHandler,
+  adminUpdateSeriesHandler,
+  adminDeleteSeriesHandler,
   // member
   listActiveCategoriesHandler,
   listFeaturedBooksHandler,
@@ -72,6 +76,11 @@ export async function ebookRoutes(fastify: FastifyInstance) {
 
       adminScope.get('/reviews', adminListReviewsHandler);
       adminScope.put('/reviews/:id/status', adminUpdateReviewStatusHandler);
+
+      adminScope.get('/series', adminListSeriesHandler);
+      adminScope.post('/series', adminCreateSeriesHandler);
+      adminScope.put('/series/:id', adminUpdateSeriesHandler);
+      adminScope.delete('/series/:id', adminDeleteSeriesHandler);
     },
     { prefix: '/admin' },
   );

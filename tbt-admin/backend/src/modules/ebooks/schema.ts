@@ -39,8 +39,21 @@ export const createBookSchema = z.object({
   // (row keeps its DB position; only the badge hides).
   pinnedAt: z.string().datetime().optional().nullable(),
   pinnedUntil: z.string().datetime().optional().nullable(),
+  // Multi-part series membership. seriesId links to EbookSeries;
+  // seriesNumber is 1-indexed and drives sibling ordering.
+  seriesId: z.string().uuid().optional().nullable(),
+  seriesNumber: z.number().int().min(1).optional().nullable(),
 });
 export const updateBookSchema = createBookSchema.partial();
+
+// Series CRUD — small model, same slug regex as categories.
+export const createSeriesSchema = z.object({
+  title: z.string().min(1).max(255),
+  slug: slugSchema,
+  description: z.string().optional().nullable(),
+  coverUrl: z.string().url().optional().nullable(),
+});
+export const updateSeriesSchema = createSeriesSchema.partial();
 
 export const createBannerSchema = z.object({
   title: z.string().min(1).max(255),

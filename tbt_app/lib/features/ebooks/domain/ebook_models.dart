@@ -119,6 +119,9 @@ class Ebook {
     this.myReview,
     this.pinnedAt,
     this.pinnedUntil,
+    this.series,
+    this.seriesNumber,
+    this.seriesSiblings = const [],
   });
 
   final String id;
@@ -167,6 +170,17 @@ class Ebook {
 
   bool get isPinned => pinnedAt != null;
 
+  /// Parent series when this book is part of a multi-part collection.
+  /// Null for standalone books.
+  final EbookSeriesRef? series;
+
+  /// 1-indexed position within the series.
+  final int? seriesNumber;
+
+  /// Sibling books in the same series, ordered by seriesNumber. Only
+  /// populated by the detail endpoint (list endpoints return empty).
+  final List<EbookSeriesSibling> seriesSiblings;
+
   factory Ebook.fromJson(Map<String, dynamic> j) => Ebook(
         id: j['id'] as String,
         title: j['title'] as String,
@@ -203,6 +217,61 @@ class Ebook {
         pinnedUntil: j['pinnedUntil'] != null
             ? DateTime.tryParse(j['pinnedUntil'] as String)
             : null,
+        series: j['series'] != null
+            ? EbookSeriesRef.fromJson(j['series'] as Map<String, dynamic>)
+            : null,
+        seriesNumber: (j['seriesNumber'] as int?),
+        seriesSiblings: ((j['seriesSiblings'] as List<dynamic>?) ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(EbookSeriesSibling.fromJson)
+            .toList(),
+      );
+}
+
+/// Compact series reference on the book detail endpoint.
+class EbookSeriesRef {
+  const EbookSeriesRef({
+    required this.id,
+    required this.title,
+    required this.slug,
+    this.coverUrl,
+  });
+  final String id;
+  final String title;
+  final String slug;
+  final String? coverUrl;
+
+  factory EbookSeriesRef.fromJson(Map<String, dynamic> j) => EbookSeriesRef(
+        id: j['id'] as String,
+        title: j['title'] as String,
+        slug: j['slug'] as String,
+        coverUrl: j['coverUrl'] as String?,
+      );
+}
+
+/// Sibling book in the same series — minimal shape for the "Part N of M"
+/// strip on the detail screen.
+class EbookSeriesSibling {
+  const EbookSeriesSibling({
+    required this.id,
+    required this.title,
+    required this.slug,
+    this.coverImage,
+    this.seriesNumber,
+  });
+  final String id;
+  final String title;
+  final String slug;
+  final String? coverImage;
+  final int? seriesNumber;
+
+  factory EbookSeriesSibling.fromJson(Map<String, dynamic> j) =>
+      EbookSeriesSibling(
+        id: j['id'] as String,
+        title: j['title'] as String,
+        slug: j['slug'] as String,
+        coverImage: j['coverImage'] as String?,
+        seriesNumber: (j['seriesNumber'] as int?),
       );
 }
 

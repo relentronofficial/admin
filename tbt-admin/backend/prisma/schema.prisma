@@ -2955,16 +2955,38 @@ model Ebook {
   // current page but no longer renders as pinned on the client.
   pinnedAt     DateTime? @map("pinned_at")   @db.Timestamptz(6)
   pinnedUntil  DateTime? @map("pinned_until") @db.Timestamptz(6)
+  // Multi-part books. Both nullable so a standalone book stays as-is.
+  // seriesNumber is human-facing (1-indexed) and drives the
+  // in-series ordering.
+  seriesId     String?   @map("series_id")   @db.Uuid
+  seriesNumber Int?      @map("series_number")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  series       EbookSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   bookmarks    EbookBookmark[]
   progress     EbookProgress[]
   reviews      EbookReview[]
 
   @@index([categoryId])
   @@index([status])
+  @@index([seriesId, seriesNumber])
   @@map("ebooks")
+}
+
+// Multi-part book series. Each book optionally references one series
+// via Ebook.seriesId. seriesNumber on the book drives the reading
+// order.
+model EbookSeries {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(255)
+  description String?
+  coverUrl    String?  @map("cover_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  books       Ebook[]
+  @@map("ebook_series")
 }
 
 model EbookBanner {
