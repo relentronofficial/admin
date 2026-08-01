@@ -188,6 +188,20 @@ class EbookService {
       throw mapDioError(e);
     }
   }
+
+  /// Current + longest reading streak for the caller. Backend returns
+  /// zeros when the streak has lapsed (last read was neither today nor
+  /// yesterday), so the client can render "0-day streak" honestly
+  /// instead of pretending a broken streak is still alive.
+  Future<EbookReadingStreak> readingStreak() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/api/ebooks/streak');
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
+      return EbookReadingStreak.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 }
 
 final ebookServiceProvider = Provider<EbookService>(

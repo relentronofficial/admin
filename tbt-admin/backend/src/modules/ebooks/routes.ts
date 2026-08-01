@@ -32,6 +32,7 @@ import {
   continueReadingHandler,
   memberSubmitReviewHandler,
   memberListReviewsHandler,
+  getReadingStreakHandler,
 } from './controller.js';
 
 /**
@@ -88,5 +89,6 @@ export async function ebookRoutes(fastify: FastifyInstance) {
     userScope.get('/continue-reading', continueReadingHandler);
     userScope.get('/books/:id/reviews', memberListReviewsHandler);
     userScope.post('/books/:id/reviews', memberSubmitReviewHandler);
+    userScope.get('/streak', getReadingStreakHandler);
   });
 }

@@ -57,3 +57,11 @@ final continueReadingProvider =
     FutureProvider.autoDispose<List<ContinueReadingItem>>((ref) async {
   return ref.watch(ebookServiceProvider).continueReading();
 });
+
+// ── Reading streak ───────────────────────────────────────────────
+// Cheap query (one row, indexed on memberId). Invalidate after a
+// submit-progress call so the badge reflects the new streak count.
+final ebookReadingStreakProvider =
+    FutureProvider.autoDispose<EbookReadingStreak>((ref) async {
+  return ref.watch(ebookServiceProvider).readingStreak();
+});

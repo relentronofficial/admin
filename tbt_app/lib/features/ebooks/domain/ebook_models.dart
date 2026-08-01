@@ -211,6 +211,32 @@ class EbookReviewSummary {
       );
 }
 
+/// Per-member reading streak snapshot returned by
+/// `GET /api/ebooks/streak`. Zero values when the member has no
+/// progress history or their streak has lapsed (skipped a day).
+class EbookReadingStreak {
+  const EbookReadingStreak({
+    required this.currentStreak,
+    required this.longestStreak,
+    this.lastReadAt,
+  });
+  final int currentStreak;
+  final int longestStreak;
+  final DateTime? lastReadAt;
+
+  static const empty =
+      EbookReadingStreak(currentStreak: 0, longestStreak: 0, lastReadAt: null);
+
+  factory EbookReadingStreak.fromJson(Map<String, dynamic> j) =>
+      EbookReadingStreak(
+        currentStreak: (j['currentStreak'] as int?) ?? 0,
+        longestStreak: (j['longestStreak'] as int?) ?? 0,
+        lastReadAt: j['lastReadAt'] != null
+            ? DateTime.tryParse(j['lastReadAt'] as String)
+            : null,
+      );
+}
+
 /// A single review with author info — the shape returned by
 /// `GET /api/ebooks/books/:id/reviews`.
 class EbookReview {

@@ -382,6 +382,7 @@ model Member {
   ebookBookmarks        EbookBookmark[]
   ebookProgress         EbookProgress[]
   ebookReviews          EbookReview[]
+  ebookReadingStreak    EbookReadingStreak?
   helpdeskTickets       HelpdeskTicket[]   @relation("MemberHelpdeskTickets")
   helpdeskFeedback      HelpdeskFeedback[] @relation("MemberHelpdeskFeedback")
   tbtActivityLog        TbtActivityLog[]   @relation("MemberTbtActivityLog")
@@ -3004,6 +3005,21 @@ model EbookProgress {
   @@unique([memberId, bookId])
   @@index([memberId, updatedAt(sort: Desc)])
   @@map("ebook_progress")
+}
+
+// Per-member reading streak tracker. One row per member, incremented
+// on any /api/ebooks/progress submission. Streak counts consecutive
+// calendar days with at least one progress update; skipping a day
+// resets to 1. Longest streak preserves the historical high.
+model EbookReadingStreak {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId       String    @unique @map("member_id") @db.Uuid
+  currentStreak  Int       @default(0) @map("current_streak")
+  longestStreak  Int       @default(0) @map("longest_streak")
+  lastReadAt     DateTime? @map("last_read_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member         Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  @@map("ebook_reading_streaks")
 }
 
 // Member-submitted ratings/reviews on ebooks. One row per (member, book);

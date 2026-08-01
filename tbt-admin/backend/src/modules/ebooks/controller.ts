@@ -642,6 +642,54 @@ export async function listBookmarksHandler(req: FastifyRequest, reply: FastifyRe
   return ok(reply, rows);
 }
 
+// Streak accounting: today (UTC) = increment when yesterday was the
+// last read day, no-op when today was, reset to 1 otherwise. UTC to
+// avoid TZ drift when the same member reads across timezones.
+function utcDayStart(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+async function bumpReadingStreak(prisma: any, memberId: string): Promise<void> {
+  const now = new Date();
+  const existing = await prisma.ebookReadingStreak.findUnique({
+    where: { memberId },
+    select: { currentStreak: true, longestStreak: true, lastReadAt: true },
+  });
+
+  const todayStart = utcDayStart(now);
+  const lastStart = existing?.lastReadAt
+    ? utcDayStart(new Date(existing.lastReadAt))
+    : null;
+
+  let nextCurrent: number;
+  if (lastStart === null) {
+    nextCurrent = 1;
+  } else if (lastStart === todayStart) {
+    // Already counted today — nothing to change beyond bumping lastReadAt.
+    nextCurrent = existing!.currentStreak;
+  } else if (todayStart - lastStart === 86_400_000) {
+    nextCurrent = existing!.currentStreak + 1;
+  } else {
+    nextCurrent = 1;
+  }
+  const nextLongest = Math.max(existing?.longestStreak ?? 0, nextCurrent);
+
+  await prisma.ebookReadingStreak.upsert({
+    where: { memberId },
+    create: {
+      memberId,
+      currentStreak: nextCurrent,
+      longestStreak: nextLongest,
+      lastReadAt: now,
+    },
+    update: {
+      currentStreak: nextCurrent,
+      longestStreak: nextLongest,
+      lastReadAt: now,
+    },
+  });
+}
+
 export async function submitProgressHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = progressSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
@@ -672,6 +720,13 @@ export async function submitProgressHandler(req: FastifyRequest, reply: FastifyR
       completed: completed ?? (pct >= 100),
     },
   });
+
+  // Fire-and-forget: streak update shouldn't block the progress
+  // response, and a failure here shouldn't lose the reader's progress.
+  bumpReadingStreak(req.server.prisma, req.memberId!).catch((err) => {
+    req.log.warn({ err }, 'ebook: reading-streak update failed');
+  });
+
   return ok(reply, upserted);
 }
 
@@ -681,6 +736,33 @@ export async function getProgressHandler(req: FastifyRequest, reply: FastifyRepl
     where: { memberId_bookId: { memberId: req.memberId!, bookId } },
   });
   return ok(reply, row);
+}
+
+// Current + longest streak for the caller. Returns zeros when the
+// member has never submitted a progress row.
+export async function getReadingStreakHandler(req: FastifyRequest, reply: FastifyReply) {
+  const row = await req.server.prisma.ebookReadingStreak.findUnique({
+    where: { memberId: req.memberId! },
+    select: { currentStreak: true, longestStreak: true, lastReadAt: true },
+  });
+
+  // If the last read wasn't today or yesterday, the current streak is
+  // effectively broken until the next progress hit. Surface that
+  // truth so a UI badge doesn't lie ("5-day streak" when it's really
+  // dead).
+  if (!row) {
+    return ok(reply, { currentStreak: 0, longestStreak: 0, lastReadAt: null });
+  }
+  const todayStart = utcDayStart(new Date());
+  const lastStart = row.lastReadAt ? utcDayStart(new Date(row.lastReadAt)) : null;
+  const stillAlive =
+    lastStart !== null &&
+    (todayStart - lastStart === 0 || todayStart - lastStart === 86_400_000);
+  return ok(reply, {
+    currentStreak: stillAlive ? row.currentStreak : 0,
+    longestStreak: row.longestStreak,
+    lastReadAt: row.lastReadAt,
+  });
 }
 
 export async function continueReadingHandler(req: FastifyRequest, reply: FastifyReply) {

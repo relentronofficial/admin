@@ -88,6 +88,9 @@ class _EbookReaderScreenState extends ConsumerState<EbookReaderScreen> {
             totalPages: _totalPages,
             completed: _totalPages > 0 && _currentPage >= _totalPages - 1,
           );
+      // Backend bumps the reading streak on every progress write; refresh
+      // the provider so the ebooks-screen badge reflects the new count.
+      ref.invalidate(ebookReadingStreakProvider);
     } catch (_) {
       // Best-effort — a lost tick just delays the resume by 3 s.
     }

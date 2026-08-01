@@ -34,6 +34,7 @@ class EbooksScreen extends ConsumerWidget {
                 fontSize: 18,
                 fontWeight: FontWeight.w700)),
         actions: [
+          const _ReadingStreakBadge(),
           IconButton(
             tooltip: 'Bookmarks',
             icon: Icon(Icons.bookmark_border, color: tokens.textPrimary),
@@ -48,6 +49,7 @@ class EbooksScreen extends ConsumerWidget {
           ref.invalidate(ebookLibraryProvider);
           ref.invalidate(ebookBannersProvider);
           ref.invalidate(continueReadingProvider);
+          ref.invalidate(ebookReadingStreakProvider);
         },
         child: ListView(
           padding: const EdgeInsets.only(bottom: 100),
@@ -57,6 +59,56 @@ class EbooksScreen extends ConsumerWidget {
             _FeaturedGrid(),
             _CategoryChipsRow(),
             _LibraryGrid(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Reading streak badge (AppBar action) ─────────────────────────
+
+class _ReadingStreakBadge extends ConsumerWidget {
+  const _ReadingStreakBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final streak =
+        ref.watch(ebookReadingStreakProvider).valueOrNull?.currentStreak ?? 0;
+    // Zero-streak members shouldn't get a "0d" badge — hide it until
+    // they read something. Once the first progress event fires the
+    // provider will invalidate and the badge lights up.
+    if (streak <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF5E3A).withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: const Color(0xFFFF5E3A).withValues(alpha: 0.4),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.local_fire_department_rounded,
+              size: 14,
+              color: Color(0xFFFF5E3A),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '${streak}d',
+              style: TextStyle(
+                color: tokens.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
       ),
