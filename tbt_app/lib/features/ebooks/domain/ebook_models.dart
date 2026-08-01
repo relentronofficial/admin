@@ -117,6 +117,8 @@ class Ebook {
     this.averageRating = 0,
     this.reviewCount = 0,
     this.myReview,
+    this.pinnedAt,
+    this.pinnedUntil,
   });
 
   final String id;
@@ -154,6 +156,17 @@ class Ebook {
   /// by the detail endpoint so the star widget can pre-fill.
   final EbookReviewSummary? myReview;
 
+  /// Admin pin timestamp. When non-null the book sorts before others.
+  /// The backend already nulls this out when `pinnedUntil` is past,
+  /// so a truthy value here is always a live pin.
+  final DateTime? pinnedAt;
+
+  /// Optional pin expiry. Only informational on the client — the
+  /// backend does the mask-when-past.
+  final DateTime? pinnedUntil;
+
+  bool get isPinned => pinnedAt != null;
+
   factory Ebook.fromJson(Map<String, dynamic> j) => Ebook(
         id: j['id'] as String,
         title: j['title'] as String,
@@ -183,6 +196,12 @@ class Ebook {
         reviewCount: (j['reviewCount'] as int?) ?? 0,
         myReview: j['myReview'] != null
             ? EbookReviewSummary.fromJson(j['myReview'] as Map<String, dynamic>)
+            : null,
+        pinnedAt: j['pinnedAt'] != null
+            ? DateTime.tryParse(j['pinnedAt'] as String)
+            : null,
+        pinnedUntil: j['pinnedUntil'] != null
+            ? DateTime.tryParse(j['pinnedUntil'] as String)
             : null,
       );
 }

@@ -116,7 +116,7 @@ export async function adminListBooksHandler(req: FastifyRequest, reply: FastifyR
 export async function adminCreateBookHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = createBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, ...rest } = parsed.data;
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, ...rest } = parsed.data;
   try {
     const created = await req.server.prisma.ebook.create({
       data: {
@@ -125,6 +125,8 @@ export async function adminCreateBookHandler(req: FastifyRequest, reply: Fastify
         // Empty array is treated as "no restriction" — persist as null
         // so downstream comparisons stay simple (matches workshop pattern).
         batchIds: batchIds && batchIds.length > 0 ? (batchIds as any) : null,
+        pinnedAt: pinnedAt ? new Date(pinnedAt) : null,
+        pinnedUntil: pinnedUntil ? new Date(pinnedUntil) : null,
       },
       include: bookInclude,
     });
@@ -139,7 +141,7 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
   const { id } = req.params as { id: string };
   const parsed = updateBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, ...rest } = parsed.data;
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, ...rest } = parsed.data;
   try {
     const updated = await req.server.prisma.ebook.update({
       where: { id },
@@ -150,6 +152,14 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
         // so a partial PATCH that omits batchIds doesn't clobber it.
         ...(batchIds !== undefined
           ? { batchIds: batchIds && batchIds.length > 0 ? (batchIds as any) : null }
+          : {}),
+        // Same partial-PATCH treatment for pins — undefined means
+        // "don't touch". Explicit null clears the pin.
+        ...(pinnedAt !== undefined
+          ? { pinnedAt: pinnedAt ? new Date(pinnedAt) : null }
+          : {}),
+        ...(pinnedUntil !== undefined
+          ? { pinnedUntil: pinnedUntil ? new Date(pinnedUntil) : null }
           : {}),
       },
       include: bookInclude,
@@ -526,6 +536,22 @@ function isBookLocked(bookBatchIds: unknown, memberBatchId: string | null): bool
   return !list.includes(memberBatchId);
 }
 
+// Pin decoration for member-facing responses. Prisma orders rows by
+// pinnedAt DESC nulls-last; here we mask the badge (set pinnedAt=null
+// on the returned JSON) when pinnedUntil is in the past so the client
+// doesn't render "PINNED" on expired pins. The row keeps its
+// DB-ordered position for the current page — admin can clear the
+// stale pin manually.
+function maskExpiredPin<T extends { pinnedAt?: Date | null; pinnedUntil?: Date | null }>(
+  row: T,
+): T {
+  if (!row.pinnedAt) return row;
+  if (row.pinnedUntil && new Date(row.pinnedUntil).getTime() <= Date.now()) {
+    return { ...row, pinnedAt: null };
+  }
+  return row;
+}
+
 async function getMemberBatchId(req: FastifyRequest): Promise<string | null> {
   if (!req.memberId) return null;
   const m = await req.server.prisma.member.findUnique({
@@ -540,11 +566,15 @@ export async function listFeaturedBooksHandler(req: FastifyRequest, reply: Fasti
   const rows = await req.server.prisma.ebook.findMany({
     where: { status: 'active', isFeatured: true, AND: [publishedFilter()] },
     include: bookInclude,
-    orderBy: [{ sortOrder: 'asc' }, { publishDate: 'desc' }],
+    orderBy: [
+      { pinnedAt: { sort: 'desc', nulls: 'last' } },
+      { sortOrder: 'asc' },
+      { publishDate: 'desc' },
+    ],
     take: 12,
   });
   const decorated = rows.map((r) => ({
-    ...r,
+    ...maskExpiredPin(r as any),
     locked: isBookLocked((r as any).batchIds, memberBatchId),
   }));
   return ok(reply, decorated);
@@ -595,14 +625,18 @@ export async function listLibraryHandler(req: FastifyRequest, reply: FastifyRepl
     req.server.prisma.ebook.findMany({
       where,
       include: bookInclude,
-      orderBy: [{ sortOrder: 'asc' }, { publishDate: 'desc' }],
+      orderBy: [
+        { pinnedAt: { sort: 'desc', nulls: 'last' } },
+        { sortOrder: 'asc' },
+        { publishDate: 'desc' },
+      ],
       skip: (p - 1) * l,
       take: l,
     }),
     req.server.prisma.ebook.count({ where }),
   ]);
   const decorated = rows.map((r) => ({
-    ...r,
+    ...maskExpiredPin(r as any),
     locked: isBookLocked((r as any).batchIds, memberBatchId),
   }));
   return reply.send({
@@ -659,7 +693,7 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
     : 0;
   const reviewCount = ratingAgg._count.rating;
   return ok(reply, {
-    ...book,
+    ...maskExpiredPin(book as any),
     progress: progress ?? null,
     bookmark: bookmark ?? null,
     averageRating,

@@ -39,6 +39,11 @@ export interface Ebook {
   // Per-batch access. null / omitted → all members; [id, ...] →
   // restrict to those batches only.
   batchIds?: string[] | null;
+  // Admin pin. pinnedAt drives the sort order (nulls last, newest
+  // first). pinnedUntil auto-hides the visual PINNED badge once past;
+  // the row keeps its DB-ordered position until admin clears the pin.
+  pinnedAt?: string | null;
+  pinnedUntil?: string | null;
   category?: { id: string; name: string; slug: string } | null;
 }
 export interface EbookDashboard {

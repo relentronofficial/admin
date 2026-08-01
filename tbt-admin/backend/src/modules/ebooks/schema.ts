@@ -34,6 +34,11 @@ export const createBookSchema = z.object({
   // Per-batch access control — omit / send null = available to all;
   // send [uuid, ...] = restrict to those batches only.
   batchIds: z.array(z.string().uuid()).optional().nullable(),
+  // Pin the book to the top of the library. Send null / omit to
+  // unpin. pinnedUntil auto-expires the pin visually on the client
+  // (row keeps its DB position; only the badge hides).
+  pinnedAt: z.string().datetime().optional().nullable(),
+  pinnedUntil: z.string().datetime().optional().nullable(),
 });
 export const updateBookSchema = createBookSchema.partial();
 

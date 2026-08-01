@@ -727,6 +727,14 @@ function BookForm({
   const [status, setStatus] = useState(initial?.status ?? "active");
   const [sortOrder, setSortOrder] = useState(initial?.sortOrder ?? 0);
   const [batchIds, setBatchIds] = useState<string[]>(initial?.batchIds ?? []);
+  // datetime-local inputs want "YYYY-MM-DDTHH:mm" (no seconds, no TZ).
+  // Truncate the ISO string coming back from the API.
+  const [pinnedAt, setPinnedAt] = useState<string>(
+    initial?.pinnedAt ? initial.pinnedAt.slice(0, 16) : "",
+  );
+  const [pinnedUntil, setPinnedUntil] = useState<string>(
+    initial?.pinnedUntil ? initial.pinnedUntil.slice(0, 16) : "",
+  );
   const [tab, setTab] = useState<"edit" | "analytics" | "bookmarks">("edit");
   const slugTouchedRef = useRef(isEdit);
 
@@ -762,6 +770,10 @@ function BookForm({
       sortOrder,
       // null = available to all members, [id, ...] = restricted.
       batchIds: batchIds.length > 0 ? batchIds : null,
+      // Convert the datetime-local values back to ISO for Zod's
+      // .datetime() validation. Empty string means "no pin".
+      pinnedAt: pinnedAt ? new Date(pinnedAt).toISOString() : null,
+      pinnedUntil: pinnedUntil ? new Date(pinnedUntil).toISOString() : null,
     };
     try {
       if (isEdit) {
@@ -923,6 +935,37 @@ function BookForm({
             className={inputCls}
             value={sortOrder}
             onChange={(e) => setSortOrder(Number(e.target.value) || 0)}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mt-3">
+        <div>
+          <label className={labelCls}>
+            Pin from{" "}
+            <span className="text-[#666] normal-case font-normal">
+              (empty = not pinned)
+            </span>
+          </label>
+          <input
+            type="datetime-local"
+            className={inputCls}
+            value={pinnedAt}
+            onChange={(e) => setPinnedAt(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>
+            Pin until{" "}
+            <span className="text-[#666] normal-case font-normal">
+              (empty = forever)
+            </span>
+          </label>
+          <input
+            type="datetime-local"
+            className={inputCls}
+            value={pinnedUntil}
+            onChange={(e) => setPinnedUntil(e.target.value)}
+            disabled={!pinnedAt}
           />
         </div>
       </div>

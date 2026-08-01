@@ -2948,6 +2948,13 @@ model Ebook {
   // null → available to all members; [] → hidden from everyone;
   // [batchId, …] → only members whose batchId is in the array.
   batchIds     Json?    @map("batch_ids")
+  // Admin can pin a book to the top of the library. When pinnedAt is
+  // non-null the book sorts before all others (most-recently-pinned
+  // first). Optional pinnedUntil auto-expires the visual "PINNED"
+  // badge — after that timestamp the row keeps its position on the
+  // current page but no longer renders as pinned on the client.
+  pinnedAt     DateTime? @map("pinned_at")   @db.Timestamptz(6)
+  pinnedUntil  DateTime? @map("pinned_until") @db.Timestamptz(6)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
