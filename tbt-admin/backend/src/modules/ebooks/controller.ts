@@ -20,6 +20,8 @@ import {
   bulkImportBooksSchema,
   createSeriesSchema,
   updateSeriesSchema,
+  createAuthorSchema,
+  updateAuthorSchema,
 } from './schema.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
@@ -32,6 +34,7 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
 const bookInclude = {
   category: { select: { id: true, name: true, slug: true } },
   series: { select: { id: true, title: true, slug: true, coverUrl: true } },
+  authorRef: { select: { id: true, name: true, slug: true, photoUrl: true } },
 };
 
 // ────────────────────────────────────────────────────────────────
@@ -119,7 +122,7 @@ export async function adminListBooksHandler(req: FastifyRequest, reply: FastifyR
 export async function adminCreateBookHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = createBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, ...rest } =
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, authorId, ...rest } =
     parsed.data;
   try {
     const created = await req.server.prisma.ebook.create({
@@ -133,6 +136,7 @@ export async function adminCreateBookHandler(req: FastifyRequest, reply: Fastify
         pinnedUntil: pinnedUntil ? new Date(pinnedUntil) : null,
         seriesId: seriesId ?? null,
         seriesNumber: seriesNumber ?? null,
+        authorId: authorId ?? null,
       },
       include: bookInclude,
     });
@@ -147,7 +151,7 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
   const { id } = req.params as { id: string };
   const parsed = updateBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, ...rest } =
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, authorId, ...rest } =
     parsed.data;
   try {
     const updated = await req.server.prisma.ebook.update({
@@ -172,6 +176,7 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
         ...(seriesNumber !== undefined
           ? { seriesNumber: seriesNumber ?? null }
           : {}),
+        ...(authorId !== undefined ? { authorId: authorId ?? null } : {}),
       },
       include: bookInclude,
     });
@@ -260,6 +265,92 @@ export async function adminDeleteSeriesHandler(req: FastifyRequest, reply: Fasti
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Series not found.');
     throw err;
   }
+}
+
+// ────────────────────────────────────────────────────────────────
+// AUTHORS — admin
+// ────────────────────────────────────────────────────────────────
+export async function adminListAuthorsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.ebookAuthor.findMany({
+    orderBy: { name: 'asc' },
+    include: { _count: { select: { books: true } } },
+  });
+  return ok(reply, rows);
+}
+
+export async function adminCreateAuthorHandler(req: FastifyRequest, reply: FastifyReply) {
+  const parsed = createAuthorSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const created = await req.server.prisma.ebookAuthor.create({ data: parsed.data });
+    return reply.status(201).send({ success: true, data: created, error: null });
+  } catch (err: any) {
+    if (err?.code === 'P2002')
+      return fail(reply, 409, 'duplicate_slug', 'Author slug already in use.');
+    throw err;
+  }
+}
+
+export async function adminUpdateAuthorHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = updateAuthorSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const updated = await req.server.prisma.ebookAuthor.update({
+      where: { id },
+      data: parsed.data,
+    });
+    return ok(reply, updated);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Author not found.');
+    if (err?.code === 'P2002')
+      return fail(reply, 409, 'duplicate_slug', 'Author slug already in use.');
+    throw err;
+  }
+}
+
+export async function adminDeleteAuthorHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  try {
+    // Set-null cascade clears authorId on child books; the legacy
+    // `author` string on those books is untouched.
+    await req.server.prisma.ebookAuthor.delete({ where: { id } });
+    return ok(reply, null);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Author not found.');
+    throw err;
+  }
+}
+
+// Public author profile — returns the author metadata plus every
+// active, published book they've written. Respects publishFilter and
+// per-batch access via `locked` decoration, same as the library list.
+export async function memberGetAuthorHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { slug } = req.params as { slug: string };
+  const author = await req.server.prisma.ebookAuthor.findUnique({
+    where: { slug },
+  });
+  if (!author) return fail(reply, 404, 'not_found', 'Author not found.');
+
+  const memberBatchId = await getMemberBatchId(req);
+  const books = await req.server.prisma.ebook.findMany({
+    where: {
+      authorId: author.id,
+      status: 'active',
+      AND: [publishedFilter()],
+    },
+    include: bookInclude,
+    orderBy: [
+      { pinnedAt: { sort: 'desc', nulls: 'last' } },
+      { sortOrder: 'asc' },
+      { publishDate: 'desc' },
+    ],
+  });
+  const decorated = books.map((r) => ({
+    ...maskExpiredPin(r as any),
+    locked: isBookLocked((r as any).batchIds, memberBatchId),
+  }));
+  return ok(reply, { author, books: decorated });
 }
 
 // Mirrors the client-side toSlug pattern used by the manual create form

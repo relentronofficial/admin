@@ -122,6 +122,7 @@ class Ebook {
     this.series,
     this.seriesNumber,
     this.seriesSiblings = const [],
+    this.authorRef,
   });
 
   final String id;
@@ -181,6 +182,10 @@ class Ebook {
   /// populated by the detail endpoint (list endpoints return empty).
   final List<EbookSeriesSibling> seriesSiblings;
 
+  /// Optional managed author profile. Legacy `author` string above
+  /// still carries the plain-text credit for un-linked rows.
+  final EbookAuthorRef? authorRef;
+
   factory Ebook.fromJson(Map<String, dynamic> j) => Ebook(
         id: j['id'] as String,
         title: j['title'] as String,
@@ -225,6 +230,74 @@ class Ebook {
             .cast<Map<String, dynamic>>()
             .map(EbookSeriesSibling.fromJson)
             .toList(),
+        authorRef: j['authorRef'] != null
+            ? EbookAuthorRef.fromJson(j['authorRef'] as Map<String, dynamic>)
+            : null,
+      );
+}
+
+/// Compact author reference on the book detail endpoint. Full profile
+/// (with bio + book list) comes from `GET /api/ebooks/authors/:slug`.
+class EbookAuthorRef {
+  const EbookAuthorRef({
+    required this.id,
+    required this.name,
+    required this.slug,
+    this.photoUrl,
+  });
+  final String id;
+  final String name;
+  final String slug;
+  final String? photoUrl;
+
+  factory EbookAuthorRef.fromJson(Map<String, dynamic> j) => EbookAuthorRef(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        slug: j['slug'] as String,
+        photoUrl: j['photoUrl'] as String?,
+      );
+}
+
+/// Full author profile — `GET /api/ebooks/authors/:slug`. Includes
+/// the author metadata plus every book they've written.
+class EbookAuthorProfile {
+  const EbookAuthorProfile({required this.author, required this.books});
+  final EbookAuthorDetails author;
+  final List<Ebook> books;
+
+  factory EbookAuthorProfile.fromJson(Map<String, dynamic> j) =>
+      EbookAuthorProfile(
+        author: EbookAuthorDetails.fromJson(
+          (j['author'] as Map<String, dynamic>?) ?? const {},
+        ),
+        books: ((j['books'] as List<dynamic>?) ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(Ebook.fromJson)
+            .toList(),
+      );
+}
+
+class EbookAuthorDetails {
+  const EbookAuthorDetails({
+    required this.id,
+    required this.name,
+    required this.slug,
+    this.bio,
+    this.photoUrl,
+  });
+  final String id;
+  final String name;
+  final String slug;
+  final String? bio;
+  final String? photoUrl;
+
+  factory EbookAuthorDetails.fromJson(Map<String, dynamic> j) =>
+      EbookAuthorDetails(
+        id: (j['id'] as String?) ?? '',
+        name: (j['name'] as String?) ?? '',
+        slug: (j['slug'] as String?) ?? '',
+        bio: j['bio'] as String?,
+        photoUrl: j['photoUrl'] as String?,
       );
 }
 

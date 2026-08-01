@@ -43,6 +43,9 @@ export const createBookSchema = z.object({
   // seriesNumber is 1-indexed and drives sibling ordering.
   seriesId: z.string().uuid().optional().nullable(),
   seriesNumber: z.number().int().min(1).optional().nullable(),
+  // Optional managed-author FK. Legacy `author` string still works
+  // for un-linked rows.
+  authorId: z.string().uuid().optional().nullable(),
 });
 export const updateBookSchema = createBookSchema.partial();
 
@@ -54,6 +57,15 @@ export const createSeriesSchema = z.object({
   coverUrl: z.string().url().optional().nullable(),
 });
 export const updateSeriesSchema = createSeriesSchema.partial();
+
+// Author CRUD.
+export const createAuthorSchema = z.object({
+  name: z.string().min(1).max(255),
+  slug: slugSchema,
+  bio: z.string().optional().nullable(),
+  photoUrl: z.string().url().optional().nullable(),
+});
+export const updateAuthorSchema = createAuthorSchema.partial();
 
 export const createBannerSchema = z.object({
   title: z.string().min(1).max(255),

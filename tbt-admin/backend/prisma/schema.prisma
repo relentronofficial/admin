@@ -2960,10 +2960,14 @@ model Ebook {
   // in-series ordering.
   seriesId     String?   @map("series_id")   @db.Uuid
   seriesNumber Int?      @map("series_number")
+  // Optional FK to a managed author record. The legacy `author` string
+  // stays for uncategorised rows so mass linking can happen lazily.
+  authorId     String?   @map("author_id")   @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   series       EbookSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  authorRef    EbookAuthor?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
   bookmarks    EbookBookmark[]
   progress     EbookProgress[]
   reviews      EbookReview[]
@@ -2971,7 +2975,23 @@ model Ebook {
   @@index([categoryId])
   @@index([status])
   @@index([seriesId, seriesNumber])
+  @@index([authorId])
   @@map("ebooks")
+}
+
+// Managed author profile. Books can link via Ebook.authorId; the
+// legacy `Ebook.author` string field stays for uncategorised rows so
+// admins can migrate to structured authors lazily.
+model EbookAuthor {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.VarChar(255)
+  slug      String   @unique @db.VarChar(255)
+  bio       String?
+  photoUrl  String?  @map("photo_url")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  books     Ebook[]
+  @@map("ebook_authors")
 }
 
 // Multi-part book series. Each book optionally references one series

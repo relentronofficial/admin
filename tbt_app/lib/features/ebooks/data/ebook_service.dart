@@ -202,6 +202,20 @@ class EbookService {
       throw mapDioError(e);
     }
   }
+
+  /// Fetches an author's public profile plus every active book they've
+  /// written. Powers the mobile `/ebook-author/:slug` route.
+  Future<EbookAuthorProfile> getAuthor(String slug) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/ebooks/authors/$slug',
+      );
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
+      return EbookAuthorProfile.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 }
 
 final ebookServiceProvider = Provider<EbookService>(

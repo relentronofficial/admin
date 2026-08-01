@@ -34,6 +34,10 @@ import {
   useCreateEbookSeries,
   useUpdateEbookSeries,
   useDeleteEbookSeries,
+  useListEbookAuthors,
+  useCreateEbookAuthor,
+  useUpdateEbookAuthor,
+  useDeleteEbookAuthor,
   type EbookCategory,
   type Ebook,
   type EbookBanner,
@@ -42,6 +46,7 @@ import {
   type BulkImportRow,
   type BulkImportDryRunResult,
   type EbookSeries,
+  type EbookAuthor,
 } from "@/lib/hooks/useEbooks";
 import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListBatches } from "@/lib/hooks/useTbt";
@@ -87,7 +92,7 @@ function StatChip({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-type Tab = "books" | "banners" | "categories" | "series" | "reviews";
+type Tab = "books" | "banners" | "categories" | "series" | "authors" | "reviews";
 
 export default function EbooksPage() {
   const [tab, setTab] = useState<Tab>("books");
@@ -123,6 +128,7 @@ export default function EbooksPage() {
               { id: "banners", label: "Banners", icon: ImageIcon },
               { id: "categories", label: "Categories", icon: Layers },
               { id: "series", label: "Series", icon: FileText },
+              { id: "authors", label: "Authors", icon: Edit2 },
               { id: "reviews", label: "Reviews", icon: Star },
             ] as { id: Tab; label: string; icon: any }[]
           ).map((t) => {
@@ -149,6 +155,7 @@ export default function EbooksPage() {
         {tab === "banners" && <BannersTab />}
         {tab === "categories" && <CategoriesTab />}
         {tab === "series" && <SeriesTab />}
+        {tab === "authors" && <AuthorsTab />}
         {tab === "reviews" && <ReviewsTab />}
       </div>
     </DashboardLayout>
@@ -746,11 +753,13 @@ function BookForm({
   const [seriesNumber, setSeriesNumber] = useState<string>(
     initial?.seriesNumber != null ? String(initial.seriesNumber) : "",
   );
+  const [authorId, setAuthorId] = useState<string>(initial?.authorId ?? "");
   const [tab, setTab] = useState<"edit" | "analytics" | "bookmarks">("edit");
   const slugTouchedRef = useRef(isEdit);
 
-  // Series picker source (small list, cached).
+  // Series + author picker sources (small lists, cached).
   const { data: seriesList } = useListEbookSeries();
+  const { data: authorList } = useListEbookAuthors();
 
   const coverUpload = useCoverUploader((url) => setCoverImage(url), "ebooks/covers");
   const pdfUpload = usePdfUploader((url) => setPdfUrl(url));
@@ -791,6 +800,7 @@ function BookForm({
       seriesId: seriesId || null,
       seriesNumber:
         seriesId && seriesNumber ? Number(seriesNumber) : null,
+      authorId: authorId || null,
     };
     try {
       if (isEdit) {
@@ -880,6 +890,26 @@ function BookForm({
             ))}
           </select>
         </div>
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>
+          Linked author profile{" "}
+          <span className="text-[#666] normal-case font-normal">
+            (optional — enables the author page)
+          </span>
+        </label>
+        <select
+          className={inputCls}
+          value={authorId}
+          onChange={(e) => setAuthorId(e.target.value)}
+        >
+          <option value="">— none —</option>
+          {(authorList ?? []).map((a: EbookAuthor) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="mt-3">
         <label className={labelCls}>Description</label>
@@ -1496,6 +1526,220 @@ function parseCsvToRows(text: string): BulkImportRow[] {
     });
   }
   return out;
+}
+
+// ── Authors tab ───────────────────────────────────────────────────
+
+function AuthorsTab() {
+  const { data: rows, isLoading } = useListEbookAuthors();
+  const [editing, setEditing] = useState<EbookAuthor | null>(null);
+  const [creating, setCreating] = useState(false);
+  const del = useDeleteEbookAuthor();
+
+  const onDelete = async (id: string, bookCount: number) => {
+    const msg =
+      bookCount > 0
+        ? `Delete this author? ${bookCount} book${bookCount === 1 ? "" : "s"} will keep working but lose the author profile link (the plain-text author field stays).`
+        : "Delete this author?";
+    if (!confirm(msg)) return;
+    try {
+      await del.mutateAsync(id);
+      toast.success("Author deleted");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Delete failed");
+    }
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] text-[#888]">
+          {rows?.length ?? 0} author{(rows?.length ?? 0) === 1 ? "" : "s"}
+        </span>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani px-3 py-2 rounded-lg"
+        >
+          <Plus size={12} /> New Author
+        </button>
+      </div>
+
+      <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[60px_1fr_1fr_100px_120px] px-4 py-3 border-b border-[#2a2a2a] text-[10px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">
+          <span></span>
+          <span>Name</span>
+          <span>Slug</span>
+          <span>Books</span>
+          <span className="text-right">Actions</span>
+        </div>
+        {isLoading && (
+          <div className="p-8 text-center text-[#666]">
+            <Loader2 className="inline animate-spin" size={16} />
+          </div>
+        )}
+        {!isLoading && (rows?.length ?? 0) === 0 && (
+          <div className="p-8 text-center text-[#666] text-[12px]">
+            No authors yet.
+          </div>
+        )}
+        {rows?.map((a) => (
+          <div
+            key={a.id}
+            className="grid grid-cols-[60px_1fr_1fr_100px_120px] px-4 py-3 border-b border-[#2a2a2a]/50 last:border-b-0 items-center hover:bg-white/[0.02]"
+          >
+            {a.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={a.photoUrl}
+                alt=""
+                className="w-9 h-9 rounded-full object-cover border border-[#2a2a2a]"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-[#2a2a2a] flex items-center justify-center text-[#a0a0a0] text-[11px] font-bold">
+                {a.name[0]?.toUpperCase() ?? "?"}
+              </div>
+            )}
+            <span className="text-[13px] text-white font-medium">
+              {a.name}
+            </span>
+            <span className="text-[12px] text-[#888] font-mono truncate">
+              {a.slug}
+            </span>
+            <span className="text-[12px] text-[#888]">
+              {a._count?.books ?? 0}
+            </span>
+            <div className="flex items-center gap-1 justify-end">
+              <button
+                onClick={() => setEditing(a)}
+                className="p-1.5 rounded hover:bg-white/5 text-[#a0a0a0]"
+                title="Edit"
+              >
+                <Edit2 size={13} />
+              </button>
+              <button
+                onClick={() => onDelete(a.id, a._count?.books ?? 0)}
+                className="p-1.5 rounded hover:bg-red-500/10 text-red-400"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {(creating || editing) && (
+        <AuthorForm
+          initial={editing ?? undefined}
+          onClose={() => {
+            setEditing(null);
+            setCreating(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function AuthorForm({
+  initial,
+  onClose,
+}: {
+  initial?: EbookAuthor;
+  onClose: () => void;
+}) {
+  const create = useCreateEbookAuthor();
+  const update = useUpdateEbookAuthor();
+  const isEdit = !!initial;
+  const [name, setName] = useState(initial?.name ?? "");
+  const [slug, setSlug] = useState(initial?.slug ?? "");
+  const [bio, setBio] = useState(initial?.bio ?? "");
+  const [photoUrl, setPhotoUrl] = useState(initial?.photoUrl ?? "");
+  const slugTouchedRef = useRef(isEdit);
+  const photoUpload = useCoverUploader(
+    (url) => setPhotoUrl(url),
+    "ebooks/authors",
+  );
+
+  const submit = async () => {
+    if (!name.trim() || !slug.trim()) {
+      toast.error("Name and slug are required.");
+      return;
+    }
+    const data = {
+      name,
+      slug,
+      bio: bio || null,
+      photoUrl: photoUrl || null,
+    };
+    try {
+      if (isEdit) {
+        await update.mutateAsync({ id: initial!.id, data });
+        toast.success("Author updated");
+      } else {
+        await create.mutateAsync(data);
+        toast.success("Author created");
+      }
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Save failed");
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title={isEdit ? "Edit Author" : "New Author"}>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Name</label>
+          <input
+            className={inputCls}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!slugTouchedRef.current) setSlug(toSlug(e.target.value));
+            }}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Slug</label>
+          <input
+            className={inputCls}
+            value={slug}
+            onChange={(e) => {
+              slugTouchedRef.current = true;
+              setSlug(toSlug(e.target.value));
+            }}
+          />
+        </div>
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>Bio</label>
+        <textarea
+          className={textareaCls}
+          value={bio ?? ""}
+          onChange={(e) => setBio(e.target.value)}
+        />
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>Photo</label>
+        {photoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photoUrl}
+            alt=""
+            className="w-24 h-24 object-cover rounded-full mb-2"
+          />
+        )}
+        {photoUpload.render}
+      </div>
+      <ModalActions
+        onClose={onClose}
+        onSubmit={submit}
+        busy={create.isPending || update.isPending}
+        isEdit={isEdit}
+      />
+    </Modal>
+  );
 }
 
 // ── Series (multi-part books) tab ─────────────────────────────────

@@ -24,6 +24,10 @@ import {
   adminCreateSeriesHandler,
   adminUpdateSeriesHandler,
   adminDeleteSeriesHandler,
+  adminListAuthorsHandler,
+  adminCreateAuthorHandler,
+  adminUpdateAuthorHandler,
+  adminDeleteAuthorHandler,
   // member
   listActiveCategoriesHandler,
   listFeaturedBooksHandler,
@@ -39,6 +43,7 @@ import {
   memberSubmitReviewHandler,
   memberListReviewsHandler,
   getReadingStreakHandler,
+  memberGetAuthorHandler,
 } from './controller.js';
 
 /**
@@ -81,6 +86,11 @@ export async function ebookRoutes(fastify: FastifyInstance) {
       adminScope.post('/series', adminCreateSeriesHandler);
       adminScope.put('/series/:id', adminUpdateSeriesHandler);
       adminScope.delete('/series/:id', adminDeleteSeriesHandler);
+
+      adminScope.get('/authors', adminListAuthorsHandler);
+      adminScope.post('/authors', adminCreateAuthorHandler);
+      adminScope.put('/authors/:id', adminUpdateAuthorHandler);
+      adminScope.delete('/authors/:id', adminDeleteAuthorHandler);
     },
     { prefix: '/admin' },
   );
@@ -103,5 +113,6 @@ export async function ebookRoutes(fastify: FastifyInstance) {
     userScope.get('/books/:id/reviews', memberListReviewsHandler);
     userScope.post('/books/:id/reviews', memberSubmitReviewHandler);
     userScope.get('/streak', getReadingStreakHandler);
+    userScope.get('/authors/:slug', memberGetAuthorHandler);
   });
 }

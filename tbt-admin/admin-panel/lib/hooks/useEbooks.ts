@@ -31,6 +31,17 @@ export interface EbookSeries {
   _count?: { books: number };
 }
 
+export interface EbookAuthor {
+  id: string;
+  name: string;
+  slug: string;
+  bio: string | null;
+  photoUrl: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  _count?: { books: number };
+}
+
 export interface Ebook {
   id: string;
   title: string;
@@ -55,6 +66,15 @@ export interface Ebook {
     title: string;
     slug: string;
     coverUrl: string | null;
+  } | null;
+  // Optional managed-author link. Legacy `author` string stays for
+  // rows that aren't linked yet.
+  authorId?: string | null;
+  authorRef?: {
+    id: string;
+    name: string;
+    slug: string;
+    photoUrl: string | null;
   } | null;
   // Per-batch access. null / omitted → all members; [id, ...] →
   // restrict to those batches only.
@@ -362,6 +382,66 @@ export const useDeleteEbookSeries = () => {
       qc.invalidateQueries({ queryKey: ["ebooks", "series"] });
       // Deleted series set-null-cascades on child books; refresh so
       // the books tab reflects the cleared seriesId.
+      qc.invalidateQueries({ queryKey: ["ebooks", "books"] });
+    },
+  });
+};
+
+// ── Authors ───────────────────────────────────────────────────────
+export const useListEbookAuthors = () =>
+  useQuery({
+    queryKey: ["ebooks", "authors"],
+    queryFn: async (): Promise<EbookAuthor[]> => {
+      const res: any = await apiClient.get("/api/ebooks/admin/authors");
+      return res?.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+export const useCreateEbookAuthor = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<EbookAuthor>) => {
+      const res: any = await apiClient.post(
+        "/api/ebooks/admin/authors",
+        data,
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["ebooks", "authors"] }),
+  });
+};
+
+export const useUpdateEbookAuthor = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<EbookAuthor>;
+    }) => {
+      const res: any = await apiClient.put(
+        `/api/ebooks/admin/authors/${id}`,
+        data,
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["ebooks", "authors"] }),
+  });
+};
+
+export const useDeleteEbookAuthor = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/ebooks/admin/authors/${id}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ebooks", "authors"] });
       qc.invalidateQueries({ queryKey: ["ebooks", "books"] });
     },
   });
