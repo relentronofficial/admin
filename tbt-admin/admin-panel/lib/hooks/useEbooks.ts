@@ -154,6 +154,64 @@ export const useUpdateEbookReviewStatus = () => {
   });
 };
 
+// ── Bulk CSV import ───────────────────────────────────────────────
+
+export interface BulkImportRow {
+  title: string;
+  author?: string | null;
+  category?: string | null;      // matched vs. slug then name
+  totalPages?: number;
+  pdfUrl?: string | null;
+  coverUrl?: string | null;
+}
+
+export interface BulkImportDryRunResult {
+  dryRun: true;
+  willCreate: number;
+  errors: Array<{ row: number; title: string; message: string }>;
+  preview: Array<{
+    row: number;
+    title: string;
+    slug: string;
+    author: string | null;
+    categoryId: string | null;
+  }>;
+}
+
+export interface BulkImportCommitResult {
+  dryRun: false;
+  createdCount: number;
+  errorCount: number;
+  created: Array<{ id: string; title: string; slug: string }>;
+  errors: Array<{ row: number; title: string; message: string }>;
+}
+
+export const useBulkImportEbooks = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      rows,
+      dryRun,
+    }: {
+      rows: BulkImportRow[];
+      dryRun: boolean;
+    }): Promise<BulkImportDryRunResult | BulkImportCommitResult> => {
+      const res: any = await apiClient.post(
+        `/api/ebooks/admin/books/bulk-import`,
+        { rows, dryRun },
+      );
+      return res?.data;
+    },
+    onSuccess: (result, variables) => {
+      // Only refresh the list on a real commit (dryRun changes nothing).
+      if (!variables.dryRun) {
+        qc.invalidateQueries({ queryKey: ["ebooks", "books"] });
+        qc.invalidateQueries({ queryKey: ["ebooks", "dashboard"] });
+      }
+    },
+  });
+};
+
 // ── Categories ────────────────────────────────────────────────────
 export const useListEbookCategories = () =>
   useQuery({

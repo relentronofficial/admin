@@ -28,10 +28,13 @@ import {
   useEbookAnalytics,
   useListEbookReviews,
   useUpdateEbookReviewStatus,
+  useBulkImportEbooks,
   type EbookCategory,
   type Ebook,
   type EbookBanner,
   type EbookReview,
+  type BulkImportRow,
+  type BulkImportDryRunResult,
 } from "@/lib/hooks/useEbooks";
 import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListBatches } from "@/lib/hooks/useTbt";
@@ -530,6 +533,7 @@ function BooksTab() {
   const { data: categories } = useListEbookCategories();
   const [editing, setEditing] = useState<Ebook | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const toggleStatus = useToggleEbookStatus();
   const del = useDeleteEbook();
 
@@ -570,6 +574,12 @@ function BooksTab() {
             className={`${inputCls} pl-9`}
           />
         </div>
+        <button
+          onClick={() => setImporting(true)}
+          className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#444] text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani px-3 py-2 rounded-lg"
+        >
+          <Upload size={12} /> Import CSV
+        </button>
         <button
           onClick={() => setCreating(true)}
           className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani px-3 py-2 rounded-lg"
@@ -680,6 +690,10 @@ function BooksTab() {
             setCreating(false);
           }}
         />
+      )}
+
+      {importing && (
+        <BulkImportModal onClose={() => setImporting(false)} />
       )}
     </>
   );
@@ -1034,6 +1048,263 @@ function BookAnalyticsPanel({ bookId, onClose }: { bookId: string; onClose: () =
       </div>
     </>
   );
+}
+
+// ── Bulk CSV import modal ─────────────────────────────────────────
+
+function BulkImportModal({ onClose }: { onClose: () => void }) {
+  const bulk = useBulkImportEbooks();
+  const [rows, setRows] = useState<BulkImportRow[]>([]);
+  const [filename, setFilename] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<BulkImportDryRunResult | null>(null);
+
+  const handleFile = async (file: File) => {
+    setFilename(file.name);
+    setParseError(null);
+    setPreview(null);
+    setRows([]);
+    try {
+      const text = await file.text();
+      const parsed = parseCsvToRows(text);
+      if (parsed.length === 0) {
+        setParseError("No data rows found in the CSV.");
+        return;
+      }
+      setRows(parsed);
+    } catch (err: any) {
+      setParseError(err?.message ?? "Could not parse CSV.");
+    }
+  };
+
+  const runDryRun = async () => {
+    if (rows.length === 0) return;
+    try {
+      const result = (await bulk.mutateAsync({
+        rows,
+        dryRun: true,
+      })) as BulkImportDryRunResult;
+      setPreview(result);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Preview failed");
+    }
+  };
+
+  const commit = async () => {
+    if (rows.length === 0) return;
+    try {
+      const result = await bulk.mutateAsync({ rows, dryRun: false });
+      if ("createdCount" in result) {
+        toast.success(
+          `Imported ${result.createdCount} book${result.createdCount === 1 ? "" : "s"}` +
+            (result.errorCount > 0 ? ` · ${result.errorCount} skipped` : ""),
+        );
+        onClose();
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Import failed");
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title="Bulk import books from CSV" wide>
+      <p className="text-[12px] text-[#a0a0a0] mb-3 leading-relaxed">
+        Upload a <code className="text-[#dc2626]">.csv</code> with these
+        columns (case-insensitive):{" "}
+        <code className="text-white">title, author, category, totalPages, pdfUrl, coverUrl</code>.{" "}
+        The <b>title</b> column is required; everything else is optional.
+        Slugs are auto-generated from titles. Duplicates (existing or
+        within the CSV) are reported and skipped.
+      </p>
+
+      <div className="rounded-lg bg-[#1a1a1a] border border-dashed border-[#2a2a2a] p-6 text-center">
+        <input
+          id="bulk-csv-input"
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+        />
+        <label
+          htmlFor="bulk-csv-input"
+          className="inline-flex items-center gap-2 cursor-pointer bg-[#2a2a2a] hover:bg-[#333] text-white px-4 py-2 rounded-lg text-[12px] font-bold uppercase tracking-widest font-rajdhani"
+        >
+          <Upload size={14} /> Choose CSV
+        </label>
+        {filename && (
+          <div className="mt-3 text-[12px] text-[#a0a0a0]">
+            <FileText size={12} className="inline mr-1 -mt-0.5" />
+            {filename} · {rows.length} row{rows.length === 1 ? "" : "s"} parsed
+          </div>
+        )}
+        {parseError && (
+          <div className="mt-3 text-[12px] text-red-400">{parseError}</div>
+        )}
+      </div>
+
+      {rows.length > 0 && !preview && (
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            onClick={runDryRun}
+            disabled={bulk.isPending}
+            className="px-4 py-2 rounded-lg bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40"
+          >
+            {bulk.isPending ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" /> Checking…
+              </span>
+            ) : (
+              "Preview import"
+            )}
+          </button>
+        </div>
+      )}
+
+      {preview && (
+        <div className="mt-4">
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-green-400 font-rajdhani">
+                To create
+              </div>
+              <div className="text-2xl font-bold text-white mt-1">
+                {preview.willCreate}
+              </div>
+            </div>
+            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-red-400 font-rajdhani">
+                Skipped (errors)
+              </div>
+              <div className="text-2xl font-bold text-white mt-1">
+                {preview.errors.length}
+              </div>
+            </div>
+          </div>
+
+          {preview.errors.length > 0 && (
+            <div className="mb-3 max-h-40 overflow-y-auto rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] divide-y divide-[#2a2a2a]">
+              {preview.errors.map((e) => (
+                <div
+                  key={`${e.row}-${e.title}`}
+                  className="px-3 py-2 text-[12px] text-[#d0d0d0] flex items-start gap-2"
+                >
+                  <span className="text-[#606060] font-mono">
+                    #{e.row}
+                  </span>
+                  <span className="text-white flex-1 truncate">
+                    {e.title}
+                  </span>
+                  <span className="text-red-400 text-right">
+                    {e.message}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setPreview(null)}
+              className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani"
+            >
+              Back
+            </button>
+            <button
+              onClick={commit}
+              disabled={bulk.isPending || preview.willCreate === 0}
+              className="px-4 py-2 rounded-lg bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40"
+            >
+              {bulk.isPending ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Importing…
+                </span>
+              ) : (
+                `Create ${preview.willCreate} book${preview.willCreate === 1 ? "" : "s"}`
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Minimal CSV parser — handles the common cases (quoted fields with
+// commas/newlines, doubled-quote escapes, trimmed headers). Not a full
+// RFC 4180 implementation; good enough for the admin CSV shape. Rows
+// missing the `title` column are dropped.
+function parseCsvToRows(text: string): BulkImportRow[] {
+  const cells: string[][] = [];
+  let cur: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          quoted = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      quoted = true;
+    } else if (ch === ",") {
+      cur.push(field);
+      field = "";
+    } else if (ch === "\r") {
+      // ignore — handled by \n
+    } else if (ch === "\n") {
+      cur.push(field);
+      cells.push(cur);
+      cur = [];
+      field = "";
+    } else {
+      field += ch;
+    }
+  }
+  if (field.length > 0 || cur.length > 0) {
+    cur.push(field);
+    cells.push(cur);
+  }
+  if (cells.length === 0) return [];
+  const header = cells[0].map((h) => h.trim().toLowerCase());
+  const idxOf = (name: string) => header.indexOf(name);
+  const iTitle = idxOf("title");
+  const iAuthor = idxOf("author");
+  const iCategory = idxOf("category");
+  const iPages = idxOf("totalpages");
+  const iPdf = idxOf("pdfurl");
+  const iCover = idxOf("coverurl");
+  if (iTitle === -1) {
+    throw new Error("CSV must include a 'title' column.");
+  }
+  const out: BulkImportRow[] = [];
+  for (let r = 1; r < cells.length; r++) {
+    const row = cells[r];
+    if (row.length === 1 && row[0].trim() === "") continue;
+    const title = row[iTitle]?.trim();
+    if (!title) continue;
+    const pages = iPages !== -1 ? Number(row[iPages]?.trim() || 0) : 0;
+    out.push({
+      title,
+      author: iAuthor !== -1 ? row[iAuthor]?.trim() || null : null,
+      category: iCategory !== -1 ? row[iCategory]?.trim() || null : null,
+      totalPages: Number.isFinite(pages) ? pages : 0,
+      pdfUrl: iPdf !== -1 ? row[iPdf]?.trim() || null : null,
+      coverUrl: iCover !== -1 ? row[iCover]?.trim() || null : null,
+    });
+  }
+  return out;
 }
 
 // ── Reviews moderation tab ────────────────────────────────────────

@@ -17,6 +17,7 @@ import {
   progressSchema,
   submitReviewSchema,
   reviewStatusSchema,
+  bulkImportBooksSchema,
 } from './schema.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
@@ -183,6 +184,147 @@ export async function adminDeleteBookHandler(req: FastifyRequest, reply: Fastify
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Book not found.');
     throw err;
   }
+}
+
+// Mirrors the client-side toSlug pattern used by the manual create form
+// (admin-panel/app/ebooks/page.tsx) — lowercase, hyphenated, ASCII
+// alphanumeric only. Duplicates get suffixed with a numeric counter to
+// stay unique within the batch.
+function toBookSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'untitled';
+}
+
+export async function adminBulkImportBooksHandler(req: FastifyRequest, reply: FastifyReply) {
+  const parsed = bulkImportBooksSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  const { dryRun = false, rows } = parsed.data;
+
+  // Pre-load categories so we resolve slug/name → id in a single pass.
+  const categories = await req.server.prisma.ebookCategory.findMany({
+    select: { id: true, slug: true, name: true },
+  });
+  const catBySlug = new Map(
+    categories.map((c) => [c.slug.toLowerCase(), c.id]),
+  );
+  const catByName = new Map(
+    categories.map((c) => [c.name.toLowerCase(), c.id]),
+  );
+
+  // Pull the union of proposed slugs from the batch so we can query
+  // existing rows in one shot instead of N. Duplicates within the
+  // batch get flagged before the DB even sees them.
+  const proposedSlugs = rows.map((r) => toBookSlug(r.title));
+  const existingSlugs = new Set(
+    (
+      await req.server.prisma.ebook.findMany({
+        where: { slug: { in: proposedSlugs } },
+        select: { slug: true },
+      })
+    ).map((r) => r.slug),
+  );
+
+  const seenInBatch = new Set<string>();
+  const errors: Array<{ row: number; title: string; message: string }> = [];
+  const toCreate: Array<{
+    row: number;
+    data: {
+      title: string;
+      slug: string;
+      author: string | null;
+      categoryId: string | null;
+      totalPages: number;
+      pdfUrl: string | null;
+      coverImage: string | null;
+    };
+  }> = [];
+
+  rows.forEach((r, i) => {
+    const rowNum = i + 1;
+    const slug = toBookSlug(r.title);
+    if (existingSlugs.has(slug)) {
+      errors.push({
+        row: rowNum,
+        title: r.title,
+        message: `Slug "${slug}" already exists in the library.`,
+      });
+      return;
+    }
+    if (seenInBatch.has(slug)) {
+      errors.push({
+        row: rowNum,
+        title: r.title,
+        message: `Duplicate title in this CSV (row already used slug "${slug}").`,
+      });
+      return;
+    }
+    let categoryId: string | null = null;
+    if (r.category && r.category.trim().length > 0) {
+      const key = r.category.trim().toLowerCase();
+      categoryId = catBySlug.get(key) ?? catByName.get(key) ?? null;
+      if (categoryId === null) {
+        errors.push({
+          row: rowNum,
+          title: r.title,
+          message: `Category "${r.category}" not found (check slug or name spelling).`,
+        });
+        return;
+      }
+    }
+    seenInBatch.add(slug);
+    toCreate.push({
+      row: rowNum,
+      data: {
+        title: r.title.trim(),
+        slug,
+        author: r.author?.trim() || null,
+        categoryId,
+        totalPages: r.totalPages ?? 0,
+        pdfUrl: r.pdfUrl || null,
+        coverImage: r.coverUrl || null,
+      },
+    });
+  });
+
+  if (dryRun) {
+    return ok(reply, {
+      dryRun: true,
+      willCreate: toCreate.length,
+      errors,
+      preview: toCreate.slice(0, 5).map((c) => ({
+        row: c.row,
+        title: c.data.title,
+        slug: c.data.slug,
+        author: c.data.author,
+        categoryId: c.data.categoryId,
+      })),
+    });
+  }
+
+  const created: Array<{ id: string; title: string; slug: string }> = [];
+  if (toCreate.length > 0) {
+    const result = await req.server.prisma.ebook.createManyAndReturn({
+      data: toCreate.map((c) => c.data),
+      select: { id: true, title: true, slug: true },
+      skipDuplicates: true,
+    });
+    created.push(...result);
+  }
+
+  return reply.status(201).send({
+    success: true,
+    data: {
+      dryRun: false,
+      createdCount: created.length,
+      errorCount: errors.length,
+      created,
+      errors,
+    },
+    error: null,
+  });
 }
 
 // ────────────────────────────────────────────────────────────────

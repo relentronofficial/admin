@@ -70,3 +70,26 @@ export const submitReviewSchema = z.object({
 export const reviewStatusSchema = z.object({
   status: z.enum(['pending', 'approved', 'rejected']),
 });
+
+// Bulk CSV import. Client parses the CSV in the browser and sends a
+// JSON array of rows — keeps this endpoint content-type simple and
+// avoids adding a multipart parser to the backend.
+export const bulkImportBooksSchema = z.object({
+  dryRun: z.boolean().optional(),
+  rows: z
+    .array(
+      z.object({
+        title: z.string().trim().min(1).max(255),
+        author: z.string().trim().max(255).optional().nullable(),
+        // Free-form: slug OR display name; matched case-insensitively
+        // against EbookCategory.slug then .name. Null / empty leaves
+        // the book uncategorised.
+        category: z.string().trim().optional().nullable(),
+        totalPages: z.number().int().min(0).optional(),
+        pdfUrl: z.string().url().optional().nullable(),
+        coverUrl: z.string().url().optional().nullable(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
