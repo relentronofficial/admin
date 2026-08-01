@@ -114,6 +114,9 @@ class Ebook {
     this.progress,
     this.bookmark,
     this.locked = false,
+    this.averageRating = 0,
+    this.reviewCount = 0,
+    this.myReview,
   });
 
   final String id;
@@ -138,6 +141,18 @@ class Ebook {
   /// the current member's batch isn't in the allowlist. Members can
   /// still see the card in the library but tapping through gets a 403.
   final bool locked;
+
+  /// Average rating across approved reviews (0..5, one decimal). 0
+  /// when the book has zero approved reviews.
+  final double averageRating;
+
+  /// Count of approved reviews. Used to render "N reviews" on the
+  /// detail screen.
+  final int reviewCount;
+
+  /// The caller's own submitted review — any status. Populated only
+  /// by the detail endpoint so the star widget can pre-fill.
+  final EbookReviewSummary? myReview;
 
   factory Ebook.fromJson(Map<String, dynamic> j) => Ebook(
         id: j['id'] as String,
@@ -164,7 +179,81 @@ class Ebook {
             ? EbookBookmark.fromJson(j['bookmark'] as Map<String, dynamic>)
             : null,
         locked: (j['locked'] as bool?) ?? false,
+        averageRating: _parseDouble(j['averageRating']),
+        reviewCount: (j['reviewCount'] as int?) ?? 0,
+        myReview: j['myReview'] != null
+            ? EbookReviewSummary.fromJson(j['myReview'] as Map<String, dynamic>)
+            : null,
       );
+}
+
+/// Compact "my review" wire format returned inline on the book detail
+/// endpoint. Full review list (with member name/avatar) comes from a
+/// separate paginated endpoint.
+class EbookReviewSummary {
+  const EbookReviewSummary({
+    required this.rating,
+    this.reviewText,
+    required this.status,
+    required this.updatedAt,
+  });
+  final int rating;
+  final String? reviewText;
+  final String status; // pending | approved | rejected
+  final DateTime updatedAt;
+
+  factory EbookReviewSummary.fromJson(Map<String, dynamic> j) =>
+      EbookReviewSummary(
+        rating: (j['rating'] as int?) ?? 0,
+        reviewText: j['reviewText'] as String?,
+        status: (j['status'] as String?) ?? 'pending',
+        updatedAt: DateTime.parse(j['updatedAt'] as String),
+      );
+}
+
+/// A single review with author info — the shape returned by
+/// `GET /api/ebooks/books/:id/reviews`.
+class EbookReview {
+  const EbookReview({
+    required this.id,
+    required this.memberId,
+    required this.bookId,
+    required this.rating,
+    this.reviewText,
+    required this.updatedAt,
+    this.authorName,
+    this.authorPhotoUrl,
+  });
+
+  final String id;
+  final String memberId;
+  final String bookId;
+  final int rating;
+  final String? reviewText;
+  final DateTime updatedAt;
+  final String? authorName;
+  final String? authorPhotoUrl;
+
+  factory EbookReview.fromJson(Map<String, dynamic> j) {
+    final m = j['member'] as Map<String, dynamic>?;
+    final name = m == null
+        ? null
+        : [m['firstName'], m['lastName']]
+            .whereType<String>()
+            .where((s) => s.isNotEmpty)
+            .join(' ')
+            .trim();
+    return EbookReview(
+      id: j['id'] as String,
+      memberId: j['memberId'] as String,
+      bookId: j['bookId'] as String,
+      rating: (j['rating'] as int?) ?? 0,
+      reviewText: j['reviewText'] as String?,
+      updatedAt: DateTime.parse(j['updatedAt'] as String),
+      authorName: (name != null && name.isNotEmpty) ? name : null,
+      authorPhotoUrl: m?['profilePhotoUrl'] as String?,
+    );
+  }
 }
 
 class EbookCategoryRef {

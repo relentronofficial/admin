@@ -59,3 +59,14 @@ export const progressSchema = z.object({
   totalPages: z.number().int().min(0),
   completed: z.boolean().optional(),
 });
+
+// One row per (member, book). Re-submitting overwrites the previous
+// rating/text and drops back to `pending` for admin moderation.
+export const submitReviewSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  reviewText: z.string().trim().max(4000).optional().nullable(),
+});
+
+export const reviewStatusSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected']),
+});

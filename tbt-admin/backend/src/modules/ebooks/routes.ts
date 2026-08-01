@@ -16,6 +16,8 @@ import {
   adminDeleteBannerHandler,
   adminDashboardHandler,
   adminBookAnalyticsHandler,
+  adminListReviewsHandler,
+  adminUpdateReviewStatusHandler,
   // member
   listActiveCategoriesHandler,
   listFeaturedBooksHandler,
@@ -28,6 +30,8 @@ import {
   submitProgressHandler,
   getProgressHandler,
   continueReadingHandler,
+  memberSubmitReviewHandler,
+  memberListReviewsHandler,
 } from './controller.js';
 
 /**
@@ -60,6 +64,9 @@ export async function ebookRoutes(fastify: FastifyInstance) {
       adminScope.post('/banners', adminCreateBannerHandler);
       adminScope.put('/banners/:id', adminUpdateBannerHandler);
       adminScope.delete('/banners/:id', adminDeleteBannerHandler);
+
+      adminScope.get('/reviews', adminListReviewsHandler);
+      adminScope.put('/reviews/:id/status', adminUpdateReviewStatusHandler);
     },
     { prefix: '/admin' },
   );
@@ -79,5 +86,7 @@ export async function ebookRoutes(fastify: FastifyInstance) {
     userScope.post('/progress', submitProgressHandler);
     userScope.get('/progress/:bookId', getProgressHandler);
     userScope.get('/continue-reading', continueReadingHandler);
+    userScope.get('/books/:id/reviews', memberListReviewsHandler);
+    userScope.post('/books/:id/reviews', memberSubmitReviewHandler);
   });
 }

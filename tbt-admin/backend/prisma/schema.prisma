@@ -381,6 +381,7 @@ model Member {
   podcastEpisodeProgress PodcastEpisodeProgress[] @relation("MemberPodcastEpisodeProgress")
   ebookBookmarks        EbookBookmark[]
   ebookProgress         EbookProgress[]
+  ebookReviews          EbookReview[]
   helpdeskTickets       HelpdeskTicket[]   @relation("MemberHelpdeskTickets")
   helpdeskFeedback      HelpdeskFeedback[] @relation("MemberHelpdeskFeedback")
   tbtActivityLog        TbtActivityLog[]   @relation("MemberTbtActivityLog")
@@ -2951,6 +2952,7 @@ model Ebook {
   category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   bookmarks    EbookBookmark[]
   progress     EbookProgress[]
+  reviews      EbookReview[]
 
   @@index([categoryId])
   @@index([status])
@@ -3002,6 +3004,27 @@ model EbookProgress {
   @@unique([memberId, bookId])
   @@index([memberId, updatedAt(sort: Desc)])
   @@map("ebook_progress")
+}
+
+// Member-submitted ratings/reviews on ebooks. One row per (member, book);
+// re-submitting overwrites the previous rating/text and drops back to
+// `pending` for admin moderation. Only rows with status='approved' are
+// surfaced on the public detail page.
+model EbookReview {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId   String   @map("member_id") @db.Uuid
+  bookId     String   @map("book_id")   @db.Uuid
+  rating     Int                                          // 1..5, enforced in Zod
+  reviewText String?  @map("review_text")
+  status     String   @default("pending") @db.VarChar(20) // pending | approved | rejected
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  book       Ebook    @relation(fields: [bookId],   references: [id], onDelete: Cascade)
+
+  @@unique([memberId, bookId])
+  @@index([bookId, status])
+  @@map("ebook_reviews")
 }
 
 // Named PodcastEpisodeProgress (mapped to podcast_episode_progress table)

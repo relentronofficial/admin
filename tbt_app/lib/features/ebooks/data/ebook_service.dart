@@ -147,6 +147,47 @@ class EbookService {
       throw mapDioError(e);
     }
   }
+
+  /// Fetches the approved reviews on a book — the public review list
+  /// rendered on the detail screen. Ordered newest first.
+  Future<List<EbookReview>> listReviews(String bookId) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/ebooks/books/$bookId/reviews',
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(EbookReview.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Upserts the caller's own review. Rating in 1..5. Re-submitting
+  /// overwrites the previous entry and drops back to `pending` for
+  /// admin moderation.
+  Future<EbookReviewSummary> submitReview({
+    required String bookId,
+    required int rating,
+    String? reviewText,
+  }) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/ebooks/books/$bookId/reviews',
+        data: {
+          'rating': rating,
+          if (reviewText != null && reviewText.trim().isNotEmpty)
+            'reviewText': reviewText.trim(),
+        },
+      );
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
+      return EbookReviewSummary.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 }
 
 final ebookServiceProvider = Provider<EbookService>(

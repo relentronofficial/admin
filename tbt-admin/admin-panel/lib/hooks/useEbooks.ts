@@ -61,6 +61,24 @@ export interface EbookAnalytics {
   viewCount: number;
 }
 
+export interface EbookReview {
+  id: string;
+  memberId: string;
+  bookId: string;
+  rating: number;
+  reviewText: string | null;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+  member?: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    profilePhotoUrl: string | null;
+  } | null;
+  book?: { id: string; title: string; slug: string } | null;
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────
 export const useEbookDashboard = () =>
   useQuery({
@@ -85,6 +103,56 @@ export const useEbookAnalytics = (bookId: string | null) =>
     enabled: !!bookId,
     staleTime: 30_000,
   });
+
+// ── Reviews (moderation) ─────────────────────────────────────────
+export const useListEbookReviews = (params: {
+  status?: "pending" | "approved" | "rejected" | "all";
+  page?: number;
+  limit?: number;
+  bookId?: string;
+}) =>
+  useQuery({
+    queryKey: ["ebooks", "reviews", params],
+    queryFn: async (): Promise<{
+      data: EbookReview[];
+      meta: { total: number; page: number; limit: number };
+    }> => {
+      const q = new URLSearchParams();
+      if (params.status) q.set("status", params.status);
+      if (params.page) q.set("page", String(params.page));
+      if (params.limit) q.set("limit", String(params.limit));
+      if (params.bookId) q.set("bookId", params.bookId);
+      const res: any = await apiClient.get(
+        `/api/ebooks/admin/reviews?${q.toString()}`,
+      );
+      return {
+        data: res?.data ?? [],
+        meta: res?.meta ?? { total: 0, page: 1, limit: 50 },
+      };
+    },
+    staleTime: 20_000,
+  });
+
+export const useUpdateEbookReviewStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: "pending" | "approved" | "rejected";
+    }) => {
+      const res: any = await apiClient.put(
+        `/api/ebooks/admin/reviews/${id}/status`,
+        { status },
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["ebooks", "reviews"] }),
+  });
+};
 
 // ── Categories ────────────────────────────────────────────────────
 export const useListEbookCategories = () =>

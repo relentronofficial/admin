@@ -15,6 +15,8 @@ import {
   updateBannerSchema,
   bookmarkSchema,
   progressSchema,
+  submitReviewSchema,
+  reviewStatusSchema,
 } from './schema.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
@@ -441,15 +443,162 @@ export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
     );
   }
 
-  const [progress, bookmark] = await Promise.all([
+  const [progress, bookmark, ratingAgg, myReview] = await Promise.all([
     req.server.prisma.ebookProgress.findUnique({
       where: { memberId_bookId: { memberId: req.memberId!, bookId: id } },
     }),
     req.server.prisma.ebookBookmark.findUnique({
       where: { memberId_bookId: { memberId: req.memberId!, bookId: id } },
     }),
+    // Only approved reviews count toward the visible average.
+    req.server.prisma.ebookReview.aggregate({
+      where: { bookId: id, status: 'approved' },
+      _avg: { rating: true },
+      _count: { rating: true },
+    }),
+    // The caller's own review (any status) so the detail page can
+    // pre-fill the star widget with what they last submitted.
+    req.server.prisma.ebookReview.findUnique({
+      where: { memberId_bookId: { memberId: req.memberId!, bookId: id } },
+      select: { rating: true, reviewText: true, status: true, updatedAt: true },
+    }),
   ]);
-  return ok(reply, { ...book, progress: progress ?? null, bookmark: bookmark ?? null });
+  const averageRating = ratingAgg._avg.rating
+    ? Number(ratingAgg._avg.rating.toFixed(2))
+    : 0;
+  const reviewCount = ratingAgg._count.rating;
+  return ok(reply, {
+    ...book,
+    progress: progress ?? null,
+    bookmark: bookmark ?? null,
+    averageRating,
+    reviewCount,
+    myReview: myReview ?? null,
+  });
+}
+
+// One review per (member, book). Re-submitting overwrites the previous
+// rating/text and drops back to `pending` so admin has to re-moderate.
+export async function memberSubmitReviewHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id: bookId } = req.params as { id: string };
+  const parsed = submitReviewSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  const book = await req.server.prisma.ebook.findFirst({
+    where: { id: bookId, status: 'active' },
+    select: { id: true, batchIds: true },
+  });
+  if (!book) return fail(reply, 404, 'not_found', 'Book not found.');
+
+  // Enforce the same batch-restriction on write as on read — otherwise
+  // a locked-out member could still poison the review queue.
+  const memberBatchId = await getMemberBatchId(req);
+  if (isBookLocked((book as any).batchIds, memberBatchId)) {
+    return fail(
+      reply,
+      403,
+      'batch_restricted',
+      'You cannot review a book that isn\'t available to your batch.',
+    );
+  }
+
+  const { rating, reviewText } = parsed.data;
+  const upserted = await req.server.prisma.ebookReview.upsert({
+    where: { memberId_bookId: { memberId: req.memberId!, bookId } },
+    create: {
+      memberId: req.memberId!,
+      bookId,
+      rating,
+      reviewText: reviewText ?? null,
+      status: 'pending',
+    },
+    update: {
+      rating,
+      reviewText: reviewText ?? null,
+      status: 'pending',
+    },
+  });
+  return ok(reply, upserted);
+}
+
+export async function memberListReviewsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id: bookId } = req.params as { id: string };
+  const { page = '1', limit = '20' } = req.query as Record<string, string>;
+  const p = Math.max(1, Number(page) || 1);
+  const l = Math.min(50, Math.max(1, Number(limit) || 20));
+
+  const [rows, total] = await Promise.all([
+    req.server.prisma.ebookReview.findMany({
+      where: { bookId, status: 'approved' },
+      include: {
+        member: {
+          select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      skip: (p - 1) * l,
+      take: l,
+    }),
+    req.server.prisma.ebookReview.count({
+      where: { bookId, status: 'approved' },
+    }),
+  ]);
+  return reply.send({
+    success: true,
+    data: rows,
+    meta: { total, page: p, limit: l },
+    error: null,
+  });
+}
+
+// Admin moderation — default filter is `pending` (the review queue).
+export async function adminListReviewsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { status = 'pending', page = '1', limit = '50', bookId } =
+    req.query as Record<string, string>;
+  const p = Math.max(1, Number(page) || 1);
+  const l = Math.min(100, Math.max(1, Number(limit) || 50));
+
+  const where: any = {};
+  if (status && status !== 'all') where.status = status;
+  if (bookId) where.bookId = bookId;
+
+  const [rows, total] = await Promise.all([
+    req.server.prisma.ebookReview.findMany({
+      where,
+      include: {
+        member: {
+          select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
+        },
+        book: { select: { id: true, title: true, slug: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (p - 1) * l,
+      take: l,
+    }),
+    req.server.prisma.ebookReview.count({ where }),
+  ]);
+  return reply.send({
+    success: true,
+    data: rows,
+    meta: { total, page: p, limit: l },
+    error: null,
+  });
+}
+
+export async function adminUpdateReviewStatusHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = reviewStatusSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const updated = await req.server.prisma.ebookReview.update({
+      where: { id },
+      data: { status: parsed.data.status },
+    });
+    return ok(reply, updated);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Review not found.');
+    throw err;
+  }
 }
 
 export async function upsertBookmarkHandler(req: FastifyRequest, reply: FastifyReply) {

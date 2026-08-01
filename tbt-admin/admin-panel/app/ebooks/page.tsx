@@ -26,9 +26,12 @@ import {
   useUpdateEbookBanner,
   useDeleteEbookBanner,
   useEbookAnalytics,
+  useListEbookReviews,
+  useUpdateEbookReviewStatus,
   type EbookCategory,
   type Ebook,
   type EbookBanner,
+  type EbookReview,
 } from "@/lib/hooks/useEbooks";
 import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListBatches } from "@/lib/hooks/useTbt";
@@ -47,6 +50,7 @@ import {
   Upload,
   Search,
   FileText,
+  Check,
 } from "lucide-react";
 
 const labelCls =
@@ -73,7 +77,7 @@ function StatChip({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-type Tab = "books" | "banners" | "categories";
+type Tab = "books" | "banners" | "categories" | "reviews";
 
 export default function EbooksPage() {
   const [tab, setTab] = useState<Tab>("books");
@@ -108,6 +112,7 @@ export default function EbooksPage() {
               { id: "books", label: "Books", icon: BookOpen },
               { id: "banners", label: "Banners", icon: ImageIcon },
               { id: "categories", label: "Categories", icon: Layers },
+              { id: "reviews", label: "Reviews", icon: Star },
             ] as { id: Tab; label: string; icon: any }[]
           ).map((t) => {
             const Icon = t.icon;
@@ -132,6 +137,7 @@ export default function EbooksPage() {
         {tab === "books" && <BooksTab />}
         {tab === "banners" && <BannersTab />}
         {tab === "categories" && <CategoriesTab />}
+        {tab === "reviews" && <ReviewsTab />}
       </div>
     </DashboardLayout>
   );
@@ -1027,6 +1033,187 @@ function BookAnalyticsPanel({ bookId, onClose }: { bookId: string; onClose: () =
         </button>
       </div>
     </>
+  );
+}
+
+// ── Reviews moderation tab ────────────────────────────────────────
+
+function ReviewsTab() {
+  const [status, setStatus] = useState<
+    "pending" | "approved" | "rejected" | "all"
+  >("pending");
+  const { data, isLoading, error } = useListEbookReviews({ status, limit: 50 });
+  const update = useUpdateEbookReviewStatus();
+
+  const rows = data?.data ?? [];
+
+  const setStatusFor = async (
+    id: string,
+    next: "approved" | "rejected" | "pending",
+  ) => {
+    try {
+      await update.mutateAsync({ id, status: next });
+      toast.success(`Review marked ${next}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Update failed");
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        {(["pending", "approved", "rejected", "all"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatus(s)}
+            className={
+              "px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors " +
+              (status === s
+                ? "bg-[#dc2626] text-white"
+                : "bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white")
+            }
+          >
+            {s}
+          </button>
+        ))}
+        {data?.meta && (
+          <span className="ml-auto text-[11px] text-[#606060]">
+            {data.meta.total} total
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="py-12 flex items-center justify-center text-[#a0a0a0] gap-2">
+          <Loader2 size={16} className="animate-spin" />
+          <span className="text-sm">Loading reviews…</span>
+        </div>
+      ) : error ? (
+        <div className="py-12 text-center text-sm text-[#a0a0a0]">
+          Could not load reviews.
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="py-12 text-center text-sm text-[#606060]">
+          No {status !== "all" ? status : ""} reviews.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r: EbookReview) => (
+            <ReviewCard
+              key={r.id}
+              review={r}
+              busy={update.isPending}
+              onApprove={() => setStatusFor(r.id, "approved")}
+              onReject={() => setStatusFor(r.id, "rejected")}
+              onReset={() => setStatusFor(r.id, "pending")}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewCard({
+  review,
+  busy,
+  onApprove,
+  onReject,
+  onReset,
+}: {
+  review: EbookReview;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onReset: () => void;
+}) {
+  const author = [review.member?.firstName, review.member?.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim() || "Member";
+  const statusColor =
+    review.status === "approved"
+      ? "text-green-400 bg-green-500/10 border-green-500/30"
+      : review.status === "rejected"
+      ? "text-red-400 bg-red-500/10 border-red-500/30"
+      : "text-orange-400 bg-orange-500/10 border-orange-500/30";
+  return (
+    <div className="rounded-lg bg-[#141414] border border-[#2a2a2a] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-[13px] text-white">
+            <span className="font-medium">{author}</span>
+            <span className="text-[#606060]">·</span>
+            <span className="text-[#a0a0a0] text-[12px] truncate">
+              {review.book?.title ?? "—"}
+            </span>
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <div className="flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <Star
+                  key={n}
+                  size={13}
+                  className={
+                    n <= review.rating
+                      ? "text-yellow-400 fill-yellow-400"
+                      : "text-[#333]"
+                  }
+                />
+              ))}
+            </div>
+            <span
+              className={
+                "text-[10px] uppercase tracking-widest font-rajdhani font-bold px-2 py-0.5 rounded border " +
+                statusColor
+              }
+            >
+              {review.status}
+            </span>
+            <span className="text-[11px] text-[#606060] ml-auto">
+              {new Date(review.updatedAt).toLocaleDateString()}
+            </span>
+          </div>
+          {review.reviewText && (
+            <p className="mt-2 text-[13px] text-[#d0d0d0] whitespace-pre-wrap leading-relaxed">
+              {review.reviewText}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-1 shrink-0">
+          {review.status !== "approved" && (
+            <button
+              onClick={onApprove}
+              disabled={busy}
+              className="p-1.5 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-40"
+              title="Approve"
+            >
+              <Check size={14} />
+            </button>
+          )}
+          {review.status !== "rejected" && (
+            <button
+              onClick={onReject}
+              disabled={busy}
+              className="p-1.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-40"
+              title="Reject"
+            >
+              <X size={14} />
+            </button>
+          )}
+          {review.status !== "pending" && (
+            <button
+              onClick={onReset}
+              disabled={busy}
+              className="p-1.5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white disabled:opacity-40"
+              title="Reset to pending"
+            >
+              <Loader2 size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
