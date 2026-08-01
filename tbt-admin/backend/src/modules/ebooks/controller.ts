@@ -253,9 +253,21 @@ export async function listActiveCategoriesHandler(req: FastifyRequest, reply: Fa
   return ok(reply, rows);
 }
 
+// Member-facing publish gate: books with publishDate in the future
+// stay hidden until that date. Rows without a publishDate (legacy /
+// unscheduled) pass through unchanged.
+function publishedFilter(): any {
+  return {
+    OR: [
+      { publishDate: null },
+      { publishDate: { lte: new Date() } },
+    ],
+  };
+}
+
 export async function listFeaturedBooksHandler(req: FastifyRequest, reply: FastifyReply) {
   const rows = await req.server.prisma.ebook.findMany({
-    where: { status: 'active', isFeatured: true },
+    where: { status: 'active', isFeatured: true, AND: [publishedFilter()] },
     include: bookInclude,
     orderBy: [{ sortOrder: 'asc' }, { publishDate: 'desc' }],
     take: 12,
@@ -277,7 +289,7 @@ export async function listLibraryHandler(req: FastifyRequest, reply: FastifyRepl
   const p = Math.max(1, Number(page) || 1);
   const l = Math.min(100, Math.max(1, Number(limit) || 20));
 
-  const where: any = { status: 'active' };
+  const where: any = { status: 'active', AND: [publishedFilter()] };
   if (category && category !== 'all' && category !== 'All') {
     const cat = await req.server.prisma.ebookCategory.findUnique({
       where: { slug: category },
@@ -293,6 +305,9 @@ export async function listLibraryHandler(req: FastifyRequest, reply: FastifyRepl
     where.categoryId = cat.id;
   }
   if (search && search.trim()) {
+    // Separate top-level OR for search — Prisma composes top-level AND
+    // and OR with an implicit outer AND, so `status AND published-or-null
+    // AND (title match OR author match)` is what actually runs.
     where.OR = [
       { title: { contains: search.trim(), mode: 'insensitive' } },
       { author: { contains: search.trim(), mode: 'insensitive' } },
@@ -321,7 +336,7 @@ export async function listLibraryHandler(req: FastifyRequest, reply: FastifyRepl
 export async function getBookHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as { id: string };
   const book = await req.server.prisma.ebook.findFirst({
-    where: { id, status: 'active' },
+    where: { id, status: 'active', AND: [publishedFilter()] },
     include: bookInclude,
   });
   if (!book) return fail(reply, 404, 'not_found', 'Book not found.');
