@@ -28,6 +28,15 @@ import {
   grantPointsSchema,
 } from './schema.js';
 import { computeMemberStats } from '../../lib/tbtStats.js';
+import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
+
+// Levels + tasks are static config data — rendered on every admin
+// dashboard load and referenced by the member gamification screen.
+// 5-minute TTL trades a bit of staleness on admin edits for far fewer
+// DB round-trips under the admin panel's polling behavior.
+const LEVELS_KEY = 'gamif:levels';
+const TASKS_KEY = 'gamif:tasks';
+const GAMIF_TTL = 300;
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
   return reply.send({ success: true, data, error: null, ...extra });
@@ -40,9 +49,13 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
 // LEVELS — admin
 // ────────────────────────────────────────────────────────────────
 export async function adminListLevelsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const redis = req.server.redis ?? null;
+  const cached = await cacheGet<unknown[]>(redis, LEVELS_KEY);
+  if (cached) return ok(reply, cached);
   const rows = await req.server.prisma.tbtLevel.findMany({
     orderBy: [{ sortOrder: 'asc' }, { levelNumber: 'asc' }],
   });
+  await cacheSet(redis, LEVELS_KEY, rows, GAMIF_TTL);
   return ok(reply, rows);
 }
 
@@ -51,6 +64,7 @@ export async function adminCreateLevelHandler(req: FastifyRequest, reply: Fastif
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
   try {
     const created = await req.server.prisma.tbtLevel.create({ data: parsed.data });
+    void invalidateCache(req.server.redis ?? null, LEVELS_KEY);
     return reply.status(201).send({ success: true, data: created, error: null });
   } catch (err: any) {
     if (err?.code === 'P2002')
@@ -68,6 +82,7 @@ export async function adminUpdateLevelHandler(req: FastifyRequest, reply: Fastif
       where: { id },
       data: parsed.data,
     });
+    void invalidateCache(req.server.redis ?? null, LEVELS_KEY);
     return ok(reply, updated);
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Level not found.');
@@ -81,6 +96,7 @@ export async function adminDeleteLevelHandler(req: FastifyRequest, reply: Fastif
   const { id } = req.params as { id: string };
   try {
     await req.server.prisma.tbtLevel.delete({ where: { id } });
+    void invalidateCache(req.server.redis ?? null, LEVELS_KEY);
     return ok(reply, null);
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Level not found.');
@@ -92,10 +108,14 @@ export async function adminDeleteLevelHandler(req: FastifyRequest, reply: Fastif
 // TASKS — admin
 // ────────────────────────────────────────────────────────────────
 export async function adminListTasksHandler(req: FastifyRequest, reply: FastifyReply) {
+  const redis = req.server.redis ?? null;
+  const cached = await cacheGet<unknown[]>(redis, TASKS_KEY);
+  if (cached) return ok(reply, cached);
   const rows = await req.server.prisma.tbtTask.findMany({
     orderBy: [{ sortOrder: 'asc' }, { taskOrder: 'asc' }],
     include: { _count: { select: { completions: true } } },
   });
+  await cacheSet(redis, TASKS_KEY, rows, GAMIF_TTL);
   return ok(reply, rows);
 }
 
@@ -104,6 +124,7 @@ export async function adminCreateTaskHandler(req: FastifyRequest, reply: Fastify
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
   try {
     const created = await req.server.prisma.tbtTask.create({ data: parsed.data });
+    void invalidateCache(req.server.redis ?? null, TASKS_KEY);
     return reply.status(201).send({ success: true, data: created, error: null });
   } catch (err: any) {
     if (err?.code === 'P2002')
@@ -121,6 +142,7 @@ export async function adminUpdateTaskHandler(req: FastifyRequest, reply: Fastify
       where: { id },
       data: parsed.data,
     });
+    void invalidateCache(req.server.redis ?? null, TASKS_KEY);
     return ok(reply, updated);
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Task not found.');
@@ -134,6 +156,7 @@ export async function adminDeleteTaskHandler(req: FastifyRequest, reply: Fastify
   const { id } = req.params as { id: string };
   try {
     await req.server.prisma.tbtTask.delete({ where: { id } });
+    void invalidateCache(req.server.redis ?? null, TASKS_KEY);
     return ok(reply, null);
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Task not found.');
@@ -311,6 +334,22 @@ export async function completeTaskHandler(req: FastifyRequest, reply: FastifyRep
   });
   if (existing) {
     return ok(reply, { alreadyCompleted: true, completion: existing });
+  }
+
+  // Cross-instance lock: if the same member fires "complete" twice
+  // in rapid succession (double-tap on flaky wifi), two Cloud Run
+  // pods can both pass the `existing` check above and race into the
+  // transaction. The DB unique constraint still saves us, but one
+  // side takes a P2002 exception + wastes a full transaction. The
+  // lock closes the window without adding client-visible latency.
+  // 10 s covers the transaction + any Prisma retry.
+  const redis = req.server.redis ?? null;
+  const lockKey = `task:complete:${req.memberId}:${task.id}`;
+  const acquired = await cacheNxSet(redis, lockKey, 10);
+  if (!acquired) {
+    // Another pod is mid-flight. Treat as already-in-progress; the
+    // client's next summary refetch will reflect the completion.
+    return ok(reply, { alreadyCompleted: true, inFlight: true });
   }
 
   // Award both rows atomically — same transaction so a mid-flight
