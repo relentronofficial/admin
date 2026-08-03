@@ -3,6 +3,15 @@ import {
   notifyCourseAccessGranted,
   notifyBadgeAwarded,
 } from '../../lib/courseNotifications.js';
+import { invalidateCache } from '../../lib/cache.js';
+
+// Any course/episode edit can change what the home sections render
+// (thumbnail, title, episode count, visibility). Busting home:* is
+// cheap — a handful of keys — and cheaper than serving stale hero /
+// section data for up to 5 min.
+function bustHome(req: FastifyRequest): void {
+  void invalidateCache(req.server.redis ?? null, 'home:*');
+}
 
 // ── COURSES ───────────────────────────────────────────────────────────
 
@@ -38,6 +47,7 @@ export async function createCourseHandler(req: FastifyRequest, reply: FastifyRep
       sortOrder: body.order ?? count,
     },
   });
+  bustHome(req);
   return reply.status(201).send({ success: true, data: course, error: null });
 }
 
@@ -75,12 +85,14 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
   }
   if (body.order !== undefined) data.sortOrder = body.order;
   const course = await req.server.prisma.course.update({ where: { id }, data });
+  bustHome(req);
   return reply.send({ success: true, data: course, error: null });
 }
 
 export async function deleteCourseHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   await req.server.prisma.course.delete({ where: { id } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -115,6 +127,7 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
       ...(body.bunnyDrmToken !== undefined && { bunnyDrmToken: body.bunnyDrmToken || null }),
     },
   });
+  bustHome(req);
   return reply.status(201).send({ success: true, data: episode, error: null });
 }
 
@@ -130,12 +143,14 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   if (body.quizUnlockPercent !== undefined) data.quizUnlockPercent = Number(body.quizUnlockPercent);
   if (body.drmEnabled !== undefined) data.drmEnabled = Boolean(body.drmEnabled);
   const episode = await req.server.prisma.courseEpisode.update({ where: { id: eid }, data });
+  bustHome(req);
   return reply.send({ success: true, data: episode, error: null });
 }
 
 export async function deleteCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
   await req.server.prisma.courseEpisode.delete({ where: { id: eid } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -146,6 +161,7 @@ export async function reorderCourseEpisodesHandler(req: FastifyRequest, reply: F
       req.server.prisma.courseEpisode.update({ where: { id }, data: { order: i } })
     )
   );
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -154,6 +170,7 @@ export async function reorderCourseEpisodesHandler(req: FastifyRequest, reply: F
 export async function publishCourseHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   const course = await req.server.prisma.course.update({ where: { id }, data: { isPublished: true } });
+  bustHome(req);
   return reply.send({ success: true, data: course, error: null });
 }
 

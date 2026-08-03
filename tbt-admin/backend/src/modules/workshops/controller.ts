@@ -2,6 +2,10 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { env } from '../../config/env.js';
 import { invalidateCache } from '../../lib/cache.js';
 
+function bustHome(req: FastifyRequest): void {
+  void invalidateCache(req.server.redis ?? null, 'home:*');
+}
+
 // ── BUNNY STREAM DURATION HELPER ──────────────────────────────────────
 
 export async function fetchBunnyDuration(bunnyVideoId: string): Promise<number | null> {
@@ -58,6 +62,7 @@ export async function createWorkshopHandler(req: FastifyRequest, reply: FastifyR
       batchIds: batchIds.length > 0 ? (batchIds as any) : null,
     },
   });
+  bustHome(req);
   return reply.status(201).send({ success: true, data: workshop, error: null });
 }
 
@@ -101,12 +106,14 @@ export async function updateWorkshopHandler(req: FastifyRequest, reply: FastifyR
     data.batchIds = batchIds.length > 0 ? (batchIds as any) : null;
   }
   const workshop = await req.server.prisma.workshop.update({ where: { id }, data });
+  bustHome(req);
   return reply.send({ success: true, data: workshop, error: null });
 }
 
 export async function deleteWorkshopHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   await req.server.prisma.workshop.delete({ where: { id } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -282,6 +289,7 @@ export async function createChallengeHandler(req: FastifyRequest, reply: Fastify
       ...(body.quizData !== undefined ? { quizData: body.quizData } : {}),
     },
   });
+  bustHome(req);
   return reply.status(201).send({ success: true, data: challenge, error: null });
 }
 
@@ -293,12 +301,14 @@ export async function updateChallengeHandler(req: FastifyRequest, reply: Fastify
     if (body[f] !== undefined) data[f] = body[f];
   });
   const challenge = await req.server.prisma.challenge.update({ where: { id: cid }, data });
+  bustHome(req);
   return reply.send({ success: true, data: challenge, error: null });
 }
 
 export async function deleteChallengeHandler(req: FastifyRequest, reply: FastifyReply) {
   const { cid } = req.params as any;
   await req.server.prisma.challenge.delete({ where: { id: cid } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -333,6 +343,7 @@ export async function createEpisodeHandler(req: FastifyRequest, reply: FastifyRe
       durationLabel: body.durationLabel,
     },
   });
+  bustHome(req);
   return reply.status(201).send({ success: true, data: episode, error: null });
 }
 
@@ -359,12 +370,14 @@ export async function updateEpisodeHandler(req: FastifyRequest, reply: FastifyRe
     data.durationSeconds = body.durationSeconds ? Number(body.durationSeconds) : null;
   }
   const episode = await req.server.prisma.workshopEpisode.update({ where: { id: eid }, data });
+  bustHome(req);
   return reply.send({ success: true, data: episode, error: null });
 }
 
 export async function deleteEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
   await req.server.prisma.workshopEpisode.delete({ where: { id: eid } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -394,6 +407,7 @@ export async function reorderEpisodesHandler(req: FastifyRequest, reply: Fastify
       req.server.prisma.workshopEpisode.update({ where: { id }, data: { order: i } })
     )
   );
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 

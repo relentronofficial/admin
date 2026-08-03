@@ -1,4 +1,13 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { invalidateCache } from '../../lib/cache.js';
+
+// Bust every cached home payload (hero + sections in all variants) whenever
+// admin edits section metadata or its items. Cheap: only a handful of
+// home:* keys ever exist. Called fire-and-forget — the read path rebuilds
+// on the next request.
+function bustHome(req: FastifyRequest): void {
+  void invalidateCache(req.server.redis ?? null, 'home:*');
+}
 
 export async function listSectionsHandler(req: FastifyRequest, reply: FastifyReply) {
   const sections = await req.server.prisma.contentSection.findMany({
@@ -15,18 +24,21 @@ export async function createSectionHandler(req: FastifyRequest, reply: FastifyRe
   const section = await req.server.prisma.contentSection.create({
     data: { ...body, slug, order: body.order ?? count },
   });
+  bustHome(req);
   return reply.status(201).send({ success: true, data: section, error: null });
 }
 
 export async function updateSectionHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   const section = await req.server.prisma.contentSection.update({ where: { id }, data: req.body as any });
+  bustHome(req);
   return reply.send({ success: true, data: section, error: null });
 }
 
 export async function deleteSectionHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   await req.server.prisma.contentSection.delete({ where: { id } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -37,6 +49,7 @@ export async function reorderSectionsHandler(req: FastifyRequest, reply: Fastify
       req.server.prisma.contentSection.update({ where: { id }, data: { order: i } })
     )
   );
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -60,18 +73,21 @@ export async function createItemHandler(req: FastifyRequest, reply: FastifyReply
   const item = await req.server.prisma.contentItem.create({
     data: { ...body, sectionId: id, order: body.order ?? count },
   });
+  bustHome(req);
   return reply.status(201).send({ success: true, data: item, error: null });
 }
 
 export async function updateItemHandler(req: FastifyRequest, reply: FastifyReply) {
   const { itemId } = req.params as any;
   const item = await req.server.prisma.contentItem.update({ where: { id: itemId }, data: req.body as any });
+  bustHome(req);
   return reply.send({ success: true, data: item, error: null });
 }
 
 export async function deleteItemHandler(req: FastifyRequest, reply: FastifyReply) {
   const { itemId } = req.params as any;
   await req.server.prisma.contentItem.delete({ where: { id: itemId } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -82,5 +98,6 @@ export async function reorderItemsHandler(req: FastifyRequest, reply: FastifyRep
       req.server.prisma.contentItem.update({ where: { id }, data: { order: i } })
     )
   );
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
