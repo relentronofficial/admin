@@ -33,6 +33,7 @@
     "@prisma/client": "^5.14.0",
     "@sentry/node": "^8.2.1",
     "@sentry/profiling-node": "^8.2.1",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@supabase/supabase-js": "^2.106.0",
     "@types/pdfkit": "^0.17.6",
     "@upstash/redis": "^1.34.0",

@@ -2,6 +2,8 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import fp from 'fastify-plugin';
 import { Server } from 'socket.io';
 import { verifyToken } from '@clerk/backend';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { Redis as IORedis } from 'ioredis';
 import { env } from '../config/env.js';
 
 declare module 'fastify' {
@@ -28,6 +30,42 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
       credentials: true,
     },
   });
+
+  // ── Redis adapter (cross-instance broadcast) ───────────────────────────────
+  // Cloud Run scales to N instances under load. Without a pub/sub adapter,
+  // an emit on instance A never reaches sockets on instance B, so DM-style
+  // events (`io.to('user:${id}').emit(...)`) silently drop for any client
+  // that happens to be on another pod. Attach the Upstash TCP client only
+  // when the env var is present; otherwise stick with the default in-memory
+  // adapter (fine for local dev and single-instance runs).
+  const tcpRedisUrl = env.UPSTASH_REDIS_URL;
+  if (tcpRedisUrl) {
+    try {
+      const useTls = tcpRedisUrl.startsWith('rediss://');
+      const pubClient = new IORedis(tcpRedisUrl, {
+        maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        lazyConnect: false,
+        ...(useTls ? { tls: {} } : {}),
+      });
+      const subClient = pubClient.duplicate();
+      // Swallow late errors so a transient Upstash blip doesn't crash
+      // the process — the adapter itself will recover on reconnect.
+      pubClient.on('error', (err: Error) => fastify.log.warn({ err }, 'socket.io pub redis error'));
+      subClient.on('error', (err: Error) => fastify.log.warn({ err }, 'socket.io sub redis error'));
+
+      io.adapter(createAdapter(pubClient, subClient));
+      fastify.log.info('✅ Socket.IO Redis adapter attached (cross-instance broadcast)');
+
+      fastify.addHook('onClose', async () => {
+        await Promise.allSettled([pubClient.quit(), subClient.quit()]);
+      });
+    } catch (err) {
+      fastify.log.warn({ err }, '⚠️ Socket.IO Redis adapter failed to attach — falling back to in-memory (events will not cross instances)');
+    }
+  } else {
+    fastify.log.warn('⚠️ UPSTASH_REDIS_URL missing — Socket.IO using in-memory adapter (single instance only)');
+  }
 
   // ── Handshake auth ─────────────────────────────────────────────────────────
   io.use(async (socket, next) => {
