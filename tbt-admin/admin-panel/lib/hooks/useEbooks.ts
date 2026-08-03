@@ -42,6 +42,17 @@ export interface EbookAuthor {
   _count?: { books: number };
 }
 
+export interface EbookPublisher {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  country: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  _count?: { books: number };
+}
+
 export interface Ebook {
   id: string;
   title: string;
@@ -75,6 +86,16 @@ export interface Ebook {
     name: string;
     slug: string;
     photoUrl: string | null;
+  } | null;
+  // Publisher metadata.
+  isbn?: string | null;
+  language?: string | null;
+  publisherId?: string | null;
+  publisher?: {
+    id: string;
+    name: string;
+    slug: string;
+    logoUrl: string | null;
   } | null;
   // Per-batch access. null / omitted → all members; [id, ...] →
   // restrict to those batches only.
@@ -442,6 +463,66 @@ export const useDeleteEbookAuthor = () => {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ebooks", "authors"] });
+      qc.invalidateQueries({ queryKey: ["ebooks", "books"] });
+    },
+  });
+};
+
+// ── Publishers ────────────────────────────────────────────────────
+export const useListEbookPublishers = () =>
+  useQuery({
+    queryKey: ["ebooks", "publishers"],
+    queryFn: async (): Promise<EbookPublisher[]> => {
+      const res: any = await apiClient.get("/api/ebooks/admin/publishers");
+      return res?.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+export const useCreateEbookPublisher = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<EbookPublisher>) => {
+      const res: any = await apiClient.post(
+        "/api/ebooks/admin/publishers",
+        data,
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["ebooks", "publishers"] }),
+  });
+};
+
+export const useUpdateEbookPublisher = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<EbookPublisher>;
+    }) => {
+      const res: any = await apiClient.put(
+        `/api/ebooks/admin/publishers/${id}`,
+        data,
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["ebooks", "publishers"] }),
+  });
+};
+
+export const useDeleteEbookPublisher = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/ebooks/admin/publishers/${id}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ebooks", "publishers"] });
       qc.invalidateQueries({ queryKey: ["ebooks", "books"] });
     },
   });

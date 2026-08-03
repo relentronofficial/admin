@@ -38,6 +38,10 @@ import {
   useCreateEbookAuthor,
   useUpdateEbookAuthor,
   useDeleteEbookAuthor,
+  useListEbookPublishers,
+  useCreateEbookPublisher,
+  useUpdateEbookPublisher,
+  useDeleteEbookPublisher,
   type EbookCategory,
   type Ebook,
   type EbookBanner,
@@ -47,6 +51,7 @@ import {
   type BulkImportDryRunResult,
   type EbookSeries,
   type EbookAuthor,
+  type EbookPublisher,
 } from "@/lib/hooks/useEbooks";
 import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListBatches } from "@/lib/hooks/useTbt";
@@ -92,7 +97,7 @@ function StatChip({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-type Tab = "books" | "banners" | "categories" | "series" | "authors" | "reviews";
+type Tab = "books" | "banners" | "categories" | "series" | "authors" | "publishers" | "reviews";
 
 export default function EbooksPage() {
   const [tab, setTab] = useState<Tab>("books");
@@ -129,6 +134,7 @@ export default function EbooksPage() {
               { id: "categories", label: "Categories", icon: Layers },
               { id: "series", label: "Series", icon: FileText },
               { id: "authors", label: "Authors", icon: Edit2 },
+              { id: "publishers", label: "Publishers", icon: Layers },
               { id: "reviews", label: "Reviews", icon: Star },
             ] as { id: Tab; label: string; icon: any }[]
           ).map((t) => {
@@ -156,6 +162,7 @@ export default function EbooksPage() {
         {tab === "categories" && <CategoriesTab />}
         {tab === "series" && <SeriesTab />}
         {tab === "authors" && <AuthorsTab />}
+        {tab === "publishers" && <PublishersTab />}
         {tab === "reviews" && <ReviewsTab />}
       </div>
     </DashboardLayout>
@@ -754,12 +761,18 @@ function BookForm({
     initial?.seriesNumber != null ? String(initial.seriesNumber) : "",
   );
   const [authorId, setAuthorId] = useState<string>(initial?.authorId ?? "");
+  const [isbn, setIsbn] = useState<string>(initial?.isbn ?? "");
+  const [language, setLanguage] = useState<string>(initial?.language ?? "");
+  const [publisherId, setPublisherId] = useState<string>(
+    initial?.publisherId ?? "",
+  );
   const [tab, setTab] = useState<"edit" | "analytics" | "bookmarks">("edit");
   const slugTouchedRef = useRef(isEdit);
 
-  // Series + author picker sources (small lists, cached).
+  // Series + author + publisher picker sources (small lists, cached).
   const { data: seriesList } = useListEbookSeries();
   const { data: authorList } = useListEbookAuthors();
+  const { data: publisherList } = useListEbookPublishers();
 
   const coverUpload = useCoverUploader((url) => setCoverImage(url), "ebooks/covers");
   const pdfUpload = usePdfUploader((url) => setPdfUrl(url));
@@ -801,6 +814,9 @@ function BookForm({
       seriesNumber:
         seriesId && seriesNumber ? Number(seriesNumber) : null,
       authorId: authorId || null,
+      isbn: isbn.trim() || null,
+      language: language.trim() || null,
+      publisherId: publisherId || null,
     };
     try {
       if (isEdit) {
@@ -910,6 +926,46 @@ function BookForm({
             </option>
           ))}
         </select>
+      </div>
+      <div className="grid grid-cols-[1fr_120px_1fr] gap-3 mt-3">
+        <div>
+          <label className={labelCls}>ISBN</label>
+          <input
+            className={inputCls}
+            value={isbn}
+            onChange={(e) => setIsbn(e.target.value)}
+            placeholder="978-3-16-148410-0"
+          />
+        </div>
+        <div>
+          <label className={labelCls}>
+            Lang{" "}
+            <span className="text-[#666] normal-case font-normal">
+              (ISO code)
+            </span>
+          </label>
+          <input
+            className={inputCls}
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            placeholder="en"
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Publisher</label>
+          <select
+            className={inputCls}
+            value={publisherId}
+            onChange={(e) => setPublisherId(e.target.value)}
+          >
+            <option value="">— none —</option>
+            {(publisherList ?? []).map((p: EbookPublisher) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="mt-3">
         <label className={labelCls}>Description</label>
@@ -1526,6 +1582,225 @@ function parseCsvToRows(text: string): BulkImportRow[] {
     });
   }
   return out;
+}
+
+// ── Publishers tab ────────────────────────────────────────────────
+
+function PublishersTab() {
+  const { data: rows, isLoading } = useListEbookPublishers();
+  const [editing, setEditing] = useState<EbookPublisher | null>(null);
+  const [creating, setCreating] = useState(false);
+  const del = useDeleteEbookPublisher();
+
+  const onDelete = async (id: string, bookCount: number) => {
+    const msg =
+      bookCount > 0
+        ? `Delete this publisher? ${bookCount} book${bookCount === 1 ? "" : "s"} will keep working but lose the publisher link.`
+        : "Delete this publisher?";
+    if (!confirm(msg)) return;
+    try {
+      await del.mutateAsync(id);
+      toast.success("Publisher deleted");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Delete failed");
+    }
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] text-[#888]">
+          {rows?.length ?? 0} publisher{(rows?.length ?? 0) === 1 ? "" : "s"}
+        </span>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-widest font-rajdhani px-3 py-2 rounded-lg"
+        >
+          <Plus size={12} /> New Publisher
+        </button>
+      </div>
+
+      <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[60px_1fr_1fr_120px_100px_120px] px-4 py-3 border-b border-[#2a2a2a] text-[10px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">
+          <span></span>
+          <span>Name</span>
+          <span>Slug</span>
+          <span>Country</span>
+          <span>Books</span>
+          <span className="text-right">Actions</span>
+        </div>
+        {isLoading && (
+          <div className="p-8 text-center text-[#666]">
+            <Loader2 className="inline animate-spin" size={16} />
+          </div>
+        )}
+        {!isLoading && (rows?.length ?? 0) === 0 && (
+          <div className="p-8 text-center text-[#666] text-[12px]">
+            No publishers yet.
+          </div>
+        )}
+        {rows?.map((p) => (
+          <div
+            key={p.id}
+            className="grid grid-cols-[60px_1fr_1fr_120px_100px_120px] px-4 py-3 border-b border-[#2a2a2a]/50 last:border-b-0 items-center hover:bg-white/[0.02]"
+          >
+            {p.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={p.logoUrl}
+                alt=""
+                className="w-9 h-9 rounded object-contain bg-white/5 border border-[#2a2a2a] p-1"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded bg-[#2a2a2a] flex items-center justify-center text-[#a0a0a0] text-[11px] font-bold">
+                {p.name[0]?.toUpperCase() ?? "?"}
+              </div>
+            )}
+            <span className="text-[13px] text-white font-medium">
+              {p.name}
+            </span>
+            <span className="text-[12px] text-[#888] font-mono truncate">
+              {p.slug}
+            </span>
+            <span className="text-[12px] text-[#888]">
+              {p.country ?? "—"}
+            </span>
+            <span className="text-[12px] text-[#888]">
+              {p._count?.books ?? 0}
+            </span>
+            <div className="flex items-center gap-1 justify-end">
+              <button
+                onClick={() => setEditing(p)}
+                className="p-1.5 rounded hover:bg-white/5 text-[#a0a0a0]"
+                title="Edit"
+              >
+                <Edit2 size={13} />
+              </button>
+              <button
+                onClick={() => onDelete(p.id, p._count?.books ?? 0)}
+                className="p-1.5 rounded hover:bg-red-500/10 text-red-400"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {(creating || editing) && (
+        <PublisherForm
+          initial={editing ?? undefined}
+          onClose={() => {
+            setEditing(null);
+            setCreating(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function PublisherForm({
+  initial,
+  onClose,
+}: {
+  initial?: EbookPublisher;
+  onClose: () => void;
+}) {
+  const create = useCreateEbookPublisher();
+  const update = useUpdateEbookPublisher();
+  const isEdit = !!initial;
+  const [name, setName] = useState(initial?.name ?? "");
+  const [slug, setSlug] = useState(initial?.slug ?? "");
+  const [country, setCountry] = useState(initial?.country ?? "");
+  const [logoUrl, setLogoUrl] = useState(initial?.logoUrl ?? "");
+  const slugTouchedRef = useRef(isEdit);
+  const logoUpload = useCoverUploader(
+    (url) => setLogoUrl(url),
+    "ebooks/publishers",
+  );
+
+  const submit = async () => {
+    if (!name.trim() || !slug.trim()) {
+      toast.error("Name and slug are required.");
+      return;
+    }
+    const data = {
+      name,
+      slug,
+      country: country || null,
+      logoUrl: logoUrl || null,
+    };
+    try {
+      if (isEdit) {
+        await update.mutateAsync({ id: initial!.id, data });
+        toast.success("Publisher updated");
+      } else {
+        await create.mutateAsync(data);
+        toast.success("Publisher created");
+      }
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Save failed");
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title={isEdit ? "Edit Publisher" : "New Publisher"}>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Name</label>
+          <input
+            className={inputCls}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!slugTouchedRef.current) setSlug(toSlug(e.target.value));
+            }}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Slug</label>
+          <input
+            className={inputCls}
+            value={slug}
+            onChange={(e) => {
+              slugTouchedRef.current = true;
+              setSlug(toSlug(e.target.value));
+            }}
+          />
+        </div>
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>Country</label>
+        <input
+          className={inputCls}
+          value={country ?? ""}
+          onChange={(e) => setCountry(e.target.value)}
+          placeholder="India"
+        />
+      </div>
+      <div className="mt-3">
+        <label className={labelCls}>Logo</label>
+        {logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt=""
+            className="w-24 h-24 object-contain rounded bg-white/5 border border-[#2a2a2a] p-2 mb-2"
+          />
+        )}
+        {logoUpload.render}
+      </div>
+      <ModalActions
+        onClose={onClose}
+        onSubmit={submit}
+        busy={create.isPending || update.isPending}
+        isEdit={isEdit}
+      />
+    </Modal>
+  );
 }
 
 // ── Authors tab ───────────────────────────────────────────────────

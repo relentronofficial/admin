@@ -22,6 +22,8 @@ import {
   updateSeriesSchema,
   createAuthorSchema,
   updateAuthorSchema,
+  createPublisherSchema,
+  updatePublisherSchema,
 } from './schema.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
@@ -35,6 +37,7 @@ const bookInclude = {
   category: { select: { id: true, name: true, slug: true } },
   series: { select: { id: true, title: true, slug: true, coverUrl: true } },
   authorRef: { select: { id: true, name: true, slug: true, photoUrl: true } },
+  publisher: { select: { id: true, name: true, slug: true, logoUrl: true } },
 };
 
 // ────────────────────────────────────────────────────────────────
@@ -122,7 +125,7 @@ export async function adminListBooksHandler(req: FastifyRequest, reply: FastifyR
 export async function adminCreateBookHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = createBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, authorId, ...rest } =
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, authorId, isbn, language, publisherId, ...rest } =
     parsed.data;
   try {
     const created = await req.server.prisma.ebook.create({
@@ -137,6 +140,9 @@ export async function adminCreateBookHandler(req: FastifyRequest, reply: Fastify
         seriesId: seriesId ?? null,
         seriesNumber: seriesNumber ?? null,
         authorId: authorId ?? null,
+        isbn: isbn?.trim() || null,
+        language: language?.trim() || null,
+        publisherId: publisherId ?? null,
       },
       include: bookInclude,
     });
@@ -151,7 +157,7 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
   const { id } = req.params as { id: string };
   const parsed = updateBookSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, authorId, ...rest } =
+  const { publishDate, batchIds, pinnedAt, pinnedUntil, seriesId, seriesNumber, authorId, isbn, language, publisherId, ...rest } =
     parsed.data;
   try {
     const updated = await req.server.prisma.ebook.update({
@@ -177,6 +183,13 @@ export async function adminUpdateBookHandler(req: FastifyRequest, reply: Fastify
           ? { seriesNumber: seriesNumber ?? null }
           : {}),
         ...(authorId !== undefined ? { authorId: authorId ?? null } : {}),
+        ...(isbn !== undefined ? { isbn: isbn?.trim() || null } : {}),
+        ...(language !== undefined
+          ? { language: language?.trim() || null }
+          : {}),
+        ...(publisherId !== undefined
+          ? { publisherId: publisherId ?? null }
+          : {}),
       },
       include: bookInclude,
     });
@@ -318,6 +331,60 @@ export async function adminDeleteAuthorHandler(req: FastifyRequest, reply: Fasti
     return ok(reply, null);
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Author not found.');
+    throw err;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// PUBLISHERS — admin
+// ────────────────────────────────────────────────────────────────
+export async function adminListPublishersHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.ebookPublisher.findMany({
+    orderBy: { name: 'asc' },
+    include: { _count: { select: { books: true } } },
+  });
+  return ok(reply, rows);
+}
+
+export async function adminCreatePublisherHandler(req: FastifyRequest, reply: FastifyReply) {
+  const parsed = createPublisherSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const created = await req.server.prisma.ebookPublisher.create({ data: parsed.data });
+    return reply.status(201).send({ success: true, data: created, error: null });
+  } catch (err: any) {
+    if (err?.code === 'P2002')
+      return fail(reply, 409, 'duplicate_slug', 'Publisher slug already in use.');
+    throw err;
+  }
+}
+
+export async function adminUpdatePublisherHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = updatePublisherSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const updated = await req.server.prisma.ebookPublisher.update({
+      where: { id },
+      data: parsed.data,
+    });
+    return ok(reply, updated);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Publisher not found.');
+    if (err?.code === 'P2002')
+      return fail(reply, 409, 'duplicate_slug', 'Publisher slug already in use.');
+    throw err;
+  }
+}
+
+export async function adminDeletePublisherHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  try {
+    // Set-null cascade clears publisherId on child books.
+    await req.server.prisma.ebookPublisher.delete({ where: { id } });
+    return ok(reply, null);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Publisher not found.');
     throw err;
   }
 }

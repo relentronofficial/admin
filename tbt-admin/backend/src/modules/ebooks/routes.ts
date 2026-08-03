@@ -28,6 +28,10 @@ import {
   adminCreateAuthorHandler,
   adminUpdateAuthorHandler,
   adminDeleteAuthorHandler,
+  adminListPublishersHandler,
+  adminCreatePublisherHandler,
+  adminUpdatePublisherHandler,
+  adminDeletePublisherHandler,
   // member
   listActiveCategoriesHandler,
   listFeaturedBooksHandler,
@@ -92,6 +96,11 @@ export async function ebookRoutes(fastify: FastifyInstance) {
       adminScope.post('/authors', adminCreateAuthorHandler);
       adminScope.put('/authors/:id', adminUpdateAuthorHandler);
       adminScope.delete('/authors/:id', adminDeleteAuthorHandler);
+
+      adminScope.get('/publishers', adminListPublishersHandler);
+      adminScope.post('/publishers', adminCreatePublisherHandler);
+      adminScope.put('/publishers/:id', adminUpdatePublisherHandler);
+      adminScope.delete('/publishers/:id', adminDeletePublisherHandler);
     },
     { prefix: '/admin' },
   );

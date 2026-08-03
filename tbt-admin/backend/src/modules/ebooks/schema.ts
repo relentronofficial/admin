@@ -46,6 +46,10 @@ export const createBookSchema = z.object({
   // Optional managed-author FK. Legacy `author` string still works
   // for un-linked rows.
   authorId: z.string().uuid().optional().nullable(),
+  // Publisher metadata.
+  isbn: z.string().trim().max(32).optional().nullable(),
+  language: z.string().trim().max(16).optional().nullable(),
+  publisherId: z.string().uuid().optional().nullable(),
 });
 export const updateBookSchema = createBookSchema.partial();
 
@@ -66,6 +70,15 @@ export const createAuthorSchema = z.object({
   photoUrl: z.string().url().optional().nullable(),
 });
 export const updateAuthorSchema = createAuthorSchema.partial();
+
+// Publisher CRUD.
+export const createPublisherSchema = z.object({
+  name: z.string().min(1).max(255),
+  slug: slugSchema,
+  logoUrl: z.string().url().optional().nullable(),
+  country: z.string().trim().max(64).optional().nullable(),
+});
+export const updatePublisherSchema = createPublisherSchema.partial();
 
 export const createBannerSchema = z.object({
   title: z.string().min(1).max(255),

@@ -123,6 +123,9 @@ class Ebook {
     this.seriesNumber,
     this.seriesSiblings = const [],
     this.authorRef,
+    this.isbn,
+    this.language,
+    this.publisher,
   });
 
   final String id;
@@ -186,6 +189,12 @@ class Ebook {
   /// still carries the plain-text credit for un-linked rows.
   final EbookAuthorRef? authorRef;
 
+  /// Publisher metadata. All nullable — the detail screen renders
+  /// these fields only when non-null.
+  final String? isbn;
+  final String? language;
+  final EbookPublisherRef? publisher;
+
   factory Ebook.fromJson(Map<String, dynamic> j) => Ebook(
         id: j['id'] as String,
         title: j['title'] as String,
@@ -233,6 +242,35 @@ class Ebook {
         authorRef: j['authorRef'] != null
             ? EbookAuthorRef.fromJson(j['authorRef'] as Map<String, dynamic>)
             : null,
+        isbn: j['isbn'] as String?,
+        language: j['language'] as String?,
+        publisher: j['publisher'] != null
+            ? EbookPublisherRef.fromJson(
+                j['publisher'] as Map<String, dynamic>,
+              )
+            : null,
+      );
+}
+
+/// Compact publisher reference on the book detail endpoint.
+class EbookPublisherRef {
+  const EbookPublisherRef({
+    required this.id,
+    required this.name,
+    required this.slug,
+    this.logoUrl,
+  });
+  final String id;
+  final String name;
+  final String slug;
+  final String? logoUrl;
+
+  factory EbookPublisherRef.fromJson(Map<String, dynamic> j) =>
+      EbookPublisherRef(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        slug: j['slug'] as String,
+        logoUrl: j['logoUrl'] as String?,
       );
 }
 

@@ -2966,11 +2966,20 @@ model Ebook {
   // Lifetime "opens" of the detail endpoint from members. Powers the
   // trending row on the ebooks home. Bumped inside getBookHandler.
   viewCount    Int       @default(0) @map("view_count")
+  // Publisher metadata. `isbn` and `language` are free-form strings —
+  // Prisma doesn't need to validate ISBN format at the DB layer.
+  // `publisherId` links to a managed EbookPublisher record; the
+  // legacy free-form absence isn't a concern (there was no publisher
+  // string before this).
+  isbn         String?   @db.VarChar(32)
+  language     String?   @default("en") @db.VarChar(16)
+  publisherId  String?   @map("publisher_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   category     EbookCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   series       EbookSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   authorRef    EbookAuthor?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  publisher    EbookPublisher? @relation(fields: [publisherId], references: [id], onDelete: SetNull)
   bookmarks    EbookBookmark[]
   progress     EbookProgress[]
   reviews      EbookReview[]
@@ -2979,7 +2988,22 @@ model Ebook {
   @@index([status])
   @@index([seriesId, seriesNumber])
   @@index([authorId])
+  @@index([publisherId])
   @@map("ebooks")
+}
+
+// Managed publisher records. Same shape as EbookAuthor — optional
+// link on Ebook, cleared with set-null on delete.
+model EbookPublisher {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.VarChar(255)
+  slug      String   @unique @db.VarChar(255)
+  logoUrl   String?  @map("logo_url")
+  country   String?  @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  books     Ebook[]
+  @@map("ebook_publishers")
 }
 
 // Managed author profile. Books can link via Ebook.authorId; the
