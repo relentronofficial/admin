@@ -252,6 +252,77 @@ class Ebook {
       );
 }
 
+/// A member-scoped highlight / note on a page of a specific book.
+/// `selectedText` is what the member wrote / selected; `notes` is an
+/// optional annotation.
+class EbookHighlight {
+  const EbookHighlight({
+    required this.id,
+    required this.bookId,
+    required this.pageNumber,
+    required this.selectedText,
+    required this.highlightColor,
+    this.notes,
+    required this.createdAt,
+    required this.updatedAt,
+    this.book,
+  });
+
+  final String id;
+  final String bookId;
+  final int pageNumber;
+  final String selectedText;
+  final String highlightColor;
+  final String? notes;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  /// Compact book reference — only populated by the aggregate
+  /// `/api/ebooks/highlights` endpoint so the My Highlights screen
+  /// can render the cover + title without a second fetch.
+  final EbookHighlightBookRef? book;
+
+  factory EbookHighlight.fromJson(Map<String, dynamic> j) => EbookHighlight(
+        id: j['id'] as String,
+        bookId: j['bookId'] as String,
+        pageNumber: (j['pageNumber'] as int?) ?? 1,
+        selectedText: (j['selectedText'] as String?) ?? '',
+        highlightColor: (j['highlightColor'] as String?) ?? 'yellow',
+        notes: j['notes'] as String?,
+        createdAt: DateTime.parse(j['createdAt'] as String),
+        updatedAt: DateTime.parse(j['updatedAt'] as String),
+        book: j['book'] != null
+            ? EbookHighlightBookRef.fromJson(
+                j['book'] as Map<String, dynamic>,
+              )
+            : null,
+      );
+}
+
+class EbookHighlightBookRef {
+  const EbookHighlightBookRef({
+    required this.id,
+    required this.title,
+    required this.slug,
+    this.coverImage,
+    this.author,
+  });
+  final String id;
+  final String title;
+  final String slug;
+  final String? coverImage;
+  final String? author;
+
+  factory EbookHighlightBookRef.fromJson(Map<String, dynamic> j) =>
+      EbookHighlightBookRef(
+        id: j['id'] as String,
+        title: j['title'] as String,
+        slug: j['slug'] as String,
+        coverImage: j['coverImage'] as String?,
+        author: j['author'] as String?,
+      );
+}
+
 /// Compact publisher reference on the book detail endpoint.
 class EbookPublisherRef {
   const EbookPublisherRef({

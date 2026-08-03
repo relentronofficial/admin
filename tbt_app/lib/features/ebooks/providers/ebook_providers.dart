@@ -40,6 +40,19 @@ final trendingBooksProvider =
   return ref.watch(ebookServiceProvider).listTrending(limit: 10);
 });
 
+// ── Highlights ────────────────────────────────────────────────────
+// Per-book (keyed by bookId). Invalidate after add/delete.
+final bookHighlightsProvider = FutureProvider.autoDispose
+    .family<List<EbookHighlight>, String>((ref, bookId) async {
+  return ref.watch(ebookServiceProvider).listHighlightsForBook(bookId);
+});
+
+// Aggregate across all books — powers the "My Highlights" screen.
+final myHighlightsProvider =
+    FutureProvider.autoDispose<List<EbookHighlight>>((ref) async {
+  return ref.watch(ebookServiceProvider).listAllHighlights();
+});
+
 // ── Banners ──────────────────────────────────────────────────────
 final ebookBannersProvider =
     FutureProvider.autoDispose<List<EbookBanner>>((ref) async {

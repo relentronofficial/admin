@@ -217,6 +217,77 @@ class EbookService {
     }
   }
 
+  /// Highlights the caller saved on a specific book, ordered by
+  /// page ascending. Powers the reader-side highlight sheet.
+  Future<List<EbookHighlight>> listHighlightsForBook(String bookId) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/ebooks/books/$bookId/highlights',
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(EbookHighlight.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Aggregate highlights across every book the caller has annotated,
+  /// newest first. Powers the "My Highlights" screen.
+  Future<List<EbookHighlight>> listAllHighlights({
+    int page = 1,
+    int limit = 100,
+  }) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/ebooks/highlights',
+        queryParameters: {'page': page, 'limit': limit},
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(EbookHighlight.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<EbookHighlight> createHighlight({
+    required String bookId,
+    required int pageNumber,
+    required String selectedText,
+    String? highlightColor,
+    String? notes,
+  }) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/ebooks/books/$bookId/highlights',
+        data: {
+          'pageNumber': pageNumber,
+          'selectedText': selectedText,
+          if (highlightColor != null && highlightColor.isNotEmpty)
+            'highlightColor': highlightColor,
+          if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        },
+      );
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
+      return EbookHighlight.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> deleteHighlight(String highlightId) async {
+    try {
+      await _dio.delete<void>('/api/ebooks/highlights/$highlightId');
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   /// Top-N most-viewed books across the whole library. Powers the
   /// "Trending" strip on the ebooks home. Backend hides zero-view
   /// rows so the strip never falls back to random alphabetical order.

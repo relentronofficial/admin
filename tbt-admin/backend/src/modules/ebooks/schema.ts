@@ -80,6 +80,18 @@ export const createPublisherSchema = z.object({
 });
 export const updatePublisherSchema = createPublisherSchema.partial();
 
+// Member-scoped highlights / notes. `selectedText` is required
+// because a highlight without text is just a bookmark. Color is a
+// free-form short string so we can add more swatches without
+// backend changes.
+export const createHighlightSchema = z.object({
+  pageNumber: z.number().int().min(1),
+  selectedText: z.string().trim().min(1).max(4000),
+  highlightColor: z.string().trim().max(32).optional().nullable(),
+  notes: z.string().trim().max(4000).optional().nullable(),
+});
+export const updateHighlightSchema = createHighlightSchema.partial();
+
 export const createBannerSchema = z.object({
   title: z.string().min(1).max(255),
   subtitle: z.string().optional().nullable(),

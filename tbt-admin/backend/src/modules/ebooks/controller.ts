@@ -24,6 +24,8 @@ import {
   updateAuthorSchema,
   createPublisherSchema,
   updatePublisherSchema,
+  createHighlightSchema,
+  updateHighlightSchema,
 } from './schema.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
@@ -1268,6 +1270,139 @@ export async function getReadingStreakHandler(req: FastifyRequest, reply: Fastif
     currentStreak: stillAlive ? row.currentStreak : 0,
     longestStreak: row.longestStreak,
     lastReadAt: row.lastReadAt,
+  });
+}
+
+// ────────────────────────────────────────────────────────────────
+// HIGHLIGHTS — member (own only)
+// ────────────────────────────────────────────────────────────────
+export async function memberListBookHighlightsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id: bookId } = req.params as { id: string };
+  const rows = await req.server.prisma.ebookHighlight.findMany({
+    where: { memberId: req.memberId!, bookId },
+    orderBy: [{ pageNumber: 'asc' }, { createdAt: 'asc' }],
+  });
+  return ok(reply, rows);
+}
+
+export async function memberCreateHighlightHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id: bookId } = req.params as { id: string };
+  const parsed = createHighlightSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  // Same gates as bookmarks / progress: the book must exist, be
+  // active, and not batch-locked for this member.
+  const book = await req.server.prisma.ebook.findFirst({
+    where: { id: bookId, status: 'active' },
+    select: { id: true, batchIds: true },
+  });
+  if (!book) return fail(reply, 404, 'not_found', 'Book not found.');
+  const memberBatchId = await getMemberBatchId(req);
+  if (isBookLocked((book as any).batchIds, memberBatchId)) {
+    return fail(
+      reply,
+      403,
+      'batch_restricted',
+      'You cannot highlight a book that isn\'t available to your batch.',
+    );
+  }
+
+  const { pageNumber, selectedText, highlightColor, notes } = parsed.data;
+  const created = await req.server.prisma.ebookHighlight.create({
+    data: {
+      memberId: req.memberId!,
+      bookId,
+      pageNumber,
+      selectedText,
+      highlightColor: highlightColor?.trim() || 'yellow',
+      notes: notes?.trim() || null,
+    },
+  });
+  return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+export async function memberUpdateHighlightHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = updateHighlightSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  // Enforce ownership via a compound where — an id-only update
+  // could let one member edit another member's highlight otherwise.
+  const existing = await req.server.prisma.ebookHighlight.findFirst({
+    where: { id, memberId: req.memberId! },
+    select: { id: true },
+  });
+  if (!existing) return fail(reply, 404, 'not_found', 'Highlight not found.');
+
+  const updated = await req.server.prisma.ebookHighlight.update({
+    where: { id },
+    data: {
+      ...(parsed.data.pageNumber !== undefined
+        ? { pageNumber: parsed.data.pageNumber }
+        : {}),
+      ...(parsed.data.selectedText !== undefined
+        ? { selectedText: parsed.data.selectedText }
+        : {}),
+      ...(parsed.data.highlightColor !== undefined
+        ? {
+            highlightColor:
+              parsed.data.highlightColor?.trim() || 'yellow',
+          }
+        : {}),
+      ...(parsed.data.notes !== undefined
+        ? { notes: parsed.data.notes?.trim() || null }
+        : {}),
+    },
+  });
+  return ok(reply, updated);
+}
+
+export async function memberDeleteHighlightHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const existing = await req.server.prisma.ebookHighlight.findFirst({
+    where: { id, memberId: req.memberId! },
+    select: { id: true },
+  });
+  if (!existing) return fail(reply, 404, 'not_found', 'Highlight not found.');
+  await req.server.prisma.ebookHighlight.delete({ where: { id } });
+  return ok(reply, null);
+}
+
+// Aggregation across all books — powers the "My highlights" screen.
+// Returns each highlight with a compact book reference so the UI can
+// tap through to the reader.
+export async function memberListAllHighlightsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { page = '1', limit = '50' } = req.query as Record<string, string>;
+  const p = Math.max(1, Number(page) || 1);
+  const l = Math.min(200, Math.max(1, Number(limit) || 50));
+
+  const [rows, total] = await Promise.all([
+    req.server.prisma.ebookHighlight.findMany({
+      where: { memberId: req.memberId! },
+      include: {
+        book: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            coverImage: true,
+            author: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      skip: (p - 1) * l,
+      take: l,
+    }),
+    req.server.prisma.ebookHighlight.count({
+      where: { memberId: req.memberId! },
+    }),
+  ]);
+  return reply.send({
+    success: true,
+    data: rows,
+    meta: { total, page: p, limit: l },
+    error: null,
   });
 }
 

@@ -49,6 +49,11 @@ import {
   getReadingStreakHandler,
   memberGetAuthorHandler,
   listTrendingBooksHandler,
+  memberListBookHighlightsHandler,
+  memberCreateHighlightHandler,
+  memberUpdateHighlightHandler,
+  memberDeleteHighlightHandler,
+  memberListAllHighlightsHandler,
 } from './controller.js';
 
 /**
@@ -125,5 +130,10 @@ export async function ebookRoutes(fastify: FastifyInstance) {
     userScope.get('/streak', getReadingStreakHandler);
     userScope.get('/authors/:slug', memberGetAuthorHandler);
     userScope.get('/trending', listTrendingBooksHandler);
+    userScope.get('/books/:id/highlights', memberListBookHighlightsHandler);
+    userScope.post('/books/:id/highlights', memberCreateHighlightHandler);
+    userScope.put('/highlights/:id', memberUpdateHighlightHandler);
+    userScope.delete('/highlights/:id', memberDeleteHighlightHandler);
+    userScope.get('/highlights', memberListAllHighlightsHandler);
   });
 }

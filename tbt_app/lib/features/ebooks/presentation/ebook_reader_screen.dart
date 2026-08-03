@@ -127,6 +127,26 @@ class _EbookReaderScreenState extends ConsumerState<EbookReaderScreen> {
     }
   }
 
+  Future<void> _openHighlightSheet() async {
+    // Sheet is manual-entry (page number + selected text + optional
+    // note) because flutter_pdfview doesn't expose text selection —
+    // native text-highlight overlay needs a PDF-library swap and is
+    // tracked as a separate follow-up.
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _HighlightComposerSheet(
+        bookId: widget.bookId,
+        initialPage: _currentPage + 1,
+        onSaved: () {
+          ref.invalidate(bookHighlightsProvider(widget.bookId));
+          ref.invalidate(myHighlightsProvider);
+        },
+      ),
+    );
+  }
+
   @override
   void dispose() {
     // Flush final progress before the screen disappears.
@@ -148,6 +168,11 @@ class _EbookReaderScreenState extends ConsumerState<EbookReaderScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Add highlight / note',
+            icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
+            onPressed: _openHighlightSheet,
+          ),
           IconButton(
             tooltip: 'Bookmark',
             icon: _busyBookmark
@@ -207,6 +232,222 @@ class _ErrorState extends StatelessWidget {
           message,
           textAlign: TextAlign.center,
           style: TextStyle(color: context.tokens.textSecondary, fontSize: 14, height: 1.4),
+        ),
+      ),
+    );
+  }
+}
+
+// Manual-entry highlight composer. Not tied to real text selection in
+// the PDF — see the note on _openHighlightSheet in the parent screen.
+class _HighlightComposerSheet extends ConsumerStatefulWidget {
+  const _HighlightComposerSheet({
+    required this.bookId,
+    required this.initialPage,
+    required this.onSaved,
+  });
+  final String bookId;
+  final int initialPage;
+  final VoidCallback onSaved;
+
+  @override
+  ConsumerState<_HighlightComposerSheet> createState() =>
+      _HighlightComposerSheetState();
+}
+
+class _HighlightComposerSheetState
+    extends ConsumerState<_HighlightComposerSheet> {
+  final _pageCtl = TextEditingController();
+  final _textCtl = TextEditingController();
+  final _noteCtl = TextEditingController();
+  String _color = 'yellow';
+  bool _saving = false;
+
+  static const _colors = <String, Color>{
+    'yellow': Color(0xFFFFD54F),
+    'green': Color(0xFF81C784),
+    'pink': Color(0xFFF48FB1),
+    'blue': Color(0xFF64B5F6),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _pageCtl.text = widget.initialPage.toString();
+  }
+
+  @override
+  void dispose() {
+    _pageCtl.dispose();
+    _textCtl.dispose();
+    _noteCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final page = int.tryParse(_pageCtl.text.trim());
+    final text = _textCtl.text.trim();
+    if (page == null || page < 1) {
+      _snack('Enter a valid page number.');
+      return;
+    }
+    if (text.isEmpty) {
+      _snack('Highlight text is required.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await ref.read(ebookServiceProvider).createHighlight(
+            bookId: widget.bookId,
+            pageNumber: page,
+            selectedText: text,
+            highlightColor: _color,
+            notes: _noteCtl.text.trim(),
+          );
+      if (!mounted) return;
+      widget.onSaved();
+      Navigator.of(context).pop();
+      _snack('Highlight saved');
+    } catch (_) {
+      _snack('Could not save highlight');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: tokens.borderCard,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Add highlight',
+              style: TextStyle(
+                color: tokens.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 90,
+                  child: TextField(
+                    controller: _pageCtl,
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(color: tokens.textPrimary),
+                    decoration: const InputDecoration(
+                      labelText: 'Page',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    children: _colors.entries
+                        .map(
+                          (e) => GestureDetector(
+                            onTap: () => setState(() => _color = e.key),
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: e.value,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _color == e.key
+                                      ? tokens.textPrimary
+                                      : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _textCtl,
+              maxLines: 4,
+              minLines: 3,
+              style: TextStyle(color: tokens.textPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Highlight text',
+                hintText: 'Type or paste the passage you want to keep.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _noteCtl,
+              maxLines: 2,
+              minLines: 1,
+              style: TextStyle(color: tokens.textPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Your note (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _saving ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

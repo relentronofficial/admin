@@ -383,6 +383,7 @@ model Member {
   ebookProgress         EbookProgress[]
   ebookReviews          EbookReview[]
   ebookReadingStreak    EbookReadingStreak?
+  ebookHighlights       EbookHighlight[]
   helpdeskTickets       HelpdeskTicket[]   @relation("MemberHelpdeskTickets")
   helpdeskFeedback      HelpdeskFeedback[] @relation("MemberHelpdeskFeedback")
   tbtActivityLog        TbtActivityLog[]   @relation("MemberTbtActivityLog")
@@ -2983,6 +2984,7 @@ model Ebook {
   bookmarks    EbookBookmark[]
   progress     EbookProgress[]
   reviews      EbookReview[]
+  highlights   EbookHighlight[]
 
   @@index([categoryId])
   @@index([status])
@@ -3096,6 +3098,29 @@ model EbookReadingStreak {
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   member         Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
   @@map("ebook_reading_streaks")
+}
+
+// Member-scoped highlight / note on a book page. Members can save
+// multiple highlights per book (one per page or multiple per page).
+// Color is a short string (`yellow` / `green` / `pink` / ...); the
+// client renders it as a colored swatch. Cascade on member/book
+// delete so we don't leak orphan notes.
+model EbookHighlight {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId       String   @map("member_id") @db.Uuid
+  bookId         String   @map("book_id")   @db.Uuid
+  pageNumber     Int      @map("page_number")
+  selectedText   String   @map("selected_text")
+  highlightColor String?  @default("yellow") @map("highlight_color") @db.VarChar(32)
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member         Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  book           Ebook    @relation(fields: [bookId],   references: [id], onDelete: Cascade)
+
+  @@index([memberId, bookId])
+  @@index([memberId, updatedAt(sort: Desc)])
+  @@map("ebook_highlights")
 }
 
 // Member-submitted ratings/reviews on ebooks. One row per (member, book);
