@@ -91,7 +91,12 @@ export async function cacheNxSet(
     try {
       const result = await redis.set(key, '1', 'EX', ttlSeconds, 'NX');
       return result === 'OK';
-    } catch {
+    } catch (err) {
+      // Fail-open on Redis error: we'd rather over-compute across instances
+      // than leave stale state forever. Log so a wedged Upstash surfaces in
+      // prod instead of silently degrading the cross-instance lock.
+      // eslint-disable-next-line no-console
+      console.warn(`[cacheNxSet] redis error on key=${key}, falling back to allow`, err);
       return true;
     }
   }
