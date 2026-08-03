@@ -3,8 +3,78 @@ import type { RedisLike } from './cache.js';
 const OTP_TTL = 300; // 5 minutes
 const MAX_ATTEMPTS = 3;
 
+// ── Rate-limit knobs ───────────────────────────────────────────────
+// Cooldown: minimum gap between OTPs to the same phone. Guards
+// against double-taps and rapid-resend loops (mobile back button →
+// login → back button → login → ...).
+const OTP_COOLDOWN_SEC = 60;
+// Hourly cap per phone: protects the WhatsApp/SMS balance from a
+// scripted attacker who cycles through Resend, and keeps a real user
+// from accidentally locking themselves out of the MSG91 provider.
+const OTP_HOURLY_MAX = 5;
+const OTP_HOURLY_WINDOW_SEC = 3600;
+
+export type OtpRateResult =
+  | { ok: true }
+  | { ok: false; retryAfterSeconds: number; reason: 'cooldown' | 'hourly_cap' };
+
 export function generateOtp(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+/**
+ * Gate an OTP send. Call this BEFORE `sendOtpWhatsapp`. Returns
+ * `{ ok: false, retryAfterSeconds, reason }` when the caller has
+ * either resent too fast (cooldown) or exceeded the hourly cap.
+ *
+ * Fails OPEN on any Redis error — a wedged Upstash must not lock
+ * every user out of login. The 60-second cooldown is the primary
+ * abuse guard; the hourly cap is a secondary belt-and-braces.
+ *
+ * Bumps counters at the same time as the check: the current call
+ * "spends" one cooldown slot even if the send later fails. That's
+ * intentional — otherwise an attacker who forces a downstream
+ * failure could bypass the limit.
+ */
+export async function checkOtpRateLimit(
+  redis: RedisLike | null,
+  phone: string,
+): Promise<OtpRateResult> {
+  if (!redis) return { ok: true };
+
+  const cooldownKey = `otp:cooldown:${phone}`;
+  const hourlyKey = `otp:hourly:${phone}`;
+
+  try {
+    // Cooldown: SET NX EX — returns 'OK' if we set it (allowed),
+    // null if the key already exists (blocked).
+    const cooldownResult = await redis.set(cooldownKey, '1', 'EX', OTP_COOLDOWN_SEC, 'NX');
+    if (cooldownResult !== 'OK') {
+      return { ok: false, retryAfterSeconds: OTP_COOLDOWN_SEC, reason: 'cooldown' };
+    }
+
+    // Hourly counter: INCR + set TTL on first hit. The UpstashAdapter
+    // in plugins/redis.ts exposes both; RedisLike doesn't declare
+    // them so we cast — the try/catch handles the absent-method case.
+    const anyRedis = redis as unknown as {
+      incr?: (key: string) => Promise<number>;
+      expire?: (key: string, seconds: number) => Promise<number>;
+    };
+    if (typeof anyRedis.incr === 'function') {
+      const count = await anyRedis.incr(hourlyKey);
+      if (count === 1 && typeof anyRedis.expire === 'function') {
+        await anyRedis.expire(hourlyKey, OTP_HOURLY_WINDOW_SEC);
+      }
+      if (count > OTP_HOURLY_MAX) {
+        return { ok: false, retryAfterSeconds: OTP_HOURLY_WINDOW_SEC, reason: 'hourly_cap' };
+      }
+    }
+
+    return { ok: true };
+  } catch (err) {
+    console.warn(`[otp.checkOtpRateLimit] redis error phone=${phone}, failing open`, err);
+    return { ok: true };
+  }
 }
 
 interface OtpRecord { otp: string; attempts: number; }

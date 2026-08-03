@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
-import { generateOtp, storeOtp, verifyAndConsumeOtp } from '../../lib/otp.js';
+import { generateOtp, storeOtp, verifyAndConsumeOtp, checkOtpRateLimit } from '../../lib/otp.js';
 import { sendOtpWhatsapp, sendOtpWhatsappDiagnostic } from '../../lib/whatsapp.js';
 import { env } from '../../config/env.js';
 import {
@@ -56,6 +56,24 @@ async function issueTokens(fastify: FastifyInstance, reply: any, memberId: strin
 /// A separate `delivered` boolean is included in the response so the
 /// client can distinguish "OTP is on the way" from "delivery failed,
 /// user should press Resend".
+// Shared 429 response for OTP rate-limit rejections. Includes
+// retryAfterSeconds so the mobile client can render a countdown
+// instead of a bare error toast.
+function otpRateLimitReply(reply: any, gate: Extract<Awaited<ReturnType<typeof checkOtpRateLimit>>, { ok: false }>) {
+  const message = gate.reason === 'cooldown'
+    ? `Please wait ${gate.retryAfterSeconds}s before requesting another OTP.`
+    : 'Too many OTP requests. Please try again in an hour.';
+  return reply
+    .status(429)
+    .header('Retry-After', String(gate.retryAfterSeconds))
+    .send({
+      success: false,
+      data: null,
+      error: message,
+      retryAfterSeconds: gate.retryAfterSeconds,
+    });
+}
+
 function otpResponseFields(sent: boolean, otp: string): {
   otp?: string;
   delivered: boolean;
@@ -115,6 +133,8 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
         error: 'Invalid phone or password',
       });
     }
+    const gate = await checkOtpRateLimit(getRedis(fastify), m.phone);
+    if (!gate.ok) return otpRateLimitReply(reply, gate);
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
     const sent = await sendOtpWhatsapp(m.phone, otp);
@@ -147,6 +167,8 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     });
   }
 
+  const gate = await checkOtpRateLimit(getRedis(fastify), m.phone);
+  if (!gate.ok) return otpRateLimitReply(reply, gate);
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
   const sent = await sendOtpWhatsapp(m.phone, otp);
@@ -241,6 +263,8 @@ export async function forgotPassword(fastify: FastifyInstance, request: any, rep
     return reply.status(403).send({ success: false, data: null, error: `Account is ${m.status}. Please contact admin.` });
   }
 
+  const gate = await checkOtpRateLimit(getRedis(fastify), m.phone);
+  if (!gate.ok) return otpRateLimitReply(reply, gate);
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
   const sent = await sendOtpWhatsapp(m.phone, otp);
@@ -265,6 +289,8 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
 
+  const gate = await checkOtpRateLimit(getRedis(fastify), (member as any).phone);
+  if (!gate.ok) return otpRateLimitReply(reply, gate);
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), (member as any).phone, otp);
   const sent = await sendOtpWhatsapp((member as any).phone, otp);
