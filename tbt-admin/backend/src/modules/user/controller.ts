@@ -2221,6 +2221,8 @@ export async function markNotificationReadHandler(request: FastifyRequest, reply
     include: { notification: { select: { title: true, message: true, type: true, actionUrl: true, mediaType: true, mediaUrl: true, createdAt: true } } },
   });
 
+  void invalidateCache(request.server.redis ?? null, `notif:unread:${request.memberId}`);
+
   return ok(reply, {
     id: updated.id,
     title: updated.notification.title,
@@ -2240,6 +2242,7 @@ export async function markAllNotificationsReadHandler(request: FastifyRequest, r
     where: { memberId: request.memberId, readAt: null },
     data: { readAt: new Date() },
   });
+  void invalidateCache(request.server.redis ?? null, `notif:unread:${request.memberId}`);
   return ok(reply, { updated: result.count });
 }
 
@@ -2248,6 +2251,7 @@ export async function dismissNotificationHandler(request: FastifyRequest, reply:
   await request.server.prisma.appNotificationRecipient.deleteMany({
     where: { id, memberId: request.memberId },
   });
+  void invalidateCache(request.server.redis ?? null, `notif:unread:${request.memberId}`);
   return ok(reply, { dismissed: true });
 }
 

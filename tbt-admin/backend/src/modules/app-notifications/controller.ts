@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { invalidateCache } from '../../lib/cache.js';
 
 export async function listNotificationsHandler(req: FastifyRequest, reply: FastifyReply) {
   const { page = 1, limit = 20 } = req.query as any;
@@ -56,12 +57,19 @@ export async function createNotificationHandler(req: FastifyRequest, reply: Fast
 
   // Emit real-time socket events
   const payload = { title, body: message, type: type || 'info', actionUrl: actionUrl ?? undefined, mediaType: mediaType ?? undefined, mediaUrl: mediaUrl ?? undefined };
+  const redis = req.server.redis ?? null;
   if (recipientType === 'all' || targetMemberIds.length === 0) {
     req.server.io.emit('notification:broadcast', payload);
   } else {
     for (const memberId of targetMemberIds) {
       req.server.io.to(`user:${memberId}`).emit('notification', payload);
     }
+  }
+  // Bust the unread-count cache for every member that got a per-member
+  // recipient row. `recipientType === 'all'` populates targetMemberIds
+  // via findMany above, so this covers the broadcast case too.
+  for (const memberId of targetMemberIds) {
+    void invalidateCache(redis, `notif:unread:${memberId}`);
   }
 
   return reply.status(201).send({ success: true, data: notification, error: null });
