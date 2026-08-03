@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createPostSchema, updatePostPinSchema, submitPostSchema, approvePostSchema } from './schema.js';
+import { cacheGet, cacheSet } from '../../lib/cache.js';
 
 // ── Member-facing: submit + list approved feed (Module 9A) ─────────
 //
@@ -13,6 +14,31 @@ import { createPostSchema, updatePostPinSchema, submitPostSchema, approvePostSch
 export async function memberListFeedHandler(request: FastifyRequest, reply: FastifyReply) {
   const { page = 1, limit = 20, filter = 'all' } = request.query as any;
   const memberId = request.memberId;
+
+  // Short-lived per-member cache for the read-heavy 'all' / 'mentors'
+  // paths. Each request otherwise runs FIVE Prisma queries (posts +
+  // likes-by-me + first-liker + top-comment + bookmarks-by-me) —
+  // painful under a tab-switch scroll pattern (open feed → screen →
+  // back → open feed). 15 s TTL covers that pattern without meaningful
+  // staleness because the mobile client uses optimistic updates on
+  // like / bookmark, so the delayed server response isn't user-visible.
+  // 'mine' and 'following' are skipped: 'mine' includes pending posts
+  // the author has to see immediately after submit; 'following'
+  // depends on the connection set which changes off-band.
+  const canCache = filter === 'all' || filter === 'mentors';
+  const redis = request.server.redis ?? null;
+  const feedCacheKey = canCache
+    ? `feed:page:${memberId}:${filter}:${page}:${limit}`
+    : null;
+  if (feedCacheKey) {
+    const cached = await cacheGet<{
+      data: unknown;
+      meta: { total: number; page: number; limit: number };
+    }>(redis, feedCacheKey);
+    if (cached) {
+      return reply.send({ success: true, ...cached, error: null });
+    }
+  }
 
   const where: Record<string, unknown> = { status: 'active' };
   switch (filter) {
@@ -209,10 +235,14 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
     topComment: topCommentByPost.get(p.id) ?? null,
   }));
 
+  const meta = { total, page: Number(page), limit: Number(limit) };
+  if (feedCacheKey) {
+    await cacheSet(redis, feedCacheKey, { data: enriched, meta }, 15);
+  }
   return reply.send({
     success: true,
     data: enriched,
-    meta: { total, page: Number(page), limit: Number(limit) },
+    meta,
     error: null,
   });
 }

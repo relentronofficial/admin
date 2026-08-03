@@ -11,6 +11,7 @@ import {
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
+import { checkRateLimit } from '../../lib/rateLimit.js';
 import {
   notifyCourseEnrolled,
   notifyEpisodeCompleted,
@@ -1893,6 +1894,20 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
     return fail(reply, 503, 'Live call service not configured');
   }
 
+  // Dedup rapid rejoin attempts (poor mobile signal → 5-20 join
+  // clicks in 30 s). Each attempt would otherwise hit three DB
+  // reads (liveCall + member + prereq progress) and re-sign a fresh
+  // 4h JWT. Cache the FULL success response for 30 s per
+  // (member, liveCall) — the returned token stays valid regardless
+  // of how many callers get the same string. Only cache on the
+  // 'joined' branch and only when there's no passcode (otherwise
+  // the key would need to include the submitted passcode to stay
+  // safe against replay with a wrong one).
+  const redis = request.server.redis ?? null;
+  const joinCacheKey = `livekit:token:${request.memberId}:${liveCallId}`;
+  const cachedJoin = await cacheGet<Record<string, unknown>>(redis, joinCacheKey);
+  if (cachedJoin) return ok(reply, cachedJoin);
+
   const liveCall = await request.server.prisma.liveCall.findUnique({
     where: { id: liveCallId },
     select: { id: true, title: true, scheduledAt: true, liveUrlUnlocksMinutesBefore: true, isWebinar: true, startedAt: true, isLocked: true, waitingRoomEnabled: true, passcode: true, prerequisiteChallengeId: true },
@@ -1945,7 +1960,14 @@ export async function joinLiveCallHandler(request: FastifyRequest, reply: Fastif
   });
 
   const token = await at.toJwt();
-  return ok(reply, { status: 'joined', token, wsUrl: env.LIVEKIT_WS_URL, roomName, startedAt: liveCall.startedAt, isWebinar: liveCall.isWebinar });
+  const joinResponse = { status: 'joined', token, wsUrl: env.LIVEKIT_WS_URL, roomName, startedAt: liveCall.startedAt, isWebinar: liveCall.isWebinar };
+  // Cache only when no passcode gate — key doesn't include the
+  // submitted passcode, so caching passcode-gated joins would let a
+  // second call with a WRONG passcode reuse a valid token.
+  if (!liveCall.passcode) {
+    await cacheSet(redis, joinCacheKey, joinResponse, 30);
+  }
+  return ok(reply, joinResponse);
 }
 
 // ─── Pre-session resources (user) ─────────────────────────────────────────────
@@ -1990,10 +2012,24 @@ export async function upsertRsvpHandler(request: FastifyRequest, reply: FastifyR
     create: { liveCallId, memberId: request.memberId, status },
     update: { status, confirmedAt: new Date() },
   });
-  // Notify admin room so badge updates live
-  const confirmed = await request.server.prisma.liveCallRsvp.count({ where: { liveCallId, status: 'confirmed' } });
-  const declined = await request.server.prisma.liveCallRsvp.count({ where: { liveCallId, status: 'declined' } });
-  request.server.io.to('admin').emit('admin:live_rsvp', { liveCallId, confirmed, declined });
+  // Notify admin room so badge updates live. Cache the pair with a
+  // 15 s TTL and DO NOT invalidate on write — under a registration
+  // storm (500 members RSVPing in 60 s) this converts 2×500 counts
+  // into ~2×4 counts over the window. Admin numbers lag by up to
+  // 15 s but move steadily; nobody watches these frequently enough
+  // for the staleness to be noticeable.
+  const redis = request.server.redis ?? null;
+  const statsKey = `livecall:rsvp:stats:${liveCallId}`;
+  let stats = await cacheGet<{ confirmed: number; declined: number }>(redis, statsKey);
+  if (!stats) {
+    const [confirmed, declined] = await Promise.all([
+      request.server.prisma.liveCallRsvp.count({ where: { liveCallId, status: 'confirmed' } }),
+      request.server.prisma.liveCallRsvp.count({ where: { liveCallId, status: 'declined' } }),
+    ]);
+    stats = { confirmed, declined };
+    await cacheSet(redis, statsKey, stats, 15);
+  }
+  request.server.io.to('admin').emit('admin:live_rsvp', { liveCallId, ...stats });
   return ok(reply, rsvp);
 }
 
@@ -4036,7 +4072,36 @@ export async function updateAvatarHandler(request: FastifyRequest, reply: Fastif
   return ok(reply, { avatarUrl });
 }
 
+// Per-member presign quota: 50 upload URLs per hour across all three
+// presign handlers (avatar, assignment image, assignment file). Each
+// URL is valid for 3600 s and buys the caller the right to write one
+// object to R2, so an unthrottled member could grind out thousands
+// of write capacities and flood the bucket even before hitting an
+// upload path. Legitimate flows are well under this cap.
+async function checkPresignRateLimit(request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+  const gate = await checkRateLimit(
+    request.server.redis ?? null,
+    `presigned:requests:${request.memberId}`,
+    50,
+    3600,
+  );
+  if (!gate.ok) {
+    reply
+      .status(429)
+      .header('Retry-After', String(gate.retryAfterSeconds))
+      .send({
+        success: false,
+        data: null,
+        error: 'Too many upload requests. Try again later.',
+        retryAfterSeconds: gate.retryAfterSeconds,
+      });
+    return false;
+  }
+  return true;
+}
+
 export async function avatarPresignHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!(await checkPresignRateLimit(request, reply))) return;
   const { filename, contentType } = request.body as { filename: string; contentType: string };
   if (!filename || !contentType) return fail(reply, 400, 'filename and contentType are required');
   if (!contentType.startsWith('image/')) return fail(reply, 400, 'Only image uploads allowed');
@@ -4066,6 +4131,7 @@ export async function avatarPresignHandler(request: FastifyRequest, reply: Fasti
 }
 
 export async function assignmentImagePresignHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!(await checkPresignRateLimit(request, reply))) return;
   const { filename, contentType } = request.body as { filename: string; contentType: string };
   if (!filename || !contentType) return fail(reply, 400, 'filename and contentType are required');
   if (!contentType.startsWith('image/')) return fail(reply, 400, 'Only image uploads allowed');
@@ -4095,6 +4161,7 @@ export async function assignmentImagePresignHandler(request: FastifyRequest, rep
 }
 
 export async function assignmentFilePresignHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!(await checkPresignRateLimit(request, reply))) return;
   const { filename, contentType } = request.body as { filename: string; contentType: string };
   if (!filename || !contentType) return fail(reply, 400, 'filename and contentType are required');
 
