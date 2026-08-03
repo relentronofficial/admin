@@ -333,6 +333,7 @@ export default function WorkshopsPage() {
                       onClick={() => openEdit(w)}
                       className="w-9 h-9 flex items-center justify-center text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all focus:outline-none focus:ring-1 focus:ring-green-400/40"
                       title="Edit workshop"
+                      aria-label={`Edit ${w.title}`}
                     >
                       <Pencil size={15} />
                     </button>
@@ -340,6 +341,7 @@ export default function WorkshopsPage() {
                       onClick={() => setDeleting(w.id)}
                       className="w-9 h-9 flex items-center justify-center text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all focus:outline-none focus:ring-1 focus:ring-red-400/40"
                       title="Delete workshop"
+                      aria-label={`Delete ${w.title}`}
                     >
                       <Trash2 size={15} />
                     </button>

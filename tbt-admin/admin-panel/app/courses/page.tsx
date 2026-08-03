@@ -323,8 +323,8 @@ export default function CoursesPage() {
                       <p className="text-[11px] text-[#888]">{c._count?.courseEpisodes ?? 0} episodes · {c.xpPerEpisode ?? 10} XP/ep</p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={e => { e.stopPropagation(); openEditCourse(c); }} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all"><Pencil size={14} /></button>
-                      <button onClick={e => { e.stopPropagation(); setDeletingCourse(c.id); }} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={14} /></button>
+                      <button aria-label={`Edit ${c.title}`} title="Edit" onClick={e => { e.stopPropagation(); openEditCourse(c); }} className="p-1.5 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all"><Pencil size={14} /></button>
+                      <button aria-label={`Delete ${c.title}`} title="Delete" onClick={e => { e.stopPropagation(); setDeletingCourse(c.id); }} className="p-1.5 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={14} /></button>
                     </div>
                   </div>
                 ))}
@@ -617,6 +617,11 @@ function EpisodesTab({ course }: { course: any }) {
   const [epForm, setEpForm] = useState<any>(EMPTY_EP);
   const [deletingEp, setDeletingEp] = useState<string | null>(null);
   const [epUploading, setEpUploading] = useState<string | null>(null);
+  // Inline validation errors keyed by field. Set on Save-attempt, cleared
+  // when the field gains a value. The toast still fires but is easy to
+  // miss on a slow connection or if the user scrolls away — the inline
+  // hint stays put until fixed.
+  const [epErrors, setEpErrors] = useState<{ title?: string; video?: string }>({});
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
@@ -651,7 +656,7 @@ function EpisodesTab({ course }: { course: any }) {
       video.src = url;
     });
 
-  const openCreate = () => { setEpForm(EMPTY_EP); setEditingEp(null); setShowForm(true); };
+  const openCreate = () => { setEpForm(EMPTY_EP); setEditingEp(null); setEpErrors({}); setShowForm(true); };
   const openEdit = (ep: any) => {
     // Normalise stored cues: add atTime display field
     const rawCues = ep.quizData?.cues ?? [];
@@ -667,7 +672,7 @@ function EpisodesTab({ course }: { course: any }) {
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
     });
-    setEditingEp(ep); setShowForm(true);
+    setEditingEp(ep); setEpErrors({}); setShowForm(true);
   };
 
   const uploadImage = useUploadImage();
@@ -693,6 +698,7 @@ function EpisodesTab({ course }: { course: any }) {
         upload.start();
       });
       setEpField("videoUrl", embedUrl); setEpField("bunnyVideoId", videoId);
+      if (epErrors.video) setEpErrors(prev => ({ ...prev, video: undefined }));
       toast.success("Video uploaded to Bunny Stream");
     } catch (e: any) { toast.error(e.message || "Upload failed"); }
     finally { setEpUploading(null); setUploadProgress(0); }
@@ -708,7 +714,15 @@ function EpisodesTab({ course }: { course: any }) {
   };
 
   const handleSaveEp = async () => {
-    if (!epForm.title.trim() || !epForm.videoUrl.trim()) return toast.error("Title and video are required");
+    const errs: { title?: string; video?: string } = {};
+    if (!epForm.title.trim()) errs.title = "Title is required";
+    if (!epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
+    if (errs.title || errs.video) {
+      setEpErrors(errs);
+      toast.error("Title and video are required");
+      return;
+    }
+    setEpErrors({});
     const normalizedVideoUrl = epForm.videoUrl.replace(/https?:\/\/player\.mediadelivery\.net\/play\/(\d+)\/([\w-]+)/, 'https://iframe.mediadelivery.net/embed/$1/$2');
     // Serialise quizData: strip atTime display field from cues, drop empty questions/options
     let quizData: any = null;
@@ -806,8 +820,8 @@ function EpisodesTab({ course }: { course: any }) {
                 </div>
                 {!ep.isVisible && <EyeOff size={11} className="text-[#888] shrink-0" />}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                  <button onClick={() => openEdit(ep)} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
-                  <button onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={12} /></button>
+                  <button aria-label={`Edit episode ${ep.title}`} title="Edit episode" onClick={() => openEdit(ep)} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
+                  <button aria-label={`Delete episode ${ep.title}`} title="Delete episode" onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={12} /></button>
                 </div>
               </div>
             ))}
@@ -824,15 +838,16 @@ function EpisodesTab({ course }: { course: any }) {
           </div>
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
-            <input value={epForm.title} onChange={e => setEpField("title", e.target.value)}
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+            <input value={epForm.title} onChange={e => { setEpField("title", e.target.value); if (epErrors.title) setEpErrors(prev => ({ ...prev, title: undefined })); }}
+              className={`w-full bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${epErrors.title ? "border-red-500" : "border-[#2a2a2a]"}`} />
+            {epErrors.title && <p className="text-[10px] text-red-500 mt-1">{epErrors.title}</p>}
           </div>
           {/* Video */}
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Video *</label>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => videoInputRef.current?.click()} disabled={epUploading === "video"}
-                className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest font-rajdhani hover:border-[#dc2626] disabled:opacity-50">
+                className={`flex items-center gap-1.5 bg-[#1a1a1a] border text-[#a0a0a0] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest font-rajdhani hover:border-[#dc2626] disabled:opacity-50 ${epErrors.video ? "border-red-500" : "border-[#2a2a2a]"}`}>
                 {epUploading === "video" ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
                 {epUploading === "video" ? (uploadProgress > 0 ? `${uploadProgress}%` : "Preparing...") : "Upload to Bunny"}
               </button>
@@ -842,6 +857,7 @@ function EpisodesTab({ course }: { course: any }) {
                 </span>
               )}
             </div>
+            {epErrors.video && <p className="text-[10px] text-red-500 mt-1">{epErrors.video}</p>}
             <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/mov" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
           </div>
@@ -1377,9 +1393,9 @@ function BadgesTab({ course }: { course: any }) {
               <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => setAwardModal(b.id)}
                   className="px-2 py-1 text-[9px] font-bold uppercase font-rajdhani bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-all">Award</button>
-                <button onClick={() => { setBadgeForm({ label: b.label, slug: b.slug, iconUrl: b.iconUrl || "", criteria: JSON.stringify(b.criteria ?? {}, null, 2) }); setEditingBadge(b); setShowForm(true); }}
+                <button aria-label={`Edit badge ${b.label}`} title="Edit badge" onClick={() => { setBadgeForm({ label: b.label, slug: b.slug, iconUrl: b.iconUrl || "", criteria: JSON.stringify(b.criteria ?? {}, null, 2) }); setEditingBadge(b); setShowForm(true); }}
                   className="p-1 text-[#777] hover:text-green-400 hover:bg-green-400/10 rounded transition-all"><Pencil size={12} /></button>
-                <button onClick={() => handleDeleteBadge(b.id)}
+                <button aria-label={`Delete badge ${b.label}`} title="Delete badge" onClick={() => handleDeleteBadge(b.id)}
                   className="p-1 text-[#777] hover:text-red-400 hover:bg-red-400/10 rounded transition-all"><Trash2 size={12} /></button>
               </div>
             </div>
