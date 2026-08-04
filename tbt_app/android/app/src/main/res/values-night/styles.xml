@@ -16,7 +16,10 @@
          running.
 
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
+    <!-- See values/styles.xml for the rationale — the bg must match the
+         Flutter splash colour so there's no flash during the pre-runApp
+         network prefetch gap. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowBackground">@color/tbt_launch_bg</item>
     </style>
 </resources>

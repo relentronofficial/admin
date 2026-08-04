@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#000000</color>
+    <!-- Shared launch/splash background. Matches VideoSplashScreen's
+         `backgroundColor: Colors.black` (see video_splash_screen.dart)
+         so the OS window, LaunchTheme, NormalTheme, and the Flutter
+         splash all paint the same colour — no flash between hand-offs. -->
+    <color name="tbt_launch_bg">#000000</color>
 </resources>

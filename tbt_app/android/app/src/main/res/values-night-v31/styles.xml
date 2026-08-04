@@ -6,7 +6,9 @@
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:windowSplashScreenBackground">#0f0f0f</item>
+        <!-- See values-v31/styles.xml for the rationale. -->
+        <item name="android:windowBackground">@color/tbt_launch_bg</item>
+        <item name="android:windowSplashScreenBackground">@color/tbt_launch_bg</item>
         <!-- Suppress the default Android 12+ splash icon so the app's own
              VideoSplashScreen is the only branded moment on launch. Points
              at a fully transparent shape (see @drawable/splash_transparent). -->
@@ -16,9 +18,9 @@
          This theme determines the color of the Android Window while your
          Flutter UI initializes, as well as behind your Flutter UI while its
          running.
-         
+
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowBackground">@color/tbt_launch_bg</item>
     </style>
 </resources>
