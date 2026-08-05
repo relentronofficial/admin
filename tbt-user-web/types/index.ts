@@ -851,3 +851,72 @@ export interface SupportTicket {
   adminRepliedAt?: string | null;
   replies?: SupportReply[];
 }
+
+// ─── Community ────────────────────────────────────────────────────────────────
+
+export type CommunityFilter = "all" | "following" | "mentors" | "mine";
+export type ReportReason = "spam" | "harassment" | "inappropriate" | "misinformation" | "other";
+
+export interface CommunityMemberRef {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  profilePhotoUrl?: string | null;
+  businessName?: string | null;
+  businessType?: string | null;
+  city?: string | null;
+  state?: string | null;
+}
+
+export interface CommentPreview {
+  id: string;
+  content: string;
+  createdAt: string;
+  member?: CommunityMemberRef | null;
+}
+
+export interface CommunityPost {
+  id: string;
+  memberId: string;
+  content: string;
+  mediaUrls: string[];
+  likesCount: number;
+  commentsCount: number;
+  isMentor: boolean;
+  isPinned: boolean;
+  isLikedByMe: boolean;
+  isBookmarkedByMe: boolean;
+  isApproved?: boolean;
+  createdAt: string;
+  member?: CommunityMemberRef | null;
+  firstLiker?: CommunityMemberRef | null;
+  topComment?: CommentPreview | null;
+}
+
+export interface CommunityComment {
+  id: string;
+  postId: string;
+  memberId: string;
+  content: string;
+  createdAt: string;
+  likesCount: number;
+  isLikedByMe: boolean;
+  parentCommentId?: string | null;
+  member?: CommunityMemberRef | null;
+}
+
+export interface CommunityRecentPost {
+  id: string;
+  content: string;
+  mediaUrls: string[];
+  createdAt: string;
+}
+
+export interface CommunityMemberProfile {
+  member: CommunityMemberRef;
+  postsCount: number;
+  followersCount: number;
+  followingCount: number;
+  isFollowing: boolean;
+  recentPosts: CommunityRecentPost[];
+}

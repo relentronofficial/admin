@@ -254,6 +254,13 @@ function ProfileButton() {
               Profile
             </Link>
             <Link
+              href="/community"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+            >
+              Community
+            </Link>
+            <Link
               href="/support"
               onClick={() => setOpen(false)}
               className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
@@ -472,19 +479,33 @@ export function Navbar() {
             style={{ borderColor: "var(--color-border-subtle)" }}
           />
           {(() => {
+            const communityActive = pathname === "/community" || pathname.startsWith("/community/");
             const supportActive = pathname === "/support" || pathname.startsWith("/support/");
             return (
-              <Link
-                href="/support"
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                  supportActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <GlowBg active={supportActive} />
-                <span className="relative z-10">Support</span>
-              </Link>
+              <>
+                <Link
+                  href="/community"
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                    communityActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <GlowBg active={communityActive} />
+                  <span className="relative z-10">Community</span>
+                </Link>
+                <Link
+                  href="/support"
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                    supportActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <GlowBg active={supportActive} />
+                  <span className="relative z-10">Support</span>
+                </Link>
+              </>
             );
           })()}
         </nav>
@@ -527,6 +548,7 @@ export function Navbar() {
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
           {[
             ...nav,
+            { id: "__community", href: "/community", label: "Community" },
             { id: "__support", href: "/support", label: "Support" },
           ].map(({ id, href, label }) => {
             const active =
