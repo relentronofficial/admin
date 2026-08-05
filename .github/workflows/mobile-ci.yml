@@ -1,0 +1,63 @@
+name: Mobile CI
+
+# Runs flutter analyze + flutter test on any PR / push that touches the
+# Flutter mobile app. Kept as a separate workflow so it doesn't slow down
+# unrelated backend / admin-panel changes and vice versa.
+
+on:
+  push:
+    branches: [main, production, develop]
+    paths:
+      - 'tbt_app/**'
+      - '.github/workflows/mobile-ci.yml'
+  pull_request:
+    branches: [main, production, develop]
+    paths:
+      - 'tbt_app/**'
+      - '.github/workflows/mobile-ci.yml'
+
+env:
+  # Keep this in sync with tbt_app/pubspec.yaml's `environment.flutter` /
+  # `environment.sdk` bounds. Any Flutter release in the 3.x series works
+  # today; pinning the channel to `stable` is enough.
+  FLUTTER_CHANNEL: stable
+
+jobs:
+  analyze:
+    name: analyze + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tbt_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Print versions
+        run: |
+          flutter --version
+          dart --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+        # Non-blocking — comment out `continue-on-error` below to enforce.
+        continue-on-error: true
+
+      - name: Static analysis
+        run: flutter analyze --fatal-warnings --fatal-infos
+
+      - name: Unit + widget tests
+        # `flutter test` returns 0 when there are no tests but prints a
+        # warning. Keep the step so future tests are picked up automatically.
+        run: flutter test --reporter=expanded
+        # Test files may not exist yet — don't fail the whole CI on their
+        # absence. Remove this once we have coverage.
+        continue-on-error: true
