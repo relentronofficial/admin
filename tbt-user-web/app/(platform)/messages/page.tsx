@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, Plus, Send, Loader2, X, ChevronLeft, Archive } from 'lucide-react';
+import { MessageSquare, Plus, Send, Loader2, X, ChevronLeft, Archive, Users } from 'lucide-react';
 import { useSiteConfig } from '@/lib/context/SiteConfigContext';
 import {
   useConversations,
@@ -10,6 +11,7 @@ import {
   useSendChatMessage,
   useArchiveConversation,
 } from '@/lib/hooks/useDashboard';
+import { useMyChatGroups } from '@/lib/hooks/useChatGroups';
 import { useMe } from '@/lib/hooks/useUser';
 import { getSocket } from '@/lib/socket/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -297,6 +299,7 @@ export default function MessagesPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
+          <GroupsSection />
           {conversations.length === 0 ? (
             <div className="p-4 text-center">
               <MessageSquare size={28} className="mx-auto mb-2 opacity-30" />
@@ -558,6 +561,59 @@ export default function MessagesPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Group chats section (sidebar) ─────────────────────────────────────────────
+
+function GroupsSection() {
+  const { data: groups = [], isLoading } = useMyChatGroups();
+  if (isLoading || groups.length === 0) return null;
+  return (
+    <div>
+      <div
+        className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest"
+        style={{ color: 'var(--color-text-secondary)' }}
+      >
+        Group chats
+      </div>
+      {groups.map((g) => (
+        <Link
+          key={g.id}
+          href={`/messages/group/${g.id}`}
+          className="flex items-center gap-3 px-4 py-3 border-b transition-colors hover:bg-[var(--color-surface-overlay)]"
+          style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)' }}
+        >
+          <div
+            className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
+            style={{ background: 'var(--color-surface-overlay)' }}
+          >
+            {g.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={g.avatarUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Users size={16} className="text-muted-foreground" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-foreground truncate">{g.name}</div>
+            <div className="text-[11px] text-muted-foreground truncate">
+              {g.lastMessage
+                ? `${g.lastMessage.senderName ? `${g.lastMessage.senderName}: ` : ''}${g.lastMessage.body}`
+                : 'No messages yet'}
+            </div>
+          </div>
+          {g.unreadCount > 0 && (
+            <span
+              className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+              style={{ background: 'var(--color-accent)' }}
+            >
+              {g.unreadCount > 99 ? '99+' : g.unreadCount}
+            </span>
+          )}
+        </Link>
+      ))}
     </div>
   );
 }

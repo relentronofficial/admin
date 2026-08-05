@@ -161,6 +161,32 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
       });
     });
 
+    // ── Group chat (WhatsApp-inspired) rooms ────────────────────────────────
+    // Clients emit `join:chat_group` when opening a group chat and
+    // `leave:chat_group` when closing it. Backend handlers emit to
+    // `group:{id}` in the chat_group_messages controller.
+    socket.on('join:chat_group', ({ groupId }: { groupId: string }) => {
+      if (typeof groupId === 'string' && groupId.length > 0) {
+        socket.join(`group:${groupId}`);
+      }
+    });
+
+    socket.on('leave:chat_group', ({ groupId }: { groupId: string }) => {
+      if (typeof groupId === 'string' && groupId.length > 0) {
+        socket.leave(`group:${groupId}`);
+      }
+    });
+
+    socket.on('chat_group:typing', ({ groupId, isTyping }: { groupId: string; isTyping: boolean }) => {
+      if (!groupId) return;
+      socket.to(`group:${groupId}`).emit('group:typing', {
+        groupId,
+        memberId: socket.data.memberId ?? null,
+        adminId: socket.data.adminId ?? null,
+        isTyping,
+      });
+    });
+
     // Hand raise queue — ephemeral, no DB
     socket.on('live_call:hand_raised', (data: { liveCallId: string; memberName: string }) => {
       io.to('admin').emit('live_call:hand_raised', {

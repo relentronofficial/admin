@@ -3164,3 +3164,9 @@ model PodcastEpisodeProgress {
   @@index([memberId, updatedAt(sort: Desc)])
   @@map("podcast_episode_progress")
 }
+
+// Group chat tables (chat_groups, chat_group_members, chat_group_messages,
+// chat_group_reactions, chat_group_message_reads) are created via
+// $executeRawUnsafe in plugins/prisma.ts startup — same pattern as
+// admin_notifications, member_attendance, product_inquiries etc. NOT in
+// this Prisma schema; access via $queryRawUnsafe / $executeRawUnsafe.

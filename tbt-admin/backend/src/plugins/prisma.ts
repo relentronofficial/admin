@@ -819,6 +819,80 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         VALUES ('default', 'Yes', 'Not Yet')
         ON CONFLICT (id) DO NOTHING
       `),
+      // ── Group chat (2026-08-05) — WhatsApp-inspired ─────────────────
+      // Admin-created group conversations for members. Real-time via
+      // Socket.IO room `group:{id}`. Access exclusively via
+      // $queryRawUnsafe/$executeRawUnsafe — NOT in schema.prisma
+      // (same pattern as admin_notifications, member_attendance, etc.).
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS chat_groups (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          avatar_url TEXT,
+          description TEXT,
+          created_by_admin UUID,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          is_deleted BOOLEAN NOT NULL DEFAULT false
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_groups_last_msg ON chat_groups(last_message_at DESC) WHERE is_deleted = false;
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS chat_group_members (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          group_id UUID NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'admin')),
+          joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          left_at TIMESTAMPTZ,
+          unread_count INTEGER NOT NULL DEFAULT 0,
+          last_read_message_id UUID,
+          last_read_at TIMESTAMPTZ,
+          muted_until TIMESTAMPTZ,
+          UNIQUE (group_id, member_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_group_members_member ON chat_group_members(member_id) WHERE left_at IS NULL;
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS chat_group_messages (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          group_id UUID NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+          sender_member_id UUID REFERENCES members(id) ON DELETE SET NULL,
+          sender_admin_id UUID,
+          body TEXT,
+          media_url TEXT,
+          media_type TEXT CHECK (media_type IS NULL OR media_type IN ('image', 'video', 'document', 'audio')),
+          reply_to_id UUID REFERENCES chat_group_messages(id) ON DELETE SET NULL,
+          is_system BOOLEAN NOT NULL DEFAULT false,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          edited_at TIMESTAMPTZ,
+          deleted_at TIMESTAMPTZ,
+          deleted_for_everyone BOOLEAN NOT NULL DEFAULT false
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_group_messages_group_time ON chat_group_messages(group_id, created_at DESC);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS chat_group_reactions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          message_id UUID NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          emoji TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (message_id, member_id, emoji)
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_group_reactions_message ON chat_group_reactions(message_id);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS chat_group_message_reads (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          message_id UUID NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (message_id, member_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_group_reads_member ON chat_group_message_reads(member_id);
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

@@ -19,6 +19,7 @@ import { adminRoutes } from './modules/admins/routes.js';
 import { memberRoutes } from './modules/members/routes.js';
 import { courseRoutes } from './modules/courses/routes.js';
 import { taskRoutes } from './modules/tasks/routes.js';
+import { chatGroupsRoutes } from './modules/chat-groups/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
 import { webinarRoutes } from './modules/webinar/routes.js';
 import { dashboardRoutes } from './modules/dashboard/routes.js';
@@ -189,6 +190,7 @@ async function bootstrap() {
     await fastify.register(helpdeskRoutes, { prefix: '/api/helpdesk' });
     await fastify.register(gamificationRoutes, { prefix: '/api/tbt' });
     await fastify.register(ritualsRoutes, { prefix: '/api/rituals' });
+    await fastify.register(chatGroupsRoutes, { prefix: '/api/chat-groups' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
