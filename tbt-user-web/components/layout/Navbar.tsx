@@ -253,6 +253,13 @@ function ProfileButton() {
             >
               Profile
             </Link>
+            <Link
+              href="/support"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+            >
+              Support
+            </Link>
             <button
               onClick={handleLogout}
               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)] transition-colors"

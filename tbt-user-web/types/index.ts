@@ -786,3 +786,68 @@ export interface ContinueLearningItem {
   isCompleted?: boolean;
   updatedAt: number;
 }
+
+// ─── Support / Helpdesk ───────────────────────────────────────────────────────
+
+export interface HelpdeskSettings {
+  title: string;
+  buttonText: string;
+  subtitle?: string | null;
+  whatsappNumber?: string | null;
+  phoneNumber?: string | null;
+  email?: string | null;
+  websiteUrl?: string | null;
+  supportTiming?: string | null;
+  address?: string | null;
+  bannerImage?: string | null;
+}
+
+export interface SupportCategory {
+  id: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+}
+
+export interface SupportCategoryRef {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface Faq {
+  id: string;
+  question: string;
+  answer: string;
+  categoryId?: string | null;
+  category?: SupportCategoryRef | null;
+}
+
+export type SupportTicketStatus = "new" | "in_progress" | "resolved" | "closed";
+export type SupportTicketPriority = "low" | "medium" | "high";
+export type SupportPreferredContact = "email" | "whatsapp" | "phone";
+
+export interface SupportReply {
+  id: string;
+  body: string;
+  isFromAdmin: boolean;
+  createdAt: string;
+  authorName?: string | null;
+}
+
+export interface SupportTicket {
+  id: string;
+  displayNumber?: number | null;
+  subject: string;
+  message: string;
+  status: SupportTicketStatus;
+  priority: SupportTicketPriority;
+  preferredContact?: SupportPreferredContact | null;
+  createdAt: string;
+  category?: SupportCategoryRef | null;
+  attachmentUrl?: string | null;
+  attachmentUrls?: string[];
+  adminReply?: string | null;
+  adminRepliedAt?: string | null;
+  replies?: SupportReply[];
+}
