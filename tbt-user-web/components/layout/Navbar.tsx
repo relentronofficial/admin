@@ -525,7 +525,10 @@ export function Navbar() {
 
         {/* Desktop: inline nav */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
-          {nav.map(({ id, href, label }) => {
+          {[
+            ...nav,
+            { id: "__support", href: "/support", label: "Support" },
+          ].map(({ id, href, label }) => {
             const active =
               pathname === href ||
               pathname.startsWith(`${href}/`) ||
