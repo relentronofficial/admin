@@ -16,6 +16,7 @@ import {
   memberMarkReadHandler,
   memberSearchMessagesHandler,
   memberLeaveGroupHandler,
+  memberGetGroupPresenceHandler,
 } from './controller.js';
 
 /**
@@ -51,6 +52,7 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
     userScope.post('/:id/messages/:messageId/react', memberToggleReactionHandler);
     userScope.post('/:id/read', memberMarkReadHandler);
     userScope.get('/:id/search', memberSearchMessagesHandler);
+    userScope.get('/:id/presence', memberGetGroupPresenceHandler);
     userScope.post('/:id/leave', memberLeaveGroupHandler);
   });
 }

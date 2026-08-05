@@ -3165,8 +3165,85 @@ model PodcastEpisodeProgress {
   @@map("podcast_episode_progress")
 }
 
-// Group chat tables (chat_groups, chat_group_members, chat_group_messages,
-// chat_group_reactions, chat_group_message_reads) are created via
-// $executeRawUnsafe in plugins/prisma.ts startup — same pattern as
-// admin_notifications, member_attendance, product_inquiries etc. NOT in
-// this Prisma schema; access via $queryRawUnsafe / $executeRawUnsafe.
+// ── Group chat tables — WhatsApp-inspired ──────────────────────────────
+// Registered here so CI's `prisma db push --accept-data-loss` doesn't
+// DROP them on every backend deploy. All access still happens via
+// $queryRawUnsafe/$executeRawUnsafe (controllers were written before
+// these models existed and would be a large refactor to switch over).
+// Startup SQL in plugins/prisma.ts still runs CREATE TABLE IF NOT EXISTS
+// as a safety net for fresh environments.
+
+model ChatGroup {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String
+  avatarUrl      String?  @map("avatar_url")
+  description    String?
+  createdByAdmin String?  @map("created_by_admin") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastMessageAt  DateTime @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  isDeleted      Boolean  @default(false) @map("is_deleted")
+
+  @@index([lastMessageAt(sort: Desc)])
+  @@map("chat_groups")
+}
+
+model ChatGroupMember {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId           String    @map("group_id") @db.Uuid
+  memberId          String    @map("member_id") @db.Uuid
+  role              String    @default("member")
+  joinedAt          DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt            DateTime? @map("left_at") @db.Timestamptz(6)
+  unreadCount       Int       @default(0) @map("unread_count")
+  lastReadMessageId String?   @map("last_read_message_id") @db.Uuid
+  lastReadAt        DateTime? @map("last_read_at") @db.Timestamptz(6)
+  mutedUntil        DateTime? @map("muted_until") @db.Timestamptz(6)
+
+  @@unique([groupId, memberId])
+  @@index([memberId])
+  @@map("chat_group_members")
+}
+
+model ChatGroupMessage {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId            String    @map("group_id") @db.Uuid
+  senderMemberId     String?   @map("sender_member_id") @db.Uuid
+  senderAdminId      String?   @map("sender_admin_id") @db.Uuid
+  body               String?
+  mediaUrl           String?   @map("media_url")
+  mediaType          String?   @map("media_type")
+  replyToId          String?   @map("reply_to_id") @db.Uuid
+  isSystem           Boolean   @default(false) @map("is_system")
+  mentionedMemberIds String[]  @default([]) @map("mentioned_member_ids") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  editedAt           DateTime? @map("edited_at") @db.Timestamptz(6)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedForEveryone Boolean   @default(false) @map("deleted_for_everyone")
+
+  @@index([groupId, createdAt(sort: Desc)])
+  @@map("chat_group_messages")
+}
+
+model ChatGroupReaction {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId String   @map("message_id") @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  emoji     String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([messageId, memberId, emoji])
+  @@index([messageId])
+  @@map("chat_group_reactions")
+}
+
+model ChatGroupMessageRead {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId String   @map("message_id") @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  readAt    DateTime @default(now()) @map("read_at") @db.Timestamptz(6)
+
+  @@unique([messageId, memberId])
+  @@index([memberId])
+  @@map("chat_group_message_reads")
+}

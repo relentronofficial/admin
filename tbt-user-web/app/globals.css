@@ -202,3 +202,12 @@
   .certificate-modal-print { display: flex !important; position: static !important; background: white !important; }
   .certificate-modal-print * { color: #000 !important; border-color: #333 !important; }
 }
+
+/* Chat "jump-to-message" transient highlight */
+.chat-msg-highlight {
+  animation: chatMsgHighlight 1.6s ease-out;
+}
+@keyframes chatMsgHighlight {
+  0%   { background: color-mix(in srgb, var(--color-accent) 25%, transparent); }
+  100% { background: transparent; }
+}

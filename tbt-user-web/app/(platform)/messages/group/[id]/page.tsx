@@ -14,6 +14,7 @@ import {
   MoreVertical,
   Paperclip,
   Reply,
+  Search,
   Send,
   Smile,
   Trash2,
@@ -27,6 +28,8 @@ import {
   chatGroupKeys,
   useChatGroup,
   useChatGroupMessages,
+  useChatGroupPresence,
+  useChatGroupSearch,
   useDeleteChatGroupMessage,
   useEditChatGroupMessage,
   useLeaveChatGroup,
@@ -38,6 +41,27 @@ import type { ChatGroupMessage } from "@/lib/api/services/chatGroups.service";
 import { cn } from "@/lib/utils/cn";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+// Split a message body on @-mention tokens and highlight each. Purely
+// visual — tokens don't need to correspond to any stored member; the
+// server-side mentionedMemberIds list is what drives the actual ping.
+function renderMentionText(text: string): React.ReactNode {
+  const parts = text.split(/(@[A-Za-z0-9_]+)/g);
+  return parts.map((chunk, i) => {
+    if (chunk.startsWith("@") && chunk.length > 1) {
+      return (
+        <span
+          key={i}
+          className="font-semibold"
+          style={{ color: "var(--color-accent)" }}
+        >
+          {chunk}
+        </span>
+      );
+    }
+    return <span key={i}>{chunk}</span>;
+  });
+}
 
 export default function GroupChatPage() {
   const params = useParams<{ id: string }>();
@@ -72,7 +96,18 @@ export default function GroupChatPage() {
     mediaType: "image" | "video" | "document" | "audio";
   } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [typingMembers, setTypingMembers] = useState<Set<string>>(new Set());
+  // Mention autocomplete state — driven off cursor position in the composer.
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionAnchor, setMentionAnchor] = useState<number>(0);
+  // memberId → firstName as it was inserted, so we can compute the
+  // mentionedMemberIds payload from the final draft on send.
+  const mentionsRef = useRef<Map<string, string>>(new Map());
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const { data: presenceList = [] } = useChatGroupPresence(groupId);
+  const [presenceMap, setPresenceMap] = useState<Map<string, boolean>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -204,6 +239,15 @@ export default function GroupChatPage() {
       socket.on("group:typing", onTyping);
       socket.on("group:read", onRead);
 
+      const onPresence = ({ memberId, online }: { memberId: string; online: boolean }) => {
+        setPresenceMap((prev) => {
+          const next = new Map(prev);
+          next.set(memberId, online);
+          return next;
+        });
+      };
+      socket.on("presence:update", onPresence);
+
       cleanup = () => {
         socket.emit("leave:chat_group", { groupId });
         socket.off("group:message:new", onNew);
@@ -212,6 +256,7 @@ export default function GroupChatPage() {
         socket.off("group:reaction", onReaction);
         socket.off("group:typing", onTyping);
         socket.off("group:read", onRead);
+        socket.off("presence:update", onPresence);
       };
     });
 
@@ -225,6 +270,19 @@ export default function GroupChatPage() {
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   function onDraftChange(v: string) {
     setDraft(v);
+    // Detect an in-progress @mention token at the caret. We look at the
+    // slice up to the caret, match the trailing @word (letters + digits
+    // + underscore), and offer autocomplete.
+    const el = textareaRef.current;
+    const caret = el?.selectionStart ?? v.length;
+    const upToCaret = v.slice(0, caret);
+    const m = upToCaret.match(/(?:^|\s)@([A-Za-z0-9_]*)$/);
+    if (m) {
+      setMentionQuery(m[1]);
+      setMentionAnchor(caret - m[1].length - 1); // position of the '@'
+    } else if (mentionQuery !== null) {
+      setMentionQuery(null);
+    }
     if (!groupId) return;
     getSocket().then((socket) => {
       socket.emit("chat_group:typing", { groupId, isTyping: true });
@@ -234,6 +292,39 @@ export default function GroupChatPage() {
       }, 2000);
     });
   }
+
+  function insertMention(member: { id: string; firstName?: string | null }) {
+    const firstName = (member.firstName ?? "Member").replace(/\s+/g, "");
+    // Replace everything between mentionAnchor and the current draft
+    // caret with `@FirstName `.
+    const el = textareaRef.current;
+    const caret = el?.selectionStart ?? draft.length;
+    const before = draft.slice(0, mentionAnchor);
+    const after = draft.slice(caret);
+    const inserted = `@${firstName} `;
+    const nextDraft = `${before}${inserted}${after}`;
+    setDraft(nextDraft);
+    setMentionQuery(null);
+    mentionsRef.current.set(member.id, firstName);
+    // Restore caret position just after the inserted token.
+    requestAnimationFrame(() => {
+      if (el) {
+        const pos = before.length + inserted.length;
+        el.focus();
+        el.setSelectionRange(pos, pos);
+      }
+    });
+  }
+
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    if (!group) return [];
+    const q = mentionQuery.toLowerCase();
+    return group.members
+      .filter((m) => m.id !== (me?.id ?? ""))
+      .filter((m) => (m.firstName ?? "").toLowerCase().startsWith(q))
+      .slice(0, 6);
+  }, [mentionQuery, group, me?.id]);
 
   // Mark the latest message read on mount / when new tail arrives.
   useEffect(() => {
@@ -248,6 +339,16 @@ export default function GroupChatPage() {
     const el = anchorRef.current;
     if (el) el.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [messages.length]);
+
+  // Seed the presence map from the REST snapshot (socket updates layer on top).
+  useEffect(() => {
+    if (presenceList.length === 0) return;
+    setPresenceMap((prev) => {
+      const next = new Map(prev);
+      for (const p of presenceList) next.set(p.memberId, p.online);
+      return next;
+    });
+  }, [presenceList]);
 
   // Infinite scroll — load older when user scrolls near the top.
   useEffect(() => {
@@ -282,15 +383,26 @@ export default function GroupChatPage() {
         await editMsg.mutateAsync({ messageId: editing.messageId, body });
         setEditing(null);
       } else {
+        // Extract only the mentions that actually survived in the final
+        // body (user may have deleted a token after inserting).
+        const finalBody = body || "";
+        const finalMentionIds: string[] = [];
+        mentionsRef.current.forEach((firstName, memberId) => {
+          const re = new RegExp(`(^|\\s)@${firstName}(\\s|$|[^A-Za-z0-9_])`);
+          if (re.test(finalBody)) finalMentionIds.push(memberId);
+        });
         await send.mutateAsync({
           body: body || undefined,
           mediaUrl: pendingMedia?.uploadedUrl ?? undefined,
           mediaType: hasReadyMedia ? pendingMedia?.mediaType : undefined,
           replyToId: replyingTo?.id,
+          mentionedMemberIds: finalMentionIds.length > 0 ? finalMentionIds : undefined,
         });
       }
       setDraft("");
       setReplyingTo(null);
+      mentionsRef.current.clear();
+      setMentionQuery(null);
       if (pendingMedia?.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
       setPendingMedia(null);
     } finally {
@@ -391,11 +503,55 @@ export default function GroupChatPage() {
           className="flex-1 min-w-0 text-left"
         >
           <div className="text-sm font-bold text-foreground truncate">{group.name}</div>
-          <div className="text-[11px] text-muted-foreground truncate">
-            {typingMembers.size > 0 ? "typing…" : `${group.members.length} members`}
+          <div className="text-[11px] text-muted-foreground truncate flex items-center gap-2">
+            {typingMembers.size > 0 ? (
+              <span>typing…</span>
+            ) : (
+              <>
+                <span>{group.members.length} members</span>
+                {(() => {
+                  const onlineOthers = group.members.filter(
+                    (m) => m.id !== (me?.id ?? "") && presenceMap.get(m.id) === true,
+                  ).length;
+                  if (onlineOthers === 0) return null;
+                  return (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#22c55e" }} />
+                      {onlineOthers} online
+                    </span>
+                  );
+                })()}
+              </>
+            )}
           </div>
         </button>
+        <button
+          onClick={() => setSearchOpen((v) => !v)}
+          className={cn(
+            "p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]",
+            searchOpen && "text-foreground bg-[var(--color-surface-overlay)]",
+          )}
+          aria-label="Search messages"
+        >
+          <Search size={16} />
+        </button>
       </div>
+
+      {searchOpen && (
+        <SearchPanel
+          groupId={groupId}
+          onClose={() => setSearchOpen(false)}
+          onJumpToMessage={(messageId) => {
+            const el = document.getElementById(`msg-${messageId}`);
+            if (el) {
+              el.scrollIntoView({ block: "center", behavior: "smooth" });
+              el.classList.add("chat-msg-highlight");
+              setTimeout(() => el.classList.remove("chat-msg-highlight"), 1600);
+            }
+            setSearchOpen(false);
+          }}
+        />
+      )}
 
       {/* Message list */}
       <div
@@ -590,25 +746,82 @@ export default function GroupChatPage() {
           >
             <Paperclip size={16} />
           </button>
-          <textarea
-            value={draft}
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                const canSend =
-                  draft.trim().length > 0 || (pendingMedia?.uploadedUrl && !pendingMedia.uploading);
-                if (canSend) handleSend();
-              }
-            }}
-            placeholder={pendingMedia ? "Add a caption…" : "Type a message…"}
-            rows={1}
-            className="flex-1 px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
-            style={{
-              background: "var(--color-bg-primary)",
-              border: "1px solid var(--color-border-subtle)",
-            }}
-          />
+          <div className="flex-1 relative">
+            {mentionQuery !== null && mentionSuggestions.length > 0 && (
+              <div
+                className="absolute bottom-full mb-1 left-0 right-0 sm:right-auto sm:min-w-[220px] max-h-56 overflow-y-auto rounded-xl overflow-hidden py-1 z-30"
+                style={{
+                  background: "var(--color-modal-bg)",
+                  border: "1px solid var(--color-border-medium)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.55)",
+                }}
+              >
+                {mentionSuggestions.map((m) => {
+                  const name = [m.firstName, m.lastName].filter(Boolean).join(" ") || "Member";
+                  const online = presenceMap.get(m.id) === true;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault() /* keep textarea focused */}
+                      onClick={() => insertMention(m)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-overlay)]"
+                    >
+                      <div
+                        className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center relative"
+                        style={{ background: "var(--color-accent)" }}
+                      >
+                        {m.profilePhotoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={m.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-[10px] font-bold text-white">
+                            {name.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        {online && (
+                          <span
+                            className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full"
+                            style={{ background: "#22c55e", border: "1px solid var(--color-modal-bg)" }}
+                          />
+                        )}
+                      </div>
+                      <span className="text-xs text-foreground truncate">{name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(e) => onDraftChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  mentionQuery !== null &&
+                  mentionSuggestions.length > 0 &&
+                  (e.key === "Enter" || e.key === "Tab")
+                ) {
+                  e.preventDefault();
+                  insertMention(mentionSuggestions[0]);
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  const canSend =
+                    draft.trim().length > 0 || (pendingMedia?.uploadedUrl && !pendingMedia.uploading);
+                  if (canSend) handleSend();
+                }
+              }}
+              placeholder={pendingMedia ? "Add a caption…" : "Type a message… (@ to mention)"}
+              rows={1}
+              className="w-full px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
+              style={{
+                background: "var(--color-bg-primary)",
+                border: "1px solid var(--color-border-subtle)",
+              }}
+            />
+          </div>
           <button
             onClick={handleSend}
             disabled={
@@ -628,6 +841,7 @@ export default function GroupChatPage() {
       {infoOpen && (
         <GroupInfoSheet
           group={group}
+          presenceMap={presenceMap}
           onClose={() => setInfoOpen(false)}
           onLeave={async () => {
             if (!confirm("Leave this group?")) return;
@@ -703,7 +917,10 @@ function MessageBubble({
   const readByAny = isMine && readCountOthers > 0;
 
   return (
-    <div className={cn("flex px-3", isMine ? "justify-end" : "justify-start")}>
+    <div
+      id={`msg-${message.id}`}
+      className={cn("flex px-3 chat-msg", isMine ? "justify-end" : "justify-start")}
+    >
       <div className={cn("max-w-[80%] group relative", isMine && "items-end")}>
         {showSender && !isMine && !deleted && (
           <div
@@ -765,7 +982,7 @@ function MessageBubble({
                 </p>
               ) : message.body ? (
                 <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-                  {message.body}
+                  {renderMentionText(message.body)}
                 </p>
               ) : null}
               <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
@@ -1023,10 +1240,108 @@ function MediaBlock({
   );
 }
 
+// ── In-group search panel ───────────────────────────────────────────────────
+
+function SearchPanel({
+  groupId,
+  onClose,
+  onJumpToMessage,
+}: {
+  groupId: string;
+  onClose: () => void;
+  onJumpToMessage: (messageId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const debouncedRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const { data: results = [], isFetching } = useChatGroupSearch(groupId, debouncedQuery);
+
+  useEffect(() => {
+    if (debouncedRef.current) clearTimeout(debouncedRef.current);
+    debouncedRef.current = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => {
+      if (debouncedRef.current) clearTimeout(debouncedRef.current);
+    };
+  }, [query]);
+
+  const trimmed = query.trim();
+
+  return (
+    <div
+      className="flex-shrink-0 p-3 border-b space-y-2"
+      style={{
+        background: "var(--color-bg-surface)",
+        borderColor: "var(--color-border-subtle)",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <Search size={14} className="text-muted-foreground" />
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search messages in this group…"
+          className="flex-1 px-2 py-1.5 rounded-lg text-sm text-foreground outline-none bg-transparent"
+        />
+        <button
+          onClick={onClose}
+          className="p-1 rounded text-muted-foreground hover:text-foreground"
+          aria-label="Close search"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      {trimmed.length < 2 ? (
+        <div className="text-[11px] text-muted-foreground italic">
+          Type at least 2 characters.
+        </div>
+      ) : isFetching ? (
+        <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+          <Loader2 size={11} className="animate-spin" /> searching…
+        </div>
+      ) : results.length === 0 ? (
+        <div className="text-[11px] text-muted-foreground italic">No matches.</div>
+      ) : (
+        <div className="max-h-64 overflow-y-auto space-y-1">
+          {results.map((m: ChatGroupMessage) => {
+            const senderName =
+              [m.sender?.firstName, m.sender?.lastName].filter(Boolean).join(" ") || "Member";
+            const when = new Date(m.createdAt).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            });
+            return (
+              <button
+                key={m.id}
+                onClick={() => onJumpToMessage(m.id)}
+                className="w-full text-left p-2 rounded-lg hover:bg-[var(--color-surface-overlay)] transition-colors"
+              >
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="font-bold" style={{ color: "var(--color-accent)" }}>
+                    {senderName}
+                  </span>
+                  <span className="text-muted-foreground">· {when}</span>
+                </div>
+                <div className="text-xs text-foreground mt-0.5 line-clamp-2">
+                  {m.body ?? (m.mediaType ? `📎 ${m.mediaType}` : "…")}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Group info bottom sheet ─────────────────────────────────────────────────
 
 function GroupInfoSheet({
   group,
+  presenceMap,
   onClose,
   onLeave,
 }: {
@@ -1037,6 +1352,7 @@ function GroupInfoSheet({
     description?: string | null;
     members: Array<{ id: string; firstName?: string | null; lastName?: string | null; profilePhotoUrl?: string | null; role?: string }>;
   };
+  presenceMap: Map<string, boolean>;
   onClose: () => void;
   onLeave: () => void;
 }) {
@@ -1093,24 +1409,39 @@ function GroupInfoSheet({
             <div className="space-y-1.5">
               {group.members.map((m) => {
                 const name = `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "Member";
+                const online = presenceMap.get(m.id) === true;
                 return (
                   <div
                     key={m.id}
                     className="flex items-center gap-3 p-2 rounded-xl"
                     style={{ background: "var(--color-bg-surface)" }}
                   >
-                    <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-[var(--color-surface-overlay)] flex items-center justify-center">
-                      {m.profilePhotoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={m.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-xs font-bold text-white">
-                          {name.slice(0, 1).toUpperCase()}
-                        </span>
+                    <div className="relative w-8 h-8 flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-[var(--color-surface-overlay)] flex items-center justify-center">
+                        {m.profilePhotoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={m.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs font-bold text-white">
+                            {name.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      {online && (
+                        <span
+                          className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full"
+                          style={{
+                            background: "#22c55e",
+                            border: "1.5px solid var(--color-bg-surface)",
+                          }}
+                        />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-foreground truncate">{name}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {online ? "Online" : "Offline"}
+                      </div>
                     </div>
                   </div>
                 );

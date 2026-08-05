@@ -65,11 +65,14 @@ export function useChatGroupMessages(id: string) {
 export function useSendChatGroupMessage(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { body?: string; mediaUrl?: string; mediaType?: string; replyToId?: string }) =>
-      chatGroupsService.sendMessage(id, body),
+    mutationFn: (body: {
+      body?: string;
+      mediaUrl?: string;
+      mediaType?: string;
+      replyToId?: string;
+      mentionedMemberIds?: string[];
+    }) => chatGroupsService.sendMessage(id, body),
     onSuccess: () => {
-      // Server will also push via socket, but invalidating covers the
-      // race where the socket event arrives before this mutation resolves.
       qc.invalidateQueries({ queryKey: chatGroupKeys.mine });
     },
   });
@@ -109,5 +112,26 @@ export function useLeaveChatGroup(id: string) {
   return useMutation({
     mutationFn: () => chatGroupsService.leave(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: chatGroupKeys.mine }),
+  });
+}
+
+export function useChatGroupPresence(id: string) {
+  return useQuery({
+    queryKey: ["chat-groups", "presence", id],
+    queryFn: async () => (await chatGroupsService.getPresence(id)).data ?? [],
+    enabled: !!id,
+    // Presence is pushed via socket after the initial fetch; this stays
+    // fresh enough for the header + info sheet without over-fetching.
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useChatGroupSearch(id: string, query: string) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: ["chat-groups", "search", id, trimmed],
+    queryFn: async () => (await chatGroupsService.search(id, trimmed)).data ?? [],
+    enabled: !!id && trimmed.length >= 2,
+    staleTime: 15 * 1000,
   });
 }

@@ -57,6 +57,7 @@ export interface ChatGroupMessage {
   replyToId: string | null;
   replyTo: ChatGroupMessageReplyPreview | null;
   isSystem: boolean;
+  mentionedMemberIds: string[];
   createdAt: string;
   editedAt: string | null;
   deletedAt: string | null;
@@ -70,6 +71,12 @@ export interface ChatGroupMessage {
   reactions: Array<{ emoji: string; memberId: string }>;
   readByCount: number;
   readByMemberIds: string[];
+}
+
+export interface ChatGroupPresenceEntry {
+  memberId: string;
+  online: boolean;
+  lastSeenAt: string | null;
 }
 
 export const chatGroupsService = {
@@ -91,7 +98,13 @@ export const chatGroupsService = {
 
   sendMessage: (
     id: string,
-    body: { body?: string; mediaUrl?: string; mediaType?: string; replyToId?: string },
+    body: {
+      body?: string;
+      mediaUrl?: string;
+      mediaType?: string;
+      replyToId?: string;
+      mentionedMemberIds?: string[];
+    },
   ) => apiClient.post<never, ApiResponse<ChatGroupMessage>>(`/api/chat-groups/${id}/messages`, body),
 
   editMessage: (id: string, messageId: string, body: string) =>
@@ -126,6 +139,9 @@ export const chatGroupsService = {
 
   leave: (id: string) =>
     apiClient.post<never, ApiResponse<{ left: boolean }>>(`/api/chat-groups/${id}/leave`),
+
+  getPresence: (id: string) =>
+    apiClient.get<never, ApiResponse<ChatGroupPresenceEntry[]>>(`/api/chat-groups/${id}/presence`),
 };
 
 /**

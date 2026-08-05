@@ -21,6 +21,7 @@
  */
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { getPresenceBulk } from '../../plugins/socket.js';
 
 type RawGroupRow = {
   id: string;
@@ -51,6 +52,7 @@ type RawMessageRow = {
   media_type: string | null;
   reply_to_id: string | null;
   is_system: boolean;
+  mentioned_member_ids: string[] | null;
   created_at: Date;
   edited_at: Date | null;
   deleted_at: Date | null;
@@ -204,6 +206,7 @@ function messageJson(m: HydratedMessage) {
     replyToId: m.reply_to_id,
     replyTo: m.replyToPreview,
     isSystem: m.is_system,
+    mentionedMemberIds: m.deleted_for_everyone ? [] : (m.mentioned_member_ids ?? []),
     createdAt: m.created_at,
     editedAt: m.edited_at,
     deletedAt: m.deleted_at,
@@ -473,11 +476,12 @@ interface SendMessageBody {
   mediaUrl?: string;
   mediaType?: string;
   replyToId?: string;
+  mentionedMemberIds?: string[];
 }
 
 export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { id: string }; Body: SendMessageBody }>, reply: FastifyReply) {
   const { id } = req.params;
-  const { body, mediaUrl, mediaType, replyToId } = req.body;
+  const { body, mediaUrl, mediaType, replyToId, mentionedMemberIds } = req.body;
   const memberId = (req as any).memberId as string;
 
   if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
@@ -486,10 +490,23 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
 
   const prisma = req.server.prisma;
 
+  // Filter mentioned ids to those who are actually current group members
+  // (defence-in-depth — client sends whatever it wants).
+  let validatedMentions: string[] = [];
+  if (Array.isArray(mentionedMemberIds) && mentionedMemberIds.length > 0) {
+    const rows = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+      `SELECT member_id FROM chat_group_members
+       WHERE group_id = $1 AND left_at IS NULL AND member_id = ANY($2::uuid[])`,
+      id,
+      mentionedMemberIds,
+    );
+    validatedMentions = rows.map((r) => r.member_id);
+  }
+
   const inserted = await prisma.$queryRawUnsafe<RawMessageRow[]>(
     `INSERT INTO chat_group_messages
-       (group_id, sender_member_id, body, media_url, media_type, reply_to_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (group_id, sender_member_id, body, media_url, media_type, reply_to_id, mentioned_member_ids)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[])
      RETURNING *`,
     id,
     memberId,
@@ -497,6 +514,7 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
     mediaUrl || null,
     mediaType || null,
     replyToId || null,
+    validatedMentions,
   );
 
   // Bump last_message_at + unread counts for everyone except the sender.
@@ -518,6 +536,19 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
   const io = (req.server as any).io;
   if (io) {
     io.to(`group:${id}`).emit('group:message:new', messageJsonPayload);
+    // Send stronger mention pings to every explicitly-@'d member so their
+    // client can distinguish "someone talked in a group" from "someone
+    // called me out by name". Fires per user room even if they're not
+    // currently in the group room.
+    for (const mid of validatedMentions) {
+      if (mid === memberId) continue; // never ping self
+      io.to(`user:${mid}`).emit('group:mention', {
+        groupId: id,
+        messageId: messageJsonPayload.id,
+        sender: messageJsonPayload.sender,
+        body: messageJsonPayload.body,
+      });
+    }
     // Also alert offline members via their user room so their group list updates.
     const otherMembers = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
       `SELECT member_id FROM chat_group_members WHERE group_id = $1 AND member_id <> $2 AND left_at IS NULL`,
@@ -734,6 +765,27 @@ export async function memberLeaveGroupHandler(req: FastifyRequest<{ Params: { id
   if (io) io.to(`group:${id}`).emit('group:member_removed', { groupId: id, memberId });
 
   return ok(reply, { left: true });
+}
+
+/**
+ * Presence snapshot for every active member of a group. Data comes from
+ * the in-memory Map in plugins/socket.ts (kept fresh by Socket.IO
+ * lifecycle events). Real-time updates flow via the presence:update
+ * socket broadcast — this endpoint is the initial hydration.
+ */
+export async function memberGetGroupPresenceHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const memberRows = await req.server.prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+    `SELECT member_id FROM chat_group_members WHERE group_id = $1 AND left_at IS NULL`,
+    id,
+  );
+  const memberIds = memberRows.map((r) => r.member_id);
+  return ok(reply, getPresenceBulk(memberIds));
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

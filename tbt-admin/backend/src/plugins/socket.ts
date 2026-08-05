@@ -123,6 +123,18 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
       // room so the feed can fan-out new posts / likes / comments
       // without per-socket tracking.
       socket.join('community');
+      // Presence bookkeeping — per-member online/lastSeen tracked in
+      // an in-memory Map. This IS per-instance (Cloud Run can have N
+      // replicas), but we broadcast presence:update via Socket.IO's
+      // Redis adapter so every replica hears the transition. The Map
+      // is used for direct HTTP queries; the socket broadcasts keep
+      // clients in sync across instances.
+      markMemberOnline(socket.data.memberId);
+      io.emit('presence:update', {
+        memberId: socket.data.memberId,
+        online: true,
+        lastSeenAt: new Date().toISOString(),
+      });
       fastify.log.info(`Member ${socket.data.memberId} connected (${socket.id})`);
     }
     if (socket.data.role === 'admin') {
@@ -215,6 +227,17 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
 
     socket.on('disconnect', () => {
       fastify.log.info(`Socket disconnected: ${socket.id}`);
+      if (socket.data.role === 'member' && socket.data.memberId) {
+        markMemberOffline(socket.data.memberId).then((isFullyOffline) => {
+          if (isFullyOffline) {
+            io.emit('presence:update', {
+              memberId: socket.data.memberId,
+              online: false,
+              lastSeenAt: new Date().toISOString(),
+            });
+          }
+        });
+      }
     });
   });
 
@@ -224,6 +247,56 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
     instance.io.close();
     done();
   });
+}
+
+// ── Presence store ──────────────────────────────────────────────────────────
+// In-memory map: memberId → { socketCount, lastSeenAt }. Multiple sockets
+// per member are tracked so opening a second tab doesn't flip presence
+// off when the first tab disconnects. Cross-instance sync is via the
+// Socket.IO Redis adapter — every replica sees presence:update events.
+// Query via `getPresence(memberId)` from other modules.
+interface PresenceEntry {
+  socketCount: number;
+  lastSeenAt: Date;
+}
+const _presence = new Map<string, PresenceEntry>();
+
+function markMemberOnline(memberId: string) {
+  const cur = _presence.get(memberId);
+  const socketCount = (cur?.socketCount ?? 0) + 1;
+  _presence.set(memberId, { socketCount, lastSeenAt: new Date() });
+}
+
+/** Returns true when the member had exactly ONE socket and it just closed
+ *  (so we should broadcast an offline transition). If they have another
+ *  tab open we keep them online and skip the broadcast. */
+async function markMemberOffline(memberId: string): Promise<boolean> {
+  const cur = _presence.get(memberId);
+  if (!cur) return false;
+  const next = cur.socketCount - 1;
+  if (next <= 0) {
+    _presence.set(memberId, { socketCount: 0, lastSeenAt: new Date() });
+    return true;
+  }
+  _presence.set(memberId, { socketCount: next, lastSeenAt: new Date() });
+  return false;
+}
+
+export function getPresence(memberId: string): { online: boolean; lastSeenAt: string | null } {
+  const p = _presence.get(memberId);
+  if (!p) return { online: false, lastSeenAt: null };
+  return {
+    online: p.socketCount > 0,
+    lastSeenAt: p.lastSeenAt.toISOString(),
+  };
+}
+
+export function getPresenceBulk(memberIds: string[]): Array<{
+  memberId: string;
+  online: boolean;
+  lastSeenAt: string | null;
+}> {
+  return memberIds.map((id) => ({ memberId: id, ...getPresence(id) }));
 }
 
 export default fp(socketPlugin);

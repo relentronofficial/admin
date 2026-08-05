@@ -893,6 +893,13 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         );
         CREATE INDEX IF NOT EXISTS idx_chat_group_reads_member ON chat_group_message_reads(member_id);
       `),
+      // Phase 3 (2026-08-05) — @mention support. Store the memberIds the
+      // sender explicitly picked from the composer autocomplete so we can
+      // fan-out mention pings + render highlighted spans on the client.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE chat_group_messages
+          ADD COLUMN IF NOT EXISTS mentioned_member_ids UUID[] NOT NULL DEFAULT '{}'
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
