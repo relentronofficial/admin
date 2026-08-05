@@ -1,6 +1,8 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { SubscriptionGate } from "./SubscriptionGate";
+import { AudioController } from "@/components/features/podcasts/AudioController";
+import { MiniPlayer } from "@/components/features/podcasts/MiniPlayer";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +16,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         </SubscriptionGate>
         <Footer />
       </main>
+      <AudioController />
+      <MiniPlayer />
     </div>
   );
 }

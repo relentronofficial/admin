@@ -1091,3 +1091,67 @@ export interface ContinueReadingItem extends EbookProgress {
 export interface BookmarkedItem extends EbookBookmark {
   book: Ebook;
 }
+
+// ─── Podcasts ─────────────────────────────────────────────────────────────────
+
+export interface PodcastCategory {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  sortOrder: number;
+}
+
+export interface PodcastCategoryRef {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface PodcastSeries {
+  id: string;
+  title: string;
+  slug: string;
+  status: string;
+  sortOrder: number;
+  description?: string | null;
+  coverImage?: string | null;
+  episodesCount?: number | null;
+}
+
+export interface PodcastSeriesRef {
+  id: string;
+  title: string;
+  slug: string;
+}
+
+export interface PodcastProgress {
+  currentPositionSeconds: number;
+  totalDurationSeconds: number;
+  completed: boolean;
+  updatedAt: string;
+}
+
+export interface PodcastEpisode {
+  id: string;
+  title: string;
+  slug: string;
+  audioUrl: string;
+  durationSeconds: number;
+  tags: string[];
+  isFeatured: boolean;
+  status: string;
+  publishDate: string;
+  description?: string | null;
+  categoryId?: string | null;
+  seriesId?: string | null;
+  coverImage?: string | null;
+  speaker?: string | null;
+  category?: PodcastCategoryRef | null;
+  series?: PodcastSeriesRef | null;
+  progress?: PodcastProgress | null;
+}
+
+export interface ContinueListeningItem extends PodcastProgress {
+  episode: PodcastEpisode;
+}
