@@ -261,6 +261,13 @@ function ProfileButton() {
               Community
             </Link>
             <Link
+              href="/ebooks"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+            >
+              Ebooks
+            </Link>
+            <Link
               href="/support"
               onClick={() => setOpen(false)}
               className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
@@ -480,6 +487,7 @@ export function Navbar() {
           />
           {(() => {
             const communityActive = pathname === "/community" || pathname.startsWith("/community/");
+            const ebooksActive = pathname === "/ebooks" || pathname.startsWith("/ebooks/");
             const supportActive = pathname === "/support" || pathname.startsWith("/support/");
             return (
               <>
@@ -493,6 +501,17 @@ export function Navbar() {
                 >
                   <GlowBg active={communityActive} />
                   <span className="relative z-10">Community</span>
+                </Link>
+                <Link
+                  href="/ebooks"
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                    ebooksActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <GlowBg active={ebooksActive} />
+                  <span className="relative z-10">Ebooks</span>
                 </Link>
                 <Link
                   href="/support"
@@ -549,6 +568,7 @@ export function Navbar() {
           {[
             ...nav,
             { id: "__community", href: "/community", label: "Community" },
+            { id: "__ebooks", href: "/ebooks", label: "Ebooks" },
             { id: "__support", href: "/support", label: "Support" },
           ].map(({ id, href, label }) => {
             const active =

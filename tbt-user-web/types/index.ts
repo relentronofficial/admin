@@ -920,3 +920,174 @@ export interface CommunityMemberProfile {
   isFollowing: boolean;
   recentPosts: CommunityRecentPost[];
 }
+
+// ─── Ebooks ───────────────────────────────────────────────────────────────────
+
+export type EbookReviewStatus = "pending" | "approved" | "rejected";
+export type EbookHighlightColor = "yellow" | "green" | "blue" | "pink" | "orange";
+
+export interface EbookCategoryRef {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface EbookCategory {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  sortOrder: number;
+}
+
+export interface EbookBanner {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  backgroundImage?: string | null;
+  buttonText?: string | null;
+  buttonLink?: string | null;
+}
+
+export interface EbookProgress {
+  currentPage: number;
+  totalPages: number;
+  progressPercentage: number;
+  completed: boolean;
+  updatedAt: string;
+}
+
+export interface EbookBookmark {
+  id: string;
+  bookId: string;
+  pageNumber?: number | null;
+  createdAt: string;
+}
+
+export interface EbookReviewSummary {
+  rating: number;
+  reviewText?: string | null;
+  status: EbookReviewStatus;
+  updatedAt: string;
+}
+
+export interface EbookReview {
+  id: string;
+  memberId: string;
+  bookId: string;
+  rating: number;
+  reviewText?: string | null;
+  updatedAt: string;
+  authorName?: string | null;
+  authorPhotoUrl?: string | null;
+}
+
+export interface EbookReadingStreak {
+  currentStreak: number;
+  longestStreak: number;
+  lastReadAt?: string | null;
+}
+
+export interface EbookAuthorRef {
+  id: string;
+  name: string;
+  slug: string;
+  photoUrl?: string | null;
+}
+
+export interface EbookAuthorDetails {
+  id: string;
+  name: string;
+  slug: string;
+  bio?: string | null;
+  photoUrl?: string | null;
+}
+
+export interface EbookAuthorProfile {
+  author: EbookAuthorDetails;
+  books: Ebook[];
+}
+
+export interface EbookPublisherRef {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl?: string | null;
+}
+
+export interface EbookSeriesRef {
+  id: string;
+  title: string;
+  slug: string;
+  coverUrl?: string | null;
+}
+
+export interface EbookSeriesSibling {
+  id: string;
+  title: string;
+  slug: string;
+  coverImage?: string | null;
+  seriesNumber?: number | null;
+}
+
+export interface EbookHighlightBookRef {
+  id: string;
+  title: string;
+  slug: string;
+  coverImage?: string | null;
+  author?: string | null;
+}
+
+export interface EbookHighlight {
+  id: string;
+  bookId: string;
+  pageNumber: number;
+  selectedText: string;
+  highlightColor: string;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  book?: EbookHighlightBookRef | null;
+}
+
+export interface Ebook {
+  id: string;
+  title: string;
+  slug: string;
+  description?: string | null;
+  author?: string | null;
+  categoryId?: string | null;
+  coverImage?: string | null;
+  pdfUrl?: string | null;
+  contentUrl?: string | null;
+  totalPages: number;
+  readingTime?: string | null;
+  isFeatured: boolean;
+  status: string;
+  publishDate: string;
+  category?: EbookCategoryRef | null;
+  progress?: EbookProgress | null;
+  bookmark?: EbookBookmark | null;
+  locked?: boolean;
+  averageRating?: number;
+  reviewCount?: number;
+  myReview?: EbookReviewSummary | null;
+  pinnedAt?: string | null;
+  pinnedUntil?: string | null;
+  series?: EbookSeriesRef | null;
+  seriesNumber?: number | null;
+  seriesSiblings?: EbookSeriesSibling[];
+  authorRef?: EbookAuthorRef | null;
+  isbn?: string | null;
+  language?: string | null;
+  publisher?: EbookPublisherRef | null;
+  viewCount?: number;
+}
+
+export interface ContinueReadingItem extends EbookProgress {
+  book: Ebook;
+}
+
+export interface BookmarkedItem extends EbookBookmark {
+  book: Ebook;
+}
