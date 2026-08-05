@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, MessageSquare, Menu, X,
+  Bell, LifeBuoy, MessageSquare, Menu, X,
   PlayCircle, ClipboardList, Video, Trophy, Megaphone, Settings2, Film,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -585,11 +585,11 @@ export function Navbar() {
         {/* Desktop: inline nav */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
           {[
-            ...nav,
+            // Messages is already a right-side icon; drop it here to avoid duplication.
+            ...nav.filter((n) => n.href !== "/messages"),
             { id: "__community", href: "/community", label: "Community" },
             { id: "__ebooks", href: "/ebooks", label: "Ebooks" },
             { id: "__podcasts", href: "/podcasts", label: "Podcasts" },
-            { id: "__support", href: "/support", label: "Support" },
           ].map(({ id, href, label }) => {
             const active =
               pathname === href ||
@@ -665,6 +665,22 @@ export function Navbar() {
               )}
             </Link>
           )}
+
+          {/* Support */}
+          <Link
+            href="/support"
+            className={cn(
+              "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
+              pathname === "/support" || pathname.startsWith("/support/")
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            aria-label="Support"
+            title="Support"
+          >
+            <GlowBg active={pathname === "/support" || pathname.startsWith("/support/")} />
+            <LifeBuoy size={17} className="relative z-10" />
+          </Link>
 
           {/* Profile avatar */}
           {rightIcons.profile && (
