@@ -585,8 +585,9 @@ export function Navbar() {
         {/* Desktop: inline nav */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
           {[
-            // Messages is already a right-side icon; drop it here to avoid duplication.
-            ...nav.filter((n) => n.href !== "/messages"),
+            // Messages and Notifications are already right-side icons;
+            // drop them here to avoid duplication.
+            ...nav.filter((n) => n.href !== "/messages" && n.href !== "/notifications"),
             { id: "__community", href: "/community", label: "Community" },
             { id: "__ebooks", href: "/ebooks", label: "Ebooks" },
             { id: "__podcasts", href: "/podcasts", label: "Podcasts" },
