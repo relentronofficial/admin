@@ -1,5 +1,7 @@
 "use client";
 
+// Admin group-chat management (WhatsApp-inspired).
+
 import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Loader2, MessageSquare, Plus, Search, Trash2, Users, X } from "lucide-react";
