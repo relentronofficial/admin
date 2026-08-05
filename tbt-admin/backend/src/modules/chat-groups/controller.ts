@@ -67,24 +67,84 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
   return reply.status(status).send({ success: false, data: null, error: { code, message } });
 }
 
+/**
+ * Compact preview of a reply-to parent — enough to render the quoted
+ * strip above a child message without a second fetch. Body is truncated
+ * to ~120 chars server-side to keep payloads small; the client can
+ * always open the full parent by tapping.
+ */
+interface ReplyPreview {
+  id: string;
+  body: string | null;
+  mediaType: string | null;
+  senderName: string | null;
+  deletedForEveryone: boolean;
+}
+
+type HydratedMessage = RawMessageRow & {
+  sender: RawMemberRow | null;
+  reactions: Array<{ emoji: string; memberId: string }>;
+  readByCount: number;
+  readByMemberIds: string[];
+  replyToPreview: ReplyPreview | null;
+};
+
 async function hydrateSenders(
   req: FastifyRequest,
   rows: RawMessageRow[],
-): Promise<Array<RawMessageRow & { sender: RawMemberRow | null; reactions: Array<{ emoji: string; memberId: string }>; readByCount: number }>> {
-  if (rows.length === 0) return [] as any;
-  const senderIds = Array.from(new Set(rows.map((r) => r.sender_member_id).filter((v): v is string => !!v)));
+): Promise<HydratedMessage[]> {
+  if (rows.length === 0) return [];
   const messageIds = rows.map((r) => r.id);
+  const replyParentIds = Array.from(
+    new Set(rows.map((r) => r.reply_to_id).filter((v): v is string => !!v)),
+  );
+  const senderIds = new Set<string>();
+  for (const r of rows) if (r.sender_member_id) senderIds.add(r.sender_member_id);
 
-  const senders = senderIds.length > 0
+  // Fetch reply parents in one round trip and add their sender ids to the
+  // member fetch so we can attach senderName to every quote in one pass.
+  const parentRows = replyParentIds.length > 0
+    ? await req.server.prisma.$queryRawUnsafe<
+        Array<Pick<RawMessageRow, 'id' | 'sender_member_id' | 'body' | 'media_type' | 'deleted_for_everyone'>>
+      >(
+        `SELECT id, sender_member_id, body, media_type, deleted_for_everyone
+         FROM chat_group_messages
+         WHERE id = ANY($1::uuid[])`,
+        replyParentIds,
+      )
+    : [];
+  for (const p of parentRows) if (p.sender_member_id) senderIds.add(p.sender_member_id);
+
+  const senderIdArr = Array.from(senderIds);
+  const senders = senderIdArr.length > 0
     ? await req.server.prisma.$queryRawUnsafe<RawMemberRow[]>(
         `SELECT id, first_name, last_name, profile_photo_url, business_name
          FROM members
          WHERE id = ANY($1::uuid[])`,
-        senderIds,
+        senderIdArr,
       )
     : [];
-
   const senderMap = new Map(senders.map((s) => [s.id, s]));
+
+  const parentMap = new Map<string, ReplyPreview>();
+  for (const p of parentRows) {
+    const sender = p.sender_member_id ? senderMap.get(p.sender_member_id) : undefined;
+    const senderName = sender
+      ? [sender.first_name, sender.last_name].filter(Boolean).join(' ') || null
+      : null;
+    const body = p.deleted_for_everyone
+      ? null
+      : p.body && p.body.length > 120
+        ? `${p.body.slice(0, 120)}…`
+        : p.body;
+    parentMap.set(p.id, {
+      id: p.id,
+      body,
+      mediaType: p.deleted_for_everyone ? null : p.media_type,
+      senderName,
+      deletedForEveryone: p.deleted_for_everyone,
+    });
+  }
 
   const reactions = await req.server.prisma.$queryRawUnsafe<
     Array<{ message_id: string; emoji: string; member_id: string }>
@@ -101,26 +161,38 @@ async function hydrateSenders(
     reactionMap.set(r.message_id, arr);
   }
 
-  const readCounts = await req.server.prisma.$queryRawUnsafe<
-    Array<{ message_id: string; count: bigint }>
+  // Read receipts — return each reader's id so the client can compute
+  // WhatsApp-style tick state (single grey = sent, double blue = read by
+  // every other group member).
+  const reads = await req.server.prisma.$queryRawUnsafe<
+    Array<{ message_id: string; member_id: string }>
   >(
-    `SELECT message_id, COUNT(*)::bigint AS count
+    `SELECT message_id, member_id
      FROM chat_group_message_reads
-     WHERE message_id = ANY($1::uuid[])
-     GROUP BY message_id`,
+     WHERE message_id = ANY($1::uuid[])`,
     messageIds,
   );
-  const readMap = new Map(readCounts.map((r) => [r.message_id, Number(r.count)]));
+  const readMap = new Map<string, string[]>();
+  for (const r of reads) {
+    const arr = readMap.get(r.message_id) ?? [];
+    arr.push(r.member_id);
+    readMap.set(r.message_id, arr);
+  }
 
-  return rows.map((row) => ({
-    ...row,
-    sender: row.sender_member_id ? senderMap.get(row.sender_member_id) ?? null : null,
-    reactions: reactionMap.get(row.id) ?? [],
-    readByCount: readMap.get(row.id) ?? 0,
-  })) as any;
+  return rows.map((row) => {
+    const readByMemberIds = readMap.get(row.id) ?? [];
+    return {
+      ...row,
+      sender: row.sender_member_id ? senderMap.get(row.sender_member_id) ?? null : null,
+      reactions: reactionMap.get(row.id) ?? [],
+      readByCount: readByMemberIds.length,
+      readByMemberIds,
+      replyToPreview: row.reply_to_id ? parentMap.get(row.reply_to_id) ?? null : null,
+    };
+  });
 }
 
-function messageJson(m: RawMessageRow & { sender: RawMemberRow | null; reactions: Array<{ emoji: string; memberId: string }>; readByCount: number }) {
+function messageJson(m: HydratedMessage) {
   return {
     id: m.id,
     groupId: m.group_id,
@@ -130,6 +202,7 @@ function messageJson(m: RawMessageRow & { sender: RawMemberRow | null; reactions
     mediaUrl: m.deleted_for_everyone ? null : m.media_url,
     mediaType: m.deleted_for_everyone ? null : m.media_type,
     replyToId: m.reply_to_id,
+    replyTo: m.replyToPreview,
     isSystem: m.is_system,
     createdAt: m.created_at,
     editedAt: m.edited_at,
@@ -145,6 +218,7 @@ function messageJson(m: RawMessageRow & { sender: RawMemberRow | null; reactions
       : null,
     reactions: m.reactions,
     readByCount: m.readByCount,
+    readByMemberIds: m.readByMemberIds,
   };
 }
 
@@ -565,12 +639,34 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
 
   if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
 
-  await req.server.prisma.$executeRawUnsafe(
-    `INSERT INTO chat_group_message_reads (message_id, member_id)
-     VALUES ($1, $2)
-     ON CONFLICT (message_id, member_id) DO NOTHING`,
+  // Fetch the target message's createdAt so we can mark every prior
+  // message as read too. Matches WhatsApp semantics — opening a chat
+  // reads everything up to (and including) the latest visible message.
+  const target = await req.server.prisma.$queryRawUnsafe<Array<{ created_at: Date }>>(
+    `SELECT created_at FROM chat_group_messages WHERE id = $1 AND group_id = $2`,
     messageId,
+    id,
+  );
+  if (target.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+
+  // Insert reads for every message in this group up to and including
+  // the target that the member hasn't already read AND that they didn't
+  // send themselves.
+  const inserted = await req.server.prisma.$queryRawUnsafe<Array<{ message_id: string }>>(
+    `INSERT INTO chat_group_message_reads (message_id, member_id)
+     SELECT m.id, $2
+     FROM chat_group_messages m
+     WHERE m.group_id = $1
+       AND m.created_at <= $3::timestamptz
+       AND (m.sender_member_id IS NULL OR m.sender_member_id <> $2)
+       AND NOT EXISTS (
+         SELECT 1 FROM chat_group_message_reads r
+         WHERE r.message_id = m.id AND r.member_id = $2
+       )
+     RETURNING message_id`,
+    id,
     memberId,
+    target[0].created_at,
   );
 
   await req.server.prisma.$executeRawUnsafe(
@@ -585,9 +681,19 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
   );
 
   const io = (req.server as any).io;
-  if (io) io.to(`group:${id}`).emit('group:read', { memberId, messageId });
+  if (io) {
+    // Emit one event per newly-read message so every sender's client can
+    // update per-message tick state. Batching to a single array keeps
+    // the payload compact even when catching up from a large unread.
+    io.to(`group:${id}`).emit('group:read', {
+      groupId: id,
+      memberId,
+      messageIds: inserted.map((r) => r.message_id),
+      upToMessageId: messageId,
+    });
+  }
 
-  return ok(reply, { marked: true });
+  return ok(reply, { marked: true, count: inserted.length });
 }
 
 export async function memberSearchMessagesHandler(req: FastifyRequest<{ Params: { id: string }; Querystring: { q?: string; limit?: string } }>, reply: FastifyReply) {

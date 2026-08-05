@@ -38,6 +38,14 @@ export interface ChatGroupDetail {
   members: ChatGroupMemberRef[];
 }
 
+export interface ChatGroupMessageReplyPreview {
+  id: string;
+  body: string | null;
+  mediaType: string | null;
+  senderName: string | null;
+  deletedForEveryone: boolean;
+}
+
 export interface ChatGroupMessage {
   id: string;
   groupId: string;
@@ -47,6 +55,7 @@ export interface ChatGroupMessage {
   mediaUrl: string | null;
   mediaType: string | null;
   replyToId: string | null;
+  replyTo: ChatGroupMessageReplyPreview | null;
   isSystem: boolean;
   createdAt: string;
   editedAt: string | null;
@@ -60,6 +69,7 @@ export interface ChatGroupMessage {
   } | null;
   reactions: Array<{ emoji: string; memberId: string }>;
   readByCount: number;
+  readByMemberIds: string[];
 }
 
 export const chatGroupsService = {
@@ -117,3 +127,36 @@ export const chatGroupsService = {
   leave: (id: string) =>
     apiClient.post<never, ApiResponse<{ left: boolean }>>(`/api/chat-groups/${id}/leave`),
 };
+
+/**
+ * Upload a chat attachment through /api/upload/image (Bunny-first, R2 fallback).
+ * Accepts image/video/document/audio — same endpoint the community feed
+ * uses for its post media. Returns the public URL + a mediaType hint
+ * derived from the file MIME.
+ */
+export async function uploadChatMedia(
+  file: File,
+): Promise<{ publicUrl: string; mediaType: "image" | "video" | "document" | "audio" } | null> {
+  try {
+    const contentType = file.type || "application/octet-stream";
+    const buffer = await file.arrayBuffer();
+    const res = await apiClient.post<never, ApiResponse<{ publicUrl: string }>>(
+      "/api/upload/image",
+      buffer,
+      {
+        params: { pathPrefix: "chat", filename: file.name },
+        headers: { "Content-Type": contentType },
+        transformRequest: [(data) => data],
+      },
+    );
+    const publicUrl = res.data?.publicUrl;
+    if (!publicUrl) return null;
+    let mediaType: "image" | "video" | "document" | "audio" = "document";
+    if (contentType.startsWith("image/")) mediaType = "image";
+    else if (contentType.startsWith("video/")) mediaType = "video";
+    else if (contentType.startsWith("audio/")) mediaType = "audio";
+    return { publicUrl, mediaType };
+  } catch {
+    return null;
+  }
+}

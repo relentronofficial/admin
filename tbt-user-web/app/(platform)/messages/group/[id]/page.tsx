@@ -6,9 +6,14 @@ import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Check,
+  CheckCheck,
   ChevronDown,
+  FileText,
   Loader2,
   MoreVertical,
+  Paperclip,
+  Reply,
   Send,
   Smile,
   Trash2,
@@ -58,10 +63,19 @@ export default function GroupChatPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [editing, setEditing] = useState<{ messageId: string; body: string } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ChatGroupMessage | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<{
+    file: File;
+    previewUrl: string;
+    uploading: boolean;
+    uploadedUrl: string | null;
+    mediaType: "image" | "video" | "document" | "audio";
+  } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [typingMembers, setTypingMembers] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messages: ChatGroupMessage[] = useMemo(
     () => (messagesData?.pages ?? []).flat(),
@@ -155,11 +169,40 @@ export default function GroupChatPage() {
         });
       };
 
+      // WhatsApp-style read receipt fan-in: the backend emits every
+      // freshly-marked messageId when a member opens the chat, so the
+      // sender's tick state can flip from grey → blue in real time.
+      const onRead = ({
+        memberId,
+        messageIds,
+      }: { groupId: string; memberId: string; messageIds: string[]; upToMessageId?: string }) => {
+        if (!memberId || !messageIds?.length) return;
+        const idSet = new Set(messageIds);
+        qc.setQueryData(chatGroupKeys.messages(groupId), (prev: any) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            pages: prev.pages.map((page: ChatGroupMessage[]) =>
+              page.map((m) => {
+                if (!idSet.has(m.id)) return m;
+                if (m.readByMemberIds.includes(memberId)) return m;
+                return {
+                  ...m,
+                  readByMemberIds: [...m.readByMemberIds, memberId],
+                  readByCount: m.readByCount + 1,
+                };
+              }),
+            ),
+          };
+        });
+      };
+
       socket.on("group:message:new", onNew);
       socket.on("group:message:edited", onEdited);
       socket.on("group:message:deleted", onDeleted);
       socket.on("group:reaction", onReaction);
       socket.on("group:typing", onTyping);
+      socket.on("group:read", onRead);
 
       cleanup = () => {
         socket.emit("leave:chat_group", { groupId });
@@ -168,6 +211,7 @@ export default function GroupChatPage() {
         socket.off("group:message:deleted", onDeleted);
         socket.off("group:reaction", onReaction);
         socket.off("group:typing", onTyping);
+        socket.off("group:read", onRead);
       };
     });
 
@@ -227,19 +271,66 @@ export default function GroupChatPage() {
 
   async function handleSend() {
     const body = draft.trim();
-    if (!body || sending) return;
+    const hasReadyMedia = pendingMedia?.uploadedUrl && !pendingMedia.uploading;
+    if (!body && !hasReadyMedia) return;
+    if (sending || pendingMedia?.uploading) return;
+
     setSending(true);
     try {
       if (editing) {
+        // Edit path only touches body — media is never edited in-place.
         await editMsg.mutateAsync({ messageId: editing.messageId, body });
         setEditing(null);
       } else {
-        await send.mutateAsync({ body });
+        await send.mutateAsync({
+          body: body || undefined,
+          mediaUrl: pendingMedia?.uploadedUrl ?? undefined,
+          mediaType: hasReadyMedia ? pendingMedia?.mediaType : undefined,
+          replyToId: replyingTo?.id,
+        });
       }
       setDraft("");
+      setReplyingTo(null);
+      if (pendingMedia?.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
+      setPendingMedia(null);
     } finally {
       setSending(false);
     }
+  }
+
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      // 20 MB cap — matches Community composer.
+      alert("File too large (max 20 MB).");
+      return;
+    }
+    if (pendingMedia?.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
+    const previewUrl = URL.createObjectURL(file);
+    const isImage = file.type.startsWith("image/");
+    const isVideo = file.type.startsWith("video/");
+    const isAudio = file.type.startsWith("audio/");
+    const mediaType: "image" | "video" | "document" | "audio" = isImage
+      ? "image"
+      : isVideo
+        ? "video"
+        : isAudio
+          ? "audio"
+          : "document";
+    setPendingMedia({ file, previewUrl, uploading: true, uploadedUrl: null, mediaType });
+    const { uploadChatMedia } = await import("@/lib/api/services/chatGroups.service");
+    const uploaded = await uploadChatMedia(file);
+    setPendingMedia((prev) => {
+      if (!prev || prev.file !== file) return prev;
+      return {
+        ...prev,
+        uploading: false,
+        uploadedUrl: uploaded?.publicUrl ?? null,
+        mediaType: uploaded?.mediaType ?? prev.mediaType,
+      };
+    });
   }
 
   if (groupLoading) {
@@ -330,38 +421,48 @@ export default function GroupChatPage() {
             No messages yet — say hi.
           </div>
         ) : (
-          messages.map((m, i) => {
-            const prev = messages[i - 1];
-            const showSender =
-              !m.deletedForEveryone &&
-              (!prev || prev.senderMemberId !== m.senderMemberId || m.isSystem);
-            const isMine = !!meId && m.senderMemberId === meId;
-            return (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                isMine={isMine}
-                showSender={showSender}
-                onEdit={() => {
-                  if (m.body) {
-                    setEditing({ messageId: m.id, body: m.body });
-                    setDraft(m.body);
+          (() => {
+            const otherMemberIds = group.members
+              .map((mem) => mem.id)
+              .filter((mid) => mid !== meId);
+            return messages.map((m, i) => {
+              const prev = messages[i - 1];
+              const showSender =
+                !m.deletedForEveryone &&
+                (!prev || prev.senderMemberId !== m.senderMemberId || m.isSystem);
+              const isMine = !!meId && m.senderMemberId === meId;
+              return (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  isMine={isMine}
+                  showSender={showSender}
+                  otherMemberIds={otherMemberIds}
+                  onEdit={() => {
+                    if (m.body) {
+                      setEditing({ messageId: m.id, body: m.body });
+                      setDraft(m.body);
+                    }
+                  }}
+                  onDelete={(forEveryone) =>
+                    deleteMsg.mutate({ messageId: m.id, forEveryone })
                   }
-                }}
-                onDelete={(forEveryone) =>
-                  deleteMsg.mutate({ messageId: m.id, forEveryone })
-                }
-                onReact={(emoji) => toggleReaction.mutate({ messageId: m.id, emoji })}
-              />
-            );
-          })
+                  onReact={(emoji) => toggleReaction.mutate({ messageId: m.id, emoji })}
+                  onReply={() => {
+                    setReplyingTo(m);
+                    setEditing(null);
+                  }}
+                />
+              );
+            });
+          })()
         )}
         <div ref={anchorRef} />
       </div>
 
       {/* Composer */}
       <div
-        className="flex items-end gap-2 p-3 rounded-b-2xl flex-shrink-0"
+        className="flex-shrink-0 rounded-b-2xl"
         style={{
           background: "var(--color-bg-surface)",
           border: "1px solid var(--color-border-subtle)",
@@ -370,7 +471,7 @@ export default function GroupChatPage() {
       >
         {editing && (
           <div
-            className="absolute -top-9 left-3 right-3 px-3 py-1.5 rounded-lg text-[11px] flex items-center justify-between"
+            className="mx-3 mt-2 px-3 py-1.5 rounded-lg text-[11px] flex items-center justify-between"
             style={{
               background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
               border: "1px solid color-mix(in srgb, var(--color-accent) 35%, transparent)",
@@ -389,32 +490,139 @@ export default function GroupChatPage() {
             </button>
           </div>
         )}
-        <textarea
-          value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (draft.trim().length > 0) handleSend();
+
+        {replyingTo && (
+          <div
+            className="mx-3 mt-2 px-3 py-2 rounded-lg text-[11px] flex items-center justify-between gap-2"
+            style={{
+              background: "var(--color-bg-primary)",
+              borderLeft: "3px solid var(--color-accent)",
+            }}
+          >
+            <div className="flex-1 min-w-0">
+              <div
+                className="font-bold"
+                style={{ color: "var(--color-accent)" }}
+              >
+                Replying to{" "}
+                {[replyingTo.sender?.firstName, replyingTo.sender?.lastName].filter(Boolean).join(" ") || "Member"}
+              </div>
+              <div className="text-muted-foreground truncate">
+                {replyingTo.body
+                  ? replyingTo.body.slice(0, 100)
+                  : replyingTo.mediaType
+                    ? `📎 ${replyingTo.mediaType}`
+                    : "…"}
+              </div>
+            </div>
+            <button
+              onClick={() => setReplyingTo(null)}
+              className="text-muted-foreground hover:text-foreground flex-shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {pendingMedia && (
+          <div
+            className="mx-3 mt-2 px-3 py-2 rounded-lg flex items-center gap-3"
+            style={{
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-border-subtle)",
+            }}
+          >
+            <div
+              className="w-12 h-12 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
+              style={{ background: "var(--color-surface-overlay)" }}
+            >
+              {pendingMedia.mediaType === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={pendingMedia.previewUrl} alt="" className="w-full h-full object-cover" />
+              ) : pendingMedia.mediaType === "video" ? (
+                <video src={pendingMedia.previewUrl} className="w-full h-full object-cover" muted />
+              ) : (
+                <FileText size={18} className="text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-foreground truncate">
+                {pendingMedia.file.name}
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                {pendingMedia.uploading
+                  ? "Uploading…"
+                  : pendingMedia.uploadedUrl
+                    ? "Ready to send"
+                    : "Upload failed"}
+              </div>
+            </div>
+            {pendingMedia.uploading ? (
+              <Loader2 size={14} className="animate-spin text-muted-foreground" />
+            ) : (
+              <button
+                onClick={() => {
+                  if (pendingMedia.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
+                  setPendingMedia(null);
+                }}
+                className="text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-end gap-2 p-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+            onChange={onPickFile}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || !!pendingMedia}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] disabled:opacity-40 flex-shrink-0"
+            aria-label="Attach file"
+            title="Attach file"
+          >
+            <Paperclip size={16} />
+          </button>
+          <textarea
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                const canSend =
+                  draft.trim().length > 0 || (pendingMedia?.uploadedUrl && !pendingMedia.uploading);
+                if (canSend) handleSend();
+              }
+            }}
+            placeholder={pendingMedia ? "Add a caption…" : "Type a message…"}
+            rows={1}
+            className="flex-1 px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
+            style={{
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-border-subtle)",
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={
+              sending ||
+              pendingMedia?.uploading ||
+              (draft.trim().length === 0 && !pendingMedia?.uploadedUrl)
             }
-          }}
-          placeholder="Type a message…"
-          rows={1}
-          className="flex-1 px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
-          style={{
-            background: "var(--color-bg-primary)",
-            border: "1px solid var(--color-border-subtle)",
-          }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={sending || draft.trim().length === 0}
-          className="w-11 h-11 rounded-full flex items-center justify-center text-white disabled:opacity-60 flex-shrink-0"
-          style={{ background: "var(--color-accent)" }}
-          aria-label="Send"
-        >
-          {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-        </button>
+            className="w-11 h-11 rounded-full flex items-center justify-center text-white disabled:opacity-60 flex-shrink-0"
+            style={{ background: "var(--color-accent)" }}
+            aria-label="Send"
+          >
+            {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+          </button>
+        </div>
       </div>
 
       {infoOpen && (
@@ -444,19 +652,24 @@ function MessageBubble({
   message,
   isMine,
   showSender,
+  otherMemberIds,
   onEdit,
   onDelete,
   onReact,
+  onReply,
 }: {
   message: ChatGroupMessage;
   isMine: boolean;
   showSender: boolean;
+  otherMemberIds: string[];
   onEdit: () => void;
   onDelete: (forEveryone: boolean) => void;
   onReact: (emoji: string) => void;
+  onReply: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactPickerOpen, setReactPickerOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const senderName =
     [message.sender?.firstName, message.sender?.lastName].filter(Boolean).join(" ") || "Member";
@@ -465,7 +678,6 @@ function MessageBubble({
     minute: "2-digit",
   });
 
-  // Group reactions by emoji so a "👍 3" pill counts everyone.
   const reactionGroups = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const r of message.reactions) {
@@ -477,6 +689,18 @@ function MessageBubble({
   }, [message.reactions]);
 
   const deleted = message.deletedForEveryone || !!message.deletedAt;
+
+  // WhatsApp-style tick state (only on own messages):
+  //   sent      — always true once persisted (single grey ✓)
+  //   readByAll — every other group member has a chat_group_message_reads row
+  //               (double blue ✓✓); otherwise double grey after at least one read.
+  const readCountOthers = useMemo(() => {
+    if (!isMine) return 0;
+    const readSet = new Set(message.readByMemberIds);
+    return otherMemberIds.filter((id) => readSet.has(id)).length;
+  }, [isMine, message.readByMemberIds, otherMemberIds]);
+  const readByAll = isMine && otherMemberIds.length > 0 && readCountOthers >= otherMemberIds.length;
+  const readByAny = isMine && readCountOthers > 0;
 
   return (
     <div className={cn("flex px-3", isMine ? "justify-end" : "justify-start")}>
@@ -491,7 +715,7 @@ function MessageBubble({
         )}
         <div className="relative">
           <div
-            className={cn("rounded-2xl px-3.5 py-2 relative")}
+            className={cn("rounded-2xl overflow-hidden relative")}
             style={{
               background: isMine
                 ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
@@ -503,18 +727,62 @@ function MessageBubble({
               borderBottomRightRadius: isMine ? 4 : undefined,
             }}
           >
-            {deleted ? (
-              <p className="text-xs text-muted-foreground italic">
-                {message.deletedForEveryone ? "This message was deleted" : "You deleted this message"}
-              </p>
-            ) : (
-              <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-                {message.body}
-              </p>
+            {/* Reply quote strip */}
+            {!deleted && message.replyTo && (
+              <div
+                className="mx-1.5 mt-1.5 px-2.5 py-1.5 rounded-md text-[11px]"
+                style={{
+                  background: "color-mix(in srgb, var(--color-accent) 8%, transparent)",
+                  borderLeft: "3px solid var(--color-accent)",
+                }}
+              >
+                <div className="font-bold" style={{ color: "var(--color-accent)" }}>
+                  {message.replyTo.senderName ?? "Member"}
+                </div>
+                <div className="text-muted-foreground truncate">
+                  {message.replyTo.deletedForEveryone
+                    ? "message deleted"
+                    : message.replyTo.body ||
+                      (message.replyTo.mediaType ? `📎 ${message.replyTo.mediaType}` : "…")}
+                </div>
+              </div>
             )}
-            <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
-              {message.editedAt && <span>edited</span>}
-              <span>{time}</span>
+
+            {/* Media */}
+            {!deleted && message.mediaUrl && message.mediaType && (
+              <MediaBlock
+                url={message.mediaUrl}
+                type={message.mediaType}
+                onImageClick={() => setLightboxOpen(true)}
+              />
+            )}
+
+            {/* Body + meta */}
+            <div className="px-3.5 py-2">
+              {deleted ? (
+                <p className="text-xs text-muted-foreground italic">
+                  {message.deletedForEveryone ? "This message was deleted" : "You deleted this message"}
+                </p>
+              ) : message.body ? (
+                <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+                  {message.body}
+                </p>
+              ) : null}
+              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
+                {message.editedAt && !deleted && <span>edited</span>}
+                <span>{time}</span>
+                {isMine && !deleted && (
+                  <span className="ml-0.5" title={readByAll ? "Read by all" : readByAny ? "Read" : "Sent"}>
+                    {readByAll ? (
+                      <CheckCheck size={12} style={{ color: "#3b82f6" }} />
+                    ) : readByAny ? (
+                      <CheckCheck size={12} />
+                    ) : (
+                      <Check size={12} />
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           {!deleted && (
@@ -554,7 +822,16 @@ function MessageBubble({
                 >
                   <Smile size={13} /> React
                 </button>
-                {isMine && !message.mediaUrl && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onReply();
+                  }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Reply size={13} /> Reply
+                </button>
+                {isMine && !message.mediaUrl && message.body && (
                   <button
                     onClick={() => {
                       setMenuOpen(false);
@@ -637,7 +914,112 @@ function MessageBubble({
           </div>
         )}
       </div>
+
+      {lightboxOpen && message.mediaUrl && message.mediaType === "image" && (
+        <div
+          className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-black/60 hover:bg-black/80 text-white"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={message.mediaUrl}
+            alt=""
+            className="max-w-[95vw] max-h-[95vh] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Inline media block (image / video / audio / document) ───────────────────
+
+function MediaBlock({
+  url,
+  type,
+  onImageClick,
+}: {
+  url: string;
+  type: string;
+  onImageClick: () => void;
+}) {
+  const filename = useMemo(() => {
+    try {
+      return decodeURIComponent(url.split("/").pop() ?? "file");
+    } catch {
+      return "file";
+    }
+  }, [url]);
+
+  if (type === "image") {
+    return (
+      <button
+        onClick={onImageClick}
+        className="block w-full max-w-[320px]"
+        style={{ background: "#000" }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt=""
+          className="w-full h-auto max-h-[360px] object-cover"
+          loading="lazy"
+        />
+      </button>
+    );
+  }
+  if (type === "video") {
+    return (
+      <video
+        src={url}
+        controls
+        preload="metadata"
+        className="w-full max-w-[320px] max-h-[360px]"
+        style={{ background: "#000" }}
+      />
+    );
+  }
+  if (type === "audio") {
+    return (
+      <audio
+        src={url}
+        controls
+        preload="metadata"
+        className="w-full max-w-[320px]"
+      />
+    );
+  }
+  // document
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-3 m-1.5 p-2 rounded-lg hover:bg-[var(--color-surface-overlay)]"
+      style={{
+        background: "var(--color-bg-primary)",
+        border: "1px solid var(--color-border-subtle)",
+      }}
+    >
+      <div
+        className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{ background: "var(--color-surface-overlay)" }}
+      >
+        <FileText size={18} className="text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-semibold text-foreground truncate">{filename}</div>
+        <div className="text-[10px] text-muted-foreground">Download</div>
+      </div>
+    </a>
   );
 }
 
