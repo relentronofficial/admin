@@ -465,6 +465,28 @@ export function Navbar() {
               </Link>
             );
           })}
+
+          {/* Utility links (separated) */}
+          <div
+            className="my-2 border-t"
+            style={{ borderColor: "var(--color-border-subtle)" }}
+          />
+          {(() => {
+            const supportActive = pathname === "/support" || pathname.startsWith("/support/");
+            return (
+              <Link
+                href="/support"
+                onClick={() => setSidebarOpen(false)}
+                className={cn(
+                  "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                  supportActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <GlowBg active={supportActive} />
+                <span className="relative z-10">Support</span>
+              </Link>
+            );
+          })()}
         </nav>
 
       </div>
