@@ -1,9 +1,13 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/routes.dart';
+import '../../../features/chat_groups/domain/chat_group_models.dart';
+import '../../../features/chat_groups/providers/chat_group_providers.dart';
 import '../../../shared/models/conversation.dart';
+import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../data/messages_service.dart';
 import '../providers/messages_provider.dart';
@@ -92,17 +96,20 @@ class MessagesScreen extends ConsumerWidget {
             backgroundColor: context.tokens.bgSurface,
             onRefresh: () async {
               ref.invalidate(conversationsProvider);
+              ref.invalidate(myChatGroupsProvider);
               await ref
                   .read(conversationsProvider.future)
                   .catchError((_) => <Conversation>[]);
             },
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: conversations.length,
-              separatorBuilder: (_, __) =>
-                  Divider(height: 1, color: context.tokens.borderCard, indent: 68),
-              itemBuilder: (context, i) {
-                final c = conversations[i];
+            child: CustomScrollView(
+              slivers: [
+                const SliverToBoxAdapter(child: _GroupChatsSection()),
+                SliverList.separated(
+                  itemCount: conversations.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, color: context.tokens.borderCard, indent: 68),
+                  itemBuilder: (context, i) {
+                    final c = conversations[i];
                 return Dismissible(
                   key: ValueKey('conv-${c.id}'),
                   direction: DismissDirection.endToStart,
@@ -140,6 +147,8 @@ class MessagesScreen extends ConsumerWidget {
                   ),
                 );
               },
+            ),
+              ],
             ),
           );
         },
@@ -521,6 +530,145 @@ class _NewConversationSheetState extends State<_NewConversationSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Group chats section (WhatsApp-inspired) ─────────────────────────────────
+
+class _GroupChatsSection extends ConsumerWidget {
+  const _GroupChatsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(myChatGroupsProvider);
+    final tokens = context.tokens;
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (groups) {
+        if (groups.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Text(
+                'GROUP CHATS',
+                style: TextStyle(
+                  fontFamily: 'Rajdhani',
+                  color: tokens.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+            ...groups.map((g) => _GroupChatTile(group: g)),
+            Divider(height: 12, color: tokens.borderCard),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _GroupChatTile extends StatelessWidget {
+  const _GroupChatTile({required this.group});
+  final ChatGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push(AppRoutes.chatGroupPath(group.id)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              _GroupThumb(url: group.avatarUrl, name: group.name),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.name,
+                      style: TextStyle(
+                        color: tokens.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      group.lastMessage != null
+                          ? (group.lastMessage!.senderName != null
+                              ? '${group.lastMessage!.senderName}: ${group.lastMessage!.body}'
+                              : group.lastMessage!.body)
+                          : 'No messages yet',
+                      style: TextStyle(color: tokens.textMuted, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (group.unreadCount > 0)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: const BoxDecoration(
+                    color: kColorAccent,
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  alignment: Alignment.center,
+                  child: Text(
+                    group.unreadCount > 99 ? '99+' : '${group.unreadCount}',
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupThumb extends StatelessWidget {
+  const _GroupThumb({required this.url, required this.name});
+  final String? url;
+  final String name;
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    if (url != null && url!.isNotEmpty) {
+      return ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: url!,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          errorWidget: (_, __, ___) => _fallback(tokens),
+        ),
+      );
+    }
+    return _fallback(tokens);
+  }
+
+  Widget _fallback(ThemeTokens tokens) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(color: tokens.bgInput, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: Icon(Icons.groups_rounded, color: tokens.textMuted, size: 22),
     );
   }
 }

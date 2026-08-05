@@ -19,6 +19,8 @@ class AppRoutes {
   // Outside shell — detail pages
   static const String workshopDetail = '/workshops/:id';
   static const String conversationDetail = '/messages/:conversationId';
+  static const String chatGroup = '/messages/group/:groupId';
+  static String chatGroupPath(String id) => '/messages/group/$id';
   static const String courses = '/courses';
   static const String learning = '/learning';
   static const String learningBadges = '/learning/badges';

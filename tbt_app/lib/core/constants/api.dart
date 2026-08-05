@@ -169,3 +169,14 @@ const String kEbookBookmarks = '/api/ebooks/bookmarks';
 const String kEbookProgress = '/api/ebooks/progress';
 // /api/ebooks/progress/:bookId — built at call site
 const String kEbookContinueReading = '/api/ebooks/continue-reading';
+
+// ── Chat groups (WhatsApp-inspired) ────────────────────────────────
+const String kChatGroupsMine = '/api/chat-groups/mine';
+// /api/chat-groups/:id — built at call site
+// /api/chat-groups/:id/messages — built at call site
+// /api/chat-groups/:id/messages/:messageId — edit/delete
+// /api/chat-groups/:id/messages/:messageId/react — toggle reaction
+// /api/chat-groups/:id/read — POST { messageId }
+// /api/chat-groups/:id/search — GET ?q=
+// /api/chat-groups/:id/presence — GET
+// /api/chat-groups/:id/leave — POST
