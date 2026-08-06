@@ -3999,8 +3999,16 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
       senderAvatarUrl: m.senderType === 'member'
         ? (memberProfile?.profilePhotoUrl ?? null)
         : (admin?.profilePhotoUrl ?? null),
-      body:            m.body,
-      createdAt:       m.createdAt,
+      body:               m.deletedForEveryone ? null : m.body,
+      mediaUrl:           m.deletedForEveryone ? null : m.mediaUrl,
+      mediaType:          m.deletedForEveryone ? null : m.mediaType,
+      replyToId:          m.replyToId,
+      editedAt:           m.editedAt,
+      deletedAt:          m.deletedAt,
+      deletedForEveryone: m.deletedForEveryone,
+      readByAdminAt:      m.readByAdminAt,
+      readByMemberAt:     m.readByMemberAt,
+      createdAt:          m.createdAt,
     };
   });
 

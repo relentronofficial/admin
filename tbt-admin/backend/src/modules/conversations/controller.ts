@@ -66,26 +66,35 @@ export async function getAdminConversationMessagesHandler(request: FastifyReques
   const memberName = `${member?.firstName ?? ''} ${member?.lastName ?? ''}`.trim() || 'Member';
 
   const data = messages.map((m) => {
+    const common = {
+      id:                 m.id,
+      body:               m.deletedForEveryone ? null : m.body,
+      mediaUrl:           m.deletedForEveryone ? null : m.mediaUrl,
+      mediaType:          m.deletedForEveryone ? null : m.mediaType,
+      replyToId:          m.replyToId,
+      editedAt:           m.editedAt,
+      deletedAt:          m.deletedAt,
+      deletedForEveryone: m.deletedForEveryone,
+      readByAdminAt:      m.readByAdminAt,
+      readByMemberAt:     m.readByMemberAt,
+      createdAt:          m.createdAt,
+    };
     if (m.senderType === 'admin') {
       const a = adminMap[m.senderId];
       return {
-        id:             m.id,
-        senderType:     'admin' as const,
-        senderId:       m.senderId,
-        senderName:     a?.fullName ?? 'TBT Team',
+        ...common,
+        senderType:      'admin' as const,
+        senderId:        m.senderId,
+        senderName:      a?.fullName ?? 'TBT Team',
         senderAvatarUrl: a?.profilePhotoUrl ?? null,
-        body:           m.body,
-        createdAt:      m.createdAt,
       };
     }
     return {
-      id:             m.id,
-      senderType:     'member' as const,
-      senderId:       m.senderId,
-      senderName:     memberName,
+      ...common,
+      senderType:      'member' as const,
+      senderId:        m.senderId,
+      senderName:      memberName,
       senderAvatarUrl: member?.profilePhotoUrl ?? null,
-      body:           m.body,
-      createdAt:      m.createdAt,
     };
   });
 
