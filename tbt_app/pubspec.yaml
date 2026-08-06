@@ -50,6 +50,14 @@ dependencies:
   # OS-level media-session controls (lockscreen play/pause), pair with
   # `audio_service` — not needed for the initial release.
   just_audio: ^0.9.42
+  # record for hold-to-record voice notes in group + DM chats. Records
+  # AAC-in-.m4a which is directly playable by just_audio / video_player.
+  record: ^5.1.2
+
+  # ── Chat / media viewer ───────────────────────────────────────────────────
+  # scrollable_positioned_list lets us programmatically scroll to a
+  # specific message index (for reply jump-to-parent).
+  scrollable_positioned_list: ^0.3.8
 
   # ── PDF ───────────────────────────────────────────────────────────────────
   # flutter_pdfview for the in-app e-book reader. MIT-licensed (unlike

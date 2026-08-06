@@ -7,6 +7,7 @@ import '../../../core/constants/api.dart';
 import '../../../shared/api/dio_client.dart';
 import '../../../shared/api/dio_provider.dart';
 import '../domain/chat_group_models.dart';
+// StarredMessage is exported from chat_group_models.dart.
 
 /// Thin HTTP client for /api/chat-groups/* member endpoints.
 /// Matches the community/ + support/ pattern — hand-written wrappers,
@@ -167,6 +168,90 @@ class ChatGroupsService {
   Future<void> leave(String id) async {
     try {
       await _dio.post<dynamic>('/api/chat-groups/$id/leave');
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  // ── Forward / star / mute / pin — P0 group-chat parity ────────────────────
+
+  /// Forwards [messageId] into every group in [toGroupIds] that the
+  /// caller is a member of. Backend returns 200 with `{ count }`.
+  Future<int> forwardMessage(
+    String groupId,
+    String messageId,
+    List<String> toGroupIds,
+  ) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/chat-groups/$groupId/messages/$messageId/forward',
+        data: {'toGroupIds': toGroupIds},
+      );
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
+      return (data['count'] as int?) ?? toGroupIds.length;
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> starMessage(String groupId, String messageId) async {
+    try {
+      await _dio.post<dynamic>(
+        '/api/chat-groups/$groupId/messages/$messageId/star',
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> unstarMessage(String groupId, String messageId) async {
+    try {
+      await _dio.delete<dynamic>(
+        '/api/chat-groups/$groupId/messages/$messageId/star',
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Returns every starred message across all the caller's groups
+  /// (server does the join). Empty list on error.
+  Future<List<StarredMessage>> listStarred() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(kChatGroupsStarred);
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(StarredMessage.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// [until] = null → unmute. Otherwise an ISO-8601 timestamp for the
+  /// end of the mute period ("Always" == a far-future date).
+  Future<void> muteGroup(String groupId, {DateTime? until}) async {
+    try {
+      await _dio.post<dynamic>(
+        '/api/chat-groups/$groupId/mute',
+        data: {'until': until?.toUtc().toIso8601String()},
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<List<ChatGroupMessage>> listPinned(String groupId) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/chat-groups/$groupId/pinned',
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(ChatGroupMessage.fromJson)
+          .toList();
     } on DioException catch (e) {
       throw mapDioError(e);
     }

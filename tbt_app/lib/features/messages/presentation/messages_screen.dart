@@ -7,6 +7,7 @@ import '../../../core/constants/routes.dart';
 import '../../../features/chat_groups/domain/chat_group_models.dart';
 import '../../../features/chat_groups/providers/chat_group_providers.dart';
 import '../../../shared/models/conversation.dart';
+import '../../../shared/providers/me_provider.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../data/messages_service.dart';
@@ -85,6 +86,34 @@ class MessagesScreen extends ConsumerWidget {
             color: context.tokens.textPrimary,
           ),
         ),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            icon: Icon(Icons.more_vert, color: context.tokens.textSecondary),
+            color: context.tokens.bgSurface,
+            onSelected: (v) {
+              if (v == 'starred') {
+                context.push(AppRoutes.starredMessages);
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'starred',
+                child: Row(
+                  children: [
+                    const Icon(Icons.star_outline_rounded, size: 18),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Starred messages',
+                      style: TextStyle(
+                          color: context.tokens.textPrimary, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: convoAsync.when(
         loading: () => _buildSkeleton(context),
@@ -175,7 +204,12 @@ class _ConversationTile extends StatelessWidget {
     final c = conversation;
     final hasUnread = c.memberUnreadCount > 0;
     final initial = c.subject.isNotEmpty ? c.subject[0].toUpperCase() : '?';
-    final preview = c.lastMessage?.body ?? '';
+    final rawPreview = c.lastMessage?.body ?? '';
+    // WhatsApp-style "You: …" prefix when the member sent the last message.
+    final youSent = c.lastMessage?.senderType == 'member';
+    final preview = youSent && rawPreview.isNotEmpty
+        ? 'You: $rawPreview'
+        : rawPreview;
     final isClosed = c.status == 'closed';
 
     return InkWell(
@@ -573,13 +607,33 @@ class _GroupChatsSection extends ConsumerWidget {
   }
 }
 
-class _GroupChatTile extends StatelessWidget {
+class _GroupChatTile extends ConsumerWidget {
   const _GroupChatTile({required this.group});
   final ChatGroup group;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final tokens = context.tokens;
+    final me = ref.watch(meNotifierProvider).valueOrNull;
+    final muteState = ref.watch(groupMuteProvider(group.id));
+    // Prefix "You: " if the last-message sender name matches the current
+    // member's name (ChatGroupLastMessage doesn't expose sender id).
+    String preview;
+    if (group.lastMessage == null) {
+      preview = 'No messages yet';
+    } else {
+      final lm = group.lastMessage!;
+      final youSent = me != null &&
+          lm.senderName != null &&
+          lm.senderName!.trim().toLowerCase() == me.name.trim().toLowerCase();
+      if (youSent) {
+        preview = 'You: ${lm.body}';
+      } else if (lm.senderName != null) {
+        preview = '${lm.senderName}: ${lm.body}';
+      } else {
+        preview = lm.body;
+      }
+    }
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -594,23 +648,33 @@ class _GroupChatTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      group.name,
-                      style: TextStyle(
-                        color: tokens.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            group.name,
+                            style: TextStyle(
+                              color: tokens.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (muteState.isMuted) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.notifications_off_outlined,
+                            size: 12,
+                            color: tokens.textMuted,
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      group.lastMessage != null
-                          ? (group.lastMessage!.senderName != null
-                              ? '${group.lastMessage!.senderName}: ${group.lastMessage!.body}'
-                              : group.lastMessage!.body)
-                          : 'No messages yet',
+                      preview,
                       style: TextStyle(color: tokens.textMuted, fontSize: 12),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

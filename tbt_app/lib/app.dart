@@ -35,6 +35,7 @@ import 'features/history/presentation/history_screen.dart';
 import 'features/live/presentation/live_call_screen.dart';
 import 'features/live/presentation/webinar_screen.dart';
 import 'features/chat_groups/presentation/chat_group_screen.dart';
+import 'features/chat_groups/presentation/starred_messages_screen.dart';
 import 'features/messages/presentation/conversation_screen.dart';
 import 'features/messages/presentation/messages_screen.dart';
 import 'features/notifications/presentation/notifications_screen.dart';
@@ -362,6 +363,10 @@ List<RouteBase> _buildRoutes() => [
         builder: (_, state) => ChatGroupScreen(
           groupId: state.pathParameters['groupId']!,
         ),
+      ),
+      GoRoute(
+        path: AppRoutes.starredMessages,
+        builder: (_, __) => const StarredMessagesScreen(),
       ),
 
       // (Courses now lives inside the StatefulShellRoute branches above.)

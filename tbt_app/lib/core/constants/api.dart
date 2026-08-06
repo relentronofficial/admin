@@ -172,10 +172,15 @@ const String kEbookContinueReading = '/api/ebooks/continue-reading';
 
 // ── Chat groups (WhatsApp-inspired) ────────────────────────────────
 const String kChatGroupsMine = '/api/chat-groups/mine';
+const String kChatGroupsStarred = '/api/chat-groups/starred';
 // /api/chat-groups/:id — built at call site
 // /api/chat-groups/:id/messages — built at call site
 // /api/chat-groups/:id/messages/:messageId — edit/delete
 // /api/chat-groups/:id/messages/:messageId/react — toggle reaction
+// /api/chat-groups/:id/messages/:messageId/forward — POST { toGroupIds }
+// /api/chat-groups/:id/messages/:messageId/star — POST/DELETE
+// /api/chat-groups/:id/mute — POST { until }
+// /api/chat-groups/:id/pinned — GET
 // /api/chat-groups/:id/read — POST { messageId }
 // /api/chat-groups/:id/search — GET ?q=
 // /api/chat-groups/:id/presence — GET

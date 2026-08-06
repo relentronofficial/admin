@@ -185,6 +185,8 @@ class ChatGroupMessage {
     this.readByCount = 0,
     this.readByMemberIds = const [],
     this.mentionedMemberIds = const [],
+    this.pinnedAt,
+    this.forwardedFromMessageId,
   });
 
   final String id;
@@ -206,8 +208,12 @@ class ChatGroupMessage {
   final int readByCount;
   final List<String> readByMemberIds;
   final List<String> mentionedMemberIds;
+  final DateTime? pinnedAt;
+  final String? forwardedFromMessageId;
 
   bool get isDeleted => deletedForEveryone || deletedAt != null;
+  bool get isPinned => pinnedAt != null;
+  bool get isForwarded => forwardedFromMessageId != null;
 
   ChatGroupMessage copyWith({
     String? body,
@@ -217,6 +223,8 @@ class ChatGroupMessage {
     List<ChatGroupReaction>? reactions,
     int? readByCount,
     List<String>? readByMemberIds,
+    DateTime? pinnedAt,
+    bool clearPinnedAt = false,
   }) {
     return ChatGroupMessage(
       id: id,
@@ -238,6 +246,8 @@ class ChatGroupMessage {
       readByCount: readByCount ?? this.readByCount,
       readByMemberIds: readByMemberIds ?? this.readByMemberIds,
       mentionedMemberIds: mentionedMemberIds,
+      pinnedAt: clearPinnedAt ? null : (pinnedAt ?? this.pinnedAt),
+      forwardedFromMessageId: forwardedFromMessageId,
     );
   }
 
@@ -272,7 +282,34 @@ class ChatGroupMessage {
         mentionedMemberIds: ((j['mentionedMemberIds'] as List<dynamic>?) ?? const [])
             .whereType<String>()
             .toList(),
+        pinnedAt: j['pinnedAt'] != null
+            ? DateTime.tryParse(j['pinnedAt'] as String)
+            : null,
+        forwardedFromMessageId: j['forwardedFromMessageId'] as String?,
       );
+}
+
+/// A starred message returned by GET /api/chat-groups/starred.
+/// Wraps a [ChatGroupMessage] with the parent group's name for display.
+class StarredMessage {
+  const StarredMessage({
+    required this.message,
+    required this.groupName,
+  });
+  final ChatGroupMessage message;
+  final String groupName;
+
+  factory StarredMessage.fromJson(Map<String, dynamic> j) {
+    // Backend may nest the message under `message` or return flat + `group`.
+    final msgMap = (j['message'] as Map<String, dynamic>?) ?? j;
+    final groupMap = j['group'] as Map<String, dynamic>?;
+    return StarredMessage(
+      message: ChatGroupMessage.fromJson(msgMap),
+      groupName: (groupMap?['name'] as String?) ??
+          (j['groupName'] as String?) ??
+          'Group',
+    );
+  }
 }
 
 class ChatGroupPresence {

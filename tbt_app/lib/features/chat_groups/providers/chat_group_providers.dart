@@ -159,17 +159,44 @@ class ChatGroupMessagesNotifier
       } catch (_) {}
     }
 
+    void onPinned(dynamic raw) {
+      try {
+        final map = (raw as Map<dynamic, dynamic>).cast<String, dynamic>();
+        if (map['groupId'] != groupId) return;
+        final messageId = map['messageId'] as String?;
+        final pinned = (map['pinned'] as bool?) ?? true;
+        if (messageId == null) return;
+        // Refresh the pinned strip.
+        ref.invalidate(chatGroupPinnedProvider(groupId));
+        // Also mark the message inline so the bubble shows the pin icon.
+        final cur = state.valueOrNull;
+        if (cur == null) return;
+        state = AsyncData(cur.copyWith(
+          messages: cur.messages
+              .map((m) => m.id == messageId
+                  ? m.copyWith(
+                      pinnedAt: pinned ? DateTime.now() : null,
+                      clearPinnedAt: !pinned,
+                    )
+                  : m)
+              .toList(),
+        ));
+      } catch (_) {}
+    }
+
     socket.on('group:message:new', onNew);
     socket.on('group:message:edited', onEdited);
     socket.on('group:message:deleted', onDeleted);
     socket.on('group:reaction', onReaction);
     socket.on('group:read', onRead);
+    socket.on('group:pinned', onPinned);
     ref.onDispose(() {
       socket.off('group:message:new', onNew);
       socket.off('group:message:edited', onEdited);
       socket.off('group:message:deleted', onDeleted);
       socket.off('group:reaction', onReaction);
       socket.off('group:read', onRead);
+      socket.off('group:pinned', onPinned);
     });
 
     final first = await ref
@@ -249,3 +276,99 @@ final chatGroupPresenceProvider = AutoDisposeAsyncNotifierProviderFamily<
     ChatGroupPresenceNotifier, Map<String, bool>, String>(
   ChatGroupPresenceNotifier.new,
 );
+
+// ── Pinned messages for a single group ─────────────────────────────────────
+
+final chatGroupPinnedProvider = FutureProvider.autoDispose
+    .family<List<ChatGroupMessage>, String>((ref, groupId) async {
+  ref.keepAlive();
+  return ref.read(chatGroupsServiceProvider).listPinned(groupId);
+});
+
+// ── Starred messages (global — across all groups) ──────────────────────────
+
+final starredMessagesProvider =
+    FutureProvider.autoDispose<List<StarredMessage>>((ref) async {
+  ref.keepAlive();
+  return ref.read(chatGroupsServiceProvider).listStarred();
+});
+
+/// Locally-tracked set of starred message ids for the group currently
+/// on-screen. Seeded from the global `/starred` fetch, mutated
+/// optimistically on Star/Unstar taps.
+class GroupStarredIdsNotifier
+    extends AutoDisposeFamilyAsyncNotifier<Set<String>, String> {
+  @override
+  Future<Set<String>> build(String groupId) async {
+    ref.keepAlive();
+    final all = await ref.read(chatGroupsServiceProvider).listStarred();
+    return all
+        .where((s) => s.message.groupId == groupId)
+        .map((s) => s.message.id)
+        .toSet();
+  }
+
+  Future<void> toggle(String messageId, {required bool star}) async {
+    final cur = state.valueOrNull ?? const <String>{};
+    final next = {...cur};
+    if (star) {
+      next.add(messageId);
+    } else {
+      next.remove(messageId);
+    }
+    state = AsyncData(next);
+    try {
+      if (star) {
+        await ref.read(chatGroupsServiceProvider).starMessage(arg, messageId);
+      } else {
+        await ref.read(chatGroupsServiceProvider).unstarMessage(arg, messageId);
+      }
+      // Invalidate global list so the "Starred messages" screen refreshes.
+      ref.invalidate(starredMessagesProvider);
+    } catch (_) {
+      // Revert on failure.
+      state = AsyncData(cur);
+      rethrow;
+    }
+  }
+}
+
+final groupStarredIdsProvider = AutoDisposeAsyncNotifierProviderFamily<
+    GroupStarredIdsNotifier, Set<String>, String>(
+  GroupStarredIdsNotifier.new,
+);
+
+// ── Per-group mute state ────────────────────────────────────────────────────
+//
+// Locally stored (SharedPreferences would be nicer but the mute state is
+// server-authoritative — the client only tracks "am I currently muted?"
+// for UI display and reflects it in the messages list. If the app is
+// reinstalled the server still respects the mute; the badge just
+// disappears until a manual toggle.
+
+class GroupMuteState {
+  const GroupMuteState({required this.until});
+  final DateTime? until; // null = not muted, DateTime = muted until…
+  bool get isMuted =>
+      until != null && until!.isAfter(DateTime.now());
+}
+
+class GroupMuteNotifier
+    extends AutoDisposeFamilyNotifier<GroupMuteState, String> {
+  @override
+  GroupMuteState build(String groupId) => const GroupMuteState(until: null);
+
+  Future<void> setMuted(DateTime? until) async {
+    final prev = state;
+    state = GroupMuteState(until: until);
+    try {
+      await ref.read(chatGroupsServiceProvider).muteGroup(arg, until: until);
+    } catch (_) {
+      state = prev;
+      rethrow;
+    }
+  }
+}
+
+final groupMuteProvider = AutoDisposeNotifierProviderFamily<GroupMuteNotifier,
+    GroupMuteState, String>(GroupMuteNotifier.new);
