@@ -519,7 +519,7 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        color: Color(0xFFFFB088),
+        color: Color(0xFFFFD4AF),
         fontSize: 11.5,
         fontWeight: FontWeight.bold,
         letterSpacing: 1.0,
@@ -547,7 +547,7 @@ class _QuickTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: tokens.bgSurface,
           borderRadius: BorderRadius.circular(16),
@@ -557,20 +557,20 @@ class _QuickTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: kColorAccent.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kColorAccent.withValues(alpha: 0.25)),
+                border: Border.all(color: kColorAccent.withValues(alpha: 0.2)),
               ),
-              child: Icon(icon, color: kColorAccent, size: 22),
+              child: Icon(icon, color: kColorAccent, size: 24),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             Text(
               label,
               style: TextStyle(
                 color: tokens.textPrimary,
-                fontSize: 13,
+                fontSize: 14.5,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -637,14 +637,14 @@ class _Chip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(right: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         decoration: BoxDecoration(
           color: tokens.bgSurface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected ? kColorAccent : tokens.borderCard,
-            width: selected ? 1.5 : 1,
+            width: 1,
           ),
         ),
         child: Text(
@@ -743,8 +743,8 @@ class _FaqRow extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         decoration: BoxDecoration(
           color: tokens.bgSurface,
           borderRadius: BorderRadius.circular(16),
@@ -764,19 +764,22 @@ class _FaqRow extends StatelessWidget {
         child: Row(
           children: [
             Icon(icon, color: kColorAccent, size: 20),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             Expanded(
               child: Text(
                 faq.question,
                 style: TextStyle(
                   color: tokens.textPrimary,
-                  fontSize: 14,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded,
-                color: tokens.textMuted, size: 14),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: tokens.textPrimary.withValues(alpha: 0.5),
+              size: 14,
+            ),
           ],
         ),
       ),

@@ -37,11 +37,19 @@ class TbtService {
     }
   }
 
-  Future<List<LeaderboardRow>> leaderboard({int limit = 20}) async {
+  /// Leaderboard rows sorted by total points desc.
+  ///
+  /// [period]: `'all'` (default), `'week'` (last 7 days), or `'month'`
+  /// (last 30 days). The backend filters `tbt_activity_log` by
+  /// `activity_date` accordingly.
+  Future<List<LeaderboardRow>> leaderboard({
+    int limit = 20,
+    String period = 'all',
+  }) async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(
         kTbtLeaderboard,
-        queryParameters: {'limit': limit},
+        queryParameters: {'limit': limit, 'period': period},
       );
       final list = (res.data?['data'] as List<dynamic>?) ?? const [];
       return list

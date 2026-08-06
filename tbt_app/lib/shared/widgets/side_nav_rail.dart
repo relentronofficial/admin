@@ -18,7 +18,11 @@ import '../theme/theme_tokens.dart';
 /// Coupled with [AppBottomTabBar] via `_AppShell` — one is shown, the
 /// other is hidden, based on the current width.
 class AppSideNavRail extends ConsumerWidget {
-  const AppSideNavRail({super.key});
+  const AppSideNavRail({super.key, this.navigationShell});
+
+  /// Optional stateful shell — when provided, tab taps switch branches
+  /// instead of `context.go`, matching [AppBottomTabBar].
+  final StatefulNavigationShell? navigationShell;
 
   static const _tabs = [
     (
@@ -59,13 +63,25 @@ class AppSideNavRail extends ConsumerWidget {
     // matching the bottom-tab-bar contract.
     ref.watch(uiStringsNotifierProvider);
     final accent = context.tbt.accent;
-    final location = GoRouterState.of(context).uri.path;
-    final activeIndex = _tabs.indexWhere((t) => location.startsWith(t.path));
+    final activeIndex = navigationShell?.currentIndex ??
+        () {
+          final location = GoRouterState.of(context).uri.path;
+          return _tabs.indexWhere((t) => location.startsWith(t.path));
+        }();
 
     return NavigationRail(
       backgroundColor: context.tokens.bgSurface,
       selectedIndex: activeIndex < 0 ? 0 : activeIndex,
-      onDestinationSelected: (i) => context.go(_tabs[i].path),
+      onDestinationSelected: (i) {
+        if (navigationShell != null) {
+          navigationShell!.goBranch(
+            i,
+            initialLocation: i == navigationShell!.currentIndex,
+          );
+        } else {
+          context.go(_tabs[i].path);
+        }
+      },
       labelType: NavigationRailLabelType.all,
       selectedIconTheme: IconThemeData(color: accent, size: 26),
       unselectedIconTheme:
