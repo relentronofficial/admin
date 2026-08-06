@@ -228,7 +228,7 @@ function messageJson(m: HydratedMessage) {
 async function requireMemberOfGroup(req: FastifyRequest, groupId: string): Promise<boolean> {
   const rows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; role: string }>>(
     `SELECT id, role FROM chat_group_members
-     WHERE group_id = $1 AND member_id = $2 AND left_at IS NULL
+     WHERE group_id = $1::uuid AND member_id = $2::uuid AND left_at IS NULL
      LIMIT 1`,
     groupId,
     (req as any).memberId,
@@ -264,13 +264,13 @@ export async function adminCreateGroupHandler(req: FastifyRequest<{ Body: Create
   // Bulk-insert members. Cast to uuid[] to satisfy the FK type.
   await prisma.$executeRawUnsafe(
     `INSERT INTO chat_group_members (group_id, member_id)
-     SELECT $1, UNNEST($2::uuid[])
+     SELECT $1::uuid, UNNEST($2::uuid[])
      ON CONFLICT (group_id, member_id) DO NOTHING`,
     groupId,
     memberIds,
   );
 
-  const group = await prisma.$queryRawUnsafe<RawGroupRow[]>(`SELECT * FROM chat_groups WHERE id = $1`, groupId);
+  const group = await prisma.$queryRawUnsafe<RawGroupRow[]>(`SELECT * FROM chat_groups WHERE id = $1::uuid`, groupId);
   const io = (req.server as any).io;
   if (io) {
     // Notify every member so their group list refreshes.
@@ -313,7 +313,7 @@ export async function adminUpdateGroupHandler(req: FastifyRequest<{ Params: { id
          avatar_url  = COALESCE($3, avatar_url),
          description = COALESCE($4, description),
          updated_at  = NOW()
-     WHERE id = $1 AND is_deleted = false`,
+     WHERE id = $1::uuid AND is_deleted = false`,
     id,
     name ?? null,
     avatarUrl ?? null,
@@ -326,7 +326,7 @@ export async function adminUpdateGroupHandler(req: FastifyRequest<{ Params: { id
 
 export async function adminDeleteGroupHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   await req.server.prisma.$executeRawUnsafe(
-    `UPDATE chat_groups SET is_deleted = true, updated_at = NOW() WHERE id = $1`,
+    `UPDATE chat_groups SET is_deleted = true, updated_at = NOW() WHERE id = $1::uuid`,
     req.params.id,
   );
   const io = (req.server as any).io;
@@ -344,7 +344,7 @@ export async function adminAddMembersHandler(req: FastifyRequest<{ Params: { id:
   if (!Array.isArray(memberIds) || memberIds.length === 0) return fail(reply, 400, 'BAD_REQUEST', 'memberIds required.');
   await req.server.prisma.$executeRawUnsafe(
     `INSERT INTO chat_group_members (group_id, member_id)
-     SELECT $1, UNNEST($2::uuid[])
+     SELECT $1::uuid, UNNEST($2::uuid[])
      ON CONFLICT (group_id, member_id) DO UPDATE SET left_at = NULL`,
     id,
     memberIds,
@@ -361,7 +361,7 @@ export async function adminRemoveMemberHandler(req: FastifyRequest<{ Params: { i
   const { id, memberId } = req.params;
   await req.server.prisma.$executeRawUnsafe(
     `UPDATE chat_group_members SET left_at = NOW()
-     WHERE group_id = $1 AND member_id = $2 AND left_at IS NULL`,
+     WHERE group_id = $1::uuid AND member_id = $2::uuid AND left_at IS NULL`,
     id,
     memberId,
   );
@@ -396,7 +396,7 @@ export async function memberListMyGroupsHandler(req: FastifyRequest, reply: Fast
       LIMIT 1
     ) lm ON true
     LEFT JOIN members ms ON ms.id = lm.sender_member_id
-    WHERE m.member_id = $1 AND m.left_at IS NULL AND g.is_deleted = false
+    WHERE m.member_id = $1::uuid AND m.left_at IS NULL AND g.is_deleted = false
     ORDER BY g.last_message_at DESC
   `, memberId);
 
@@ -421,7 +421,7 @@ export async function memberGetGroupHandler(req: FastifyRequest<{ Params: { id: 
   if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
 
   const groups = await req.server.prisma.$queryRawUnsafe<RawGroupRow[]>(
-    `SELECT * FROM chat_groups WHERE id = $1 AND is_deleted = false`,
+    `SELECT * FROM chat_groups WHERE id = $1::uuid AND is_deleted = false`,
     id,
   );
   if (groups.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Group not found.');
@@ -431,7 +431,7 @@ export async function memberGetGroupHandler(req: FastifyRequest<{ Params: { id: 
             cgm.role, cgm.joined_at
      FROM chat_group_members cgm
      JOIN members m ON m.id = cgm.member_id
-     WHERE cgm.group_id = $1 AND cgm.left_at IS NULL
+     WHERE cgm.group_id = $1::uuid AND cgm.left_at IS NULL
      ORDER BY cgm.joined_at ASC`,
     id,
   );
@@ -458,7 +458,7 @@ export async function memberListMessagesHandler(req: FastifyRequest<{ Params: { 
 
   const rows = await req.server.prisma.$queryRawUnsafe<RawMessageRow[]>(
     `SELECT * FROM chat_group_messages
-     WHERE group_id = $1
+     WHERE group_id = $1::uuid
        AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
      ORDER BY created_at DESC
      LIMIT $3`,
@@ -496,7 +496,7 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
   if (Array.isArray(mentionedMemberIds) && mentionedMemberIds.length > 0) {
     const rows = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
       `SELECT member_id FROM chat_group_members
-       WHERE group_id = $1 AND left_at IS NULL AND member_id = ANY($2::uuid[])`,
+       WHERE group_id = $1::uuid AND left_at IS NULL AND member_id = ANY($2::uuid[])`,
       id,
       mentionedMemberIds,
     );
@@ -506,7 +506,7 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
   const inserted = await prisma.$queryRawUnsafe<RawMessageRow[]>(
     `INSERT INTO chat_group_messages
        (group_id, sender_member_id, body, media_url, media_type, reply_to_id, mentioned_member_ids)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[])
+     VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid[])
      RETURNING *`,
     id,
     memberId,
@@ -519,13 +519,13 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
 
   // Bump last_message_at + unread counts for everyone except the sender.
   await prisma.$executeRawUnsafe(
-    `UPDATE chat_groups SET last_message_at = NOW() WHERE id = $1`,
+    `UPDATE chat_groups SET last_message_at = NOW() WHERE id = $1::uuid`,
     id,
   );
   await prisma.$executeRawUnsafe(
     `UPDATE chat_group_members
      SET unread_count = unread_count + 1
-     WHERE group_id = $1 AND member_id <> $2 AND left_at IS NULL`,
+     WHERE group_id = $1::uuid AND member_id <> $2::uuid AND left_at IS NULL`,
     id,
     memberId,
   );
@@ -551,7 +551,7 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
     }
     // Also alert offline members via their user room so their group list updates.
     const otherMembers = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
-      `SELECT member_id FROM chat_group_members WHERE group_id = $1 AND member_id <> $2 AND left_at IS NULL`,
+      `SELECT member_id FROM chat_group_members WHERE group_id = $1::uuid AND member_id <> $2::uuid AND left_at IS NULL`,
       id,
       memberId,
     );
@@ -569,7 +569,7 @@ export async function memberEditMessageHandler(req: FastifyRequest<{ Params: { i
   if (!body?.trim()) return fail(reply, 400, 'BAD_REQUEST', 'Body required.');
 
   const rows = await req.server.prisma.$queryRawUnsafe<Array<{ sender_member_id: string | null; created_at: Date; deleted_at: Date | null }>>(
-    `SELECT sender_member_id, created_at, deleted_at FROM chat_group_messages WHERE id = $1 AND group_id = $2`,
+    `SELECT sender_member_id, created_at, deleted_at FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
     messageId,
     id,
   );
@@ -580,7 +580,7 @@ export async function memberEditMessageHandler(req: FastifyRequest<{ Params: { i
   if (ageMs > 15 * 60 * 1000) return fail(reply, 400, 'TOO_LATE', 'Messages can only be edited within 15 minutes.');
 
   const updated = await req.server.prisma.$queryRawUnsafe<RawMessageRow[]>(
-    `UPDATE chat_group_messages SET body = $1, edited_at = NOW() WHERE id = $2 RETURNING *`,
+    `UPDATE chat_group_messages SET body = $1, edited_at = NOW() WHERE id = $2::uuid RETURNING *`,
     body.trim(),
     messageId,
   );
@@ -600,7 +600,7 @@ export async function memberDeleteMessageHandler(req: FastifyRequest<{ Params: {
   const memberId = (req as any).memberId as string;
 
   const rows = await req.server.prisma.$queryRawUnsafe<Array<{ sender_member_id: string | null }>>(
-    `SELECT sender_member_id FROM chat_group_messages WHERE id = $1 AND group_id = $2`,
+    `SELECT sender_member_id FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
     messageId,
     id,
   );
@@ -611,7 +611,7 @@ export async function memberDeleteMessageHandler(req: FastifyRequest<{ Params: {
     `UPDATE chat_group_messages
      SET deleted_at = NOW(),
          deleted_for_everyone = $3
-     WHERE id = $1 AND group_id = $2`,
+     WHERE id = $1::uuid AND group_id = $2::uuid`,
     messageId,
     id,
     forEveryone,
@@ -634,7 +634,7 @@ export async function memberToggleReactionHandler(req: FastifyRequest<{ Params: 
   // Toggle: if the reaction exists, remove it; else add it.
   const existing = await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
     `SELECT id FROM chat_group_reactions
-     WHERE message_id = $1 AND member_id = $2 AND emoji = $3`,
+     WHERE message_id = $1::uuid AND member_id = $2::uuid AND emoji = $3`,
     messageId,
     memberId,
     emoji,
@@ -643,13 +643,13 @@ export async function memberToggleReactionHandler(req: FastifyRequest<{ Params: 
   let added: boolean;
   if (existing.length > 0) {
     await req.server.prisma.$executeRawUnsafe(
-      `DELETE FROM chat_group_reactions WHERE id = $1`,
+      `DELETE FROM chat_group_reactions WHERE id = $1::uuid`,
       existing[0].id,
     );
     added = false;
   } else {
     await req.server.prisma.$executeRawUnsafe(
-      `INSERT INTO chat_group_reactions (message_id, member_id, emoji) VALUES ($1, $2, $3)`,
+      `INSERT INTO chat_group_reactions (message_id, member_id, emoji) VALUES ($1::uuid, $2::uuid, $3)`,
       messageId,
       memberId,
       emoji,
@@ -674,7 +674,7 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
   // message as read too. Matches WhatsApp semantics — opening a chat
   // reads everything up to (and including) the latest visible message.
   const target = await req.server.prisma.$queryRawUnsafe<Array<{ created_at: Date }>>(
-    `SELECT created_at FROM chat_group_messages WHERE id = $1 AND group_id = $2`,
+    `SELECT created_at FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
     messageId,
     id,
   );
@@ -685,14 +685,14 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
   // send themselves.
   const inserted = await req.server.prisma.$queryRawUnsafe<Array<{ message_id: string }>>(
     `INSERT INTO chat_group_message_reads (message_id, member_id)
-     SELECT m.id, $2
+     SELECT m.id, $2::uuid
      FROM chat_group_messages m
-     WHERE m.group_id = $1
+     WHERE m.group_id = $1::uuid
        AND m.created_at <= $3::timestamptz
-       AND (m.sender_member_id IS NULL OR m.sender_member_id <> $2)
+       AND (m.sender_member_id IS NULL OR m.sender_member_id <> $2::uuid)
        AND NOT EXISTS (
          SELECT 1 FROM chat_group_message_reads r
-         WHERE r.message_id = m.id AND r.member_id = $2
+         WHERE r.message_id = m.id AND r.member_id = $2::uuid
        )
      RETURNING message_id`,
     id,
@@ -703,9 +703,9 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
   await req.server.prisma.$executeRawUnsafe(
     `UPDATE chat_group_members
      SET unread_count = 0,
-         last_read_message_id = $3,
+         last_read_message_id = $3::uuid,
          last_read_at = NOW()
-     WHERE group_id = $1 AND member_id = $2`,
+     WHERE group_id = $1::uuid AND member_id = $2::uuid`,
     id,
     memberId,
     messageId,
@@ -736,7 +736,7 @@ export async function memberSearchMessagesHandler(req: FastifyRequest<{ Params: 
 
   const rows = await req.server.prisma.$queryRawUnsafe<RawMessageRow[]>(
     `SELECT * FROM chat_group_messages
-     WHERE group_id = $1
+     WHERE group_id = $1::uuid
        AND deleted_for_everyone = false
        AND body ILIKE $2
      ORDER BY created_at DESC
@@ -756,7 +756,7 @@ export async function memberLeaveGroupHandler(req: FastifyRequest<{ Params: { id
 
   await req.server.prisma.$executeRawUnsafe(
     `UPDATE chat_group_members SET left_at = NOW()
-     WHERE group_id = $1 AND member_id = $2 AND left_at IS NULL`,
+     WHERE group_id = $1::uuid AND member_id = $2::uuid AND left_at IS NULL`,
     id,
     memberId,
   );
@@ -781,7 +781,7 @@ export async function memberGetGroupPresenceHandler(
   if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
 
   const memberRows = await req.server.prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
-    `SELECT member_id FROM chat_group_members WHERE group_id = $1 AND left_at IS NULL`,
+    `SELECT member_id FROM chat_group_members WHERE group_id = $1::uuid AND left_at IS NULL`,
     id,
   );
   const memberIds = memberRows.map((r) => r.member_id);
