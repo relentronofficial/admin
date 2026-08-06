@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   adminCreateGroupHandler,
   adminListGroupsHandler,
+  adminGetGroupHandler,
   adminUpdateGroupHandler,
   adminDeleteGroupHandler,
   adminAddMembersHandler,
@@ -40,6 +41,7 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
     async (adminScope) => {
       adminScope.addHook('preHandler', adminScope.authenticate);
       adminScope.get('/', adminListGroupsHandler);
+      adminScope.get('/:id', adminGetGroupHandler);
       adminScope.post('/', adminCreateGroupHandler);
       adminScope.put('/:id', adminUpdateGroupHandler);
       adminScope.delete('/:id', adminDeleteGroupHandler);

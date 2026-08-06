@@ -300,6 +300,49 @@ export async function adminListGroupsHandler(req: FastifyRequest, reply: Fastify
   );
 }
 
+/**
+ * Admin-scope: fetch a single group + its full member roster.
+ * Used by the admin panel's edit-group modal to render the "Members"
+ * tab and to seed the "already added" filter of the add-members picker.
+ * No admin bypass required — Clerk auth already gate-keeps the route.
+ */
+export async function adminGetGroupHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  const groups = await req.server.prisma.$queryRawUnsafe<RawGroupRow[]>(
+    `SELECT * FROM chat_groups WHERE id = $1::uuid AND is_deleted = false`,
+    id,
+  );
+  if (groups.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Group not found.');
+
+  const members = await req.server.prisma.$queryRawUnsafe<
+    Array<RawMemberRow & { role: string; joined_at: Date }>
+  >(
+    `SELECT m.id, m.first_name, m.last_name, m.profile_photo_url, m.business_name,
+            cgm.role, cgm.joined_at
+     FROM chat_group_members cgm
+     JOIN members m ON m.id = cgm.member_id
+     WHERE cgm.group_id = $1::uuid AND cgm.left_at IS NULL
+     ORDER BY cgm.joined_at ASC`,
+    id,
+  );
+
+  return ok(reply, {
+    ...groupToJson(groups[0]),
+    members: members.map((m) => ({
+      id: m.id,
+      firstName: m.first_name,
+      lastName: m.last_name,
+      profilePhotoUrl: m.profile_photo_url,
+      businessName: m.business_name,
+      role: m.role,
+      joinedAt: m.joined_at,
+    })),
+  });
+}
+
 interface UpdateGroupBody {
   name?: string;
   avatarUrl?: string | null;

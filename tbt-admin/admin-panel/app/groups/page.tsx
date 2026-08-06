@@ -4,7 +4,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { Loader2, MessageSquare, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { Loader2, Megaphone, MessageSquare, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers } from "@/lib/hooks/useMembers";
@@ -15,6 +15,7 @@ import {
   useAdminListGroups,
   type AdminChatGroup,
 } from "@/lib/hooks/useChatGroups";
+import { EditGroupModal } from "@/components/groups/EditGroupModal";
 import toast from "react-hot-toast";
 import { formatDistanceToNow } from "date-fns";
 
@@ -30,6 +31,7 @@ interface Member {
 export default function AdminGroupsPage() {
   const { data: groups = [], isLoading } = useAdminListGroups();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editGroup, setEditGroup] = useState<AdminChatGroup | null>(null);
   const deleteGroup = useAdminDeleteGroup();
 
   return (
@@ -68,6 +70,7 @@ export default function AdminGroupsPage() {
               <GroupRow
                 key={g.id}
                 group={g}
+                onEdit={() => setEditGroup(g)}
                 onDelete={() => {
                   if (confirm(`Delete "${g.name}"? This removes the group and every message.`)) {
                     deleteGroup.mutate(g.id, {
@@ -83,11 +86,22 @@ export default function AdminGroupsPage() {
       </div>
 
       {createOpen && <CreateGroupModal onClose={() => setCreateOpen(false)} />}
+      {editGroup && (
+        <EditGroupModal group={editGroup} onClose={() => setEditGroup(null)} />
+      )}
     </DashboardLayout>
   );
 }
 
-function GroupRow({ group, onDelete }: { group: AdminChatGroup; onDelete: () => void }) {
+function GroupRow({
+  group,
+  onEdit,
+  onDelete,
+}: {
+  group: AdminChatGroup;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <div className="flex items-center gap-4 p-4">
       <div className="w-12 h-12 rounded-full flex-shrink-0 bg-[#1a1a1a] overflow-hidden flex items-center justify-center">
@@ -99,7 +113,17 @@ function GroupRow({ group, onDelete }: { group: AdminChatGroup; onDelete: () => 
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-bold text-[#f0f0f0]">{group.name}</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-bold text-[#f0f0f0] truncate">{group.name}</span>
+          {group.announcementOnly && (
+            <span
+              title="Only admins can post in this group"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#dc2626]/15 border border-[#dc2626]/40 text-[10px] font-bold uppercase tracking-widest text-[#dc2626] font-rajdhani"
+            >
+              <Megaphone size={10} /> Announcements
+            </span>
+          )}
+        </div>
         <div className="text-[11px] text-[#606060] uppercase tracking-widest font-rajdhani mt-0.5">
           {group.memberCount ?? 0} members · {group.messageCount ?? 0} messages
         </div>
@@ -110,6 +134,13 @@ function GroupRow({ group, onDelete }: { group: AdminChatGroup; onDelete: () => 
       <div className="text-[11px] text-[#606060] uppercase tracking-widest">
         {formatDistanceToNow(new Date(group.lastMessageAt), { addSuffix: true })}
       </div>
+      <button
+        onClick={onEdit}
+        aria-label="Edit group"
+        className="p-2 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
+      >
+        <Pencil size={14} />
+      </button>
       <button
         onClick={onDelete}
         aria-label="Delete group"

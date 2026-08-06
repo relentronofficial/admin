@@ -13,6 +13,23 @@ export interface AdminChatGroup {
   lastMessageAt: string;
   memberCount?: number;
   messageCount?: number;
+  /** True when only members with role='admin' can send. */
+  announcementOnly?: boolean;
+}
+
+export interface AdminChatGroupMember {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  profilePhotoUrl: string | null;
+  businessName: string | null;
+  /** `'admin' | 'member'` — set at membership row level. */
+  role: string;
+  joinedAt: string;
+}
+
+export interface AdminChatGroupDetail extends AdminChatGroup {
+  members: AdminChatGroupMember[];
 }
 
 interface CreateGroupBody {
@@ -87,6 +104,78 @@ export function useAdminRemoveGroupMember() {
       const res = await apiClient.delete(`/api/chat-groups/admin/${id}/members/${memberId}`);
       return res;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "chat-groups"] }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "chat-groups"] });
+      qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id] });
+    },
+  });
+}
+
+/**
+ * Admin-only fetch of a single group + roster. Backed by
+ * `GET /api/chat-groups/admin/:id` which returns the group metadata
+ * plus every non-left member row with their per-group role.
+ */
+export function useAdminGetGroup(id: string | undefined | null) {
+  return useQuery({
+    queryKey: ["admin", "chat-group", id],
+    queryFn: async () => {
+      const res = await apiClient.get(`/api/chat-groups/admin/${id}`);
+      return (res as unknown as { data: AdminChatGroupDetail }).data;
+    },
+    enabled: !!id,
+    staleTime: 15 * 1000,
+  });
+}
+
+/** Toggle broadcast mode. `PATCH /admin/:id/announcement-only`. */
+export function useAdminSetAnnouncementOnly() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, announcementOnly }: { id: string; announcementOnly: boolean }) => {
+      const res = await apiClient.patch(
+        `/api/chat-groups/admin/${id}/announcement-only`,
+        { announcementOnly },
+      );
+      return res;
+    },
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "chat-groups"] });
+      qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id] });
+    },
+  });
+}
+
+/** Pin a message in a group. `POST /admin/:id/messages/:messageId/pin`. */
+export function useAdminPinGroupMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, messageId }: { id: string; messageId: string }) => {
+      const res = await apiClient.post(
+        `/api/chat-groups/admin/${id}/messages/${messageId}/pin`,
+      );
+      return res;
+    },
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id] });
+      qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id, "messages"] });
+    },
+  });
+}
+
+/** Remove a pin. `DELETE /admin/:id/messages/:messageId/pin`. */
+export function useAdminUnpinGroupMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, messageId }: { id: string; messageId: string }) => {
+      const res = await apiClient.delete(
+        `/api/chat-groups/admin/${id}/messages/${messageId}/pin`,
+      );
+      return res;
+    },
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id] });
+      qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id, "messages"] });
+    },
   });
 }
