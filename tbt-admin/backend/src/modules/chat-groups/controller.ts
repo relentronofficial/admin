@@ -22,6 +22,7 @@
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { getPresenceBulk } from '../../plugins/socket.js';
+import { notifyMembers, filterUnmutedMembers } from '../../lib/notifications.js';
 
 type RawGroupRow = {
   id: string;
@@ -32,6 +33,7 @@ type RawGroupRow = {
   updated_at: Date;
   last_message_at: Date;
   is_deleted: boolean;
+  announcement_only?: boolean;
 };
 
 type RawMemberRow = {
@@ -490,6 +492,21 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
 
   const prisma = req.server.prisma;
 
+  // Announcement-only enforcement: if the group is flagged
+  // `announcement_only`, only members with role='admin' can send. Members
+  // can still react + read; this is broadcast-style groups.
+  const groupMeta = await prisma.$queryRawUnsafe<Array<{ announcement_only: boolean; role: string }>>(
+    `SELECT g.announcement_only, cgm.role
+     FROM chat_groups g
+     JOIN chat_group_members cgm ON cgm.group_id = g.id AND cgm.member_id = $2::uuid AND cgm.left_at IS NULL
+     WHERE g.id = $1::uuid`,
+    id,
+    memberId,
+  );
+  if (groupMeta.length > 0 && groupMeta[0].announcement_only && groupMeta[0].role !== 'admin') {
+    return fail(reply, 403, 'ANNOUNCEMENT_ONLY', 'Only admins can post in this group.');
+  }
+
   // Filter mentioned ids to those who are actually current group members
   // (defence-in-depth — client sends whatever it wants).
   let validatedMentions: string[] = [];
@@ -558,6 +575,62 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
     for (const om of otherMembers) io.to(`user:${om.member_id}`).emit('group:bumped', { groupId: id });
   }
 
+  // Push + in-app notifications for every non-sender group member. Skip
+  // muted members from FCM (they still see the socket badge in real time
+  // but no lockscreen ping). @mentions get a stronger "You were mentioned"
+  // notification instead of the plain "new message" one.
+  const senderName = hydrated[0].sender
+    ? [hydrated[0].sender.first_name, hydrated[0].sender.last_name].filter(Boolean).join(' ') || 'Someone'
+    : 'Someone';
+  const groupNameRow = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+    `SELECT name FROM chat_groups WHERE id = $1::uuid`,
+    id,
+  );
+  const groupName = groupNameRow[0]?.name ?? 'Group';
+
+  const preview =
+    body?.trim()
+      ? body.trim().length > 120
+        ? `${body.trim().slice(0, 120)}…`
+        : body.trim()
+      : mediaType
+        ? `📎 ${mediaType}`
+        : 'sent a message';
+
+  const otherMemberRows = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+    `SELECT member_id FROM chat_group_members
+     WHERE group_id = $1::uuid AND member_id <> $2::uuid AND left_at IS NULL`,
+    id,
+    memberId,
+  );
+  const otherMemberIds = otherMemberRows.map((r) => r.member_id);
+  const mentionedIds = validatedMentions.filter((m) => m !== memberId);
+  const nonMentionedIds = otherMemberIds.filter((m) => !mentionedIds.includes(m));
+
+  const unmutedMentioned = await filterUnmutedMembers(req.server, id, mentionedIds);
+  const unmutedOthers = await filterUnmutedMembers(req.server, id, nonMentionedIds);
+
+  if (unmutedMentioned.length > 0) {
+    void notifyMembers(req.server, {
+      memberIds: unmutedMentioned,
+      title: `${senderName} mentioned you in ${groupName}`,
+      body: preview,
+      type: 'group_mention',
+      actionUrl: `/messages/group/${id}`,
+      data: { groupId: id, messageId: messageJsonPayload.id },
+    });
+  }
+  if (unmutedOthers.length > 0) {
+    void notifyMembers(req.server, {
+      memberIds: unmutedOthers,
+      title: `${senderName} in ${groupName}`,
+      body: preview,
+      type: 'group_message',
+      actionUrl: `/messages/group/${id}`,
+      data: { groupId: id, messageId: messageJsonPayload.id },
+    });
+  }
+
   return ok(reply, messageJsonPayload);
 }
 
@@ -598,6 +671,8 @@ export async function memberDeleteMessageHandler(req: FastifyRequest<{ Params: {
   const { id, messageId } = req.params;
   const forEveryone = req.query.forEveryone === 'true';
   const memberId = (req as any).memberId as string;
+
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
 
   const rows = await req.server.prisma.$queryRawUnsafe<Array<{ sender_member_id: string | null }>>(
     `SELECT sender_member_id FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
@@ -788,6 +863,292 @@ export async function memberGetGroupPresenceHandler(
   return ok(reply, getPresenceBulk(memberIds));
 }
 
+// ── Forward, pin, star, mute (WhatsApp-parity Phase 5, 2026-08-06) ─────────
+
+interface ForwardMessageBody {
+  toGroupIds: string[];
+}
+
+export async function memberForwardMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: ForwardMessageBody }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const { toGroupIds } = req.body;
+  const memberId = (req as any).memberId as string;
+
+  if (!Array.isArray(toGroupIds) || toGroupIds.length === 0) {
+    return fail(reply, 400, 'BAD_REQUEST', 'toGroupIds required.');
+  }
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const prisma = req.server.prisma;
+
+  // Load the source message. If it's deleted-for-everyone, refuse — no
+  // resurrecting deleted content by forwarding.
+  const source = await prisma.$queryRawUnsafe<
+    Array<Pick<RawMessageRow, 'id' | 'body' | 'media_url' | 'media_type' | 'deleted_for_everyone'>>
+  >(
+    `SELECT id, body, media_url, media_type, deleted_for_everyone
+     FROM chat_group_messages
+     WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  if (source.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Source message not found.');
+  if (source[0].deleted_for_everyone) return fail(reply, 400, 'DELETED', 'Cannot forward a deleted message.');
+  const src = source[0];
+
+  // Filter targets to groups the caller is actually a member of. Silently
+  // drops anything they don't have access to — matches WhatsApp behaviour
+  // (you can't forward to a group you aren't in).
+  const validTargets = await prisma.$queryRawUnsafe<Array<{ group_id: string; announcement_only: boolean; role: string }>>(
+    `SELECT cgm.group_id, g.announcement_only, cgm.role
+     FROM chat_group_members cgm
+     JOIN chat_groups g ON g.id = cgm.group_id AND g.is_deleted = false
+     WHERE cgm.member_id = $1::uuid AND cgm.left_at IS NULL
+       AND cgm.group_id = ANY($2::uuid[])`,
+    memberId,
+    toGroupIds,
+  );
+  // In announcement-only groups, only role='admin' can forward INTO them.
+  const eligible = validTargets.filter((t) => !t.announcement_only || t.role === 'admin');
+  if (eligible.length === 0) return fail(reply, 403, 'FORBIDDEN', 'No eligible target groups.');
+
+  const insertedIds: Array<{ groupId: string; messageId: string }> = [];
+  for (const t of eligible) {
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `INSERT INTO chat_group_messages
+         (group_id, sender_member_id, body, media_url, media_type, forwarded_from_message_id)
+       VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
+       RETURNING id`,
+      t.group_id,
+      memberId,
+      src.body,
+      src.media_url,
+      src.media_type,
+      src.id,
+    );
+    if (rows[0]) {
+      insertedIds.push({ groupId: t.group_id, messageId: rows[0].id });
+      await prisma.$executeRawUnsafe(
+        `UPDATE chat_groups SET last_message_at = NOW() WHERE id = $1::uuid`,
+        t.group_id,
+      );
+      await prisma.$executeRawUnsafe(
+        `UPDATE chat_group_members
+         SET unread_count = unread_count + 1
+         WHERE group_id = $1::uuid AND member_id <> $2::uuid AND left_at IS NULL`,
+        t.group_id,
+        memberId,
+      );
+    }
+  }
+
+  const io = (req.server as any).io;
+  if (io) {
+    // Fan-out socket ping so target group members refresh their list.
+    for (const inserted of insertedIds) {
+      io.to(`group:${inserted.groupId}`).emit('group:message:new', { forwardedMessageId: inserted.messageId });
+      // Non-sender members in each target group get a group:bumped ping.
+      const others = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+        `SELECT member_id FROM chat_group_members WHERE group_id = $1::uuid AND member_id <> $2::uuid AND left_at IS NULL`,
+        inserted.groupId,
+        memberId,
+      );
+      for (const om of others) io.to(`user:${om.member_id}`).emit('group:bumped', { groupId: inserted.groupId });
+    }
+  }
+
+  return ok(reply, { forwardedTo: insertedIds.map((i) => i.groupId), count: insertedIds.length });
+}
+
+interface MuteGroupBody {
+  /** ISO timestamp. Null / undefined = unmute. */
+  until: string | null;
+}
+
+export async function memberMuteGroupHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: MuteGroupBody }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  const memberId = (req as any).memberId as string;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const until = req.body.until ? new Date(req.body.until) : null;
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE chat_group_members
+     SET muted_until = $3::timestamptz
+     WHERE group_id = $1::uuid AND member_id = $2::uuid`,
+    id,
+    memberId,
+    until,
+  );
+  return ok(reply, { mutedUntil: until });
+}
+
+export async function memberStarMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const memberId = (req as any).memberId as string;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO chat_group_starred_messages (member_id, message_id)
+     VALUES ($1::uuid, $2::uuid)
+     ON CONFLICT (member_id, message_id) DO NOTHING`,
+    memberId,
+    messageId,
+  );
+  return ok(reply, { starred: true });
+}
+
+export async function memberUnstarMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const memberId = (req as any).memberId as string;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  await req.server.prisma.$executeRawUnsafe(
+    `DELETE FROM chat_group_starred_messages
+     WHERE member_id = $1::uuid AND message_id = $2::uuid`,
+    memberId,
+    messageId,
+  );
+  return ok(reply, { starred: false });
+}
+
+/**
+ * Global "Starred messages" across all groups the member is in. Mirrors
+ * WhatsApp's "Starred messages" screen (Settings → Starred). Newest first.
+ */
+export async function memberListStarredHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = (req as any).memberId as string;
+  const rows = await req.server.prisma.$queryRawUnsafe<
+    Array<RawMessageRow & { starred_at: Date; group_name: string; group_id_out: string }>
+  >(
+    `SELECT m.*, s.starred_at, g.name AS group_name, g.id AS group_id_out
+     FROM chat_group_starred_messages s
+     JOIN chat_group_messages m ON m.id = s.message_id
+     JOIN chat_groups g ON g.id = m.group_id
+     WHERE s.member_id = $1::uuid
+       AND m.deleted_for_everyone = false
+       AND g.is_deleted = false
+       AND EXISTS (
+         SELECT 1 FROM chat_group_members cgm
+         WHERE cgm.group_id = g.id AND cgm.member_id = $1::uuid AND cgm.left_at IS NULL
+       )
+     ORDER BY s.starred_at DESC
+     LIMIT 200`,
+    memberId,
+  );
+
+  const hydrated = await hydrateSenders(req, rows);
+  return ok(
+    reply,
+    hydrated.map((h, i) => ({
+      ...messageJson(h),
+      starredAt: rows[i].starred_at,
+      groupName: rows[i].group_name,
+      groupId: rows[i].group_id_out,
+    })),
+  );
+}
+
+export async function adminPinMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const admin = await req.server.prisma.admin.findFirst({
+    where: { clerkId: (req as any).user },
+    select: { id: true },
+  });
+
+  const rows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `UPDATE chat_group_messages
+     SET is_pinned = true,
+         pinned_at = NOW(),
+         pinned_by_admin_id = $3::uuid
+     WHERE id = $1::uuid AND group_id = $2::uuid AND deleted_for_everyone = false
+     RETURNING id`,
+    messageId,
+    id,
+    admin?.id ?? null,
+  );
+  if (rows.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:pinned', { groupId: id, messageId, pinned: true });
+  return ok(reply, { pinned: true });
+}
+
+export async function adminUnpinMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE chat_group_messages
+     SET is_pinned = false,
+         pinned_at = NULL,
+         pinned_by_admin_id = NULL
+     WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:pinned', { groupId: id, messageId, pinned: false });
+  return ok(reply, { pinned: false });
+}
+
+/**
+ * Members-visible list of currently-pinned messages for a group. Newest
+ * pin first — matches WhatsApp's "1 pinned" strip.
+ */
+export async function memberListPinnedHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const rows = await req.server.prisma.$queryRawUnsafe<RawMessageRow[]>(
+    `SELECT * FROM chat_group_messages
+     WHERE group_id = $1::uuid AND is_pinned = true AND deleted_for_everyone = false
+     ORDER BY pinned_at DESC
+     LIMIT 20`,
+    id,
+  );
+  const hydrated = await hydrateSenders(req, rows);
+  return ok(reply, hydrated.map(messageJson));
+}
+
+interface SetAnnouncementOnlyBody {
+  announcementOnly: boolean;
+}
+
+export async function adminSetAnnouncementOnlyHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: SetAnnouncementOnlyBody }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  const { announcementOnly } = req.body;
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE chat_groups SET announcement_only = $2, updated_at = NOW() WHERE id = $1::uuid`,
+    id,
+    !!announcementOnly,
+  );
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:updated', { groupId: id, announcementOnly: !!announcementOnly });
+  return ok(reply, { announcementOnly: !!announcementOnly });
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function groupToJson(g: RawGroupRow) {
@@ -799,5 +1160,6 @@ function groupToJson(g: RawGroupRow) {
     createdAt: g.created_at,
     updatedAt: g.updated_at,
     lastMessageAt: g.last_message_at,
+    announcementOnly: (g as any).announcement_only ?? false,
   };
 }

@@ -1,4 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { notifyMembers } from '../../lib/notifications.js';
 
 // ── GET /api/conversations ────────────────────────────────────────────────────
 export async function listAdminConversationsHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -99,7 +100,16 @@ export async function getAdminConversationMessagesHandler(request: FastifyReques
 // ── POST /api/conversations/:id/messages ──────────────────────────────────────
 export async function sendAdminChatMessageHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  const { body } = request.body as { body: string };
+  const { body, mediaUrl, mediaType, replyToId } = request.body as {
+    body?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    replyToId?: string;
+  };
+
+  if (!body?.trim() && !mediaUrl) {
+    return reply.status(400).send({ success: false, data: null, error: 'body or mediaUrl required' });
+  }
 
   const admin = await request.server.prisma.admin.findFirst({
     where: { clerkId: request.user },
@@ -112,7 +122,16 @@ export async function sendAdminChatMessageHandler(request: FastifyRequest, reply
 
   const message = await request.server.prisma.$transaction(async (tx) => {
     const msg = await tx.directMessage.create({
-      data: { conversationId: id, memberId: convo.memberId, senderId: admin.id, senderType: 'admin', body },
+      data: {
+        conversationId: id,
+        memberId:       convo.memberId,
+        senderId:       admin.id,
+        senderType:     'admin',
+        body:           body ?? null,
+        mediaUrl:       mediaUrl ?? null,
+        mediaType:      mediaType ?? null,
+        replyToId:      replyToId ?? null,
+      },
     });
     await tx.conversation.update({
       where: { id },
@@ -129,7 +148,10 @@ export async function sendAdminChatMessageHandler(request: FastifyRequest, reply
       senderId:        admin.id,
       senderName:      admin.fullName,
       senderAvatarUrl: admin.profilePhotoUrl ?? null,
-      body,
+      body:            message.body,
+      mediaUrl:        message.mediaUrl,
+      mediaType:       message.mediaType,
+      replyToId:       message.replyToId,
       createdAt:       message.createdAt,
     },
   };
@@ -139,22 +161,17 @@ export async function sendAdminChatMessageHandler(request: FastifyRequest, reply
   // Ping member's room for Navbar badge + conversation list update
   request.server.io.to(`user:${convo.memberId}`).emit('message:new', { messageId: message.id });
 
-  // Create in-app notification so member sees it even when offline
-  const preview = body.length > 120 ? body.substring(0, 120) + '…' : body;
-  await request.server.prisma.appNotification.create({
-    data: {
-      title: `New message from TBT Team`,
-      message: preview,
-      type: 'message',
-      actionUrl: '/messages',
-      recipients: { create: [{ memberId: convo.memberId }] },
-    },
-  });
-  request.server.io.to(`user:${convo.memberId}`).emit('notification', {
+  // Create in-app notification + FCM push. notifyMembers handles the fan-out
+  // to AppNotification, socket, and Firebase in one call.
+  const previewSource = body?.trim() || (mediaType ? `📎 ${mediaType}` : 'sent a message');
+  const preview = previewSource.length > 120 ? previewSource.substring(0, 120) + '…' : previewSource;
+  void notifyMembers(request.server, {
+    memberIds: [convo.memberId],
     title: 'New message from TBT Team',
     body: preview,
     type: 'message',
-    actionUrl: '/messages',
+    actionUrl: `/messages/${id}`,
+    data: { conversationId: id, messageId: message.id },
   });
 
   return reply.status(201).send({ success: true, data: { id: message.id }, error: null });

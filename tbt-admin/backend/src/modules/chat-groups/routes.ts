@@ -6,6 +6,9 @@ import {
   adminDeleteGroupHandler,
   adminAddMembersHandler,
   adminRemoveMemberHandler,
+  adminPinMessageHandler,
+  adminUnpinMessageHandler,
+  adminSetAnnouncementOnlyHandler,
   memberListMyGroupsHandler,
   memberGetGroupHandler,
   memberListMessagesHandler,
@@ -17,6 +20,12 @@ import {
   memberSearchMessagesHandler,
   memberLeaveGroupHandler,
   memberGetGroupPresenceHandler,
+  memberForwardMessageHandler,
+  memberMuteGroupHandler,
+  memberStarMessageHandler,
+  memberUnstarMessageHandler,
+  memberListStarredHandler,
+  memberListPinnedHandler,
 } from './controller.js';
 
 /**
@@ -36,6 +45,9 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
       adminScope.delete('/:id', adminDeleteGroupHandler);
       adminScope.post('/:id/members', adminAddMembersHandler);
       adminScope.delete('/:id/members/:memberId', adminRemoveMemberHandler);
+      adminScope.post('/:id/messages/:messageId/pin', adminPinMessageHandler);
+      adminScope.delete('/:id/messages/:messageId/pin', adminUnpinMessageHandler);
+      adminScope.patch('/:id/announcement-only', adminSetAnnouncementOnlyHandler);
     },
     { prefix: '/admin' },
   );
@@ -44,12 +56,18 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
   fastify.register(async (userScope) => {
     userScope.addHook('preHandler', userScope.authenticateUser);
     userScope.get('/mine', memberListMyGroupsHandler);
+    userScope.get('/starred', memberListStarredHandler);
     userScope.get('/:id', memberGetGroupHandler);
     userScope.get('/:id/messages', memberListMessagesHandler);
     userScope.post('/:id/messages', memberSendMessageHandler);
     userScope.put('/:id/messages/:messageId', memberEditMessageHandler);
     userScope.delete('/:id/messages/:messageId', memberDeleteMessageHandler);
     userScope.post('/:id/messages/:messageId/react', memberToggleReactionHandler);
+    userScope.post('/:id/messages/:messageId/forward', memberForwardMessageHandler);
+    userScope.post('/:id/messages/:messageId/star', memberStarMessageHandler);
+    userScope.delete('/:id/messages/:messageId/star', memberUnstarMessageHandler);
+    userScope.get('/:id/pinned', memberListPinnedHandler);
+    userScope.post('/:id/mute', memberMuteGroupHandler);
     userScope.post('/:id/read', memberMarkReadHandler);
     userScope.get('/:id/search', memberSearchMessagesHandler);
     userScope.get('/:id/presence', memberGetGroupPresenceHandler);

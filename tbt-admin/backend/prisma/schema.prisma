@@ -297,6 +297,7 @@ model Member {
   longestStreak         Int                @default(0) @map("longest_streak")
   notificationPrefs     Json?              @map("notification_prefs")
   lastActiveAt          DateTime?          @map("last_active_at") @db.Timestamptz(6)
+  lastSeenAt            DateTime?          @map("last_seen_at") @db.Timestamptz(6)
   onboardingCompleted   Boolean            @default(false) @map("onboarding_completed")
   passwordHash          String?            @map("password_hash")
 
@@ -1028,16 +1029,25 @@ model Notification {
 }
 
 model DirectMessage {
-  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  conversationId String?    @map("conversation_id") @db.Uuid
-  memberId       String     @map("member_id") @db.Uuid
-  senderId       String     @map("sender_id") @db.Uuid
-  senderType     SenderType @map("sender_type")
-  subject        String?
-  body           String
-  isRead         Boolean    @default(false) @map("is_read")
-  readAt         DateTime?  @map("read_at") @db.Timestamptz(6)
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                       String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId           String?    @map("conversation_id") @db.Uuid
+  memberId                 String     @map("member_id") @db.Uuid
+  senderId                 String     @map("sender_id") @db.Uuid
+  senderType               SenderType @map("sender_type")
+  subject                  String?
+  body                     String?
+  mediaUrl                 String?    @map("media_url")
+  mediaType                String?    @map("media_type") @db.VarChar(20)
+  replyToId                String?    @map("reply_to_id") @db.Uuid
+  editedAt                 DateTime?  @map("edited_at") @db.Timestamptz(6)
+  deletedAt                DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  deletedForEveryone       Boolean    @default(false) @map("deleted_for_everyone")
+  readByAdminAt            DateTime?  @map("read_by_admin_at") @db.Timestamptz(6)
+  readByMemberAt           DateTime?  @map("read_by_member_at") @db.Timestamptz(6)
+  forwardedFromMessageId   String?    @map("forwarded_from_message_id") @db.Uuid
+  isRead                   Boolean    @default(false) @map("is_read")
+  readAt                   DateTime?  @map("read_at") @db.Timestamptz(6)
+  createdAt                DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   member       Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
