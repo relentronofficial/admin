@@ -17,10 +17,12 @@ on:
       - '.github/workflows/mobile-ci.yml'
 
 env:
-  # Keep this in sync with tbt_app/pubspec.yaml's `environment.flutter` /
-  # `environment.sdk` bounds. Any Flutter release in the 3.x series works
-  # today; pinning the channel to `stable` is enough.
-  FLUTTER_CHANNEL: stable
+  # Pin exact Flutter version so CI matches local dev (pubspec.yaml's
+  # `intl: ^0.19.0` locks flutter_localizations to the intl bundle that
+  # ships with Flutter <3.32). Newer Flutter (3.32+) bundles intl 0.20.2
+  # which conflicts with the pubspec constraint. Bump this once the
+  # codebase is ready for a Flutter upgrade + intl bump.
+  FLUTTER_VERSION: 3.29.2
 
 jobs:
   analyze:
@@ -35,7 +37,8 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
           cache: true
 
       - name: Print versions
