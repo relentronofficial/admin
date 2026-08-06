@@ -1,46 +1,70 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  BellOff,
   Check,
   CheckCheck,
   ChevronDown,
+  Copy,
   FileText,
+  Forward,
   Loader2,
   MoreVertical,
   Paperclip,
+  Pause,
+  Play,
   Reply,
   Search,
   Send,
   Smile,
+  Star,
   Trash2,
   Users,
   X,
 } from "lucide-react";
+import toast from "react-hot-toast";
 
 import { getSocket } from "@/lib/socket/client";
 import { useMe } from "@/lib/hooks/useUser";
 import {
   chatGroupKeys,
+  getLocalMuteState,
+  isLocallyMuted,
+  setLocalMuteState,
   useChatGroup,
   useChatGroupMessages,
   useChatGroupPresence,
   useChatGroupSearch,
   useDeleteChatGroupMessage,
   useEditChatGroupMessage,
-  useLeaveChatGroup,
+  useForwardChatGroupMessage,
   useMarkChatGroupRead,
+  useMuteChatGroup,
+  usePinnedMessages,
   useSendChatGroupMessage,
+  useStarredMessages,
   useToggleChatGroupReaction,
+  useToggleChatGroupStar,
 } from "@/lib/hooks/useChatGroups";
 import type { ChatGroupMessage } from "@/lib/api/services/chatGroups.service";
 import { cn } from "@/lib/utils/cn";
+import { VoiceRecorder } from "@/components/features/chat/VoiceRecorder";
+import { ForwardPickerSheet } from "@/components/features/chat/ForwardPickerSheet";
+import { PinStrip } from "@/components/features/chat/PinStrip";
+import { ReactorsSheet } from "@/components/features/chat/ReactorsSheet";
+import { senderColor } from "@/components/features/chat/senderColor";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+// Two messages from the same sender within 60s of each other are
+// visually collapsed into a single cluster (hide the name + timestamp
+// on the newer one).
+const CLUSTER_WINDOW_MS = 60_000;
 
 // Split a message body on @-mention tokens and highlight each. Purely
 // visual — tokens don't need to correspond to any stored member; the
@@ -83,9 +107,15 @@ export default function GroupChatPage() {
   const deleteMsg = useDeleteChatGroupMessage(groupId);
   const toggleReaction = useToggleChatGroupReaction(groupId);
   const markRead = useMarkChatGroupRead(groupId);
+  const forwardMsg = useForwardChatGroupMessage(groupId);
+  const toggleStar = useToggleChatGroupStar(groupId);
+  const muteGroup = useMuteChatGroup(groupId);
+  const { data: pinned = [] } = usePinnedMessages(groupId);
+  const { data: starred = [] } = useStarredMessages();
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
   const [editing, setEditing] = useState<{ messageId: string; body: string } | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatGroupMessage | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{
@@ -97,6 +127,8 @@ export default function GroupChatPage() {
   } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [forwardingMsg, setForwardingMsg] = useState<ChatGroupMessage | null>(null);
+  const [reactorsMsg, setReactorsMsg] = useState<{ msg: ChatGroupMessage; emoji: string | null } | null>(null);
   const [typingMembers, setTypingMembers] = useState<Set<string>>(new Set());
   // Mention autocomplete state — driven off cursor position in the composer.
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -112,10 +144,22 @@ export default function GroupChatPage() {
   const anchorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Local mute state, re-hydrated whenever the group id changes so the
+  // info sheet can render the chip. Backend also has an authoritative
+  // record via `POST /:id/mute`; we mirror to localStorage so the
+  // sidebar tile chip renders without another fetch.
+  const [localMute, setLocalMuteStateStr] = useState<string | "always" | null>(null);
+  useEffect(() => {
+    if (!groupId) return;
+    setLocalMuteStateStr(getLocalMuteState()[groupId] ?? null);
+  }, [groupId]);
+
   const messages: ChatGroupMessage[] = useMemo(
     () => (messagesData?.pages ?? []).flat(),
     [messagesData],
   );
+
+  const starredIdSet = useMemo(() => new Set(starred.map((s) => s.id)), [starred]);
 
   // ── Socket subscription ─────────────────────────────────────────────
   useEffect(() => {
@@ -232,12 +276,20 @@ export default function GroupChatPage() {
         });
       };
 
+      // Pin-strip live update. The backend emits this whenever an admin
+      // pins/unpins a message in this group.
+      const onPinned = ({ groupId: gid }: { groupId: string; messageId: string; pinned: boolean }) => {
+        if (gid !== groupId) return;
+        qc.invalidateQueries({ queryKey: chatGroupKeys.pinned(groupId) });
+      };
+
       socket.on("group:message:new", onNew);
       socket.on("group:message:edited", onEdited);
       socket.on("group:message:deleted", onDeleted);
       socket.on("group:reaction", onReaction);
       socket.on("group:typing", onTyping);
       socket.on("group:read", onRead);
+      socket.on("group:pinned", onPinned);
 
       const onPresence = ({ memberId, online }: { memberId: string; online: boolean }) => {
         setPresenceMap((prev) => {
@@ -256,6 +308,7 @@ export default function GroupChatPage() {
         socket.off("group:reaction", onReaction);
         socket.off("group:typing", onTyping);
         socket.off("group:read", onRead);
+        socket.off("group:pinned", onPinned);
         socket.off("presence:update", onPresence);
       };
     });
@@ -370,6 +423,15 @@ export default function GroupChatPage() {
     return () => el.removeEventListener("scroll", onScroll);
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  const jumpToMessage = useCallback((messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.classList.add("chat-msg-highlight");
+      setTimeout(() => el.classList.remove("chat-msg-highlight"), 1600);
+    }
+  }, []);
+
   async function handleSend() {
     const body = draft.trim();
     const hasReadyMedia = pendingMedia?.uploadedUrl && !pendingMedia.uploading;
@@ -445,6 +507,99 @@ export default function GroupChatPage() {
     });
   }
 
+  // Voice-note recording → upload → send immediately (no caption UX for now).
+  async function onVoiceRecorded(blob: Blob, durationSec: number) {
+    if (blob.size === 0 || uploadingAudio) return;
+    setUploadingAudio(true);
+    try {
+      const { uploadChatMedia } = await import("@/lib/api/services/chatGroups.service");
+      // Prefer .webm since that's what MediaRecorder gives us on Chromium;
+      // Safari would give .mp4, and the server just stores the raw bytes
+      // with the R2 filename we send.
+      const ext = blob.type.includes("mp4") ? "mp4" : blob.type.includes("mpeg") ? "mp3" : "webm";
+      const filename = `voice-${Date.now()}.${ext}`;
+      const uploaded = await uploadChatMedia(blob, { pathPrefix: "chat-audio", filename });
+      if (!uploaded?.publicUrl) {
+        toast.error("Voice note upload failed");
+        return;
+      }
+      await send.mutateAsync({
+        mediaUrl: uploaded.publicUrl,
+        mediaType: "audio",
+      });
+      // Duration is passed for future use (e.g. adding it as message
+      // metadata) — currently the audio element derives its own duration
+      // from the file so we don't need to send it.
+      void durationSec;
+    } finally {
+      setUploadingAudio(false);
+    }
+  }
+
+  async function handleForward(msg: ChatGroupMessage, toGroupIds: string[]) {
+    try {
+      await forwardMsg.mutateAsync({ messageId: msg.id, toGroupIds });
+      toast.success(`Forwarded to ${toGroupIds.length} group${toGroupIds.length === 1 ? "" : "s"}`);
+    } catch {
+      toast.error("Failed to forward message");
+    }
+  }
+
+  function handleCopy(msg: ChatGroupMessage) {
+    const text = msg.body ?? "";
+    if (!text) {
+      toast.error("Nothing to copy");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(
+        () => toast.success("Copied"),
+        () => toast.error("Copy failed"),
+      );
+    }
+  }
+
+  function handleToggleStar(msg: ChatGroupMessage) {
+    const isStarred = starredIdSet.has(msg.id);
+    toggleStar.mutate(
+      { messageId: msg.id, starred: isStarred },
+      {
+        onSuccess: () => {
+          toast.success(isStarred ? "Unstarred" : "Starred");
+        },
+        onError: () => toast.error("Failed to update star"),
+      },
+    );
+  }
+
+  async function handleMute(preset: "8h" | "1w" | "always" | "off") {
+    let until: string | null = null;
+    let stored: string | "always" | null = null;
+    if (preset === "8h") {
+      const d = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      until = d.toISOString();
+      stored = until;
+    } else if (preset === "1w") {
+      const d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      until = d.toISOString();
+      stored = until;
+    } else if (preset === "always") {
+      until = null;
+      stored = "always";
+    } else {
+      until = null;
+      stored = null;
+    }
+    try {
+      await muteGroup.mutateAsync(until);
+      setLocalMuteState(groupId, stored);
+      setLocalMuteStateStr(stored);
+      toast.success(preset === "off" ? "Unmuted" : "Muted");
+    } catch {
+      toast.error("Failed to update mute");
+    }
+  }
+
   if (groupLoading) {
     return (
       <div className="min-h-[50vh] flex items-center justify-center text-muted-foreground text-sm">
@@ -469,6 +624,7 @@ export default function GroupChatPage() {
   }
 
   const meId = me?.id;
+  const isMuted = isLocallyMuted(groupId);
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-8rem)]">
@@ -502,7 +658,10 @@ export default function GroupChatPage() {
           onClick={() => setInfoOpen(true)}
           className="flex-1 min-w-0 text-left"
         >
-          <div className="text-sm font-bold text-foreground truncate">{group.name}</div>
+          <div className="text-sm font-bold text-foreground truncate flex items-center gap-1.5">
+            {group.name}
+            {isMuted && <BellOff size={12} className="text-muted-foreground" />}
+          </div>
           <div className="text-[11px] text-muted-foreground truncate flex items-center gap-2">
             {typingMembers.size > 0 ? (
               <span>typing…</span>
@@ -542,16 +701,14 @@ export default function GroupChatPage() {
           groupId={groupId}
           onClose={() => setSearchOpen(false)}
           onJumpToMessage={(messageId) => {
-            const el = document.getElementById(`msg-${messageId}`);
-            if (el) {
-              el.scrollIntoView({ block: "center", behavior: "smooth" });
-              el.classList.add("chat-msg-highlight");
-              setTimeout(() => el.classList.remove("chat-msg-highlight"), 1600);
-            }
+            jumpToMessage(messageId);
             setSearchOpen(false);
           }}
         />
       )}
+
+      {/* Pin strip — sits between the header and message list. */}
+      <PinStrip pinned={pinned} onJumpTo={jumpToMessage} />
 
       {/* Message list */}
       <div
@@ -583,9 +740,34 @@ export default function GroupChatPage() {
               .filter((mid) => mid !== meId);
             return messages.map((m, i) => {
               const prev = messages[i - 1];
+              // Compute two flags:
+              //   showSender = show sender name row (first-in-cluster)
+              //   showMeta   = show timestamp / ticks row (last-in-cluster within 60s)
+              // A "cluster" is a run of consecutive messages from the same
+              // sender where each pair is within CLUSTER_WINDOW_MS.
+              const isSameSenderAsPrev =
+                prev &&
+                prev.senderMemberId === m.senderMemberId &&
+                !m.isSystem &&
+                !prev.isSystem;
+              const withinWindow = prev
+                ? new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < CLUSTER_WINDOW_MS
+                : false;
+              const isClustered = !!(isSameSenderAsPrev && withinWindow);
               const showSender =
                 !m.deletedForEveryone &&
-                (!prev || prev.senderMemberId !== m.senderMemberId || m.isSystem);
+                (!prev || !isClustered || m.isSystem);
+              const next = messages[i + 1];
+              const isSameSenderAsNext =
+                next &&
+                next.senderMemberId === m.senderMemberId &&
+                !next.isSystem &&
+                !m.isSystem;
+              const nextWithinWindow = next
+                ? new Date(next.createdAt).getTime() - new Date(m.createdAt).getTime() < CLUSTER_WINDOW_MS
+                : false;
+              const isMidCluster = !!(isSameSenderAsNext && nextWithinWindow);
+              const showMeta = !isMidCluster;
               const isMine = !!meId && m.senderMemberId === meId;
               return (
                 <MessageBubble
@@ -593,6 +775,9 @@ export default function GroupChatPage() {
                   message={m}
                   isMine={isMine}
                   showSender={showSender}
+                  showMeta={showMeta}
+                  clustered={isClustered}
+                  isStarred={starredIdSet.has(m.id)}
                   otherMemberIds={otherMemberIds}
                   onEdit={() => {
                     if (m.body) {
@@ -608,6 +793,10 @@ export default function GroupChatPage() {
                     setReplyingTo(m);
                     setEditing(null);
                   }}
+                  onForward={() => setForwardingMsg(m)}
+                  onCopy={() => handleCopy(m)}
+                  onStar={() => handleToggleStar(m)}
+                  onShowReactors={(emoji) => setReactorsMsg({ msg: m, emoji })}
                 />
               );
             });
@@ -746,6 +935,11 @@ export default function GroupChatPage() {
           >
             <Paperclip size={16} />
           </button>
+          <VoiceRecorder
+            disabled={sending || !!pendingMedia || !!editing}
+            uploading={uploadingAudio}
+            onRecorded={onVoiceRecorded}
+          />
           <div className="flex-1 relative">
             {mentionQuery !== null && mentionSuggestions.length > 0 && (
               <div
@@ -842,12 +1036,33 @@ export default function GroupChatPage() {
         <GroupInfoSheet
           group={group}
           presenceMap={presenceMap}
+          localMute={localMute}
+          onMute={handleMute}
           onClose={() => setInfoOpen(false)}
           onLeave={async () => {
             if (!confirm("Leave this group?")) return;
             await useLeaveChatGroupOnce(groupId);
             window.location.href = "/messages";
           }}
+        />
+      )}
+
+      {forwardingMsg && (
+        <ForwardPickerSheet
+          fromGroupId={groupId}
+          previewText={forwardingMsg.body}
+          previewMediaType={forwardingMsg.mediaType}
+          onClose={() => setForwardingMsg(null)}
+          onSubmit={(toIds) => handleForward(forwardingMsg, toIds)}
+        />
+      )}
+
+      {reactorsMsg && (
+        <ReactorsSheet
+          reactions={reactorsMsg.msg.reactions}
+          members={group.members}
+          initialEmoji={reactorsMsg.emoji}
+          onClose={() => setReactorsMsg(null)}
         />
       )}
     </div>
@@ -866,24 +1081,67 @@ function MessageBubble({
   message,
   isMine,
   showSender,
+  showMeta,
+  clustered,
+  isStarred,
   otherMemberIds,
   onEdit,
   onDelete,
   onReact,
   onReply,
+  onForward,
+  onCopy,
+  onStar,
+  onShowReactors,
 }: {
   message: ChatGroupMessage;
   isMine: boolean;
   showSender: boolean;
+  showMeta: boolean;
+  clustered: boolean;
+  isStarred: boolean;
   otherMemberIds: string[];
   onEdit: () => void;
   onDelete: (forEveryone: boolean) => void;
   onReact: (emoji: string) => void;
   onReply: () => void;
+  onForward: () => void;
+  onCopy: () => void;
+  onStar: () => void;
+  onShowReactors: (emoji: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactPickerOpen, setReactPickerOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Long-press support for touch devices. `pointerdown` starts a 500ms
+  // timer; if the user hasn't lifted their finger by then we open the
+  // menu. If they do lift (or move too far), we cancel.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function startLongPress(e: React.PointerEvent<HTMLDivElement>) {
+    // Only trigger for touch/pen — mouse users have the hover menu.
+    if (e.pointerType === "mouse") return;
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+    longPressTimerRef.current = setTimeout(() => {
+      setMenuOpen(true);
+    }, 500);
+  }
+  function cancelLongPress(e?: React.PointerEvent<HTMLDivElement>) {
+    if (e && longPressStartRef.current) {
+      const dx = Math.abs(e.clientX - longPressStartRef.current.x);
+      const dy = Math.abs(e.clientY - longPressStartRef.current.y);
+      if (dx < 10 && dy < 10 && e.type === "pointerup") {
+        // A tap — cancel timer but don't open the menu.
+      }
+    }
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  }
 
   const senderName =
     [message.sender?.firstName, message.sender?.lastName].filter(Boolean).join(" ") || "Member";
@@ -916,21 +1174,39 @@ function MessageBubble({
   const readByAll = isMine && otherMemberIds.length > 0 && readCountOthers >= otherMemberIds.length;
   const readByAny = isMine && readCountOthers > 0;
 
+  const senderNameColor = senderColor(message.senderMemberId);
+
   return (
     <div
       id={`msg-${message.id}`}
-      className={cn("flex px-3 chat-msg", isMine ? "justify-end" : "justify-start")}
+      className={cn(
+        "flex px-3 chat-msg",
+        isMine ? "justify-end" : "justify-start",
+        clustered ? "mt-0.5" : "mt-2",
+      )}
     >
       <div className={cn("max-w-[80%] group relative", isMine && "items-end")}>
         {showSender && !isMine && !deleted && (
           <div
             className="text-[10px] font-bold ml-1 mb-0.5"
-            style={{ color: "var(--color-accent)" }}
+            style={{ color: senderNameColor }}
           >
             {senderName}
           </div>
         )}
-        <div className="relative">
+        <div
+          className="relative"
+          onPointerDown={startLongPress}
+          onPointerUp={cancelLongPress}
+          onPointerMove={(e) => {
+            // Cancel long-press if the user drags — matches OS behaviour.
+            if (!longPressStartRef.current) return;
+            const dx = Math.abs(e.clientX - longPressStartRef.current.x);
+            const dy = Math.abs(e.clientY - longPressStartRef.current.y);
+            if (dx > 10 || dy > 10) cancelLongPress();
+          }}
+          onPointerCancel={() => cancelLongPress()}
+        >
           <div
             className={cn("rounded-2xl overflow-hidden relative")}
             style={{
@@ -985,27 +1261,36 @@ function MessageBubble({
                   {renderMentionText(message.body)}
                 </p>
               ) : null}
-              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
-                {message.editedAt && !deleted && <span>edited</span>}
-                <span>{time}</span>
-                {isMine && !deleted && (
-                  <span className="ml-0.5" title={readByAll ? "Read by all" : readByAny ? "Read" : "Sent"}>
-                    {readByAll ? (
-                      <CheckCheck size={12} style={{ color: "#3b82f6" }} />
-                    ) : readByAny ? (
-                      <CheckCheck size={12} />
-                    ) : (
-                      <Check size={12} />
-                    )}
-                  </span>
-                )}
-              </div>
+              {showMeta && (
+                <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
+                  {isStarred && !deleted && (
+                    <Star size={10} className="fill-current" style={{ color: "#f59e0b" }} />
+                  )}
+                  {message.editedAt && !deleted && <span>edited</span>}
+                  <span>{time}</span>
+                  {isMine && !deleted && (
+                    <span className="ml-0.5" title={readByAll ? "Read by all" : readByAny ? "Read" : "Sent"}>
+                      {readByAll ? (
+                        <CheckCheck size={12} style={{ color: "#3b82f6" }} />
+                      ) : readByAny ? (
+                        <CheckCheck size={12} />
+                      ) : (
+                        <Check size={12} />
+                      )}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           {!deleted && (
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+              className={cn(
+                "absolute -top-2 w-6 h-6 rounded-full flex items-center justify-center transition-opacity",
+                isMine ? "-right-2" : "-right-2",
+                "opacity-0 group-hover:opacity-100 focus:opacity-100",
+              )}
               style={{
                 background: "var(--color-modal-bg)",
                 border: "1px solid var(--color-border-medium)",
@@ -1021,7 +1306,7 @@ function MessageBubble({
               <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
               <div
                 className={cn(
-                  "absolute z-50 mt-1 w-40 rounded-xl overflow-hidden py-1",
+                  "absolute z-50 mt-1 w-44 rounded-xl overflow-hidden py-1",
                   isMine ? "right-0" : "left-0",
                 )}
                 style={{
@@ -1047,6 +1332,35 @@ function MessageBubble({
                   className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
                 >
                   <Reply size={13} /> Reply
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onForward();
+                  }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Forward size={13} /> Forward
+                </button>
+                {message.body && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCopy();
+                    }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                  >
+                    <Copy size={13} /> Copy
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onStar();
+                  }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Star size={13} /> {isStarred ? "Unstar" : "Star"}
                 </button>
                 {isMine && !message.mediaUrl && message.body && (
                   <button
@@ -1117,7 +1431,9 @@ function MessageBubble({
             {reactionGroups.map(([emoji, mIds]) => (
               <button
                 key={emoji}
-                onClick={() => onReact(emoji)}
+                onClick={() => onShowReactors(emoji)}
+                onDoubleClick={() => onReact(emoji)}
+                title="Tap to see who reacted · double-tap to toggle"
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]"
                 style={{
                   background: "var(--color-bg-surface)",
@@ -1205,14 +1521,7 @@ function MediaBlock({
     );
   }
   if (type === "audio") {
-    return (
-      <audio
-        src={url}
-        controls
-        preload="metadata"
-        className="w-full max-w-[320px]"
-      />
-    );
+    return <VoiceNotePlayer url={url} />;
   }
   // document
   return (
@@ -1237,6 +1546,102 @@ function MediaBlock({
         <div className="text-[10px] text-muted-foreground">Download</div>
       </div>
     </a>
+  );
+}
+
+// ── Voice note player (inline audio with a decorative waveform) ─────────────
+
+function VoiceNotePlayer({ url }: { url: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState<number | null>(null);
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.preload = "metadata";
+    const onLoaded = () => {
+      if (Number.isFinite(audio.duration)) setDuration(audio.duration);
+    };
+    const onTime = () => setCurrent(audio.currentTime);
+    const onEnded = () => {
+      setPlaying(false);
+      setCurrent(0);
+    };
+    audio.addEventListener("loadedmetadata", onLoaded);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("ended", onEnded);
+    return () => {
+      audio.pause();
+      audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("ended", onEnded);
+      audioRef.current = null;
+    };
+  }, [url]);
+
+  function toggle() {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) {
+      a.pause();
+      setPlaying(false);
+    } else {
+      void a.play();
+      setPlaying(true);
+    }
+  }
+
+  // Decorative sine-bar waveform. Real waveform decoding is P2; for now
+  // we render 32 bars with heights derived from a stable sine function
+  // so they don't look random or shift on re-render.
+  const bars = useMemo(() => {
+    const arr: number[] = [];
+    for (let i = 0; i < 32; i++) {
+      const h = 4 + Math.abs(Math.sin(i * 0.7)) * 14;
+      arr.push(h);
+    }
+    return arr;
+  }, []);
+
+  const progress = duration ? Math.min(1, current / duration) : 0;
+  const activeBars = Math.floor(progress * bars.length);
+
+  const displayTime = (() => {
+    const t = duration ?? 0;
+    const remaining = playing ? t - current : t;
+    const s = Math.max(0, Math.round(remaining));
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+  })();
+
+  return (
+    <div className="flex items-center gap-2 m-1.5 px-2.5 py-2 rounded-lg min-w-[220px]" style={{ background: "var(--color-bg-primary)" }}>
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white"
+        style={{ background: "var(--color-accent)" }}
+        aria-label={playing ? "Pause" : "Play"}
+      >
+        {playing ? <Pause size={14} /> : <Play size={14} />}
+      </button>
+      <div className="flex-1 flex items-center gap-[2px] h-6">
+        {bars.map((h, i) => (
+          <span
+            key={i}
+            className="w-[3px] rounded-full"
+            style={{
+              height: `${h}px`,
+              background: i < activeBars ? "var(--color-accent)" : "var(--color-border-medium)",
+            }}
+          />
+        ))}
+      </div>
+      <span className="text-[10px] text-muted-foreground tabular-nums flex-shrink-0">
+        {displayTime}
+      </span>
+    </div>
   );
 }
 
@@ -1342,6 +1747,8 @@ function SearchPanel({
 function GroupInfoSheet({
   group,
   presenceMap,
+  localMute,
+  onMute,
   onClose,
   onLeave,
 }: {
@@ -1353,6 +1760,8 @@ function GroupInfoSheet({
     members: Array<{ id: string; firstName?: string | null; lastName?: string | null; profilePhotoUrl?: string | null; role?: string }>;
   };
   presenceMap: Map<string, boolean>;
+  localMute: string | "always" | null;
+  onMute: (preset: "8h" | "1w" | "always" | "off") => Promise<void> | void;
   onClose: () => void;
   onLeave: () => void;
 }) {
@@ -1363,6 +1772,28 @@ function GroupInfoSheet({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const isMuted = (() => {
+    if (!localMute) return false;
+    if (localMute === "always") return true;
+    try {
+      return new Date(localMute).getTime() > Date.now();
+    } catch {
+      return false;
+    }
+  })();
+
+  const muteLabel = (() => {
+    if (!localMute) return "Not muted";
+    if (localMute === "always") return "Muted · always";
+    try {
+      const d = new Date(localMute);
+      return `Muted until ${d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    } catch {
+      return "Muted";
+    }
+  })();
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
       <div
@@ -1398,6 +1829,51 @@ function GroupInfoSheet({
             {group.description && (
               <p className="text-xs text-muted-foreground mt-1">{group.description}</p>
             )}
+          </div>
+
+          {/* Mute controls */}
+          <div
+            className="rounded-xl p-3 space-y-2.5"
+            style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BellOff size={14} className="text-muted-foreground" />
+                <span className="text-sm font-semibold text-foreground">Notifications</span>
+              </div>
+              <span className="text-[11px] text-muted-foreground">{muteLabel}</span>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {(
+                [
+                  { key: "8h", label: "8 hours" },
+                  { key: "1w", label: "1 week" },
+                  { key: "always", label: "Always" },
+                ] as const
+              ).map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => onMute(p.key)}
+                  className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                  style={{
+                    background: "var(--color-bg-primary)",
+                    border: "1px solid var(--color-border-subtle)",
+                    color: "var(--color-text-secondary)",
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+              {isMuted && (
+                <button
+                  onClick={() => onMute("off")}
+                  className="px-3 py-1.5 rounded-full text-xs font-semibold text-white"
+                  style={{ background: "var(--color-accent)" }}
+                >
+                  Unmute
+                </button>
+              )}
+            </div>
           </div>
 
           <div>
