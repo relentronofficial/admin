@@ -4,8 +4,17 @@ import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import type { ChatGroupMemberRef } from "@/lib/api/services/chatGroups.service";
 
+interface ReactionEntry {
+  emoji: string;
+  memberId: string;
+  /** Enriched by backend since Phase 5 — may be null for older payloads. */
+  memberName?: string | null;
+  profilePhotoUrl?: string | null;
+}
+
 interface ReactorsSheetProps {
-  reactions: Array<{ emoji: string; memberId: string }>;
+  reactions: ReactionEntry[];
+  /** Legacy fallback lookup for older reaction payloads without memberName. */
   members: ChatGroupMemberRef[];
   /**
    * The emoji that should be preselected when the sheet opens (i.e.
@@ -108,10 +117,19 @@ export function ReactorsSheet({ reactions, members, initialEmoji, onClose }: Rea
             <div className="text-center py-6 text-sm text-muted-foreground">No reactions.</div>
           ) : (
             displayList.map(({ memberId, emojis }) => {
+              // Prefer the enriched fields on the reaction itself (Phase 5
+              // backend); fall back to the group's member roster if the
+              // reaction was posted before enrichment shipped.
+              const reactorReactions = reactions.filter((r) => r.memberId === memberId);
+              const enrichedName = reactorReactions.find((r) => r.memberName)?.memberName ?? null;
+              const enrichedPhoto = reactorReactions.find((r) => r.profilePhotoUrl)?.profilePhotoUrl ?? null;
               const m = memberById(memberId);
-              const name = m
-                ? `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "Member"
-                : "Member";
+              const name =
+                enrichedName ??
+                (m
+                  ? `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "Member"
+                  : "Member");
+              const photo = enrichedPhoto ?? m?.profilePhotoUrl ?? null;
               return (
                 <div
                   key={memberId}
@@ -122,9 +140,9 @@ export function ReactorsSheet({ reactions, members, initialEmoji, onClose }: Rea
                     className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
                     style={{ background: "var(--color-accent)" }}
                   >
-                    {m?.profilePhotoUrl ? (
+                    {photo ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={m.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+                      <img src={photo} alt="" className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-xs font-bold text-white">
                         {name.slice(0, 1).toUpperCase()}

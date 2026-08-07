@@ -64,7 +64,7 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
   Timer? _typingTimer;
 
   // Voice recorder state.
-  final AudioRecorder _recorder = AudioRecorder();
+  final Record _recorder = Record();
   bool _isRecording = false;
   DateTime? _recordingStartedAt;
   Timer? _recordingTicker;
@@ -204,8 +204,9 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
       final path =
           '${dir.path}${Platform.pathSeparator}voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
       await _recorder.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 96000),
         path: path,
+        encoder: AudioEncoder.aacLc,
+        bitRate: 96000,
       );
       HapticFeedback.mediumImpact();
       setState(() {
@@ -1673,18 +1674,56 @@ class _MessageBubble extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               ...byEmoji.entries.expand((entry) {
-                return entry.value.map((r) => ListTile(
-                      dense: true,
-                      leading: Text(entry.key,
-                          style: const TextStyle(fontSize: 20)),
-                      title: Text(
-                        r.memberId,
-                        style: TextStyle(
-                          color: tokens.textPrimary,
-                          fontSize: 13,
-                        ),
+                return entry.value.map((r) {
+                  final photo = r.profilePhotoUrl;
+                  final name = r.memberName ?? 'Member';
+                  return ListTile(
+                    dense: true,
+                    leading: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundColor: tokens.bgInput,
+                            backgroundImage:
+                                photo != null && photo.isNotEmpty
+                                    ? NetworkImage(photo)
+                                    : null,
+                            child: (photo == null || photo.isEmpty)
+                                ? Text(
+                                    name.isNotEmpty
+                                        ? name[0].toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      color: tokens.textPrimary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  )
+                                : null,
+                          ),
+                          Positioned(
+                            right: -4,
+                            bottom: -4,
+                            child: Text(entry.key,
+                                style: const TextStyle(fontSize: 16)),
+                          ),
+                        ],
                       ),
-                    ));
+                    ),
+                    title: Text(
+                      name,
+                      style: TextStyle(
+                        color: tokens.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                });
               }),
               const SizedBox(height: 6),
             ],

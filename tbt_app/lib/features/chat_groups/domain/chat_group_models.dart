@@ -155,12 +155,23 @@ class ChatGroupReplyPreview {
 }
 
 class ChatGroupReaction {
-  const ChatGroupReaction({required this.emoji, required this.memberId});
+  const ChatGroupReaction({
+    required this.emoji,
+    required this.memberId,
+    this.memberName,
+    this.profilePhotoUrl,
+  });
   final String emoji;
   final String memberId;
+  /// Reactor's display name — null when the member was deleted OR when the
+  /// payload comes from an older backend that didn't include it.
+  final String? memberName;
+  final String? profilePhotoUrl;
   factory ChatGroupReaction.fromJson(Map<String, dynamic> j) => ChatGroupReaction(
         emoji: j['emoji'] as String,
         memberId: j['memberId'] as String,
+        memberName: j['memberName'] as String?,
+        profilePhotoUrl: j['profilePhotoUrl'] as String?,
       );
 }
 

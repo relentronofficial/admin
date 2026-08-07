@@ -85,9 +85,17 @@ interface ReplyPreview {
   deletedForEveryone: boolean;
 }
 
+interface ReactionEntry {
+  emoji: string;
+  memberId: string;
+  /** Full display name of the reactor — null if the member was deleted. */
+  memberName: string | null;
+  profilePhotoUrl: string | null;
+}
+
 type HydratedMessage = RawMessageRow & {
   sender: RawMemberRow | null;
-  reactions: Array<{ emoji: string; memberId: string }>;
+  reactions: ReactionEntry[];
   readByCount: number;
   readByMemberIds: string[];
   replyToPreview: ReplyPreview | null;
@@ -118,6 +126,18 @@ async function hydrateSenders(
       )
     : [];
   for (const p of parentRows) if (p.sender_member_id) senderIds.add(p.sender_member_id);
+
+  // Fetch reactions early so reactor memberIds join the same member query
+  // — avoids a second round trip just to enrich the "who reacted" sheet.
+  const reactionRows = await req.server.prisma.$queryRawUnsafe<
+    Array<{ message_id: string; emoji: string; member_id: string }>
+  >(
+    `SELECT message_id, emoji, member_id
+     FROM chat_group_reactions
+     WHERE message_id = ANY($1::uuid[])`,
+    messageIds,
+  );
+  for (const r of reactionRows) senderIds.add(r.member_id);
 
   const senderIdArr = Array.from(senderIds);
   const senders = senderIdArr.length > 0
@@ -150,18 +170,22 @@ async function hydrateSenders(
     });
   }
 
-  const reactions = await req.server.prisma.$queryRawUnsafe<
-    Array<{ message_id: string; emoji: string; member_id: string }>
-  >(
-    `SELECT message_id, emoji, member_id
-     FROM chat_group_reactions
-     WHERE message_id = ANY($1::uuid[])`,
-    messageIds,
-  );
-  const reactionMap = new Map<string, Array<{ emoji: string; memberId: string }>>();
-  for (const r of reactions) {
+  // Enrich reactions with reactor name + avatar (senderMap contains every
+  // reactor because we added their ids to senderIds above). Falls back to
+  // null name/avatar for deleted members so the client can render "Deleted
+  // member" or an empty avatar without crashing.
+  const reactionMap = new Map<string, ReactionEntry[]>();
+  for (const r of reactionRows) {
+    const reactor = senderMap.get(r.member_id);
     const arr = reactionMap.get(r.message_id) ?? [];
-    arr.push({ emoji: r.emoji, memberId: r.member_id });
+    arr.push({
+      emoji: r.emoji,
+      memberId: r.member_id,
+      memberName: reactor
+        ? [reactor.first_name, reactor.last_name].filter(Boolean).join(' ') || null
+        : null,
+      profilePhotoUrl: reactor?.profile_photo_url ?? null,
+    });
     reactionMap.set(r.message_id, arr);
   }
 
@@ -775,8 +799,34 @@ export async function memberToggleReactionHandler(req: FastifyRequest<{ Params: 
     added = true;
   }
 
+  // Fetch reactor's display name + avatar so the client can render the
+  // "who reacted" sheet without a second round-trip.
+  let memberName: string | null = null;
+  let profilePhotoUrl: string | null = null;
+  try {
+    const rows = await req.server.prisma.$queryRawUnsafe<
+      Array<{ first_name: string | null; last_name: string | null; profile_photo_url: string | null }>
+    >(
+      `SELECT first_name, last_name, profile_photo_url FROM members WHERE id = $1::uuid`,
+      memberId,
+    );
+    if (rows[0]) {
+      memberName = [rows[0].first_name, rows[0].last_name].filter(Boolean).join(' ') || null;
+      profilePhotoUrl = rows[0].profile_photo_url;
+    }
+  } catch {
+    // Best-effort — socket payload still fires with just memberId.
+  }
+
   const io = (req.server as any).io;
-  if (io) io.to(`group:${id}`).emit('group:reaction', { messageId, memberId, emoji, added });
+  if (io) io.to(`group:${id}`).emit('group:reaction', {
+    messageId,
+    memberId,
+    memberName,
+    profilePhotoUrl,
+    emoji,
+    added,
+  });
 
   return ok(reply, { added, emoji });
 }
