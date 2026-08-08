@@ -14,6 +14,7 @@
     "lint": "npm run lint -w admin-panel && npm run lint -w backend",
     "format": "prettier --write .",
     "typecheck": "npm run typecheck -w admin-panel && npm run typecheck -w backend",
+    "test": "npm run test -w backend",
     "seed:gamified": "npm run seed:gamified -w backend",
     "seed:tasks": "npm run seed:tasks -w backend",
     "seed:batches": "npm run seed:batches -w backend"

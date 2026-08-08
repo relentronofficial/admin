@@ -5,12 +5,19 @@ import { useRouter, usePathname } from "next/navigation";
 import { useMe } from "@/lib/hooks/useUser";
 import { Lock, X } from "lucide-react";
 import apiClient from "@/lib/api/client";
+import { useSuppressAds } from "@/lib/ads/useRegisterMedia";
 
 // Paths where the free-plan / expired-subscription interceptors are suspended
 const EXEMPT_PATHS = ["/Products", "/profile"];
 
 function PendingInterceptor() {
   const [showPopup, setShowPopup] = useState(false);
+
+  // The user is already gated behind a click-blocker; stacking a fullscreen ad
+  // on top of it is incoherent (TBT_ADS_SPECKIT.md §7.4). Suppression lasts as
+  // long as this component is mounted, and is ref-counted, so it composes with
+  // whatever else is suppressing at the same time.
+  useSuppressAds("pending-interceptor");
 
   const handleLogout = async () => {
     try { await apiClient.post("/api/user-auth/logout", {}); } catch (_) {}
@@ -93,6 +100,9 @@ function PendingInterceptor() {
 
 function FreeInterceptor() {
   const [showPopup, setShowPopup] = useState(false);
+
+  // Same reasoning as PendingInterceptor (§7.4) — the user is already blocked.
+  useSuppressAds("free-interceptor");
 
   return (
     <>

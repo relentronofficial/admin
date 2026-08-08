@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../core/constants/storage_keys.dart';
+import '../../../shared/media/interruptible_media.dart';
+import '../../../shared/media/media_interruption_coordinator.dart';
 import '../../../shared/models/lesson.dart';
 import '../../../shared/providers/site_config_provider.dart';
 import '../../../shared/theme/tbt_theme.dart';
@@ -58,14 +60,46 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   // Whether the lesson was already completed BEFORE this session opened
   bool _wasAlreadyCompleted = false;
 
+  // Ad interruption (TBT_ADS_SPECKIT.md §7)
+  VoidCallback? _deregisterFromAds;
+  /// Playing state for the WebView fallback only. The Bunny iframe gives us no
+  /// synchronous way to ask, so we track it from the events it does send: a
+  /// timeupdate means it is running, pause/ended mean it is not. BetterPlayer
+  /// answers directly and never consults this.
+  bool _webViewPlaying = false;
+
   @override
   void initState() {
     super.initState();
     _init();
+
+    // Reuses the pause/resume helpers built for cue quizzes, which already
+    // handle the HLS-vs-iframe split — so the ad path gets both transports for
+    // free (§1.1: generalise this, do not reinvent it).
+    _deregisterFromAds = MediaInterruptionCoordinator.instance.register(
+      CallbackInterruptibleMedia(
+        id: 'course-lesson-player',
+        kind: InterruptibleMediaKind.video,
+        isPlayingFn: _isMediaPlaying,
+        getPositionFn: () => _currentTime,
+        pauseFn: _pausePlayer,
+        resumeFn: _resumePlayer,
+        seekFn: _seekPlayer,
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _deregisterFromAds?.call();
+    _deregisterFromAds = null;
+    // Leaving the screen with a quiz open would otherwise strand the
+    // suppression forever — the count is process-wide and nothing else clears
+    // it, so ads would be dead for the rest of the session.
+    if (_cueQuizActive) {
+      MediaInterruptionCoordinator.instance.unsuppress('course-cue-quiz');
+      _cueQuizActive = false;
+    }
     _progressTimer?.cancel();
     final ctrl = _playerController;
     if (ctrl != null) {
@@ -281,6 +315,10 @@ window.addEventListener('message', function(e) {
         } else {
           secs = (value as num?)?.toDouble();
         }
+        // A timeupdate only arrives while the iframe is actually running, so
+        // it doubles as the "is playing" signal the embed never exposes
+        // directly (§7.1 — isPlaying must be answerable synchronously).
+        _webViewPlaying = true;
         if (secs != null && mounted) {
           setState(() => _currentTime = secs!);
           _onPositionChanged(secs);
@@ -288,7 +326,13 @@ window.addEventListener('message', function(e) {
         return;
       }
 
+      if (evt == 'pause') {
+        _webViewPlaying = false;
+        return;
+      }
+
       if (evt == 'ended') {
+        _webViewPlaying = false;
         _onVideoEnded();
         return;
       }
@@ -361,6 +405,9 @@ window.addEventListener('message', function(e) {
       if (secs >= atSecs && secs < atSecs + 2) {
         _firedCueIds.add(cueId);
         _cueQuizActive = true;
+        // An open cue quiz is already a modal interruption; stacking a
+        // fullscreen ad on top of it is incoherent (§7.4).
+        MediaInterruptionCoordinator.instance.suppress('course-cue-quiz');
         _pausePlayer();
         final questions = (cue['questions'] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
@@ -372,6 +419,7 @@ window.addEventListener('message', function(e) {
 
   void _pausePlayer() {
     _playerController?.pause();
+    _webViewPlaying = false;
     _webViewController?.runJavaScript(
       "sendToPlayer('pause')",
     );
@@ -381,6 +429,26 @@ window.addEventListener('message', function(e) {
     _playerController?.play();
     _webViewController?.runJavaScript(
       "sendToPlayer('play')",
+    );
+  }
+
+  /// Whichever transport is live right now. Read at ad-interrupt time to decide
+  /// whether this lesson gets resumed afterwards — a wrong answer here is
+  /// exactly the criterion-21 failure (§7.2).
+  bool _isMediaPlaying() {
+    final ctrl = _playerController;
+    if (ctrl != null) return ctrl.isPlaying() ?? false;
+    return _webViewPlaying;
+  }
+
+  void _seekPlayer(double seconds) {
+    final ctrl = _playerController;
+    if (ctrl != null) {
+      ctrl.seekTo(Duration(milliseconds: (seconds * 1000).round()));
+      return;
+    }
+    _webViewController?.runJavaScript(
+      "sendToPlayer('setCurrentTime', $seconds)",
     );
   }
 
@@ -399,6 +467,9 @@ window.addEventListener('message', function(e) {
   }
 
   void _onCueQuizDismiss() {
+    if (_cueQuizActive) {
+      MediaInterruptionCoordinator.instance.unsuppress('course-cue-quiz');
+    }
     _cueQuizActive = false;
     if (mounted) Navigator.of(context).pop();
     _resumePlayer();

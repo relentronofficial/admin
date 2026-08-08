@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../../shared/media/interruptible_media.dart';
+import '../../../shared/media/media_interruption_coordinator.dart';
 import '../domain/podcast_models.dart';
 import 'podcast_service.dart';
 
@@ -24,10 +26,34 @@ class PodcastPlayerController extends ChangeNotifier {
   PodcastPlayerController(this._service) {
     _player.playerStateStream.listen(_onStateChange);
     _player.positionStream.listen(_onPositionTick);
+
+    // Let an ad interrupt podcast audio (TBT_ADS_SPECKIT.md §7). This
+    // controller is the app-wide singleton, so registering here covers every
+    // screen — the mini-player, the full player and background playback all
+    // drive the same `AudioPlayer`. §7.3 calls this out specifically: just_audio
+    // keeps playing while the app is backgrounded, so nothing but an explicit
+    // pause stops it talking over an ad.
+    _deregisterFromAds = MediaInterruptionCoordinator.instance.register(
+      CallbackInterruptibleMedia(
+        id: 'podcast-audio',
+        kind: InterruptibleMediaKind.audio,
+        isPlayingFn: () => _player.playing,
+        getPositionFn: () => _player.position.inMilliseconds / 1000,
+        // Pause the player directly rather than going through togglePlay():
+        // this is not a user-initiated pause and must not flush progress or
+        // notify listeners into showing a paused mini-player mid-ad.
+        pauseFn: () => unawaited(_player.pause()),
+        resumeFn: () => unawaited(_player.play()),
+        seekFn: (s) => unawaited(
+          _player.seek(Duration(milliseconds: (s * 1000).round())),
+        ),
+      ),
+    );
   }
 
   final PodcastService _service;
   final AudioPlayer _player = AudioPlayer();
+  VoidCallback? _deregisterFromAds;
 
   PodcastEpisode? _current;
   DateTime _lastWriteAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -166,6 +192,8 @@ class PodcastPlayerController extends ChangeNotifier {
 
   @override
   Future<void> dispose() async {
+    _deregisterFromAds?.call();
+    _deregisterFromAds = null;
     await _writeProgress(force: true);
     await _player.dispose();
     super.dispose();

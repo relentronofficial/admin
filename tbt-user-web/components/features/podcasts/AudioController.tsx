@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePodcastPlayer } from "@/lib/stores/usePodcastPlayer";
 import { useSubmitPodcastProgress } from "@/lib/hooks/usePodcasts";
+import { useRegisterMedia } from "@/lib/ads/useRegisterMedia";
 
 const PROGRESS_INTERVAL_MS = 15_000;
 
@@ -57,6 +58,29 @@ export function AudioController() {
     if (!audio) return;
     audio.playbackRate = speed;
   }, [speed]);
+
+  // Let the ad system pause/resume podcast audio (TBT_ADS_SPECKIT.md §7).
+  //
+  // Drives the STORE rather than the element directly: the `isPlaying` effect
+  // above owns the element, so pausing the element alone would be immediately
+  // undone on the next render. Position comes from the element because the
+  // store's `position` lags by up to one timeupdate tick.
+  useRegisterMedia("podcast-audio", "audio", {
+    isPlaying: () => isPlaying && !!episode,
+    getPosition: () => audioRef.current?.currentTime ?? 0,
+    pause: () => setPlaying(false),
+    resume: () => setPlaying(true),
+    seek: (seconds: number) => {
+      const audio = audioRef.current;
+      if (audio) {
+        try {
+          audio.currentTime = seconds;
+        } catch {
+          /* not seekable yet — the store position below still holds */
+        }
+      }
+    },
+  });
 
   // Seek target — moves audio.currentTime whenever seekSignal ticks.
   useEffect(() => {

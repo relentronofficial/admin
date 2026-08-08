@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../core/constants/storage_keys.dart';
+import '../../../shared/media/interruptible_media.dart';
+import '../../../shared/media/media_interruption_coordinator.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/video/tbt_video_player_config.dart';
@@ -49,14 +51,64 @@ class _WorkshopEpisodePlayerScreenState
   Timer? _progressTimer;
   bool _completionFired = false;
 
+  // Ad interruption (TBT_ADS_SPECKIT.md §7). Same shape as LessonPlayerScreen —
+  // this screen is its mirror and the two must behave identically.
+  VoidCallback? _deregisterFromAds;
+  /// Playing state for the WebView fallback only; the Bunny iframe cannot be
+  /// asked synchronously, so it is inferred from the events it sends.
+  bool _webViewPlaying = false;
+
   @override
   void initState() {
     super.initState();
     _init();
+
+    _deregisterFromAds = MediaInterruptionCoordinator.instance.register(
+      CallbackInterruptibleMedia(
+        id: 'workshop-episode-player',
+        kind: InterruptibleMediaKind.video,
+        isPlayingFn: _isMediaPlaying,
+        getPositionFn: () => _currentTime,
+        pauseFn: _pausePlayer,
+        resumeFn: _resumePlayer,
+        seekFn: _seekPlayer,
+      ),
+    );
+  }
+
+  /// Whichever transport is live right now. A wrong answer here is the
+  /// criterion-21 failure: content that was paused before the ad must not come
+  /// back playing after it.
+  bool _isMediaPlaying() {
+    final ctrl = _playerController;
+    if (ctrl != null) return ctrl.isPlaying() ?? false;
+    return _webViewPlaying;
+  }
+
+  void _pausePlayer() {
+    _playerController?.pause();
+    _webViewPlaying = false;
+    _webViewController?.runJavaScript("send('pause')");
+  }
+
+  void _resumePlayer() {
+    _playerController?.play();
+    _webViewController?.runJavaScript("send('play')");
+  }
+
+  void _seekPlayer(double seconds) {
+    final ctrl = _playerController;
+    if (ctrl != null) {
+      ctrl.seekTo(Duration(milliseconds: (seconds * 1000).round()));
+      return;
+    }
+    _webViewController?.runJavaScript("send('setCurrentTime', $seconds)");
   }
 
   @override
   void dispose() {
+    _deregisterFromAds?.call();
+    _deregisterFromAds = null;
     _progressTimer?.cancel();
     final ctrl = _playerController;
     if (ctrl != null) {
@@ -218,13 +270,21 @@ window.addEventListener('message',function(e){if(!e.origin||e.origin.indexOf('me
         } else {
           secs = (value as num?)?.toDouble();
         }
+        // Only arrives while the iframe is actually running, so it doubles as
+        // the "is playing" signal the embed never exposes directly (§7.1).
+        _webViewPlaying = true;
         if (secs != null && mounted) {
           setState(() => _currentTime = secs!);
           _onPositionChanged(secs);
         }
         return;
       }
+      if (evt == 'pause') {
+        _webViewPlaying = false;
+        return;
+      }
       if (evt == 'ended') {
+        _webViewPlaying = false;
         _onVideoEnded();
         return;
       }

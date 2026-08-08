@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import '../../../core/constants/api.dart';
 import '../../../shared/api/dio_client.dart';
 import '../../../shared/api/dio_provider.dart';
+import '../../../shared/media/media_interruption_coordinator.dart';
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/socket/socket_events.dart';
 import '../../../shared/theme/tbt_theme.dart';
@@ -50,6 +51,11 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
   @override
   void initState() {
     super.initState();
+    // Never overlay an ad on a live session — the user cannot rejoin a stream
+    // mid-broadcast (TBT_ADS_SPECKIT.md §7.4). Held for the whole screen
+    // lifetime, including the countdown and recording states, so a stream going
+    // live mid-view cannot be interrupted either.
+    MediaInterruptionCoordinator.instance.suppress('webinar');
     _fetch();
     _wireSocket();
     _countdownTicker = Timer.periodic(
@@ -60,6 +66,7 @@ class _WebinarScreenState extends ConsumerState<WebinarScreen> {
 
   @override
   void dispose() {
+    MediaInterruptionCoordinator.instance.unsuppress('webinar');
     _countdownTicker?.cancel();
     _videoController?.dispose();
     _unwireSocket();

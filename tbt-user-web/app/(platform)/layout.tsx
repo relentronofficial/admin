@@ -3,6 +3,7 @@ import { Footer } from "@/components/layout/Footer";
 import { SubscriptionGate } from "./SubscriptionGate";
 import { AudioController } from "@/components/features/podcasts/AudioController";
 import { MiniPlayer } from "@/components/features/podcasts/MiniPlayer";
+import { AdHost } from "@/components/features/ads/AdHost";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -18,6 +19,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       </main>
       <AudioController />
       <MiniPlayer />
+      {/* Portals to document.body, so it sits above Navbar and MiniPlayer
+          regardless of this container's stacking context. */}
+      <AdHost />
     </div>
   );
 }

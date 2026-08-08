@@ -2309,6 +2309,16 @@ model UiStrings {
   batchBreakReasonLabel       String   @default("Reason") @map("batch_break_reason_label")
   batchBreakRejectedLabel     String   @default("Rejected") @map("batch_break_rejected_label")
   batchBreakSubmitLabel       String   @default("Submit Request") @map("batch_break_submit_label")
+
+  // Advertisement overlay (TBT_ADS_SPECKIT.md §9). Every string the ad overlay
+  // shows comes from here — the clients keep hardcoded English fallbacks only
+  // for the window before this config loads.
+  adSponsoredLabel            String   @default("Sponsored") @map("ad_sponsored_label")
+  adSkipLabel                 String   @default("Skip") @map("ad_skip_label")
+  adSkipInLabel               String   @default("Skip in") @map("ad_skip_in_label")
+  adCloseLabel                String   @default("Close") @map("ad_close_label")
+  adUnmuteLabel               String   @default("Tap for sound") @map("ad_unmute_label")
+
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -3170,3 +3180,164 @@ model PodcastEpisodeProgress {
 // $executeRawUnsafe in plugins/prisma.ts startup — same pattern as
 // admin_notifications, member_attendance, product_inquiries etc. NOT in
 // this Prisma schema; access via $queryRawUnsafe / $executeRawUnsafe.
+
+// ─── Advertisement campaigns (TBT_ADS_SPECKIT.md §3) ────────────────────────
+//
+// Unlike the group-chat tables above, these DO get Prisma models — the
+// campaign surface is wide enough that raw SQL everywhere would be a
+// liability. plugins/prisma.ts still creates them idempotently at startup
+// plus the CHECK constraints Prisma cannot express.
+
+model AdCampaign {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignCode String  @unique @map("campaign_code")
+  name         String
+  description  String?
+  status       String  @default("draft") // draft|scheduled|active|paused|completed|archived
+  priority     Int     @default(0)
+
+  // Creative
+  mediaType            String  @map("media_type") // image|video
+  mediaUrl             String? @map("media_url")
+  bunnyVideoId         String? @map("bunny_video_id")
+  hlsUrl               String? @map("hls_url")
+  thumbnailUrl         String? @map("thumbnail_url")
+  fallbackMediaUrl     String? @map("fallback_media_url")
+  mediaDurationSeconds Int?    @map("media_duration_seconds")
+  objectFit            String  @default("contain") @map("object_fit") // contain|cover|fill
+  backgroundColor      String? @map("background_color")
+  autoplay             Boolean @default(true)
+  muted                Boolean @default(true)
+  loop                 Boolean @default(false)
+
+  // Schedule. start/end are absolute UTC instants; daily* + activeDays are
+  // wall-clock recurrence rules evaluated IN `timezone` at request time.
+  startAt        DateTime @map("start_at") @db.Timestamptz(6)
+  endAt          DateTime @map("end_at") @db.Timestamptz(6)
+  timezone       String   @default("Asia/Kolkata")
+  dailyStartTime String?  @map("daily_start_time") // "HH:mm"
+  dailyEndTime   String?  @map("daily_end_time") // "HH:mm"
+  activeDays     Json?    @map("active_days") // [0..6], 0=Sunday. null = all days
+
+  // Targeting
+  targetPlatforms Json    @map("target_platforms") // ["mobile","web"]
+  targetOs        Json?   @map("target_os") // ["android","ios","web"]
+  placements      Json // ["app_launch","home",...]
+  targetRoutes    Json?   @map("target_routes")
+  audienceConfig  Json    @map("audience_config")
+  batchIds        Json?   @map("batch_ids") // project-wide batch access convention
+
+  // Behaviour
+  triggerType     String @map("trigger_type")
+  triggerConfig   Json   @map("trigger_config")
+  frequencyConfig Json   @map("frequency_config")
+  skipConfig      Json   @map("skip_config")
+  closeConfig     Json   @map("close_config")
+  ctaConfig       Json?  @map("cta_config")
+  analyticsConfig Json?  @map("analytics_config")
+
+  // Caps
+  maxTotalImpressions    BigInt? @map("max_total_impressions")
+  currentImpressionCount BigInt  @default(0) @map("current_impression_count")
+
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedBy String?   @map("updated_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  impressions AdImpression[]
+  events      AdEvent[]
+  frequency   AdUserFrequency[]
+
+  @@index([status, startAt, endAt])
+  @@index([status, priority(sort: Desc), startAt])
+  @@map("ad_campaigns")
+}
+
+model AdImpression {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId   String  @map("campaign_id") @db.Uuid
+  memberId     String? @map("member_id") @db.Uuid
+  anonymousId  String? @map("anonymous_id") // tbt_device_id
+  displayToken String  @unique @map("display_token")
+  sessionId    String  @map("session_id")
+  platform     String
+  placement    String
+  route        String?
+
+  // NULL until the client confirms the ad actually rendered. An issued-but-
+  // never-shown token is a selection, not an impression — analytics and
+  // frequency caps must both filter on displayedAt IS NOT NULL.
+  displayedAt       DateTime? @map("displayed_at") @db.Timestamptz(6)
+  playbackStartedAt DateTime? @map("playback_started_at") @db.Timestamptz(6)
+  completedAt       DateTime? @map("completed_at") @db.Timestamptz(6)
+  skippedAt         DateTime? @map("skipped_at") @db.Timestamptz(6)
+  closedAt          DateTime? @map("closed_at") @db.Timestamptz(6)
+  clickedAt         DateTime? @map("clicked_at") @db.Timestamptz(6)
+
+  watchedSeconds            Decimal  @default(0) @map("watched_seconds") @db.Decimal(10, 2)
+  completionPercentage      Decimal  @default(0) @map("completion_percentage") @db.Decimal(5, 2)
+  skipAvailableAfterSeconds Decimal? @map("skip_available_after_seconds") @db.Decimal(10, 2)
+
+  userAgent  String?  @map("user_agent")
+  deviceInfo Json?    @map("device_info")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt(sort: Desc)])
+  @@index([memberId, campaignId])
+  @@index([anonymousId, campaignId])
+  @@index([sessionId, campaignId])
+  @@map("ad_impressions")
+}
+
+model AdEvent {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId           String   @map("campaign_id") @db.Uuid
+  impressionId         String?  @map("impression_id") @db.Uuid
+  memberId             String?  @map("member_id") @db.Uuid
+  eventType            String   @map("event_type")
+  eventTimestamp       DateTime @map("event_timestamp") @db.Timestamptz(6)
+  elapsedSeconds       Decimal? @map("elapsed_seconds") @db.Decimal(10, 2)
+  completionPercentage Decimal? @map("completion_percentage") @db.Decimal(5, 2)
+  platform             String?
+  placement            String?
+  metadata             Json?
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, eventType, createdAt(sort: Desc)])
+  @@index([impressionId])
+  @@map("ad_events")
+}
+
+model AdUserFrequency {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+
+  // Postgres treats NULLs as distinct in unique constraints, so a key mixing
+  // nullable memberId/anonymousId would never dedupe. subjectKey is the
+  // resolved non-null identity ("m:<uuid>" or "a:<deviceId>") and is what the
+  // unique constraint actually uses; the two columns below are kept for
+  // querying only.
+  subjectKey  String  @map("subject_key")
+  memberId    String? @map("member_id") @db.Uuid
+  anonymousId String? @map("anonymous_id")
+
+  sessionId        String    @map("session_id")
+  dayBucket        String    @map("day_bucket") // "YYYY-MM-DD" in campaign timezone
+  impressionCount  Int       @default(0) @map("impression_count")
+  lastImpressionAt DateTime? @map("last_impression_at") @db.Timestamptz(6)
+  lastCompletedAt  DateTime? @map("last_completed_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, subjectKey, sessionId, dayBucket], name: "ad_freq_identity")
+  @@index([campaignId, subjectKey])
+  @@map("ad_user_frequency")
+}

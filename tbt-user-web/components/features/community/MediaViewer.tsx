@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useRegisterMedia } from "@/lib/ads/useRegisterMedia";
 
 /**
  * Fullscreen viewer for a set of image/video URLs. Detects video vs
@@ -18,6 +19,28 @@ export function MediaViewer({
 }) {
   const clamped = Math.max(0, Math.min(urls.length - 1, initialIndex));
   const [index, setIndex] = useState(clamped);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // This viewer autoplays with sound, so an ad over it would talk across it
+  // (TBT_ADS_SPECKIT.md §7). The grid thumbnails in PostCard/Composer are muted
+  // previews with no controls and are deliberately not registered — there is
+  // nothing to interrupt.
+  useRegisterMedia("community-media-viewer", "video", {
+    isPlaying: () => {
+      const v = videoRef.current;
+      return !!v && !v.paused && !v.ended;
+    },
+    getPosition: () => videoRef.current?.currentTime ?? 0,
+    pause: () => videoRef.current?.pause(),
+    // A rejected play() promise (autoplay policy) must not throw out of the
+    // registry's restore loop.
+    resume: () => {
+      void videoRef.current?.play()?.catch(() => {});
+    },
+    seek: (s) => {
+      if (videoRef.current) videoRef.current.currentTime = s;
+    },
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -79,6 +102,7 @@ export function MediaViewer({
         {isVideo ? (
           <video
             key={current}
+            ref={videoRef}
             src={current}
             controls
             autoPlay

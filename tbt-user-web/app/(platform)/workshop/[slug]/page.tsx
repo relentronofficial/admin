@@ -65,6 +65,7 @@ import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
+import { useRegisterMedia } from "@/lib/ads/useRegisterMedia";
 import type {
   WorkshopFlowItem,
   WorkshopTab,
@@ -1639,6 +1640,44 @@ function WatchChallengeView({
   useEffect(() => { onChallengeCompleteRef.current = onChallengeComplete; }, [onChallengeComplete]);
   useEffect(() => { currentEpRef.current = ep; epRef.current = ep; }, [ep]);
   useEffect(() => { speedRef.current = speed; }, [speed]);
+
+  // ─── Ad media interruption (TBT_ADS_SPECKIT.md §7) ───────────────────────────
+  // Same shape as the course player's cue-quiz pause/resume: branch on which
+  // transport is actually rendered, because the iframe fallback has no handle
+  // and only responds to postMessage. Reassigned every render, so the closures
+  // always see the current episode and hlsFailed state.
+  const pausePlayerRef = useRef<() => void>(() => {});
+  const resumePlayerRef = useRef<() => void>(() => {});
+  pausePlayerRef.current = () => {
+    if (ep?.hlsUrl && !hlsFailed) {
+      playerRef.current?.pause();
+    } else {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ context: "player.js", method: "pause" }),
+        "https://iframe.mediadelivery.net",
+      );
+    }
+  };
+  resumePlayerRef.current = () => {
+    if (ep?.hlsUrl && !hlsFailed) {
+      playerRef.current?.play();
+    } else {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ context: "player.js", method: "play" }),
+        "https://iframe.mediadelivery.net",
+      );
+    }
+  };
+
+  useRegisterMedia("workshop-episode-player", "video", {
+    isPlaying: () => isPlayingRef.current,
+    getPosition: () => lastPlayheadRef.current,
+    pause: () => pausePlayerRef.current(),
+    resume: () => resumePlayerRef.current(),
+    // No-op for the same reason as the course player: both transports keep the
+    // playhead across pause/play, and PlyrPlayerHandle exposes no seek.
+    seek: () => {},
+  });
 
   const handleSpeedChange = (s: number) => {
     setSpeed(s);

@@ -93,3 +93,10 @@ const String kSocketJoinLive = 'join:live';
 
 /// Emitted by client to leave a live session room.
 const String kSocketLeaveLive = 'leave:live';
+
+// ── Advertisements (TBT_ADS_SPECKIT.md §12) ───────────────────────────────────
+
+/// A campaign changed in a way clients must react to.
+/// Payload: `{ campaignId: String, reason: 'paused'|'archived'|'updated'|'expired' }`.
+/// Only `paused` / `archived` tear down an ad already on screen.
+const String kSocketAdCampaignInvalidated = 'ads:campaign_invalidated';

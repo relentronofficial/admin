@@ -12,6 +12,7 @@ import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
+import { useRegisterMedia, useSuppressAds } from "@/lib/ads/useRegisterMedia";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCourse, useLessonProgress, useMarkLessonComplete,
@@ -955,6 +956,26 @@ export default function CourseDetailPage({
       );
     }
   };
+
+  // Let the ad system interrupt and restore this lesson (TBT_ADS_SPECKIT.md §7).
+  // Reuses the pause/resume refs already built above for cue quizzes — those
+  // handle the HLS-vs-iframe split, so the ad path gets it for free.
+  useRegisterMedia("course-lesson-player", "video", {
+    isPlaying: () => isPlayingRef.current,
+    getPosition: () => lastPlayheadRef.current,
+    pause: () => pausePlayerRef.current(),
+    resume: () => resumePlayerRef.current(),
+    // Intentionally a no-op: both transports preserve the playhead across
+    // pause/play, so restoring position needs no seek. The registry's seek is
+    // a safety net for players that DO reset, and PlyrPlayerHandle exposes no
+    // seek — adding one just for this would widen a shared player interface
+    // for a case that cannot occur here.
+    seek: () => {},
+  });
+
+  // An open cue quiz is already a modal interruption; stacking a fullscreen ad
+  // on top of it is incoherent (speckit §7.4).
+  useSuppressAds("course-cue-quiz", !!cueQuizModal);
 
   // Auto-select lesson from URL parameter once course data loads
   useEffect(() => {

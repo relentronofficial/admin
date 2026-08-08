@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'crypto';
 import { env } from '../../config/env.js';
+import { deleteBunnyVideo } from '../../lib/bunny.js';
 import sharp from 'sharp';
 
 // Image MIME types that will be converted to WebP before storage
@@ -182,39 +183,25 @@ export async function getPresignedUrlHandler(request: FastifyRequest, reply: Fas
 export async function deleteBunnyVideoHandler(request: FastifyRequest, reply: FastifyReply) {
   const { videoId } = request.params as { videoId: string };
 
-  if (!env.BUNNY_STREAM_API_KEY || !env.BUNNY_STREAM_LIBRARY_ID) {
-    return reply.status(503).send({
-      success: false,
-      error: { code: 'SERVICE_UNAVAILABLE', message: 'Bunny Stream is not configured' },
-    });
-  }
+  // Shared with the ad campaign module (lib/bunny.ts) so the REST call lives
+  // in one place. Behaviour is unchanged: 404 still counts as success.
+  const result = await deleteBunnyVideo(videoId);
 
-  try {
-    const res = await fetch(
-      `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${videoId}`,
-      {
-        method: 'DELETE',
-        headers: { AccessKey: env.BUNNY_STREAM_API_KEY },
-      },
-    );
-
-    if (!res.ok && res.status !== 404) {
-      const errText = await res.text();
-      request.server.log.error(`Bunny Stream delete video failed: ${errText}`);
-      return reply.status(502).send({
+  if (!result.ok) {
+    if (result.reason === 'not_configured') {
+      return reply.status(503).send({
         success: false,
-        error: { code: 'BUNNY_ERROR', message: 'Failed to delete video from Bunny Stream' },
+        error: { code: 'SERVICE_UNAVAILABLE', message: 'Bunny Stream is not configured' },
       });
     }
-
-    return reply.send({ success: true, data: null, error: null });
-  } catch (err: any) {
-    request.server.log.error(err);
-    return reply.status(500).send({
+    request.server.log.error(`Bunny Stream delete video failed: ${result.detail ?? ''}`);
+    return reply.status(502).send({
       success: false,
-      error: { code: 'BUNNY_ERROR', message: 'Bunny Stream request failed' },
+      error: { code: 'BUNNY_ERROR', message: 'Failed to delete video from Bunny Stream' },
     });
   }
+
+  return reply.send({ success: true, data: null, error: null });
 }
 
 export async function createBunnyVideoHandler(request: FastifyRequest, reply: FastifyReply) {

@@ -130,7 +130,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS batch_break_end_label TEXT NOT NULL DEFAULT 'End day',
           ADD COLUMN IF NOT EXISTS batch_break_reason_label TEXT NOT NULL DEFAULT 'Reason',
           ADD COLUMN IF NOT EXISTS batch_break_rejected_label TEXT NOT NULL DEFAULT 'Rejected',
-          ADD COLUMN IF NOT EXISTS batch_break_submit_label TEXT NOT NULL DEFAULT 'Submit Request'
+          ADD COLUMN IF NOT EXISTS batch_break_submit_label TEXT NOT NULL DEFAULT 'Submit Request',
+          ADD COLUMN IF NOT EXISTS ad_sponsored_label TEXT NOT NULL DEFAULT 'Sponsored',
+          ADD COLUMN IF NOT EXISTS ad_skip_label TEXT NOT NULL DEFAULT 'Skip',
+          ADD COLUMN IF NOT EXISTS ad_skip_in_label TEXT NOT NULL DEFAULT 'Skip in',
+          ADD COLUMN IF NOT EXISTS ad_close_label TEXT NOT NULL DEFAULT 'Close',
+          ADD COLUMN IF NOT EXISTS ad_unmute_label TEXT NOT NULL DEFAULT 'Tap for sound'
       `),
       // miscellaneous single-column additions (different tables, fully parallel)
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS login_bg_images JSONB`).catch(() => {}),
@@ -893,6 +898,130 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         );
         CREATE INDEX IF NOT EXISTS idx_chat_group_reads_member ON chat_group_message_reads(member_id);
       `),
+      // ── Advertisement campaigns (2026-08-06) — TBT_ADS_SPECKIT.md §3 ──
+      // These DO have Prisma models (see schema.prisma); this block is the
+      // belt-and-braces bootstrap plus the CHECK constraints Prisma can't
+      // express. All four tables live in ONE statement because the child
+      // tables carry FKs to ad_campaigns — separate entries in this
+      // Promise.all would race.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ad_campaigns (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          campaign_code TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'draft',
+          priority INTEGER NOT NULL DEFAULT 0,
+          media_type TEXT NOT NULL,
+          media_url TEXT,
+          bunny_video_id TEXT,
+          hls_url TEXT,
+          thumbnail_url TEXT,
+          fallback_media_url TEXT,
+          media_duration_seconds INTEGER,
+          object_fit TEXT NOT NULL DEFAULT 'contain',
+          background_color TEXT,
+          autoplay BOOLEAN NOT NULL DEFAULT true,
+          muted BOOLEAN NOT NULL DEFAULT true,
+          loop BOOLEAN NOT NULL DEFAULT false,
+          start_at TIMESTAMPTZ NOT NULL,
+          end_at TIMESTAMPTZ NOT NULL,
+          timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata',
+          daily_start_time TEXT,
+          daily_end_time TEXT,
+          active_days JSONB,
+          target_platforms JSONB NOT NULL,
+          target_os JSONB,
+          placements JSONB NOT NULL,
+          target_routes JSONB,
+          audience_config JSONB NOT NULL,
+          batch_ids JSONB,
+          trigger_type TEXT NOT NULL,
+          trigger_config JSONB NOT NULL,
+          frequency_config JSONB NOT NULL,
+          skip_config JSONB NOT NULL,
+          close_config JSONB NOT NULL,
+          cta_config JSONB,
+          analytics_config JSONB,
+          max_total_impressions BIGINT,
+          current_impression_count BIGINT NOT NULL DEFAULT 0,
+          created_by UUID,
+          updated_by UUID,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          deleted_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS "ad_campaigns_status_start_at_end_at_idx" ON ad_campaigns(status, start_at, end_at);
+        CREATE INDEX IF NOT EXISTS "ad_campaigns_status_priority_start_at_idx" ON ad_campaigns(status, priority DESC, start_at);
+
+        CREATE TABLE IF NOT EXISTS ad_impressions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          campaign_id UUID NOT NULL REFERENCES ad_campaigns(id) ON DELETE CASCADE,
+          member_id UUID,
+          anonymous_id TEXT,
+          display_token TEXT NOT NULL UNIQUE,
+          session_id TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          placement TEXT NOT NULL,
+          route TEXT,
+          displayed_at TIMESTAMPTZ,
+          playback_started_at TIMESTAMPTZ,
+          completed_at TIMESTAMPTZ,
+          skipped_at TIMESTAMPTZ,
+          closed_at TIMESTAMPTZ,
+          clicked_at TIMESTAMPTZ,
+          watched_seconds NUMERIC(10,2) NOT NULL DEFAULT 0,
+          completion_percentage NUMERIC(5,2) NOT NULL DEFAULT 0,
+          skip_available_after_seconds NUMERIC(10,2),
+          user_agent TEXT,
+          device_info JSONB,
+          metadata JSONB,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS "ad_impressions_campaign_id_created_at_idx" ON ad_impressions(campaign_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS "ad_impressions_member_id_campaign_id_idx" ON ad_impressions(member_id, campaign_id);
+        CREATE INDEX IF NOT EXISTS "ad_impressions_anonymous_id_campaign_id_idx" ON ad_impressions(anonymous_id, campaign_id);
+        CREATE INDEX IF NOT EXISTS "ad_impressions_session_id_campaign_id_idx" ON ad_impressions(session_id, campaign_id);
+
+        CREATE TABLE IF NOT EXISTS ad_events (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          campaign_id UUID NOT NULL REFERENCES ad_campaigns(id) ON DELETE CASCADE,
+          impression_id UUID,
+          member_id UUID,
+          event_type TEXT NOT NULL,
+          event_timestamp TIMESTAMPTZ NOT NULL,
+          elapsed_seconds NUMERIC(10,2),
+          completion_percentage NUMERIC(5,2),
+          platform TEXT,
+          placement TEXT,
+          metadata JSONB,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS "ad_events_campaign_id_event_type_created_at_idx" ON ad_events(campaign_id, event_type, created_at DESC);
+        CREATE INDEX IF NOT EXISTS "ad_events_impression_id_idx" ON ad_events(impression_id);
+
+        CREATE TABLE IF NOT EXISTS ad_user_frequency (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          campaign_id UUID NOT NULL REFERENCES ad_campaigns(id) ON DELETE CASCADE,
+          subject_key TEXT NOT NULL,
+          member_id UUID,
+          anonymous_id TEXT,
+          session_id TEXT NOT NULL,
+          day_bucket TEXT NOT NULL,
+          impression_count INTEGER NOT NULL DEFAULT 0,
+          last_impression_at TIMESTAMPTZ,
+          last_completed_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS "ad_user_frequency_campaign_id_subject_key_idx" ON ad_user_frequency(campaign_id, subject_key);
+        -- Named explicitly to match Prisma's generated identifier. An inline
+        -- UNIQUE(...) would get a Postgres auto-name that truncates differently
+        -- from Prisma's, so prisma db push would add a SECOND unique index on
+        -- the same columns. Index names are the contract here, not just the
+        -- column list. (No backticks in this comment: it lives inside a JS
+        -- template literal and an unescaped backtick terminates it.)
+        CREATE UNIQUE INDEX IF NOT EXISTS "ad_user_frequency_campaign_id_subject_key_session_id_day_bu_key" ON ad_user_frequency(campaign_id, subject_key, session_id, day_bucket);
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
@@ -968,6 +1097,39 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         is_read BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `).catch(() => {});
+
+    // Ad campaign CHECK constraints — Prisma cannot express these, and they
+    // must run after ad_campaigns exists. ADD CONSTRAINT has no IF NOT EXISTS,
+    // so each is wrapped to swallow the duplicate_object error on re-run.
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        BEGIN
+          ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_status_chk
+            CHECK (status IN ('draft','scheduled','active','paused','completed','archived'));
+        EXCEPTION WHEN duplicate_object THEN NULL; END;
+        BEGIN
+          ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_media_type_chk
+            CHECK (media_type IN ('image','video'));
+        EXCEPTION WHEN duplicate_object THEN NULL; END;
+        BEGIN
+          ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_object_fit_chk
+            CHECK (object_fit IN ('contain','cover','fill'));
+        EXCEPTION WHEN duplicate_object THEN NULL; END;
+        BEGIN
+          ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_dates_chk
+            CHECK (end_at > start_at);
+        EXCEPTION WHEN duplicate_object THEN NULL; END;
+        BEGIN
+          ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_priority_chk
+            CHECK (priority BETWEEN 0 AND 1000);
+        EXCEPTION WHEN duplicate_object THEN NULL; END;
+        BEGIN
+          ALTER TABLE ad_campaigns ADD CONSTRAINT ad_campaigns_impressions_chk
+            CHECK (max_total_impressions IS NULL OR max_total_impressions >= 0);
+        EXCEPTION WHEN duplicate_object THEN NULL; END;
+      END $$;
     `).catch(() => {});
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.

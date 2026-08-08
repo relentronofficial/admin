@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/routes.dart';
 import '../../features/auth/domain/member_status.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../media/ad_suppression_scope.dart';
 import '../providers/me_provider.dart';
 import '../providers/site_config_provider.dart';
 import '../theme/tbt_theme.dart';
@@ -37,11 +38,19 @@ class SubscriptionGate extends ConsumerWidget {
       loading: () => const _GateLoading(),
       error: (_, __) => child,
       data: (me) {
+        // The user is already blocked behind these; stacking a fullscreen ad on
+        // top is incoherent (TBT_ADS_SPECKIT.md §7.4).
         if (me.status == MemberStatus.pending) {
-          return _PendingInterceptor(widgetRef: ref);
+          return AdSuppressionScope(
+            reason: 'pending-interceptor',
+            child: _PendingInterceptor(widgetRef: ref),
+          );
         }
         if (me.membershipPlan == 'free') {
-          return _FreeInterceptor(widgetRef: ref);
+          return AdSuppressionScope(
+            reason: 'free-interceptor',
+            child: _FreeInterceptor(widgetRef: ref),
+          );
         }
         return child;
       },

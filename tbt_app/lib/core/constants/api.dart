@@ -169,3 +169,14 @@ const String kEbookBookmarks = '/api/ebooks/bookmarks';
 const String kEbookProgress = '/api/ebooks/progress';
 // /api/ebooks/progress/:bookId — built at call site
 const String kEbookContinueReading = '/api/ebooks/continue-reading';
+
+// ── Advertisements (TBT_ADS_SPECKIT.md §10) ──────────────────────────────────
+// Client scope only. These are optional-auth: they work signed-in (JWT cookie
+// header) and as a guest, which is why they do not sit behind /api/user*.
+const String kAdsEligible = '/api/ads/eligible';
+const String kAdsImpression = '/api/ads/impression';
+const String kAdsEvents = '/api/ads/events';
+const String kAdsComplete = '/api/ads/complete';
+const String kAdsSkip = '/api/ads/skip';
+const String kAdsClose = '/api/ads/close';
+const String kAdsClick = '/api/ads/click';

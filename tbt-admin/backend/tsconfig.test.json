@@ -1,0 +1,13 @@
+{
+  // Typechecks the ad test files, which the build config excludes so they never
+  // land in `dist/`. Without this they would be the only TypeScript in the repo
+  // nothing typechecks — and a test that does not compile is worse than no test,
+  // because it silently stops running.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

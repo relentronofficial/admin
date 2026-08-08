@@ -39,6 +39,18 @@ const GROUPS = [
       { key: "submitLabel", label: "Submit Button Label" },
     ],
   },
+  {
+    // Shown on the fullscreen ad overlay in both the web app and the mobile
+    // app. Changing these reaches every client without a release.
+    title: "Advertisements",
+    fields: [
+      { key: "adSponsoredLabel", label: "Sponsored Badge" },
+      { key: "adSkipLabel", label: "Skip Button Label" },
+      { key: "adSkipInLabel", label: "Skip Countdown Prefix" },
+      { key: "adCloseLabel", label: "Close Button Label" },
+      { key: "adUnmuteLabel", label: "Unmute Prompt" },
+    ],
+  },
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -49,6 +61,8 @@ const DEFAULTS: Record<string, string> = {
   loginHeading: "Welcome Back", loginSubheading: "Sign in to continue your journey",
   emailLabel: "Email", emailPlaceholder: "Enter your email",
   passwordLabel: "Password", passwordPlaceholder: "Enter your password", submitLabel: "Sign In",
+  adSponsoredLabel: "Sponsored", adSkipLabel: "Skip", adSkipInLabel: "Skip in",
+  adCloseLabel: "Close", adUnmuteLabel: "Tap for sound",
 };
 
 export default function UiStringsPage() {

@@ -1,7 +1,8 @@
 {
   "scripts": {
     "percy:player": "percy exec -- playwright test percy/player-visual.spec.ts",
-    "percy:all": "percy exec -- playwright test percy/"
+    "percy:all": "percy exec -- playwright test percy/",
+    "e2e:ads": "playwright test e2e/ads.spec.ts"
   },
   "dependencies": {
     "concurrently": "^9.2.1",
