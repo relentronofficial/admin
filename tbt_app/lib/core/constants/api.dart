@@ -143,6 +143,11 @@ const String kRitualButtons = '/api/rituals/buttons';
 
 // ── Community feed (Module 9A) ───────────────────────────────────────────────
 const String kCommunityFeed = '/api/community/feed';
+// Bases for the per-post / per-member routes; the id is appended at the call
+// site, matching how the rest of this file handles parameterised paths.
+const String kCommunityPosts = '/api/community/posts';
+const String kCommunityMembers = '/api/community/members';
+const String kCommunityBookmarks = '/api/community/bookmarks';
 
 // ── TBT Gamification ─────────────────────────────────────────────────────────
 const String kTbtPath = '/api/tbt/path';

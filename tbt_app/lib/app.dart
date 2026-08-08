@@ -993,7 +993,15 @@ class _AppShellState extends ConsumerState<_AppShell> {
         body: isTablet
             ? Row(
                 children: [
-                  AppSideNavRail(navigationShell: widget.navigationShell),
+                  // `AppSideNavRail` takes no arguments — it reads the current
+                  // location from GoRouterState and navigates with context.go
+                  // itself. Passing `navigationShell:` here was a compile error
+                  // left over from a half-finished StatefulShellRoute
+                  // migration: the shell was converted, the two tab widgets
+                  // were not. Completing that migration (so tab switches use
+                  // goBranch and preserve per-branch stacks, per CLAUDE.md) is
+                  // a behaviour change, not a build fix, and is left alone.
+                  const AppSideNavRail(),
                   const VerticalDivider(width: 1, thickness: 1),
                   Expanded(child: widget.child),
                 ],
@@ -1005,7 +1013,8 @@ class _AppShellState extends ConsumerState<_AppShell> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const PodcastMiniPlayer(),
-                  AppBottomTabBar(navigationShell: widget.navigationShell),
+                  // Same as AppSideNavRail above — no arguments.
+                  const AppBottomTabBar(),
                 ],
               ),
       ),
