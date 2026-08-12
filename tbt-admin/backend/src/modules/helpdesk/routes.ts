@@ -27,6 +27,8 @@ import {
   getFaqByIdHandler,
   submitTicketHandler,
   myTicketsHandler,
+  getMyTicketDetailHandler,
+  postMemberReplyHandler,
   submitFeedbackHandler,
 } from './controller.js';
 
@@ -79,6 +81,8 @@ export async function helpdeskRoutes(fastify: FastifyInstance) {
     userScope.get('/faqs/:id', getFaqByIdHandler);
     userScope.post('/tickets', submitTicketHandler);
     userScope.get('/tickets/mine', myTicketsHandler);
+    userScope.get('/tickets/mine/:id', getMyTicketDetailHandler);
+    userScope.post('/tickets/mine/:id/replies', postMemberReplyHandler);
     userScope.post('/feedback', submitFeedbackHandler);
   });
 }

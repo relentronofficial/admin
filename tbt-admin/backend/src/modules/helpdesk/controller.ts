@@ -21,6 +21,7 @@ import {
   submitTicketSchema,
   updateTicketStatusSchema,
   replyTicketSchema,
+  memberReplySchema,
   submitFeedbackSchema,
   updateFeedbackStatusSchema,
 } from './schema.js';
@@ -180,6 +181,16 @@ export async function adminUpdateSettingsHandler(req: FastifyRequest, reply: Fas
 const ticketInclude = {
   category: { select: { id: true, name: true, slug: true } },
   member: { select: { id: true, firstName: true, lastName: true, email: true } },
+  replies: {
+    orderBy: { createdAt: 'asc' as const },
+    select: {
+      id: true,
+      body: true,
+      isFromAdmin: true,
+      authorName: true,
+      createdAt: true,
+    },
+  },
 };
 
 export async function adminListTicketsHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -248,17 +259,22 @@ export async function adminUpdateTicketStatusHandler(req: FastifyRequest, reply:
 }
 
 /**
- * Admin posts a member-visible reply to a ticket. When the reply is
- * non-empty, the ticket status auto-flips to 'in_progress' (if still
- * 'new') and the member (if linked) receives a socket + notification
- * so they know an admin responded.
+ * Admin posts a member-visible reply to a ticket. Each non-empty reply
+ * appends a new row to helpdesk_ticket_replies so the member sees a
+ * chat-style thread on My Tickets → Detail. We also keep the legacy
+ * `admin_reply` / `admin_replied_at` scalar columns updated (they mirror
+ * the most recent admin reply) for older clients that predate the
+ * thread rollout. Empty body is a no-op — clearing must be done via
+ * ticket delete or a future dedicated endpoint.
  */
 export async function adminReplyTicketHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as { id: string };
   const parsed = replyTicketSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
   const trimmedReply = parsed.data.reply.trim();
-  const isClearing = trimmedReply.length === 0;
+  if (trimmedReply.length === 0) {
+    return fail(reply, 400, 'invalid_input', 'Reply body is required.');
+  }
   try {
     const before = await req.server.prisma.helpdeskTicket.findUnique({
       where: { id },
@@ -266,23 +282,44 @@ export async function adminReplyTicketHandler(req: FastifyRequest, reply: Fastif
     });
     if (!before) return fail(reply, 404, 'not_found', 'Ticket not found.');
 
-    const updated = await req.server.prisma.helpdeskTicket.update({
-      where: { id },
-      data: {
-        adminReply: isClearing ? null : trimmedReply,
-        adminRepliedAt: isClearing ? null : new Date(),
-        // Auto-advance 'new' → 'in_progress' when admin first responds.
-        // Don't touch already-resolved / already-in_progress tickets.
-        ...(isClearing || before.status !== 'new'
-          ? {}
-          : { status: 'in_progress' }),
-      },
-      include: ticketInclude,
-    });
+    // Resolve author display name from the Clerk-authed admin, so the
+    // thread bubble can label who replied. Falls back to "Support" if
+    // the admin isn't found in the mirrored Admin table.
+    let authorName = 'Support';
+    const clerkId = req.user as string | undefined;
+    if (clerkId) {
+      const admin = await req.server.prisma.admin.findUnique({
+        where: { clerkId },
+        select: { fullName: true, email: true },
+      });
+      authorName = admin?.fullName || admin?.email || 'Support';
+    }
+
+    // Append the thread row, then update the ticket's mirrored scalars
+    // and status in a single transaction so nothing else races between.
+    const [updated] = await req.server.prisma.$transaction([
+      req.server.prisma.helpdeskTicket.update({
+        where: { id },
+        data: {
+          adminReply: trimmedReply,
+          adminRepliedAt: new Date(),
+          ...(before.status === 'new' ? { status: 'in_progress' } : {}),
+        },
+        include: ticketInclude,
+      }),
+      req.server.prisma.helpdeskTicketReply.create({
+        data: {
+          ticketId: id,
+          body: trimmedReply,
+          isFromAdmin: true,
+          authorName,
+        },
+      }),
+    ]);
 
     // Notify the member (if this ticket is linked to a member row)
     // — mirrors the admin_notifications pattern but on the member side.
-    if (!isClearing && before.memberId) {
+    if (before.memberId) {
       req.server.io.to(`user:${before.memberId}`).emit('notification', {
         type: 'helpdesk_reply',
         title: 'Support replied to your ticket',
@@ -475,9 +512,29 @@ export async function getFaqByIdHandler(req: FastifyRequest, reply: FastifyReply
 export async function submitTicketHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = submitTicketSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  // Merge legacy single attachment + new multi array into one canonical
+  // list. Older clients (pre-multi-attach rollout) send `attachmentUrl`;
+  // newer clients send `attachmentUrls`. Store both so both clients can
+  // read whatever they expect.
+  const attachmentUrls = [
+    ...(parsed.data.attachmentUrls ?? []),
+    ...(parsed.data.attachmentUrl ? [parsed.data.attachmentUrl] : []),
+  ];
+  const legacyAttachmentUrl = attachmentUrls[0] ?? null;
+
   const created = await req.server.prisma.helpdeskTicket.create({
     data: {
-      ...parsed.data,
+      name: parsed.data.name,
+      email: parsed.data.email,
+      phone: parsed.data.phone,
+      subject: parsed.data.subject,
+      categoryId: parsed.data.categoryId,
+      message: parsed.data.message,
+      attachmentUrl: legacyAttachmentUrl,
+      attachmentUrls: attachmentUrls.length > 0 ? (attachmentUrls as any) : undefined,
+      priority: parsed.data.priority ?? 'medium',
+      preferredContact: parsed.data.preferredContact ?? null,
       memberId: req.memberId ?? null,
       status: 'new',
     },
@@ -496,6 +553,86 @@ export async function submitTicketHandler(req: FastifyRequest, reply: FastifyRep
     type: 'helpdesk_ticket',
     metadata: { ticketId: created.id },
   });
+  return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+/**
+ * Member-facing fetch of a single ticket + its full reply thread.
+ * 404s tickets that aren't owned by the caller so a member can't
+ * probe for other people's tickets by guessing UUIDs.
+ */
+export async function getMyTicketDetailHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const row = await req.server.prisma.helpdeskTicket.findFirst({
+    where: { id, memberId: req.memberId! },
+    include: {
+      category: { select: { id: true, name: true, slug: true } },
+      replies: {
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          body: true,
+          isFromAdmin: true,
+          authorName: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+  if (!row) return fail(reply, 404, 'not_found', 'Ticket not found.');
+  return ok(reply, row);
+}
+
+/**
+ * Member posts a follow-up reply on their own ticket. If the ticket
+ * was already 'resolved' or 'closed', re-opens it so the admin sees
+ * the incoming message in their new-ticket queue. Emits an admin
+ * notification.
+ */
+export async function postMemberReplyHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = memberReplySchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  const ticket = await req.server.prisma.helpdeskTicket.findFirst({
+    where: { id, memberId: req.memberId! },
+    select: { id: true, status: true, subject: true, name: true },
+  });
+  if (!ticket) return fail(reply, 404, 'not_found', 'Ticket not found.');
+
+  const shouldReopen =
+    ticket.status === 'resolved' || ticket.status === 'closed';
+
+  const [, created] = await req.server.prisma.$transaction([
+    req.server.prisma.helpdeskTicket.update({
+      where: { id },
+      data: shouldReopen ? { status: 'in_progress' } : {},
+    }),
+    req.server.prisma.helpdeskTicketReply.create({
+      data: {
+        ticketId: id,
+        body: parsed.data.body.trim(),
+        isFromAdmin: false,
+        authorName: ticket.name,
+        memberId: req.memberId!,
+      },
+    }),
+  ]);
+
+  req.server.io.to('admin').emit('admin:helpdesk_ticket', {
+    ticketId: id,
+    subject: ticket.subject,
+    submitterName: ticket.name,
+    replyId: created.id,
+    kind: 'follow_up',
+  });
+  void createAdminNotification(req.server.prisma, {
+    title: 'Member replied on a ticket',
+    body: `${ticket.name}: ${ticket.subject}`,
+    type: 'helpdesk_ticket',
+    metadata: { ticketId: id },
+  });
+
   return reply.status(201).send({ success: true, data: created, error: null });
 }
 

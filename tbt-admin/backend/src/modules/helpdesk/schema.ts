@@ -47,6 +47,9 @@ export const updateSettingsSchema = z.object({
 });
 
 // ── Tickets ─────────────────────────────────────────────────────
+const priorityEnum = z.enum(['low', 'medium', 'high']);
+const preferredContactEnum = z.enum(['email', 'whatsapp', 'phone']);
+
 export const submitTicketSchema = z.object({
   name: z.string().min(1).max(255),
   email: z.string().email().max(255),
@@ -55,6 +58,9 @@ export const submitTicketSchema = z.object({
   categoryId: z.string().uuid().optional().nullable(),
   message: z.string().min(1),
   attachmentUrl: z.string().url().optional().nullable(),
+  attachmentUrls: z.array(z.string().url()).max(10).optional(),
+  priority: priorityEnum.optional(),
+  preferredContact: preferredContactEnum.optional().nullable(),
 });
 
 export const updateTicketStatusSchema = z.object({
@@ -62,10 +68,15 @@ export const updateTicketStatusSchema = z.object({
   adminNotes: z.string().optional().nullable(),
 });
 
-// Admin posts a member-visible reply. Sending an empty string clears
-// the reply; a non-empty value overwrites any previous reply.
+// Admin posts a member-visible reply. Non-empty appends a reply row on
+// the ticket thread; empty string is treated as a no-op.
 export const replyTicketSchema = z.object({
   reply: z.string().max(5000),
+});
+
+// Member posts a follow-up reply on their own ticket.
+export const memberReplySchema = z.object({
+  body: z.string().min(1).max(5000),
 });
 
 // ── Feedback ────────────────────────────────────────────────────
