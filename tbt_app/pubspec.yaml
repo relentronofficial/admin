@@ -52,7 +52,9 @@ dependencies:
   just_audio: ^0.9.42
   # record for hold-to-record voice notes in group + DM chats. Records
   # AAC-in-.m4a which is directly playable by just_audio / video_player.
-  record: ^5.1.2
+  # Pinned to 4.4.4 — the 5.x line has a broken record_linux platform stub
+  # that fails `flutter build apk` even though we only ship Android/iOS.
+  record: 4.4.4
 
   # ── Chat / media viewer ───────────────────────────────────────────────────
   # scrollable_positioned_list lets us programmatically scroll to a
