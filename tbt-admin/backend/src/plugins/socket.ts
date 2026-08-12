@@ -228,13 +228,26 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
     socket.on('disconnect', () => {
       fastify.log.info(`Socket disconnected: ${socket.id}`);
       if (socket.data.role === 'member' && socket.data.memberId) {
-        markMemberOffline(socket.data.memberId).then((isFullyOffline) => {
+        const memberId = socket.data.memberId;
+        markMemberOffline(memberId).then((isFullyOffline) => {
           if (isFullyOffline) {
             io.emit('presence:update', {
-              memberId: socket.data.memberId,
+              memberId,
               online: false,
               lastSeenAt: new Date().toISOString(),
             });
+            // Persist last_seen so it survives backend restarts /
+            // Cloud Run cold starts. Best-effort — a failed write just
+            // means the info-sheet falls back to the in-memory value
+            // (or null if the pod scaled to zero).
+            fastify.prisma.member
+              .update({
+                where: { id: memberId },
+                data: { lastSeenAt: new Date() },
+              })
+              .catch((err: unknown) => {
+                fastify.log.warn({ err, memberId }, 'presence: last_seen persist failed');
+              });
           }
         });
       }
@@ -297,6 +310,37 @@ export function getPresenceBulk(memberIds: string[]): Array<{
   lastSeenAt: string | null;
 }> {
   return memberIds.map((id) => ({ memberId: id, ...getPresence(id) }));
+}
+
+/**
+ * Bulk presence merged with DB last_seen_at. Any member without an
+ * in-memory entry (e.g. after a Cloud Run cold start) gets its
+ * `lastSeenAt` filled from the members.last_seen_at column. This is
+ * async and hits the DB — use it from HTTP handlers where a single
+ * extra round trip is acceptable; use `getPresenceBulk` (sync) from
+ * socket paths that need to reply within the same tick.
+ */
+export async function getPresenceBulkWithDb(
+  prisma: { member: { findMany: (...args: any[]) => Promise<Array<{ id: string; lastSeenAt: Date | null }>> } },
+  memberIds: string[],
+): Promise<Array<{ memberId: string; online: boolean; lastSeenAt: string | null }>> {
+  const memory = getPresenceBulk(memberIds);
+  const missingIds = memory.filter((p) => !p.online && !p.lastSeenAt).map((p) => p.memberId);
+  if (missingIds.length === 0) return memory;
+  try {
+    const rows = await prisma.member.findMany({
+      where: { id: { in: missingIds } },
+      select: { id: true, lastSeenAt: true },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r.lastSeenAt]));
+    return memory.map((p) => {
+      if (p.online || p.lastSeenAt) return p;
+      const dbSeen = byId.get(p.memberId);
+      return { ...p, lastSeenAt: dbSeen ? dbSeen.toISOString() : null };
+    });
+  } catch {
+    return memory;
+  }
 }
 
 export default fp(socketPlugin);

@@ -21,7 +21,7 @@
  */
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { getPresenceBulk } from '../../plugins/socket.js';
+import { getPresenceBulk, getPresenceBulkWithDb } from '../../plugins/socket.js';
 import { notifyMembers, filterUnmutedMembers } from '../../lib/notifications.js';
 
 type RawGroupRow = {
@@ -953,7 +953,7 @@ export async function memberGetGroupPresenceHandler(
     id,
   );
   const memberIds = memberRows.map((r) => r.member_id);
-  return ok(reply, getPresenceBulk(memberIds));
+  return ok(reply, await getPresenceBulkWithDb(req.server.prisma, memberIds));
 }
 
 // ── Forward, pin, star, mute (WhatsApp-parity Phase 5, 2026-08-06) ─────────
