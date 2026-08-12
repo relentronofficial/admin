@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tamil Business Tribe (TBT) — monorepo with three workspaces:
+Tamil Business Tribe (TBT) — monorepo with four active workspaces:
 
 ```
 tbt-admin/
@@ -13,11 +13,18 @@ tbt-admin/
   package.json   # npm workspaces root
 
 tbt-user-web/    # Next.js 15 (App Router) member-facing frontend (port 3001)
+
+tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router + Dio.
+                 # Talks to the same Fastify backend as tbt-user-web (JWT cookie auth).
 ```
 
 **NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.**
 
 `tbt-admin-safe/` is a backup snapshot directory — not a workspace, not a source of truth. Ignore it entirely.
+
+**Repo-root screenshots & audit scripts are throwaway artifacts.** The repo root contains hundreds of `.png`/`.jpeg` screenshots and one-off `.mjs` audit/test scripts (`admin-full-audit.mjs`, `test-*.mjs`, `*-audit.mjs`, etc.) from prior manual QA runs. Do not commit them, do not treat them as canonical tests, and do not delete them without asking — they're the user's local debugging trail.
+
+**Additional spec docs at repo root** — `tbt-admin/SPECKIT.md` is the workflow-audit implementation speckit (P0–P3 fix list for Members · Batches · Tasks). Check it before touching those modules to avoid re-litigating decisions.
 
 **Surgical updates over large rewrites** — prefer targeted data sanitation (handling nulls/empty strings, guarding one field) over refactoring entire controllers or modules. Minimal, non-breaking fixes only.
 
@@ -69,6 +76,29 @@ npm run lint
 npm run format      # prettier --write .
 ```
 
+### Flutter App (from `tbt_app/`)
+
+```bash
+flutter pub get               # Install dependencies
+flutter run                   # Run on connected device / emulator
+flutter build apk             # Android build
+flutter build ios             # iOS build (macOS host)
+flutter test                  # Unit + widget tests
+flutter analyze               # Static analysis (analysis_options.yaml)
+```
+
+Stack: Flutter SDK ^3.7.2, Riverpod state, go_router navigation, Dio HTTP client, Hive local storage, `flutter_secure_storage` for JWT tokens. Reuses the same Fastify `/api/user-auth/*` endpoints as `tbt-user-web` — cookie/token auth patterns mirror the web client.
+
+### Visual Regression (Percy + Playwright — from repo root)
+
+`playwright.config.ts` at the repo root is a **Percy visual-regression setup**, not an e2e suite. It runs snapshot specs in `percy/` (`debug-screenshots.spec.ts`, `player-visual.spec.ts`) against `PERCY_BASE_URL` (defaults to production `https://app.tamilbusinesstribe.com`). Single-worker chromium project only; not part of CI gating.
+
+```powershell
+# Run Percy snapshots (from repo root)
+.\run-percy.ps1                       # Wrapper script
+npx playwright test --config=playwright.config.ts    # Direct invocation
+```
+
 ## Architecture
 
 ### Authentication — Two Completely Different Systems
@@ -92,12 +122,19 @@ npm run format      # prettier --write .
 - **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins skip gracefully if env vars are missing.
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` + `schema.ts` pattern
 - **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
-- **Route prefix convention:** `/api/<module>` (e.g. `/api/courses`, `/api/members`)
+- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:157–193` for the full ordered list. Non-obvious prefixes:
+  - `hero` → `/api/hero-slides`
+  - `security` → `/api/security-logs`
+  - **`gamification` → `/api/tbt`** (not `/api/gamification`) — leaderboards, points, level/tier/badge reads
+  - `webinar` → `/api/webinars`
+  - `messages` (DM) is separate from `chat-groups` (group chat)
+- **`user` module** (`backend/src/modules/user/`) — monolithic handler for ALL user-facing authenticated API routes at `/api/user/*`. Covers courses (user-facing), events, webinars, workshops, notifications, messages, dashboard, products, resources, conversations, search, programs, and profile. When adding new user-web backend routes, handlers go in `user/controller.ts` and the route in `user/routes.ts`.
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
-- **Backend modules present:** `admin-notifications`, `admins`, `app-notifications`, `app-resources`, `auth`, `batches`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `hero`, `location`, `members`, `messages`, `notifications`, `products`, `pub`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
+- **Backend modules present:** `admin-notifications`, `admins`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `podcasts`, `products`, `pub`, `rituals`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
 - **Cron endpoints** — `/api/workshops/cron/generate-recurring` and `/api/cron/course-expiry-reminder` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
+- **Public certificate verification** — `GET /api/pub/certificates/course/:certId` is unauthenticated; returns `{ memberName, courseTitle, completedAt }`. Served by the `pub` module and consumed by `app/verify/course/[certId]/page.tsx` (Server Component, `revalidate: 3600`).
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
@@ -136,9 +173,12 @@ app/
     history/        # Watch history
     profile/        # Member profile (exempt from SubscriptionGate)
   (player)/         # Full-screen video player — bare layout (no Navbar/Footer)
+    episode/[workshopSlug]/[episodeId]/  # Workshop episode full-screen player
+    watch/[episodeId]/                   # Standalone episode watch page
   login/            # Custom LoginScreen — DO NOT MODIFY
   signup/           # Self-registration form (SignupScreen) — DO NOT MODIFY
   verify/           # Phone/OTP verification step (post-signup)
+  verify/course/[certId]/  # Public certificate verification page (Server Component, revalidate: 3600)
   loading/          # Standalone loading page
 ```
 `(platform)/layout.tsx` renders `<Navbar>`, `<SubscriptionGate>`, and `<Footer>`. All platform pages sit inside `max-w-7xl mx-auto`.
@@ -170,15 +210,26 @@ Injects theme as CSS custom properties on `document.documentElement`.
 **CRITICAL**: Every user-visible string must come from `uiStrings` (or `config`). Zero hardcoded label strings in `(platform)` pages.
 
 ### CSS Custom Properties (theme tokens)
-Injected at runtime — never hardcode these:
+User-web supports **light and dark themes**. `globals.css` defines `:root` (light defaults) and `.dark` (dark overrides). The `html` element toggles the `.dark` class based on user/system preference.
+
+Runtime-injected by `SiteConfigProvider` — never hardcode these:
 ```
 --color-accent       # primary CTA / brand color
 --color-alert        # warning/alert
 --color-success      # success state
---color-bg-primary   # page background
---color-bg-surface   # card / surface background
+--color-bg-primary   # page background (injected in dark; CSS fallback in light)
+--color-bg-surface   # card / surface background (same)
 ```
 Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(--color-accent) 30%, transparent)` for tints.
+
+Additional semantic tokens from `globals.css` (not API-injected — safe to use directly in CSS):
+```
+--color-text-normal / --color-text-secondary / --color-text-subtle  # text hierarchy
+--color-surface-overlay / -xs / -md / -lg                           # overlay tints
+--color-navbar-bg / --color-modal-bg / --color-notif-bg             # surface backgrounds
+```
+
+**Overlay text rule:** Text sitting on dark image/video/banner gradients must always be white. Use the `overlay-text` (headings) and `overlay-meta` (sub-text) CSS classes defined in `globals.css` — these force `color: #ffffff` with drop-shadow regardless of the active theme. Never use `text-foreground` or `color-text-normal` on dark overlay backgrounds.
 
 `--color-locked: #4a4a4a` is the only static token (not from API).
 
@@ -188,7 +239,7 @@ Use `style={{ background: "var(--color-accent)" }}` or `color-mix(in srgb, var(-
 ### Hook Files
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
-- `lib/hooks/useUser.ts` — `useMe`, `useUpdateProfile`
+- `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`
 - `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`)
 - `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`; backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
@@ -348,6 +399,18 @@ Workshop assignment submissions (uploaded by members) are reviewed by admins in 
 
 Admin hooks in `useTbt.ts`: `useAllAssignmentSubmissions({ page?, limit?, reviewed?, workshopId? })`, `useReviewAssignment()`.
 
+### Notification Routing (`admin-panel/lib/utils/notificationRouter.ts`)
+`resolveNotificationRoute(notification)` maps a notification's `type` + `metadata` to the correct admin route. Used by `NotifPanel` in `Topbar` on click: mark read → close dropdown → `router.push(route)`. Pages read the injected query param on mount and call `history.replaceState` to clear it:
+- `member_pending` / `member_joined` → `/members/${memberId}` 
+- `workshop_access_request` → `/workshops/${workshopId}`
+- `course_access_request` → `/courses?open=${courseId}` — courses page auto-opens the detail panel
+- `product_inquiry` → `/products?tab=inquiries` — products page auto-switches tab
+- `day_submitted` → `/batches/${batchId}`
+- `announcement` → `/app-notifications`
+- (default) → `/dashboard`
+
+`messages/page.tsx` also reads `?conversation=<id>` on mount and auto-opens that conversation (future-proofing for message-type notifications).
+
 ### Site Settings (`admin-panel/app/settings/`)
 Admin pages for editing site-wide config served by `/api/config` (persisted to DB, read by `SiteConfigProvider` on user-web load):
 - `settings/site/` — site name, logos, colours, splash screen
@@ -365,6 +428,47 @@ Workshops and resources support per-batch access restriction via a `batchIds Jso
 - **Access endpoints** (workshop detail, resource download) — return 403 if `batchIds` is set and member's `batchId` is not in the array
 - **Admin UI** — multi-select checkbox (not a dropdown). Members and notifications stay single-select (one batch per member is the business model)
 - **Prisma Json cast** — `(batchIds as any)` when writing; `(record.batchIds as string[] | null)` when reading
+
+---
+
+## Content Verticals Beyond Courses
+
+Alongside courses and workshops, the platform ships four additional content verticals — each with its own admin page, user-web pages, and backend module. Common patterns (batch access via `batchIds Json?`/`visibility JSONB`, R2 upload for assets, activity-log unification) apply throughout.
+
+### Ebooks (`/api/ebooks`)
+Managed digital library. Admin page: `admin-panel/app/ebooks/`. User pages: `app/(platform)/ebooks/` (library, series, reader with bookmarks + highlights + notes) and `app/ebook/` (public preview + share). Features: series (multi-part), managed author profiles, publisher metadata (ISBN, language, publisher), ratings + reviews with admin moderation, trending row + view count, reading streak (header badge), per-book "who bookmarked" viewer, bulk CSV import, pin-at-position + pin-until scheduling, scheduled publish date enforcement, per-batch access control, per-book analytics tab.
+
+### Podcasts (`/api/podcasts`)
+Admin page: `admin-panel/app/podcasts/`. User pages: `app/(platform)/podcasts/` (home, series, player). Includes a **persistent mini-player** at the platform layout level so audio survives navigation.
+
+### Community (`/api/community`)
+Social feed inside the platform: composer, feed, comments, follow. Admin page: `admin-panel/app/community/`. User pages: `app/(platform)/community/`.
+
+### Rituals (`/api/rituals`)
+Daily habit / streak module. Admin page: `admin-panel/app/rituals/`. Backend controller + routes only (no `schema.ts`).
+
+### Group Chat — Chat Groups (`/api/chat-groups`) — WhatsApp parity
+Group chat (distinct from DM `/api/messages`). Admin page: `admin-panel/app/groups/` — edit-group modal, members roster, announcement-only toggle. User pages: `app/(platform)/messages/` (unified with DM). Phase 5 features: **voice notes, forward, pin, star, mute, DM media, reply-jump, @mentions, presence, in-group search, FCM push, read receipts, media, replies**. Flutter port lives in `tbt_app/lib/features/chat/`.
+
+**Raw-SQL UUID casts required** — every raw-SQL UUID parameter in `chat-groups/controller.ts` must be cast to `::uuid` (see commit `e3a5590f`). Missing the cast produces a Postgres type error at runtime.
+
+### Helpdesk / Support (`/api/helpdesk`)
+Support ticketing. Admin page: `admin-panel/app/support/`. User pages: `app/(platform)/support/` (list tickets, submit feedback, ticket detail with chat).
+
+### AI Content (`/api/ai`)
+Admin-only AI content generation. Admin page: `admin-panel/app/ai-content/`. Backend uses `claudeService.ts` + `usageGuard.ts` (per-admin usage rate limiting). Uses `claude-haiku-4-5` via Anthropic API (requires `ANTHROPIC_API_KEY`).
+
+### Gamification (`/api/tbt` — NOT `/api/gamification`)
+Points ledger, tiers, levels, badges, leaderboards. All member points now unify around the `tbt_activity_log` ledger table (see commit `8d349739`). The DDL for `tbt_activity_log` in `prisma.ts` must be split into per-statement `$executeRawUnsafe` calls (see `91d46316` for why a single multi-statement call fails).
+
+### Masters (`/api/masters`)
+Shared lookup data (categories, tags, dropdown options). Controller + routes only.
+
+---
+
+## Session & Auth Persistence
+
+**No auto-logout.** Commit `524c003e` removed ALL auto-logout code paths from user-web and mobile — sessions persist until explicit manual sign-out. The AuthInterceptor must NOT redirect to `/login` on any 401/403 mid-session (see `c742c325` — refresh cookie must not be clobbered, and `a5621083` — no auto-logout on refresh 401/403). When adding new interceptors or auth guards, verify they don't reintroduce forced sign-out.
 
 ---
 
@@ -495,6 +599,10 @@ POST /api/courses/:id/badges/:badgeId/award
 27. **Uploaded images are auto-converted to WebP** — `backend/src/modules/upload/controller.ts` uses `sharp` to convert JPEG/PNG/WebP/GIF to WebP (quality 85, animated GIF preserved) before writing to R2. The stored filename gets a `.webp` extension regardless of the original. Body limit for image endpoints is 50 MB. No client-side format guard is needed — accept `accept="image/*"` in file inputs; the backend normalises everything.
 28. **Several tables exist only as raw SQL — not in Prisma schema** — `member_attendance`, `batch_break_requests`, `member_batch_settings`, `product_inquiries`, `admin_notifications` are created entirely via `$executeRawUnsafe` in `prisma.ts` startup. There are no Prisma models for them; all reads/writes must use `$queryRawUnsafe` / `$executeRawUnsafe`. Never attempt `prisma.memberAttendance.findMany()` — it will fail with "does not exist on type PrismaClient".
 29. **Task unification — `tasks.batch_id` now nullable FK** — the startup SQL added `batch_id UUID REFERENCES batches(id)` to `tasks` and made `program_id` nullable. `task_submissions` gained `batch_id`, `day_progress_id`, `day_number` columns. The old global unique constraint `(member_id, task_id)` was replaced by two day-scoped partial indexes: one for batch tasks `(member_id, task_id, batch_id, day_number)` and one for program tasks `(member_id, task_id) WHERE batch_id IS NULL`. Batch-inline tasks (batch_id set, program_id null) and program tasks (program_id set, batch_id null) are differentiated by which FK is populated.
+30. **Gamification route prefix is `/api/tbt`** — the `gamification` module registers under `/api/tbt`, not `/api/gamification`. Reads for leaderboards, points, tier/badge/level all live there. Do not create a parallel `/api/gamification` prefix.
+31. **`chat-groups` raw SQL requires `::uuid` casts on every UUID param** — see commit `e3a5590f`. Missing the cast throws a Postgres type error at runtime. Example: `$queryRawUnsafe('SELECT ... WHERE id = $1::uuid', groupId)`.
+32. **`tbt_activity_log` DDL must be split into per-statement calls** — see commit `91d46316`. A single multi-statement `$executeRawUnsafe` for this table fails; split into one call per SQL statement in the `prisma.ts` startup block.
+33. **No auto-logout on 401/403** — do NOT add "redirect to `/login` on session expiry" logic to AuthInterceptors in user-web or mobile. Commit `524c003e` intentionally removed all auto-logout paths; sessions persist until manual sign-out. The refresh cookie must never be clobbered by an interceptor (see `c742c325`).
 
 ## Socket Events
 
@@ -510,9 +618,10 @@ Socket.IO rooms and the events each room receives:
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
 | `conversation:{id}` | `chat:message`, `chat:typing`, `chat:conversation_closed`, `chat:conversation_reopened` |
+| `chat-group:{groupId}` | `chat-group:message`, `chat-group:typing`, `chat-group:reaction`, `chat-group:read`, `chat-group:member_update` |
 | broadcast | `notification:broadcast` |
 
-Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` and `join:live` / `leave:live`.
+Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` and `join:live` / `leave:live`. Redis pub/sub adapter is attached to Socket.IO for cross-instance broadcast (commit `c5187846`).
 
 ## Key Services
 | Service | Purpose |
@@ -575,3 +684,12 @@ VOD course platform with pricing/access control, XP gamification, episode quizze
 
 ### Batch Program Improvements (`TASK_FEATURE_SPEC.md`) — ✅ Complete (2026-06-30)
 All 25 items implemented: attendance marking, break requests (admin approve/reject), per-day categories, calendar view, bulk approve, task proofs, configurable XP per batch (`xp_per_day`), extended days per member, UI-string driven labels, and socket notifications.
+
+### Additional Verticals Shipped (2026-Q3)
+- **Ebooks** — full library with series, authors, publisher metadata, ratings + moderation, reviews, reading streak, per-batch access, per-book analytics, CSV import, pin scheduling, share/public preview, highlights + notes
+- **Podcasts** — home, series, player with persistent mini-player at platform layout level
+- **Community feed** — feed, composer, comments, follow (ported to user-web from mobile)
+- **Support/Helpdesk** — tickets, chat, feedback (`/support`)
+- **Chat Groups (WhatsApp parity Phase 5)** — voice notes, forward, pin, star, mute, DM media, reply-jump, @mentions, presence, in-group search, FCM push, read receipts, media, replies. Web + Flutter parity.
+- **Activity log unification** — all member points now flow through `tbt_activity_log` ledger
+- **No auto-logout** — sessions persist until manual sign-out on web and mobile

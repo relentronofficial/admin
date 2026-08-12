@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**TBT Admin Platform** — monorepo for the Tamil Business Tribe LMS. The workspace root is `tbt-admin/`. All 18 PRD sections are complete. See `F:\admin\tbt-admin\PROJECT_STATUS.md` for detail.
+**TBT Admin Platform** — monorepo for the Tamil Business Tribe LMS. The workspace root is `tbt-admin/`. All 18 PRD sections are complete.
 
 ```
 tbt-admin/
@@ -12,6 +12,8 @@ tbt-admin/
   backend/       # Fastify API server (port 8000)
   package.json   # npm workspaces root
 ```
+
+**NEVER use the word "EiFlix"** in user-facing code or string literals. Use "TBT".
 
 ## Commands
 
@@ -23,61 +25,69 @@ npm run dev              # Both servers concurrently
 npm run dev:admin        # Next.js only (port 3000)
 npm run dev:backend      # Fastify only (port 8000)
 
-# Build
-npm run build:admin
-npm run build:backend
-
 # Checks
 npm run typecheck        # Both workspaces
-npm run lint             # Both workspaces
+npm run lint
 npm run format           # Prettier (whole repo)
+
+# TypeScript check (targeted)
+npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | Select-String <filename>
 
 # Database
 npm run prisma:generate -w backend   # Regenerate Prisma client after schema changes
-npm run prisma:migrate -w backend    # Run migrations
-npm run prisma:studio -w backend     # GUI for DB
+npm run prisma:migrate -w backend
+npm run prisma:studio -w backend
 npx prisma db seed                   # Seed super admin (run from backend/)
 npm run seed:gamified                # Seed XP/gamification data
 ```
 
 ## Architecture
 
-### Authentication Flow
-Clerk is the auth provider for both frontend and backend.
+### Two Auth Systems (Critical)
 
-- **Backend:** `clerkPlugin` (`backend/src/plugins/clerk.ts`) decorates Fastify with `fastify.authenticate`, used as `preHandler` on all protected route groups.
-- **Frontend:** `ClerkProvider` wraps the root layout. `AuthInterceptor` inside `components/Providers.tsx` registers an Axios request interceptor (via `useAuth().getToken()`) that attaches `Authorization: Bearer <token>` to every `apiClient` call. The interceptor is mounted once when Clerk loads and ejected on unmount.
+The backend supports two completely different auth middlewares coexisting:
+
+- **`fastify.authenticate`** (Clerk) — `clerkPlugin` (`backend/src/plugins/clerk.ts`). Used as `preHandler` on all admin routes. Reads `Authorization: Bearer <clerk-jwt>` header set by the admin panel's Axios interceptor.
+- **`fastify.authenticateUser`** (JWT cookie) — `jwtPlugin` (`backend/src/plugins/jwt.ts`). Used as `preHandler` on user-web-facing routes. Reads `tbt_access` HttpOnly cookie, verifies JWT locally, sets `request.memberId: string`. There is NO `request.member` object — never write `(req as any).member.id`.
+
+Admin panel auth flow: `ClerkProvider` wraps root layout → `AuthInterceptor` in `components/Providers.tsx` attaches `Authorization: Bearer <token>` to every `apiClient` call. Token is cached and refreshed 8 s before its `exp` claim.
 
 ### Backend Structure
 - **Entry:** `backend/src/server.ts` — registers plugins then route modules
-- **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance
+- **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` pattern
-- **Config:** `backend/src/config/env.ts` — Zod-validated env schema
-- **Route prefix:** `/api/<module>` (e.g. `/api/courses`, `/api/workshops`)
+- **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
+- **Route prefix convention:** `/api/<module>`. Two exceptions: `hero` module → `/api/hero-slides`; `security` module → `/api/security-logs`
+- **`user` module** (`backend/src/modules/user/`) — monolithic handler for ALL user-facing authenticated routes at `/api/user/*` (courses, events, workshops, notifications, dashboard, etc.). Not just profile.
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev
 
 ### Frontend Structure
-- **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). Response interceptor unwraps `response.data`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks for workshops, hero, content sections, courses, config, nav, tiers, badges, notifications, products, resources, live calls, analytics (`useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics`), community, and 21 course-platform hooks. Batch hooks: `useGetBatch`, `useListBatches`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`. Batch objects include `xpPerDay` (int, default 50) — raw SQL column, not Prisma schema. Add new hooks to the bottom.
-- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload)
-- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `{ status }` filter for pending/active/etc.), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`), and related mutations
-- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, and related mutations
+- **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (202+ exports). Add new hooks to the bottom. Includes analytics hooks, live-call hooks, community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks. Batch admin hooks: `useGetBatch`, `useListBatches`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`, `useBatchDayAnalytics`, `useGetAllBatchTasks`. Batch objects include `xpPerDay` (int, default 50) — raw SQL column, not Prisma schema.
+- **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer ≤100 MB), `useCreateBunnyVideo`, `useDeleteBunnyVideo`
+- **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `{ status }` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
+- **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, `useUpdateTask`, `useDeleteTask`, `useListBatchTasks`, `useCreateBatchTask`, `useUpdateBatchTask`, `useDeleteBatchTask`, `useReorderBatchTasks`, `useGetBatchSubmissions`, `useReviewTaskSubmission`, `useGetAllBatchTasks`
 - **Layout:** `DashboardLayout` wraps authenticated pages with `Sidebar` + `Topbar`; fixed sidebar 220px
 
-### File Upload Pattern
+### Notification Routing (`admin-panel/lib/utils/notificationRouter.ts`)
+`resolveNotificationRoute(notification)` maps `type` + `metadata` to the correct admin route. Used by `NotifPanel` in `Topbar` on click: mark read → close dropdown → `router.push(route)`:
+- `member_pending` / `member_joined` → `/members/${memberId}`
+- `workshop_access_request` → `/workshops/${workshopId}`
+- `course_access_request` → `/courses?open=${courseId}` — courses page auto-opens detail panel
+- `product_inquiry` → `/products?tab=inquiries` — products page auto-switches tab
+- `day_submitted` → `/batches/${batchId}`
+- `announcement` → `/app-notifications`
+
+### File Upload Pattern (R2 presigned URL)
 ```typescript
-// 1. Get presigned URL
 const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
-  filename: file.name,
-  contentType: file.type,
-  bucket: "bucket-name",      // e.g. "site-assets", "workshops", "courses"
-  pathPrefix: "subfolder",    // e.g. "thumbnails", "videos"
+  filename: file.name, contentType: file.type,
+  bucket: "bucket-name", pathPrefix: "subfolder",
 });
-// 2. PUT to R2
 await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-// 3. Store publicUrl in form state
+// store publicUrl in form state
 ```
-`useGetPresignedUrl` is from `@/lib/hooks/useAdmin`.
+`useGetPresignedUrl` is from `@/lib/hooks/useAdmin` — never from `useTbt`. Uploaded images are auto-converted to WebP (quality 85) by the backend via `sharp`.
 
 ### DnD Reorder Pattern (HTML5 native, used everywhere)
 ```typescript
@@ -100,91 +110,80 @@ const onDrop = (e, dropIdx) => {
   dragIdx.current = null;
   setDragOver(null);
 };
-// "Save Order" button visible only when isDirty=true
-// On click: call reorderMutation.mutateAsync(localItems.map(i => i.id))
-```
-
-### Slug Auto-Generation
-```typescript
-const toSlug = (s: string) =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-// Applied on title change in create mode only; manual override supported via slugManual flag
-```
-
-### Duration Auto-Detection (video files)
-```typescript
-const detectDuration = (file: File): Promise<number> =>
-  new Promise(resolve => {
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    const url = URL.createObjectURL(file);
-    video.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(Math.round(video.duration)); };
-    video.onerror = () => { URL.revokeObjectURL(url); resolve(0); };
-    video.src = url;
-  });
+// "Save Order" visible only when isDirty=true
+// Reorder endpoints always use: PUT <prefix>/reorder { ids: string[] }
 ```
 
 ### Design System Constants
 ```
 Background:  bg-[#0f0f0f] (page), bg-[#181818] (card), bg-[#1a1a1a] (input/header), bg-[#141414] (modal)
 Border:      border-[#2a2a2a] (card), border-[#333] (input)
-Text:        text-[#f0f0f0] (primary), text-[#a0a0a0] (secondary), text-[#606060] (muted), text-[#444] (subtle)
-Accent:      #dc2626 (red — primary action), hover:bg-red-700
+Text:        text-[#f0f0f0] (primary), text-[#a0a0a0] (secondary), text-[#606060] (muted)
+Accent:      #dc2626 (red — primary CTA), hover:bg-red-700
 Font:        font-rajdhani (headings/labels, uppercase tracking-widest), system sans (body)
 Label style: text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani
 Input:       bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626]
 ```
 
-### Pending Member Approval Workflow
-When a user self-registers via `/signup` on the user web:
-1. Backend creates member with `status='pending'`, `membershipPlan='free'`
-2. Backend emits `admin:member_pending` socket event to the `'admin'` room
-3. Admin panel `/members` page receives the socket event → shows toast + increments badge on the "Pending" tab
-4. Admin opens the member via the edit modal → fills any missing fields → clicks **"Approve Member"** (green button, only visible when `status === 'pending'`)
-5. `useApproveMember` calls `POST /api/members/:id/approve` → member's status becomes `active`
+### Batch Access Control
+Workshops and resources support per-batch access via `batchIds Json?` (null = all; array of IDs = restricted). List endpoints return all items with a `locked: boolean`. Access endpoints return 403 if the member's `batchId` is not in the array.
 
-`MemberStatus` enum: `active | inactive | paused | suspended | pending`. The `pending` value is added at DB startup via idempotent `ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'` in `backend/src/plugins/prisma.ts` — no migration file needed.
+### Raw SQL Tables (no Prisma model)
+These tables are created via `$executeRawUnsafe` in `prisma.ts` startup only — never use Prisma model accessors for them:
+`member_attendance`, `batch_break_requests`, `member_batch_settings`, `product_inquiries`, `admin_notifications`
 
-Socket events (`admin-panel/lib/socket/client.ts`):
-- `admin:member_pending` — new self-signup awaiting approval (handled in `/members`)
-- `admin:member_joined` — new member fully onboarded (handled in `/dashboard`)
+### Raw SQL Columns (not in Prisma schema)
+`batches.xp_per_day` (INT, default 50), `batches.status` (VARCHAR), `batches.snapshot_days` (INT, nullable). **Always destructure these out of the request body before spreading into `prisma.batch.create/update`**, then persist via `$executeRawUnsafe`.
 
-### API Response Shape
-```json
-{ "success": true, "data": ..., "meta": { "total": 0, "page": 1, "limit": 20 }, "error": null }
+### Adding DB Columns Without Migrations
+```typescript
+// In backend/src/plugins/prisma.ts startup block — idempotent:
+await prisma.$executeRawUnsafe('ALTER TABLE foo ADD COLUMN IF NOT EXISTS bar JSONB');
 ```
-Pages access: `data?.data || []` and `data?.meta?.total`
+
+### Common Pitfalls
+1. **`req.memberId` not `req.member`** — `fastify.authenticateUser` sets `request.memberId: string`; there is NO `request.member` object
+2. **`hero` prefix is `/api/hero-slides`** — not `/api/hero`; `security` prefix is `/api/security-logs`
+3. **`task_steps` table does not exist** — never include `step: true` or `steps: true` in Prisma task `include` blocks
+4. **Slug** — auto-generates from title in create mode only; never auto-overwrite in edit mode
+5. **Save Order button** — visible only when `isDirty=true`; never always-visible
+6. **`useGetPresignedUrl`** — from `useAdmin`, not `useTbt`
+7. **Cron endpoints** (`/api/workshops/cron/generate-recurring`, `/api/cron/course-expiry-reminder`) bypass Clerk/JWT and require `x-cron-secret` header instead
+8. **`tsx watch` hot-reload** — after editing backend files, kill and restart the backend dev server if API behaviour doesn't change
+9. **`CourseAccess` ≠ `CourseEnrollment`** — access grants permission; enrollment tracks progress; always check `CourseAccess` before allowing lesson playback
+10. **`invalidateCache`** — call after mutations that affect `useMe()`: `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
+
+### Socket Events (Admin Room)
+Admin panel uses `getAdminSocket()` from `admin-panel/lib/socket/client.ts`.
+
+| Room | Events |
+|---|---|
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` |
+| `user:{memberId}` | `notification`, `message:new`, `batch:day_approved`, `course:access_granted` |
 
 ## Key Services
 | Service | Purpose |
 |---|---|
 | Supabase (PostgreSQL) | Primary DB via Prisma ORM |
-| Cloudflare R2 | File/image/video storage |
-| Upstash Redis | BullMQ job queues |
-| Bunny Stream | Video hosting |
-| LiveKit | Workshop live calls (rooms, breakout rooms, egress) |
-| Clerk | Auth (admin panel + API) |
+| Cloudflare R2 | File/image/video storage (presigned URL uploads) |
+| Upstash Redis | BullMQ job queues + cache |
+| Bunny Stream | Video hosting (HLS + iframe embed) |
+| LiveKit | Workshop live calls |
+| Clerk | Admin panel auth only |
 | Firebase | Push notifications |
-| Resend / Twilio | Email / SMS |
+| Resend / Twilio / MSG91 | Email / SMS / OTP |
 | Sentry | Error tracking |
 
 ## Environment Setup
-
 - `backend/.env.example` → `backend/.env`
 - `admin-panel/.env.example` → `admin-panel/.env.local`
 
-Required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys (frontend + backend), `CLOUDFLARE_R2_*` keys.
+Required: `DATABASE_URL`, `DIRECT_URL`, Supabase keys, Clerk keys (frontend + backend), `CLOUDFLARE_R2_*`, `JWT_ACCESS_SECRET`.
 
 ## Deployment
-- **Backend → Google Cloud Run** — deploy via Google Cloud Run
-- **Frontend → Vercel** — auto-deploy on push to `main` via GitHub Actions
+| Branch | Service | Notes |
+|---|---|---|
+| `main` | `tbt-backend-staging` | Staging backend; admin frontend → Vercel (auto-deploy) |
+| `production` | `tbt-backend` | Production backend (`--min-instances=1`) |
 
-## PRD Reference
-Full PRD: `F:\admin\TBT_Admin_PRD.md`
-Status tracker: `F:\admin\tbt-admin\PROJECT_STATUS.md`
-Architecture detail: `F:\admin\tbt-admin\ARCHITECTURE.md`
-
-## Implementation Status
-- All 18 Admin PRD sections ✅ complete
-- Course Platform (`TBT_Course_Platform_Spec.md`) ✅ complete (2026-06-24)
-- Batch Program Improvements (`TASK_FEATURE_SPEC.md`) ✅ complete (2026-06-30): attendance, break requests, categories, calendar, bulk approve, task proofs, `xp_per_day`, extended days, socket notifications
+To promote staging → production: `git push origin main:production`
