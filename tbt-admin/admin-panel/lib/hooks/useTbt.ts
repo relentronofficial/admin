@@ -1648,3 +1648,138 @@ export const useMarkAllAdminNotificationsRead = () => {
     },
   });
 };
+
+// ── Ad Campaigns (TBT_ADS_SPECKIT.md §8.1) ────────────────────────────────────
+//
+// Client routes live at /api/ads/* and are optional-auth; everything below is
+// the ADMIN scope at /api/ads/admin/* behind Clerk. Getting the prefix wrong is
+// the easiest mistake here — it 401s rather than 404s, which reads like an auth
+// bug instead of a wrong path.
+
+const ADS_ADMIN = '/api/ads/admin';
+
+export type AdCampaignStatus =
+  | 'draft' | 'scheduled' | 'active' | 'paused' | 'completed' | 'archived';
+
+export interface AdCampaignListParams {
+  page?: number;
+  limit?: number;
+  status?: AdCampaignStatus;
+  mediaType?: 'image' | 'video';
+  platform?: 'web' | 'mobile';
+  placement?: string;
+  triggerType?: string;
+  search?: string;
+  startFrom?: string;
+  startTo?: string;
+  includeDeleted?: boolean;
+}
+
+export const useListAdCampaigns = (params: AdCampaignListParams = {}) =>
+  useQuery({
+    queryKey: ['ad-campaigns', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`${ADS_ADMIN}/campaigns`, { params });
+      return res;
+    },
+  });
+
+export const useGetAdCampaign = (id: string) =>
+  useQuery({
+    queryKey: ['ad-campaign', id],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`${ADS_ADMIN}/campaigns/${id}`);
+      return res;
+    },
+    enabled: !!id,
+  });
+
+export const useCreateAdCampaign = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: any) => {
+      const res: any = await apiClient.post(`${ADS_ADMIN}/campaigns`, body);
+      return res;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ad-campaigns'] }); },
+  });
+};
+
+export const useUpdateAdCampaign = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: any) => {
+      const res: any = await apiClient.put(`${ADS_ADMIN}/campaigns/${id}`, body);
+      return res;
+    },
+    onSuccess: (_res, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['ad-campaigns'] });
+      qc.invalidateQueries({ queryKey: ['ad-campaign', vars.id] });
+    },
+  });
+};
+
+/**
+ * Status is its own endpoint, not part of the update payload — the backend
+ * runs the activation gate here and rejects an incoherent campaign going live.
+ * A failed activation returns NOT_ACTIVATABLE with the specific reason; surface
+ * `error.message` rather than a generic toast.
+ */
+export const useUpdateAdCampaignStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: AdCampaignStatus }) => {
+      const res: any = await apiClient.patch(`${ADS_ADMIN}/campaigns/${id}/status`, { status });
+      return res;
+    },
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['ad-campaigns'] });
+      qc.invalidateQueries({ queryKey: ['ad-campaign', vars.id] });
+    },
+  });
+};
+
+export const useDuplicateAdCampaign = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res: any = await apiClient.post(`${ADS_ADMIN}/campaigns/${id}/duplicate`);
+      return res;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ad-campaigns'] }); },
+  });
+};
+
+/** Soft delete by default; `hard: true` also reaps the Bunny creative when no
+ *  other campaign still references it. */
+export const useDeleteAdCampaign = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, hard }: { id: string; hard?: boolean }) => {
+      const res: any = await apiClient.delete(`${ADS_ADMIN}/campaigns/${id}`, {
+        params: hard ? { hard: 'true' } : undefined,
+      });
+      return res;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ad-campaigns'] }); },
+  });
+};
+
+export const useAdCampaignAnalytics = (id: string, range?: { from?: string; to?: string }) =>
+  useQuery({
+    queryKey: ['ad-campaign-analytics', id, range],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`${ADS_ADMIN}/campaigns/${id}/analytics`, { params: range });
+      return res;
+    },
+    enabled: !!id,
+  });
+
+export const useAdAnalyticsOverview = (range?: { from?: string; to?: string }) =>
+  useQuery({
+    queryKey: ['ad-analytics-overview', range],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`${ADS_ADMIN}/analytics/overview`, { params: range });
+      return res;
+    },
+  });

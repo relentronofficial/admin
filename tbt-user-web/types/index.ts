@@ -341,6 +341,14 @@ export interface UiStrings {
   batchLinkUrlPlaceholder?: string;
   batchSubmittedProofLabel?: string;
   batchViewProofLabel?: string;
+
+  // Advertisement overlay (TBT_ADS_SPECKIT.md §9). Optional like the rest —
+  // components fall back to English defaults until the backend ships the keys.
+  adSkipLabel?: string;
+  adSkipInLabel?: string;
+  adCloseLabel?: string;
+  adUnmuteLabel?: string;
+  adSponsoredLabel?: string;
 }
 
 // ─── Batch Program ───────────────────────────────────────────────────────────
@@ -1155,3 +1163,102 @@ export interface PodcastEpisode {
 export interface ContinueListeningItem extends PodcastProgress {
   episode: PodcastEpisode;
 }
+
+// ─── Advertisement campaigns (TBT_ADS_SPECKIT.md) ───────────────────────────
+
+export type AdMediaType = "image" | "video";
+export type AdPlatform = "mobile" | "web";
+export type AdTriggerType =
+  | "app_launch"
+  | "route_enter"
+  | "timed_interval"
+  | "content_playback"
+  | "action";
+
+export interface AdSkipConfig {
+  enabled: boolean;
+  type: "seconds" | "percent" | "after_end" | "immediate";
+  value?: number;
+}
+
+export interface AdCloseConfig {
+  enabled: boolean;
+  autoClose?: boolean;
+  autoCloseSeconds?: number;
+}
+
+export interface AdCtaConfig {
+  enabled: boolean;
+  text?: string;
+  type?: "internal_route" | "external_url";
+  target?: string;
+  showAfterSeconds?: number;
+  openInNewTab?: boolean;
+}
+
+/** The single campaign the backend selected. Never a list — selection is
+ *  server-side and final (speckit §5.3). */
+export interface AdCampaign {
+  id: string;
+  name: string;
+  mediaType: AdMediaType;
+  mediaUrl: string | null;
+  /** Mirrors the course/workshop playback discriminator so the client can
+   *  reuse the same HLS-vs-iframe branch. */
+  videoType: "hls" | "iframe" | null;
+  bunnyVideoId: string | null;
+  thumbnailUrl: string | null;
+  fallbackMediaUrl: string | null;
+  durationSeconds: number | null;
+  objectFit: "contain" | "cover" | "fill";
+  backgroundColor: string | null;
+  autoplay: boolean;
+  muted: boolean;
+  loop: boolean;
+  skipConfig: AdSkipConfig;
+  /** Server-computed unlock point in seconds; null means "never". */
+  skipAvailableAfterSeconds: number | null;
+  closeConfig: AdCloseConfig;
+  ctaConfig: AdCtaConfig | null;
+}
+
+export interface AdEligibleResponse {
+  showAd: boolean;
+  displayToken?: string;
+  campaign: AdCampaign | null;
+}
+
+export interface AdEligibleRequest {
+  sessionId: string;
+  anonymousId?: string | null;
+  platform: AdPlatform;
+  os?: "android" | "ios" | "web" | null;
+  placement: string;
+  route?: string | null;
+  triggerType: AdTriggerType;
+  contentId?: string | null;
+  module?: string | null;
+  appVersion?: string | null;
+  launchCount?: number | null;
+  sessionElapsedSeconds?: number | null;
+  deviceInfo?: Record<string, unknown> | null;
+}
+
+export type AdEventType =
+  | "eligible"
+  | "requested"
+  | "impression"
+  | "playback_started"
+  | "playback_paused"
+  | "playback_resumed"
+  | "skip_available"
+  | "skipped"
+  | "completed"
+  | "closed"
+  | "cta_clicked"
+  /** The user clicked, but the navigation failed — not a conversion (§11). */
+  | "cta_click_failed"
+  | "media_error"
+  | "load_error"
+  | "frequency_blocked"
+  | "schedule_blocked";

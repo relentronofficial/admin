@@ -143,6 +143,11 @@ const String kRitualButtons = '/api/rituals/buttons';
 
 // ── Community feed (Module 9A) ───────────────────────────────────────────────
 const String kCommunityFeed = '/api/community/feed';
+// Bases for the per-post / per-member routes; the id is appended at the call
+// site, matching how the rest of this file handles parameterised paths.
+const String kCommunityPosts = '/api/community/posts';
+const String kCommunityMembers = '/api/community/members';
+const String kCommunityBookmarks = '/api/community/bookmarks';
 
 // ── TBT Gamification ─────────────────────────────────────────────────────────
 const String kTbtPath = '/api/tbt/path';
@@ -185,3 +190,14 @@ const String kChatGroupsStarred = '/api/chat-groups/starred';
 // /api/chat-groups/:id/search — GET ?q=
 // /api/chat-groups/:id/presence — GET
 // /api/chat-groups/:id/leave — POST
+
+// ── Advertisements (TBT_ADS_SPECKIT.md §10) ──────────────────────────────────
+// Client scope only. These are optional-auth: they work signed-in (JWT cookie
+// header) and as a guest, which is why they do not sit behind /api/user*.
+const String kAdsEligible = '/api/ads/eligible';
+const String kAdsImpression = '/api/ads/impression';
+const String kAdsEvents = '/api/ads/events';
+const String kAdsComplete = '/api/ads/complete';
+const String kAdsSkip = '/api/ads/skip';
+const String kAdsClose = '/api/ads/close';
+const String kAdsClick = '/api/ads/click';

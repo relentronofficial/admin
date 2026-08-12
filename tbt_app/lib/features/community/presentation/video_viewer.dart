@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../shared/media/interruptible_media.dart';
+import '../../../shared/media/media_interruption_coordinator.dart';
 import '../../../shared/theme/status_bar_scope.dart';
 
 /// Simple fullscreen video player for community video posts (item #23).
@@ -34,6 +36,7 @@ class VideoViewer extends StatefulWidget {
 class _VideoViewerState extends State<VideoViewer> {
   late final VideoPlayerController _ctl;
   bool _ready = false;
+  VoidCallback? _deregisterFromAds;
 
   @override
   void initState() {
@@ -45,10 +48,27 @@ class _VideoViewerState extends State<VideoViewer> {
         _ctl.play();
       })
       ..setLooping(true);
+
+    // Plays with sound, so an ad would talk across it (TBT_ADS_SPECKIT.md §7).
+    _deregisterFromAds = MediaInterruptionCoordinator.instance.register(
+      CallbackInterruptibleMedia(
+        id: 'community-video-viewer',
+        kind: InterruptibleMediaKind.video,
+        // `value.isPlaying` is false until initialize() completes, which is the
+        // right answer during that window — there is nothing to interrupt yet.
+        isPlayingFn: () => _ctl.value.isPlaying,
+        getPositionFn: () => _ctl.value.position.inMilliseconds / 1000,
+        pauseFn: () => _ctl.pause(),
+        resumeFn: () => _ctl.play(),
+        seekFn: (s) => _ctl.seekTo(Duration(milliseconds: (s * 1000).round())),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _deregisterFromAds?.call();
+    _deregisterFromAds = null;
     _ctl.dispose();
     super.dispose();
   }

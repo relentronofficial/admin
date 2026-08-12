@@ -13,6 +13,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "seed:gamified": "tsx prisma/seed-gamified-course.ts",
     "seed:tasks": "tsx prisma/seed-tasks.ts",
     "seed:batches": "tsx prisma/seed-batches.ts"
@@ -69,6 +72,7 @@
     "ipaddr.js": "^2.4.0",
     "prisma": "^5.14.0",
     "tsx": "^4.22.3",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.10"
   }
 }

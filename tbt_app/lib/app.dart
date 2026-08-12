@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/constants/routes.dart';
 import 'core/constants/storage_keys.dart';
+import 'features/ads/presentation/ad_host.dart';
+import 'features/ads/providers/ad_campaign_provider.dart';
 import 'features/auth/domain/auth_state.dart';
 import 'features/notifications/data/fcm_service.dart';
 import 'shared/api/session_state.dart';
@@ -234,10 +236,16 @@ List<RouteBase> _buildRoutes() => [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => _AppShell(
           navigationShell: navigationShell,
+          // AdHost wraps the shell body (TBT_ADS_SPECKIT.md §10) — the overlay
+          // then covers the bottom nav and mini-player while every branch keeps
+          // its navigation stack. It sits INSIDE SubscriptionGate so a gated
+          // member never sees an ad stacked on the gate.
           child: Column(
             children: [
               const OfflineBanner(),
-              Expanded(child: SubscriptionGate(child: navigationShell)),
+              Expanded(
+                child: SubscriptionGate(child: AdHost(child: navigationShell)),
+              ),
             ],
           ),
         ),
@@ -901,7 +909,7 @@ class _GlobalBackGateState extends State<_GlobalBackGate> {
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
 
-class _AppShell extends StatefulWidget {
+class _AppShell extends ConsumerStatefulWidget {
   const _AppShell({required this.navigationShell, required this.child});
 
   /// The stateful shell that manages branch navigators. Passed through to
@@ -911,10 +919,10 @@ class _AppShell extends StatefulWidget {
   final Widget child;
 
   @override
-  State<_AppShell> createState() => _AppShellState();
+  ConsumerState<_AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<_AppShell> {
+class _AppShellState extends ConsumerState<_AppShell> {
   /// Tracks the last Android system-back press timestamp so we can implement
   /// the platform-standard "press back again to exit" pattern on the root
   /// tab. Nulled when the interval window expires so a stale press doesn't
@@ -933,6 +941,12 @@ class _AppShellState extends State<_AppShell> {
   ///   3. Else on Home branch, require two back presses within
   ///      [_kExitConfirmWindow] to exit; first press just shows a snackbar.
   Future<void> _handleBack() async {
+    // An ad on screen owns back first (TBT_ADS_SPECKIT.md §10). It closes the
+    // ad when the admin allowed closing, and otherwise swallows the press so
+    // back cannot be used to walk past an unskippable ad. The user is never
+    // trapped: the overlay's lifetime ceiling always fires.
+    if (ref.read(adControllerProvider).handleBackPress()) return;
+
     final router = GoRouter.of(context);
     if (router.canPop()) {
       router.pop();
@@ -993,7 +1007,15 @@ class _AppShellState extends State<_AppShell> {
         body: isTablet
             ? Row(
                 children: [
-                  AppSideNavRail(navigationShell: widget.navigationShell),
+                  // `AppSideNavRail` takes no arguments — it reads the current
+                  // location from GoRouterState and navigates with context.go
+                  // itself. Passing `navigationShell:` here was a compile error
+                  // left over from a half-finished StatefulShellRoute
+                  // migration: the shell was converted, the two tab widgets
+                  // were not. Completing that migration (so tab switches use
+                  // goBranch and preserve per-branch stacks, per CLAUDE.md) is
+                  // a behaviour change, not a build fix, and is left alone.
+                  const AppSideNavRail(),
                   const VerticalDivider(width: 1, thickness: 1),
                   Expanded(child: widget.child),
                 ],
@@ -1005,7 +1027,8 @@ class _AppShellState extends State<_AppShell> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const PodcastMiniPlayer(),
-                  AppBottomTabBar(navigationShell: widget.navigationShell),
+                  // Same as AppSideNavRail above — no arguments.
+                  const AppBottomTabBar(),
                 ],
               ),
       ),

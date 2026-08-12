@@ -102,6 +102,11 @@ class UiStrings {
     this.batchBreakReasonLabel,
     this.batchBreakRejectedLabel,
     this.batchBreakSubmitLabel,
+    this.adSponsoredLabel,
+    this.adSkipLabel,
+    this.adSkipInLabel,
+    this.adCloseLabel,
+    this.adUnmuteLabel,
     this.pendingApprovalTitle,
     this.pendingApprovalBody,
     this.freeInterceptorTitle,
@@ -235,6 +240,13 @@ class UiStrings {
   final String? batchBreakReasonLabel;
   final String? batchBreakRejectedLabel;
   final String? batchBreakSubmitLabel;
+
+  // ── Advertisement overlay (TBT_ADS_SPECKIT.md §10) ─────────────────────────
+  final String? adSponsoredLabel;
+  final String? adSkipLabel;
+  final String? adSkipInLabel;
+  final String? adCloseLabel;
+  final String? adUnmuteLabel;
 
   // ── Subscription gate ─────────────────────────────────────────────────────
   final String? pendingApprovalTitle;
@@ -370,6 +382,11 @@ class UiStrings {
             json['batchBreakRejectedLabel'] as String?,
         batchBreakSubmitLabel:
             json['batchBreakSubmitLabel'] as String?,
+        adSponsoredLabel: json['adSponsoredLabel'] as String?,
+        adSkipLabel: json['adSkipLabel'] as String?,
+        adSkipInLabel: json['adSkipInLabel'] as String?,
+        adCloseLabel: json['adCloseLabel'] as String?,
+        adUnmuteLabel: json['adUnmuteLabel'] as String?,
         // Fields not in DB schema — forward-compatible additions:
         pendingApprovalTitle:
             json['pendingApprovalTitle'] as String?,

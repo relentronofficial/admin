@@ -6,10 +6,16 @@ import { PageLoader } from "@/components/common/LoadingSpinner";
 import { useWebinar } from "@/lib/hooks/useEvents";
 import { getSocket } from "@/lib/socket/client";
 import { formatDateTime } from "@/lib/utils/format";
+import { useSuppressAds } from "@/lib/ads/useRegisterMedia";
 
 export default function LiveSessionPage({ params }: { params: Promise<{ webinarId: string }> }) {
   const { webinarId } = use(params);
   const { data: webinar, isLoading } = useWebinar(webinarId);
+
+  // Never overlay an ad on a live session — the user cannot rejoin a stream
+  // mid-broadcast (TBT_ADS_SPECKIT.md §7.4). The orchestrator also blocks
+  // `/live` by route prefix; this covers the case where the route changes.
+  useSuppressAds("live-session");
 
   const [socketStatus, setSocketStatus] = useState<string | null>(null);
   const [socketStreamUrl, setSocketStreamUrl] = useState<string | null>(null);
