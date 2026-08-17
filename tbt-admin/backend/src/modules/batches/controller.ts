@@ -5,6 +5,7 @@ import {
   upsertBatchDaySchema,
   upsertMemberProgressSchema,
 } from './schema.js';
+import { deliverMemberReport, generateMemberReport } from '../../lib/batchReports.js';
 
 export async function listBatchesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { status } = req.query as { status?: string };
@@ -872,4 +873,64 @@ export async function getBatchSubmissionsHandler(
     status ?? null,
   );
   return reply.send({ success: true, data: submissions, error: null });
+}
+
+// ── Batch report delivery (weekly/monthly WhatsApp reports) ──────────────
+
+// GET /api/batches/reports/history — paginated WhatsApp report delivery log
+export async function getReportHistoryHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { page = '1', limit = '25', reportType, status, memberId } = req.query as {
+    page?: string; limit?: string; reportType?: string; status?: string; memberId?: string;
+  };
+  const pageNum = Math.max(1, parseInt(page, 10));
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+  const skip = (pageNum - 1) * limitNum;
+
+  const where: any = { reportType: { not: null } };
+  if (reportType) where.reportType = reportType;
+  if (status) where.status = status;
+  if (memberId) where.memberId = memberId;
+
+  const [rows, total] = await Promise.all([
+    req.server.prisma.whatsappMessage.findMany({
+      where,
+      select: {
+        id: true, memberId: true, reportType: true, reportPeriod: true, status: true,
+        failureReason: true, sentAt: true,
+        member: { select: { firstName: true, lastName: true, phone: true, memberId: true } },
+      },
+      orderBy: { sentAt: 'desc' },
+      skip,
+      take: limitNum,
+    }),
+    req.server.prisma.whatsappMessage.count({ where }),
+  ]);
+
+  return reply.send({ success: true, data: rows, meta: { total, page: pageNum, limit: limitNum }, error: null });
+}
+
+const reportTypeParam = (v: unknown): 'weekly' | 'monthly' | null =>
+  v === 'weekly' || v === 'monthly' ? v : null;
+
+// POST /api/batches/reports/preview — dry run, computes the report without sending or logging
+export async function previewBatchReportHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { memberId, reportType } = (req.body ?? {}) as { memberId?: string; reportType?: string };
+  const type = reportTypeParam(reportType);
+  if (!memberId || !type) {
+    return reply.status(400).send({ success: false, data: null, error: 'memberId and reportType ("weekly"|"monthly") are required' });
+  }
+  const report = await generateMemberReport(req.server.prisma, memberId, type);
+  return reply.send({ success: true, data: report, error: null });
+}
+
+// POST /api/batches/reports/send-test — admin manual trigger, sends to one member now.
+// Still respects the per-period duplicate check unless force=true.
+export async function sendTestBatchReportHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { memberId, reportType, force } = (req.body ?? {}) as { memberId?: string; reportType?: string; force?: boolean };
+  const type = reportTypeParam(reportType);
+  if (!memberId || !type) {
+    return reply.status(400).send({ success: false, data: null, error: 'memberId and reportType ("weekly"|"monthly") are required' });
+  }
+  const result = await deliverMemberReport(req.server.prisma, memberId, type, { force: !!force });
+  return reply.send({ success: true, data: result, error: null });
 }
