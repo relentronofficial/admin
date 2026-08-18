@@ -162,6 +162,20 @@ export function isEligibleMember(
 
 // ── Tanglish message ─────────────────────────────────────────────────────
 
+function encouragementFor(completionRate: number, periodWord: string): string {
+  if (completionRate >= 80)
+    return `Indha ${periodWord} unga progress semma-a irukku! 🔥 Idhu maadhiri continue pannunga.`;
+  if (completionRate >= 50)
+    return `Indha ${periodWord} nalla progress panreenga! 💪 Innum konjam push pannunga.`;
+  return `Indha ${periodWord} konjam tasks pending irukku. Next ${periodWord} steady-a complete pannunga 💪`;
+}
+
+function streakDisplayFor(streak: number): string {
+  return streak >= 7
+    ? `${streak} days — semma consistency! 🏆`
+    : `${streak} days`;
+}
+
 export function buildTanglishMessage(params: {
   firstName: string;
   reportType: 'weekly' | 'monthly';
@@ -169,23 +183,9 @@ export function buildTanglishMessage(params: {
   stats: MemberReportStats;
 }): string {
   const { firstName, reportType, periodLabel, stats } = params;
-  const { completed, pending, completionRate, streak } = stats;
+  const { completed, pending, completionRate, streak } = params.stats;
   const periodWord = reportType === 'weekly' ? 'week' : 'month';
   const reportLabel = reportType === 'weekly' ? 'Weekly Report' : 'Monthly Report';
-
-  let encouragement: string;
-  if (completionRate >= 80) {
-    encouragement = `Indha ${periodWord} unga progress semma-a irukku! 🔥 Idhu maadhiri continue pannunga.`;
-  } else if (completionRate >= 50) {
-    encouragement = `Indha ${periodWord} nalla progress panreenga! 💪 Innum konjam push pannunga.`;
-  } else {
-    encouragement = `Indha ${periodWord} konjam tasks pending irukku. Next ${periodWord} steady-a complete pannunga 💪`;
-  }
-
-  const streakLine =
-    streak >= 7
-      ? `🔥 Current Streak: ${streak} days — semma consistency! 🏆`
-      : `🔥 Current Streak: ${streak} days`;
 
   return [
     `Hi ${firstName} 👋`,
@@ -198,10 +198,36 @@ export function buildTanglishMessage(params: {
     `✅ Completed Tasks: ${completed}`,
     `⏳ Pending Tasks: ${pending}`,
     `📈 Completion Rate: ${completionRate}%`,
-    streakLine,
+    `🔥 Current Streak: ${streakDisplayFor(streak)}`,
     ``,
-    encouragement,
+    encouragementFor(completionRate, periodWord),
     ``,
     `– TBT Team`,
   ].join('\n');
+}
+
+/**
+ * Returns the 7 template variables for batch_weekly_report /
+ * batch_monthly_report WhatsApp templates:
+ *   {{1}} firstName  {{2}} periodLabel  {{3}} completed  {{4}} pending
+ *   {{5}} completionRate  {{6}} streakDisplay  {{7}} encouragement
+ */
+export function buildReportVariables(params: {
+  firstName: string;
+  reportType: 'weekly' | 'monthly';
+  periodLabel: string;
+  stats: MemberReportStats;
+}): string[] {
+  const { firstName, reportType, periodLabel, stats } = params;
+  const { completed, pending, completionRate, streak } = stats;
+  const periodWord = reportType === 'weekly' ? 'week' : 'month';
+  return [
+    firstName,
+    periodLabel,
+    String(completed),
+    String(pending),
+    String(completionRate),
+    streakDisplayFor(streak),
+    encouragementFor(completionRate, periodWord),
+  ];
 }
