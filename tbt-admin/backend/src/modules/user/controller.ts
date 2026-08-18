@@ -187,6 +187,11 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
         notificationPrefs: true,
         batchId: true,
         lastActiveAt: true,
+        status: true,
+        verificationStatus: true,
+        onboardingCompleted: true,
+        onboardingSubmittedAt: true,
+        onboardingReviewNote: true,
         displayBadges: {
           select: {
             badge: { select: { id: true, label: true, color: true, bgColor: true } },
@@ -320,6 +325,13 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     lastActiveAt: (member as any).lastActiveAt
       ? (member as any).lastActiveAt.toISOString()
       : null,
+    status: (member as any).status,
+    verificationStatus: (member as any).verificationStatus,
+    onboardingCompleted: (member as any).onboardingCompleted,
+    onboardingSubmittedAt: (member as any).onboardingSubmittedAt
+      ? (member as any).onboardingSubmittedAt.toISOString()
+      : null,
+    onboardingReviewNote: (member as any).onboardingReviewNote ?? null,
     totalPoints: member.totalPoints,
     currentStreak: member.currentStreak,
     healthScore: member.healthScore,

@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcrypt';
-import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { generateOtp, storeOtp, verifyAndConsumeOtp, checkOtpRateLimit } from '../../lib/otp.js';
 import { sendOtpWhatsapp, sendOtpWhatsappDiagnostic } from '../../lib/whatsapp.js';
 import { env } from '../../config/env.js';
@@ -507,6 +506,10 @@ export async function me(fastify: FastifyInstance, request: any, reply: any) {
       profilePhotoUrl: true,
       avatarGradient: true,
       status: true,
+      verificationStatus: true,
+      onboardingCompleted: true,
+      onboardingSubmittedAt: true,
+      onboardingReviewNote: true,
     } as any,
   });
 
@@ -562,21 +565,10 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
     },
   });
 
-  // Notify all connected admins in real-time
-  const memberFullName = `${firstName} ${lastName ?? ''}`.trim();
-  (fastify as any).io?.to('admin').emit('admin:member_pending', {
-    memberId: member.id,
-    fullName: memberFullName,
-    phone: member.phone,
-    createdAt: member.createdAt,
-  });
-  void createAdminNotification(fastify.prisma, {
-    title: 'New Member Signup',
-    body: `${memberFullName} signed up and is waiting for approval.`,
-    type: 'member_pending',
-    metadata: { memberId: member.id, phone: member.phone },
-  });
-
-  fastify.log.info({ memberId: member.id, phone: member.phone }, 'New self-signup — pending approval');
+  // Admins are notified when the member actually SUBMITS the onboarding
+  // wizard (modules/onboarding/controller.ts submitOnboardingHandler), not
+  // here — signup only creates the account; there's nothing to review yet.
+  // See SELF_ONBOARDING_SPECKIT.md §5.4.
+  fastify.log.info({ memberId: member.id, phone: member.phone }, 'New self-signup — awaiting onboarding');
   return reply.status(201).send({ success: true, data: null });
 }

@@ -18,6 +18,15 @@ _$MemberImpl _$$MemberImplFromJson(Map<String, dynamic> json) => _$MemberImpl(
   membershipPlan: json['membershipPlan'] as String? ?? 'free',
   avatarUrl: json['avatarUrl'] as String?,
   batchId: json['batchId'] as String?,
+  verificationStatus:
+      json['verificationStatus'] == null
+          ? VerificationStatus.awaitingKyc
+          : const _VerificationStatusConverter().fromJson(
+            json['verificationStatus'] as String?,
+          ),
+  onboardingCompleted: json['onboardingCompleted'] as bool? ?? false,
+  onboardingSubmittedAt: json['onboardingSubmittedAt'] as String?,
+  onboardingReviewNote: json['onboardingReviewNote'] as String?,
 );
 
 Map<String, dynamic> _$$MemberImplToJson(_$MemberImpl instance) =>
@@ -30,4 +39,10 @@ Map<String, dynamic> _$$MemberImplToJson(_$MemberImpl instance) =>
       'membershipPlan': instance.membershipPlan,
       'avatarUrl': instance.avatarUrl,
       'batchId': instance.batchId,
+      'verificationStatus': const _VerificationStatusConverter().toJson(
+        instance.verificationStatus,
+      ),
+      'onboardingCompleted': instance.onboardingCompleted,
+      'onboardingSubmittedAt': instance.onboardingSubmittedAt,
+      'onboardingReviewNote': instance.onboardingReviewNote,
     };

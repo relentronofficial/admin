@@ -25,6 +25,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Enum migrations must run sequentially before table changes that use them
     await prisma.$executeRawUnsafe(`ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'`);
     await prisma.$executeRawUnsafe(`ALTER TYPE "CoursePaymentMethod" ADD VALUE IF NOT EXISTS 'external'`);
+    await prisma.$executeRawUnsafe(`ALTER TYPE "VerificationStatus" ADD VALUE IF NOT EXISTS 'changes_requested'`);
 
     // Parallelize all table mutations — grouped per table so each table gets one ALTER statement
     await Promise.all([
@@ -195,6 +196,30 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_report_lookup
         ON whatsapp_messages(member_id, report_type, report_period)
         WHERE report_type IS NOT NULL
+      `),
+      // Self-onboarding — submission/review tracking columns on members,
+      // plus a small table for admin-authored onboarding step content
+      // (text/video/audio). See SELF_ONBOARDING_SPECKIT.md §3.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS onboarding_submitted_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS onboarding_reviewed_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS onboarding_reviewed_by UUID,
+          ADD COLUMN IF NOT EXISTS onboarding_review_note TEXT
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS onboarding_content (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          step_key VARCHAR(50) NOT NULL,
+          title TEXT NOT NULL,
+          text_body TEXT,
+          video_url TEXT,
+          audio_url TEXT,
+          sort_order INT NOT NULL DEFAULT 0,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
       `),
       // Task unification — Phase 1 migrations
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id) ON DELETE CASCADE`),

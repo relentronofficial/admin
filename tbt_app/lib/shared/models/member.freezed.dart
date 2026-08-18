@@ -30,6 +30,12 @@ mixin _$Member {
   String get membershipPlan => throw _privateConstructorUsedError;
   String? get avatarUrl => throw _privateConstructorUsedError;
   String? get batchId => throw _privateConstructorUsedError;
+  @_VerificationStatusConverter()
+  VerificationStatus get verificationStatus =>
+      throw _privateConstructorUsedError;
+  bool get onboardingCompleted => throw _privateConstructorUsedError;
+  String? get onboardingSubmittedAt => throw _privateConstructorUsedError;
+  String? get onboardingReviewNote => throw _privateConstructorUsedError;
 
   /// Serializes this Member to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -54,6 +60,10 @@ abstract class $MemberCopyWith<$Res> {
     String membershipPlan,
     String? avatarUrl,
     String? batchId,
+    @_VerificationStatusConverter() VerificationStatus verificationStatus,
+    bool onboardingCompleted,
+    String? onboardingSubmittedAt,
+    String? onboardingReviewNote,
   });
 }
 
@@ -80,6 +90,10 @@ class _$MemberCopyWithImpl<$Res, $Val extends Member>
     Object? membershipPlan = null,
     Object? avatarUrl = freezed,
     Object? batchId = freezed,
+    Object? verificationStatus = null,
+    Object? onboardingCompleted = null,
+    Object? onboardingSubmittedAt = freezed,
+    Object? onboardingReviewNote = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -123,6 +137,26 @@ class _$MemberCopyWithImpl<$Res, $Val extends Member>
                     ? _value.batchId
                     : batchId // ignore: cast_nullable_to_non_nullable
                         as String?,
+            verificationStatus:
+                null == verificationStatus
+                    ? _value.verificationStatus
+                    : verificationStatus // ignore: cast_nullable_to_non_nullable
+                        as VerificationStatus,
+            onboardingCompleted:
+                null == onboardingCompleted
+                    ? _value.onboardingCompleted
+                    : onboardingCompleted // ignore: cast_nullable_to_non_nullable
+                        as bool,
+            onboardingSubmittedAt:
+                freezed == onboardingSubmittedAt
+                    ? _value.onboardingSubmittedAt
+                    : onboardingSubmittedAt // ignore: cast_nullable_to_non_nullable
+                        as String?,
+            onboardingReviewNote:
+                freezed == onboardingReviewNote
+                    ? _value.onboardingReviewNote
+                    : onboardingReviewNote // ignore: cast_nullable_to_non_nullable
+                        as String?,
           )
           as $Val,
     );
@@ -146,6 +180,10 @@ abstract class _$$MemberImplCopyWith<$Res> implements $MemberCopyWith<$Res> {
     String membershipPlan,
     String? avatarUrl,
     String? batchId,
+    @_VerificationStatusConverter() VerificationStatus verificationStatus,
+    bool onboardingCompleted,
+    String? onboardingSubmittedAt,
+    String? onboardingReviewNote,
   });
 }
 
@@ -171,6 +209,10 @@ class __$$MemberImplCopyWithImpl<$Res>
     Object? membershipPlan = null,
     Object? avatarUrl = freezed,
     Object? batchId = freezed,
+    Object? verificationStatus = null,
+    Object? onboardingCompleted = null,
+    Object? onboardingSubmittedAt = freezed,
+    Object? onboardingReviewNote = freezed,
   }) {
     return _then(
       _$MemberImpl(
@@ -214,6 +256,26 @@ class __$$MemberImplCopyWithImpl<$Res>
                 ? _value.batchId
                 : batchId // ignore: cast_nullable_to_non_nullable
                     as String?,
+        verificationStatus:
+            null == verificationStatus
+                ? _value.verificationStatus
+                : verificationStatus // ignore: cast_nullable_to_non_nullable
+                    as VerificationStatus,
+        onboardingCompleted:
+            null == onboardingCompleted
+                ? _value.onboardingCompleted
+                : onboardingCompleted // ignore: cast_nullable_to_non_nullable
+                    as bool,
+        onboardingSubmittedAt:
+            freezed == onboardingSubmittedAt
+                ? _value.onboardingSubmittedAt
+                : onboardingSubmittedAt // ignore: cast_nullable_to_non_nullable
+                    as String?,
+        onboardingReviewNote:
+            freezed == onboardingReviewNote
+                ? _value.onboardingReviewNote
+                : onboardingReviewNote // ignore: cast_nullable_to_non_nullable
+                    as String?,
       ),
     );
   }
@@ -231,6 +293,11 @@ class _$MemberImpl implements _Member {
     this.membershipPlan = 'free',
     this.avatarUrl,
     this.batchId,
+    @_VerificationStatusConverter()
+    this.verificationStatus = VerificationStatus.awaitingKyc,
+    this.onboardingCompleted = false,
+    this.onboardingSubmittedAt,
+    this.onboardingReviewNote,
   });
 
   factory _$MemberImpl.fromJson(Map<String, dynamic> json) =>
@@ -255,10 +322,21 @@ class _$MemberImpl implements _Member {
   final String? avatarUrl;
   @override
   final String? batchId;
+  @override
+  @JsonKey()
+  @_VerificationStatusConverter()
+  final VerificationStatus verificationStatus;
+  @override
+  @JsonKey()
+  final bool onboardingCompleted;
+  @override
+  final String? onboardingSubmittedAt;
+  @override
+  final String? onboardingReviewNote;
 
   @override
   String toString() {
-    return 'Member(id: $id, name: $name, email: $email, phone: $phone, status: $status, membershipPlan: $membershipPlan, avatarUrl: $avatarUrl, batchId: $batchId)';
+    return 'Member(id: $id, name: $name, email: $email, phone: $phone, status: $status, membershipPlan: $membershipPlan, avatarUrl: $avatarUrl, batchId: $batchId, verificationStatus: $verificationStatus, onboardingCompleted: $onboardingCompleted, onboardingSubmittedAt: $onboardingSubmittedAt, onboardingReviewNote: $onboardingReviewNote)';
   }
 
   @override
@@ -275,7 +353,15 @@ class _$MemberImpl implements _Member {
                 other.membershipPlan == membershipPlan) &&
             (identical(other.avatarUrl, avatarUrl) ||
                 other.avatarUrl == avatarUrl) &&
-            (identical(other.batchId, batchId) || other.batchId == batchId));
+            (identical(other.batchId, batchId) || other.batchId == batchId) &&
+            (identical(other.verificationStatus, verificationStatus) ||
+                other.verificationStatus == verificationStatus) &&
+            (identical(other.onboardingCompleted, onboardingCompleted) ||
+                other.onboardingCompleted == onboardingCompleted) &&
+            (identical(other.onboardingSubmittedAt, onboardingSubmittedAt) ||
+                other.onboardingSubmittedAt == onboardingSubmittedAt) &&
+            (identical(other.onboardingReviewNote, onboardingReviewNote) ||
+                other.onboardingReviewNote == onboardingReviewNote));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -290,6 +376,10 @@ class _$MemberImpl implements _Member {
     membershipPlan,
     avatarUrl,
     batchId,
+    verificationStatus,
+    onboardingCompleted,
+    onboardingSubmittedAt,
+    onboardingReviewNote,
   );
 
   /// Create a copy of Member
@@ -316,6 +406,10 @@ abstract class _Member implements Member {
     final String membershipPlan,
     final String? avatarUrl,
     final String? batchId,
+    @_VerificationStatusConverter() final VerificationStatus verificationStatus,
+    final bool onboardingCompleted,
+    final String? onboardingSubmittedAt,
+    final String? onboardingReviewNote,
   }) = _$MemberImpl;
 
   factory _Member.fromJson(Map<String, dynamic> json) = _$MemberImpl.fromJson;
@@ -337,6 +431,15 @@ abstract class _Member implements Member {
   String? get avatarUrl;
   @override
   String? get batchId;
+  @override
+  @_VerificationStatusConverter()
+  VerificationStatus get verificationStatus;
+  @override
+  bool get onboardingCompleted;
+  @override
+  String? get onboardingSubmittedAt;
+  @override
+  String? get onboardingReviewNote;
 
   /// Create a copy of Member
   /// with the given fields replaced by the non-null parameter values.

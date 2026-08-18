@@ -4,6 +4,7 @@ import { createMemberSchema, updateMemberSchema } from './schema.js';
 import { invalidateCache } from '../../lib/cache.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
+import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic.js';
 
 /**
  * Ensure a member-supplied city / state / businessType value is present
@@ -437,7 +438,8 @@ export async function getMemberHandler(request: FastifyRequest, reply: FastifyRe
         accountManager: true,
         creator: true,
         batch: true,
-        courseEnrollments: { include: { course: true } }
+        courseEnrollments: { include: { course: true } },
+        kycDocuments: { orderBy: { createdAt: 'asc' } },
     }
   });
   if (!member || (member as any).deletedAt) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
@@ -1405,17 +1407,39 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
 
     const existing = await request.server.prisma.member.findUnique({
       where: { id },
-      select: { id: true, status: true } as any,
+      select: { id: true, status: true, createdBy: true, verificationStatus: true } as any,
     });
     if (!existing) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
-    if ((existing as any).status !== 'pending') {
-      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Member is not in pending status' } });
+    // Admin-direct-created members (createdBy set) skip self-onboarding entirely and
+    // remain immediately approvable, exactly as before. Self-signed-up members
+    // (createdBy null) must have actually submitted the onboarding wizard
+    // (verificationStatus === 'under_review') first. See SELF_ONBOARDING_SPECKIT.md §5.5.
+    if (!canApproveMember({
+      status: (existing as any).status,
+      createdBy: (existing as any).createdBy,
+      verificationStatus: (existing as any).verificationStatus,
+    })) {
+      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Member is not eligible for approval yet' } });
     }
 
-    const { password, dob, businessEstablishedOn, accountManagerId, batchId, subscriptionEndsAt, status: _ignoredStatus, ...rest } = body;
+    const {
+      password, dob, businessEstablishedOn, accountManagerId, batchId, subscriptionEndsAt,
+      status: _ignoredStatus, verificationStatus: _ignoredVerificationStatus,
+      onboardingCompleted: _ignoredOnboardingCompleted, onboardingReviewedAt: _ignoredOnboardingReviewedAt,
+      onboardingReviewedBy: _ignoredOnboardingReviewedBy,
+      ...rest
+    } = body;
+
+    const adminId = (request as any).auth?.sub ?? null;
 
     // Filter out empty strings — enum fields (gender, preferredSessionMode, etc.) reject "" in Prisma
-    const data: any = { status: 'active' };
+    const data: any = {
+      status: 'active',
+      verificationStatus: 'verified',
+      onboardingCompleted: true,
+      onboardingReviewedAt: new Date(),
+      onboardingReviewedBy: adminId,
+    };
     for (const key in rest) {
       if ((rest as any)[key] !== '' && (rest as any)[key] !== undefined) {
         data[key] = (rest as any)[key];
@@ -1488,6 +1512,102 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
     request.server.log.error({ err }, 'Failed to approve member');
+    return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+  }
+}
+
+// POST /api/members/:id/reject  (admin only — reject a submitted onboarding application)
+export async function rejectMemberHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string };
+    const { reason } = (request.body || {}) as { reason?: string };
+    if (!reason || !reason.trim()) {
+      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'A reason is required to reject an application' } });
+    }
+
+    const existing = await request.server.prisma.member.findUnique({
+      where: { id },
+      select: { verificationStatus: true } as any,
+    });
+    if (!existing) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+    if (!canReviewOnboarding((existing as any).verificationStatus)) {
+      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Application is not awaiting review' } });
+    }
+
+    const adminId = (request as any).auth?.sub ?? null;
+    const updated = await request.server.prisma.member.update({
+      where: { id },
+      data: {
+        verificationStatus: 'rejected',
+        onboardingReviewedAt: new Date(),
+        onboardingReviewedBy: adminId,
+        onboardingReviewNote: reason.trim(),
+      } as any,
+    });
+
+    void invalidateCache(request.server.redis ?? null, `me:${id}`);
+    request.server.io.to('admin').emit('admin:member_rejected', { memberId: id });
+    request.server.io.to(`user:${id}`).emit('notification', {
+      type: 'system',
+      title: 'Onboarding Not Approved',
+      body: reason.trim(),
+      createdAt: new Date().toISOString(),
+    });
+    request.server.prisma.notification.create({
+      data: { memberId: id, type: 'system', title: 'Onboarding Not Approved', body: reason.trim(), isRead: false },
+    }).catch(() => {});
+
+    return reply.send({ success: true, data: updated, error: null });
+  } catch (err: any) {
+    request.server.log.error({ err }, 'Failed to reject member onboarding');
+    return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+  }
+}
+
+// POST /api/members/:id/request-changes  (admin only — send a submitted application back for corrections)
+export async function requestMemberChangesHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string };
+    const { note } = (request.body || {}) as { note?: string };
+    if (!note || !note.trim()) {
+      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'A note is required to request changes' } });
+    }
+
+    const existing = await request.server.prisma.member.findUnique({
+      where: { id },
+      select: { verificationStatus: true } as any,
+    });
+    if (!existing) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+    if (!canReviewOnboarding((existing as any).verificationStatus)) {
+      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Application is not awaiting review' } });
+    }
+
+    const adminId = (request as any).auth?.sub ?? null;
+    const updated = await request.server.prisma.member.update({
+      where: { id },
+      data: {
+        verificationStatus: 'changes_requested',
+        onboardingReviewedAt: new Date(),
+        onboardingReviewedBy: adminId,
+        onboardingReviewNote: note.trim(),
+      } as any,
+    });
+
+    void invalidateCache(request.server.redis ?? null, `me:${id}`);
+    request.server.io.to('admin').emit('admin:member_changes_requested', { memberId: id });
+    request.server.io.to(`user:${id}`).emit('notification', {
+      type: 'system',
+      title: 'Changes Requested',
+      body: note.trim(),
+      createdAt: new Date().toISOString(),
+    });
+    request.server.prisma.notification.create({
+      data: { memberId: id, type: 'system', title: 'Changes Requested', body: note.trim(), isRead: false },
+    }).catch(() => {});
+
+    return reply.send({ success: true, data: updated, error: null });
+  } catch (err: any) {
+    request.server.log.error({ err }, 'Failed to request onboarding changes');
     return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
   }
 }

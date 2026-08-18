@@ -185,3 +185,11 @@ const String kAdsComplete = '/api/ads/complete';
 const String kAdsSkip = '/api/ads/skip';
 const String kAdsClose = '/api/ads/close';
 const String kAdsClick = '/api/ads/click';
+
+// ── Self-onboarding (SELF_ONBOARDING_SPECKIT.md §10.5) ──────────────────────
+const String kOnboarding = '/api/onboarding';
+const String kOnboardingContent = '/api/onboarding/content';
+const String kOnboardingDocumentsPresign = '/api/onboarding/documents/presign';
+const String kOnboardingDocuments = '/api/onboarding/documents';
+// /api/onboarding/documents/:id — built at call site
+const String kOnboardingSubmit = '/api/onboarding/submit';

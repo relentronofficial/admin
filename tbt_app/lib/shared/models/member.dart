@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../features/auth/domain/member_status.dart';
+import '../../features/auth/domain/verification_status.dart';
 
 part 'member.freezed.dart';
 part 'member.g.dart';
@@ -16,6 +17,12 @@ class Member with _$Member {
     @Default('free') String membershipPlan,
     String? avatarUrl,
     String? batchId,
+    @Default(VerificationStatus.awaitingKyc)
+    @_VerificationStatusConverter()
+    VerificationStatus verificationStatus,
+    @Default(false) bool onboardingCompleted,
+    String? onboardingSubmittedAt,
+    String? onboardingReviewNote,
   }) = _Member;
 
   factory Member.fromJson(Map<String, dynamic> json) => _$MemberFromJson(json);
@@ -31,4 +38,16 @@ class _MemberStatusConverter
 
   @override
   String toJson(MemberStatus s) => MemberStatusConverter.toJson(s);
+}
+
+class _VerificationStatusConverter
+    implements JsonConverter<VerificationStatus, String?> {
+  const _VerificationStatusConverter();
+
+  @override
+  VerificationStatus fromJson(String? json) =>
+      VerificationStatusConverter.fromJson(json);
+
+  @override
+  String toJson(VerificationStatus s) => VerificationStatusConverter.toJson(s);
 }
