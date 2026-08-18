@@ -257,27 +257,53 @@ export async function sendOtpWhatsappDiagnostic(
   }
 }
 
-export async function sendWhatsappMessage(phone: string, message: string): Promise<boolean> {
-  if (!env.WABA_ACCESS_TOKEN || !env.WABA_FROM_NUMBER || !env.WABA_TEMPLATE_NAME) return false;
+/**
+ * Send a WhatsApp message for batch reports.
+ *
+ * If WABA_REPORT_TEMPLATE_NAME is set → template message (required for
+ * proactive sends to members who haven't recently messaged us).
+ * If not set → plain text message, which works inside the 24-hour
+ * customer-service window. Good enough for the test-send flow and for
+ * any member who has chatted recently; for reliable at-scale delivery
+ * create a WhatsApp template in the zacx dashboard and set the env var.
+ */
+export async function sendWhatsappMessage(
+  phone: string,
+  message: string,
+): Promise<boolean> {
+  if (!env.WABA_ACCESS_TOKEN || !env.WABA_FROM_NUMBER) return false;
   const to = normalizePhone(phone);
+  const tmpl = env.WABA_REPORT_TEMPLATE_NAME;
+
+  const payload = tmpl
+    ? {
+        wabaNumber: env.WABA_FROM_NUMBER,
+        recipient: { phoneNumber: to },
+        type: 'template',
+        template: { name: tmpl, language: env.WABA_TEMPLATE_LANGUAGE, body: [message] },
+      }
+    : {
+        wabaNumber: env.WABA_FROM_NUMBER,
+        recipient: { phoneNumber: to },
+        type: 'text',
+        text: message,
+      };
+
   try {
     const res = await fetch(`${env.WABA_API_BASE_URL}/message/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.WABA_ACCESS_TOKEN}` },
-      body: JSON.stringify({
-        wabaNumber: env.WABA_FROM_NUMBER,
-        recipient: { phoneNumber: to },
-        type: 'template',
-        template: { name: env.WABA_TEMPLATE_NAME, language: env.WABA_TEMPLATE_LANGUAGE, body: [message] },
-      }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
+      console.error('[WhatsApp] sendWhatsappMessage failed', res.status, body, { tmpl: tmpl || 'text', to });
       detectAndAlertLowBalance(res.status, body);
       return false;
     }
     return true;
-  } catch {
+  } catch (err: any) {
+    console.error('[WhatsApp] sendWhatsappMessage network error', err.message);
     return false;
   }
 }

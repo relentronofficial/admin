@@ -33,6 +33,9 @@ import {
   reorderBatchTasksHandler,
   migrateJsonTasksHandler,
   getBatchSubmissionsHandler,
+  getReportHistoryHandler,
+  previewBatchReportHandler,
+  sendTestBatchReportHandler,
 } from './controller.js';
 import {
   approveDayHandler,
@@ -102,4 +105,9 @@ export async function batchRoutes(fastify: FastifyInstance) {
 
   // Task submissions (admin view)
   fastify.get('/:id/submissions', getBatchSubmissionsHandler);
+
+  // Weekly/monthly WhatsApp report delivery (admin visibility + manual test trigger)
+  fastify.get('/reports/history', getReportHistoryHandler);
+  fastify.post('/reports/preview', previewBatchReportHandler);
+  fastify.post('/reports/send-test', sendTestBatchReportHandler);
 }

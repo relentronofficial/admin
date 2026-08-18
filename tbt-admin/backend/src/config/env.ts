@@ -57,6 +57,7 @@ const envSchema = z.object({
   WABA_PHONE_NUMBER_ID: z.string().optional().or(z.literal('')),
   WABA_FROM_NUMBER: z.string().optional().or(z.literal('')),
   WABA_TEMPLATE_NAME: z.string().optional().or(z.literal('')),
+  WABA_REPORT_TEMPLATE_NAME: z.string().optional().or(z.literal('')),
   WABA_TEMPLATE_LANGUAGE: z.string().default('en'),
   WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),

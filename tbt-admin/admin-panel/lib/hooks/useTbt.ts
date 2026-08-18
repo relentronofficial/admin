@@ -1783,3 +1783,34 @@ export const useAdAnalyticsOverview = (range?: { from?: string; to?: string }) =
       return res;
     },
   });
+
+// ── Batch reports (weekly/monthly WhatsApp delivery) ──────────────
+
+export const useReportDeliveryHistory = (params: { page?: number; limit?: number; reportType?: string; status?: string; memberId?: string } = {}) =>
+  useQuery({
+    queryKey: ['batch-report-history', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/batches/reports/history', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const usePreviewBatchReport = () =>
+  useMutation({
+    mutationFn: async (data: { memberId: string; reportType: 'weekly' | 'monthly' }) => {
+      const res: any = await apiClient.post('/api/batches/reports/preview', data);
+      return res.data;
+    },
+  });
+
+export const useSendTestBatchReport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { memberId: string; reportType: 'weekly' | 'monthly'; force?: boolean }) => {
+      const res: any = await apiClient.post('/api/batches/reports/send-test', data);
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['batch-report-history'] }); },
+  });
+};

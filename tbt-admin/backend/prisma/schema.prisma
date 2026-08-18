@@ -1478,12 +1478,18 @@ model AutomationRule {
 }
 
 model WhatsappMessage {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  memberId     String   @map("member_id") @db.Uuid
-  templateName String   @map("template_name")
-  messageBody  String   @map("message_body")
-  status       String   @default("sent")
-  sentAt       DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId          String   @map("member_id") @db.Uuid
+  templateName      String   @map("template_name")
+  messageBody       String   @map("message_body")
+  status            String   @default("sent")
+  // Weekly/monthly batch-report delivery log fields. Null for any other
+  // WhatsApp send (OTP, notifications) — only report sends populate these.
+  reportType        String?  @map("report_type")
+  reportPeriod      String?  @map("report_period")
+  providerMessageId String?  @map("provider_message_id")
+  failureReason     String?  @map("failure_reason")
+  sentAt            DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
 
   // Relations
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)

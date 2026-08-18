@@ -55,6 +55,8 @@ import { ritualsRoutes } from './modules/rituals/routes.js';
 import { batchReminderCronHandler } from './modules/user-batch/controller.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
+import { startBatchReportJobs } from './jobs/batchReports.js';
+import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
 import { registerLowBalanceHandler } from './lib/whatsapp.js';
 import { createAdminNotification } from './lib/adminNotifications.js';
 
@@ -210,6 +212,32 @@ async function bootstrap() {
         return reply.status(500).send({ error: err.message });
       }
     });
+    fastify.post('/api/cron/weekly-report', async (req, reply) => {
+      const secret = req.headers['x-cron-secret'];
+      if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+      }
+      try {
+        const result = await runWeeklyReports(fastify.prisma);
+        return reply.send({ success: true, data: result });
+      } catch (err: any) {
+        fastify.log.error({ err }, '[cron] weekly-report failed');
+        return reply.status(500).send({ error: err.message });
+      }
+    });
+    fastify.post('/api/cron/monthly-report', async (req, reply) => {
+      const secret = req.headers['x-cron-secret'];
+      if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+      }
+      try {
+        const result = await runMonthlyReports(fastify.prisma);
+        return reply.send({ success: true, data: result });
+      } catch (err: any) {
+        fastify.log.error({ err }, '[cron] monthly-report failed');
+        return reply.status(500).send({ error: err.message });
+      }
+    });
 
     // Root + Health Check
     fastify.get('/', async () => ({ name: 'TBT Admin API', status: 'ok' }));
@@ -345,6 +373,14 @@ async function bootstrap() {
       // unreachable. Fire-and-forget with a swallow — failures are
       // already logged inside the job.
       startCourseExpiryReminderJob(fastify.prisma, {
+        info: (msg) => fastify.log.info(msg),
+        warn: (msg) => fastify.log.warn(msg),
+        error: (obj, msg) => fastify.log.error(obj, msg),
+      }).catch(() => { /* logged internally */ });
+
+      // Start BullMQ weekly/monthly batch-report jobs (own queue, independent
+      // of the course-expiry job above). Same probe-then-schedule pattern.
+      startBatchReportJobs(fastify.prisma, {
         info: (msg) => fastify.log.info(msg),
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),

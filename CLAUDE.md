@@ -18,6 +18,10 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
                  # Talks to the same Fastify backend as tbt-user-web (JWT cookie auth).
 ```
 
+**Non-TBT directories at repo root (ignore for TBT work):**
+- `form/` — standalone Next.js 16 app (port 3007) for an Office Assistant job application form. Separate Prisma schema, separate Vercel Blob storage. Not part of the TBT monorepo.
+- `co-worker/` — separate Flutter mobile app. Not part of the TBT monorepo.
+
 **NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.**
 
 `tbt-admin-safe/` is a backup snapshot directory — not a workspace, not a source of truth. Ignore it entirely.
@@ -49,6 +53,10 @@ npm run format
 npm run seed:gamified -w backend   # Seed XP/gamification data
 npm run seed:tasks -w backend      # Seed task/initiative sample data
 npm run seed:batches -w backend    # Seed batch sample data
+
+# Tests (Vitest — narrowly scoped to ads module only)
+npm test                           # Runs src/modules/ads/**/*.test.ts — pure unit tests, no DB/network
+# DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
 
 # TypeScript check (targeted — Bash syntax; use before/after any edit)
 cd tbt-admin && npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | grep <filename>
@@ -111,6 +119,8 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 **User web auth (custom JWT cookies):**
 - `@clerk/nextjs` IS installed in user-web, but only for: the `app/(auth)/` Clerk-hosted route group and middleware auth-state detection. The main `/login` page and all backend API calls use custom JWT cookies — never Clerk JWTs or bearer tokens.
 - `POST /api/user-auth/login` → phone + password → bcrypt check → OTP sent via WhatsApp (WABA) or SMS (MSG91) → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
+- Full user-auth route list: `POST /signup`, `POST /login`, `POST /forgot-password`, `POST /verify-otp`, `POST /set-password`, `POST /resend-otp`, `POST /refresh`, `POST /logout`, `DELETE /sessions` (revoke all sessions, requires `authenticateUser`), `GET /me` (requires `authenticateUser`), `GET /whatsapp-diagnostic` (CRON_SECRET header — support engineers only, no Clerk/member auth). Dev-only: `GET /dev-otp/:phone`.
+- **OTP rate limits** — 60-second cooldown between sends to the same phone; 5 OTPs/hour cap per phone (both enforced in `backend/src/lib/otp.ts`). **Fails open on Redis errors** — a wedged Upstash must not lock users out. OTPs are also mirrored to an in-process `Map` as a resilience fallback (Upstash has intermittent ETIMEDOUT spikes in Cloud Run). The same Cloud Run instance that stored the OTP is likely to serve verify-otp (30-60 s later); if a cold-start routes the request to a new instance, the user taps Resend.
 - Axios client has `withCredentials: true`; cookies are sent automatically on every request
 - Auto-refresh: interceptor catches 401, calls `/api/user-auth/refresh`, retries original request (skipped for `/api/user-auth/` paths)
 - `initApiClient()` in `tbt-user-web/lib/api/client.ts` is a **no-op stub** — user web never attaches bearer tokens; auth is entirely cookie-based
@@ -131,14 +141,14 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 - **`user` module** (`backend/src/modules/user/`) — monolithic handler for ALL user-facing authenticated API routes at `/api/user/*`. Covers courses (user-facing), events, webinars, workshops, notifications, messages, dashboard, products, resources, conversations, search, programs, and profile. When adding new user-web backend routes, handlers go in `user/controller.ts` and the route in `user/routes.ts`.
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
-- **Backend modules present:** `admin-notifications`, `admins`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `podcasts`, `products`, `pub`, `rituals`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
+- **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `podcasts`, `products`, `pub`, `rituals`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
 - **Cron endpoints** — `/api/workshops/cron/generate-recurring` and `/api/cron/course-expiry-reminder` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
 - **Public certificate verification** — `GET /api/pub/certificates/course/:certId` is unauthenticated; returns `{ memberName, courseTitle, completedAt }`. Served by the `pub` module and consumed by `app/verify/course/[certId]/page.tsx` (Server Component, `revalidate: 3600`).
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (202+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`, `useBatchDayAnalytics`.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (202+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`, `useBatchDayAnalytics`. Ads admin hooks: `useListAdCampaigns`, `useGetAdCampaign`, `useCreateAdCampaign`, `useUpdateAdCampaign`, `useUpdateAdCampaignStatus`, `useDuplicateAdCampaign`, `useDeleteAdCampaign`, `useAdCampaignAnalytics`, `useAdAnalyticsOverview`.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB), `useCreateBunnyVideo` (`POST /api/upload/bunny-video-create`), `useDeleteBunnyVideo` (`DELETE /api/upload/bunny-video/:videoId`)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, `useUpdateTask`, `useDeleteTask`, `useListBatchTasks`, `useCreateBatchTask`, `useUpdateBatchTask`, `useDeleteBatchTask`, `useReorderBatchTasks`, `useMigrateJsonTasks`, `useGetBatchSubmissions`, `useReviewTaskSubmission`, `useGetAllBatchTasks` (`GET /api/batches/:id/all-tasks` — program tasks + batch-inline tasks combined)
@@ -243,6 +253,7 @@ Additional semantic tokens from `globals.css` (not API-injected — safe to use 
 - `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`)
 - `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`; backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
+- `lib/hooks/useAds.ts` — ad display logic: `useAdEngine` (fetches eligible ad, tracks impression/click/skip/close/complete). Backed by `lib/api/services/ads.service.ts`. Ad triggers live in `lib/ads/adTriggers.ts`; media pre-loading in `lib/ads/mediaRegistry.ts`; per-session frequency cap in `lib/ads/session.ts`; event batching in `lib/ads/trackingQueue.ts`.
 - All hooks are `"use client"` and use TanStack Query v5
 
 **Service layer:** User-web hooks delegate HTTP calls to `lib/api/services/*.service.ts` (thin wrappers over `apiClient`). When adding new user-web hooks, create or extend the relevant service file rather than calling `apiClient` directly from the hook.
@@ -453,7 +464,17 @@ Group chat (distinct from DM `/api/messages`). Admin page: `admin-panel/app/grou
 **Raw-SQL UUID casts required** — every raw-SQL UUID parameter in `chat-groups/controller.ts` must be cast to `::uuid` (see commit `e3a5590f`). Missing the cast produces a Postgres type error at runtime.
 
 ### Helpdesk / Support (`/api/helpdesk`)
-Support ticketing. Admin page: `admin-panel/app/support/`. User pages: `app/(platform)/support/` (list tickets, submit feedback, ticket detail with chat).
+Support ticketing. Admin page: `admin-panel/app/support/`. User pages: `app/(platform)/support/` (list tickets, submit feedback, ticket detail with chat). Tickets carry `priority` (`low | medium | high | urgent`, default `medium`), `preferredContact` (optional), and `attachmentUrls` (array — multi-attachment). Older clients sending a single `attachmentUrl` are merged server-side; do not remove the legacy field from the schema.
+
+### Advertisement Campaigns (`/api/ads`)
+Admin-managed ad campaigns served to members and guests. Admin page: `admin-panel/app/ads/`. Admin routes live at `/api/ads/admin/*` (Clerk auth); client routes at `/api/ads/*` (optional-auth — guests allowed, memberId null = anonymous). User-web: `lib/hooks/useAds.ts` + `lib/ads/` (adTriggers, mediaRegistry, session, trackingQueue). Key client calls: `GET /api/ads/eligible` → returns next ad, `POST /api/ads/:token/impression|click|complete|skip|close`. Campaign status transitions go through `useUpdateAdCampaignStatus` — the backend enforces an activation gate before going live. Socket event `ads:campaign_invalidated` is broadcast globally (no room) when a campaign is paused/archived/deleted mid-flight.
+
+**Ad trigger timing** (`lib/ads/adTriggers.ts` — `useAdTriggers(fire)`): three trigger types fire `fire(triggerType)`:
+- `app_launch` — once per component mount, 1,200 ms delay. All eligibility/display decisions are in the orchestrator, not here.
+- `route_enter` — on each unique path change, 600 ms debounce (absorbs redirect chains); skipped on the very first render (handled by `app_launch`).
+- `timed_interval` — every 30,000 ms; skips hidden tabs. Also fires on `visibilitychange → visible` to catch campaigns that started/ended while the tab was backgrounded.
+
+**Eligibility engine** (`backend/src/modules/ads/eligibility.ts`) is pure (no Prisma, no `new Date()`, no I/O — `now` is passed in). Unit-tested via Vitest. Do not add I/O to this file; widen the input types in the controller instead.
 
 ### AI Content (`/api/ai`)
 Admin-only AI content generation. Admin page: `admin-panel/app/ai-content/`. Backend uses `claudeService.ts` + `usageGuard.ts` (per-admin usage rate limiting). Uses `claude-haiku-4-5` via Anthropic API (requires `ANTHROPIC_API_KEY`).
@@ -619,9 +640,11 @@ Socket.IO rooms and the events each room receives:
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
 | `conversation:{id}` | `chat:message`, `chat:typing`, `chat:conversation_closed`, `chat:conversation_reopened` |
 | `chat-group:{groupId}` | `chat-group:message`, `chat-group:typing`, `chat-group:reaction`, `chat-group:read`, `chat-group:member_update` |
-| broadcast | `notification:broadcast` |
+| broadcast | `notification:broadcast`, `ads:campaign_invalidated` (`{ campaignId, reason }`) |
 
 Client joins workshop/live rooms by emitting `join:workshop` / `leave:workshop` and `join:live` / `leave:live`. Redis pub/sub adapter is attached to Socket.IO for cross-instance broadcast (commit `c5187846`).
+
+**Presence (`presence:update`)** — emitted globally on connect/disconnect. Payload: `{ memberId, online: boolean, lastSeenAt: ISO string }`. `last_seen_at` is also persisted to the `members` table (raw SQL column added at startup) on disconnect and at cold-start bulk-load. In-memory map tracks socket count per member so a second tab opening does not flip presence to offline.
 
 ## Key Services
 | Service | Purpose |
@@ -692,4 +715,7 @@ All 25 items implemented: attendance marking, break requests (admin approve/reje
 - **Support/Helpdesk** — tickets, chat, feedback (`/support`)
 - **Chat Groups (WhatsApp parity Phase 5)** — voice notes, forward, pin, star, mute, DM media, reply-jump, @mentions, presence, in-group search, FCM push, read receipts, media, replies. Web + Flutter parity.
 - **Activity log unification** — all member points now flow through `tbt_activity_log` ledger
+- **Advertisement campaign system** — admin CRUD + analytics (`/api/ads/admin/*`); client eligibility + tracking (`/api/ads/*`, optional-auth). Web + mobile clients. Campaigns broadcast `ads:campaign_invalidated` on pause/archive/delete.
+- **Presence tracking** — `last_seen_at` persisted to DB on disconnect; bulk cold-start restore on server boot. Emits global `presence:update` events.
+- **Helpdesk improvements** — priority field, preferred contact, member replies in ticket chat, multi-attachment support.
 - **No auto-logout** — sessions persist until manual sign-out on web and mobile

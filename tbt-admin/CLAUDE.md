@@ -29,6 +29,7 @@ npm run dev:backend      # Fastify only (port 8000)
 npm run typecheck        # Both workspaces
 npm run lint
 npm run format           # Prettier (whole repo)
+npm test                 # Vitest — scoped to src/modules/ads/**/*.test.ts only (pure unit, no DB/network)
 
 # TypeScript check (targeted)
 npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | Select-String <filename>

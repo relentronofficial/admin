@@ -181,6 +181,20 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS snapshot_days INT`),
+      // whatsapp_messages table so weekly/monthly report sends can be looked
+      // up and deduplicated per (member, reportType, reportPeriod).
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE whatsapp_messages
+          ADD COLUMN IF NOT EXISTS report_type VARCHAR(20),
+          ADD COLUMN IF NOT EXISTS report_period VARCHAR(20),
+          ADD COLUMN IF NOT EXISTS provider_message_id TEXT,
+          ADD COLUMN IF NOT EXISTS failure_reason TEXT
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_report_lookup
+        ON whatsapp_messages(member_id, report_type, report_period)
+        WHERE report_type IS NOT NULL
+      `),
       // Task unification — Phase 1 migrations
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id) ON DELETE CASCADE`),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ALTER COLUMN program_id DROP NOT NULL`).catch(() => {}),
