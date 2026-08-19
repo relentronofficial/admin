@@ -85,7 +85,7 @@ No manual `prisma migrate` step is required — this runs automatically on next 
 
 ## 3. Backend Domain Logic (`lib/weekChecklistLogic.ts`)
 
-Pure functions — no DB, no Fastify, no `Date.now()`/`new Date()` defaults baked in (accepts `now` as a param) — deliberately isolated so `vitest` can test it with zero mocking. Covered by `weekChecklistLogic.test.ts` (9 `describe` blocks, all passing).
+Pure functions — no DB, no Fastify, no `Date.now()`/`new Date()` defaults baked in (accepts `now` as a param) — deliberately isolated so `vitest` can test it with zero mocking. Covered by `weekChecklistLogic.test.ts` (7 `describe` blocks, all passing).
 
 | Function | Signature | Purpose |
 |---|---|---|
@@ -104,12 +104,12 @@ Pure functions — no DB, no Fastify, no `Date.now()`/`new Date()` defaults bake
 
 | Endpoint | Handler | File | New/Changed |
 |---|---|---|---|
-| `GET /api/batches/:id/week-analytics?week=N` | `getWeekAnalyticsHandler` | `modules/batches/controller.ts:602` | **New.** `week` optional, defaults to the batch's current week via `getCurrentWeekNumber(batch.startsAt)`. Returns `summarizeWeek()` output merged with `memberWise[]` and `taskWise[]` (see §7). |
+| `GET /api/batches/:id/week-analytics?week=N` | `getWeekAnalyticsHandler` | `modules/batches/controller.ts:602` | **New.** `week` optional, defaults to the batch's current week via `getCurrentWeekNumber(batch.startsAt)`. Returns `summarizeWeek()` output merged with `memberWise[]` and `taskWise[]` (see §7). **Auth:** protected by Clerk authentication — `batchRoutes` applies `fastify.authenticate` as a plugin-wide `preHandler`, same as every other route in this module. |
 | `POST /api/batches/:id/tasks` | `createBatchTaskHandler` | `modules/batches/controller.ts:763` | Changed — accepts `isRequired`, `isActive`; sets `createdBy` from `req.auth.sub`. |
 | `PUT /api/batches/:id/tasks/:taskId` | `updateBatchTaskHandler` | `modules/batches/controller.ts:800` | Changed — accepts `isRequired`, `isActive` (partial update, only applied when present in body). |
 | `DELETE /api/batches/:id/tasks/:taskId` | `deleteBatchTaskHandler` | `modules/batches/controller.ts:~830` | Changed — soft-deactivates instead of hard-deleting when `TaskSubmission` rows reference the task (D4). Response: `{deactivated: boolean, task?}`. |
-| `POST /api/user/fcm-token` | `registerFcmTokenHandler` | `modules/user/controller.ts:4215` | **New.** Upserts `NotificationDevice` by `fcmToken`; also mirrors into legacy `Member.pushToken`. Mobile was already calling this (`kUserFcmToken` in `api.dart`) — it previously 404'd. |
-| `DELETE /api/user/fcm-token` | `removeFcmTokenHandler` | `modules/user/controller.ts:~4235` | **New.** With `token`: deletes that one device row. Without: clears all of the member's device rows (logout-without-known-token case). |
+| `POST /api/user/fcm-token` | `registerFcmTokenHandler` | `modules/user/controller.ts:4215` | **New.** Upserts `NotificationDevice` by `fcmToken`; also mirrors into legacy `Member.pushToken`. Mobile was already calling this (`kUserFcmToken` in `api.dart`) — it previously 404'd. **Validation:** returns `400` with `'token is required'` when the request body has no `token`. **Auth:** protected by JWT-cookie user authentication — `userRoutes` applies `fastify.authenticateUser` as a plugin-wide `preHandler`. |
+| `DELETE /api/user/fcm-token` | `removeFcmTokenHandler` | `modules/user/controller.ts:~4235` | **New.** With `token`: deletes that one device row. Without: clears all of the member's device rows (logout-without-known-token case). **Auth:** protected by JWT-cookie user authentication (same `userRoutes` `preHandler` as above). |
 
 `GET /api/user-batch` (`getMyBatchHandler`) task-selection query changed per D8 — now `OR`s program tasks with this batch's inline tasks, both filtered `isActive: true`, and selects the two new columns (`isRequired`, `isActive`).
 
@@ -230,7 +230,7 @@ New hook: `useGetWeekAnalytics(batchId, week?)` in `lib/hooks/useTasks.ts` — `
 
 | Check | Result |
 |---|---|
-| Backend unit tests (`vitest run`, `tbt-admin/backend`) | ✅ **5 files / 105 tests passed** — includes `weekChecklistLogic.test.ts` (9 groups) |
+| Backend unit tests (`vitest run`, `tbt-admin/backend`) | ✅ **5 files / 105 tests passed** — includes `weekChecklistLogic.test.ts` (7 groups) |
 | Backend `tsc --noEmit` | ✅ clean |
 | Admin Panel `tsc --noEmit -p admin-panel/tsconfig.json` | ✅ clean |
 | User Web `tsc --noEmit` | ✅ clean |
@@ -264,6 +264,19 @@ Recorded here so a future session doesn't mistake these for regressions introduc
 
 None of these 10 files appear anywhere in this feature's `git diff`.
 
+### 12.1 Known Limitations (of this feature's own implementation)
+
+Unlike §12 above (pre-existing failures in *other* code), these three are real, verified properties of the code *this feature added* — not bugs, but boundaries worth knowing before relying on the feature further.
+
+**a. Multi-device push does not cover every push call site in the backend.**
+The new `NotificationDevice` + `sendPushToMember()` multi-device/dead-token-pruning flow (§5) covers exactly two call sites: `sendBatchNotif()` (`user-batch/controller.ts`, used by all batch notifications) and `deliverMemberReport()`'s weekly-report push (`batchReports.ts`, D7). `lib/courseNotifications.ts` — a separate, pre-existing module for course-access/badge-award notifications, untouched by this feature — still calls `sendPushNotification()` directly against the single legacy `member.pushToken` column. **Do not describe multi-device push as a platform-wide migration** — it is scoped to batch/weekly-checklist notifications only.
+
+**b. The User Web "Weekly Progress" heading is a string concatenation, not a full localized string.**
+`app/(platform)/batch-program/page.tsx` builds the heading as `` {uiStrings?.batchWeekLabel ?? "Week"}ly Progress `` — i.e. it appends the literal suffix `"ly Progress"` to whatever `batchWeekLabel` resolves to. This works for the shipped default (`"Week"` → "Weekly Progress") but is a UI/localization limitation: if an admin customizes `batchWeekLabel` in Site Settings to any value that isn't the English word "Week" (e.g. "Wk", a translated word, an emoji), the rendered heading will not read as a grammatical sentence (e.g. "Wkly Progress"). `batchWeekLabel` is also reused standalone elsewhere on the same page ("Week 1", "Week 2" card labels), where this concatenation problem does not apply — only the section heading is affected.
+
+**c. The `shouldSendChecklistAvailableNotif` unit tests do not exercise the runtime dedup path.**
+`weekChecklistLogic.ts` exports `shouldSendChecklistAvailableNotif(alreadyNotifiedDayNumbers, dayNumber)` as a pure, unit-tested dedup rule. However, `batchReminderCronHandler` (`user-batch/controller.ts`) never imports or calls this function — it independently re-implements the equivalent check as a direct Prisma query against `AppNotificationRecipient`/`AppNotification` (matching on `type: 'checklist_available'` and `actionUrl`). The unit tests in `weekChecklistLogic.test.ts` validate the *pure rule* is correct; they provide no coverage of the actual runtime DB-backed dedup query, and the two implementations could in principle drift without a failing test catching it.
+
 ---
 
 ## 13. Files Changed — Inventory
@@ -278,7 +291,7 @@ None of these 10 files appear anywhere in this feature's `git diff`.
 `app/(platform)/batch-program/page.tsx` · `app/(platform)/batch-program/[day]/page.tsx` · `types/index.ts`
 
 ### 13.4 Feature code (Mobile)
-`lib/shared/models/batch.dart` (+ regenerated `.freezed.dart`/`.g.dart`) · `lib/features/batch_program/data/batch_service.dart` · `lib/features/batch_program/presentation/batch_day_screen.dart` · `lib/features/batch_program/presentation/batch_program_screen.dart` · `lib/features/notifications/data/fcm_service.dart` · `lib/features/notifications/data/notifications_service.dart` · `lib/core/utils/notification_router.dart` · `lib/features/auth/providers/auth_provider.dart` · `lib/config/ui_strings.dart` · `test/widget/batch_day_test.dart` (fix, §11.1)
+`lib/shared/models/batch.dart` (+ regenerated `.freezed.dart`/`.g.dart`) · `lib/features/batch_program/data/batch_service.dart` · `lib/features/batch_program/presentation/batch_day_screen.dart` · `lib/features/batch_program/presentation/batch_program_screen.dart` · `lib/features/notifications/data/fcm_service.dart` · `lib/features/notifications/data/notifications_service.dart` · `lib/core/utils/notification_router.dart` · `lib/features/auth/providers/auth_provider.dart` (+ regenerated `lib/features/auth/providers/auth_provider.g.dart` — codegen sibling produced by `build_runner`/`riverpod_generator`, its `_$authNotifierHash()` constant changes whenever `auth_provider.dart`'s `AuthNotifier` body changes; not hand-edited) · `lib/config/ui_strings.dart` · `test/widget/batch_day_test.dart` (fix, §11.1)
 
 ### 13.5 Present in the working tree but NOT part of this feature — review separately before staging
 | Path | Why it's flagged |
