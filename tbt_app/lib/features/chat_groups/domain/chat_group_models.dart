@@ -300,6 +300,27 @@ class ChatGroupMessage {
       );
 }
 
+/// Read receipt detail returned by GET /api/chat-groups/:id/messages/:messageId/info.
+class MessageReadInfo {
+  const MessageReadInfo({
+    required this.memberId,
+    required this.name,
+    required this.readAt,
+    this.profilePhotoUrl,
+  });
+  final String memberId;
+  final String name;
+  final String? profilePhotoUrl;
+  final DateTime readAt;
+
+  factory MessageReadInfo.fromJson(Map<String, dynamic> j) => MessageReadInfo(
+        memberId: j['memberId'] as String,
+        name: j['name'] as String? ?? 'Member',
+        profilePhotoUrl: j['profilePhotoUrl'] as String?,
+        readAt: DateTime.parse(j['readAt'] as String),
+      );
+}
+
 /// A starred message returned by GET /api/chat-groups/starred.
 /// Wraps a [ChatGroupMessage] with the parent group's name for display.
 class StarredMessage {

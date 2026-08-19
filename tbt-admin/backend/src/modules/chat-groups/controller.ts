@@ -1222,6 +1222,80 @@ export async function memberListPinnedHandler(
   return ok(reply, hydrated.map(messageJson));
 }
 
+export async function memberPinMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const rows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `UPDATE chat_group_messages
+     SET is_pinned = true, pinned_at = NOW()
+     WHERE id = $1::uuid AND group_id = $2::uuid AND deleted_for_everyone = false
+     RETURNING id`,
+    messageId,
+    id,
+  );
+  if (rows.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:pinned', { groupId: id, messageId, pinned: true });
+  return ok(reply, { pinned: true });
+}
+
+export async function memberUnpinMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE chat_group_messages
+     SET is_pinned = false, pinned_at = NULL
+     WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:pinned', { groupId: id, messageId, pinned: false });
+  return ok(reply, { pinned: false });
+}
+
+type MessageInfoReadRow = {
+  member_id: string;
+  read_at: Date;
+  first_name: string | null;
+  last_name: string | null;
+  profile_photo_url: string | null;
+};
+
+export async function memberMessageInfoHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const rows = await req.server.prisma.$queryRawUnsafe<MessageInfoReadRow[]>(
+    `SELECT r.member_id, r.read_at, m.first_name, m.last_name, m.profile_photo_url
+     FROM chat_group_message_reads r
+     JOIN members m ON m.id = r.member_id
+     WHERE r.message_id = $1::uuid
+     ORDER BY r.read_at ASC`,
+    messageId,
+  );
+  return ok(reply, {
+    readBy: rows.map((r) => ({
+      memberId: r.member_id,
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Member',
+      profilePhotoUrl: r.profile_photo_url,
+      readAt: r.read_at,
+    })),
+  });
+}
+
 interface SetAnnouncementOnlyBody {
   announcementOnly: boolean;
 }

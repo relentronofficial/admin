@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -72,9 +73,17 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
   double _slideCancelOffset = 0; // px slid left; > 100 == cancel
   bool _recordingCancelled = false;
 
+  // Voice preview state (F-02) — path is set after stop; cleared on send/cancel.
+  String? _pendingAudioPath;
+  bool _pendingAudioSending = false;
+
   // Message being highlighted on jump-to (fades over ~800ms).
   String? _highlightedMessageId;
   Timer? _highlightTimer;
+
+  // Scroll-to-bottom FAB state.
+  bool _showScrollToBottom = false;
+  int _unreadWhileScrolled = 0;
 
   @override
   void initState() {
@@ -102,21 +111,48 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
   void _onScrollPositions() {
     final positions = _itemPositionsListener.itemPositions.value;
     if (positions.isEmpty) return;
-    final state = ref.read(chatGroupMessagesNotifierProvider(widget.groupId))
+    final msgState = ref
+        .read(chatGroupMessagesNotifierProvider(widget.groupId))
         .valueOrNull;
-    if (state == null || state.messages.isEmpty) return;
-    // With reverse:true, item 0 is the newest. The oldest visible index is
-    // the max index in `positions`. If it's close to the total length,
-    // request older messages.
+    if (msgState == null || msgState.messages.isEmpty) return;
+
+    var minIndex = 999999;
     var maxIndex = 0;
     for (final p in positions) {
       if (p.index > maxIndex) maxIndex = p.index;
+      if (p.index < minIndex) minIndex = p.index;
     }
-    if (maxIndex >= state.messages.length - 5) {
+
+    // Load more when near the oldest visible message.
+    if (maxIndex >= msgState.messages.length - 5) {
       ref
           .read(chatGroupMessagesNotifierProvider(widget.groupId).notifier)
           .loadMore();
     }
+
+    // Show scroll-to-bottom FAB when the newest message (index 0) is not visible.
+    final atBottom = minIndex == 0;
+    if (!atBottom != _showScrollToBottom) {
+      setState(() {
+        _showScrollToBottom = !atBottom;
+        if (atBottom) _unreadWhileScrolled = 0;
+      });
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_itemScrollController.isAttached) {
+      _itemScrollController.scrollTo(
+        index: 0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+    setState(() {
+      _showScrollToBottom = false;
+      _unreadWhileScrolled = 0;
+    });
+    _markTailRead();
   }
 
   void _onComposerChange() {
@@ -194,6 +230,36 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     });
   }
 
+  // ── Camera capture (F-08) ──────────────────────────────────────────────────
+
+  Future<void> _pickFromCamera() async {
+    if (_pendingMediaFile != null) return;
+    try {
+      final xfile = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (xfile == null) return;
+      final file = File(xfile.path);
+      setState(() {
+        _pendingMediaFile = file;
+        _pendingUploading = true;
+        _pendingMediaUrl = null;
+        _pendingMediaType = null;
+      });
+      final uploaded =
+          await ref.read(chatGroupsServiceProvider).uploadMedia(file);
+      if (!mounted) return;
+      setState(() {
+        _pendingUploading = false;
+        _pendingMediaUrl = uploaded?.publicUrl;
+        _pendingMediaType = uploaded?.mediaType;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _pendingUploading = false);
+    }
+  }
+
   // ── Voice recording flow ───────────────────────────────────────────────
 
   Future<void> _startRecording() async {
@@ -243,7 +309,6 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     });
     if (cancelled || path == null) {
       if (path != null) {
-        // Best-effort file cleanup.
         try {
           final f = File(path);
           if (await f.exists()) await f.delete();
@@ -251,7 +316,14 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
       }
       return;
     }
-    // Upload and send.
+    // Show preview bar instead of sending immediately (F-02).
+    setState(() => _pendingAudioPath = path);
+  }
+
+  Future<void> _sendPendingAudio() async {
+    final path = _pendingAudioPath;
+    if (path == null || _pendingAudioSending) return;
+    setState(() => _pendingAudioSending = true);
     final file = File(path);
     try {
       final uploaded =
@@ -262,7 +334,12 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
             mediaUrl: uploaded.publicUrl,
             mediaType: 'audio',
           );
+      setState(() {
+        _pendingAudioPath = null;
+        _pendingAudioSending = false;
+      });
     } catch (_) {
+      setState(() => _pendingAudioSending = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -273,6 +350,20 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     } finally {
       try {
         if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _cancelPendingAudio() async {
+    final path = _pendingAudioPath;
+    setState(() {
+      _pendingAudioPath = null;
+      _pendingAudioSending = false;
+    });
+    if (path != null) {
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
       } catch (_) {}
     }
   }
@@ -469,6 +560,18 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     );
   }
 
+  void _openMessageInfoSheet(BuildContext context, String messageId) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MessageInfoSheet(
+        groupId: widget.groupId,
+        messageId: messageId,
+      ),
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────
 
   @override
@@ -485,19 +588,42 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
         ref.watch(groupStarredIdsProvider(widget.groupId)).valueOrNull ??
             const <String>{};
 
-    // Mark newest read whenever the tail extends.
+    // Mark newest read when tail extends; accumulate unread badge if scrolled up.
     ref.listen<AsyncValue<ChatGroupMessagesState>>(
       chatGroupMessagesNotifierProvider(widget.groupId),
       (prev, next) {
         final prevLen = prev?.valueOrNull?.messages.length ?? 0;
         final nextLen = next.valueOrNull?.messages.length ?? 0;
-        if (nextLen > prevLen) _markTailRead();
+        if (nextLen > prevLen) {
+          if (_showScrollToBottom) {
+            setState(() => _unreadWhileScrolled += nextLen - prevLen);
+          } else {
+            _markTailRead();
+          }
+        }
       },
     );
 
     return Scaffold(
       backgroundColor: tokens.bgPage,
       appBar: _buildHeader(context, tokens, detailAsync, presenceAsync),
+      floatingActionButton: _showScrollToBottom
+          ? FloatingActionButton.small(
+              heroTag: 'scroll-to-bottom',
+              backgroundColor: tokens.bgSurface,
+              elevation: 4,
+              onPressed: _scrollToBottom,
+              child: Badge(
+                isLabelVisible: _unreadWhileScrolled > 0,
+                label: Text('$_unreadWhileScrolled'),
+                child: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: tokens.textPrimary,
+                ),
+              ),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Column(
         children: [
           // Pinned strip (only when pinned messages exist).
@@ -564,15 +690,8 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                     final highlighted =
                         _highlightedMessageId != null &&
                             _highlightedMessageId == msg.id;
-                    return _MessageBubble(
-                      key: ValueKey('msg-${msg.id}'),
-                      message: msg,
-                      isMine: isMine,
-                      showSender: showSender,
-                      otherMemberIds: otherMemberIds,
-                      isStarred: isStarred,
-                      highlighted: highlighted,
-                      onReplyJump: () => _jumpToMessage(msg.replyToId!),
+                    return _SwipeToReplyWrapper(
+                      disabled: msg.isDeleted,
                       onReply: () {
                         setState(() {
                           _replyingTo = msg;
@@ -580,42 +699,88 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                         });
                         _composerFocus.requestFocus();
                       },
-                      onEdit: () {
-                        if (msg.body == null) return;
-                        setState(() {
-                          _editing = msg;
-                          _replyingTo = null;
-                          _composerCtl.text = msg.body!;
-                        });
-                        _composerFocus.requestFocus();
-                      },
-                      onDelete: (forEveryone) =>
-                          _delete(msg.id, forEveryone: forEveryone),
-                      onReact: (emoji) => _toggleReaction(msg.id, emoji),
-                      onCopy: msg.body != null && msg.body!.isNotEmpty
-                          ? () async {
-                              await Clipboard.setData(
-                                  ClipboardData(text: msg.body!));
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Copied'),
-                                    behavior: SnackBarBehavior.floating,
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
+                      child: _MessageBubble(
+                        key: ValueKey('msg-${msg.id}'),
+                        message: msg,
+                        isMine: isMine,
+                        showSender: showSender,
+                        otherMemberIds: otherMemberIds,
+                        isStarred: isStarred,
+                        highlighted: highlighted,
+                        onReplyJump: () => _jumpToMessage(msg.replyToId!),
+                        onReply: () {
+                          setState(() {
+                            _replyingTo = msg;
+                            _editing = null;
+                          });
+                          _composerFocus.requestFocus();
+                        },
+                        onEdit: () {
+                          if (msg.body == null) return;
+                          setState(() {
+                            _editing = msg;
+                            _replyingTo = null;
+                            _composerCtl.text = msg.body!;
+                          });
+                          _composerFocus.requestFocus();
+                        },
+                        onDelete: (forEveryone) =>
+                            _delete(msg.id, forEveryone: forEveryone),
+                        onReact: (emoji) => _toggleReaction(msg.id, emoji),
+                        onCopy: msg.body != null && msg.body!.isNotEmpty
+                            ? () async {
+                                await Clipboard.setData(
+                                    ClipboardData(text: msg.body!));
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Copied'),
+                                      behavior: SnackBarBehavior.floating,
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                }
                               }
-                            }
-                          : null,
-                      onForward: () => _openForwardSheet(msg.id),
-                      onToggleStar: () async {
-                        try {
-                          await ref
-                              .read(groupStarredIdsProvider(widget.groupId)
-                                  .notifier)
-                              .toggle(msg.id, star: !isStarred);
-                        } catch (_) {}
-                      },
+                            : null,
+                        onForward: () => _openForwardSheet(msg.id),
+                        onToggleStar: () async {
+                          try {
+                            await ref
+                                .read(groupStarredIdsProvider(widget.groupId)
+                                    .notifier)
+                                .toggle(msg.id, star: !isStarred);
+                          } catch (_) {}
+                        },
+                        onPinToggle: msg.isDeleted
+                            ? null
+                            : () async {
+                                try {
+                                  final svc = ref
+                                      .read(chatGroupsServiceProvider);
+                                  if (msg.isPinned) {
+                                    await svc.unpinMessage(
+                                        widget.groupId, msg.id);
+                                  } else {
+                                    await svc.pinMessage(
+                                        widget.groupId, msg.id);
+                                  }
+                                } catch (_) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(const SnackBar(
+                                      content: Text(
+                                          'Could not update pin.'),
+                                      behavior:
+                                          SnackBarBehavior.floating,
+                                    ));
+                                  }
+                                }
+                              },
+                        onInfo: isMine && !msg.isDeleted
+                            ? () => _openMessageInfoSheet(
+                                context, msg.id)
+                            : null,
+                      ),
                     );
                   },
                 );
@@ -896,6 +1061,13 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                 uploaded: _pendingMediaUrl != null,
                 onClose: _clearPendingMedia,
               ),
+            if (_pendingAudioPath != null)
+              _VoicePreviewBar(
+                path: _pendingAudioPath!,
+                sending: _pendingAudioSending,
+                onSend: _sendPendingAudio,
+                onCancel: _cancelPendingAudio,
+              ),
             if (suggestions.isNotEmpty)
               _MentionDropdown(
                 suggestions: suggestions,
@@ -915,6 +1087,12 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    IconButton(
+                      icon: const Icon(Icons.camera_alt_rounded),
+                      color: tokens.textMuted,
+                      onPressed:
+                          _pendingMediaFile != null ? null : _pickFromCamera,
+                    ),
                     IconButton(
                       icon: const Icon(Icons.attach_file_rounded),
                       color: tokens.textMuted,
@@ -974,6 +1152,118 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Swipe-to-reply wrapper (F-01) ───────────────────────────────────────────
+//
+// Wraps a single message row. A rightward swipe beyond [_kThreshold] triggers
+// the reply callback and springs back with an elastic animation. Does nothing
+// when [disabled] (deleted messages).
+
+class _SwipeToReplyWrapper extends StatefulWidget {
+  const _SwipeToReplyWrapper({
+    required this.child,
+    required this.onReply,
+    this.disabled = false,
+  });
+  final Widget child;
+  final VoidCallback onReply;
+  final bool disabled;
+
+  @override
+  State<_SwipeToReplyWrapper> createState() => _SwipeToReplyWrapperState();
+}
+
+class _SwipeToReplyWrapperState extends State<_SwipeToReplyWrapper>
+    with SingleTickerProviderStateMixin {
+  static const _kThreshold = 56.0;
+  static const _kMaxDrag = 72.0;
+
+  double _dx = 0;
+  bool _hapticFired = false;
+  late final AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..addListener(() {
+        if (mounted) setState(() => _dx = _anim.value);
+      });
+    _anim = const AlwaysStoppedAnimation(0.0);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    _ctrl.stop();
+    final next = (_dx + d.delta.dx).clamp(0.0, _kMaxDrag);
+    setState(() => _dx = next);
+    if (next >= _kThreshold && !_hapticFired) {
+      _hapticFired = true;
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  void _onDragEnd(DragEndDetails _) {
+    if (_dx >= _kThreshold) widget.onReply();
+    _hapticFired = false;
+    _anim = Tween<double>(begin: _dx, end: 0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut),
+    );
+    _ctrl.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final iconOpacity = (_dx / _kThreshold).clamp(0.0, 1.0);
+    return GestureDetector(
+      onHorizontalDragUpdate: widget.disabled ? null : _onDragUpdate,
+      onHorizontalDragEnd: widget.disabled ? null : _onDragEnd,
+      behavior: HitTestBehavior.translucent,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Transform.translate(
+            offset: Offset(_dx, 0),
+            child: widget.child,
+          ),
+          if (_dx > 0)
+            Positioned(
+              left: 4,
+              top: 0,
+              bottom: 0,
+              child: Opacity(
+                opacity: iconOpacity,
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: kColorAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.reply_rounded,
+                      color: kColorAccent,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1468,6 +1758,8 @@ class _MessageBubble extends StatelessWidget {
     required this.onCopy,
     required this.onForward,
     required this.onToggleStar,
+    this.onPinToggle,
+    this.onInfo,
   });
   final ChatGroupMessage message;
   final bool isMine;
@@ -1483,6 +1775,8 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback? onCopy;
   final VoidCallback onForward;
   final VoidCallback onToggleStar;
+  final VoidCallback? onPinToggle;
+  final VoidCallback? onInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -1805,6 +2099,26 @@ class _MessageBubble extends StatelessWidget {
                   onToggleStar();
                 },
               ),
+              if (onPinToggle != null)
+                ListTile(
+                  leading: Icon(message.isPinned
+                      ? Icons.push_pin_rounded
+                      : Icons.push_pin_outlined),
+                  title: Text(message.isPinned ? 'Unpin' : 'Pin'),
+                  onTap: () {
+                    Navigator.pop(bs);
+                    onPinToggle!();
+                  },
+                ),
+              if (onInfo != null)
+                ListTile(
+                  leading: const Icon(Icons.info_outline_rounded),
+                  title: const Text('Info'),
+                  onTap: () {
+                    Navigator.pop(bs);
+                    onInfo!();
+                  },
+                ),
               if (isMine &&
                   message.mediaUrl == null &&
                   message.body != null)
@@ -2198,6 +2512,295 @@ class _BodyText extends StatelessWidget {
           }
           return TextSpan(text: chunk);
         }).toList(),
+      ),
+    );
+  }
+}
+
+// ── Voice Note Preview Bar (F-02) ────────────────────────────────────────────
+//
+// Shown in the composer area after recording stops. Lets the user preview
+// the audio before sending (or cancel/discard it).
+
+class _VoicePreviewBar extends StatefulWidget {
+  const _VoicePreviewBar({
+    required this.path,
+    required this.sending,
+    required this.onSend,
+    required this.onCancel,
+  });
+  final String path;
+  final bool sending;
+  final VoidCallback onSend;
+  final VoidCallback onCancel;
+
+  @override
+  State<_VoicePreviewBar> createState() => _VoicePreviewBarState();
+}
+
+class _VoicePreviewBarState extends State<_VoicePreviewBar> {
+  late final AudioPlayer _player;
+  bool _playing = false;
+  Duration _position = Duration.zero;
+  Duration _total = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = AudioPlayer();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      await _player.setFilePath(widget.path);
+      final dur = _player.duration;
+      if (dur != null && mounted) setState(() => _total = dur);
+      _player.positionStream.listen((pos) {
+        if (mounted) setState(() => _position = pos);
+      });
+      _player.playerStateStream.listen((s) {
+        if (!mounted) return;
+        setState(() => _playing = s.playing);
+        if (s.processingState == ProcessingState.completed) {
+          _player.seek(Duration.zero);
+          if (mounted) setState(() => _playing = false);
+        }
+      });
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final progress = _total.inMilliseconds > 0
+        ? (_position.inMilliseconds / _total.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: tokens.bgInput,
+        border: Border(
+            top: BorderSide(color: tokens.borderCard, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(
+              _playing ? Icons.pause_circle_filled_rounded : Icons.play_circle_filled_rounded,
+              color: kColorAccent,
+              size: 36,
+            ),
+            onPressed: () {
+              if (_playing) {
+                _player.pause();
+              } else {
+                _player.play();
+              }
+            },
+          ),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 2,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: SliderComponentShape.noOverlay,
+                    activeTrackColor: kColorAccent,
+                    inactiveTrackColor: tokens.borderCard,
+                    thumbColor: kColorAccent,
+                  ),
+                  child: Slider(
+                    value: progress,
+                    onChanged: (v) {
+                      _player.seek(Duration(
+                          milliseconds:
+                              (v * _total.inMilliseconds).round()));
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_fmt(_position),
+                          style: TextStyle(
+                              color: tokens.textMuted, fontSize: 10)),
+                      Text(_fmt(_total),
+                          style: TextStyle(
+                              color: tokens.textMuted, fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: Icon(Icons.close_rounded, color: tokens.textMuted),
+            onPressed: widget.sending ? null : widget.onCancel,
+            tooltip: 'Discard',
+          ),
+          widget.sending
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child:
+                      SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.send_rounded, color: kColorAccent),
+                  onPressed: widget.onSend,
+                  tooltip: 'Send',
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Message Info Sheet (F-07) ─────────────────────────────────────────────────
+//
+// Shows who has read the message, with avatar + name + read time.
+
+class _MessageInfoSheet extends ConsumerWidget {
+  const _MessageInfoSheet({
+    required this.groupId,
+    required this.messageId,
+  });
+  final String groupId;
+  final String messageId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.5,
+      maxChildSize: 0.9,
+      minChildSize: 0.3,
+      expand: false,
+      builder: (_, scrollCtrl) => Container(
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 6),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: tokens.borderCard,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Text(
+                    'Read by',
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontFamily: 'Rajdhani',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: FutureBuilder<List<MessageReadInfo>>(
+                future: ref
+                    .read(chatGroupsServiceProvider)
+                    .getMessageInfo(groupId, messageId),
+                builder: (ctx, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                        child: CircularProgressIndicator());
+                  }
+                  if (snap.hasError || snap.data == null) {
+                    return Center(
+                      child: Text('Could not load read receipts.',
+                          style:
+                              TextStyle(color: tokens.textSecondary)),
+                    );
+                  }
+                  final list = snap.data!;
+                  if (list.isEmpty) {
+                    return Center(
+                      child: Text('No one has read this yet.',
+                          style: TextStyle(color: tokens.textMuted)),
+                    );
+                  }
+                  return ListView.builder(
+                    controller: scrollCtrl,
+                    itemCount: list.length,
+                    itemBuilder: (_, i) {
+                      final r = list[i];
+                      final photo = r.profilePhotoUrl;
+                      return ListTile(
+                        leading: CircleAvatar(
+                          radius: 20,
+                          backgroundColor: tokens.bgInput,
+                          backgroundImage:
+                              photo != null && photo.isNotEmpty
+                                  ? NetworkImage(photo)
+                                  : null,
+                          child: (photo == null || photo.isEmpty)
+                              ? Text(
+                                  r.name.isNotEmpty
+                                      ? r.name[0].toUpperCase()
+                                      : '?',
+                                  style: TextStyle(
+                                      color: tokens.textPrimary,
+                                      fontWeight: FontWeight.w600),
+                                )
+                              : null,
+                        ),
+                        title: Text(r.name,
+                            style: TextStyle(
+                                color: tokens.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          DateFormat('d MMM, h:mm a')
+                              .format(r.readAt.toLocal()),
+                          style: TextStyle(
+                              color: tokens.textMuted, fontSize: 11),
+                        ),
+                        trailing: Icon(Icons.done_all_rounded,
+                            color: kColorAccent, size: 16),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

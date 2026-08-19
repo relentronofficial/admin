@@ -292,6 +292,43 @@ class ChatGroupsService {
     }
   }
 
+  Future<void> pinMessage(String groupId, String messageId) async {
+    try {
+      await _dio.post<dynamic>(
+        '/api/chat-groups/$groupId/messages/$messageId/pin',
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> unpinMessage(String groupId, String messageId) async {
+    try {
+      await _dio.delete<dynamic>(
+        '/api/chat-groups/$groupId/messages/$messageId/pin',
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<List<MessageReadInfo>> getMessageInfo(
+      String groupId, String messageId) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/chat-groups/$groupId/messages/$messageId/info',
+      );
+      final list =
+          ((res.data?['data']?['readBy']) as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(MessageReadInfo.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   static String _guessContentType(String ext) {
     return const {
           'jpg': 'image/jpeg',

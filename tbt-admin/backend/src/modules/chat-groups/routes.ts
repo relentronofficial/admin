@@ -27,6 +27,9 @@ import {
   memberUnstarMessageHandler,
   memberListStarredHandler,
   memberListPinnedHandler,
+  memberPinMessageHandler,
+  memberUnpinMessageHandler,
+  memberMessageInfoHandler,
 } from './controller.js';
 
 /**
@@ -69,6 +72,9 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
     userScope.post('/:id/messages/:messageId/star', memberStarMessageHandler);
     userScope.delete('/:id/messages/:messageId/star', memberUnstarMessageHandler);
     userScope.get('/:id/pinned', memberListPinnedHandler);
+    userScope.post('/:id/messages/:messageId/pin', memberPinMessageHandler);
+    userScope.delete('/:id/messages/:messageId/pin', memberUnpinMessageHandler);
+    userScope.get('/:id/messages/:messageId/info', memberMessageInfoHandler);
     userScope.post('/:id/mute', memberMuteGroupHandler);
     userScope.post('/:id/read', memberMarkReadHandler);
     userScope.get('/:id/search', memberSearchMessagesHandler);
