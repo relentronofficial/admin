@@ -2,8 +2,8 @@
 
 Adds a **weekly rollup layer** on top of the existing 90-day batch program (`TASK_FEATURE_SPEC.md`) — required/optional task flags, per-week analytics for admins, weekly progress UI for members (web + mobile), and a real multi-device push-notification pipeline (the FCM device-registration endpoint the mobile app was already calling was previously a 404).
 
-**Status: implemented and verified — not yet committed.**
-Audit + verification date: 2026-08-19. Written against branch `feature/app`, HEAD `3496819` (all described changes are currently uncommitted working-tree diff on top of that commit).
+**Status: implemented, verified, and committed.**
+Audit + verification date: 2026-08-19. Written against branch `feature/app`, HEAD `3496819`; the described changes now live in three commits on top of that: `2ef5a5a` (this document), `42580d9` (backend), `e28193d` (Admin Panel + User Web + Mobile UI). Not yet pushed to `origin/feature/app`.
 
 Week number is a **derived value, never stored** — `ceil(dayNumber / 7)` — computed identically in three places (backend `weekChecklistLogic.ts`, user-web `batch-program/page.tsx`, mobile `batch_program_screen.dart`). This is the load-bearing invariant of the whole feature: it stays correct even if a task's `dayNumber` or a batch's `extendedDays` changes later, with no migration.
 
@@ -307,5 +307,6 @@ None of these 10 files appear anywhere in this feature's `git diff`.
 - [x] Pre-existing Flutter test failures identified and confirmed unrelated (§12)
 - [x] No `.env` files, secrets, or credentials in the working tree diff
 - [x] Existing 90-day checklist functionality preserved (day-analytics untouched, additive-only task fields, `batchReportLogic`/`onboardingLogic` suites still pass)
-- [ ] Decide on `CLAUDE.md` / `tsconfig.tsbuildinfo` / unrelated generated-file noise (§13.5) — commit together, split, or defer
-- [ ] Explicit user go-ahead to commit (not yet given — do not commit from this document alone)
+- [x] Decided on `CLAUDE.md` / `tsconfig.tsbuildinfo` / unrelated generated-file noise (§13.5) — left uncommitted, out of scope for this feature; no further action
+- [x] Explicit user go-ahead given, section-by-section, for the backend (§0, → `42580d9`) and UI (§1, → `e28193d`) commits
+- [ ] Push `2ef5a5a` / `42580d9` / `e28193d` to `origin/feature/app` — not yet requested
