@@ -29,7 +29,7 @@ npm run dev:backend      # Fastify only (port 8000)
 npm run typecheck        # Both workspaces
 npm run lint
 npm run format           # Prettier (whole repo)
-npm test                 # Vitest — scoped to src/modules/ads/**/*.test.ts only (pure unit, no DB/network)
+npm test                 # Vitest — scoped to src/modules/ads/**/*.test.ts + src/lib/batchReportLogic.test.ts (pure unit, no DB/network)
 
 # TypeScript check (targeted)
 npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | Select-String <filename>
@@ -149,7 +149,7 @@ await prisma.$executeRawUnsafe('ALTER TABLE foo ADD COLUMN IF NOT EXISTS bar JSO
 4. **Slug** — auto-generates from title in create mode only; never auto-overwrite in edit mode
 5. **Save Order button** — visible only when `isDirty=true`; never always-visible
 6. **`useGetPresignedUrl`** — from `useAdmin`, not `useTbt`
-7. **Cron endpoints** (`/api/workshops/cron/generate-recurring`, `/api/cron/course-expiry-reminder`) bypass Clerk/JWT and require `x-cron-secret` header instead
+7. **Cron endpoints** (`/api/workshops/cron/generate-recurring`, `/api/cron/course-expiry-reminder`, `/api/cron/weekly-report`, `/api/cron/monthly-report`) bypass Clerk/JWT and require `x-cron-secret` header instead
 8. **`tsx watch` hot-reload** — after editing backend files, kill and restart the backend dev server if API behaviour doesn't change
 9. **`CourseAccess` ≠ `CourseEnrollment`** — access grants permission; enrollment tracks progress; always check `CourseAccess` before allowing lesson playback
 10. **`invalidateCache`** — call after mutations that affect `useMe()`: `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`

@@ -31,19 +31,60 @@ void main() async {
   runApp(UncontrolledProviderScope(container: container, child: const TbtApp()));
 
   // Everything below runs concurrently with the splash video (up to 6 s).
-  // Order matters only where noted.
   unawaited(_backgroundInit(container));
 }
 
 /// Heavy startup work that does not need to block the first frame.
 /// Runs concurrently with [VideoSplashScreen].
 Future<void> _backgroundInit(ProviderContainer container) async {
+  // (1) Hive must be open before provider build() methods call
+  //     ResponseCache.readPayload() for cache-first rendering.
+  await ResponseCache.init();
+
+  // (2) Prime the token cache and device ID in parallel — both read from
+  //     secure/shared prefs and are independent of each other.
+  final tokenFuture = TokenStorage.readAccessToken();
+  await getOrCreateDeviceId(); // populates cachedDeviceId for AuthInterceptor
+  final hasSession = (await tokenFuture) != null;
+
+  // (3) Fire network prefetch and local setup concurrently.
+  //     Local notification channel setup does not affect HTTP request
+  //     handling, so it is safe to run alongside the backend calls.
+  await Future.wait([
+    _prefetchProviders(container, hasSession),
+    _localSetup(),
+  ]);
+}
+
+/// Prefetches the four high-priority providers in parallel so the dashboard
+/// renders from cache when the splash hands off instead of showing spinners.
+Future<void> _prefetchProviders(
+    ProviderContainer container, bool hasSession) async {
+  await Future.wait([
+    container
+        .read(siteConfigNotifierProvider.future)
+        .then((_) {})
+        .catchError((_) {}),
+    container
+        .read(navConfigNotifierProvider.future)
+        .then((_) {})
+        .catchError((_) {}),
+    container
+        .read(uiStringsNotifierProvider.future)
+        .then((_) {})
+        .catchError((_) {}),
+    if (hasSession)
+      container
+          .read(meNotifierProvider.future)
+          .then((_) {})
+          .catchError((_) {}),
+  ]);
+}
+
+/// Local setup tasks that can run concurrently with network prefetch.
+Future<void> _localSetup() async {
   // Local notifications channel must exist before FCM fires any tap callbacks.
   await initLocalNotifications();
-
-  // Hive cache — providers treat a null box as a cache miss so the app
-  // stays functional even if this completes after the first provider read.
-  await ResponseCache.init();
 
   // Opt into the highest supported refresh rate on Android.
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
@@ -67,37 +108,6 @@ Future<void> _backgroundInit(ProviderContainer container) async {
       await prefs.setString(kPrefPendingDeepLink, route);
     }
   }
-
-  // Device ID — populates cachedDeviceId used by AuthInterceptor.
-  await getOrCreateDeviceId();
-
-  // Prime the token cache once. Every subsequent readAccessToken() call
-  // in the interceptor now returns the in-memory value instead of hitting
-  // EncryptedSharedPreferences again.
-  final hasSession = (await TokenStorage.readAccessToken()) != null;
-
-  // Prefetch public config + member profile in parallel so the dashboard
-  // renders from cache when the splash hands off. All errors are swallowed
-  // — a failed prefetch is just a cache miss; providers re-fetch normally.
-  await Future.wait([
-    container
-        .read(siteConfigNotifierProvider.future)
-        .then((_) {})
-        .catchError((_) {}),
-    container
-        .read(navConfigNotifierProvider.future)
-        .then((_) {})
-        .catchError((_) {}),
-    container
-        .read(uiStringsNotifierProvider.future)
-        .then((_) {})
-        .catchError((_) {}),
-    if (hasSession)
-      container
-          .read(meNotifierProvider.future)
-          .then((_) {})
-          .catchError((_) {}),
-  ]);
 }
 
 Map<String, dynamic>? _parseMetadata(dynamic raw) {

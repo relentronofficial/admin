@@ -54,8 +54,8 @@ npm run seed:gamified -w backend   # Seed XP/gamification data
 npm run seed:tasks -w backend      # Seed task/initiative sample data
 npm run seed:batches -w backend    # Seed batch sample data
 
-# Tests (Vitest — narrowly scoped to ads module only)
-npm test                           # Runs src/modules/ads/**/*.test.ts — pure unit tests, no DB/network
+# Tests (Vitest — narrowly scoped to two pure modules; no DB/network)
+npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/batchReportLogic.test.ts
 # DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
 
 # TypeScript check (targeted — Bash syntax; use before/after any edit)
@@ -143,7 +143,7 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
 - **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `podcasts`, `products`, `pub`, `rituals`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
-- **Cron endpoints** — `/api/workshops/cron/generate-recurring` and `/api/cron/course-expiry-reminder` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
+- **Cron endpoints** — `/api/workshops/cron/generate-recurring`, `/api/cron/course-expiry-reminder`, `/api/cron/weekly-report`, and `/api/cron/monthly-report` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
 - **Public certificate verification** — `GET /api/pub/certificates/course/:certId` is unauthenticated; returns `{ memberName, courseTitle, completedAt }`. Served by the `pub` module and consumed by `app/verify/course/[certId]/page.tsx` (Server Component, `revalidate: 3600`).
 
 ### Frontend Structure (Admin Panel)
@@ -719,3 +719,4 @@ All 25 items implemented: attendance marking, break requests (admin approve/reje
 - **Presence tracking** — `last_seen_at` persisted to DB on disconnect; bulk cold-start restore on server boot. Emits global `presence:update` events.
 - **Helpdesk improvements** — priority field, preferred contact, member replies in ticket chat, multi-attachment support.
 - **No auto-logout** — sessions persist until manual sign-out on web and mobile
+- **Batch reports** — weekly/monthly WhatsApp progress reports for batch members. Backend: pure logic in `backend/src/lib/batchReportLogic.ts` (28 unit tests); orchestration in `batchReports.ts`; BullMQ cron queue `tbt-batch-reports` (weekly Sun 21:30 IST = `0 16 * * 0` UTC; monthly fires daily at `30 15 * * *` UTC and no-ops on non-last days). Admin Clerk routes: `GET /api/batches/reports/history`, `GET /api/batches/reports/preview`, `POST /api/batches/reports/send-test`. Admin hooks in `useTbt.ts`: `useReportDeliveryHistory`, `usePreviewBatchReport`, `useSendTestBatchReport`. Admin page: `admin-panel/app/batch-reports/`. Optional env vars: `WABA_WEEKLY_REPORT_TEMPLATE_NAME`, `WABA_MONTHLY_REPORT_TEMPLATE_NAME` (both optional; falls back to plain-text WhatsApp message). `WhatsappMessage` Prisma model gained four startup-ALTER columns: `reportType`, `reportPeriod`, `providerMessageId`, `failureReason`.
