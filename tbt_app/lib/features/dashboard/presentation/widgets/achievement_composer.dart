@@ -64,7 +64,7 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
   final _focus = FocusNode();
   final _picker = ImagePicker();
 
-  bool _expanded = true;
+  bool _expanded = false;
   bool _showEmojiPicker = false;
   bool _submitting = false;
   String _visibility = 'Public';

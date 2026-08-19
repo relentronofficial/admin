@@ -38,97 +38,94 @@ class _MorningRitualCardState extends ConsumerState<MorningRitualCard> {
   }
 
   // ── Neumorphism recipe (matches home menu tiles) ────────────────────
-  //   Outer card: rich diagonal gradient + deep drop shadow (dark) /
-  //   dual highlight+shadow (light).
-  //   Inner elements: smaller, scaled-down version of the same recipe
-  //   so they read as extruded from the card face, not stuck on top.
+  //   Cached as static finals so object allocation only happens once per
+  //   app lifetime, not on every build() call.
 
-  BoxDecoration _outerCardDeco(bool isDark) => BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? const [
-                  Color(0xFF1B1B22),
-                  Color(0xFF11111A),
-                  Color(0xFF06060B),
-                ]
-              : const [
-                  Color(0xFFFFFFFF),
-                  Color(0xFFEDEDF0),
-                  Color(0xFFD4D4DC),
-                ],
-          stops: isDark ? const [0.0, 0.55, 1.0] : null,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: isDark
-            ? const [
-                BoxShadow(
-                  color: Colors.black,
-                  offset: Offset(0, 16),
-                  blurRadius: 36,
-                ),
-                BoxShadow(
-                  color: Color(0xA6000000),
-                  offset: Offset(0, 4),
-                  blurRadius: 8,
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: const Color(0xFF8E8EA0).withValues(alpha: 0.55),
-                  offset: const Offset(14, 14),
-                  blurRadius: 30,
-                ),
-                BoxShadow(
-                  color: const Color(0xFF8E8EA0).withValues(alpha: 0.30),
-                  offset: const Offset(4, 4),
-                  blurRadius: 6,
-                ),
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 1.0),
-                  offset: const Offset(-12, -12),
-                  blurRadius: 28,
-                ),
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.95),
-                  offset: const Offset(-3, -3),
-                  blurRadius: 5,
-                ),
-              ],
-      );
+  static const _outerCardDecoDark = BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF1B1B22), Color(0xFF11111A), Color(0xFF06060B)],
+      stops: [0.0, 0.55, 1.0],
+    ),
+    borderRadius: BorderRadius.all(Radius.circular(20)),
+    boxShadow: [
+      BoxShadow(color: Colors.black, offset: Offset(0, 16), blurRadius: 36),
+      BoxShadow(color: Color(0xA6000000), offset: Offset(0, 4), blurRadius: 8),
+    ],
+  );
 
-  // Small pill (header ritual tag, step counter, chevron)
-  BoxDecoration _pillDeco(bool isDark, {double radius = 10}) => BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? const [Color(0xFF23232B), Color(0xFF0A0A0F)]
-              : const [Color(0xFFFFFFFF), Color(0xFFE6E6EC)],
-        ),
+  static final _outerCardDecoLight = BoxDecoration(
+    gradient: const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFFFF), Color(0xFFEDEDF0), Color(0xFFD4D4DC)],
+    ),
+    borderRadius: BorderRadius.circular(20),
+    boxShadow: [
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.55), offset: const Offset(14, 14), blurRadius: 30),
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.30), offset: const Offset(4, 4), blurRadius: 6),
+      const BoxShadow(color: Colors.white, offset: Offset(-12, -12), blurRadius: 28),
+      BoxShadow(color: Colors.white.withValues(alpha: 0.95), offset: const Offset(-3, -3), blurRadius: 5),
+    ],
+  );
+
+  BoxDecoration _outerCardDeco(bool isDark) =>
+      isDark ? _outerCardDecoDark : _outerCardDecoLight;
+
+  // Small pill (header ritual tag, step counter, chevron) — cached per radius.
+  static const _pillDecoDark = BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF23232B), Color(0xFF0A0A0F)],
+    ),
+    boxShadow: [
+      BoxShadow(color: Color(0xCC000000), offset: Offset(2, 3), blurRadius: 6),
+    ],
+  );
+  static final _pillDecoLight = BoxDecoration(
+    gradient: const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFFFF), Color(0xFFE6E6EC)],
+    ),
+    boxShadow: [
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.35), offset: const Offset(3, 3), blurRadius: 6),
+      const BoxShadow(color: Colors.white, offset: Offset(-3, -3), blurRadius: 6),
+    ],
+  );
+
+  // _pillDeco uses copyWith so gradient/shadows are shared references —
+  // only borderRadius is new on each call.
+  BoxDecoration _pillDeco(bool isDark, {double radius = 10}) =>
+      (isDark ? _pillDecoDark : _pillDecoLight).copyWith(
         borderRadius: BorderRadius.circular(radius),
-        boxShadow: isDark
-            ? const [
-                BoxShadow(
-                  color: Color(0xCC000000),
-                  offset: Offset(2, 3),
-                  blurRadius: 6,
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: const Color(0xFF8E8EA0).withValues(alpha: 0.35),
-                  offset: const Offset(3, 3),
-                  blurRadius: 6,
-                ),
-                BoxShadow(
-                  color: Colors.white,
-                  offset: const Offset(-3, -3),
-                  blurRadius: 6,
-                ),
-              ],
       );
+
+  static const _secondaryBtnDecoDark = BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF1F1F26), Color(0xFF08080C)],
+    ),
+    borderRadius: BorderRadius.all(Radius.circular(16)),
+    boxShadow: [
+      BoxShadow(color: Colors.black, offset: Offset(4, 5), blurRadius: 12),
+    ],
+  );
+  static final _secondaryBtnDecoLight = BoxDecoration(
+    gradient: const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFFFF), Color(0xFFE0E0E8)],
+    ),
+    borderRadius: BorderRadius.circular(16),
+    boxShadow: [
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.40), offset: const Offset(5, 5), blurRadius: 10),
+      const BoxShadow(color: Colors.white, offset: Offset(-5, -5), blurRadius: 10),
+    ],
+  );
 
   // Medium extruded circle (habit icon 60px, completion badge 60px)
   BoxDecoration _extrudedCircleDeco(bool isDark, {Color? tint}) =>
@@ -175,37 +172,8 @@ class _MorningRitualCardState extends ConsumerState<MorningRitualCard> {
               ],
       );
 
-  // Neumorphic "Not Yet" secondary button
-  BoxDecoration _secondaryBtnDeco(bool isDark) => BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? const [Color(0xFF1F1F26), Color(0xFF08080C)]
-              : const [Color(0xFFFFFFFF), Color(0xFFE0E0E8)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: isDark
-            ? const [
-                BoxShadow(
-                  color: Colors.black,
-                  offset: Offset(4, 5),
-                  blurRadius: 12,
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: const Color(0xFF8E8EA0).withValues(alpha: 0.40),
-                  offset: const Offset(5, 5),
-                  blurRadius: 10,
-                ),
-                BoxShadow(
-                  color: Colors.white,
-                  offset: const Offset(-5, -5),
-                  blurRadius: 10,
-                ),
-              ],
-      );
+  BoxDecoration _secondaryBtnDeco(bool isDark) =>
+      isDark ? _secondaryBtnDecoDark : _secondaryBtnDecoLight;
 
   void _handleAnswer(bool answer, int total) {
     setState(() {
