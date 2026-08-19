@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -21,31 +22,39 @@ import 'shared/providers/site_config_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Firebase must be initialized before runApp — native plugin channels.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Set up local notification channel before anything else uses FCM.
+  final container = ProviderContainer();
+
+  // Show UI immediately — the splash video covers background init time.
+  runApp(UncontrolledProviderScope(container: container, child: const TbtApp()));
+
+  // Everything below runs concurrently with the splash video (up to 6 s).
+  // Order matters only where noted.
+  unawaited(_backgroundInit(container));
+}
+
+/// Heavy startup work that does not need to block the first frame.
+/// Runs concurrently with [VideoSplashScreen].
+Future<void> _backgroundInit(ProviderContainer container) async {
+  // Local notifications channel must exist before FCM fires any tap callbacks.
   await initLocalNotifications();
 
-  // Open the shared response cache before any provider tries to read
-  // from it. Cheap — opens a single Hive box.
+  // Hive cache — providers treat a null box as a cache miss so the app
+  // stays functional even if this completes after the first provider read.
   await ResponseCache.init();
 
-  // Opt into the highest supported display refresh rate on Android.
-  // Flutter caps at 60 Hz by default even on 120 Hz hardware — this
-  // call picks the mode with the highest refresh rate among modes that
-  // match the current resolution. iOS handles this via
-  // `CADisableMinimumFrameDurationOnPhone` in Info.plist (already set).
+  // Opt into the highest supported refresh rate on Android.
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {
       await FlutterDisplayMode.setHighRefreshRate();
-    } catch (_) {
-      // Not fatal — some emulators / older Android versions don't
-      // support the mode API. Fall back to whatever the OS gave us.
-    }
+    } catch (_) {}
   }
 
-  // Terminated state: resolve the tapped notification's route and stash it for
-  // the router to consume once the user is authenticated.
+  // Terminated-state notification deep-link — resolve and stash the target
+  // route so TbtApp can consume it once the user is authenticated.
+  // getInitialMessage() is a fast local IPC call (no network).
   final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
   if (initialMessage != null) {
     final type = initialMessage.data['type'] as String?;
@@ -59,17 +68,17 @@ void main() async {
     }
   }
 
+  // Device ID — populates cachedDeviceId used by AuthInterceptor.
   await getOrCreateDeviceId();
 
-  final container = ProviderContainer();
-
-  // Prefetch member profile in parallel with the public config fetches
-  // when a session token is present — cuts the auth waterfall on cold
-  // start (previously every authenticated screen paid the round-trip
-  // for /api/user/me on first render). Skipped when there's no token
-  // so we don't fire a guaranteed-401 for logged-out users.
+  // Prime the token cache once. Every subsequent readAccessToken() call
+  // in the interceptor now returns the in-memory value instead of hitting
+  // EncryptedSharedPreferences again.
   final hasSession = (await TokenStorage.readAccessToken()) != null;
 
+  // Prefetch public config + member profile in parallel so the dashboard
+  // renders from cache when the splash hands off. All errors are swallowed
+  // — a failed prefetch is just a cache miss; providers re-fetch normally.
   await Future.wait([
     container
         .read(siteConfigNotifierProvider.future)
@@ -89,8 +98,6 @@ void main() async {
           .then((_) {})
           .catchError((_) {}),
   ]);
-
-  runApp(UncontrolledProviderScope(container: container, child: const TbtApp()));
 }
 
 Map<String, dynamic>? _parseMetadata(dynamic raw) {
