@@ -67,6 +67,17 @@ class NotificationsService {
     }
   }
 
+  Future<void> unregisterFcmToken(String? token) async {
+    try {
+      await _dio.delete<dynamic>(
+        kUserFcmToken,
+        data: token != null ? {'token': token} : null,
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   Future<void> dismiss(String id) async {
     try {
       await _dio.delete<dynamic>('$kNotifications/$id');

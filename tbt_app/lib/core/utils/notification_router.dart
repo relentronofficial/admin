@@ -14,10 +14,16 @@ String resolveNotificationRoute({
   final m = metadata ?? const <String, dynamic>{};
 
   switch (type) {
-    // ── Batch ────────────────────────────────────────────────────────────────
+    // ── Batch / weekly checklist ────────────────────────────────────────────
     case 'batch_day_approved':
+    case 'batch_day_reminder':
+    case 'checklist_available':
+    case 'checklist_submitted':
       final day = m['dayNumber'];
       if (day != null) return '/batch-program/$day';
+      return '/batch-program';
+
+    case 'weekly_pending_reminder':
       return '/batch-program';
 
     // ── Courses ──────────────────────────────────────────────────────────────

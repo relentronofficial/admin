@@ -315,6 +315,31 @@ export default function BatchProgramPage() {
     };
   }, [program, totalDays]);
 
+  // Weekly grouping — week number is always derived from dayNumber
+  // (ceil(dayNumber/7)), never stored or hardcoded. Mirrors
+  // getWeekDayRange/getCurrentWeekNumber in the backend's
+  // weekChecklistLogic.ts.
+  const weeklyProgress = useMemo(() => {
+    const weekCount = Math.ceil(totalDays / 7);
+    const currentWeek = Math.max(1, Math.ceil(Math.min(daysElapsed + 1, totalDays) / 7));
+    return Array.from({ length: weekCount }, (_, i) => {
+      const weekNumber = i + 1;
+      const startDay = i * 7 + 1;
+      const endDay = Math.min((i + 1) * 7, totalDays);
+      const days = Array.from({ length: endDay - startDay + 1 }, (_, j) => startDay + j);
+      const approved = days.filter((d) => progressMap[String(d)]?.status === "approved").length;
+      return {
+        weekNumber,
+        startDay,
+        endDay,
+        approved,
+        total: days.length,
+        completionRate: days.length > 0 ? Math.round((approved / days.length) * 100) : 0,
+        isCurrent: weekNumber === currentWeek,
+      };
+    });
+  }, [totalDays, daysElapsed, progressMap]);
+
   // Build calendar cells for the current month
   const calendarDays = useMemo(() => {
     if (!program?.batch) return [];
@@ -919,6 +944,44 @@ export default function BatchProgramPage() {
           ))}
         </div>
       </div>
+
+      {/* Weekly progress */}
+      {weeklyProgress.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3 opacity-60 uppercase tracking-widest">
+            {uiStrings?.batchWeekLabel ?? "Week"}ly Progress
+          </h3>
+          <div className="flex gap-2.5 overflow-x-auto pb-1">
+            {weeklyProgress.map((w) => (
+              <div
+                key={w.weekNumber}
+                className="shrink-0 rounded-xl border p-3 min-w-[92px]"
+                style={{
+                  borderColor: w.isCurrent ? "var(--color-accent)" : "var(--color-border-subtle)",
+                  background: w.isCurrent
+                    ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
+                    : "var(--color-bg-surface)",
+                }}
+              >
+                <p className="text-[11px] text-muted-foreground font-semibold">
+                  {uiStrings?.batchWeekLabel ?? "Week"} {w.weekNumber}
+                </p>
+                <p className="text-sm font-bold mt-1">{w.completionRate}%</p>
+                <p className="text-[11px] text-muted-foreground">{w.approved}/{w.total}</p>
+                <div
+                  className="h-1.5 rounded-full overflow-hidden mt-2"
+                  style={{ background: "var(--color-surface-overlay-md)" }}
+                >
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${w.completionRate}%`, background: "var(--color-accent)" }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Day list */}
       <div>

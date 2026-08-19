@@ -85,6 +85,18 @@ class FcmService {
     }
   }
 
+  /// Best-effort — called on manual logout so the device stops receiving
+  /// push for this member. Must run while the session cookie is still
+  /// valid (before AuthService.logout() clears local tokens).
+  Future<void> unregisterToken() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      await _notificationsService.unregisterFcmToken(token).catchError((_) {});
+    } catch (_) {
+      // Best-effort — logout must proceed regardless.
+    }
+  }
+
   // ── Message handlers ───────────────────────────────────────────────────────
 
   /// Wire up foreground + background-tap handlers. Idempotent — safe to call

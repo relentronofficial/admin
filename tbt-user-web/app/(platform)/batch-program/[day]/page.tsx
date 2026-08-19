@@ -177,6 +177,7 @@ export default function BatchDayPage() {
     id: string; title: string; order: number;
     description?: string | null; deliverables?: string | null; contentUrl?: string | null;
     proofType?: string; basePoints?: number; estimatedMinutes?: number; isMilestone?: boolean;
+    isRequired?: boolean;
   }[] =
     programTasksForDay.length > 0
       ? programTasksForDay.map((t: any) => ({ ...t, order: t.sortOrder ?? 0 }))
@@ -628,6 +629,18 @@ export default function BatchDayPage() {
                             {proofType}
                           </span>
                         )}
+                        <span
+                          className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                          style={
+                            task.isRequired === false
+                              ? { color: "var(--color-text-subtle)", background: "var(--color-surface-overlay)" }
+                              : { color: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }
+                          }
+                        >
+                          {task.isRequired === false
+                            ? (uiStrings?.batchOptionalLabel ?? "Optional")
+                            : (uiStrings?.batchRequiredLabel ?? "Required")}
+                        </span>
                       </div>
                     </div>
                     {/* File upload icon for image/file types */}

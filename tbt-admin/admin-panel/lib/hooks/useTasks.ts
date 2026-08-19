@@ -16,6 +16,8 @@ export interface TaskInitiativeInput {
   milestoneLabel?: string;
   bonusPoints?: number;
   sortOrder?: number;
+  isRequired?: boolean;
+  isActive?: boolean;
 }
 
 export const useCreateTaskInitiative = () => {
@@ -170,6 +172,20 @@ export const useGetAllBatchTasks = (batchId: string) => {
     },
     enabled: !!batchId,
     staleTime: 1000 * 60 * 5,
+  });
+};
+
+export const useGetWeekAnalytics = (batchId: string, week?: number) => {
+  return useQuery({
+    queryKey: ['batch-week-analytics', batchId, week],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/batches/${batchId}/week-analytics`, {
+        params: week != null ? { week } : undefined,
+      });
+      return res.data ?? res;
+    },
+    enabled: !!batchId,
+    staleTime: 1000 * 60 * 2,
   });
 };
 

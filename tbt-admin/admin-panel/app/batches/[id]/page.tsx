@@ -49,6 +49,7 @@ import {
   useUpsertMemberBatchSettings,
   useBatchDayAnalytics,
 } from "@/lib/hooks/useTbt";
+import { useGetWeekAnalytics } from "@/lib/hooks/useTasks";
 import { toast } from "react-hot-toast";
 import { format, differenceInDays, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -672,6 +673,7 @@ export default function BatchDetailPage() {
   const [pendingRejectNote, setPendingRejectNote] = useState("");
   const [progressFilter, setProgressFilter] = useState<"all" | "behind" | "pending_today">("all");
   const [progressView, setProgressView] = useState<"days" | "weeks">("days");
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null); // null = current week (backend default)
 
   const configuredDaysMap = useMemo(() => {
     const m: Record<number, any> = {};
@@ -741,6 +743,10 @@ export default function BatchDetailPage() {
       days: Array.from({ length: 7 }, (_, j) => i * 7 + j + 1).filter(d => d <= totalDays),
     })),
     [totalDays],
+  );
+
+  const { data: weekAnalytics, isLoading: weekAnalyticsLoading } = useGetWeekAnalytics(
+    id, progressView === "weeks" ? (selectedWeek ?? undefined) : undefined,
   );
 
   const weekCellColor = (memberProgress: Record<number, any>, days: number[]) => {
@@ -1207,6 +1213,108 @@ export default function BatchDetailPage() {
                   </div>
                 ) : (
                   /* ── Weeks grid ── */
+                  <div>
+                    {/* Week picker */}
+                    <div className="flex items-center gap-2 px-5 py-3 border-b border-[#1f1f1f] flex-wrap">
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mr-1">Week</span>
+                      {weeks.map((w, i) => (
+                        <button
+                          key={w.label}
+                          onClick={() => setSelectedWeek(i + 1)}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all"
+                          style={(selectedWeek ?? weekAnalytics?.weekNumber) === i + 1
+                            ? { background: "#dc2626", color: "#fff" }
+                            : { background: "#1f1f1f", color: "#888" }}
+                        >
+                          {w.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Week summary */}
+                    {weekAnalyticsLoading ? (
+                      <div className="flex items-center justify-center py-10">
+                        <Loader2 size={22} className="animate-spin text-[#dc2626]" />
+                      </div>
+                    ) : weekAnalytics ? (
+                      <div className="px-5 py-4 border-b border-[#1f1f1f] space-y-4">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <p className="text-[12px] text-[#888]">
+                            {isValid(new Date(weekAnalytics.startDate)) && isValid(new Date(weekAnalytics.endDate))
+                              ? `${format(new Date(weekAnalytics.startDate), "MMM d")} – ${format(new Date(weekAnalytics.endDate), "MMM d, yyyy")}`
+                              : ""}
+                            {" · Day "}{weekAnalytics.startDay}–{weekAnalytics.endDay}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                          {[
+                            { label: "Members", value: weekAnalytics.totalMembers },
+                            { label: "Assigned", value: weekAnalytics.totalAssigned },
+                            { label: "Completed", value: weekAnalytics.completed },
+                            { label: "Pending", value: weekAnalytics.pending },
+                            { label: "Completion", value: `${weekAnalytics.completionRate}%` },
+                          ].map(s => (
+                            <div key={s.label} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 text-center">
+                              <p className="text-[18px] font-bold text-[#f0f0f0] font-rajdhani">{s.value}</p>
+                              <p className="text-[10px] text-[#606060] uppercase tracking-wider font-rajdhani font-bold">{s.label}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Daily breakdown within the week */}
+                        {weekAnalytics.dailyBreakdown?.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-2">Daily Breakdown</p>
+                            <div className="flex gap-2 flex-wrap">
+                              {weekAnalytics.dailyBreakdown.map((d: any) => (
+                                <div key={d.dayNumber} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-center min-w-[64px]">
+                                  <p className="text-[10px] text-[#606060] font-rajdhani font-bold">Day {d.dayNumber}</p>
+                                  <p className="text-[13px] text-[#f0f0f0] font-bold font-rajdhani">{d.approvalRate}%</p>
+                                  <p className="text-[9px] text-[#555]">{d.approved}/{d.total}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Checklist/task-wise completion */}
+                        {weekAnalytics.taskWise?.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-2">Checklist-wise Completion</p>
+                            <div className="space-y-1.5">
+                              {weekAnalytics.taskWise.map((t: any) => (
+                                <div key={t.taskId} className="flex items-center gap-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2">
+                                  <span className="text-[10px] text-[#606060] font-rajdhani font-bold w-12 shrink-0">Day {t.dayNumber}</span>
+                                  <span className="text-[12px] text-[#f0f0f0] flex-1 truncate">{t.title}</span>
+                                  {t.isRequired === false && (
+                                    <span className="text-[9px] text-[#888] bg-[#2a2a2a] px-1.5 py-0.5 rounded font-bold font-rajdhani uppercase">Optional</span>
+                                  )}
+                                  <span className="text-[11px] text-[#888] font-rajdhani font-bold w-16 text-right shrink-0">{t.approved}/{t.total}</span>
+                                  <span className="text-[11px] text-[#22c55e] font-rajdhani font-bold w-12 text-right shrink-0">{t.completionRate}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Member-wise completion */}
+                        {weekAnalytics.memberWise?.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-2">Member-wise Completion</p>
+                            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                              {weekAnalytics.memberWise.map((m: any) => (
+                                <div key={m.memberId} className="flex items-center gap-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2">
+                                  <span className="text-[12px] text-[#f0f0f0] flex-1 truncate">{m.firstName} {m.lastName}</span>
+                                  <span className="text-[11px] text-[#888] font-rajdhani font-bold w-16 text-right shrink-0">{m.approved}/{m.total}</span>
+                                  <span className="text-[11px] text-[#22c55e] font-rajdhani font-bold w-12 text-right shrink-0">{m.completionRate}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+
                   <div className="overflow-x-auto">
                     <div style={{ minWidth: `${200 + weeks.length * 52}px` }}>
                       {/* Week header row */}
@@ -1268,6 +1376,7 @@ export default function BatchDetailPage() {
                         );
                       })}
                     </div>
+                  </div>
                   </div>
                 )}
               </div>

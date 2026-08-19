@@ -124,6 +124,9 @@ class AuthNotifier extends _$AuthNotifier {
   }
 
   Future<void> logout() async {
+    // Must run before AuthService.logout() clears the session cookie —
+    // the DELETE call needs to authenticate as this member.
+    await ref.read(fcmServiceProvider).unregisterToken();
     await ref.read(authServiceProvider).logout();
     // Purge cached responses so the next user doesn't render the
     // previous user's dashboard on first launch.

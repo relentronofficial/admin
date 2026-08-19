@@ -60,6 +60,11 @@ Widget _buildBatchDay({
         completedTaskIds: any(named: 'completedTaskIds'),
         taskSubmissions: any(named: 'taskSubmissions'),
       )).thenAnswer((_) async {});
+  // mocktail returns null for unstubbed getters — taskMeta/dayMeta are
+  // non-nullable on the real BatchService (always initialized to {}), so
+  // stub them here to match, or _initTasks() throws a type error.
+  when(() => svc.taskMeta).thenReturn(<String, BatchTaskMeta>{});
+  when(() => svc.dayMeta).thenReturn(<int, BatchDayMeta>{});
 
   return ProviderScope(
     overrides: [

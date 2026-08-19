@@ -838,6 +838,31 @@ class _TaskRow extends StatelessWidget {
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: task.isRequired
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withValues(alpha: 0.12)
+                                    : context.tokens.bgSurface,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                task.isRequired ? 'Required' : 'Optional',
+                                style: TextStyle(
+                                  color: task.isRequired
+                                      ? Theme.of(context).colorScheme.primary
+                                      : context.tokens.textMuted,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ],
