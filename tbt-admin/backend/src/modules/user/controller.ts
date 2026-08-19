@@ -4212,6 +4212,43 @@ export async function revokeDeviceHandler(request: FastifyRequest, reply: Fastif
   return ok(reply, { revoked: true });
 }
 
+// ─── FCM device registration (multi-device push) ───────────────────────────
+// Mobile already calls POST on login/permission-grant (core/constants/api.dart
+// kUserFcmToken) — this was previously a 404. Upserts by fcmToken so the same
+// physical device re-registering just bumps lastSeenAt instead of duplicating.
+export async function registerFcmTokenHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { token, platform } = request.body as { token?: string; platform?: string };
+  if (!token) return fail(reply, 400, 'token is required');
+
+  const device = await request.server.prisma.notificationDevice.upsert({
+    where: { fcmToken: token },
+    create: { memberId: request.memberId!, fcmToken: token, platform: platform ?? null },
+    update: { memberId: request.memberId!, platform: platform ?? undefined, lastSeenAt: new Date() },
+  });
+  // Keep the legacy single-token column in sync for any code still reading it directly.
+  await request.server.prisma.member.update({
+    where: { id: request.memberId! },
+    data: { pushToken: token },
+  }).catch(() => {});
+  return ok(reply, { id: device.id });
+}
+
+export async function removeFcmTokenHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { token } = (request.body ?? {}) as { token?: string };
+  if (token) {
+    await request.server.prisma.notificationDevice
+      .deleteMany({ where: { memberId: request.memberId!, fcmToken: token } });
+    await request.server.prisma.member
+      .updateMany({ where: { id: request.memberId!, pushToken: token }, data: { pushToken: null } })
+      .catch(() => {});
+  } else {
+    // No token supplied (e.g. logout without knowing the current token) — clear all of this member's devices.
+    await request.server.prisma.notificationDevice.deleteMany({ where: { memberId: request.memberId! } });
+    await request.server.prisma.member.update({ where: { id: request.memberId! }, data: { pushToken: null } }).catch(() => {});
+  }
+  return ok(reply, { removed: true });
+}
+
 export async function getNotificationPrefsHandler(request: FastifyRequest, reply: FastifyReply) {
   const member = await request.server.prisma.member.findUnique({
     where: { id: request.memberId },

@@ -1,7 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { sendPushNotification } from '../../lib/firebase.js';
+import { sendPushToMember } from '../../lib/pushNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { checklistAvailableActionUrl } from '../../lib/weekChecklistLogic.js';
 
 async function sendBatchNotif(
   server: { prisma: any; io: any },
@@ -10,24 +11,19 @@ async function sendBatchNotif(
   message: string,
   type: string,
   pushData?: Record<string, string>,
+  actionUrl = '/batch-program',
 ): Promise<void> {
   await server.prisma.appNotification.create({
     data: {
       title,
       message,
       type,
-      actionUrl: '/batch-program',
+      actionUrl,
       recipients: { create: [{ memberId }] },
     },
   });
   server.io.to(`user:${memberId}`).emit('notification', { title, body: message, type });
-  const member = await server.prisma.member.findUnique({
-    where: { id: memberId },
-    select: { pushToken: true },
-  }).catch(() => null);
-  if (member?.pushToken) {
-    await sendPushNotification(member.pushToken, title, message, pushData);
-  }
+  await sendPushToMember(server.prisma, memberId, title, message, pushData);
 }
 
 const saveDraftSchema = z.object({
@@ -103,27 +99,37 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
   const extendedDays = (settings[0] as any)?.extended_days ?? 0;
   const totalDays = baseDays + extendedDays;
 
-  const programTasks = (batch as any)?.programId
-    ? await req.server.prisma.task.findMany({
-        where: { programId: (batch as any).programId },
-        orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
-        select: {
-          id: true,
-          dayNumber: true,
-          title: true,
-          description: true,
-          deliverables: true,
-          contentUrl: true,
-          basePoints: true,
-          bonusPoints: true,
-          proofType: true,
-          estimatedMinutes: true,
-          isMilestone: true,
-          milestoneLabel: true,
-          sortOrder: true,
-        },
-      })
-    : [];
+  // Program-scoped tasks (shared across all batches of the program) AND
+  // this batch's own inline tasks (created via the admin Batch Checklist
+  // tab) — both feed the same member-facing checklist. Only active tasks
+  // are shown; deactivated tasks stay visible in admin reporting only.
+  const programTasks = await req.server.prisma.task.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { batchId: member.batchId },
+        ...((batch as any)?.programId ? [{ programId: (batch as any).programId, batchId: null }] : []),
+      ],
+    },
+    orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
+    select: {
+      id: true,
+      dayNumber: true,
+      title: true,
+      description: true,
+      deliverables: true,
+      contentUrl: true,
+      basePoints: true,
+      bonusPoints: true,
+      proofType: true,
+      estimatedMinutes: true,
+      isMilestone: true,
+      milestoneLabel: true,
+      sortOrder: true,
+      isRequired: true,
+      isActive: true,
+    },
+  });
 
   return reply.send({
     success: true,
@@ -321,6 +327,16 @@ export async function submitDayHandler(
     type: 'day_submitted',
     metadata: { memberId, batchId: member.batchId, dayNumber: dayNum, memberName },
   });
+
+  // Member-facing submission confirmation
+  void sendBatchNotif(
+    req.server,
+    memberId,
+    'Checklist Submitted',
+    `Day ${dayNum} submitted for review. We'll notify you once it's approved.`,
+    'checklist_submitted',
+    { batchId: member.batchId, dayNumber: String(dayNum) },
+  );
 
   return reply.send({ success: true, data: record, error: null });
 }
@@ -763,8 +779,30 @@ export async function batchReminderCronHandler(req: FastifyRequest, reply: Fasti
       });
 
       const needsReminder = !progress || ['not_started', 'in_progress'].includes(progress.status ?? 'not_started');
-      if (needsReminder) {
-        notified++;
+      if (!needsReminder) continue;
+
+      // Distinguish "this day's checklist just became available" (send once
+      // per member per day, dedup via existing AppNotification rows) from
+      // "still pending" (the existing daily reminder). See
+      // shouldSendChecklistAvailableNotif in weekChecklistLogic.ts.
+      const actionUrl = checklistAvailableActionUrl(currentDay);
+      const alreadyNotifiedAvailable = await req.server.prisma.appNotificationRecipient.findFirst({
+        where: { memberId: member.id, notification: { type: 'checklist_available', actionUrl } },
+        select: { id: true },
+      }).catch(() => null);
+
+      notified++;
+      if (!progress && !alreadyNotifiedAvailable) {
+        void sendBatchNotif(
+          req.server,
+          member.id,
+          `New checklist available — Day ${currentDay} 📋`,
+          `${member.firstName ?? 'Hey'}, Day ${currentDay} of your batch program is now open!`,
+          'checklist_available',
+          { batchId: batch.id, dayNumber: String(currentDay) },
+          actionUrl,
+        ).catch(() => {});
+      } else {
         void sendBatchNotif(
           req.server,
           member.id,

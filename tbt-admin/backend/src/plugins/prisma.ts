@@ -132,6 +132,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS batch_break_reason_label TEXT NOT NULL DEFAULT 'Reason',
           ADD COLUMN IF NOT EXISTS batch_break_rejected_label TEXT NOT NULL DEFAULT 'Rejected',
           ADD COLUMN IF NOT EXISTS batch_break_submit_label TEXT NOT NULL DEFAULT 'Submit Request',
+          ADD COLUMN IF NOT EXISTS batch_required_label TEXT NOT NULL DEFAULT 'Required',
+          ADD COLUMN IF NOT EXISTS batch_optional_label TEXT NOT NULL DEFAULT 'Optional',
+          ADD COLUMN IF NOT EXISTS batch_week_label TEXT NOT NULL DEFAULT 'Week',
           ADD COLUMN IF NOT EXISTS ad_sponsored_label TEXT NOT NULL DEFAULT 'Sponsored',
           ADD COLUMN IF NOT EXISTS ad_skip_label TEXT NOT NULL DEFAULT 'Skip',
           ADD COLUMN IF NOT EXISTS ad_skip_in_label TEXT NOT NULL DEFAULT 'Skip in',
@@ -1061,6 +1064,27 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         -- column list. (No backticks in this comment: it lives inside a JS
         -- template literal and an unescaped backtick terminates it.)
         CREATE UNIQUE INDEX IF NOT EXISTS "ad_user_frequency_campaign_id_subject_key_session_id_day_bu_key" ON ad_user_frequency(campaign_id, subject_key, session_id, day_bucket);
+      `),
+      // Weekly checklist (2026-08) — required/active/creator on tasks, plus a
+      // multi-device FCM registration table. Week number is deliberately not
+      // stored anywhere; it's always ceil(dayNumber/7). See TASK_FEATURE_SPEC.md.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE tasks
+          ADD COLUMN IF NOT EXISTS is_required BOOLEAN NOT NULL DEFAULT true,
+          ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true,
+          ADD COLUMN IF NOT EXISTS created_by TEXT
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS notification_devices (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          fcm_token TEXT NOT NULL,
+          platform VARCHAR(20),
+          last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS notification_devices_fcm_token_key ON notification_devices(fcm_token);
+        CREATE INDEX IF NOT EXISTS idx_notification_devices_member ON notification_devices(member_id);
       `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
