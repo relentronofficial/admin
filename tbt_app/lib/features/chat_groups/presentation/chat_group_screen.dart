@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,9 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../features/community/presentation/image_viewer.dart';
@@ -25,8 +29,12 @@ import '../data/chat_groups_service.dart';
 import '../domain/chat_group_models.dart';
 import '../providers/chat_group_providers.dart';
 import 'chat_group_info_sheet.dart';
+import 'chat_group_media_preview.dart';
 import 'chat_group_search_sheet.dart';
 import 'forward_picker_sheet.dart';
+// F-11/F-12: full emoji picker.
+// ignore: depend_on_referenced_packages
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 
 /// WhatsApp-inspired group chat screen. Header + message list +
 /// composer, all wired to the real-time provider stack.
@@ -72,10 +80,27 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
   Duration _recordingElapsed = Duration.zero;
   double _slideCancelOffset = 0; // px slid left; > 100 == cancel
   bool _recordingCancelled = false;
+  // F-17: lock-to-record — true when user swiped up to lock recording.
+  bool _recordingLocked = false;
 
   // Voice preview state (F-02) — path is set after stop; cleared on send/cancel.
   String? _pendingAudioPath;
   bool _pendingAudioSending = false;
+
+  // Multi-select state (F-05). Empty set == not in selection mode.
+  final Set<String> _selectedIds = {};
+  bool get _inSelectionMode => _selectedIds.isNotEmpty;
+
+  // F-10: amplitude samples captured during recording; passed to preview bar.
+  final List<double> _amplitudeSamples = [];
+  List<double>? _pendingAudioAmplitudes;
+
+  // F-12: emoji keyboard panel toggle (replaces system keyboard).
+  bool _showEmojiKeyboard = false;
+
+  // F-13: index (from bottom of reversed list) where unread messages begin.
+  // Set on load, cleared when user scrolls to bottom.
+  int? _unreadFromIndex;
 
   // Message being highlighted on jump-to (fades over ~800ms).
   String? _highlightedMessageId;
@@ -90,8 +115,25 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     super.initState();
     _itemPositionsListener.itemPositions.addListener(_onScrollPositions);
     _composerCtl.addListener(_onComposerChange);
-    // Mark the tail read once the messages arrive (post-frame).
-    WidgetsBinding.instance.addPostFrameCallback((_) => _markTailRead());
+    // F-12: hide emoji keyboard when the hardware keyboard claims focus.
+    _composerFocus.addListener(() {
+      if (_composerFocus.hasFocus && _showEmojiKeyboard) {
+        setState(() => _showEmojiKeyboard = false);
+      }
+    });
+    // F-13: capture unread count before marking as read, then mark tail read.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final groups = ref.read(myChatGroupsProvider).valueOrNull;
+      if (groups != null) {
+        for (final g in groups) {
+          if (g.id == widget.groupId && g.unreadCount > 0) {
+            setState(() => _unreadFromIndex = g.unreadCount);
+            break;
+          }
+        }
+      }
+      _markTailRead();
+    });
   }
 
   @override
@@ -135,7 +177,10 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     if (!atBottom != _showScrollToBottom) {
       setState(() {
         _showScrollToBottom = !atBottom;
-        if (atBottom) _unreadWhileScrolled = 0;
+        if (atBottom) {
+          _unreadWhileScrolled = 0;
+          _unreadFromIndex = null; // F-13: dismiss divider once user scrolls down
+        }
       });
     }
   }
@@ -190,6 +235,57 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
         .catchError((_) => null);
   }
 
+  // ── F-21: Attach sheet (file + location) ──────────────────────────────────
+
+  void _showAttachSheet(BuildContext context, ThemeTokens tokens) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: tokens.bgSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: tokens.borderCard, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: const Color(0xFF3B82F6).withValues(alpha: 0.15), shape: BoxShape.circle),
+                child: const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF3B82F6), size: 20),
+              ),
+              title: Text('Document / Media', style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
+              onTap: () {
+                Navigator.pop(context);
+                _pickMedia();
+              },
+            ),
+            ListTile(
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: const Color(0xFF22C55E).withValues(alpha: 0.15), shape: BoxShape.circle),
+                child: const Icon(Icons.location_on_rounded, color: Color(0xFF22C55E), size: 20),
+              ),
+              title: Text('Location', style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
+              subtitle: Text('Share your current location', style: TextStyle(color: tokens.textMuted, fontSize: 12)),
+              onTap: () {
+                Navigator.pop(context);
+                _sendLocation();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Attach flow (image/video/document) ─────────────────────────────────
 
   Future<void> _pickMedia() async {
@@ -202,14 +298,33 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
       final path = res?.files.first.path;
       if (path == null) return;
       final file = File(path);
+      // F-14: show preview screen for images and videos.
+      final ext = path.split('.').last.toLowerCase();
+      final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext);
+      final isVideo = ['mp4', 'mov', 'webm'].contains(ext);
+      File uploadFile = file;
+      if (isImage || isVideo) {
+        if (!mounted) return;
+        final result = await Navigator.of(context)
+            .push<({String caption, File file})>(MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => ChatGroupMediaPreviewScreen(
+            file: file,
+            mediaType: isImage ? 'image' : 'video',
+          ),
+        ));
+        if (result == null || !mounted) return;
+        uploadFile = result.file;
+        if (result.caption.isNotEmpty) _composerCtl.text = result.caption;
+      }
       setState(() {
-        _pendingMediaFile = file;
+        _pendingMediaFile = uploadFile;
         _pendingUploading = true;
         _pendingMediaUrl = null;
         _pendingMediaType = null;
       });
       final uploaded =
-          await ref.read(chatGroupsServiceProvider).uploadMedia(file);
+          await ref.read(chatGroupsServiceProvider).uploadMedia(uploadFile);
       if (!mounted) return;
       setState(() {
         _pendingUploading = false;
@@ -217,7 +332,7 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
         _pendingMediaType = uploaded?.mediaType;
       });
     } catch (_) {
-      setState(() => _pendingUploading = false);
+      if (mounted) setState(() => _pendingUploading = false);
     }
   }
 
@@ -241,22 +356,71 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
       );
       if (xfile == null) return;
       final file = File(xfile.path);
+      // F-14: show preview before upload.
+      if (!mounted) return;
+      final result = await Navigator.of(context)
+          .push<({String caption, File file})>(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            ChatGroupMediaPreviewScreen(file: file, mediaType: 'image'),
+      ));
+      if (result == null || !mounted) return;
       setState(() {
-        _pendingMediaFile = file;
+        _pendingMediaFile = result.file;
         _pendingUploading = true;
         _pendingMediaUrl = null;
         _pendingMediaType = null;
       });
       final uploaded =
-          await ref.read(chatGroupsServiceProvider).uploadMedia(file);
+          await ref.read(chatGroupsServiceProvider).uploadMedia(result.file);
       if (!mounted) return;
       setState(() {
         _pendingUploading = false;
         _pendingMediaUrl = uploaded?.publicUrl;
         _pendingMediaType = uploaded?.mediaType;
       });
+      if (result.caption.isNotEmpty) _composerCtl.text = result.caption;
     } catch (_) {
       if (mounted) setState(() => _pendingUploading = false);
+    }
+  }
+
+  // ── F-21: Location sharing ─────────────────────────────────────────────────
+
+  Future<void> _sendLocation() async {
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission required')),
+        );
+      }
+      return;
+    }
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      final lat = pos.latitude.toStringAsFixed(6);
+      final lng = pos.longitude.toStringAsFixed(6);
+      final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
+      await ref.read(chatGroupsServiceProvider).sendMessage(
+        widget.groupId,
+        body: mapsUrl,
+        mediaType: 'location',
+        mentionedMemberIds: const [],
+      );
+      // Mark the tail read after sending.
+      _markTailRead();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not get location')),
+        );
+      }
     }
   }
 
@@ -281,15 +445,23 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
         _recordingElapsed = Duration.zero;
         _slideCancelOffset = 0;
         _recordingCancelled = false;
+        _recordingLocked = false;
       });
+      _amplitudeSamples.clear(); // F-10: fresh slate for each recording
       _recordingTicker?.cancel();
       _recordingTicker =
-          Timer.periodic(const Duration(milliseconds: 200), (_) {
+          Timer.periodic(const Duration(milliseconds: 200), (_) async {
         if (!mounted || _recordingStartedAt == null) return;
         setState(() {
           _recordingElapsed =
               DateTime.now().difference(_recordingStartedAt!);
         });
+        // F-10: sample amplitude (dBFS −60..0) and normalise to 0..1.
+        try {
+          final amp = await _recorder.getAmplitude();
+          final db = amp.current.clamp(-60.0, 0.0);
+          if (mounted) _amplitudeSamples.add(((db + 60) / 60).clamp(0.0, 1.0));
+        } catch (_) {}
       });
     } catch (_) {
       // Silently fail — the composer stays in normal state.
@@ -301,11 +473,16 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     _recordingTicker?.cancel();
     _recordingTicker = null;
     final path = await _recorder.stop();
+    // F-10: snapshot samples before clearing.
+    final amplitudes =
+        _amplitudeSamples.isNotEmpty ? List<double>.from(_amplitudeSamples) : null;
+    _amplitudeSamples.clear();
     if (!mounted) return;
     setState(() {
       _isRecording = false;
       _recordingStartedAt = null;
       _slideCancelOffset = 0;
+      _recordingLocked = false;
     });
     if (cancelled || path == null) {
       if (path != null) {
@@ -317,7 +494,10 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
       return;
     }
     // Show preview bar instead of sending immediately (F-02).
-    setState(() => _pendingAudioPath = path);
+    setState(() {
+      _pendingAudioPath = path;
+      _pendingAudioAmplitudes = amplitudes; // F-10
+    });
   }
 
   Future<void> _sendPendingAudio() async {
@@ -337,6 +517,7 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
       setState(() {
         _pendingAudioPath = null;
         _pendingAudioSending = false;
+        _pendingAudioAmplitudes = null; // F-10
       });
     } catch (_) {
       setState(() => _pendingAudioSending = false);
@@ -359,6 +540,7 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
     setState(() {
       _pendingAudioPath = null;
       _pendingAudioSending = false;
+      _pendingAudioAmplitudes = null; // F-10
     });
     if (path != null) {
       try {
@@ -542,6 +724,8 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
   }
 
   Future<void> _openForwardSheet(String messageId) async {
+    final msgState = ref.read(chatGroupMessagesNotifierProvider(widget.groupId)).valueOrNull;
+    final msg = msgState?.messages.where((m) => m.id == messageId).firstOrNull;
     final count = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -549,12 +733,15 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
       builder: (_) => ForwardPickerSheet(
         sourceGroupId: widget.groupId,
         messageId: messageId,
+        body: msg?.body,
+        mediaUrl: msg?.mediaUrl,
+        mediaType: msg?.mediaType,
       ),
     );
     if (!mounted || count == null || count <= 0) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Forwarded to $count ${count == 1 ? "group" : "groups"}'),
+        content: Text('Forwarded to $count ${count == 1 ? "recipient" : "recipients"}'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -606,8 +793,10 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
 
     return Scaffold(
       backgroundColor: tokens.bgPage,
-      appBar: _buildHeader(context, tokens, detailAsync, presenceAsync),
-      floatingActionButton: _showScrollToBottom
+      appBar: _inSelectionMode
+          ? _buildSelectionBar(context, tokens)
+          : _buildHeader(context, tokens, detailAsync, presenceAsync),
+      floatingActionButton: (!_inSelectionMode && _showScrollToBottom)
           ? FloatingActionButton.small(
               heroTag: 'scroll-to-bottom',
               backgroundColor: tokens.bgSurface,
@@ -637,6 +826,12 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
             loading: () => const SizedBox.shrink(),
             error: (_, __) => const SizedBox.shrink(),
           ),
+          // Disappearing messages banner (F-18).
+          if (detailAsync.valueOrNull?.disappearingDurationSeconds != null)
+            _DisappearingBanner(
+              durationSeconds:
+                  detailAsync.valueOrNull!.disappearingDurationSeconds!,
+            ),
           Expanded(
             child: messagesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -690,8 +885,9 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                     final highlighted =
                         _highlightedMessageId != null &&
                             _highlightedMessageId == msg.id;
-                    return _SwipeToReplyWrapper(
-                      disabled: msg.isDeleted,
+                    final isSelected = _selectedIds.contains(msg.id);
+                    final bubble = _SwipeToReplyWrapper(
+                      disabled: msg.isDeleted || _inSelectionMode,
                       onReply: () {
                         setState(() {
                           _replyingTo = msg;
@@ -707,6 +903,15 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                         otherMemberIds: otherMemberIds,
                         isStarred: isStarred,
                         highlighted: highlighted,
+                        isSelected: isSelected,
+                        inSelectionMode: _inSelectionMode,
+                        onSelect: () => setState(() {
+                          if (isSelected) {
+                            _selectedIds.remove(msg.id);
+                          } else {
+                            _selectedIds.add(msg.id);
+                          }
+                        }),
                         onReplyJump: () => _jumpToMessage(msg.replyToId!),
                         onReply: () {
                           setState(() {
@@ -782,6 +987,19 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                             : null,
                       ),
                     );
+                    // F-13: insert unread separator below the first read message.
+                    if (_unreadFromIndex != null &&
+                        i == _unreadFromIndex! &&
+                        _unreadFromIndex! < state.messages.length) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          bubble,
+                          _UnreadDivider(count: _unreadFromIndex!),
+                        ],
+                      );
+                    }
+                    return bubble;
                   },
                 );
               },
@@ -790,6 +1008,103 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
           _buildComposer(context, tokens, detailAsync, presenceAsync),
         ],
       ),
+    );
+  }
+
+  // ── F-05 Selection mode ────────────────────────────────────────────────
+
+  PreferredSizeWidget _buildSelectionBar(BuildContext context, ThemeTokens tokens) {
+    final n = _selectedIds.length;
+    return AppBar(
+      backgroundColor: tokens.bgSurface,
+      elevation: 0.5,
+      leading: IconButton(
+        icon: Icon(Icons.close, color: tokens.textPrimary),
+        onPressed: () => setState(() => _selectedIds.clear()),
+      ),
+      title: Text(
+        '$n selected',
+        style: TextStyle(color: tokens.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(Icons.star_outline, color: tokens.textPrimary),
+          tooltip: 'Star',
+          onPressed: n == 0 ? null : _bulkStar,
+        ),
+        IconButton(
+          icon: Icon(Icons.forward, color: tokens.textPrimary),
+          tooltip: 'Forward',
+          onPressed: n == 0 ? null : _bulkForward,
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          tooltip: 'Delete',
+          onPressed: n == 0 ? null : _bulkDelete,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _bulkStar() async {
+    final ids = List<String>.from(_selectedIds);
+    setState(() => _selectedIds.clear());
+    final starredNotifier = ref.read(groupStarredIdsProvider(widget.groupId).notifier);
+    await Future.wait(ids.map((id) => starredNotifier.toggle(id, star: true).catchError((_) {})));
+  }
+
+  Future<void> _bulkForward() async {
+    final ids = List<String>.from(_selectedIds);
+    setState(() => _selectedIds.clear());
+    await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ForwardPickerSheet(
+        sourceGroupId: widget.groupId,
+        messageId: ids.first,
+        messageIds: ids,
+      ),
+    );
+  }
+
+  Future<void> _bulkDelete() async {
+    final ids = List<String>.from(_selectedIds);
+    final me = ref.read(meNotifierProvider).valueOrNull;
+    // Determine if all selected are own — if so offer "delete for everyone".
+    final msgState = ref.read(chatGroupMessagesNotifierProvider(widget.groupId)).valueOrNull;
+    final allMine = msgState != null &&
+        ids.every((id) => msgState.messages.any((m) => m.id == id && m.senderMemberId == me?.id));
+
+    final confirmed = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF181818),
+        title: Text('Delete ${ids.length} message${ids.length > 1 ? "s" : ""}?',
+            style: const TextStyle(color: Color(0xFFf0f0f0), fontSize: 16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFFa0a0a0))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('me'),
+            child: const Text('Delete for me', style: TextStyle(color: Colors.redAccent)),
+          ),
+          if (allMine)
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('everyone'),
+              child: const Text('Delete for everyone', style: TextStyle(color: Colors.redAccent)),
+            ),
+        ],
+      ),
+    );
+    if (confirmed == null) return;
+    setState(() => _selectedIds.clear());
+    final forEveryone = confirmed == 'everyone';
+    final svc = ref.read(chatGroupsServiceProvider);
+    await Future.wait(
+      ids.map((id) => svc.deleteMessage(widget.groupId, id, forEveryone: forEveryone).catchError((_) {})),
     );
   }
 
@@ -1065,6 +1380,7 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
               _VoicePreviewBar(
                 path: _pendingAudioPath!,
                 sending: _pendingAudioSending,
+                amplitudes: _pendingAudioAmplitudes,
                 onSend: _sendPendingAudio,
                 onCancel: _cancelPendingAudio,
               ),
@@ -1079,8 +1395,12 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                 elapsed: _recordingElapsed,
                 slideOffset: _slideCancelOffset,
                 cancelled: _recordingCancelled,
+                locked: _recordingLocked,
+                onStop: _recordingLocked
+                    ? () => _stopRecording(cancelled: false)
+                    : null,
               )
-            else
+            else ...[
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -1096,8 +1416,27 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                     IconButton(
                       icon: const Icon(Icons.attach_file_rounded),
                       color: tokens.textMuted,
-                      onPressed:
-                          _pendingMediaFile != null ? null : _pickMedia,
+                      onPressed: _pendingMediaFile != null
+                          ? null
+                          : () => _showAttachSheet(context, tokens),
+                    ),
+                    // F-12: emoji keyboard toggle.
+                    IconButton(
+                      icon: Icon(
+                        _showEmojiKeyboard
+                            ? Icons.keyboard_rounded
+                            : Icons.emoji_emotions_outlined,
+                        color: tokens.textMuted,
+                      ),
+                      onPressed: () {
+                        final showing = !_showEmojiKeyboard;
+                        setState(() => _showEmojiKeyboard = showing);
+                        if (showing) {
+                          _composerFocus.unfocus();
+                        } else {
+                          _composerFocus.requestFocus();
+                        }
+                      },
                     ),
                     Expanded(
                       child: TextField(
@@ -1146,10 +1485,24 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                         setState(() => _recordingCancelled = true);
                         _stopRecording(cancelled: true);
                       },
+                      onLock: () => setState(() => _recordingLocked = true),
                     ),
                   ],
                 ),
               ),
+              // F-12: emoji keyboard panel (replaces system keyboard).
+              if (_showEmojiKeyboard)
+                SizedBox(
+                  height: 280,
+                  child: EmojiPicker(
+                    textEditingController: _composerCtl,
+                    config: const Config(
+                      height: 256,
+                      checkPlatformCompatibility: true,
+                    ),
+                  ),
+                ),
+            ],
           ],
         ),
       ),
@@ -1281,6 +1634,7 @@ class _SendOrMicButton extends StatefulWidget {
     required this.onMicStop,
     required this.onSlideUpdate,
     required this.onCancelRecord,
+    required this.onLock,
   });
   final bool hasTextOrMedia;
   final VoidCallback onSend;
@@ -1288,6 +1642,8 @@ class _SendOrMicButton extends StatefulWidget {
   final Future<void> Function({required bool cancel}) onMicStop;
   final void Function(double dx) onSlideUpdate;
   final VoidCallback onCancelRecord;
+  /// Called when user swipes up far enough to lock recording.
+  final VoidCallback onLock;
 
   @override
   State<_SendOrMicButton> createState() => _SendOrMicButtonState();
@@ -1296,10 +1652,14 @@ class _SendOrMicButton extends StatefulWidget {
 class _SendOrMicButtonState extends State<_SendOrMicButton> {
   bool _recording = false;
   double _dx = 0;
+  double _dy = 0;
+  bool _locked = false;
 
   @override
   Widget build(BuildContext context) {
     final iconIsSend = widget.hasTextOrMedia;
+    // Show a lock icon overlay when user has swiped up enough to nearly lock.
+    final nearLock = _dy < -60 && !_locked;
     return GestureDetector(
       onTap: iconIsSend ? widget.onSend : null,
       onLongPressStart: iconIsSend
@@ -1308,40 +1668,85 @@ class _SendOrMicButtonState extends State<_SendOrMicButton> {
               setState(() {
                 _recording = true;
                 _dx = 0;
+                _dy = 0;
+                _locked = false;
               });
               await widget.onMicStart();
             },
       onLongPressMoveUpdate: iconIsSend
           ? null
           : (d) {
-              setState(() => _dx = math.min(0, d.offsetFromOrigin.dx));
-              widget.onSlideUpdate(_dx.abs());
+              final newDx = math.min(0.0, d.offsetFromOrigin.dx);
+              final newDy = d.offsetFromOrigin.dy;
+              final wasLocked = _locked;
+              final nowLocked = newDy < -80;
+              setState(() {
+                _dx = newDx;
+                _dy = newDy;
+                if (nowLocked && !wasLocked) _locked = true;
+              });
+              if (nowLocked && !wasLocked) {
+                widget.onLock();
+              } else if (!_locked) {
+                widget.onSlideUpdate(_dx.abs());
+              }
             },
       onLongPressEnd: iconIsSend
           ? null
           : (_) async {
+              if (_locked) return; // locked — only the stop tap target can end
               final cancel = _dx.abs() > 100;
               setState(() {
                 _recording = false;
                 _dx = 0;
+                _dy = 0;
               });
               await widget.onMicStop(cancel: cancel);
             },
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: _recording ? const Color(0xFFEF4444) : kColorAccent,
-          borderRadius: BorderRadius.circular(22),
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          iconIsSend
-              ? Icons.send_rounded
-              : (_recording ? Icons.mic : Icons.mic_none_rounded),
-          color: Colors.white,
-          size: 20,
-        ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _recording ? const Color(0xFFEF4444) : kColorAccent,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              iconIsSend
+                  ? Icons.send_rounded
+                  : (_recording
+                      ? (_locked ? Icons.lock_rounded : Icons.mic)
+                      : Icons.mic_none_rounded),
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          // Lock indicator bubble — animates up above the button.
+          if (_recording && (nearLock || _locked))
+            Positioned(
+              bottom: 50,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _locked ? const Color(0xFF22C55E) : const Color(0xFF64748B),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1352,10 +1757,16 @@ class _RecordingIndicator extends StatelessWidget {
     required this.elapsed,
     required this.slideOffset,
     required this.cancelled,
+    this.locked = false,
+    this.onStop,
   });
   final Duration elapsed;
   final double slideOffset;
   final bool cancelled;
+  /// True when user has swiped up to lock — shows a tap-to-stop button.
+  final bool locked;
+  final VoidCallback? onStop;
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -1363,6 +1774,53 @@ class _RecordingIndicator extends StatelessWidget {
     final mm = (total ~/ 60).toString().padLeft(2, '0');
     final ss = (total % 60).toString().padLeft(2, '0');
     final cancelHint = slideOffset > 100 || cancelled;
+
+    if (locked) {
+      // Locked mode: timer + stop button (no slide hint).
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFEF4444), shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$mm:$ss',
+              style: TextStyle(
+                color: tokens.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: onStop,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: kColorAccent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.stop_rounded, color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text('Send', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
@@ -1466,6 +1924,48 @@ class _PinnedStrip extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Disappearing messages banner (F-18) ──────────────────────────────────────
+
+class _DisappearingBanner extends StatelessWidget {
+  const _DisappearingBanner({required this.durationSeconds});
+  final int durationSeconds;
+
+  String get _label {
+    if (durationSeconds < 3600) {
+      final m = (durationSeconds / 60).round();
+      return 'Messages disappear after $m minute${m == 1 ? "" : "s"}';
+    } else if (durationSeconds < 86400) {
+      final h = (durationSeconds / 3600).round();
+      return 'Messages disappear after $h hour${h == 1 ? "" : "s"}';
+    } else {
+      final d = (durationSeconds / 86400).round();
+      return 'Messages disappear after $d day${d == 1 ? "" : "s"}';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF1A2A1A),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.timer_outlined, size: 14, color: Color(0xFF4ADE80)),
+          const SizedBox(width: 6),
+          Text(
+            _label,
+            style: const TextStyle(
+              color: Color(0xFF4ADE80),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1750,6 +2250,9 @@ class _MessageBubble extends StatelessWidget {
     required this.otherMemberIds,
     required this.isStarred,
     required this.highlighted,
+    required this.isSelected,
+    required this.inSelectionMode,
+    required this.onSelect,
     required this.onReplyJump,
     required this.onReply,
     required this.onEdit,
@@ -1767,6 +2270,9 @@ class _MessageBubble extends StatelessWidget {
   final List<String> otherMemberIds;
   final bool isStarred;
   final bool highlighted;
+  final bool isSelected;
+  final bool inSelectionMode;
+  final VoidCallback onSelect;
   final VoidCallback onReplyJump;
   final VoidCallback onReply;
   final VoidCallback onEdit;
@@ -1803,18 +2309,26 @@ class _MessageBubble extends StatelessWidget {
         ? _senderColour(message.senderMemberId!)
         : kColorAccent;
 
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
-        child: GestureDetector(
-          onLongPress: () => _openActionSheet(context),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 400),
-            margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-            decoration: BoxDecoration(
-              color: bg,
+    final selectionBg = isSelected
+        ? kColorAccent.withValues(alpha: 0.10)
+        : Colors.transparent;
+
+    return GestureDetector(
+      onTap: inSelectionMode ? onSelect : null,
+      onLongPress: inSelectionMode ? onSelect : () => _openActionSheet(context),
+      child: Container(
+        color: selectionBg,
+        child: Stack(
+          children: [
+            Align(
+              alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: bg,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(14),
                 topRight: const Radius.circular(14),
@@ -1885,6 +2399,8 @@ class _MessageBubble extends StatelessWidget {
                         fontSize: 14,
                         height: 1.35),
                   ),
+                if (message.linkPreview != null && !message.isDeleted)
+                  _LinkPreviewCard(preview: message.linkPreview!),
                 if (message.reactions.isNotEmpty)
                   _Reactions(
                     reactions: message.reactions,
@@ -1930,7 +2446,25 @@ class _MessageBubble extends StatelessWidget {
           ),
         ),
       ),
-    );
+      // Selection checkmark overlay (F-05).
+      if (isSelected)
+        Positioned(
+          top: 6,
+          left: 6,
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: const BoxDecoration(
+              color: kColorAccent,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded, color: Colors.white, size: 14),
+          ),
+        ),
+    ],
+  ),
+  ),
+);
   }
 
   void _showReactionsSheet(BuildContext ctx) {
@@ -2046,21 +2580,49 @@ class _MessageBubble extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: ['👍', '❤️', '😂', '😮', '😢', '🙏']
-                      .map((e) => GestureDetector(
-                            onTap: () {
-                              Navigator.pop(bs);
-                              onReact(e);
-                            },
-                            child: Text(e,
-                                style: const TextStyle(fontSize: 24)),
-                          ))
-                      .toList(),
+                  children: [
+                    ...['👍', '❤️', '😂', '😮', '😢', '🙏']
+                        .map((e) => GestureDetector(
+                              onTap: () {
+                                Navigator.pop(bs);
+                                onReact(e);
+                              },
+                              child: Text(e,
+                                  style: const TextStyle(fontSize: 24)),
+                            )),
+                    // F-11: open full emoji picker.
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(bs);
+                        _openEmojiReactPicker(ctx);
+                      },
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: tokens.bgInput,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: tokens.borderCard),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(Icons.add_rounded,
+                            size: 18, color: tokens.textMuted),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const Divider(height: 1),
               // Order matches WhatsApp: Reply, React (bar above), Copy,
               // Forward, Star, Info(*omitted*), Edit(own), Delete.
+              ListTile(
+                leading: const Icon(Icons.check_circle_outline_rounded),
+                title: const Text('Select'),
+                onTap: () {
+                  Navigator.pop(bs);
+                  onSelect();
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.reply_rounded),
                 title: const Text('Reply'),
@@ -2156,6 +2718,30 @@ class _MessageBubble extends StatelessWidget {
       },
     );
   }
+
+  // F-11: full emoji picker for reactions.
+  void _openEmojiReactPicker(BuildContext ctx) {
+    showModalBottomSheet<void>(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bs) => SafeArea(
+        child: SizedBox(
+          height: 320,
+          child: EmojiPicker(
+            onEmojiSelected: (_, emoji) {
+              Navigator.of(bs).pop();
+              onReact(emoji.emoji);
+            },
+            config: const Config(
+              height: 300,
+              checkPlatformCompatibility: true,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ReplyQuote extends StatelessWidget {
@@ -2230,7 +2816,16 @@ class _MediaContent extends StatelessWidget {
     if (type == 'audio') {
       return _AudioBubble(url: url);
     }
+    // F-21: Location card.
+    if (type == 'location') {
+      return _LocationCard(mapsUrl: url);
+    }
     // Video / document → tap to open.
+    final isVideo = type == 'video';
+    final filename = url.split('/').last.split('?').first;
+    final ext = filename.contains('.')
+        ? filename.split('.').last.toLowerCase()
+        : '';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Material(
@@ -2239,7 +2834,7 @@ class _MediaContent extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () async {
-            if (type == 'video') {
+            if (isVideo) {
               await VideoViewer.open(context, url);
             } else {
               final uri = Uri.tryParse(url);
@@ -2256,27 +2851,262 @@ class _MediaContent extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(
-                  type == 'video'
-                      ? Icons.play_circle_outline_rounded
-                      : Icons.insert_drive_file_rounded,
-                  color: tokens.textPrimary,
-                ),
+                isVideo
+                    ? Icon(Icons.play_circle_outline_rounded, color: tokens.textPrimary)
+                    : (ext == 'pdf' ? _PdfThumbnail(url: url) : _ExtBadge(ext: ext)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    url.split('/').last,
-                    style:
-                        TextStyle(color: tokens.textPrimary, fontSize: 12),
+                    filename.isEmpty ? url.split('/').last : filename,
+                    style: TextStyle(color: tokens.textPrimary, fontSize: 12),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Icon(Icons.open_in_new_rounded,
-                    size: 14, color: tokens.textMuted),
+                Icon(Icons.open_in_new_rounded, size: 14, color: tokens.textMuted),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// F-21: Location card — static map image (when API key is set via
+/// --dart-define=GOOGLE_MAPS_KEY=xxx) with coordinate fallback.
+/// Taps to open in the native Maps app.
+class _LocationCard extends StatelessWidget {
+  const _LocationCard({required this.mapsUrl});
+  final String mapsUrl;
+
+  // Injected at build time: flutter run --dart-define=GOOGLE_MAPS_KEY=xxx
+  static const _mapsKey = String.fromEnvironment('GOOGLE_MAPS_KEY');
+
+  String get _coords {
+    final q = Uri.tryParse(mapsUrl)?.queryParameters['q'] ?? '';
+    return q.isEmpty ? 'Location' : q;
+  }
+
+  String? get _staticMapUrl {
+    if (_mapsKey.isEmpty) return null;
+    final q = Uri.tryParse(mapsUrl)?.queryParameters['q'] ?? '';
+    if (q.isEmpty) return null;
+    return 'https://maps.googleapis.com/maps/api/staticmap'
+        '?center=$q&zoom=14&size=300x150&markers=color:red%7C$q&key=$_mapsKey';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final staticUrl = _staticMapUrl;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () async {
+          final uri = Uri.tryParse(mapsUrl);
+          if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+        },
+        child: Container(
+          width: 240,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D2B1A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF22C55E).withValues(alpha: 0.4)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Static map image — shown only when API key is set.
+              if (staticUrl != null)
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+                  child: CachedNetworkImage(
+                    imageUrl: staticUrl,
+                    height: 110,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              // Coordinate row — always shown.
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.location_on_rounded, color: Color(0xFF22C55E), size: 20),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Location',
+                            style: TextStyle(
+                              color: tokens.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _coords,
+                            style: const TextStyle(color: Color(0xFF22C55E), fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          const Text(
+                            'Tap to open in Maps',
+                            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// F-19: Lazy PDF page-1 thumbnail. Downloads to temp on first render,
+/// then shows via PDFView constrained in a 56×56 box. Falls back to
+/// the red PDF badge on error.
+class _PdfThumbnail extends StatefulWidget {
+  const _PdfThumbnail({required this.url});
+  final String url;
+
+  @override
+  State<_PdfThumbnail> createState() => _PdfThumbnailState();
+}
+
+class _PdfThumbnailState extends State<_PdfThumbnail> {
+  static final Map<String, String> _pathCache = {};
+
+  String? _localPath;
+  bool _loading = true;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (_pathCache.containsKey(widget.url)) {
+      if (mounted) setState(() { _localPath = _pathCache[widget.url]; _loading = false; });
+      return;
+    }
+    try {
+      final dir = await getTemporaryDirectory();
+      // Stable filename from URL so repeat opens reuse the same temp file.
+      final name = widget.url.split('/').last.split('?').first;
+      final path = '${dir.path}${Platform.pathSeparator}pdf_thumb_$name';
+      final file = File(path);
+      if (!await file.exists()) {
+        final res = await http.get(Uri.parse(widget.url));
+        if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+        await file.writeAsBytes(res.bodyBytes);
+      }
+      _pathCache[widget.url] = path;
+      if (mounted) setState(() { _localPath = path; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _error = true; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+        width: 56,
+        height: 56,
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 1.5,
+            color: Color(0xFFEF4444),
+          ),
+        ),
+      );
+    }
+    if (_error || _localPath == null) {
+      return const _ExtBadge(ext: 'pdf');
+    }
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: AbsorbPointer(
+          child: PDFView(
+            filePath: _localPath!,
+            enableSwipe: false,
+            swipeHorizontal: false,
+            pageSnap: false,
+            defaultPage: 0,
+            fitPolicy: FitPolicy.BOTH,
+            preventLinkNavigation: true,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// F-19: Colored extension badge for document attachments.
+class _ExtBadge extends StatelessWidget {
+  const _ExtBadge({required this.ext});
+  final String ext;
+
+  static const _colors = {
+    'pdf': Color(0xFFEF4444),
+    'doc': Color(0xFF3B82F6),
+    'docx': Color(0xFF3B82F6),
+    'xls': Color(0xFF22C55E),
+    'xlsx': Color(0xFF22C55E),
+    'ppt': Color(0xFFF97316),
+    'pptx': Color(0xFFF97316),
+    'txt': Color(0xFF94A3B8),
+    'csv': Color(0xFF22C55E),
+    'zip': Color(0xFFA78BFA),
+    'rar': Color(0xFFA78BFA),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _colors[ext] ?? const Color(0xFF64748B);
+    final label = ext.isEmpty ? 'FILE' : ext.toUpperCase();
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label.length > 4 ? label.substring(0, 4) : label,
+        style: TextStyle(
+          color: color,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.3,
         ),
       ),
     );
@@ -2300,6 +3130,8 @@ class _AudioBubbleState extends State<_AudioBubble> {
   bool _playing = false;
   bool _loading = false;
   bool _initialised = false;
+  // F-09: playback speed cycling 1× → 1.5× → 2× → 1×.
+  double _speed = 1.0;
 
   @override
   void dispose() {
@@ -2316,6 +3148,7 @@ class _AudioBubbleState extends State<_AudioBubble> {
         await _player.setUrl(widget.url);
         final d = _player.duration;
         if (d != null) _dur = d;
+        await _player.setSpeed(_speed); // F-09
         _initialised = true;
       } catch (_) {
         setState(() => _loading = false);
@@ -2348,6 +3181,14 @@ class _AudioBubbleState extends State<_AudioBubble> {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+
+  // F-09: cycle playback speed 1× → 1.5× → 2× → 1×.
+  void _cycleSpeed() {
+    setState(() {
+      _speed = _speed == 1.0 ? 1.5 : _speed == 1.5 ? 2.0 : 1.0;
+    });
+    if (_initialised) _player.setSpeed(_speed);
   }
 
   @override
@@ -2396,13 +3237,33 @@ class _AudioBubbleState extends State<_AudioBubble> {
                       ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             SizedBox(
-              width: 120,
+              width: 100,
               height: 26,
               child: _Waveform(progress: pct),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 6),
+            // F-09: speed label — tap to cycle.
+            GestureDetector(
+              onTap: _cycleSpeed,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: tokens.bgPage,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  _speed == 1.0 ? '1×' : _speed == 1.5 ? '1.5×' : '2×',
+                  style: const TextStyle(
+                    color: kColorAccent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
             Text(
               _mmss(_pos == Duration.zero ? _dur : _pos),
               style: TextStyle(
@@ -2418,11 +3279,12 @@ class _AudioBubbleState extends State<_AudioBubble> {
   }
 }
 
-/// Static waveform placeholder — 24 sine-shaped bars that fill to
-/// [progress] (0..1). Actual per-file amplitude analysis is P2.
+/// 24-bar waveform. Uses real [amplitudes] when provided (F-10 recording
+/// data), otherwise falls back to a sine-wave placeholder.
 class _Waveform extends StatelessWidget {
-  const _Waveform({required this.progress});
+  const _Waveform({required this.progress, this.amplitudes});
   final double progress;
+  final List<double>? amplitudes; // normalised 0..1 per sample
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -2431,11 +3293,20 @@ class _Waveform extends StatelessWidget {
         const barCount = 24;
         final barSpacing = c.maxWidth / barCount;
         final filledCount = (progress * barCount).round();
+        final amps = amplitudes;
         return Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: List.generate(barCount, (i) {
-            // sine wave heights 4..22
-            final h = 4 + (18 * (0.5 + 0.5 * math.sin(i * 0.6)));
+            final double h;
+            if (amps != null && amps.isNotEmpty) {
+              // Downsample real amplitude data to barCount bars.
+              final srcIdx =
+                  ((i / barCount) * amps.length).floor().clamp(0, amps.length - 1);
+              h = 4 + amps[srcIdx] * 18;
+            } else {
+              // Sine-wave placeholder (sine heights 4..22).
+              h = 4 + (18 * (0.5 + 0.5 * math.sin(i * 0.6)));
+            }
             final on = i < filledCount;
             return Container(
               width: barSpacing - 2,
@@ -2492,26 +3363,192 @@ class _Reactions extends StatelessWidget {
   }
 }
 
-class _BodyText extends StatelessWidget {
+class _BodyText extends StatefulWidget {
   const _BodyText({required this.text, required this.textStyle});
   final String text;
   final TextStyle textStyle;
   @override
+  State<_BodyText> createState() => _BodyTextState();
+}
+
+class _BodyTextState extends State<_BodyText> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final parts = text.split(RegExp(r'(@[A-Za-z0-9_]+)'));
-    return RichText(
-      text: TextSpan(
-        style: textStyle,
-        children: parts.map((chunk) {
-          if (chunk.startsWith('@') && chunk.length > 1) {
-            return TextSpan(
-              text: chunk,
-              style: textStyle.copyWith(
-                  color: kColorAccent, fontWeight: FontWeight.w700),
-            );
-          }
-          return TextSpan(text: chunk);
-        }).toList(),
+    // Dispose previous recognizers before rebuilding.
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+
+    final tokenPattern = RegExp(r'(https?://[^\s]+|@[A-Za-z0-9_]+)');
+    final chunks = widget.text.split(tokenPattern);
+    final matches = tokenPattern.allMatches(widget.text).toList();
+
+    final spans = <InlineSpan>[];
+    for (int i = 0; i < chunks.length; i++) {
+      if (chunks[i].isNotEmpty) {
+        spans.add(TextSpan(text: chunks[i], style: widget.textStyle));
+      }
+      if (i < matches.length) {
+        final token = matches[i].group(0) ?? '';
+        if (token.startsWith('@')) {
+          spans.add(TextSpan(
+            text: token,
+            style: widget.textStyle.copyWith(color: kColorAccent, fontWeight: FontWeight.w700),
+          ));
+        } else {
+          final rec = TapGestureRecognizer()
+            ..onTap = () async {
+              final uri = Uri.tryParse(token);
+              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            };
+          _recognizers.add(rec);
+          spans.add(TextSpan(
+            text: token,
+            style: widget.textStyle.copyWith(
+              color: Colors.blue[300],
+              decoration: TextDecoration.underline,
+            ),
+            recognizer: rec,
+          ));
+        }
+      }
+    }
+
+    return RichText(text: TextSpan(style: widget.textStyle, children: spans));
+  }
+}
+
+// ── Link Preview Card (F-06) ─────────────────────────────────────────────────
+
+class _LinkPreviewCard extends StatelessWidget {
+  const _LinkPreviewCard({required this.preview});
+  final ChatGroupLinkPreview preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final domain = Uri.tryParse(preview.url)?.host ?? preview.url;
+    return GestureDetector(
+      onTap: () async {
+        final uri = Uri.tryParse(preview.url);
+        if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(top: 6),
+        decoration: BoxDecoration(
+          color: tokens.bgInput,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: tokens.borderCard),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (preview.imageUrl != null && preview.imageUrl!.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: preview.imageUrl!,
+                width: double.infinity,
+                height: 120,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (preview.siteName != null)
+                    Text(
+                      preview.siteName!,
+                      style: TextStyle(
+                        color: kColorAccent,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Rajdhani',
+                      ),
+                    ),
+                  if (preview.title != null)
+                    Text(
+                      preview.title!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: tokens.textPrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                  if (preview.description != null)
+                    Text(
+                      preview.description!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: tokens.textMuted, fontSize: 11),
+                    ),
+                  const SizedBox(height: 2),
+                  Text(
+                    domain,
+                    style: TextStyle(color: tokens.textMuted, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Unread message separator (F-13) ──────────────────────────────────────────
+
+class _UnreadDivider extends StatelessWidget {
+  const _UnreadDivider({required this.count});
+  final int count;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              color: kColorAccent.withValues(alpha: 0.4),
+              thickness: 0.5,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              '$count unread message${count == 1 ? '' : 's'}',
+              style: const TextStyle(
+                color: kColorAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(
+              color: kColorAccent.withValues(alpha: 0.4),
+              thickness: 0.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2528,9 +3565,11 @@ class _VoicePreviewBar extends StatefulWidget {
     required this.sending,
     required this.onSend,
     required this.onCancel,
+    this.amplitudes,
   });
   final String path;
   final bool sending;
+  final List<double>? amplitudes; // F-10: real waveform data
   final VoidCallback onSend;
   final VoidCallback onCancel;
 
@@ -2616,6 +3655,15 @@ class _VoicePreviewBarState extends State<_VoicePreviewBar> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // F-10: real waveform when amplitudes are available.
+                if (widget.amplitudes != null)
+                  SizedBox(
+                    height: 24,
+                    child: _Waveform(
+                      progress: progress,
+                      amplitudes: widget.amplitudes,
+                    ),
+                  ),
                 SliderTheme(
                   data: SliderThemeData(
                     trackHeight: 2,

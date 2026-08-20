@@ -194,6 +194,27 @@ class ChatGroupsService {
     }
   }
 
+  /// Bulk-forward multiple messages ([messageIds]) into every group in
+  /// [toGroupIds]. Uses the first id as the route param (backward compat)
+  /// and passes the full list in the body so the backend loops over all.
+  Future<int> forwardMessages(
+    String groupId,
+    List<String> messageIds,
+    List<String> toGroupIds,
+  ) async {
+    if (messageIds.isEmpty) return 0;
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/chat-groups/$groupId/messages/${messageIds.first}/forward',
+        data: {'toGroupIds': toGroupIds, 'messageIds': messageIds},
+      );
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
+      return (data['count'] as int?) ?? toGroupIds.length;
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   Future<void> starMessage(String groupId, String messageId) async {
     try {
       await _dio.post<dynamic>(
@@ -306,6 +327,46 @@ class ChatGroupsService {
     try {
       await _dio.delete<dynamic>(
         '/api/chat-groups/$groupId/messages/$messageId/pin',
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Returns media attachments in a group, newest-first. Supports cursor
+  /// pagination via [before] (ISO timestamp) and optional [type] filter.
+  Future<List<ChatGroupMediaItem>> listGroupMedia(
+    String groupId, {
+    String? type,
+    int limit = 20,
+    String? before,
+  }) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/chat-groups/$groupId/media',
+        queryParameters: {
+          'limit': limit,
+          if (type != null) 'type': type,
+          if (before != null) 'before': before,
+        },
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(ChatGroupMediaItem.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Sets (or clears) the disappearing-messages TTL for a group.
+  /// Pass null or 0 to disable. Admin-only on the backend.
+  Future<void> setDisappearing(String groupId, {int? durationSeconds}) async {
+    try {
+      await _dio.patch<dynamic>(
+        '/api/chat-groups/admin/$groupId/disappearing',
+        data: {'durationSeconds': durationSeconds},
       );
     } on DioException catch (e) {
       throw mapDioError(e);

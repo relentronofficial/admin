@@ -185,6 +185,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS snapshot_days INT`),
+      prisma.$executeRawUnsafe(`ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS disappearing_duration_seconds INT`),
       // whatsapp_messages table so weekly/monthly report sends can be looked
       // up and deduplicated per (member, reportType, reportPeriod).
       prisma.$executeRawUnsafe(`
@@ -974,6 +975,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           PRIMARY KEY (member_id, message_id)
         );
         CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC);
+      `),
+      // Sprint 3 (2026-08-19) — Link preview card stored alongside the message.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE chat_group_messages
+          ADD COLUMN IF NOT EXISTS link_preview JSONB
       `),
       // DM parity — media, reply, edit, delete, per-message read receipts.
       // body was NOT NULL — must allow media-only messages now.

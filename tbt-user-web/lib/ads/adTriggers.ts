@@ -48,7 +48,12 @@ export function useAdTriggers(fire: AdTriggerFn): void {
     if (launchFiredRef.current) return;
     launchFiredRef.current = true;
     const t = setTimeout(() => fire("app_launch", "app_launch"), LAUNCH_DELAY_MS);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      // Reset so React Strict Mode's double-invoke (cleanup → remount) can
+      // schedule the real timer on the second mount.
+      launchFiredRef.current = false;
+    };
   }, [fire]);
 
   // ── route_enter ───────────────────────────────────────────────────────────

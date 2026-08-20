@@ -28,7 +28,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 **Repo-root screenshots & audit scripts are throwaway artifacts.** The repo root contains hundreds of `.png`/`.jpeg` screenshots and one-off `.mjs` audit/test scripts (`admin-full-audit.mjs`, `test-*.mjs`, `*-audit.mjs`, etc.) from prior manual QA runs. Do not commit them, do not treat them as canonical tests, and do not delete them without asking — they're the user's local debugging trail.
 
-**Additional spec docs at repo root** — `tbt-admin/SPECKIT.md` is the workflow-audit implementation speckit (P0–P3 fix list for Members · Batches · Tasks). Check it before touching those modules to avoid re-litigating decisions.
+**Additional spec docs at repo root** — `tbt-admin/SPECKIT.md` is the workflow-audit implementation speckit (P0–P3 fix list for Members · Batches · Tasks). Check it before touching those modules to avoid re-litigating decisions. `tbt_app/CHAT_GROUP_SPECKIT.md` is the Flutter chat group WhatsApp-parity roadmap (F-01 – F-22, P0/P1/P2 tiers); **Sprints 1 and 2 are committed** (F-01 swipe-to-reply, F-02 voice preview, F-03 member pin/unpin, F-04 scroll-to-bottom FAB, F-07 message info sheet, F-08 camera capture); **Sprint 3 is in progress (uncommitted)** — F-05 multi-select forward, F-06 link preview (`ChatGroupLinkPreview` model added), F-11/F-12 emoji picker (`emoji_picker_flutter` added to pubspec), F-15 media gallery (backend route `GET /api/chat-groups/:id/media` + Flutter `chat_group_media_gallery.dart`/`chat_group_media_preview.dart`); **Sprint 6 is done (uncommitted)** — F-17 lock-to-record (swipe-up on mic button locks recording, tap-to-stop), F-18 disappearing messages (backend `ALTER TABLE chat_groups ADD COLUMN disappearing_duration_seconds INT` + `PATCH /api/chat-groups/admin/:id/disappearing` + hourly BullMQ cron + Flutter banner + admin info-sheet picker), F-19 document extension color badges (`_ExtBadge`), F-21 location sharing (`geolocator` added + attach-sheet + location card). Check the speckit before adding any group-chat feature to avoid re-implementing done work or violating the planned API contracts.
 
 **Surgical updates over large rewrites** — prefer targeted data sanitation (handling nulls/empty strings, guarding one field) over refactoring entire controllers or modules. Minimal, non-breaking fixes only.
 
@@ -58,10 +58,12 @@ npm run seed:batches -w backend    # Seed batch sample data
 npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/batchReportLogic.test.ts
 # DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
 
-# TypeScript check (targeted — Bash syntax; use before/after any edit)
-cd tbt-admin && npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | grep <filename>
-# PowerShell equivalent:
-# npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | Select-String <filename>
+# Run a single test file (from tbt-admin/)
+npx vitest run --reporter=verbose -w backend src/lib/batchReportLogic.test.ts
+
+# TypeScript check (targeted — PowerShell; run from tbt-admin/)
+npx tsc --noEmit -p admin-panel/tsconfig.json 2>&1 | Select-String <filename>   # admin panel
+npx tsc --noEmit -p backend/tsconfig.json 2>&1 | Select-String <filename>       # backend
 
 # Clean build after auth/routing changes (required to avoid stale .next cache)
 rmdir /s /q .next && npm run dev   # Windows PowerShell
@@ -91,7 +93,8 @@ flutter pub get               # Install dependencies
 flutter run                   # Run on connected device / emulator
 flutter build apk             # Android build
 flutter build ios             # iOS build (macOS host)
-flutter test                  # Unit + widget tests
+flutter test                                    # All unit + widget tests
+flutter test test/features/<path>_test.dart   # Single test file
 flutter analyze               # Static analysis (analysis_options.yaml)
 ```
 
@@ -460,6 +463,8 @@ Daily habit / streak module. Admin page: `admin-panel/app/rituals/`. Backend con
 
 ### Group Chat — Chat Groups (`/api/chat-groups`) — WhatsApp parity
 Group chat (distinct from DM `/api/messages`). Admin page: `admin-panel/app/groups/` — edit-group modal, members roster, announcement-only toggle. User pages: `app/(platform)/messages/` (unified with DM). Phase 5 features: **voice notes, forward, pin, star, mute, DM media, reply-jump, @mentions, presence, in-group search, FCM push, read receipts, media, replies**. Flutter port lives in `tbt_app/lib/features/chat/`.
+
+**WhatsApp-parity roadmap** — `tbt_app/CHAT_GROUP_SPECKIT.md` tracks F-01 – F-22. Status: Sprints 1+2 committed (F-01/02/03/04/07/08); Sprint 3 in progress (uncommitted) — F-05/06/11/12/15; Sprint 6 done (uncommitted) — F-17/18/19/21. Remaining P1: F-09–F-14, F-16. P2 done: F-17/18/19/21. P2 remaining: F-20, F-22. New DB columns (startup ALTER): `chat_group_messages.link_preview JSONB` (F-06), `chat_group_message_reads.read_at TIMESTAMPTZ` (F-07), `chat_groups.disappearing_duration_seconds INT` (F-18). New admin backend route: `PATCH /api/chat-groups/admin/:id/disappearing` (F-18). New member-scoped routes: `POST/DELETE /api/chat-groups/:id/messages/:messageId/pin` (F-03), `GET /api/chat-groups/:id/messages/:messageId/info` (F-07), `GET /api/chat-groups/:id/media` (F-15). New BullMQ job: `tbt-disappearing-messages` (hourly sweep, `jobs/disappearingMessages.ts`). `geolocator: ^13.0.2` added to pubspec (F-21).
 
 **Raw-SQL UUID casts required** — every raw-SQL UUID parameter in `chat-groups/controller.ts` must be cast to `::uuid` (see commit `e3a5590f`). Missing the cast produces a Postgres type error at runtime.
 

@@ -34,6 +34,7 @@ type RawGroupRow = {
   last_message_at: Date;
   is_deleted: boolean;
   announcement_only?: boolean;
+  disappearing_duration_seconds?: number | null;
 };
 
 type RawMemberRow = {
@@ -59,7 +60,64 @@ type RawMessageRow = {
   edited_at: Date | null;
   deleted_at: Date | null;
   deleted_for_everyone: boolean;
+  link_preview?: Record<string, unknown> | null;
 };
+
+// ── Link preview scraper (Sprint 3, 2026-08-19) ─────────────────────────────
+
+interface LinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  siteName: string | null;
+}
+
+async function fetchLinkPreview(url: string): Promise<LinkPreview | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    let html = '';
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TBTBot/1.0 (link preview)' },
+      });
+      clearTimeout(timeout);
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('text/html')) return null;
+      // Read first 32 KB only — enough for <head> OG tags.
+      const reader = res.body?.getReader();
+      if (!reader) return null;
+      const decoder = new TextDecoder();
+      let bytes = 0;
+      while (bytes < 32768) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        html += decoder.decode(value, { stream: !done });
+        bytes += value.byteLength;
+      }
+      reader.cancel().catch(() => {});
+    } finally {
+      clearTimeout(timeout);
+    }
+    const og = (prop: string) => {
+      const m = html.match(new RegExp(`<meta[^>]+property=["']og:${prop}["'][^>]+content=["']([^"']*?)["']`, 'i'))
+             ?? html.match(new RegExp(`<meta[^>]+content=["']([^"']*?)["'][^>]+property=["']og:${prop}["']`, 'i'));
+      return m?.[1]?.trim() || null;
+    };
+    const title = og('title') ?? html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? null;
+    return {
+      url,
+      title,
+      description: og('description'),
+      imageUrl: og('image'),
+      siteName: og('site_name'),
+    };
+  } catch {
+    return null;
+  }
+}
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -248,6 +306,7 @@ function messageJson(m: HydratedMessage) {
     reactions: m.reactions,
     readByCount: m.readByCount,
     readByMemberIds: m.readByMemberIds,
+    linkPreview: m.deleted_for_everyone ? null : (m.link_preview ?? null),
   };
 }
 
@@ -698,6 +757,36 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
     });
   }
 
+  // Fire link-preview scraping after the response is sent so the HTTP round
+  // trip isn't blocked by the fetch. Emits group:message:edited once done so
+  // the client can update the bubble without polling.
+  const messageId = messageJsonPayload.id;
+  if (body?.trim()) {
+    const urlMatch = body.trim().match(/https?:\/\/[^\s]+/);
+    if (urlMatch) {
+      setImmediate(async () => {
+        try {
+          const preview = await fetchLinkPreview(urlMatch[0]);
+          if (!preview) return;
+          await prisma.$executeRawUnsafe(
+            `UPDATE chat_group_messages SET link_preview = $1::jsonb WHERE id = $2::uuid`,
+            JSON.stringify(preview),
+            messageId,
+          );
+          const updated = await prisma.$queryRawUnsafe<RawMessageRow[]>(
+            `SELECT * FROM chat_group_messages WHERE id = $1::uuid`,
+            messageId,
+          );
+          if (updated.length > 0) {
+            const hydrated = await hydrateSenders(req, updated);
+            const io = (req.server as any).io;
+            if (io) io.to(`group:${id}`).emit('group:message:edited', messageJson(hydrated[0]));
+          }
+        } catch { /* non-fatal */ }
+      });
+    }
+  }
+
   return ok(reply, messageJsonPayload);
 }
 
@@ -960,14 +1049,16 @@ export async function memberGetGroupPresenceHandler(
 
 interface ForwardMessageBody {
   toGroupIds: string[];
+  /** Multi-select bulk forward — overrides the single :messageId param when provided. */
+  messageIds?: string[];
 }
 
 export async function memberForwardMessageHandler(
   req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: ForwardMessageBody }>,
   reply: FastifyReply,
 ) {
-  const { id, messageId } = req.params;
-  const { toGroupIds } = req.body;
+  const { id, messageId: paramMessageId } = req.params;
+  const { toGroupIds, messageIds: bodyMessageIds } = req.body;
   const memberId = (req as any).memberId as string;
 
   if (!Array.isArray(toGroupIds) || toGroupIds.length === 0) {
@@ -977,20 +1068,23 @@ export async function memberForwardMessageHandler(
 
   const prisma = req.server.prisma;
 
-  // Load the source message. If it's deleted-for-everyone, refuse — no
-  // resurrecting deleted content by forwarding.
+  // Accept either single-message (backward-compat) or multi-select bulk.
+  const sourceIds = Array.isArray(bodyMessageIds) && bodyMessageIds.length > 0
+    ? bodyMessageIds
+    : [paramMessageId];
+
+  // Load the source messages. Silently skip deleted-for-everyone ones.
   const source = await prisma.$queryRawUnsafe<
     Array<Pick<RawMessageRow, 'id' | 'body' | 'media_url' | 'media_type' | 'deleted_for_everyone'>>
   >(
     `SELECT id, body, media_url, media_type, deleted_for_everyone
      FROM chat_group_messages
-     WHERE id = $1::uuid AND group_id = $2::uuid`,
-    messageId,
+     WHERE id = ANY($1::uuid[]) AND group_id = $2::uuid`,
+    sourceIds,
     id,
   );
-  if (source.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Source message not found.');
-  if (source[0].deleted_for_everyone) return fail(reply, 400, 'DELETED', 'Cannot forward a deleted message.');
-  const src = source[0];
+  const validSources = source.filter((s) => !s.deleted_for_everyone);
+  if (validSources.length === 0) return fail(reply, 404, 'NOT_FOUND', 'No forwardable messages found.');
 
   // Filter targets to groups the caller is actually a member of. Silently
   // drops anything they don't have access to — matches WhatsApp behaviour
@@ -1010,6 +1104,7 @@ export async function memberForwardMessageHandler(
 
   const insertedIds: Array<{ groupId: string; messageId: string }> = [];
   for (const t of eligible) {
+    for (const src of validSources) {
     const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
       `INSERT INTO chat_group_messages
          (group_id, sender_member_id, body, media_url, media_type, forwarded_from_message_id)
@@ -1036,6 +1131,7 @@ export async function memberForwardMessageHandler(
         memberId,
       );
     }
+    } // end for src of validSources
   }
 
   const io = (req.server as any).io;
@@ -1316,6 +1412,80 @@ export async function adminSetAnnouncementOnlyHandler(
   return ok(reply, { announcementOnly: !!announcementOnly });
 }
 
+// ── F-18: Set disappearing messages duration ──────────────────────────────────
+
+interface SetDisappearingBody { durationSeconds: number | null; }
+
+export async function adminSetDisappearingHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: SetDisappearingBody }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  const { durationSeconds } = req.body;
+  const dur = durationSeconds === null || Number(durationSeconds) <= 0 ? null : Number(durationSeconds);
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE chat_groups SET disappearing_duration_seconds = $2, updated_at = NOW() WHERE id = $1::uuid`,
+    id,
+    dur,
+  );
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:updated', { groupId: id, disappearingDurationSeconds: dur });
+  return ok(reply, { disappearingDurationSeconds: dur });
+}
+
+// ── F-15: Group media gallery ────────────────────────────────────────────────
+
+export async function memberListGroupMediaHandler(
+  req: FastifyRequest<{
+    Params: { id: string };
+    Querystring: { type?: string; limit?: string; before?: string };
+  }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const { type, before, limit: limitStr } = req.query;
+  const limit = Math.min(50, Math.max(1, Number(limitStr) || 20));
+  const beforeDate = before ? new Date(before) : null;
+
+  const allTypes = ['image', 'video', 'document', 'audio'];
+  const typeFilter = type && allTypes.includes(type) ? [type] : allTypes;
+
+  const rows = await req.server.prisma.$queryRawUnsafe<
+    Array<{
+      id: string;
+      media_url: string;
+      media_type: string;
+      created_at: Date;
+      sender_member_id: string | null;
+    }>
+  >(
+    `SELECT id, media_url, media_type, created_at, sender_member_id
+     FROM chat_group_messages
+     WHERE group_id = $1::uuid
+       AND media_url IS NOT NULL
+       AND media_type = ANY($2::text[])
+       AND deleted_at IS NULL
+       AND deleted_for_everyone = false
+       AND ($3::timestamptz IS NULL OR created_at < $3::timestamptz)
+     ORDER BY created_at DESC
+     LIMIT $4`,
+    id,
+    typeFilter,
+    beforeDate,
+    limit,
+  );
+
+  return ok(reply, rows.map((r) => ({
+    id: r.id,
+    mediaUrl: r.media_url,
+    mediaType: r.media_type,
+    createdAt: r.created_at,
+    senderMemberId: r.sender_member_id,
+  })));
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function groupToJson(g: RawGroupRow) {
@@ -1328,5 +1498,6 @@ function groupToJson(g: RawGroupRow) {
     updatedAt: g.updated_at,
     lastMessageAt: g.last_message_at,
     announcementOnly: (g as any).announcement_only ?? false,
+    disappearingDurationSeconds: (g as any).disappearing_duration_seconds ?? null,
   };
 }

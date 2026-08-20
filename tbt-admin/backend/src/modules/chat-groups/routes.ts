@@ -10,6 +10,7 @@ import {
   adminPinMessageHandler,
   adminUnpinMessageHandler,
   adminSetAnnouncementOnlyHandler,
+  adminSetDisappearingHandler,
   memberListMyGroupsHandler,
   memberGetGroupHandler,
   memberListMessagesHandler,
@@ -30,6 +31,7 @@ import {
   memberPinMessageHandler,
   memberUnpinMessageHandler,
   memberMessageInfoHandler,
+  memberListGroupMediaHandler,
 } from './controller.js';
 
 /**
@@ -53,6 +55,7 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
       adminScope.post('/:id/messages/:messageId/pin', adminPinMessageHandler);
       adminScope.delete('/:id/messages/:messageId/pin', adminUnpinMessageHandler);
       adminScope.patch('/:id/announcement-only', adminSetAnnouncementOnlyHandler);
+      adminScope.patch('/:id/disappearing', adminSetDisappearingHandler);
     },
     { prefix: '/admin' },
   );
@@ -80,5 +83,6 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
     userScope.get('/:id/search', memberSearchMessagesHandler);
     userScope.get('/:id/presence', memberGetGroupPresenceHandler);
     userScope.post('/:id/leave', memberLeaveGroupHandler);
+    userScope.get('/:id/media', memberListGroupMediaHandler);
   });
 }

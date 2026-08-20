@@ -104,6 +104,7 @@ class ChatGroupDetail {
     required this.members,
     this.avatarUrl,
     this.description,
+    this.disappearingDurationSeconds,
   });
 
   final String id;
@@ -114,6 +115,8 @@ class ChatGroupDetail {
   final DateTime updatedAt;
   final DateTime lastMessageAt;
   final List<ChatGroupMember> members;
+  /// Null = disabled. Positive int = seconds after which messages auto-delete.
+  final int? disappearingDurationSeconds;
 
   factory ChatGroupDetail.fromJson(Map<String, dynamic> j) => ChatGroupDetail(
         id: j['id'] as String,
@@ -127,6 +130,31 @@ class ChatGroupDetail {
             .cast<Map<String, dynamic>>()
             .map(ChatGroupMember.fromJson)
             .toList(),
+        disappearingDurationSeconds: j['disappearingDurationSeconds'] as int?,
+      );
+}
+
+/// Open-Graph / meta-tag preview scraped from the first URL in a message body.
+class ChatGroupLinkPreview {
+  const ChatGroupLinkPreview({
+    required this.url,
+    this.title,
+    this.description,
+    this.imageUrl,
+    this.siteName,
+  });
+  final String url;
+  final String? title;
+  final String? description;
+  final String? imageUrl;
+  final String? siteName;
+
+  factory ChatGroupLinkPreview.fromJson(Map<String, dynamic> j) => ChatGroupLinkPreview(
+        url: j['url'] as String,
+        title: j['title'] as String?,
+        description: j['description'] as String?,
+        imageUrl: j['imageUrl'] as String?,
+        siteName: j['siteName'] as String?,
       );
 }
 
@@ -198,6 +226,7 @@ class ChatGroupMessage {
     this.mentionedMemberIds = const [],
     this.pinnedAt,
     this.forwardedFromMessageId,
+    this.linkPreview,
   });
 
   final String id;
@@ -221,6 +250,7 @@ class ChatGroupMessage {
   final List<String> mentionedMemberIds;
   final DateTime? pinnedAt;
   final String? forwardedFromMessageId;
+  final ChatGroupLinkPreview? linkPreview;
 
   bool get isDeleted => deletedForEveryone || deletedAt != null;
   bool get isPinned => pinnedAt != null;
@@ -236,6 +266,8 @@ class ChatGroupMessage {
     List<String>? readByMemberIds,
     DateTime? pinnedAt,
     bool clearPinnedAt = false,
+    ChatGroupLinkPreview? linkPreview,
+    bool clearLinkPreview = false,
   }) {
     return ChatGroupMessage(
       id: id,
@@ -259,6 +291,7 @@ class ChatGroupMessage {
       mentionedMemberIds: mentionedMemberIds,
       pinnedAt: clearPinnedAt ? null : (pinnedAt ?? this.pinnedAt),
       forwardedFromMessageId: forwardedFromMessageId,
+      linkPreview: clearLinkPreview ? null : (linkPreview ?? this.linkPreview),
     );
   }
 
@@ -297,6 +330,9 @@ class ChatGroupMessage {
             ? DateTime.tryParse(j['pinnedAt'] as String)
             : null,
         forwardedFromMessageId: j['forwardedFromMessageId'] as String?,
+        linkPreview: j['linkPreview'] != null
+            ? ChatGroupLinkPreview.fromJson(j['linkPreview'] as Map<String, dynamic>)
+            : null,
       );
 }
 
@@ -342,6 +378,32 @@ class StarredMessage {
           'Group',
     );
   }
+}
+
+/// A single media attachment returned by GET /api/chat-groups/:id/media.
+class ChatGroupMediaItem {
+  const ChatGroupMediaItem({
+    required this.id,
+    required this.mediaUrl,
+    required this.mediaType,
+    required this.createdAt,
+    this.senderMemberId,
+  });
+
+  final String id;
+  final String mediaUrl;
+  final String mediaType;
+  final DateTime createdAt;
+  final String? senderMemberId;
+
+  factory ChatGroupMediaItem.fromJson(Map<String, dynamic> j) =>
+      ChatGroupMediaItem(
+        id: j['id'] as String,
+        mediaUrl: j['mediaUrl'] as String,
+        mediaType: j['mediaType'] as String,
+        createdAt: DateTime.parse(j['createdAt'] as String),
+        senderMemberId: j['senderMemberId'] as String?,
+      );
 }
 
 class ChatGroupPresence {
