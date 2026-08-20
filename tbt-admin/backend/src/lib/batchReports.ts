@@ -4,6 +4,7 @@
 // this file wires that logic to Prisma and the existing WhatsApp sender.
 
 import { sendWhatsappMessage, sendWhatsappTemplateMessage } from './whatsapp.js';
+import { sendPushToMember } from './pushNotifications.js';
 import { env } from '../config/env.js';
 import {
   buildTanglishMessage,
@@ -114,7 +115,7 @@ export async function deliverMemberReport(
 ): Promise<DeliverResult> {
   const now = opts.now ?? new Date();
   const report = await generateMemberReport(prisma, memberId, reportType, now);
-  if (!report.eligible || !report.member || !report.period || !report.message) {
+  if (!report.eligible || !report.member || !report.period || !report.message || !report.stats) {
     return { status: 'skipped', reason: report.reason };
   }
 
@@ -160,6 +161,22 @@ export async function deliverMemberReport(
       failureReason: ok ? null : errMsg,
     },
   }).catch(() => { /* logging must never fault the delivery loop */ });
+
+  // Weekly pending-reminder push — fires regardless of WhatsApp send success.
+  if (reportType === 'weekly' && report.stats.pending > 0) {
+    const pushTitle = `Weekly Checklist — ${report.stats.pending} pending`;
+    const pushBody = `You have ${report.stats.pending} pending task${report.stats.pending === 1 ? '' : 's'} this week. Complete them before the week ends!`;
+    await prisma.appNotification.create({
+      data: {
+        title: pushTitle,
+        message: pushBody,
+        type: 'weekly_pending_reminder',
+        actionUrl: '/batch-program',
+        recipients: { create: [{ memberId: report.member.id }] },
+      },
+    }).catch(() => {});
+    await sendPushToMember(prisma, report.member.id, pushTitle, pushBody, { type: 'weekly_pending_reminder' }).catch(() => {});
+  }
 
   return ok ? { status: 'sent' } : { status: 'failed', reason: errMsg ?? undefined };
 }

@@ -33,6 +33,7 @@ class AppRoutes {
   static const String resources = '/Resources';
   static const String history = '/history';
   static const String profile = '/profile';
+  static const String onboarding = '/onboarding';
   static const String events = '/events';
   static const String eventDetail = '/events/:id';
   static const String programs = '/programs';
@@ -122,6 +123,7 @@ class RouteNames {
   static const String resources = 'resources';
   static const String history = 'history';
   static const String profile = 'profile';
+  static const String onboarding = 'onboarding';
   static const String events = 'events';
   static const String eventDetail = 'event-detail';
   static const String programs = 'programs';

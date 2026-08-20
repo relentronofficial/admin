@@ -38,6 +38,7 @@ enum VerificationStatus {
   under_review
   verified
   rejected
+  changes_requested
 }
 
 enum CourseLevel {
@@ -301,6 +302,14 @@ model Member {
   onboardingCompleted   Boolean            @default(false) @map("onboarding_completed")
   passwordHash          String?            @map("password_hash")
 
+  // Self-onboarding submission/review tracking. onboardingReviewedBy is a
+  // plain id (not a relation) matching the existing KycDocument.verifiedBy
+  // precedent — see SELF_ONBOARDING_SPECKIT.md §3.2.
+  onboardingSubmittedAt DateTime? @map("onboarding_submitted_at") @db.Timestamptz(6)
+  onboardingReviewedAt  DateTime? @map("onboarding_reviewed_at") @db.Timestamptz(6)
+  onboardingReviewedBy  String?   @map("onboarding_reviewed_by") @db.Uuid
+  onboardingReviewNote  String?   @map("onboarding_review_note")
+
   createdBy String?   @map("created_by") @db.Uuid
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -389,6 +398,7 @@ model Member {
   helpdeskFeedback      HelpdeskFeedback[] @relation("MemberHelpdeskFeedback")
   tbtActivityLog        TbtActivityLog[]   @relation("MemberTbtActivityLog")
   tbtTaskCompletions    TbtTaskCompletion[] @relation("MemberTbtTaskCompletion")
+  notificationDevices   NotificationDevice[]
 
   @@map("members")
 }
@@ -643,6 +653,12 @@ model Task {
   milestoneLabel   String?  @map("milestone_label")
   bonusPoints      Int      @default(0) @map("bonus_points")
   sortOrder        Int      @default(0) @map("sort_order")
+  // Weekly checklist fields (2026-08). Week number is intentionally NOT
+  // stored — it's always derived from dayNumber (ceil(dayNumber/7)) so it
+  // stays correct if a task's day assignment changes later.
+  isRequired       Boolean  @default(true) @map("is_required")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdBy        String?  @map("created_by")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -653,6 +669,22 @@ model Task {
   submissions TaskSubmission[]
 
   @@map("tasks")
+}
+
+// Multi-device FCM registration (2026-08). One member can hold several
+// tokens (phone + tablet, reinstalled app, etc); rows are upserted by
+// fcmToken and pruned when FCM reports the token as invalid/unregistered.
+model NotificationDevice {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId   String   @map("member_id") @db.Uuid
+  fcmToken   String   @unique @map("fcm_token")
+  platform   String?
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("notification_devices")
 }
 
 model TaskSubmission {
@@ -1399,6 +1431,21 @@ model KycDocument {
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@map("kyc_documents")
+}
+
+model OnboardingContent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stepKey   String   @map("step_key") @db.VarChar(50)
+  title     String
+  textBody  String?  @map("text_body")
+  videoUrl  String?  @map("video_url")
+  audioUrl  String?  @map("audio_url")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("onboarding_content")
 }
 
 model AuditLog {
@@ -2325,6 +2372,10 @@ model UiStrings {
   batchBreakReasonLabel       String   @default("Reason") @map("batch_break_reason_label")
   batchBreakRejectedLabel     String   @default("Rejected") @map("batch_break_rejected_label")
   batchBreakSubmitLabel       String   @default("Submit Request") @map("batch_break_submit_label")
+  // Weekly checklist (2026-08)
+  batchRequiredLabel          String   @default("Required") @map("batch_required_label")
+  batchOptionalLabel          String   @default("Optional") @map("batch_optional_label")
+  batchWeekLabel              String   @default("Week") @map("batch_week_label")
 
   // Advertisement overlay (TBT_ADS_SPECKIT.md §9). Every string the ad overlay
   // shows comes from here — the clients keep hardcoded English fallbacks only

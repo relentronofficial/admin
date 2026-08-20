@@ -64,6 +64,8 @@ const emptyInlineTaskForm = () => ({
   milestoneLabel: "",
   bonusPoints: 0,
   sortOrder: 0,
+  isRequired: true,
+  isActive: true,
 });
 
 type Tab = "tasks" | "programs" | "batch-checklist" | "submissions" | "overview";
@@ -305,6 +307,8 @@ export default function TasksPage() {
       milestoneLabel:   task.milestoneLabel   || "",
       bonusPoints:      task.bonusPoints      ?? 0,
       sortOrder:        task.sortOrder        ?? 0,
+      isRequired:       task.isRequired       ?? true,
+      isActive:         task.isActive         ?? true,
     });
     setInlineModal({ dayNumber, task });
   }
@@ -336,11 +340,26 @@ export default function TasksPage() {
   const handleInlineTaskDelete = async () => {
     if (!deletingInlineTask) return;
     try {
-      await deleteInlineTask.mutateAsync(deletingInlineTask);
-      toast.success("Task deleted");
+      const result: any = await deleteInlineTask.mutateAsync(deletingInlineTask);
+      toast.success(result?.deactivated
+        ? "Task has submissions — deactivated instead of deleted"
+        : "Task deleted");
       setDeletingInlineTask(null);
     } catch {
       toast.error("Failed to delete task");
+    }
+  };
+
+  const handleToggleInlineTaskActive = async (task: any) => {
+    try {
+      await updateInlineTask.mutateAsync({
+        batchId: selectedBatchId,
+        taskId: task.id,
+        data: { isActive: !task.isActive },
+      });
+      toast.success(task.isActive ? "Task deactivated" : "Task activated");
+    } catch {
+      toast.error("Failed to update task");
     }
   };
 
@@ -793,15 +812,33 @@ export default function TasksPage() {
                                   <span className="w-5 h-5 rounded bg-[#1a1a1a] border border-[#2a2a2a] text-[10px] text-[#666] font-bold font-rajdhani flex items-center justify-center shrink-0">
                                     {idx + 1}
                                   </span>
-                                  <div className="flex-1 min-w-0">
+                                  <div className={cn("flex-1 min-w-0", task.isActive === false && "opacity-50")}>
                                     <p className="text-[13px] text-[#f0f0f0] font-medium truncate">{task.title}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
                                       <span className="text-[10px] text-[#666] uppercase font-rajdhani font-bold">{task.proofType}</span>
                                       <span className="text-[10px] text-yellow-500 font-bold">{task.basePoints}pts</span>
                                       {task.isMilestone && <Star size={10} className="text-yellow-400 fill-yellow-400" />}
+                                      <span className={cn(
+                                        "text-[9px] font-bold font-rajdhani uppercase tracking-wider px-1.5 py-0.5 rounded",
+                                        task.isRequired === false ? "text-[#888] bg-[#2a2a2a]" : "text-[#dc2626] bg-[#dc2626]/10"
+                                      )}>
+                                        {task.isRequired === false ? "Optional" : "Required"}
+                                      </span>
+                                      {task.isActive === false && (
+                                        <span className="text-[9px] font-bold font-rajdhani uppercase tracking-wider px-1.5 py-0.5 rounded text-[#888] bg-[#2a2a2a]">
+                                          Inactive
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                    <button
+                                      onClick={() => handleToggleInlineTaskActive(task)}
+                                      title={task.isActive === false ? "Activate" : "Deactivate"}
+                                      className="p-1 rounded text-[#666] hover:text-white hover:bg-[#2a2a2a] transition-all"
+                                    >
+                                      <CheckSquare size={12} />
+                                    </button>
                                     <button
                                       onClick={() => openEditInlineTask(dayNum, task)}
                                       className="p-1 rounded text-[#666] hover:text-white hover:bg-[#2a2a2a] transition-all"
@@ -1280,6 +1317,26 @@ export default function TasksPage() {
                   </div>
                 )}
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setInlineForm(f => ({ ...f, isRequired: !f.isRequired }))}
+                  className={cn("flex items-center gap-2 p-3 rounded-xl border transition-all",
+                    inlineForm.isRequired ? "bg-[#dc2626]/10 border-[#dc2626]" : "bg-[#1a1a1a] border-[#2a2a2a]"
+                  )}>
+                  <span className={cn("w-5 h-5 rounded border-2 flex items-center justify-center shrink-0", inlineForm.isRequired ? "bg-[#dc2626] border-[#dc2626]" : "border-[#444]")}>
+                    {inlineForm.isRequired && <Check size={11} className="text-white" />}
+                  </span>
+                  <span className="text-[12px] font-bold font-rajdhani uppercase tracking-wider text-[#f0f0f0]">Required</span>
+                </button>
+                <button type="button" onClick={() => setInlineForm(f => ({ ...f, isActive: !f.isActive }))}
+                  className={cn("flex items-center gap-2 p-3 rounded-xl border transition-all",
+                    inlineForm.isActive ? "bg-green-500/10 border-green-600" : "bg-[#1a1a1a] border-[#2a2a2a]"
+                  )}>
+                  <span className={cn("w-5 h-5 rounded border-2 flex items-center justify-center shrink-0", inlineForm.isActive ? "bg-green-600 border-green-600" : "border-[#444]")}>
+                    {inlineForm.isActive && <Check size={11} className="text-white" />}
+                  </span>
+                  <span className="text-[12px] font-bold font-rajdhani uppercase tracking-wider text-[#f0f0f0]">Active</span>
+                </button>
+              </div>
             </div>
             <div className="px-7 py-5 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
               <button onClick={() => setInlineModal(null)} className="px-5 py-2 rounded-lg border border-[#333] text-[#888] hover:text-white hover:border-[#555] text-[13px] font-bold font-rajdhani uppercase tracking-wider transition-all">Cancel</button>
@@ -1383,7 +1440,7 @@ export default function TasksPage() {
           <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-8 max-w-sm w-full text-center space-y-4 shadow-2xl">
             <Trash2 size={32} className="text-red-500 mx-auto" />
             <h3 className="font-rajdhani text-lg font-bold uppercase tracking-widest">Delete Task?</h3>
-            <p className="text-[13px] text-[#888]">Member submissions for this task will also be removed.</p>
+            <p className="text-[13px] text-[#888]">If members have already submitted this task, it will be deactivated instead of deleted so their history stays intact.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeletingInlineTask(null)} className="flex-1 py-2.5 rounded-lg border border-[#333] text-[#888] hover:text-white text-[13px] font-bold font-rajdhani uppercase tracking-wider transition-all">Cancel</button>
               <button onClick={handleInlineTaskDelete} disabled={deleteInlineTask.isPending} className="flex-1 py-2.5 rounded-lg bg-red-600 text-white text-[13px] font-bold font-rajdhani uppercase tracking-wider hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2">

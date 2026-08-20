@@ -26,6 +26,7 @@ mixin _$BatchTask {
   BatchTaskType get type => throw _privateConstructorUsedError;
   bool get isCompleted => throw _privateConstructorUsedError;
   String? get proofUrl => throw _privateConstructorUsedError;
+  bool get isRequired => throw _privateConstructorUsedError;
 
   /// Serializes this BatchTask to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -48,6 +49,7 @@ abstract class $BatchTaskCopyWith<$Res> {
     BatchTaskType type,
     bool isCompleted,
     String? proofUrl,
+    bool isRequired,
   });
 }
 
@@ -71,6 +73,7 @@ class _$BatchTaskCopyWithImpl<$Res, $Val extends BatchTask>
     Object? type = null,
     Object? isCompleted = null,
     Object? proofUrl = freezed,
+    Object? isRequired = null,
   }) {
     return _then(
       _value.copyWith(
@@ -99,6 +102,11 @@ class _$BatchTaskCopyWithImpl<$Res, $Val extends BatchTask>
                     ? _value.proofUrl
                     : proofUrl // ignore: cast_nullable_to_non_nullable
                         as String?,
+            isRequired:
+                null == isRequired
+                    ? _value.isRequired
+                    : isRequired // ignore: cast_nullable_to_non_nullable
+                        as bool,
           )
           as $Val,
     );
@@ -120,6 +128,7 @@ abstract class _$$BatchTaskImplCopyWith<$Res>
     BatchTaskType type,
     bool isCompleted,
     String? proofUrl,
+    bool isRequired,
   });
 }
 
@@ -142,6 +151,7 @@ class __$$BatchTaskImplCopyWithImpl<$Res>
     Object? type = null,
     Object? isCompleted = null,
     Object? proofUrl = freezed,
+    Object? isRequired = null,
   }) {
     return _then(
       _$BatchTaskImpl(
@@ -170,6 +180,11 @@ class __$$BatchTaskImplCopyWithImpl<$Res>
                 ? _value.proofUrl
                 : proofUrl // ignore: cast_nullable_to_non_nullable
                     as String?,
+        isRequired:
+            null == isRequired
+                ? _value.isRequired
+                : isRequired // ignore: cast_nullable_to_non_nullable
+                    as bool,
       ),
     );
   }
@@ -184,6 +199,7 @@ class _$BatchTaskImpl implements _BatchTask {
     this.type = BatchTaskType.watch,
     this.isCompleted = false,
     this.proofUrl,
+    this.isRequired = true,
   });
 
   factory _$BatchTaskImpl.fromJson(Map<String, dynamic> json) =>
@@ -201,10 +217,13 @@ class _$BatchTaskImpl implements _BatchTask {
   final bool isCompleted;
   @override
   final String? proofUrl;
+  @override
+  @JsonKey()
+  final bool isRequired;
 
   @override
   String toString() {
-    return 'BatchTask(id: $id, title: $title, type: $type, isCompleted: $isCompleted, proofUrl: $proofUrl)';
+    return 'BatchTask(id: $id, title: $title, type: $type, isCompleted: $isCompleted, proofUrl: $proofUrl, isRequired: $isRequired)';
   }
 
   @override
@@ -218,13 +237,22 @@ class _$BatchTaskImpl implements _BatchTask {
             (identical(other.isCompleted, isCompleted) ||
                 other.isCompleted == isCompleted) &&
             (identical(other.proofUrl, proofUrl) ||
-                other.proofUrl == proofUrl));
+                other.proofUrl == proofUrl) &&
+            (identical(other.isRequired, isRequired) ||
+                other.isRequired == isRequired));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, id, title, type, isCompleted, proofUrl);
+  int get hashCode => Object.hash(
+    runtimeType,
+    id,
+    title,
+    type,
+    isCompleted,
+    proofUrl,
+    isRequired,
+  );
 
   /// Create a copy of BatchTask
   /// with the given fields replaced by the non-null parameter values.
@@ -247,6 +275,7 @@ abstract class _BatchTask implements BatchTask {
     final BatchTaskType type,
     final bool isCompleted,
     final String? proofUrl,
+    final bool isRequired,
   }) = _$BatchTaskImpl;
 
   factory _BatchTask.fromJson(Map<String, dynamic> json) =
@@ -262,6 +291,8 @@ abstract class _BatchTask implements BatchTask {
   bool get isCompleted;
   @override
   String? get proofUrl;
+  @override
+  bool get isRequired;
 
   /// Create a copy of BatchTask
   /// with the given fields replaced by the non-null parameter values.

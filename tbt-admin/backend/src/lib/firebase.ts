@@ -46,15 +46,21 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-export async function sendPushNotification(
+export interface PushSendResult {
+  ok: boolean;
+  /** true when FCM reports the token itself is dead (UNREGISTERED / NOT_FOUND / bad format) — safe to delete. */
+  invalidToken: boolean;
+}
+
+export async function sendPushNotificationDetailed(
   fcmToken: string,
   title: string,
   body: string,
   data?: Record<string, string>,
-): Promise<boolean> {
-  if (!fcmToken || !env.FIREBASE_PROJECT_ID) return false;
+): Promise<PushSendResult> {
+  if (!fcmToken || !env.FIREBASE_PROJECT_ID) return { ok: false, invalidToken: false };
   const token = await getAccessToken();
-  if (!token) return false;
+  if (!token) return { ok: false, invalidToken: false };
   try {
     const resp = await fetch(
       `https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`,
@@ -67,11 +73,27 @@ export async function sendPushNotification(
       },
     );
     if (!resp.ok) {
-      _cachedToken = null; // invalidate on 401
-      return false;
+      if (resp.status === 401) _cachedToken = null; // invalidate cached OAuth token
+      let errStatus: string | undefined;
+      try {
+        const errBody = await resp.json() as any;
+        errStatus = errBody?.error?.status;
+      } catch { /* non-JSON error body */ }
+      const invalidToken = resp.status === 404 || errStatus === 'UNREGISTERED' || errStatus === 'NOT_FOUND' || errStatus === 'INVALID_ARGUMENT';
+      return { ok: false, invalidToken };
     }
-    return true;
+    return { ok: true, invalidToken: false };
   } catch {
-    return false;
+    return { ok: false, invalidToken: false };
   }
+}
+
+export async function sendPushNotification(
+  fcmToken: string,
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+): Promise<boolean> {
+  const result = await sendPushNotificationDetailed(fcmToken, title, body, data);
+  return result.ok;
 }

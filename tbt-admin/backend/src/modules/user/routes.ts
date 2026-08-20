@@ -7,6 +7,8 @@ import {
   assignmentImagePresignHandler,
   assignmentFilePresignHandler,
   revokeDeviceHandler,
+  registerFcmTokenHandler,
+  removeFcmTokenHandler,
   getNotificationPrefsHandler,
   updateNotificationPrefsHandler,
   listUserCoursesHandler,
@@ -138,6 +140,10 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/webinars', listUserWebinarsHandler);
   fastify.get('/webinars/:id', getUserWebinarHandler);
   fastify.post('/webinars/:id/token', getWebinarTokenHandler);
+
+  // ── Push notifications (FCM device registration) ─────────────────────────
+  fastify.post('/fcm-token', registerFcmTokenHandler);
+  fastify.delete('/fcm-token', removeFcmTokenHandler);
 
   // ── Notifications ─────────────────────────────────────────────────────────
   fastify.get('/notifications/unread-count', getNotificationUnreadCountHandler);

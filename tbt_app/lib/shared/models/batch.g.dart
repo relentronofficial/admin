@@ -15,6 +15,7 @@ _$BatchTaskImpl _$$BatchTaskImplFromJson(Map<String, dynamic> json) =>
           BatchTaskType.watch,
       isCompleted: json['isCompleted'] as bool? ?? false,
       proofUrl: json['proofUrl'] as String?,
+      isRequired: json['isRequired'] as bool? ?? true,
     );
 
 Map<String, dynamic> _$$BatchTaskImplToJson(_$BatchTaskImpl instance) =>
@@ -24,6 +25,7 @@ Map<String, dynamic> _$$BatchTaskImplToJson(_$BatchTaskImpl instance) =>
       'type': _$BatchTaskTypeEnumMap[instance.type]!,
       'isCompleted': instance.isCompleted,
       'proofUrl': instance.proofUrl,
+      'isRequired': instance.isRequired,
     };
 
 const _$BatchTaskTypeEnumMap = {

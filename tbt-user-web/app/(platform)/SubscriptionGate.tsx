@@ -10,6 +10,11 @@ import { useSuppressAds } from "@/lib/ads/useRegisterMedia";
 // Paths where the free-plan / expired-subscription interceptors are suspended
 const EXEMPT_PATHS = ["/Products", "/profile"];
 
+// A pending member must be able to reach the self-onboarding wizard —
+// otherwise there's no way for them to ever get out of "pending". See
+// SELF_ONBOARDING_SPECKIT.md §7.1 (D2).
+const PENDING_EXEMPT_PATHS = ["/onboarding"];
+
 function PendingInterceptor() {
   const [showPopup, setShowPopup] = useState(false);
 
@@ -174,6 +179,7 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   const isExempt = EXEMPT_PATHS.some((p) => pathname.startsWith(p));
+  const isPendingExempt = PENDING_EXEMPT_PATHS.some((p) => pathname.startsWith(p));
 
   useEffect(() => {
     if (isLoading || isFetching || isError || isExempt || !me) return;
@@ -187,8 +193,9 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
     }
   }, [me, isLoading, isFetching, isError, isExempt, router]);
 
-  // Pending users: page content visible, but every click opens the pending popup
-  if (!isLoading && !isFetching && me && (me as any).status === "pending") {
+  // Pending users: page content visible, but every click opens the pending popup —
+  // except on the onboarding wizard itself, which they must be able to use.
+  if (!isLoading && !isFetching && me && (me as any).status === "pending" && !isPendingExempt) {
     return (
       <>
         {children}

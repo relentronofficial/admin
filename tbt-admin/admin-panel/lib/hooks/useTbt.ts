@@ -1784,7 +1784,7 @@ export const useAdAnalyticsOverview = (range?: { from?: string; to?: string }) =
     },
   });
 
-// ── Batch reports (weekly/monthly WhatsApp delivery) ──────────────
+// ── Batch reports (weekly/monthly WhatsApp delivery) ──────────────────
 
 export const useReportDeliveryHistory = (params: { page?: number; limit?: number; reportType?: string; status?: string; memberId?: string } = {}) =>
   useQuery({

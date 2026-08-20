@@ -26,6 +26,7 @@ import {
   rejectBreakHandler,
   upsertMemberSettingsHandler,
   getDayAnalyticsHandler,
+  getWeekAnalyticsHandler,
   listBatchTasksHandler,
   createBatchTaskHandler,
   updateBatchTaskHandler,
@@ -89,8 +90,9 @@ export async function batchRoutes(fastify: FastifyInstance) {
   // Member settings (admin)
   fastify.put('/:id/members/:memberId/settings', upsertMemberSettingsHandler);
 
-  // Day-level analytics
+  // Day-level and week-level analytics
   fastify.get('/:id/day-analytics', getDayAnalyticsHandler);
+  fastify.get('/:id/week-analytics', getWeekAnalyticsHandler);
 
   // Inline task CRUD (tasks table with batchId)
   fastify.get('/:id/tasks', listBatchTasksHandler);

@@ -43,6 +43,7 @@ import 'features/messages/presentation/messages_screen.dart';
 import 'features/notifications/presentation/notifications_screen.dart';
 import 'features/products/presentation/products_screen.dart';
 import 'features/profile/presentation/profile_screen.dart';
+import 'features/onboarding/presentation/onboarding_screen.dart';
 import 'features/profile/presentation/connections_screen.dart';
 import 'features/profile/presentation/legal_page_screen.dart';
 import 'features/resources/presentation/resources_screen.dart';
@@ -318,6 +319,15 @@ List<RouteBase> _buildRoutes() => [
             ),
           ]),
         ],
+      ),
+
+      // ── Outside shell — Self-onboarding wizard ──────────────────────────────
+      // Not a bottom-nav tab — a one-time flow reached (and exempted from the
+      // subscription gate) via SELF_ONBOARDING_SPECKIT.md §7.1.
+      GoRoute(
+        path: AppRoutes.onboarding,
+        name: RouteNames.onboarding,
+        builder: (_, __) => const OnboardingScreen(),
       ),
 
       // ── Outside shell — Profile extras (2026-07-28) ────────────────────────

@@ -228,6 +228,8 @@ class BatchProgramScreen extends ConsumerWidget {
                       const SizedBox(height: 4),
                       _Legend(),
                       const SizedBox(height: 12),
+                      _WeeklyProgress(program: program, todayDay: todayDay),
+                      const SizedBox(height: 12),
                       BatchCalendar(
                         program: program,
                         onDayTap: (day) =>
@@ -399,6 +401,94 @@ class _HeaderCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Weekly progress ──────────────────────────────────────────────────────────
+// Week number is always derived from dayNumber (ceil(dayNumber/7)) — never
+// stored or hardcoded. Mirrors getWeekDayRange/getCurrentWeekNumber in the
+// backend's weekChecklistLogic.ts.
+
+class _WeeklyProgress extends StatelessWidget {
+  const _WeeklyProgress({required this.program, required this.todayDay});
+
+  final BatchProgram program;
+  final int todayDay;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalDays = program.totalDays;
+    if (totalDays <= 0) return const SizedBox.shrink();
+
+    final statusByDay = <int, BatchDayStatus>{
+      for (final d in program.days) d.dayNumber: d.status,
+    };
+    final weekCount = (totalDays / 7).ceil();
+    final currentWeek = (todayDay.clamp(1, totalDays) / 7).ceil().clamp(1, weekCount);
+
+    return SizedBox(
+      height: 84,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: weekCount,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final weekNumber = i + 1;
+          final startDay = i * 7 + 1;
+          final endDay = (startDay + 6).clamp(0, totalDays);
+          var approved = 0;
+          for (var d = startDay; d <= endDay; d++) {
+            if (statusByDay[d] == BatchDayStatus.approved) approved++;
+          }
+          final total = endDay - startDay + 1;
+          final rate = total > 0 ? (approved / total * 100).round() : 0;
+          final isCurrent = weekNumber == currentWeek;
+
+          return Container(
+            width: 88,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+                  : context.tokens.bgSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isCurrent
+                    ? Theme.of(context).colorScheme.primary
+                    : context.tokens.borderCard,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Week $weekNumber',
+                  style: TextStyle(
+                    color: context.tokens.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$rate%',
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '$approved/$total',
+                  style: TextStyle(color: context.tokens.textMuted, fontSize: 10),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

@@ -6,6 +6,7 @@ import {
   upsertMemberProgressSchema,
 } from './schema.js';
 import { deliverMemberReport, generateMemberReport } from '../../lib/batchReports.js';
+import { computeApprovalRate, getCurrentWeekNumber, getWeekDayRange, summarizeWeek } from '../../lib/weekChecklistLogic.js';
 
 export async function listBatchesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { status } = req.query as { status?: string };
@@ -598,6 +599,105 @@ export async function getDayAnalyticsHandler(
   return reply.send({ success: true, data, error: null });
 }
 
+// GET /api/batches/:id/week-analytics?week=N
+// Weekly rollup for the Progress tab's "Weeks" view: totals + member-wise +
+// checklist/task-wise + daily breakdown for one week. `week` defaults to the
+// batch's current week (derived from startsAt — never hardcoded).
+export async function getWeekAnalyticsHandler(
+  req: FastifyRequest<{ Params: { id: string }; Querystring: { week?: string } }>,
+  reply: FastifyReply,
+) {
+  const batch = await req.server.prisma.batch.findUnique({
+    where: { id: req.params.id },
+    select: { startsAt: true, snapshotDays: true, program: { select: { durationDays: true } } },
+  });
+  if (!batch) return reply.status(404).send({ success: false, data: null, error: 'Batch not found' });
+
+  const totalDays = (batch as any).snapshotDays ?? batch.program?.durationDays ?? 90;
+  const weekNumber = req.query.week
+    ? Math.max(1, parseInt(req.query.week, 10))
+    : getCurrentWeekNumber(batch.startsAt);
+  const { startDay, endDay } = getWeekDayRange(weekNumber, totalDays);
+
+  const totalMembers = await req.server.prisma.member.count({ where: { batchId: req.params.id } });
+
+  const dayRows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT
+       day_number,
+       COUNT(*) FILTER (WHERE status = 'approved')         AS approved,
+       COUNT(*) FILTER (WHERE status = 'rejected')         AS rejected,
+       COUNT(*) FILTER (WHERE status = 'pending_approval') AS pending,
+       COUNT(*) FILTER (WHERE status = 'in_progress')      AS in_progress,
+       COUNT(*)                                             AS total
+     FROM member_day_progress
+     WHERE batch_id = $1::uuid AND day_number BETWEEN $2 AND $3
+     GROUP BY day_number
+     ORDER BY day_number ASC`,
+    req.params.id, startDay, endDay,
+  );
+
+  const summary = summarizeWeek({
+    weekNumber,
+    batchStartsAt: batch.startsAt,
+    totalMembers,
+    dayRows: dayRows.map(r => ({
+      dayNumber: Number(r.day_number),
+      approved: Number(r.approved),
+      rejected: Number(r.rejected),
+      pending: Number(r.pending),
+      inProgress: Number(r.in_progress),
+      total: Number(r.total),
+    })),
+  });
+
+  const memberRows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT m.id AS member_id, m.first_name AS "firstName", m.last_name AS "lastName",
+            m.member_id AS "memberCode", m.profile_photo_url AS "profilePhotoUrl",
+            COUNT(*) FILTER (WHERE mdp.status = 'approved') AS approved,
+            COUNT(mdp.id) AS total
+     FROM members m
+     LEFT JOIN member_day_progress mdp
+       ON mdp.member_id = m.id AND mdp.batch_id = $1::uuid AND mdp.day_number BETWEEN $2 AND $3
+     WHERE m.batch_id = $1::uuid
+     GROUP BY m.id, m.first_name, m.last_name, m.member_id, m.profile_photo_url
+     ORDER BY m.first_name ASC`,
+    req.params.id, startDay, endDay,
+  );
+  const memberWise = memberRows.map(r => ({
+    memberId: r.member_id,
+    firstName: r.firstName,
+    lastName: r.lastName,
+    memberCode: r.memberCode,
+    profilePhotoUrl: r.profilePhotoUrl,
+    approved: Number(r.approved),
+    total: Number(r.total),
+    completionRate: computeApprovalRate(Number(r.approved), Number(r.total)),
+  }));
+
+  const taskRows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT t.id AS task_id, t.title, t.day_number, t.is_required AS "isRequired",
+            COUNT(*) FILTER (WHERE ts.status = 'approved') AS approved,
+            COUNT(ts.id) AS total
+     FROM tasks t
+     LEFT JOIN task_submissions ts ON ts.task_id = t.id AND ts.batch_id = $1::uuid
+     WHERE t.batch_id = $1::uuid AND t.day_number BETWEEN $2 AND $3 AND t.is_active = true
+     GROUP BY t.id, t.title, t.day_number, t.is_required
+     ORDER BY t.day_number ASC, t.sort_order ASC`,
+    req.params.id, startDay, endDay,
+  );
+  const taskWise = taskRows.map(r => ({
+    taskId: r.task_id,
+    title: r.title,
+    dayNumber: Number(r.day_number),
+    isRequired: r.isRequired,
+    approved: Number(r.approved),
+    total: Number(r.total),
+    completionRate: computeApprovalRate(Number(r.approved), Number(r.total)),
+  }));
+
+  return reply.send({ success: true, data: { ...summary, memberWise, taskWise }, error: null });
+}
+
 export async function upsertMemberProgressHandler(
   req: FastifyRequest<{ Params: { id: string; memberId: string; dayNumber: string } }>,
   reply: FastifyReply,
@@ -663,10 +763,12 @@ export async function createBatchTaskHandler(
     dayNumber, title, description, deliverables, contentUrl,
     basePoints = 100, bonusPoints = 0, proofType = 'watch',
     estimatedMinutes = 15, isMilestone = false, milestoneLabel, sortOrder = 0,
+    isRequired = true, isActive = true,
   } = req.body as any;
   if (!dayNumber || !title) {
     return reply.status(400).send({ success: false, data: null, error: 'dayNumber and title are required' });
   }
+  const adminId = (req as any).auth?.sub ?? null;
   const task = await req.server.prisma.task.create({
     data: {
       batchId: req.params.id,
@@ -682,6 +784,9 @@ export async function createBatchTaskHandler(
       isMilestone,
       milestoneLabel: milestoneLabel ?? null,
       sortOrder,
+      isRequired,
+      isActive,
+      createdBy: adminId,
     },
   });
   return reply.status(201).send({ success: true, data: task, error: null });
@@ -695,7 +800,7 @@ export async function updateBatchTaskHandler(
   const {
     dayNumber, title, description, deliverables, contentUrl,
     basePoints, bonusPoints, proofType, estimatedMinutes,
-    isMilestone, milestoneLabel, sortOrder,
+    isMilestone, milestoneLabel, sortOrder, isRequired, isActive,
   } = req.body as any;
   const task = await req.server.prisma.task.update({
     where: { id: req.params.taskId },
@@ -712,18 +817,31 @@ export async function updateBatchTaskHandler(
       ...(isMilestone !== undefined ? { isMilestone } : {}),
       ...(milestoneLabel !== undefined ? { milestoneLabel } : {}),
       ...(sortOrder !== undefined ? { sortOrder } : {}),
+      ...(isRequired !== undefined ? { isRequired } : {}),
+      ...(isActive !== undefined ? { isActive } : {}),
     },
   });
   return reply.send({ success: true, data: task, error: null });
 }
 
 // DELETE /api/batches/:id/tasks/:taskId
+// Hard-deletes only when no member has ever submitted against this task —
+// otherwise deactivates it (isActive=false) so historical submissions/reports
+// stay intact. Callers should check `data.deactivated` to know which happened.
 export async function deleteBatchTaskHandler(
   req: FastifyRequest<{ Params: { id: string; taskId: string } }>,
   reply: FastifyReply,
 ) {
+  const submissionCount = await req.server.prisma.taskSubmission.count({ where: { taskId: req.params.taskId } });
+  if (submissionCount > 0) {
+    const task = await req.server.prisma.task.update({
+      where: { id: req.params.taskId },
+      data: { isActive: false },
+    });
+    return reply.send({ success: true, data: { deactivated: true, task }, error: null });
+  }
   await req.server.prisma.task.delete({ where: { id: req.params.taskId } });
-  return reply.send({ success: true, data: null, error: null });
+  return reply.send({ success: true, data: { deactivated: false }, error: null });
 }
 
 // PUT /api/batches/:id/tasks/reorder

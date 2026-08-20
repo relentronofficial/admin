@@ -29,6 +29,7 @@ class BatchTask with _$BatchTask {
     @Default(BatchTaskType.watch) BatchTaskType type,
     @Default(false) bool isCompleted,
     String? proofUrl,
+    @Default(true) bool isRequired,
   }) = _BatchTask;
 
   factory BatchTask.fromJson(Map<String, dynamic> json) =>

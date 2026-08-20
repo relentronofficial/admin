@@ -25,6 +25,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Enum migrations must run sequentially before table changes that use them
     await prisma.$executeRawUnsafe(`ALTER TYPE "MemberStatus" ADD VALUE IF NOT EXISTS 'pending'`);
     await prisma.$executeRawUnsafe(`ALTER TYPE "CoursePaymentMethod" ADD VALUE IF NOT EXISTS 'external'`);
+    await prisma.$executeRawUnsafe(`ALTER TYPE "VerificationStatus" ADD VALUE IF NOT EXISTS 'changes_requested'`);
 
     // Parallelize all table mutations — grouped per table so each table gets one ALTER statement
     await Promise.all([
@@ -131,6 +132,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS batch_break_reason_label TEXT NOT NULL DEFAULT 'Reason',
           ADD COLUMN IF NOT EXISTS batch_break_rejected_label TEXT NOT NULL DEFAULT 'Rejected',
           ADD COLUMN IF NOT EXISTS batch_break_submit_label TEXT NOT NULL DEFAULT 'Submit Request',
+          ADD COLUMN IF NOT EXISTS batch_required_label TEXT NOT NULL DEFAULT 'Required',
+          ADD COLUMN IF NOT EXISTS batch_optional_label TEXT NOT NULL DEFAULT 'Optional',
+          ADD COLUMN IF NOT EXISTS batch_week_label TEXT NOT NULL DEFAULT 'Week',
           ADD COLUMN IF NOT EXISTS ad_sponsored_label TEXT NOT NULL DEFAULT 'Sponsored',
           ADD COLUMN IF NOT EXISTS ad_skip_label TEXT NOT NULL DEFAULT 'Skip',
           ADD COLUMN IF NOT EXISTS ad_skip_in_label TEXT NOT NULL DEFAULT 'Skip in',
@@ -194,6 +198,30 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_report_lookup
         ON whatsapp_messages(member_id, report_type, report_period)
         WHERE report_type IS NOT NULL
+      `),
+      // Self-onboarding — submission/review tracking columns on members,
+      // plus a small table for admin-authored onboarding step content
+      // (text/video/audio). See SELF_ONBOARDING_SPECKIT.md §3.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS onboarding_submitted_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS onboarding_reviewed_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS onboarding_reviewed_by UUID,
+          ADD COLUMN IF NOT EXISTS onboarding_review_note TEXT
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS onboarding_content (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          step_key VARCHAR(50) NOT NULL,
+          title TEXT NOT NULL,
+          text_body TEXT,
+          video_url TEXT,
+          audio_url TEXT,
+          sort_order INT NOT NULL DEFAULT 0,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
       `),
       // Task unification — Phase 1 migrations
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id) ON DELETE CASCADE`),
@@ -1106,6 +1134,27 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         -- column list. (No backticks in this comment: it lives inside a JS
         -- template literal and an unescaped backtick terminates it.)
         CREATE UNIQUE INDEX IF NOT EXISTS "ad_user_frequency_campaign_id_subject_key_session_id_day_bu_key" ON ad_user_frequency(campaign_id, subject_key, session_id, day_bucket);
+      `),
+      // Weekly checklist (2026-08) — required/active/creator on tasks, plus a
+      // multi-device FCM registration table. Week number is deliberately not
+      // stored anywhere; it's always ceil(dayNumber/7). See TASK_FEATURE_SPEC.md.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE tasks
+          ADD COLUMN IF NOT EXISTS is_required BOOLEAN NOT NULL DEFAULT true,
+          ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true,
+          ADD COLUMN IF NOT EXISTS created_by TEXT
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS notification_devices (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          fcm_token TEXT NOT NULL,
+          platform VARCHAR(20),
+          last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS notification_devices_fcm_token_key ON notification_devices(fcm_token);
+        CREATE INDEX IF NOT EXISTS idx_notification_devices_member ON notification_devices(member_id);
       `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);

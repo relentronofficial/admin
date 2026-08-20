@@ -151,6 +151,7 @@ class BatchService {
             type: _parseTaskType(t['proofType'] as String?),
             isCompleted: completedTaskIds.contains(taskId),
             proofUrl: sub?['proofUrl'] as String?,
+            isRequired: (t['isRequired'] as bool?) ?? true,
           );
         }).toList();
 

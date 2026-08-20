@@ -102,6 +102,9 @@ class UiStrings {
     this.batchBreakReasonLabel,
     this.batchBreakRejectedLabel,
     this.batchBreakSubmitLabel,
+    this.batchRequiredLabel,
+    this.batchOptionalLabel,
+    this.batchWeekLabel,
     this.adSponsoredLabel,
     this.adSkipLabel,
     this.adSkipInLabel,
@@ -240,6 +243,9 @@ class UiStrings {
   final String? batchBreakReasonLabel;
   final String? batchBreakRejectedLabel;
   final String? batchBreakSubmitLabel;
+  final String? batchRequiredLabel;
+  final String? batchOptionalLabel;
+  final String? batchWeekLabel;
 
   // ── Advertisement overlay (TBT_ADS_SPECKIT.md §10) ─────────────────────────
   final String? adSponsoredLabel;
@@ -382,6 +388,9 @@ class UiStrings {
             json['batchBreakRejectedLabel'] as String?,
         batchBreakSubmitLabel:
             json['batchBreakSubmitLabel'] as String?,
+        batchRequiredLabel: json['batchRequiredLabel'] as String?,
+        batchOptionalLabel: json['batchOptionalLabel'] as String?,
+        batchWeekLabel: json['batchWeekLabel'] as String?,
         adSponsoredLabel: json['adSponsoredLabel'] as String?,
         adSkipLabel: json['adSkipLabel'] as String?,
         adSkipInLabel: json['adSkipInLabel'] as String?,

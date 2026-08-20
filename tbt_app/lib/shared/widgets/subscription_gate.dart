@@ -11,8 +11,10 @@ import '../providers/site_config_provider.dart';
 import '../theme/tbt_theme.dart';
 
 import '../../shared/theme/theme_tokens.dart';
-/// Routes that bypass the subscription gate entirely.
-const _exemptRoutes = {AppRoutes.products, AppRoutes.profile};
+/// Routes that bypass the subscription gate entirely. `onboarding` must stay
+/// exempt so a pending member can actually reach the self-onboarding wizard —
+/// see SELF_ONBOARDING_SPECKIT.md §7.1 (D2).
+const _exemptRoutes = {AppRoutes.products, AppRoutes.profile, AppRoutes.onboarding};
 
 bool _isExempt(String location) =>
     _exemptRoutes.any((r) => location.startsWith(r));

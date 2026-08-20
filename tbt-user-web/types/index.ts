@@ -340,6 +340,9 @@ export interface UiStrings {
   batchVideoUrlPlaceholder?: string;
   batchLinkUrlPlaceholder?: string;
   batchSubmittedProofLabel?: string;
+  batchRequiredLabel?: string;
+  batchOptionalLabel?: string;
+  batchWeekLabel?: string;
   batchViewProofLabel?: string;
 
   // Advertisement overlay (TBT_ADS_SPECKIT.md §9). Optional like the rest —
