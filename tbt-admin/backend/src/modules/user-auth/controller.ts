@@ -2,6 +2,14 @@ import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcrypt';
 import { generateOtp, storeOtp, verifyAndConsumeOtp, checkOtpRateLimit } from '../../lib/otp.js';
 import { sendOtpWhatsapp, sendOtpWhatsappDiagnostic } from '../../lib/whatsapp.js';
+import { sendOtp as sendOtpSms } from '../../lib/msg91.js';
+
+async function sendOtpWithFallback(phone: string, otp: string): Promise<boolean> {
+  const waOk = await sendOtpWhatsapp(phone, otp);
+  if (waOk) return true;
+  // WhatsApp delivery failed — fall back to SMS via MSG91
+  return sendOtpSms(phone, otp);
+}
 import { env } from '../../config/env.js';
 import {
   setAuthCookies,
@@ -136,7 +144,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     if (!gate.ok) return otpRateLimitReply(reply, gate);
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), m.phone, otp);
-    const sent = await sendOtpWhatsapp(m.phone, otp);
+    const sent = await sendOtpWithFallback(m.phone, otp);
     fastify.log.info({ phone: m.phone, sent }, 'OTP generated (first login)');
     return reply.send({
       success: true,
@@ -170,7 +178,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   if (!gate.ok) return otpRateLimitReply(reply, gate);
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
-  const sent = await sendOtpWhatsapp(m.phone, otp);
+  const sent = await sendOtpWithFallback(m.phone, otp);
   fastify.log.info({ phone: m.phone, sent }, 'OTP generated');
   return reply.send({
     success: true,
@@ -266,7 +274,7 @@ export async function forgotPassword(fastify: FastifyInstance, request: any, rep
   if (!gate.ok) return otpRateLimitReply(reply, gate);
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), m.phone, otp);
-  const sent = await sendOtpWhatsapp(m.phone, otp);
+  const sent = await sendOtpWithFallback(m.phone, otp);
   fastify.log.info({ phone: m.phone, sent }, 'OTP generated (forgot password)');
 
   return reply.send({
@@ -292,8 +300,8 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
   if (!gate.ok) return otpRateLimitReply(reply, gate);
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), (member as any).phone, otp);
-  const sent = await sendOtpWhatsapp((member as any).phone, otp);
-  if (!sent) fastify.log.warn({ phone }, 'WhatsApp OTP resend failed');
+  const sent = await sendOtpWithFallback((member as any).phone, otp);
+  if (!sent) fastify.log.warn({ phone }, 'OTP resend failed (WhatsApp + SMS both failed)');
 
   return reply.send({ success: true, data: null });
 }
