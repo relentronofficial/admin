@@ -12,7 +12,7 @@ const String kAuthVerifyOtp = '/api/user-auth/verify-otp';
 const String kAuthRefresh = '/api/user-auth/refresh';
 const String kAuthLogout = '/api/user-auth/logout';
 const String kAuthForgotPassword = '/api/user-auth/forgot-password';
-const String kAuthResetPassword = '/api/user-auth/reset-password';
+const String kAuthResetPassword = '/api/user-auth/set-password';
 const String kAuthSignup = '/api/user-auth/signup';
 
 // ── User / Profile ─────────────────────────────────────────────────────────────
