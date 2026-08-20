@@ -125,7 +125,8 @@ class _FullscreenAdOverlayState extends ConsumerState<FullscreenAdOverlay>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    ref.read(adControllerProvider).detachOverlay(_end);
+    // Read the controller before super.dispose() — ref is invalid after unmount.
+    try { ref.read(adControllerProvider).detachOverlay(_end); } catch (_) {}
     _clock?.cancel();
     _loadTimer?.cancel();
     _lifetimeTimer?.cancel();
@@ -418,9 +419,10 @@ class _FullscreenAdOverlayState extends ConsumerState<FullscreenAdOverlay>
       return;
     }
     if (!mounted) return;
-    final router = GoRouter.of(context);
+    // Capture router before _end() tears down the overlay (context may become stale).
+    final router = GoRouter.maybeOf(context);
     _end(AdEndReason.cta);
-    router.go(target);
+    router?.go(target);
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────

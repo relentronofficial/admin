@@ -2,7 +2,7 @@
 // Pure Dart — no Flutter SDK or network needed.
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tbt_app/lib/features/chat_groups/domain/chat_group_models.dart';
+import 'package:tbt_app/features/chat_groups/domain/chat_group_models.dart';
 
 void main() {
   // ── ChatGroupMember ────────────────────────────────────────────────────────
