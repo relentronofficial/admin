@@ -233,6 +233,9 @@ model Admin {
   resources       Resource[]
   updatedSettings Setting[]        @relation("SettingUpdater")
   qaReplies       QAReply[]
+  hostedOnboardingMeetings  OnboardingMeeting[]            @relation("OnboardingMeetingHost")
+  createdOnboardingMeetings OnboardingMeeting[]            @relation("OnboardingMeetingCreator")
+  onboardingMeetingParticipations OnboardingMeetingParticipant[]
 
   @@map("admins")
 }
@@ -398,6 +401,8 @@ model Member {
   tbtActivityLog        TbtActivityLog[]   @relation("MemberTbtActivityLog")
   tbtTaskCompletions    TbtTaskCompletion[] @relation("MemberTbtTaskCompletion")
   notificationDevices   NotificationDevice[]
+  onboardingMeetings    OnboardingMeeting[]
+  onboardingMeetingParticipations OnboardingMeetingParticipant[]
 
   @@map("members")
 }
@@ -1436,6 +1441,69 @@ model OnboardingContent {
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   @@map("onboarding_content")
+}
+
+// Virtual Self Onboarding — live verification meeting (LiveKit). One member's
+// onboarding may have zero or more meetings; each is a lean, purpose-built
+// entity rather than a reuse of the workshop-scoped `LiveCall` model (which
+// is hard-FK'd to `Workshop` and carries polls/RSVP/certificates/breakout
+// rooms that don't apply here). The LiveKit token-mint/webhook *mechanics*
+// (see backend/src/lib/onboardingLiveKit.ts) mirror the workshops module's
+// proven pattern; only the owning entity and audience differ.
+// Status is a plain string (not a Postgres enum), matching LiveCall/
+// WorkshopEnrollment/LiveCallRsvp precedent elsewhere in this schema.
+// Values: scheduled | live | completed | cancelled.
+model OnboardingMeeting {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId        String    @map("member_id") @db.Uuid
+  hostAdminId     String?   @map("host_admin_id") @db.Uuid
+  createdBy       String?   @map("created_by") @db.Uuid
+  title           String    @default("Onboarding Verification Call")
+  description     String?
+  status          String    @default("scheduled")
+  scheduledAt     DateTime  @map("scheduled_at") @db.Timestamptz(6)
+  durationMinutes Int       @default(30) @map("duration_minutes")
+  startedAt       DateTime? @map("started_at") @db.Timestamptz(6)
+  endedAt         DateTime? @map("ended_at") @db.Timestamptz(6)
+  cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason    String?   @map("cancel_reason")
+  recordingUrl    String?   @map("recording_url")
+  egressId        String?   @map("egress_id")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member       Member                         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  hostAdmin    Admin?                         @relation("OnboardingMeetingHost", fields: [hostAdminId], references: [id])
+  creator      Admin?                         @relation("OnboardingMeetingCreator", fields: [createdBy], references: [id])
+  participants OnboardingMeetingParticipant[]
+
+  @@index([memberId])
+  @@index([status, scheduledAt])
+  @@map("onboarding_meetings")
+}
+
+// Role: host | participant. Status: invited | joined | left | removed.
+// Exactly one of memberId/adminId is set per row (app-enforced, not a DB
+// constraint — matches the general lack of CHECK constraints for this kind
+// of either/or elsewhere in this schema, e.g. LiveCallAttendance.memberId).
+model OnboardingMeetingParticipant {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  meetingId   String    @map("meeting_id") @db.Uuid
+  memberId    String?   @map("member_id") @db.Uuid
+  adminId     String?   @map("admin_id") @db.Uuid
+  role        String    @default("participant")
+  status      String    @default("invited")
+  identity    String?
+  invitedAt   DateTime  @default(now()) @map("invited_at") @db.Timestamptz(6)
+  joinedAt    DateTime? @map("joined_at") @db.Timestamptz(6)
+  leftAt      DateTime? @map("left_at") @db.Timestamptz(6)
+  durationSec Int?      @map("duration_sec")
+
+  meeting OnboardingMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member  Member?           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  admin   Admin?            @relation(fields: [adminId], references: [id])
+
+  @@map("onboarding_meeting_participants")
 }
 
 model AuditLog {

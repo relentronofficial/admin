@@ -224,6 +224,47 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `),
+      // Virtual Self Onboarding — LiveKit verification meetings. See
+      // ONBOARDING_LIVE_MEETING_SPECKIT.md.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS onboarding_meetings (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          host_admin_id UUID REFERENCES admins(id),
+          created_by UUID REFERENCES admins(id),
+          title TEXT NOT NULL DEFAULT 'Onboarding Verification Call',
+          description TEXT,
+          status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+          scheduled_at TIMESTAMPTZ NOT NULL,
+          duration_minutes INT NOT NULL DEFAULT 30,
+          started_at TIMESTAMPTZ,
+          ended_at TIMESTAMPTZ,
+          cancelled_at TIMESTAMPTZ,
+          cancel_reason TEXT,
+          recording_url TEXT,
+          egress_id TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_onboarding_meetings_member ON onboarding_meetings(member_id)`),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_onboarding_meetings_status ON onboarding_meetings(status, scheduled_at)`),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS onboarding_meeting_participants (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          meeting_id UUID NOT NULL REFERENCES onboarding_meetings(id) ON DELETE CASCADE,
+          member_id UUID REFERENCES members(id) ON DELETE CASCADE,
+          admin_id UUID REFERENCES admins(id),
+          role VARCHAR(20) NOT NULL DEFAULT 'participant',
+          status VARCHAR(20) NOT NULL DEFAULT 'invited',
+          identity TEXT,
+          invited_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          joined_at TIMESTAMPTZ,
+          left_at TIMESTAMPTZ,
+          duration_sec INT
+        )
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_onboarding_meeting_participants_meeting ON onboarding_meeting_participants(meeting_id)`),
       // Task unification — Phase 1 migrations
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id) ON DELETE CASCADE`),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ALTER COLUMN program_id DROP NOT NULL`).catch(() => {}),

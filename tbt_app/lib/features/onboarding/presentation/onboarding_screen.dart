@@ -2,11 +2,15 @@ import 'package:better_player_plus/better_player_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../../core/constants/routes.dart';
 import '../../../shared/api/upload_service.dart';
+import '../../../shared/theme/tbt_theme.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/providers/me_provider.dart';
+import '../domain/onboarding_meeting.dart';
 import '../domain/onboarding_state.dart';
 import '../providers/onboarding_provider.dart';
 
@@ -58,13 +62,16 @@ class OnboardingScreen extends ConsumerWidget {
   }
 }
 
-class _PendingReviewView extends StatelessWidget {
+class _PendingReviewView extends ConsumerWidget {
   const _PendingReviewView();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final meetingsAsync = ref.watch(onboardingMeetingsProvider);
+    final meeting = meetingsAsync.valueOrNull?.where((m) => m.isJoinable).firstOrNull;
+
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -78,8 +85,64 @@ class _PendingReviewView extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(color: context.tokens.textSecondary, height: 1.5),
             ),
+            if (meeting != null) ...[
+              const SizedBox(height: 24),
+              _MeetingCard(meeting: meeting),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MeetingCard extends StatelessWidget {
+  const _MeetingCard({required this.meeting});
+  final OnboardingMeeting meeting;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.tbt.accent;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(radius: 20, backgroundColor: accent.withValues(alpha: 0.15), child: Icon(Icons.videocam, color: accent)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(meeting.title, style: TextStyle(fontWeight: FontWeight.w700, color: context.tokens.textPrimary)),
+                const SizedBox(height: 2),
+                Text(
+                  meeting.status == 'live' ? 'Live now' : '${meeting.scheduledAt.toLocal()}'.split('.').first,
+                  style: TextStyle(fontSize: 12, color: context.tokens.textSecondary),
+                ),
+                if (meeting.hostAdminName != null || meeting.participantCount != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      if (meeting.hostAdminName != null) 'Host: ${meeting.hostAdminName}',
+                      if (meeting.participantCount != null) '${meeting.participantCount} invited',
+                    ].join(' · '),
+                    style: TextStyle(fontSize: 11, color: context.tokens.textMuted),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => context.push(AppRoutes.onboardingMeetingPath(meeting.id)),
+            style: ElevatedButton.styleFrom(backgroundColor: accent),
+            child: Text(meeting.status == 'live' ? 'Join' : 'View'),
+          ),
+        ],
       ),
     );
   }
