@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -21,55 +22,44 @@ import 'shared/providers/site_config_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Firebase must be initialized before runApp — native plugin channels.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  // Set up local notification channel before anything else uses FCM.
-  await initLocalNotifications();
-
-  // Open the shared response cache before any provider tries to read
-  // from it. Cheap — opens a single Hive box.
-  await ResponseCache.init();
-
-  // Opt into the highest supported display refresh rate on Android.
-  // Flutter caps at 60 Hz by default even on 120 Hz hardware — this
-  // call picks the mode with the highest refresh rate among modes that
-  // match the current resolution. iOS handles this via
-  // `CADisableMinimumFrameDurationOnPhone` in Info.plist (already set).
-  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-    try {
-      await FlutterDisplayMode.setHighRefreshRate();
-    } catch (_) {
-      // Not fatal — some emulators / older Android versions don't
-      // support the mode API. Fall back to whatever the OS gave us.
-    }
-  }
-
-  // Terminated state: resolve the tapped notification's route and stash it for
-  // the router to consume once the user is authenticated.
-  final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-  if (initialMessage != null) {
-    final type = initialMessage.data['type'] as String?;
-    if (type != null && type.isNotEmpty) {
-      final route = resolveNotificationRoute(
-        type: type,
-        metadata: _parseMetadata(initialMessage.data['metadata']),
-      );
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(kPrefPendingDeepLink, route);
-    }
-  }
-
-  await getOrCreateDeviceId();
 
   final container = ProviderContainer();
 
-  // Prefetch member profile in parallel with the public config fetches
-  // when a session token is present — cuts the auth waterfall on cold
-  // start (previously every authenticated screen paid the round-trip
-  // for /api/user/me on first render). Skipped when there's no token
-  // so we don't fire a guaranteed-401 for logged-out users.
-  final hasSession = (await TokenStorage.readAccessToken()) != null;
+  // Show UI immediately — the splash video covers background init time.
+  runApp(UncontrolledProviderScope(container: container, child: const TbtApp()));
 
+  // Everything below runs concurrently with the splash video (up to 6 s).
+  unawaited(_backgroundInit(container));
+}
+
+/// Heavy startup work that does not need to block the first frame.
+/// Runs concurrently with [VideoSplashScreen].
+Future<void> _backgroundInit(ProviderContainer container) async {
+  // (1) Hive must be open before provider build() methods call
+  //     ResponseCache.readPayload() for cache-first rendering.
+  await ResponseCache.init();
+
+  // (2) Prime the token cache and device ID in parallel — both read from
+  //     secure/shared prefs and are independent of each other.
+  final tokenFuture = TokenStorage.readAccessToken();
+  await getOrCreateDeviceId(); // populates cachedDeviceId for AuthInterceptor
+  final hasSession = (await tokenFuture) != null;
+
+  // (3) Fire network prefetch and local setup concurrently.
+  //     Local notification channel setup does not affect HTTP request
+  //     handling, so it is safe to run alongside the backend calls.
+  await Future.wait([
+    _prefetchProviders(container, hasSession),
+    _localSetup(),
+  ]);
+}
+
+/// Prefetches the four high-priority providers in parallel so the dashboard
+/// renders from cache when the splash hands off instead of showing spinners.
+Future<void> _prefetchProviders(
+    ProviderContainer container, bool hasSession) async {
   await Future.wait([
     container
         .read(siteConfigNotifierProvider.future)
@@ -89,8 +79,35 @@ void main() async {
           .then((_) {})
           .catchError((_) {}),
   ]);
+}
 
-  runApp(UncontrolledProviderScope(container: container, child: const TbtApp()));
+/// Local setup tasks that can run concurrently with network prefetch.
+Future<void> _localSetup() async {
+  // Local notifications channel must exist before FCM fires any tap callbacks.
+  await initLocalNotifications();
+
+  // Opt into the highest supported refresh rate on Android.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    try {
+      await FlutterDisplayMode.setHighRefreshRate();
+    } catch (_) {}
+  }
+
+  // Terminated-state notification deep-link — resolve and stash the target
+  // route so TbtApp can consume it once the user is authenticated.
+  // getInitialMessage() is a fast local IPC call (no network).
+  final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+  if (initialMessage != null) {
+    final type = initialMessage.data['type'] as String?;
+    if (type != null && type.isNotEmpty) {
+      final route = resolveNotificationRoute(
+        type: type,
+        metadata: _parseMetadata(initialMessage.data['metadata']),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(kPrefPendingDeepLink, route);
+    }
+  }
 }
 
 Map<String, dynamic>? _parseMetadata(dynamic raw) {

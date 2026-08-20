@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import * as controller from './controller.js';
+import { devPeekOtp } from '../../lib/otp.js';
 
 export async function userAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/signup', (req, reply) => controller.signup(fastify, req, reply));
@@ -22,6 +23,16 @@ export async function userAuthRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticateUser],
     handler: (req, reply) => controller.me(fastify, req, reply),
   });
+
+  // DEV ONLY — peek at current in-memory OTP for a phone. Never runs in production.
+  if (process.env.NODE_ENV !== 'production') {
+    fastify.get('/dev-otp/:phone', (req, reply) => {
+      const { phone } = req.params as { phone: string };
+      const otp = devPeekOtp(decodeURIComponent(phone));
+      if (!otp) return reply.status(404).send({ otp: null });
+      return reply.send({ otp });
+    });
+  }
 
   // Admin-only WhatsApp diagnostic. Protected by CRON_SECRET header
   // (same pattern as the cron endpoints — no Clerk / member auth

@@ -64,7 +64,7 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
   final _focus = FocusNode();
   final _picker = ImagePicker();
 
-  bool _expanded = true;
+  bool _expanded = false;
   bool _showEmojiPicker = false;
   bool _submitting = false;
   String _visibility = 'Public';
@@ -304,10 +304,12 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
     );
   }
 
-  /// Uploads a picked file to R2 via the presigned-URL flow. Returns
-  /// the public URL that should be stored on the post's `mediaUrls`.
-  /// Returns null (with a toast) if the upload fails — the composer
-  /// still submits the text-only post in that case.
+  /// Uploads a picked file via `POST /api/upload/image` (same endpoint
+  /// the admin panel uses). The backend `uploadImageHandler` tries
+  /// Bunny Storage first and only falls back to R2 if Bunny is
+  /// unavailable — so media lands on Bunny by default. Returns the
+  /// public CDN URL to store on the post's `mediaUrls`, or null (with
+  /// a toast) on failure.
   Future<String?> _uploadMedia(XFile file) async {
     try {
       final dio = ref.read(dioProvider);
@@ -326,42 +328,30 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
             'webm': 'video/webm',
           }[ext] ??
               'application/octet-stream');
-      final isVideo = contentType.startsWith('video/');
-      final res = await dio.post<Map<String, dynamic>>(
-        '/api/upload/presigned-url',
-        data: {
-          'filename': file.name,
-          'contentType': contentType,
-          'bucket': isVideo ? 'community-videos' : 'community-photos',
-          'pathPrefix': 'community',
-        },
-      );
-      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
-      final uploadUrl = data['uploadUrl'] as String?;
-      final publicUrl = data['publicUrl'] as String?;
-      if (uploadUrl == null || publicUrl == null) {
-        _showError('Upload URL missing from server.');
-        return null;
-      }
 
-      // Read the file bytes + PUT them to the presigned URL. Uses a
-      // fresh Dio (no auth interceptor) since the presigned URL already
-      // authenticates via the signed query string.
       final bytes = await file.readAsBytes();
-      final putDio = Dio();
-      await putDio.put<void>(
-        uploadUrl,
-        data: Stream.fromIterable([bytes]),
+      final res = await dio.post<Map<String, dynamic>>(
+        '/api/upload/image',
+        queryParameters: {
+          'pathPrefix': 'community',
+          'filename': file.name,
+        },
+        data: bytes,
         options: Options(
-          headers: {
-            'Content-Type': contentType,
-            'Content-Length': bytes.length,
-          },
+          contentType: contentType,
+          headers: {'Content-Type': contentType},
+          validateStatus: (s) => s != null && s >= 200 && s < 300,
         ),
       );
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
+      final publicUrl = data['publicUrl'] as String?;
+      if (publicUrl == null || publicUrl.isEmpty) {
+        _showError('Upload succeeded but no URL was returned.');
+        return null;
+      }
       return publicUrl;
     } catch (e) {
-      _showError('Media upload failed. Posting without media.');
+      _showError('Media upload failed: $e');
       return null;
     }
   }
@@ -457,6 +447,72 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
       if (mounted) setState(() => _submitting = false);
     }
   }
+
+  // ── Neumorphism helpers (match morning_ritual_card.dart recipe) ────
+  // Small pill for header chevron, tag icons, chips.
+  BoxDecoration _pillDeco(bool isDark, {double radius = 12}) => BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF23232B), Color(0xFF0A0A0F)]
+              : const [Color(0xFFFFFFFF), Color(0xFFE6E6EC)],
+        ),
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: isDark
+            ? const [
+                BoxShadow(
+                  color: Color(0xCC000000),
+                  offset: Offset(2, 3),
+                  blurRadius: 6,
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: const Color(0xFF8E8EA0).withValues(alpha: 0.35),
+                  offset: const Offset(3, 3),
+                  blurRadius: 6,
+                ),
+                BoxShadow(
+                  color: Colors.white,
+                  offset: const Offset(-3, -3),
+                  blurRadius: 6,
+                ),
+              ],
+      );
+
+  // Inset surface (emoji picker area — reads as pressed-in, not raised).
+  BoxDecoration _insetSurfaceDeco(bool isDark, {double radius = 14}) =>
+      BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF0A0A0F), Color(0xFF15151B)]
+              : const [Color(0xFFE0E0E6), Color(0xFFF3F3F6)],
+        ),
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: isDark
+            ? const [
+                BoxShadow(
+                  color: Color(0xFF000000),
+                  offset: Offset(3, 3),
+                  blurRadius: 6,
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: const Color(0xFF8E8EA0).withValues(alpha: 0.30),
+                  offset: const Offset(3, 3),
+                  blurRadius: 5,
+                ),
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  offset: const Offset(-3, -3),
+                  blurRadius: 5,
+                ),
+              ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -568,10 +624,7 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
                 child: Container(
                   width: 36,
                   height: 36,
-                  decoration: BoxDecoration(
-                    color: tokens.borderCard,
-                    shape: BoxShape.circle,
-                  ),
+                  decoration: _pillDeco(isDark, radius: 18),
                   child: Icon(
                     _expanded
                         ? Icons.keyboard_arrow_up_rounded
@@ -651,14 +704,8 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: kColorAccent.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: kColorAccent.withValues(alpha: 0.25),
-                        ),
-                      ),
+                          horizontal: 12, vertical: 6),
+                      decoration: _pillDeco(isDark, radius: 20),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -714,12 +761,8 @@ class _AchievementComposerState extends ConsumerState<AchievementComposer> {
               const SizedBox(height: 12),
               Container(
                 height: 220,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: tokens.bgInput,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: tokens.borderCard),
-                ),
+                padding: const EdgeInsets.all(10),
+                decoration: _insetSurfaceDeco(isDark, radius: 14),
                 child: GridView.builder(
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
@@ -878,6 +921,7 @@ class _MediaChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Tooltip(
       message: tooltip,
       child: Material(
@@ -887,15 +931,47 @@ class _MediaChip extends StatelessWidget {
           onTap: onTap,
           customBorder: const CircleBorder(),
           child: Container(
-            width: 36,
-            height: 36,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: color.withValues(alpha: 0.12),
-              border: Border.all(
-                color: color.withValues(alpha: 0.35),
-                width: 1,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? const [Color(0xFF23232B), Color(0xFF0A0A0F)]
+                    : const [Color(0xFFFFFFFF), Color(0xFFE6E6EC)],
               ),
+              boxShadow: isDark
+                  ? [
+                      const BoxShadow(
+                        color: Color(0xCC000000),
+                        offset: Offset(3, 3),
+                        blurRadius: 7,
+                      ),
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.22),
+                        blurRadius: 8,
+                        spreadRadius: 0.5,
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: const Color(0xFF8E8EA0).withValues(alpha: 0.40),
+                        offset: const Offset(4, 4),
+                        blurRadius: 8,
+                      ),
+                      const BoxShadow(
+                        color: Colors.white,
+                        offset: Offset(-4, -4),
+                        blurRadius: 8,
+                      ),
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.15),
+                        blurRadius: 8,
+                        spreadRadius: 0.5,
+                      ),
+                    ],
             ),
             child: Icon(icon, color: color, size: 18),
           ),
@@ -915,6 +991,7 @@ class _VisibilityToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isPublic = visibility == 'Public';
     return Material(
       color: Colors.transparent,
@@ -923,12 +1000,37 @@ class _VisibilityToggle extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Container(
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: tokens.bgInput,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: tokens.borderCard),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? const [Color(0xFF23232B), Color(0xFF0A0A0F)]
+                  : const [Color(0xFFFFFFFF), Color(0xFFE6E6EC)],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: isDark
+                ? const [
+                    BoxShadow(
+                      color: Color(0xCC000000),
+                      offset: Offset(3, 3),
+                      blurRadius: 6,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: const Color(0xFF8E8EA0).withValues(alpha: 0.35),
+                      offset: const Offset(4, 4),
+                      blurRadius: 8,
+                    ),
+                    const BoxShadow(
+                      color: Colors.white,
+                      offset: Offset(-4, -4),
+                      blurRadius: 8,
+                    ),
+                  ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1001,13 +1103,46 @@ class _AttachmentPreview extends StatelessWidget {
       );
     } else {
       content = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFF9B51E0).withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color(0xFF9B51E0).withValues(alpha: 0.3),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: Theme.of(context).brightness == Brightness.dark
+                ? const [Color(0xFF23232B), Color(0xFF0A0A0F)]
+                : const [Color(0xFFFFFFFF), Color(0xFFE6E6EC)],
           ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: Theme.of(context).brightness == Brightness.dark
+              ? [
+                  const BoxShadow(
+                    color: Color(0xCC000000),
+                    offset: Offset(3, 3),
+                    blurRadius: 7,
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF9B51E0).withValues(alpha: 0.25),
+                    blurRadius: 12,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: const Color(0xFF8E8EA0).withValues(alpha: 0.40),
+                    offset: const Offset(4, 4),
+                    blurRadius: 8,
+                  ),
+                  const BoxShadow(
+                    color: Colors.white,
+                    offset: Offset(-4, -4),
+                    blurRadius: 8,
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF9B51E0).withValues(alpha: 0.18),
+                    blurRadius: 10,
+                    spreadRadius: 0.5,
+                  ),
+                ],
         ),
         child: Row(
           children: [

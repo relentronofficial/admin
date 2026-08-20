@@ -185,7 +185,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS snapshot_days INT`),
-      // Batch-program WhatsApp report delivery — extends the previously-unused
+      prisma.$executeRawUnsafe(`ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS disappearing_duration_seconds INT`),
       // whatsapp_messages table so weekly/monthly report sends can be looked
       // up and deduplicated per (member, reportType, reportPeriod).
       prisma.$executeRawUnsafe(`
@@ -981,6 +981,82 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           UNIQUE (message_id, member_id)
         );
         CREATE INDEX IF NOT EXISTS idx_chat_group_reads_member ON chat_group_message_reads(member_id);
+      `),
+      // Phase 3 (2026-08-05) — @mention support. Store the memberIds the
+      // sender explicitly picked from the composer autocomplete so we can
+      // fan-out mention pings + render highlighted spans on the client.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE chat_group_messages
+          ADD COLUMN IF NOT EXISTS mentioned_member_ids UUID[] NOT NULL DEFAULT '{}'
+      `),
+      // WhatsApp-parity Phase 5 (2026-08-06) — pin/star/forward/announcement-only + DM parity.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE chat_groups
+          ADD COLUMN IF NOT EXISTS announcement_only BOOLEAN NOT NULL DEFAULT false
+      `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE chat_group_messages
+          ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT false,
+          ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS pinned_by_admin_id UUID,
+          ADD COLUMN IF NOT EXISTS forwarded_from_message_id UUID
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_chat_group_messages_pinned
+          ON chat_group_messages(group_id, pinned_at DESC)
+          WHERE is_pinned = true AND deleted_for_everyone = false
+      `),
+      // Per-member starred messages ("bookmarks"). Composite PK — one star
+      // per (member, message) pair.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS chat_group_starred_messages (
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          message_id UUID NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
+          starred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (member_id, message_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC);
+      `),
+      // Sprint 3 (2026-08-19) — Link preview card stored alongside the message.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE chat_group_messages
+          ADD COLUMN IF NOT EXISTS link_preview JSONB
+      `),
+      // DM parity — media, reply, edit, delete, per-message read receipts.
+      // body was NOT NULL — must allow media-only messages now.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE direct_messages
+          ALTER COLUMN body DROP NOT NULL,
+          ADD COLUMN IF NOT EXISTS media_url TEXT,
+          ADD COLUMN IF NOT EXISTS media_type VARCHAR(20),
+          ADD COLUMN IF NOT EXISTS reply_to_id UUID,
+          ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS deleted_for_everyone BOOLEAN NOT NULL DEFAULT false,
+          ADD COLUMN IF NOT EXISTS read_by_admin_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS read_by_member_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS forwarded_from_message_id UUID
+      `),
+      // DM reactions — mirrors chat_group_reactions but keys on
+      // (message, sender_type, sender_id) since senders can be admins or
+      // members.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS direct_message_reactions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          message_id UUID NOT NULL REFERENCES direct_messages(id) ON DELETE CASCADE,
+          sender_type VARCHAR(20) NOT NULL CHECK (sender_type IN ('admin', 'member')),
+          sender_id UUID NOT NULL,
+          emoji TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (message_id, sender_type, sender_id, emoji)
+        );
+        CREATE INDEX IF NOT EXISTS idx_direct_message_reactions_message ON direct_message_reactions(message_id);
+      `),
+      // Presence — "last seen at" per member. Written on socket disconnect;
+      // exposed by chat-groups/presence + DM headers.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ
       `),
       // ── Advertisement campaigns (2026-08-06) — TBT_ADS_SPECKIT.md §3 ──
       // These DO have Prisma models (see schema.prisma); this block is the

@@ -176,3 +176,14 @@ async function _deleteBoth(redis: RedisLike | null, key: string) {
 // In-process fallback: (a) primary store when Redis isn't configured,
 // (b) resilience layer when Redis is configured but times out mid-flow.
 const _devStore = new Map<string, { value: string; expiresAt: number }>();
+
+/** DEV ONLY — peek at the stored OTP for a phone (never ship to prod). */
+export function devPeekOtp(phone: string): string | null {
+  if (process.env.NODE_ENV === 'production') return null;
+  const entry = _devStore.get(`otp:${phone}`);
+  if (!entry || Date.now() >= entry.expiresAt) return null;
+  try {
+    const record = JSON.parse(entry.value) as OtpRecord;
+    return record.otp;
+  } catch { return null; }
+}

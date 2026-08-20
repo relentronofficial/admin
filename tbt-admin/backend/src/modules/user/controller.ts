@@ -4011,8 +4011,16 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
       senderAvatarUrl: m.senderType === 'member'
         ? (memberProfile?.profilePhotoUrl ?? null)
         : (admin?.profilePhotoUrl ?? null),
-      body:            m.body,
-      createdAt:       m.createdAt,
+      body:               m.deletedForEveryone ? null : m.body,
+      mediaUrl:           m.deletedForEveryone ? null : m.mediaUrl,
+      mediaType:          m.deletedForEveryone ? null : m.mediaType,
+      replyToId:          m.replyToId,
+      editedAt:           m.editedAt,
+      deletedAt:          m.deletedAt,
+      deletedForEveryone: m.deletedForEveryone,
+      readByAdminAt:      m.readByAdminAt,
+      readByMemberAt:     m.readByMemberAt,
+      createdAt:          m.createdAt,
     };
   });
 
@@ -4022,7 +4030,14 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
 export async function sendMemberChatMessageHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { id } = request.params as { id: string };
-  const { body } = request.body as { body: string };
+  const { body, mediaUrl, mediaType, replyToId } = request.body as {
+    body?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    replyToId?: string;
+  };
+
+  if (!body?.trim() && !mediaUrl) return fail(reply, 400, 'body or mediaUrl required');
 
   const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
   if (!convo) return fail(reply, 404, 'Conversation not found');
@@ -4031,7 +4046,16 @@ export async function sendMemberChatMessageHandler(request: FastifyRequest, repl
 
   const message = await request.server.prisma.$transaction(async (tx) => {
     const msg = await tx.directMessage.create({
-      data: { conversationId: id, memberId, senderId: memberId, senderType: 'member', body },
+      data: {
+        conversationId: id,
+        memberId,
+        senderId:       memberId,
+        senderType:     'member',
+        body:           body ?? null,
+        mediaUrl:       mediaUrl ?? null,
+        mediaType:      mediaType ?? null,
+        replyToId:      replyToId ?? null,
+      },
     });
     await tx.conversation.update({
       where: { id },
@@ -4057,7 +4081,10 @@ export async function sendMemberChatMessageHandler(request: FastifyRequest, repl
       senderId:   memberId,
       senderType: 'member',
       senderName: memberName,
-      body,
+      body:       message.body,
+      mediaUrl:   message.mediaUrl,
+      mediaType:  message.mediaType,
+      replyToId:  message.replyToId,
       createdAt:  message.createdAt,
     },
   });

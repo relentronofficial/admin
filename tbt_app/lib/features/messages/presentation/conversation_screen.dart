@@ -1,8 +1,19 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../features/chat_groups/data/chat_groups_service.dart';
+import '../../../features/community/presentation/image_viewer.dart';
+import '../../../features/community/presentation/video_viewer.dart';
 import '../../../shared/models/chat_message.dart';
 import '../../../shared/providers/me_provider.dart';
+import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../data/messages_service.dart';
 import '../providers/messages_provider.dart';
@@ -23,6 +34,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   var _sending = false;
   var _loadingMore = false;
 
+  // Reply preview state.
+  ChatMessage? _replyingTo;
+
+  // Uploaded-but-not-sent media.
+  File? _pendingMediaFile;
+  bool _pendingUploading = false;
+  String? _pendingMediaUrl;
+  String? _pendingMediaType;
+
   @override
   void initState() {
     super.initState();
@@ -37,8 +57,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     super.dispose();
   }
 
-  // Backwards pagination — when the user scrolls to the TOP of the message
-  // list, ask the provider for the next page of older messages.
   Future<void> _onScroll() async {
     if (_loadingMore) return;
     if (!_scrollCtrl.hasClients) return;
@@ -47,12 +65,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         conversationMessagesProvider(widget.conversationId).notifier);
     if (!notifier.hasMore) return;
     setState(() => _loadingMore = true);
-    // Remember scroll offset so it survives the list-length change.
     final prevMax = _scrollCtrl.position.maxScrollExtent;
     await notifier.fetchMore();
     if (mounted) setState(() => _loadingMore = false);
-    // After older messages are prepended, keep the viewport anchored to the
-    // same visible content (offset shifts by the newly-added height).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollCtrl.hasClients) return;
       final newMax = _scrollCtrl.position.maxScrollExtent;
@@ -77,9 +92,94 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     });
   }
 
+  Future<void> _openAttachSheet() async {
+    if (_pendingMediaFile != null) return;
+    final choice = await showModalBottomSheet<_AttachChoice>(
+      context: context,
+      backgroundColor: context.tokens.bgSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (bs) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(bs, _AttachChoice.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(bs, _AttachChoice.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: const Text('Document'),
+              onTap: () => Navigator.pop(bs, _AttachChoice.document),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+    File? file;
+    try {
+      switch (choice) {
+        case _AttachChoice.camera:
+          final x = await ImagePicker()
+              .pickImage(source: ImageSource.camera, imageQuality: 90);
+          if (x != null) file = File(x.path);
+          break;
+        case _AttachChoice.gallery:
+          final x = await ImagePicker()
+              .pickImage(source: ImageSource.gallery, imageQuality: 90);
+          if (x != null) file = File(x.path);
+          break;
+        case _AttachChoice.document:
+          final res = await FilePicker.platform
+              .pickFiles(type: FileType.any, withData: false);
+          final path = res?.files.first.path;
+          if (path != null) file = File(path);
+          break;
+      }
+    } catch (_) {
+      return;
+    }
+    if (file == null) return;
+    setState(() {
+      _pendingMediaFile = file;
+      _pendingUploading = true;
+      _pendingMediaUrl = null;
+      _pendingMediaType = null;
+    });
+    // Reuse the group-chat upload endpoint — same backend surface.
+    final uploaded =
+        await ref.read(chatGroupsServiceProvider).uploadMedia(file);
+    if (!mounted) return;
+    setState(() {
+      _pendingUploading = false;
+      _pendingMediaUrl = uploaded?.publicUrl;
+      _pendingMediaType = uploaded?.mediaType;
+    });
+  }
+
+  void _clearPendingMedia() {
+    setState(() {
+      _pendingMediaFile = null;
+      _pendingMediaUrl = null;
+      _pendingMediaType = null;
+      _pendingUploading = false;
+    });
+  }
+
   Future<void> _send() async {
     final body = _inputCtrl.text.trim();
-    if (body.isEmpty || _sending) return;
+    final hasMedia = _pendingMediaUrl != null && !_pendingUploading;
+    if (body.isEmpty && !hasMedia) return;
+    if (_sending) return;
 
     final me = ref.read(meNotifierProvider).valueOrNull;
     final memberName = me?.name ?? 'You';
@@ -92,20 +192,41 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       senderAvatarUrl: null,
       body: body,
       createdAt: DateTime.now().toIso8601String(),
+      mediaUrl: hasMedia ? _pendingMediaUrl : null,
+      mediaType: hasMedia ? _pendingMediaType : null,
+      replyToId: _replyingTo?.id,
+      replyToBody: _replyingTo?.body,
+      replyToSenderName: _replyingTo?.senderName,
     );
 
     _inputCtrl.clear();
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+    });
 
     ref
         .read(conversationMessagesProvider(widget.conversationId).notifier)
         .appendSent(optimistic);
     _scrollToBottom(animated: true);
 
+    final replyToId = _replyingTo?.id;
+    final capturedBody = body.isEmpty ? null : body;
+    final capturedMediaUrl = hasMedia ? _pendingMediaUrl : null;
+    final capturedMediaType = hasMedia ? _pendingMediaType : null;
+
+    setState(() {
+      _replyingTo = null;
+    });
+    _clearPendingMedia();
+
     try {
-      await ref
-          .read(messagesServiceProvider)
-          .sendMessage(widget.conversationId, body);
+      await ref.read(messagesServiceProvider).sendMessage(
+            widget.conversationId,
+            capturedBody,
+            mediaUrl: capturedMediaUrl,
+            mediaType: capturedMediaType,
+            replyToId: replyToId,
+          );
     } catch (_) {
       // Optimistic message stays visible; a retry isn't critical for MVP.
     } finally {
@@ -119,7 +240,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final messagesAsync =
         ref.watch(conversationMessagesProvider(widget.conversationId));
 
-    // Scroll to bottom on first load AND when a new message arrives.
     ref.listen(conversationMessagesProvider(widget.conversationId),
         (prev, next) {
       if (prev?.isLoading == true && next.hasValue) {
@@ -188,7 +308,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
       body: Column(
         children: [
-          // Message list
           Expanded(
             child: messagesAsync.when(
               loading: () => const Center(
@@ -235,7 +354,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             ),
           ),
 
-          // Typing indicator — appears when the other party is typing.
           Consumer(
             builder: (_, r, __) {
               final typing = r.watch(
@@ -269,8 +387,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             },
           ),
 
-          // "Reply to reopen" hint — surfaces when the support team has
-          // closed this conversation. Sending a reply reopens it server-side.
           Consumer(
             builder: (_, r, __) {
               final convos = r.watch(conversationsProvider).valueOrNull ?? [];
@@ -295,12 +411,27 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             },
           ),
 
-          // Input bar
+          // Reply banner + pending media
+          if (_replyingTo != null)
+            _ReplyBanner(
+              message: _replyingTo!,
+              onClose: () => setState(() => _replyingTo = null),
+            ),
+          if (_pendingMediaFile != null)
+            _PendingMediaStrip(
+              file: _pendingMediaFile!,
+              uploading: _pendingUploading,
+              uploaded: _pendingMediaUrl != null,
+              onClose: _clearPendingMedia,
+            ),
+
           _InputBar(
             controller: _inputCtrl,
             accent: accent,
             sending: _sending,
             onSend: _send,
+            onAttach: _openAttachSheet,
+            attachDisabled: _pendingMediaFile != null,
           ),
         ],
       ),
@@ -354,7 +485,27 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       cursor++;
       for (final m in g.messages) {
         if (index == cursor) {
-          return _MessageBubble(message: m, accent: accent);
+          return _MessageBubble(
+            message: m,
+            accent: accent,
+            onReply: () {
+              setState(() => _replyingTo = m);
+            },
+            onCopy: m.body.isEmpty
+                ? null
+                : () async {
+                    await Clipboard.setData(ClipboardData(text: m.body));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Copied'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                  },
+          );
         }
         cursor++;
       }
@@ -362,6 +513,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     return const SizedBox.shrink();
   }
 }
+
+// ── Attach choice enum ────────────────────────────────────────────────────────
+
+enum _AttachChoice { camera, gallery, document }
 
 // ── Day separator ─────────────────────────────────────────────────────────────
 
@@ -394,13 +549,172 @@ class _DaySeparator extends StatelessWidget {
       );
 }
 
+// ── Reply banner (composer strip) ─────────────────────────────────────────────
+
+class _ReplyBanner extends StatelessWidget {
+  const _ReplyBanner({required this.message, required this.onClose});
+  final ChatMessage message;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: tokens.bgInput,
+        borderRadius: BorderRadius.circular(8),
+        border: Border(left: BorderSide(color: kColorAccent, width: 3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.reply_rounded, size: 14, color: kColorAccent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Replying to ${message.senderName}',
+                  style: const TextStyle(
+                    color: kColorAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  message.body.isNotEmpty
+                      ? message.body
+                      : '📎 ${message.mediaType ?? "media"}',
+                  style: TextStyle(color: tokens.textMuted, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close_rounded, size: 16, color: tokens.textMuted),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: onClose,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingMediaStrip extends StatelessWidget {
+  const _PendingMediaStrip({
+    required this.file,
+    required this.uploading,
+    required this.uploaded,
+    required this.onClose,
+  });
+  final File file;
+  final bool uploading;
+  final bool uploaded;
+  final VoidCallback onClose;
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final name = file.path.split(Platform.pathSeparator).last;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: tokens.bgInput,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderCard),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.attach_file_rounded, size: 16, color: tokens.textMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(color: tokens.textPrimary, fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (uploading)
+            const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2))
+          else if (uploaded)
+            const Icon(Icons.check_circle,
+                color: Color(0xFF27AE60), size: 16)
+          else
+            const Icon(Icons.error_outline,
+                color: Color(0xFFEF4444), size: 16),
+          IconButton(
+            icon: Icon(Icons.close_rounded, size: 16, color: tokens.textMuted),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: onClose,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Message bubble ─────────────────────────────────────────────────────────────
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, required this.accent});
+  const _MessageBubble({
+    required this.message,
+    required this.accent,
+    required this.onReply,
+    required this.onCopy,
+  });
 
   final ChatMessage message;
   final Color accent;
+  final VoidCallback onReply;
+  final VoidCallback? onCopy;
+
+  void _openActionSheet(BuildContext ctx) {
+    final tokens = ctx.tokens;
+    showModalBottomSheet<void>(
+      context: ctx,
+      backgroundColor: tokens.bgSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (bs) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply_rounded),
+              title: const Text('Reply'),
+              onTap: () {
+                Navigator.pop(bs);
+                onReply();
+              },
+            ),
+            if (onCopy != null)
+              ListTile(
+                leading: const Icon(Icons.content_copy_rounded),
+                title: const Text('Copy'),
+                onTap: () {
+                  Navigator.pop(bs);
+                  onCopy!();
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -410,79 +724,267 @@ class _MessageBubble extends StatelessWidget {
         ? '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
         : '';
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        mainAxisAlignment:
-            isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isMine) ...[
-            _Avatar(name: message.senderName, avatarUrl: message.senderAvatarUrl),
-            const SizedBox(width: 8),
+    return GestureDetector(
+      onLongPress: () => _openActionSheet(context),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          mainAxisAlignment:
+              isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!isMine) ...[
+              _Avatar(name: message.senderName, avatarUrl: message.senderAvatarUrl),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment:
+                    isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  if (!isMine)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2, left: 2),
+                      child: Text(
+                        message.senderName,
+                        style: TextStyle(
+                          color: context.tokens.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  Container(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.72,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isMine ? accent : context.tokens.bgSurface,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(16),
+                        topRight: const Radius.circular(16),
+                        bottomLeft:
+                            Radius.circular(isMine ? 16 : 4),
+                        bottomRight:
+                            Radius.circular(isMine ? 4 : 16),
+                      ),
+                      border: isMine
+                          ? null
+                          : Border.all(color: context.tokens.borderCard),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (message.replyToId != null)
+                          _MiniReplyQuote(
+                            senderName: message.replyToSenderName,
+                            body: message.replyToBody,
+                            onDark: isMine,
+                          ),
+                        if (message.hasMedia)
+                          _DmMediaContent(
+                            url: message.mediaUrl!,
+                            type: message.mediaType ?? 'document',
+                            onDark: isMine,
+                          ),
+                        if (message.body.isNotEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(
+                                top: message.hasMedia ? 4 : 0),
+                            child: Text(
+                              message.body,
+                              style: TextStyle(
+                                color: isMine
+                                    ? Colors.white
+                                    : context.tokens.textPrimary,
+                                fontSize: 14,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (timeStr.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, left: 2, right: 2),
+                      child: Text(
+                        timeStr,
+                        style: TextStyle(
+                          color: context.tokens.textMuted,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (isMine) const SizedBox(width: 8),
           ],
-          Flexible(
-            child: Column(
-              crossAxisAlignment:
-                  isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                if (!isMine)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 2, left: 2),
-                    child: Text(
-                      message.senderName,
-                      style: TextStyle(
-                        color: context.tokens.textMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                Container(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.72,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isMine ? accent : context.tokens.bgSurface,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft:
-                          Radius.circular(isMine ? 16 : 4),
-                      bottomRight:
-                          Radius.circular(isMine ? 4 : 16),
-                    ),
-                    border: isMine
-                        ? null
-                        : Border.all(color: context.tokens.borderCard),
-                  ),
-                  child: Text(
-                    message.body,
-                    style: TextStyle(
-                      color: isMine ? Colors.white : context.tokens.textPrimary,
-                      fontSize: 14,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-                if (timeStr.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2, left: 2, right: 2),
-                    child: Text(
-                      timeStr,
-                      style: TextStyle(
-                        color: context.tokens.textMuted,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-              ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniReplyQuote extends StatelessWidget {
+  const _MiniReplyQuote({
+    required this.senderName,
+    required this.body,
+    required this.onDark,
+  });
+  final String? senderName;
+  final String? body;
+  final bool onDark;
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final labelColor = onDark ? Colors.white : kColorAccent;
+    final bodyColor = onDark ? Colors.white70 : tokens.textMuted;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: (onDark ? Colors.white : kColorAccent).withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+        border: Border(left: BorderSide(color: labelColor, width: 2.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            senderName ?? 'Message',
+            style: TextStyle(
+              color: labelColor,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          if (isMine) const SizedBox(width: 8),
+          if (body != null && body!.isNotEmpty)
+            Text(
+              body!,
+              style: TextStyle(color: bodyColor, fontSize: 11),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _DmMediaContent extends StatelessWidget {
+  const _DmMediaContent({
+    required this.url,
+    required this.type,
+    required this.onDark,
+  });
+  final String url;
+  final String type;
+  final bool onDark;
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    if (type == 'image') {
+      return GestureDetector(
+        onTap: () =>
+            FullscreenImageViewer.open(context, urls: [url], initialIndex: 0),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: url,
+            width: 220,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => Icon(
+              Icons.image_not_supported,
+              color: onDark ? Colors.white70 : tokens.textMuted,
+            ),
+          ),
+        ),
+      );
+    }
+    if (type == 'video') {
+      return GestureDetector(
+        onTap: () => VideoViewer.open(context, url),
+        child: Container(
+          width: 220,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: onDark
+                ? Colors.white.withValues(alpha: 0.15)
+                : tokens.bgInput,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.play_circle_outline_rounded,
+                color: onDark ? Colors.white : tokens.textPrimary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  url.split('/').last,
+                  style: TextStyle(
+                    color: onDark ? Colors.white : tokens.textPrimary,
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    // Audio + document → tap to open externally.
+    return GestureDetector(
+      onTap: () async {
+        final uri = Uri.tryParse(url);
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: onDark
+              ? Colors.white.withValues(alpha: 0.15)
+              : tokens.bgInput,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              type == 'audio'
+                  ? Icons.audiotrack_rounded
+                  : Icons.insert_drive_file_rounded,
+              color: onDark ? Colors.white : tokens.textPrimary,
+              size: 18,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                url.split('/').last,
+                style: TextStyle(
+                  color: onDark ? Colors.white : tokens.textPrimary,
+                  fontSize: 12,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(Icons.open_in_new_rounded,
+                size: 14,
+                color: onDark ? Colors.white70 : tokens.textMuted),
+          ],
+        ),
       ),
     );
   }
@@ -529,12 +1031,16 @@ class _InputBar extends StatelessWidget {
     required this.accent,
     required this.sending,
     required this.onSend,
+    required this.onAttach,
+    required this.attachDisabled,
   });
 
   final TextEditingController controller;
   final Color accent;
   final bool sending;
   final VoidCallback onSend;
+  final VoidCallback onAttach;
+  final bool attachDisabled;
 
   @override
   Widget build(BuildContext context) {
@@ -550,6 +1056,12 @@ class _InputBar extends StatelessWidget {
         top: false,
         child: Row(
           children: [
+            IconButton(
+              tooltip: 'Attach',
+              icon: Icon(Icons.attach_file_rounded,
+                  color: context.tokens.textMuted),
+              onPressed: attachDisabled ? null : onAttach,
+            ),
             Expanded(
               child: TextField(
                 controller: controller,

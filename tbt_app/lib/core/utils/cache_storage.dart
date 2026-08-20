@@ -11,6 +11,9 @@ class CacheStorage {
   static Future<void> writeMe(String json) async =>
       (await SharedPreferences.getInstance()).setString(kCacheMe, json);
 
+  static Future<void> clearMe() async =>
+      (await SharedPreferences.getInstance()).remove(kCacheMe);
+
   static Future<int> readUnreadNotifCount() async =>
       (await SharedPreferences.getInstance()).getInt(kCacheUnreadNotifCount) ??
       0;

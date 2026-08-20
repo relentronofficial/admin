@@ -2,7 +2,7 @@ name: tbt_app
 description: Tamil Business Tribe — Flutter mobile application for Android and iOS.
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ">=3.7.0-0 <4.0.0"
@@ -50,6 +50,18 @@ dependencies:
   # OS-level media-session controls (lockscreen play/pause), pair with
   # `audio_service` — not needed for the initial release.
   just_audio: ^0.9.42
+  # record for hold-to-record voice notes in group + DM chats. Records
+  # AAC-in-.m4a which is directly playable by just_audio / video_player.
+  # Pinned to 4.4.4 — the 5.x line has a broken record_linux platform stub
+  # that fails `flutter build apk` even though we only ship Android/iOS.
+  record: 4.4.4
+
+  # ── Chat / media viewer ───────────────────────────────────────────────────
+  # scrollable_positioned_list lets us programmatically scroll to a
+  # specific message index (for reply jump-to-parent).
+  scrollable_positioned_list: ^0.3.8
+  # Full emoji picker for reactions (F-11) and composer keyboard (F-12).
+  emoji_picker_flutter: ^4.4.0
 
   # ── PDF ───────────────────────────────────────────────────────────────────
   # flutter_pdfview for the in-app e-book reader. MIT-licensed (unlike
@@ -83,6 +95,7 @@ dependencies:
   freezed_annotation: ^2.4.4
   uuid: ^4.5.1
   permission_handler: ^11.3.1
+  geolocator: ^13.0.2
   cupertino_icons: ^1.0.8
 
   # ── Splash ────────────────────────────────────────────────────────────────

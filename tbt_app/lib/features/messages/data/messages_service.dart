@@ -49,11 +49,24 @@ class MessagesService {
   }
 
   // Backend returns { id } only — caller constructs the optimistic ChatMessage.
-  Future<String> sendMessage(String conversationId, String body) async {
+  // The backend `sendMessage` handler accepts `{ body?, mediaUrl?, mediaType?,
+  // replyToId? }` — either body or mediaUrl is required.
+  Future<String> sendMessage(
+    String conversationId,
+    String? body, {
+    String? mediaUrl,
+    String? mediaType,
+    String? replyToId,
+  }) async {
     try {
       final res = await _dio.post<Map<String, dynamic>>(
         '$kConversations/$conversationId/messages',
-        data: {'body': body},
+        data: {
+          if (body != null && body.isNotEmpty) 'body': body,
+          if (mediaUrl != null) 'mediaUrl': mediaUrl,
+          if (mediaType != null) 'mediaType': mediaType,
+          if (replyToId != null) 'replyToId': replyToId,
+        },
       );
       final data = res.data?['data'] as Map<String, dynamic>? ?? {};
       return data['id'] as String? ?? '';

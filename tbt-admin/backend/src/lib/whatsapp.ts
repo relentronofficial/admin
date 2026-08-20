@@ -257,8 +257,54 @@ export async function sendOtpWhatsappDiagnostic(
   }
 }
 
-export async function sendWhatsappMessage(phone: string, message: string): Promise<boolean> {
-  if (!env.WABA_ACCESS_TOKEN || !env.WABA_FROM_NUMBER || !env.WABA_TEMPLATE_NAME) return false;
+/**
+ * Send a batch report as a plain-text WhatsApp message.
+ * Works inside the 24-hour customer-service window (member has recently
+ * messaged the business number). Used as the fallback when no approved
+ * template is configured.
+ */
+export async function sendWhatsappMessage(
+  phone: string,
+  message: string,
+): Promise<boolean> {
+  if (!env.WABA_ACCESS_TOKEN || !env.WABA_FROM_NUMBER) return false;
+  const to = normalizePhone(phone);
+  try {
+    const res = await fetch(`${env.WABA_API_BASE_URL}/message/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.WABA_ACCESS_TOKEN}` },
+      body: JSON.stringify({
+        wabaNumber: env.WABA_FROM_NUMBER,
+        recipient: { phoneNumber: to },
+        type: 'text',
+        text: message,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error('[WhatsApp] sendWhatsappMessage failed', res.status, body, { to });
+      detectAndAlertLowBalance(res.status, body);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[WhatsApp] sendWhatsappMessage network error', err.message);
+    return false;
+  }
+}
+
+/**
+ * Send a batch report using an approved WhatsApp template with 7
+ * variables: firstName, periodLabel, completed, pending, completionRate,
+ * streakDisplay, encouragement — matching batch_weekly_report /
+ * batch_monthly_report template bodies.
+ */
+export async function sendWhatsappTemplateMessage(
+  phone: string,
+  variables: string[],
+  templateName: string,
+): Promise<boolean> {
+  if (!env.WABA_ACCESS_TOKEN || !env.WABA_FROM_NUMBER) return false;
   const to = normalizePhone(phone);
   try {
     const res = await fetch(`${env.WABA_API_BASE_URL}/message/send`, {
@@ -268,16 +314,18 @@ export async function sendWhatsappMessage(phone: string, message: string): Promi
         wabaNumber: env.WABA_FROM_NUMBER,
         recipient: { phoneNumber: to },
         type: 'template',
-        template: { name: env.WABA_TEMPLATE_NAME, language: env.WABA_TEMPLATE_LANGUAGE, body: [message] },
+        template: { name: templateName, language: env.WABA_TEMPLATE_LANGUAGE, body: variables },
       }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
+      console.error('[WhatsApp] sendWhatsappTemplateMessage failed', res.status, body, { templateName, to });
       detectAndAlertLowBalance(res.status, body);
       return false;
     }
     return true;
-  } catch {
+  } catch (err: any) {
+    console.error('[WhatsApp] sendWhatsappTemplateMessage network error', err.message);
     return false;
   }
 }

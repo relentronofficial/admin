@@ -7,19 +7,37 @@ class TokenStorage {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
-  static Future<String?> readAccessToken() =>
-      _store.read(key: kSecureAccessToken);
+  // In-memory cache so repeated reads (e.g. per-request interceptor, socket
+  // connect) never hit EncryptedSharedPreferences more than once per session.
+  // On Android, each EncryptedSharedPreferences read involves Keystore crypto
+  // (~100–300 ms cold, ~10–50 ms warm) — without this cache every API call
+  // paid that cost individually, causing visible UI lag.
+  static String? _cachedAccessToken;
+  static String? _cachedRefreshToken;
 
-  static Future<void> writeAccessToken(String token) =>
-      _store.write(key: kSecureAccessToken, value: token);
+  static Future<String?> readAccessToken() async {
+    _cachedAccessToken ??= await _store.read(key: kSecureAccessToken);
+    return _cachedAccessToken;
+  }
 
-  static Future<String?> readRefreshToken() =>
-      _store.read(key: kSecureRefreshToken);
+  static Future<void> writeAccessToken(String token) async {
+    _cachedAccessToken = token;
+    await _store.write(key: kSecureAccessToken, value: token);
+  }
 
-  static Future<void> writeRefreshToken(String token) =>
-      _store.write(key: kSecureRefreshToken, value: token);
+  static Future<String?> readRefreshToken() async {
+    _cachedRefreshToken ??= await _store.read(key: kSecureRefreshToken);
+    return _cachedRefreshToken;
+  }
+
+  static Future<void> writeRefreshToken(String token) async {
+    _cachedRefreshToken = token;
+    await _store.write(key: kSecureRefreshToken, value: token);
+  }
 
   static Future<void> clearAll() async {
+    _cachedAccessToken = null;
+    _cachedRefreshToken = null;
     await _store.delete(key: kSecureAccessToken);
     await _store.delete(key: kSecureRefreshToken);
   }

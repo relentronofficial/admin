@@ -92,7 +92,7 @@ class AuthService {
     try {
       final res = await _dio.post<Map<String, dynamic>>(
         kAuthResetPassword,
-        data: {'phone': phone, 'otp': otp, 'newPassword': newPassword},
+        data: {'phone': phone, 'otp': otp, 'password': newPassword},
       );
       // Reset password also issues new session cookies.
       final setCookies = res.headers.map['set-cookie'];

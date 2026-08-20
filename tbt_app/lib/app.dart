@@ -36,6 +36,8 @@ import 'features/webinars/presentation/webinars_screen.dart';
 import 'features/history/presentation/history_screen.dart';
 import 'features/live/presentation/live_call_screen.dart';
 import 'features/live/presentation/webinar_screen.dart';
+import 'features/chat_groups/presentation/chat_group_screen.dart';
+import 'features/chat_groups/presentation/starred_messages_screen.dart';
 import 'features/messages/presentation/conversation_screen.dart';
 import 'features/messages/presentation/messages_screen.dart';
 import 'features/notifications/presentation/notifications_screen.dart';
@@ -379,6 +381,18 @@ List<RouteBase> _buildRoutes() => [
         ),
       ),
 
+      // ── Outside shell — Group chat (WhatsApp-inspired) ────────────────────
+      GoRoute(
+        path: AppRoutes.chatGroup,
+        builder: (_, state) => ChatGroupScreen(
+          groupId: state.pathParameters['groupId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.starredMessages,
+        builder: (_, __) => const StarredMessagesScreen(),
+      ),
+
       // (Courses now lives inside the StatefulShellRoute branches above.)
 
       // ── Outside shell — Learning ───────────────────────────────────────────
@@ -618,6 +632,7 @@ class TbtApp extends ConsumerStatefulWidget {
 
 class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
   bool _deepLinkChecked = false;
+  bool _handlersInitialized = false;
 
   /// Timestamp of the last successful token refresh (or authenticated boot).
   /// Used to decide whether an `AppLifecycleState.resumed` warrants a
@@ -631,6 +646,13 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _lastRefreshAt = DateTime.now();
+    // Initialize keepAlive providers once here so socket state changes
+    // don't cause the entire root widget tree to rebuild (which happened
+    // when these were ref.watch/ref.read inside build()).
+    ref.read(socketNotifierProvider);
+    ref.read(batchDayApprovedNotifierProvider);
+    ref.read(courseAccessEventNotifierProvider);
+    ref.read(workshopEventHandlerProvider);
   }
 
   @override
@@ -674,16 +696,12 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final router = ref.watch(appRouterProvider);
 
-    // Eagerly initialize the socket provider and all global socket event
-    // handlers so they are active from the moment the user logs in,
-    // regardless of which screen is currently visible.
-    ref.watch(socketNotifierProvider);
-    ref.read(batchDayApprovedNotifierProvider);
-    ref.read(courseAccessEventNotifierProvider);
-    ref.read(workshopEventHandlerProvider);
-
-    // Wire FCM foreground + background-tap handlers once the router is ready.
-    ref.read(fcmServiceProvider).initHandlers(router);
+    // Wire FCM foreground + background-tap handlers once — guarded by flag
+    // because this is in build() (needs the router) but must only run once.
+    if (!_handlersInitialized) {
+      _handlersInitialized = true;
+      ref.read(fcmServiceProvider).initHandlers(router);
+    }
 
     // Consume any pending deep-link stored from a terminated-state
     // notification tap as soon as the user is authenticated.

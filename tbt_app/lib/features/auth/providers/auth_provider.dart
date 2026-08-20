@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../core/utils/cache_storage.dart';
 import '../../../shared/api/services/auth_service.dart';
 import '../../../shared/api/session_state.dart';
 import '../../../shared/api/token_storage.dart';
@@ -128,9 +129,8 @@ class AuthNotifier extends _$AuthNotifier {
     // the DELETE call needs to authenticate as this member.
     await ref.read(fcmServiceProvider).unregisterToken();
     await ref.read(authServiceProvider).logout();
-    // Purge cached responses so the next user doesn't render the
-    // previous user's dashboard on first launch.
-    await ResponseCache.clear();
+    // Purge all cached responses so the next user never sees stale data.
+    await Future.wait([ResponseCache.clear(), CacheStorage.clearMe()]);
     ref.invalidate(meNotifierProvider);
     // Intentional logout — reset the session-state machine so nothing
     // downstream misreads the state as "revoked" and pops the

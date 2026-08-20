@@ -58,11 +58,38 @@ class PodcastPlayerController extends ChangeNotifier {
   PodcastEpisode? _current;
   DateTime _lastWriteAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _completeReported = false;
+  double _speed = 1.0;
+
+  /// Optional playlist context — when set, prev/next episode buttons on
+  /// the full player advance/reverse within this list.
+  List<PodcastEpisode> _playlist = const [];
+
+  static const List<double> speedCycle = [1.0, 1.25, 1.5, 2.0, 0.75];
 
   AudioPlayer get player => _player;
   PodcastEpisode? get currentEpisode => _current;
   bool get isPlaying => _player.playing;
   bool get hasEpisode => _current != null;
+  double get speed => _speed;
+  List<PodcastEpisode> get playlist => _playlist;
+
+  int get _currentIndexInPlaylist {
+    if (_current == null || _playlist.isEmpty) return -1;
+    return _playlist.indexWhere((e) => e.id == _current!.id);
+  }
+
+  bool get hasPrevInPlaylist => _currentIndexInPlaylist > 0;
+  bool get hasNextInPlaylist =>
+      _currentIndexInPlaylist >= 0 &&
+      _currentIndexInPlaylist < _playlist.length - 1;
+
+  /// Register a playlist so prev/next can navigate within it.
+  /// Call this from series-detail / episode-list screens when starting
+  /// playback so the queue is known. Silent no-op otherwise.
+  void setPlaylist(List<PodcastEpisode> episodes) {
+    _playlist = List.unmodifiable(episodes);
+    notifyListeners();
+  }
 
   /// Duration of the current source — falls back to the backend-
   /// reported value while just_audio is still probing.
@@ -134,6 +161,34 @@ class PodcastPlayerController extends ChangeNotifier {
     await _player.stop();
     _current = null;
     notifyListeners();
+  }
+
+  /// Cycles playback speed through [speedCycle]. Called from the speed
+  /// chip on the full-screen player.
+  Future<void> cycleSpeed() async {
+    final idx = speedCycle.indexOf(_speed);
+    final next = speedCycle[(idx + 1) % speedCycle.length];
+    _speed = next;
+    await _player.setSpeed(next);
+    notifyListeners();
+  }
+
+  Future<void> setSpeed(double value) async {
+    _speed = value;
+    await _player.setSpeed(value);
+    notifyListeners();
+  }
+
+  Future<void> playPrevInPlaylist() async {
+    if (!hasPrevInPlaylist) return;
+    final prev = _playlist[_currentIndexInPlaylist - 1];
+    await playEpisode(prev);
+  }
+
+  Future<void> playNextInPlaylist() async {
+    if (!hasNextInPlaylist) return;
+    final next = _playlist[_currentIndexInPlaylist + 1];
+    await playEpisode(next);
   }
 
   // ── Internal ────────────────────────────────────────────────────

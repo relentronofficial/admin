@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/theme/design_constants.dart';
 import '../../../../shared/theme/theme_tokens.dart';
 import '../../data/rituals_service.dart';
 
-/// Morning Ritual home-page card — ports the co-worker's home widget.
+/// Morning Ritual home-page card — direct port of the co-worker's
+/// `_buildMorningRitualCard` (main.dart:3252–3679).
 ///
-/// Shows the current day's habit question with Yes / Not-Yet buttons.
-/// After answering, advances to the next habit until all 5 (or however
-/// many the admin configured) are done. Answers are client-side only —
-/// they reset overnight (or on app restart — MVP behaviour).
+/// Behavior:
+///   * Shows 5 hardcoded fallback habits when [habitsProvider] returns
+///     empty (so the card is never blank).
+///   * PageView-based navigation between habits (swipe or Yes/Not-Yet).
+///   * Progress row of thin bars (4 px) with red glow on completed steps.
+///   * `rawQuestion` renders as RichText with `highlightWord` in coral red.
+///   * Completion celebration: green circle check + "Success! You checked
+///     off X of Y morning habits." message.
 class MorningRitualCard extends ConsumerStatefulWidget {
   const MorningRitualCard({super.key});
 
@@ -19,262 +23,565 @@ class MorningRitualCard extends ConsumerStatefulWidget {
 }
 
 class _MorningRitualCardState extends ConsumerState<MorningRitualCard> {
+  static const Color _coral = Color(0xFFFF3B30);
+  static const Color _coralEnd = Color(0xFFFF5E3A);
+
   int _currentStep = 0;
-  final Map<int, bool> _answers = {}; // 1 = yes, 0 = not-yet
-  bool _dismissed = false;
+  final List<bool?> _answers = List<bool?>.filled(5, null);
+  bool _expanded = true;
+  final PageController _pageCtrl = PageController();
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Neumorphism recipe (matches home menu tiles) ────────────────────
+  //   Cached as static finals so object allocation only happens once per
+  //   app lifetime, not on every build() call.
+
+  static const _outerCardDecoDark = BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF1B1B22), Color(0xFF11111A), Color(0xFF06060B)],
+      stops: [0.0, 0.55, 1.0],
+    ),
+    borderRadius: BorderRadius.all(Radius.circular(20)),
+    boxShadow: [
+      BoxShadow(color: Colors.black, offset: Offset(0, 16), blurRadius: 36),
+      BoxShadow(color: Color(0xA6000000), offset: Offset(0, 4), blurRadius: 8),
+    ],
+  );
+
+  static final _outerCardDecoLight = BoxDecoration(
+    gradient: const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFFFF), Color(0xFFEDEDF0), Color(0xFFD4D4DC)],
+    ),
+    borderRadius: BorderRadius.circular(20),
+    boxShadow: [
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.55), offset: const Offset(14, 14), blurRadius: 30),
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.30), offset: const Offset(4, 4), blurRadius: 6),
+      const BoxShadow(color: Colors.white, offset: Offset(-12, -12), blurRadius: 28),
+      BoxShadow(color: Colors.white.withValues(alpha: 0.95), offset: const Offset(-3, -3), blurRadius: 5),
+    ],
+  );
+
+  BoxDecoration _outerCardDeco(bool isDark) =>
+      isDark ? _outerCardDecoDark : _outerCardDecoLight;
+
+  // Small pill (header ritual tag, step counter, chevron) — cached per radius.
+  static const _pillDecoDark = BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF23232B), Color(0xFF0A0A0F)],
+    ),
+    boxShadow: [
+      BoxShadow(color: Color(0xCC000000), offset: Offset(2, 3), blurRadius: 6),
+    ],
+  );
+  static final _pillDecoLight = BoxDecoration(
+    gradient: const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFFFF), Color(0xFFE6E6EC)],
+    ),
+    boxShadow: [
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.35), offset: const Offset(3, 3), blurRadius: 6),
+      const BoxShadow(color: Colors.white, offset: Offset(-3, -3), blurRadius: 6),
+    ],
+  );
+
+  // _pillDeco uses copyWith so gradient/shadows are shared references —
+  // only borderRadius is new on each call.
+  BoxDecoration _pillDeco(bool isDark, {double radius = 10}) =>
+      (isDark ? _pillDecoDark : _pillDecoLight).copyWith(
+        borderRadius: BorderRadius.circular(radius),
+      );
+
+  static const _secondaryBtnDecoDark = BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF1F1F26), Color(0xFF08080C)],
+    ),
+    borderRadius: BorderRadius.all(Radius.circular(16)),
+    boxShadow: [
+      BoxShadow(color: Colors.black, offset: Offset(4, 5), blurRadius: 12),
+    ],
+  );
+  static final _secondaryBtnDecoLight = BoxDecoration(
+    gradient: const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFFFF), Color(0xFFE0E0E8)],
+    ),
+    borderRadius: BorderRadius.circular(16),
+    boxShadow: [
+      BoxShadow(color: const Color(0xFF8E8EA0).withValues(alpha: 0.40), offset: const Offset(5, 5), blurRadius: 10),
+      const BoxShadow(color: Colors.white, offset: Offset(-5, -5), blurRadius: 10),
+    ],
+  );
+
+  // Medium extruded circle (habit icon 60px, completion badge 60px)
+  BoxDecoration _extrudedCircleDeco(bool isDark, {Color? tint}) =>
+      BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF23232B), Color(0xFF0A0A0F)]
+              : const [Color(0xFFFFFFFF), Color(0xFFE0E0E8)],
+        ),
+        boxShadow: isDark
+            ? [
+                const BoxShadow(
+                  color: Colors.black,
+                  offset: Offset(5, 6),
+                  blurRadius: 14,
+                ),
+                if (tint != null)
+                  BoxShadow(
+                    color: tint.withValues(alpha: 0.25),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                  ),
+              ]
+            : [
+                BoxShadow(
+                  color: const Color(0xFF8E8EA0).withValues(alpha: 0.45),
+                  offset: const Offset(6, 6),
+                  blurRadius: 12,
+                ),
+                BoxShadow(
+                  color: Colors.white,
+                  offset: const Offset(-6, -6),
+                  blurRadius: 12,
+                ),
+                if (tint != null)
+                  BoxShadow(
+                    color: tint.withValues(alpha: 0.18),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                  ),
+              ],
+      );
+
+  BoxDecoration _secondaryBtnDeco(bool isDark) =>
+      isDark ? _secondaryBtnDecoDark : _secondaryBtnDecoLight;
+
+  void _handleAnswer(bool answer, int total) {
+    setState(() {
+      if (_currentStep < _answers.length) {
+        _answers[_currentStep] = answer;
+      }
+      _currentStep += 1;
+    });
+    if (_currentStep < total && _pageCtrl.hasClients) {
+      _pageCtrl.animateToPage(
+        _currentStep,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (_dismissed) return const SizedBox.shrink();
     final tokens = context.tokens;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final habitsAsync = ref.watch(habitsProvider);
     final buttonsAsync = ref.watch(buttonsConfigProvider);
 
-    return habitsAsync.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (habits) {
-        if (habits.isEmpty) return const SizedBox.shrink();
-        final total = habits.length;
-        final isComplete = _currentStep >= total;
-        final currentHabit = isComplete ? null : habits[_currentStep];
-        final buttons = buttonsAsync.valueOrNull ??
-            const ButtonsConfig(yesLabel: 'Yes', notYetLabel: 'Not Yet');
+    // Resolve habits — fall back to hardcoded defaults when backend is
+    // empty or errors, so the card is never blank.
+    final habits = habitsAsync.when(
+      loading: () => _defaultHabits,
+      error: (_, __) => _defaultHabits,
+      data: (list) => list.isEmpty ? _defaultHabits : list,
+    );
+    final total = habits.length;
+    final buttons = buttonsAsync.valueOrNull ??
+        const ButtonsConfig(yesLabel: 'Yes', notYetLabel: 'Not Yet');
+    final isComplete = _currentStep >= total;
 
-        return Container(
-          margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFFf59e0b).withValues(alpha: 0.15),
-                kColorAccent.withValues(alpha: 0.10),
-                Colors.transparent,
-              ],
-            ),
-            border: Border.all(
-              color: const Color(0xFFf59e0b).withValues(alpha: 0.30),
-            ),
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    // Ensure answers list matches habit count.
+    while (_answers.length < total) {
+      _answers.add(null);
+    }
+
+    final textColor = tokens.textPrimary;
+    // Ignored: borderColor was used by the old bordered look; the
+    // neumorphic recipe uses shadow-only depth cues instead.
+    // ignore: unused_local_variable
+    final _ = tokens.borderCard;
+
+    return Container(
+      decoration: _outerCardDeco(isDark),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header row: Ritual tag + step pill + chevron
+          Row(
             children: [
-              // Header row: title + step indicator + close
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFfacc15), Color(0xFFf59e0b)],
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.wb_sunny, color: Colors.white, size: 16),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'MORNING RITUAL',
-                          style: TextStyle(
-                            fontFamily: 'Rajdhani',
-                            color: tokens.textPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 2,
-                          ),
-                        ),
-                        Text(
-                          isComplete
-                              ? 'Complete for today ✓'
-                              : 'Step ${_currentStep + 1} of $total',
-                          style: TextStyle(color: tokens.textMuted, fontSize: 10),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close, size: 18, color: tokens.textMuted),
-                    onPressed: () => setState(() => _dismissed = true),
-                    tooltip: 'Hide for now',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // Progress bar
-              ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: total == 0 ? 0 : _currentStep / total,
-                  minHeight: 4,
-                  backgroundColor: tokens.borderCard,
-                  color: const Color(0xFFfacc15),
-                ),
-              ),
-
-              if (isComplete) ...[
-                const SizedBox(height: 16),
-                _CompleteView(answers: _answers, total: total),
-              ] else ...[
-                const SizedBox(height: 16),
-                _HabitPrompt(habit: currentHabit!),
-                const SizedBox(height: 16),
-                Row(
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: _AnswerButton(
-                        label: buttons.notYetLabel,
-                        primary: false,
-                        onTap: () {
-                          setState(() {
-                            _answers[_currentStep] = false;
-                            _currentStep += 1;
-                          });
-                        },
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: _pillDeco(isDark, radius: 10),
+                      child: const Icon(
+                        Icons.edit_document,
+                        color: _coral,
+                        size: 16,
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(
-                      child: _AnswerButton(
-                        label: buttons.yesLabel,
-                        primary: true,
-                        onTap: () {
-                          setState(() {
-                            _answers[_currentStep] = true;
-                            _currentStep += 1;
-                          });
-                        },
+                    const Expanded(
+                      child: Text(
+                        'MORNING RITUAL',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _coral,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
+              const SizedBox(width: 8),
+              // Step pill / Completed pill — neumorphic
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: _pillDeco(isDark, radius: 14),
+                child: Text(
+                  isComplete ? 'Completed' : '${_currentStep + 1} / $total',
+                  style: TextStyle(
+                    color: isComplete ? Colors.green : _coral,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: _pillDeco(isDark, radius: 16),
+                  child: Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: const Color(0xFF8E8E93),
+                    size: 18,
+                  ),
+                ),
+              ),
             ],
           ),
-        );
-      },
-    );
-  }
-}
 
-class _HabitPrompt extends StatelessWidget {
-  const _HabitPrompt({required this.habit});
-  final Habit habit;
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    // Highlight the highlight_word inside rawQuestion by wrapping it in
-    // an accent-colored TextSpan. Case-insensitive first match.
-    final q = habit.rawQuestion;
-    final hw = habit.highlightWord;
-    List<InlineSpan> spans;
-    if (hw.isEmpty) {
-      spans = [TextSpan(text: q)];
-    } else {
-      final lower = q.toLowerCase();
-      final idx = lower.indexOf(hw.toLowerCase());
-      if (idx < 0) {
-        spans = [TextSpan(text: q)];
-      } else {
-        spans = [
-          TextSpan(text: q.substring(0, idx)),
-          TextSpan(
-            text: q.substring(idx, idx + hw.length),
-            style: const TextStyle(color: Color(0xFFfacc15), fontWeight: FontWeight.w800),
-          ),
-          TextSpan(text: q.substring(idx + hw.length)),
-        ];
-      }
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        RichText(
-          text: TextSpan(
-            style: TextStyle(
-              color: tokens.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              height: 1.3,
-            ),
-            children: spans,
-          ),
-        ),
-        if (habit.subtitle.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              habit.subtitle,
-              style: TextStyle(color: tokens.textSecondary, fontSize: 12, height: 1.4),
-            ),
-          ),
-      ],
-    );
-  }
-}
+          const SizedBox(height: 16),
 
-class _AnswerButton extends StatelessWidget {
-  const _AnswerButton({required this.label, required this.primary, required this.onTap});
-  final String label;
-  final bool primary;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 42,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: primary ? const Color(0xFFfacc15) : tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: primary ? const Color(0xFFfacc15) : tokens.borderCard,
+          // Progress bars — one per habit, glowing red when active/done.
+          Row(
+            children: List.generate(total, (index) {
+              final active =
+                  _currentStep >= total || index <= _currentStep;
+              return Expanded(
+                child: Container(
+                  margin: EdgeInsets.symmetric(
+                    horizontal: index == 0 ? 0 : 4,
+                  ),
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: active
+                        ? const Color(0xFFE50914)
+                        : (isDark
+                            ? const Color(0xFF2C2C2E)
+                            : const Color(0xFFE5E5EA)),
+                    borderRadius: BorderRadius.circular(2),
+                    boxShadow: active
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFFE50914)
+                                  .withValues(alpha: 0.4),
+                              blurRadius: 8,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+              );
+            }),
           ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: primary ? Colors.black : tokens.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.3,
-          ),
-        ),
+
+          if (_expanded) ...[
+            const SizedBox(height: 24),
+
+            if (!isComplete) ...[
+              // Habit prompt PageView (swipeable)
+              SizedBox(
+                height: 200,
+                child: PageView.builder(
+                  controller: _pageCtrl,
+                  itemCount: total,
+                  onPageChanged: (page) =>
+                      setState(() => _currentStep = page),
+                  itemBuilder: (context, index) {
+                    final habit = habits[index];
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Extruded neumorphic icon with coral tint glow
+                        Container(
+                          width: 68,
+                          height: 68,
+                          decoration:
+                              _extrudedCircleDeco(isDark, tint: _coral),
+                          child: Icon(
+                            _iconFor(habit.icon),
+                            color: _coral,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        // Question — highlight word in coral
+                        RichText(
+                          textAlign: TextAlign.center,
+                          text: TextSpan(
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: textColor,
+                              height: 1.25,
+                            ),
+                            children: _questionSpans(
+                              habit.rawQuestion,
+                              habit.highlightWord,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (habit.subtitle.isNotEmpty)
+                          Text(
+                            habit.subtitle,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF8E8E93),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Not Yet / Yes buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _handleAnswer(false, total),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        decoration: _secondaryBtnDeco(isDark),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF8E8E93),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              buttons.notYetLabel,
+                              style: const TextStyle(
+                                color: Color(0xFF8E8E93),
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _handleAnswer(true, total),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [_coral, _coralEnd],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _coral.withValues(alpha: 0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.check_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              buttons.yesLabel,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              // Completion celebration state
+              Column(
+                children: [
+                  const SizedBox(height: 20),
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration:
+                        _extrudedCircleDeco(isDark, tint: Colors.green),
+                    child: const Icon(
+                      Icons.check_circle_rounded,
+                      color: Colors.green,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Morning Ritual Completed!',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Success! You checked off ${_answers.where((v) => v == true).length} of $total morning habits.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF8E8E93),
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            ],
+          ],
+        ],
       ),
     );
   }
-}
 
-class _CompleteView extends StatelessWidget {
-  const _CompleteView({required this.answers, required this.total});
-  final Map<int, bool> answers;
-  final int total;
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    final yesCount = answers.values.where((v) => v).length;
-    return Row(
-      children: [
-        const Icon(Icons.check_circle_rounded, color: Color(0xFF4ade80), size: 22),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            '$yesCount of $total done today. Keep it up.',
-            style: TextStyle(color: tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
-    );
+  static List<InlineSpan> _questionSpans(String raw, String highlight) {
+    if (highlight.isEmpty) return [TextSpan(text: raw)];
+    final idx = raw.toLowerCase().indexOf(highlight.toLowerCase());
+    if (idx < 0) return [TextSpan(text: raw)];
+    return [
+      TextSpan(text: raw.substring(0, idx)),
+      TextSpan(
+        text: raw.substring(idx, idx + highlight.length),
+        style: const TextStyle(color: _coral),
+      ),
+      TextSpan(text: raw.substring(idx + highlight.length)),
+    ];
+  }
+
+  static IconData _iconFor(String key) {
+    switch (key) {
+      case 'fa-sun':
+        return Icons.wb_sunny_outlined;
+      case 'fa-spa':
+        return Icons.self_improvement;
+      case 'fa-bullseye':
+        return Icons.track_changes;
+      case 'fa-dumbbell':
+        return Icons.fitness_center;
+      case 'fa-coffee':
+        return Icons.local_cafe;
+      default:
+        return Icons.wb_sunny_outlined;
+    }
   }
 }
+
+const List<Habit> _defaultHabits = [
+  Habit(
+    id: 'default-1',
+    icon: 'fa-sun',
+    rawQuestion: 'Did you write your morning pages?',
+    highlightWord: 'morning pages',
+    subtitle: 'Build clarity. Boost focus. Start your day right.',
+  ),
+  Habit(
+    id: 'default-2',
+    icon: 'fa-spa',
+    rawQuestion: 'Did you meditate for 10 minutes?',
+    highlightWord: 'for 10 minutes',
+    subtitle: 'Calm your mind. Find presence. Center yourself.',
+  ),
+  Habit(
+    id: 'default-3',
+    icon: 'fa-bullseye',
+    rawQuestion: 'Did you plan your daily goals?',
+    highlightWord: 'daily goals',
+    subtitle: 'Prioritize tasks. Direct your energy. Stay productive.',
+  ),
+  Habit(
+    id: 'default-4',
+    icon: 'fa-dumbbell',
+    rawQuestion: 'Did you exercise or stretch today?',
+    highlightWord: 'stretch today',
+    subtitle: 'Activate your body. Boost energy. Stay healthy.',
+  ),
+  Habit(
+    id: 'default-5',
+    icon: 'fa-coffee',
+    rawQuestion: 'Did you eat a healthy breakfast?',
+    highlightWord: 'healthy breakfast',
+    subtitle: 'Nourish your body. Fuel your mind for the day.',
+  ),
+];

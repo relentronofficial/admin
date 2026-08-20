@@ -170,8 +170,24 @@ export const useStartConversation = () => {
 
 export const useSendChatMessage = () =>
   useMutation({
-    mutationFn: ({ conversationId, body }: { conversationId: string; body: string }) =>
-      dashboardService.sendChatMessage(conversationId, body),
+    mutationFn: ({
+      conversationId,
+      body,
+      mediaUrl,
+      mediaType,
+      replyToId,
+    }: {
+      conversationId: string;
+      body: string;
+      mediaUrl?: string;
+      mediaType?: string;
+      replyToId?: string;
+    }) =>
+      dashboardService.sendChatMessage(conversationId, body, {
+        mediaUrl,
+        mediaType,
+        replyToId,
+      }),
   });
 
 export const useArchiveConversation = () => {

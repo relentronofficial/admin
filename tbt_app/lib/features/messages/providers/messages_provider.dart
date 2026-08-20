@@ -69,21 +69,29 @@ class ConversationMessages extends _$ConversationMessages {
 
   @override
   Future<List<ChatMessage>> build(String conversationId) async {
-    // Append incoming chat messages in real time while this conversation is open.
+    // Join the conversation's Socket.IO room while the screen is open.
+    // Backend broadcasts `chat:message` on that room whenever anyone
+    // (member or admin) sends into this thread.
     final socket = ref.read(socketNotifierProvider.notifier);
+    socket.emit('join:conversation', {'conversationId': conversationId});
+
     void handler(dynamic data) {
       try {
         final map = (data as Map<dynamic, dynamic>).cast<String, dynamic>();
         if (map['conversationId'] != conversationId) return;
         final msg = ChatMessage.fromJson(map);
         final prev = state.valueOrNull ?? [];
+        if (prev.any((m) => m.id == msg.id)) return; // dedupe echo
         state = AsyncData([...prev, msg]);
       } catch (_) {
         // Malformed payload — ignore.
       }
     }
     socket.on(kSocketChatMessage, handler);
-    ref.onDispose(() => socket.off(kSocketChatMessage, handler));
+    ref.onDispose(() {
+      socket.off(kSocketChatMessage, handler);
+      socket.emit('leave:conversation', {'conversationId': conversationId});
+    });
 
     _page = 1;
     _hasMore = true;

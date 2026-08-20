@@ -125,32 +125,31 @@ class _SupportContactScreenState extends ConsumerState<SupportContactScreen> {
   }
 
   Future<String?> _uploadToR2(PlatformFile f) async {
+    // Uploads via `POST /api/upload/image` — the backend
+    // `uploadImageHandler` tries Bunny Storage first and falls back to
+    // R2 only if Bunny isn't configured. Same flow the admin panel and
+    // the community composer use, so support attachments land on Bunny
+    // instead of the old presigned-R2-PUT that produced 404s.
     try {
       final dio = ref.read(dioProvider);
       final contentType = _guessContentType(f.name);
+      final bytes = f.bytes!;
       final res = await dio.post<Map<String, dynamic>>(
-        '/api/upload/presigned-url',
-        data: {
-          'filename': f.name,
-          'contentType': contentType,
-          'bucket': 'support-attachments',
+        '/api/upload/image',
+        queryParameters: {
           'pathPrefix': 'tickets',
+          'filename': f.name,
         },
+        data: bytes,
+        options: Options(
+          contentType: contentType,
+          headers: {'Content-Type': contentType},
+          validateStatus: (s) => s != null && s >= 200 && s < 300,
+        ),
       );
       final data = (res.data?['data'] as Map<String, dynamic>?) ?? const {};
-      final uploadUrl = data['uploadUrl'] as String?;
       final publicUrl = data['publicUrl'] as String?;
-      if (uploadUrl == null || publicUrl == null) return null;
-      final bytes = f.bytes!;
-      final putDio = Dio();
-      await putDio.put<void>(
-        uploadUrl,
-        data: Stream.fromIterable([bytes]),
-        options: Options(headers: {
-          'Content-Type': contentType,
-          'Content-Length': bytes.length,
-        }),
-      );
+      if (publicUrl == null || publicUrl.isEmpty) return null;
       return publicUrl;
     } catch (_) {
       return null;

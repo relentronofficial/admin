@@ -3,11 +3,12 @@
 // copy, eligibility) lives in batchReportLogic.ts and is unit-tested there;
 // this file wires that logic to Prisma and the existing WhatsApp sender.
 
-import { sendWhatsappMessage } from './whatsapp.js';
+import { sendWhatsappMessage, sendWhatsappTemplateMessage } from './whatsapp.js';
 import { sendPushToMember } from './pushNotifications.js';
 import { env } from '../config/env.js';
 import {
   buildTanglishMessage,
+  buildReportVariables,
   computeDayNumberForDate,
   computeMemberStats,
   getMonthlyPeriod,
@@ -25,6 +26,7 @@ export interface GeneratedReport {
   period?: BatchReportPeriod;
   stats?: MemberReportStats;
   message?: string;
+  variables?: string[];
 }
 
 /** Computes (but does not send or log) a report for one member. Safe to use
@@ -78,12 +80,14 @@ export async function generateMemberReport(
   const stats = computeMemberStats({ progress, periodDayStart, periodDayEnd, currentDay, totalDays });
   if (stats.totalAssigned === 0) return { eligible: false, reason: 'No tasks scheduled in this period' };
 
-  const message = buildTanglishMessage({
+  const msgParams = {
     firstName: member.firstName ?? 'there',
     reportType,
     periodLabel: period.label,
     stats,
-  });
+  };
+  const message = buildTanglishMessage(msgParams);
+  const variables = buildReportVariables(msgParams);
 
   return {
     eligible: true,
@@ -91,6 +95,7 @@ export async function generateMemberReport(
     period,
     stats,
     message,
+    variables,
   };
 }
 
@@ -128,10 +133,18 @@ export async function deliverMemberReport(
 
   if (!report.member.phone) return { status: 'skipped', reason: 'No phone number on file' };
 
+  const tmplName = reportType === 'weekly'
+    ? (env.WABA_WEEKLY_REPORT_TEMPLATE_NAME || '')
+    : (env.WABA_MONTHLY_REPORT_TEMPLATE_NAME || '');
+
   let ok = false;
   let errMsg: string | null = null;
   try {
-    ok = await sendWhatsappMessage(report.member.phone, report.message);
+    if (tmplName && report.variables) {
+      ok = await sendWhatsappTemplateMessage(report.member.phone, report.variables, tmplName);
+    } else {
+      ok = await sendWhatsappMessage(report.member.phone, report.message!);
+    }
     if (!ok) errMsg = 'WABA send returned false';
   } catch (err) {
     errMsg = err instanceof Error ? err.message : String(err);
@@ -140,7 +153,7 @@ export async function deliverMemberReport(
   await prisma.whatsappMessage.create({
     data: {
       memberId: report.member.id,
-      templateName: env.WABA_TEMPLATE_NAME || 'batch_report',
+      templateName: tmplName || 'text',
       messageBody: report.message,
       status: ok ? 'sent' : 'failed',
       reportType,
@@ -149,9 +162,7 @@ export async function deliverMemberReport(
     },
   }).catch(() => { /* logging must never fault the delivery loop */ });
 
-  // Weekly pending-reminder push — reuses the stats already computed above
-  // for the WhatsApp message rather than recomputing. Independent channel:
-  // fires regardless of whether the WhatsApp send itself succeeded.
+  // Weekly pending-reminder push — fires regardless of WhatsApp send success.
   if (reportType === 'weekly' && report.stats.pending > 0) {
     const pushTitle = `Weekly Checklist — ${report.stats.pending} pending`;
     const pushBody = `You have ${report.stats.pending} pending task${report.stats.pending === 1 ? '' : 's'} this week. Complete them before the week ends!`;

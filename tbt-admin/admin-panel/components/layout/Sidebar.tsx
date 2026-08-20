@@ -65,7 +65,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     items: [
       { name: "Community",     href: "/community",         icon: Users },
       { name: "Notifications", href: "/app-notifications", icon: Bell },
-      { name: "Batch Reports", href: "/batch-reports", icon: MessageSquareText },
+      { name: "Batch Reports", href: "/batch-reports",     icon: MessageSquareText },
       { name: "Messages",      href: "/messages",          icon: MessageSquare },
       { name: "Group Chats",   href: "/groups",            icon: Users },
       { name: "Ad Campaigns",  href: "/ads",               icon: Megaphone },

@@ -53,8 +53,12 @@ export const dashboardService = {
   startConversation: (data: { subject: string; body: string }) =>
     apiClient.post("/api/user/conversations", data),
 
-  sendChatMessage: (id: string, body: string) =>
-    apiClient.post(`/api/user/conversations/${id}/messages`, { body }),
+  sendChatMessage: (
+    id: string,
+    body: string,
+    extras?: { mediaUrl?: string; mediaType?: string; replyToId?: string },
+  ) =>
+    apiClient.post(`/api/user/conversations/${id}/messages`, { body, ...(extras ?? {}) }),
 
   archiveConversation: (id: string, hidden: boolean) =>
     apiClient.patch(`/api/user/conversations/${id}/archive`, { hidden }),

@@ -58,6 +58,7 @@ import { batchReminderCronHandler } from './modules/user-batch/controller.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
 import { startBatchReportJobs } from './jobs/batchReports.js';
+import { startDisappearingMessagesJob } from './jobs/disappearingMessages.js';
 import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
 import { registerLowBalanceHandler } from './lib/whatsapp.js';
 import { createAdminNotification } from './lib/adminNotifications.js';
@@ -385,6 +386,12 @@ async function bootstrap() {
       // Start BullMQ weekly/monthly batch-report jobs (own queue, independent
       // of the course-expiry job above). Same probe-then-schedule pattern.
       startBatchReportJobs(fastify.prisma, {
+        info: (msg) => fastify.log.info(msg),
+        warn: (msg) => fastify.log.warn(msg),
+        error: (obj, msg) => fastify.log.error(obj, msg),
+      }).catch(() => { /* logged internally */ });
+
+      startDisappearingMessagesJob(fastify.prisma, (fastify as any).io ?? null, {
         info: (msg) => fastify.log.info(msg),
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),
