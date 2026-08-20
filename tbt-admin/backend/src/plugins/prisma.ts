@@ -224,6 +224,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE onboarding_content
+          ADD COLUMN IF NOT EXISTS image_url TEXT,
+          ADD COLUMN IF NOT EXISTS lottie_url TEXT,
+          ADD COLUMN IF NOT EXISTS quiz_data JSONB
+      `),
       // Task unification — Phase 1 migrations
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES batches(id) ON DELETE CASCADE`),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ALTER COLUMN program_id DROP NOT NULL`).catch(() => {}),

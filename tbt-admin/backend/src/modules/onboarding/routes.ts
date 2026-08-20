@@ -3,6 +3,7 @@ import {
   getOnboardingHandler,
   updateOnboardingHandler,
   getOnboardingContentHandler,
+  presignProfilePhotoHandler,
   presignOnboardingDocumentHandler,
   registerOnboardingDocumentHandler,
   deleteOnboardingDocumentHandler,
@@ -11,6 +12,7 @@ import {
   adminCreateOnboardingContentHandler,
   adminUpdateOnboardingContentHandler,
   adminDeleteOnboardingContentHandler,
+  adminReorderOnboardingContentHandler,
 } from './controller.js';
 
 /**
@@ -27,6 +29,7 @@ export async function onboardingRoutes(fastify: FastifyInstance) {
     userScope.get('/', getOnboardingHandler);
     userScope.patch('/', updateOnboardingHandler);
     userScope.get('/content', getOnboardingContentHandler);
+    userScope.post('/photo/presign', presignProfilePhotoHandler);
     userScope.post('/documents/presign', presignOnboardingDocumentHandler);
     userScope.post('/documents', registerOnboardingDocumentHandler);
     userScope.delete('/documents/:id', deleteOnboardingDocumentHandler);
@@ -39,6 +42,7 @@ export async function onboardingRoutes(fastify: FastifyInstance) {
       adminScope.addHook('preHandler', adminScope.authenticate);
       adminScope.get('/content', adminListOnboardingContentHandler);
       adminScope.post('/content', adminCreateOnboardingContentHandler);
+      adminScope.put('/content/reorder', adminReorderOnboardingContentHandler);
       adminScope.put('/content/:id', adminUpdateOnboardingContentHandler);
       adminScope.delete('/content/:id', adminDeleteOnboardingContentHandler);
     },

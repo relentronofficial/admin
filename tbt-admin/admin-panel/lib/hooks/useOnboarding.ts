@@ -74,3 +74,13 @@ export const useDeleteOnboardingContent = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['onboarding-content'] }),
   });
 };
+
+export const useReorderOnboardingContent = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      await apiClient.put('/api/onboarding/admin/content/reorder', { ids });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['onboarding-content'] }),
+  });
+};

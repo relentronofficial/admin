@@ -5,6 +5,8 @@ import { invalidateCache } from '../../lib/cache.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
 import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic.js';
+import { sendPushNotification } from '../../lib/firebase.js';
+import { sendWhatsappMessage } from '../../lib/whatsapp.js';
 
 /**
  * Ensure a member-supplied city / state / businessType value is present
@@ -1509,6 +1511,19 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       },
     }).catch(() => {});
 
+    // FCM push for members with the app closed/backgrounded
+    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true } })
+      .then((m) => {
+        if ((m as any)?.pushToken) {
+          return sendPushNotification(
+            (m as any).pushToken,
+            'Account Approved 🎉',
+            'Your TBT membership is now active. Tap to get started.',
+            { type: 'member_approved' },
+          );
+        }
+      }).catch(() => {});
+
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
     request.server.log.error({ err }, 'Failed to approve member');
@@ -1557,6 +1572,18 @@ export async function rejectMemberHandler(request: FastifyRequest, reply: Fastif
       data: { memberId: id, type: 'system', title: 'Onboarding Not Approved', body: reason.trim(), isRead: false },
     }).catch(() => {});
 
+    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true } })
+      .then((m) => {
+        if ((m as any)?.pushToken) {
+          return sendPushNotification(
+            (m as any).pushToken,
+            'Application Not Approved',
+            reason.trim(),
+            { type: 'member_rejected' },
+          );
+        }
+      }).catch(() => {});
+
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
     request.server.log.error({ err }, 'Failed to reject member onboarding');
@@ -1604,6 +1631,24 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
     request.server.prisma.notification.create({
       data: { memberId: id, type: 'system', title: 'Changes Requested', body: note.trim(), isRead: false },
     }).catch(() => {});
+
+    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true, phone: true } as any })
+      .then((m: any) => {
+        if (m?.pushToken) {
+          void sendPushNotification(
+            m.pushToken,
+            'Action Required',
+            'Your onboarding application needs updates. Tap to review.',
+            { type: 'member_changes_requested' },
+          ).catch(() => {});
+        }
+        if (m?.phone) {
+          void sendWhatsappMessage(
+            m.phone,
+            `Your TBT onboarding application requires some changes.\n\n${note.trim()}\n\nPlease log in to the TBT app to update your details and resubmit.`,
+          ).catch(() => {});
+        }
+      }).catch(() => {});
 
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {

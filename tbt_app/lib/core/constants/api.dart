@@ -205,6 +205,7 @@ const String kAdsClick = '/api/ads/click';
 // ── Self-onboarding (SELF_ONBOARDING_SPECKIT.md §10.5) ──────────────────────
 const String kOnboarding = '/api/onboarding';
 const String kOnboardingContent = '/api/onboarding/content';
+const String kOnboardingPhotoPresign = '/api/onboarding/photo/presign';
 const String kOnboardingDocumentsPresign = '/api/onboarding/documents/presign';
 const String kOnboardingDocuments = '/api/onboarding/documents';
 // /api/onboarding/documents/:id — built at call site

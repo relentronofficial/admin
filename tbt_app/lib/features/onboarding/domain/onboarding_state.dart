@@ -65,6 +65,10 @@ class OnboardingContentStep {
     this.textBody,
     this.videoUrl,
     this.audioUrl,
+    this.imageUrl,
+    this.lottieUrl,
+    this.quizData,
+    this.isActive,
   });
 
   final String id;
@@ -73,6 +77,10 @@ class OnboardingContentStep {
   final String? textBody;
   final String? videoUrl;
   final String? audioUrl;
+  final String? imageUrl;
+  final String? lottieUrl;
+  final Map<String, dynamic>? quizData;
+  final bool? isActive;
 
   factory OnboardingContentStep.fromJson(Map<String, dynamic> json) => OnboardingContentStep(
         id: json['id'] as String,
@@ -81,5 +89,11 @@ class OnboardingContentStep {
         textBody: json['textBody'] as String?,
         videoUrl: json['videoUrl'] as String?,
         audioUrl: json['audioUrl'] as String?,
+        imageUrl: json['imageUrl'] as String?,
+        lottieUrl: json['lottieUrl'] as String?,
+        quizData: json['quizData'] != null
+            ? Map<String, dynamic>.from(json['quizData'] as Map)
+            : null,
+        isActive: json['isActive'] as bool?,
       );
 }

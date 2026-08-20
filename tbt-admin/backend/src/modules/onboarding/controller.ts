@@ -70,13 +70,33 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
   return reply.send({ success: true, data: updated, error: null });
 }
 
+const CONTENT_COLS = `id, step_key AS "stepKey", title, text_body AS "textBody", video_url AS "videoUrl", audio_url AS "audioUrl", image_url AS "imageUrl", lottie_url AS "lottieUrl", quiz_data AS "quizData", sort_order AS "sortOrder", is_active AS "isActive"`;
+
 // GET /api/onboarding/content — active step content (member-facing)
 export async function getOnboardingContentHandler(req: FastifyRequest, reply: FastifyReply) {
-  const rows = await req.server.prisma.onboardingContent.findMany({
-    where: { isActive: true },
-    orderBy: { sortOrder: 'asc' },
-  });
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT ${CONTENT_COLS} FROM onboarding_content WHERE is_active = true ORDER BY sort_order ASC`,
+  );
   return reply.send({ success: true, data: rows, error: null });
+}
+
+// POST /api/onboarding/photo/presign — member-facing, presign for profile photo upload
+export async function presignProfilePhotoHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const parsed = presignDocumentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
+  }
+
+  const member = await req.server.prisma.member.findUnique({ where: { id: memberId }, select: { verificationStatus: true } as any });
+  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+  if (!canEditOnboarding((member as any).verificationStatus)) {
+    return reply.status(403).send({ success: false, data: null, error: 'Profile photo cannot be changed in the current state' });
+  }
+
+  (req.body as any).bucket = 'profile-photos';
+  (req.body as any).pathPrefix = `members/${memberId}`;
+  return getPresignedUrlHandler(req, reply);
 }
 
 // POST /api/onboarding/documents/presign — member-facing, thin wrapper over
@@ -192,7 +212,9 @@ export async function submitOnboardingHandler(req: FastifyRequest, reply: Fastif
 // ── Admin content management (Clerk-protected, registered under /admin) ──
 
 export async function adminListOnboardingContentHandler(req: FastifyRequest, reply: FastifyReply) {
-  const rows = await req.server.prisma.onboardingContent.findMany({ orderBy: { sortOrder: 'asc' } });
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT ${CONTENT_COLS}, created_at AS "createdAt", updated_at AS "updatedAt" FROM onboarding_content ORDER BY sort_order ASC`,
+  );
   return reply.send({ success: true, data: rows, error: null });
 }
 
@@ -201,7 +223,16 @@ export async function adminCreateOnboardingContentHandler(req: FastifyRequest, r
   if (!parsed.success) {
     return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
   }
-  const row = await req.server.prisma.onboardingContent.create({ data: parsed.data });
+  const d = parsed.data;
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO onboarding_content (step_key, title, text_body, video_url, audio_url, image_url, lottie_url, quiz_data, sort_order, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+     RETURNING ${CONTENT_COLS}`,
+    d.stepKey, d.title, d.textBody ?? null, d.videoUrl ?? null, d.audioUrl ?? null,
+    d.imageUrl ?? null, d.lottieUrl ?? null,
+    d.quizData ? JSON.stringify(d.quizData) : null,
+    d.sortOrder ?? 0, d.isActive ?? true,
+  );
   return reply.status(201).send({ success: true, data: row, error: null });
 }
 
@@ -210,11 +241,49 @@ export async function adminUpdateOnboardingContentHandler(req: FastifyRequest<{ 
   if (!parsed.success) {
     return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
   }
-  const row = await req.server.prisma.onboardingContent.update({ where: { id: req.params.id }, data: parsed.data });
-  return reply.send({ success: true, data: row, error: null });
+  const d = parsed.data;
+  const setClauses: string[] = [];
+  const vals: unknown[] = [];
+  let idx = 1;
+  if (d.stepKey !== undefined)  { setClauses.push(`step_key = $${idx++}`);   vals.push(d.stepKey); }
+  if (d.title !== undefined)    { setClauses.push(`title = $${idx++}`);       vals.push(d.title); }
+  if (d.textBody !== undefined) { setClauses.push(`text_body = $${idx++}`);   vals.push(d.textBody); }
+  if (d.videoUrl !== undefined) { setClauses.push(`video_url = $${idx++}`);   vals.push(d.videoUrl); }
+  if (d.audioUrl !== undefined) { setClauses.push(`audio_url = $${idx++}`);   vals.push(d.audioUrl); }
+  if (d.imageUrl !== undefined) { setClauses.push(`image_url = $${idx++}`);   vals.push(d.imageUrl); }
+  if (d.lottieUrl !== undefined){ setClauses.push(`lottie_url = $${idx++}`);  vals.push(d.lottieUrl); }
+  if (d.quizData !== undefined) { setClauses.push(`quiz_data = $${idx++}::jsonb`); vals.push(d.quizData ? JSON.stringify(d.quizData) : null); }
+  if (d.sortOrder !== undefined){ setClauses.push(`sort_order = $${idx++}`);  vals.push(d.sortOrder); }
+  if (d.isActive !== undefined) { setClauses.push(`is_active = $${idx++}`);   vals.push(d.isActive); }
+  if (setClauses.length === 0) return reply.send({ success: true, data: null, error: null });
+  setClauses.push(`updated_at = NOW()`);
+  vals.push(req.params.id);
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE onboarding_content SET ${setClauses.join(', ')} WHERE id = $${idx}::uuid RETURNING ${CONTENT_COLS}`,
+    ...vals,
+  );
+  return reply.send({ success: true, data: row ?? null, error: null });
 }
 
 export async function adminDeleteOnboardingContentHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-  await req.server.prisma.onboardingContent.delete({ where: { id: req.params.id } });
+  await req.server.prisma.$executeRawUnsafe(`DELETE FROM onboarding_content WHERE id = $1::uuid`, req.params.id);
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// PUT /api/onboarding/admin/content/reorder — { ids: string[] } sets sort_order by array position
+export async function adminReorderOnboardingContentHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { ids } = (req.body ?? {}) as { ids?: string[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return reply.status(400).send({ success: false, data: null, error: 'ids array is required' });
+  }
+  await Promise.all(
+    ids.map((id, idx) =>
+      req.server.prisma.$executeRawUnsafe(
+        `UPDATE onboarding_content SET sort_order = $1, updated_at = NOW() WHERE id = $2::uuid`,
+        idx,
+        id,
+      ),
+    ),
+  );
   return reply.send({ success: true, data: null, error: null });
 }

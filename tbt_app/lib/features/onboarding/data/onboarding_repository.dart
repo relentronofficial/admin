@@ -41,6 +41,25 @@ class OnboardingRepository {
     }
   }
 
+  Future<({String uploadUrl, String publicUrl})> presignProfilePhoto({
+    required String filename,
+    required String contentType,
+  }) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        kOnboardingPhotoPresign,
+        data: {'filename': filename, 'contentType': contentType},
+      );
+      final data = res.data?['data'] as Map<String, dynamic>? ?? {};
+      return (
+        uploadUrl: (data['uploadUrl'] as String?) ?? '',
+        publicUrl: (data['publicUrl'] as String?) ?? '',
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   Future<({String uploadUrl, String publicUrl})> presignDocument({
     required String filename,
     required String contentType,

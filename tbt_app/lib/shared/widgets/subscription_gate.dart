@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/routes.dart';
 import '../../features/auth/domain/member_status.dart';
+import '../../features/auth/domain/verification_status.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../media/ad_suppression_scope.dart';
 import '../providers/me_provider.dart';
@@ -21,9 +22,10 @@ bool _isExempt(String location) =>
 
 /// Wraps platform content and enforces subscription state.
 ///
-/// pending  → [_PendingInterceptor] (sign-out only)
-/// free     → [_FreeInterceptor] (upgrade prompt)
-/// otherwise → [child] pass-through
+/// pending + awaiting_kyc  → [_KycIncompleteInterceptor] (complete profile CTA)
+/// pending + other status  → [_PendingInterceptor] (sign-out only — already submitted)
+/// free                    → [_FreeInterceptor] (upgrade prompt)
+/// otherwise               → [child] pass-through
 class SubscriptionGate extends ConsumerWidget {
   const SubscriptionGate({super.key, required this.child});
 
@@ -45,7 +47,9 @@ class SubscriptionGate extends ConsumerWidget {
         if (me.status == MemberStatus.pending) {
           return AdSuppressionScope(
             reason: 'pending-interceptor',
-            child: _PendingInterceptor(widgetRef: ref),
+            child: me.verificationStatus == VerificationStatus.awaitingKyc
+                ? _KycIncompleteInterceptor(widgetRef: ref)
+                : _PendingInterceptor(widgetRef: ref),
           );
         }
         if (me.membershipPlan == 'free') {
@@ -168,6 +172,63 @@ class _PendingInterceptor extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
                 letterSpacing: 2,
               ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── KYC incomplete interceptor ────────────────────────────────────────────────
+
+class _KycIncompleteInterceptor extends ConsumerWidget {
+  const _KycIncompleteInterceptor({required this.widgetRef});
+
+  final WidgetRef widgetRef;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = context.tbt.accent;
+
+    return _InterceptorScaffold(
+      title: 'Complete Your Profile',
+      body: 'Your account is pending. Fill in your business details to apply for membership.',
+      actions: [
+        SizedBox(
+          height: 48,
+          child: ElevatedButton(
+            onPressed: () => context.push(AppRoutes.onboarding),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 0,
+            ),
+            child: const Text(
+              'COMPLETE NOW',
+              style: TextStyle(
+                fontFamily: 'Rajdhani',
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextButton(
+          onPressed: () async {
+            await ref.read(authNotifierProvider.notifier).logout();
+            if (context.mounted) context.go(AppRoutes.login);
+          },
+          child: Text(
+            'Sign out',
+            style: TextStyle(
+              color: context.tokens.textSecondary,
+              fontSize: 14,
             ),
           ),
         ),
