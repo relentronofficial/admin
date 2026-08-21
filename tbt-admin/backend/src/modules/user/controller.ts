@@ -1336,9 +1336,15 @@ function isAccessValid(access: { isActive: boolean; accessType: string; expiresA
 
 async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, episodeId: string, xpAmount: number) {
   try {
-    await prisma.memberXP.create({
-      data: { memberId, courseId, source: 'episode_complete', amount: xpAmount },
-    });
+    // INSERT ... ON CONFLICT DO NOTHING prevents duplicate XP when the client retries
+    // the progress POST (e.g. on network flicker). The unique index on
+    // (member_id, episode_id) WHERE episode_id IS NOT NULL enforces this at DB level.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO member_xp (id, member_id, course_id, episode_id, source, amount, earned_at)
+       VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, 'episode_complete', $4, NOW())
+       ON CONFLICT (member_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING`,
+      memberId, courseId, episodeId, xpAmount,
+    );
 
     // Update course streak
     const now = new Date();

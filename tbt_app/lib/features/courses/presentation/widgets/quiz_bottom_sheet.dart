@@ -16,7 +16,7 @@ class QuizBottomSheet extends StatefulWidget {
   final List<Map<String, dynamic>> questions;
   /// 0–100 percent required to pass.
   final int passingScore;
-  final Future<Map<String, dynamic>> Function(List<Map<String, dynamic>> answers) onSubmit;
+  final Future<Map<String, dynamic>> Function(Map<String, String> answers) onSubmit;
 
   @override
   State<QuizBottomSheet> createState() => _QuizBottomSheetState();
@@ -37,9 +37,9 @@ class _QuizBottomSheetState extends State<QuizBottomSheet> {
     if (!_allAnswered || _submitting) return;
     setState(() => _submitting = true);
     try {
-      final answers = _questions.asMap().entries.map((e) {
-        return {'questionId': e.value['id'], 'answerId': _selected[e.key]};
-      }).toList();
+      final answers = Map.fromEntries(_questions.asMap().entries.map((e) =>
+        MapEntry(e.value['id'] as String, _selected[e.key]!),
+      ));
       final result = await widget.onSubmit(answers);
       if (mounted) setState(() => _result = result);
     } catch (_) {

@@ -87,15 +87,19 @@ export interface Lesson {
   title: string;
   description?: string | null;
   videoUrl?: string | null;
+  hlsUrl?: string | null;
+  videoType?: 'hls' | 'iframe';
   duration?: number | null;
   durationSeconds?: number | null;
   order: number;
   isFree: boolean;
+  locked?: boolean;
   resumeAtSeconds?: number;
   actualWatchedSecs?: number;
   isCompleted?: boolean;
   hasQuiz?: boolean;
   quizUnlockPercent?: number;
+  quizData?: { questions: any[]; cues?: Array<{ id: string; atSeconds: number; questions: any[] }> } | null;
 }
 
 export interface CourseEnrollment {

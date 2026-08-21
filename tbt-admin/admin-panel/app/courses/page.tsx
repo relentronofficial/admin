@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Plus, Trash2, Pencil, X, Loader2, BookOpen, Search, Film,
   Eye, EyeOff, AlertCircle, GripVertical, Save, Image as ImageIcon, Upload,
@@ -1411,8 +1411,17 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [courseIdFilter, setCourseIdFilter] = useState("");
   const [page, setPage] = useState(1);
-  const [approvingId, setApprovingId] = useState<string | null>(null);
   const qc = useQueryClient();
+
+  const approvePayment = useMutation({
+    mutationFn: async ({ courseId, paymentId }: { courseId: string; paymentId: string }) => {
+      await apiClient.post(`/api/courses/${courseId}/payments/${paymentId}/approve`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["course-payments"] });
+      qc.invalidateQueries({ queryKey: ["course-access"] });
+    },
+  });
 
   const { data, isLoading } = useListCoursePayments({
     ...(statusFilter ? { status: statusFilter } : {}),
@@ -1431,14 +1440,10 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
 
   const handleApprove = async (payment: any) => {
     try {
-      setApprovingId(payment.id);
-      await apiClient.post(`/api/courses/${payment.course?.id}/payments/${payment.id}/approve`);
+      await approvePayment.mutateAsync({ courseId: payment.course?.id, paymentId: payment.id });
       toast.success("Payment approved & access granted");
-      qc.invalidateQueries({ queryKey: ["course-payments"] });
     } catch (e: any) {
       toast.error(e.message || "Failed");
-    } finally {
-      setApprovingId(null);
     }
   };
 
@@ -1558,9 +1563,9 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
                       </td>
                       <td className="px-4 py-3">
                         {p.status === "pending" && (
-                          <button onClick={() => handleApprove(p)} disabled={approvingId === p.id}
+                          <button onClick={() => handleApprove(p)} disabled={approvePayment.isPending}
                             className="bg-green-600 hover:bg-green-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded disabled:opacity-60 flex items-center gap-1 transition-all whitespace-nowrap">
-                            {approvingId === p.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />} Approve
+                            {approvePayment.isPending ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />} Approve
                           </button>
                         )}
                       </td>

@@ -144,6 +144,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       // miscellaneous single-column additions (different tables, fully parallel)
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS login_bg_images JSONB`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS watched_segments TEXT`),
+      prisma.$executeRawUnsafe(`ALTER TABLE member_xp ADD COLUMN IF NOT EXISTS episode_id UUID`),
+      prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS member_xp_episode_dedup ON member_xp (member_id, episode_id) WHERE episode_id IS NOT NULL`),
       prisma.$executeRawUnsafe(`ALTER TABLE workshops ADD COLUMN IF NOT EXISTS batch_ids JSONB`),
       prisma.$executeRawUnsafe(`ALTER TABLE ebooks ADD COLUMN IF NOT EXISTS batch_ids JSONB`),
       prisma.$executeRawUnsafe(`ALTER TABLE ebooks ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`),

@@ -36,7 +36,7 @@ export default function BadgesPage() {
           <p className="text-sm font-medium text-muted-foreground">
             No badges yet — keep learning!
           </p>
-          <Link href="/programs"
+          <Link href="/courses"
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: "var(--color-accent)" }}>
             <BookOpen size={14} /> Browse Courses

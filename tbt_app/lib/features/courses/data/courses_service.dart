@@ -20,13 +20,22 @@ class CourseAccessRequest {
 }
 
 class CourseXp {
-  const CourseXp({required this.totalXp, required this.episodesCompleted});
+  const CourseXp({
+    required this.totalXp,
+    required this.episodesCompleted,
+    required this.currentStreak,
+    required this.longestStreak,
+  });
   final int totalXp;
   final int episodesCompleted;
+  final int currentStreak;
+  final int longestStreak;
 
   factory CourseXp.fromJson(Map<String, dynamic> json) => CourseXp(
         totalXp: (json['totalXp'] as num?)?.toInt() ?? 0,
         episodesCompleted: (json['episodesCompleted'] as num?)?.toInt() ?? 0,
+        currentStreak: (json['currentStreak'] as num?)?.toInt() ?? 0,
+        longestStreak: (json['longestStreak'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -155,7 +164,7 @@ class CoursesService {
   }
 
   Future<Map<String, dynamic>> submitQuiz(
-      String courseId, String episodeId, List<Map<String, dynamic>> answers) async {
+      String courseId, String episodeId, Map<String, String> answers) async {
     try {
       final res = await _dio.post<Map<String, dynamic>>(
         '$kUserCourses/$courseId/episodes/$episodeId/quiz',

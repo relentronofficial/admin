@@ -45,6 +45,14 @@ export async function createCourseHandler(req: FastifyRequest, reply: FastifyRep
       isActive: body.isActive ?? true,
       isPublished: body.isPublished ?? true,
       sortOrder: body.order ?? count,
+      price: body.price != null ? body.price : null,
+      accessDurationDays: body.accessDurationDays ?? null,
+      maxEnrollments: body.maxEnrollments ?? null,
+      xpPerEpisode: body.xpPerEpisode ?? 10,
+      passingScorePercent: body.passingScorePercent ?? 70,
+      paymentLinkUrl: body.paymentLinkUrl ?? null,
+      requireSequential: body.requireSequential ?? true,
+      completionThresholdPercent: body.completionThresholdPercent ?? 95,
     },
   });
   bustHome(req);

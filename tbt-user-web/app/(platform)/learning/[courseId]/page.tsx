@@ -35,11 +35,12 @@ function isBunnyEmbed(url: string) {
 }
 
 // Unified "lesson already done" check used in every place resumeAtSeconds is decided.
-// Four signals, any one is sufficient:
+// Three signals, any one is sufficient:
 //   1. completedIds (from progress query) — authoritative DB state
 //   2. lesson.isCompleted (from course query) — may be stale but usually correct
-//   3. durationSeconds threshold — 85% of stored duration (fails if duration is wrong in DB)
-//   4. Position heuristic — resume position ≈ total accumulated watch time (handles wrong duration metadata)
+//   3. durationSeconds threshold — 85% of stored duration
+// NOTE: there is intentionally NO position proximity heuristic — it was removed because
+// |resumeAtSeconds - actualWatchedSecs| < 5 caused false positives for partially-watched lessons.
 function lessonAlreadyDone(
   lessonId: string,
   completedIds: Set<string>,
