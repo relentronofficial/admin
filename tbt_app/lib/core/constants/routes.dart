@@ -34,6 +34,8 @@ class AppRoutes {
   static const String history = '/history';
   static const String profile = '/profile';
   static const String onboarding = '/onboarding';
+  static const String onboardingMeeting = '/onboarding/meeting/:meetingId';
+  static String onboardingMeetingPath(String id) => '/onboarding/meeting/$id';
   static const String events = '/events';
   static const String eventDetail = '/events/:id';
   static const String programs = '/programs';
@@ -124,6 +126,7 @@ class RouteNames {
   static const String history = 'history';
   static const String profile = 'profile';
   static const String onboarding = 'onboarding';
+  static const String onboardingMeeting = 'onboarding-meeting';
   static const String events = 'events';
   static const String eventDetail = 'event-detail';
   static const String programs = 'programs';

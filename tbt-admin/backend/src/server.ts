@@ -45,6 +45,7 @@ import { securityRoutes } from './modules/security/routes.js';
 import { userAuthRoutes } from './modules/user-auth/routes.js';
 import { userBatchRoutes } from './modules/user-batch/routes.js';
 import { onboardingRoutes } from './modules/onboarding/routes.js';
+import { onboardingMeetingsRoutes } from './modules/onboarding-meetings/routes.js';
 import { adminNotificationRoutes } from './modules/admin-notifications/routes.js';
 import { mastersRoutes } from './modules/masters/routes.js';
 import { aiRoutes } from './modules/ai/routes.js';
@@ -188,6 +189,7 @@ async function bootstrap() {
     await fastify.register(userAuthRoutes, { prefix: '/api/user-auth' });
     await fastify.register(userBatchRoutes, { prefix: '/api/user-batch' });
     await fastify.register(onboardingRoutes, { prefix: '/api/onboarding' });
+    await fastify.register(onboardingMeetingsRoutes, { prefix: '/api/onboarding-meetings' });
     await fastify.register(adminNotificationRoutes, { prefix: '/api/admin-notifications' });
     await fastify.register(mastersRoutes, { prefix: '/api/masters' });
     await fastify.register(aiRoutes, { prefix: '/api/ai' });

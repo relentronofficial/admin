@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { Video, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import {
   useOnboardingState,
@@ -13,6 +14,7 @@ import {
   useDeleteOnboardingDocument,
   useSubmitOnboarding,
 } from "@/lib/hooks/useOnboarding";
+import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
 import type { OnboardingContentStep } from "@/lib/api/services/onboarding.service";
 
 // Wizard chrome (labels/copy) is hardcoded here rather than sourced from
@@ -108,6 +110,42 @@ function StepShell({ title, children, onBack, onNext, nextLabel, nextDisabled }:
 
 // ─── Read-only states ───────────────────────────────────────────────────────
 
+function VerificationMeetingCard() {
+  const router = useRouter();
+  const { data: meetings } = useMyOnboardingMeetings();
+  const meeting = meetings?.find((m) => m.status === "scheduled" || m.status === "live");
+  if (!meeting) return null;
+
+  return (
+    <div
+      className="max-w-lg mx-auto mt-6 p-5 rounded-xl text-left"
+      style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)" }}
+    >
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)" }}>
+          <Video size={18} style={{ color: "var(--color-accent)" }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground">{meeting.title}</p>
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1">
+            <Calendar size={12} /> {new Date(meeting.scheduledAt).toLocaleString()}
+          </p>
+          {meeting.status === "live" && (
+            <p className="text-xs font-semibold mt-1" style={{ color: "var(--color-success, #22c55e)" }}>Live now</p>
+          )}
+        </div>
+        <button
+          onClick={() => router.push(`/onboarding/meeting/${meeting.id}`)}
+          className="px-4 h-9 text-xs font-semibold rounded-lg text-white shrink-0"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {meeting.status === "live" ? "Join Now" : "View"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PendingReviewView() {
   return (
     <div className="max-w-lg mx-auto text-center py-16">
@@ -116,6 +154,7 @@ function PendingReviewView() {
         Your onboarding has been submitted successfully and is waiting for admin approval.
         We&apos;ll notify you as soon as it&apos;s reviewed.
       </p>
+      <VerificationMeetingCard />
     </div>
   );
 }

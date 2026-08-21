@@ -204,6 +204,13 @@ export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyR
   }
 
   const roomName: string = event?.room?.name ?? '';
+
+  const { meetingIdFromRoomName } = await import('../../lib/onboardingLiveKit.js');
+  const onboardingMeetingId = meetingIdFromRoomName(roomName);
+  if (onboardingMeetingId) {
+    return handleOnboardingMeetingWebhookEvent(req, reply, onboardingMeetingId, event);
+  }
+
   const prefix = 'workshop-live-';
   if (!roomName.startsWith(prefix)) return reply.send({ success: true });
 
@@ -249,6 +256,42 @@ export async function livekitWebhookHandler(req: FastifyRequest, reply: FastifyR
         await req.server.prisma.liveCallAttendance.update({
           where: { id: record.id },
           data: { leftAt: new Date(), durationSec },
+        }).catch(() => {});
+      }
+    }
+  }
+
+  return reply.send({ success: true });
+}
+
+// Onboarding-meeting branch of the shared LiveKit webhook — tracks
+// join/leave against OnboardingMeetingParticipant rows (identity was
+// stamped on each row at token-mint time by the onboarding-meetings
+// controller). No egress/recording handling — onboarding meetings don't
+// expose a "start recording" action, so egress_ended never fires for them.
+async function handleOnboardingMeetingWebhookEvent(req: FastifyRequest, reply: FastifyReply, meetingId: string, event: any) {
+  if (event.event === 'participant_joined') {
+    const identity: string = event?.participant?.identity ?? '';
+    if (identity) {
+      await req.server.prisma.onboardingMeetingParticipant.updateMany({
+        where: { meetingId, identity },
+        data: { status: 'joined', joinedAt: new Date() },
+      }).catch(() => {});
+    }
+  }
+
+  if (event.event === 'participant_left') {
+    const identity: string = event?.participant?.identity ?? '';
+    if (identity) {
+      const record = await req.server.prisma.onboardingMeetingParticipant.findFirst({
+        where: { meetingId, identity, status: 'joined' },
+        orderBy: { joinedAt: 'desc' },
+      }).catch(() => null);
+      if (record?.joinedAt) {
+        const durationSec = Math.round((Date.now() - record.joinedAt.getTime()) / 1000);
+        await req.server.prisma.onboardingMeetingParticipant.update({
+          where: { id: record.id },
+          data: { status: 'left', leftAt: new Date(), durationSec },
         }).catch(() => {});
       }
     }

@@ -210,3 +210,8 @@ const String kOnboardingDocumentsPresign = '/api/onboarding/documents/presign';
 const String kOnboardingDocuments = '/api/onboarding/documents';
 // /api/onboarding/documents/:id — built at call site
 const String kOnboardingSubmit = '/api/onboarding/submit';
+
+// ── Onboarding live meetings (ONBOARDING_LIVE_MEETING_SPECKIT.md) ───────────
+const String kOnboardingMeetings = '/api/onboarding-meetings';
+// /api/onboarding-meetings/:id/token — built at call site
+// /api/onboarding-meetings/:id/leave — built at call site

@@ -104,6 +104,13 @@ function AuthInterceptor() {
         );
         invalidateAdminNotifs();
       });
+      // Onboarding live meetings — keep the /onboarding "Live Meetings" tab
+      // reactive without a manual refresh. See ONBOARDING_LIVE_MEETING_SPECKIT.md.
+      const invalidateOnboardingMeetings = () => queryClient.invalidateQueries({ queryKey: ['onboarding-meetings'] });
+      socket.on('admin:onboarding_meeting_scheduled', invalidateOnboardingMeetings);
+      socket.on('admin:onboarding_meeting_started', invalidateOnboardingMeetings);
+      socket.on('admin:onboarding_meeting_ended', invalidateOnboardingMeetings);
+      socket.on('admin:onboarding_meeting_cancelled', invalidateOnboardingMeetings);
     });
     return () => {
       mounted = false;
@@ -114,6 +121,10 @@ function AuthInterceptor() {
         s.off('admin:course_access_request');
         s.off('admin:member_joined');
         s.off('admin:whatsapp_low_balance');
+        s.off('admin:onboarding_meeting_scheduled');
+        s.off('admin:onboarding_meeting_started');
+        s.off('admin:onboarding_meeting_ended');
+        s.off('admin:onboarding_meeting_cancelled');
       });
     };
   }, [isLoaded, queryClient]);

@@ -84,12 +84,13 @@ AppException mapDioError(DioException e) {
 
   final status = e.response?.statusCode;
   final data = e.response?.data;
-  // Backend uses { success: false, data: null, error: '<message>' } for all
-  // 4xx responses. Surface that message so the user sees "Invalid OTP" instead
-  // of a generic "Something went wrong".
-  final backendMsg = data is Map
-      ? (data['error'] ?? data['message'])?.toString()
-      : null;
+  // Backend uses { success: false, data: null, error: '<message>' } for most
+  // 4xx responses, but some modules (members, onboarding-meetings) use
+  // { error: { code, message } } instead — unwrap both shapes so callers
+  // always see the real message ("Invalid OTP") instead of a stringified
+  // Map or a generic fallback.
+  final rawError = data is Map ? (data['error'] ?? data['message']) : null;
+  final backendMsg = rawError is Map ? rawError['message']?.toString() : rawError?.toString();
 
   if (status == 401) {
     return backendMsg != null && backendMsg.isNotEmpty

@@ -11,8 +11,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../shared/api/upload_service.dart';
+import '../../../shared/theme/tbt_theme.dart';
+import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/providers/me_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../domain/onboarding_meeting.dart';
 import '../domain/onboarding_state.dart';
 import '../providers/onboarding_provider.dart';
 
@@ -71,7 +74,7 @@ class OnboardingScreen extends ConsumerWidget {
         ),
         data: (state) {
           if (state.verificationStatus == 'under_review') {
-            return _PendingView(submittedAt: state.onboardingSubmittedAt);
+            return const _PendingReviewView();
           }
           if (state.verificationStatus == 'verified' || state.onboardingCompleted) {
             return const _VerifiedView();
@@ -88,51 +91,87 @@ class OnboardingScreen extends ConsumerWidget {
 
 // ── Terminal states ────────────────────────────────────────────────────────────
 
-class _PendingView extends StatelessWidget {
-  const _PendingView({this.submittedAt});
-  final String? submittedAt;
+class _PendingReviewView extends ConsumerWidget {
+  const _PendingReviewView();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final meetingsAsync = ref.watch(onboardingMeetingsProvider);
+    final meeting = meetingsAsync.valueOrNull?.where((m) => m.isJoinable).firstOrNull;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Application Submitted',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: context.tokens.textPrimary)),
+            const SizedBox(height: 12),
+            Text(
+              "Your onboarding has been submitted successfully and is waiting for admin approval. "
+              "We'll notify you as soon as it's reviewed.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.tokens.textSecondary, height: 1.5),
+            ),
+            if (meeting != null) ...[
+              const SizedBox(height: 24),
+              _MeetingCard(meeting: meeting),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MeetingCard extends StatelessWidget {
+  const _MeetingCard({required this.meeting});
+  final OnboardingMeeting meeting;
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _iconBox(Icons.hourglass_top_rounded, _kAccent),
-              const SizedBox(height: 24),
-              const Text('Under Review',
-                  style: TextStyle(color: _kText, fontSize: 22, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 12),
-              const Text(
-                "Your application is being reviewed. We'll notify you once it's approved.",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: _kMuted, fontSize: 15, height: 1.55),
-              ),
-              if (submittedAt != null) ...[
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _kCard,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _kBorder),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.schedule_outlined, color: _kMuted, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Submitted ${_formatRelativeDate(submittedAt!)}',
-                      style: const TextStyle(color: _kMuted, fontSize: 13),
-                    ),
-                  ]),
+    final accent = context.tbt.accent;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(radius: 20, backgroundColor: accent.withValues(alpha: 0.15), child: Icon(Icons.videocam, color: accent)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(meeting.title, style: TextStyle(fontWeight: FontWeight.w700, color: context.tokens.textPrimary)),
+                const SizedBox(height: 2),
+                Text(
+                  meeting.status == 'live' ? 'Live now' : '${meeting.scheduledAt.toLocal()}'.split('.').first,
+                  style: TextStyle(fontSize: 12, color: context.tokens.textSecondary),
                 ),
+                if (meeting.hostAdminName != null || meeting.participantCount != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      if (meeting.hostAdminName != null) 'Host: ${meeting.hostAdminName}',
+                      if (meeting.participantCount != null) '${meeting.participantCount} invited',
+                    ].join(' · '),
+                    style: TextStyle(fontSize: 11, color: context.tokens.textMuted),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
+          ElevatedButton(
+            onPressed: () => context.push(AppRoutes.onboardingMeetingPath(meeting.id)),
+            style: ElevatedButton.styleFrom(backgroundColor: accent),
+            child: Text(meeting.status == 'live' ? 'Join' : 'View'),
+          ),
+        ],
       ),
     );
   }

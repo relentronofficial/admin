@@ -44,6 +44,7 @@ import 'features/notifications/presentation/notifications_screen.dart';
 import 'features/products/presentation/products_screen.dart';
 import 'features/profile/presentation/profile_screen.dart';
 import 'features/onboarding/presentation/onboarding_screen.dart';
+import 'features/onboarding/presentation/onboarding_meeting_screen.dart';
 import 'features/profile/presentation/connections_screen.dart';
 import 'features/profile/presentation/legal_page_screen.dart';
 import 'features/resources/presentation/resources_screen.dart';
@@ -328,6 +329,11 @@ List<RouteBase> _buildRoutes() => [
         path: AppRoutes.onboarding,
         name: RouteNames.onboarding,
         builder: (_, __) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.onboardingMeeting,
+        name: RouteNames.onboardingMeeting,
+        builder: (_, state) => OnboardingMeetingScreen(meetingId: state.pathParameters['meetingId']!),
       ),
 
       // ── Outside shell — Profile extras (2026-07-28) ────────────────────────
