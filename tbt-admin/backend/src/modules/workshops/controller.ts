@@ -469,8 +469,7 @@ export async function updateLiveCallHandler(req: FastifyRequest, reply: FastifyR
     if (body[f] !== undefined) data[f] = body[f] || null;
   }
   if (body.scheduledAt) data.scheduledAt = new Date(body.scheduledAt);
-  // Clear endedAt whenever the call is edited so it becomes joinable again
-  data.endedAt = null;
+  if (body.endedAt === null) data.endedAt = null;
   const call = await req.server.prisma.liveCall.update({ where: { id: lcid }, data });
   return reply.send({ success: true, data: call, error: null });
 }
@@ -518,7 +517,7 @@ export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: Fa
 
   const lc = await req.server.prisma.liveCall.findUnique({
     where: { id: lcid },
-    select: { id: true, title: true, workshopId: true, startedAt: true },
+    select: { id: true, title: true, workshopId: true, startedAt: true, workshop: { select: { slug: true } } },
   });
   if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
 
@@ -568,7 +567,7 @@ export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: Fa
         title: 'Live Session Started',
         body: `${lc.title} is now live — join now!`,
         type: 'live_call',
-        actionUrl: `/workshop`,
+        actionUrl: `/workshop/${lc.workshop?.slug ?? lc.workshopId}`,
       };
       for (const { memberId } of enrollments) {
         req.server.io.to(`user:${memberId}`).emit('notification', notifPayload);
@@ -1459,9 +1458,12 @@ export async function listQAHandler(req: FastifyRequest, reply: FastifyReply) {
 export async function replyQAHandler(req: FastifyRequest, reply: FastifyReply) {
   const { postId } = req.params as any;
   const { replyText } = req.body as any;
-  const admin = (req as any).admin;
+  const adminRecord = await req.server.prisma.admin.findFirst({
+    where: { clerkId: req.user },
+    select: { id: true },
+  });
   const qaReply = await req.server.prisma.qAReply.create({
-    data: { postId, replyText, adminId: admin?.id || null },
+    data: { postId, replyText, adminId: adminRecord?.id ?? null },
   });
   return reply.status(201).send({ success: true, data: qaReply, error: null });
 }
@@ -1604,13 +1606,26 @@ export async function assignToBreakoutHandler(req: FastifyRequest, reply: Fastif
 export async function recallAllHandler(req: FastifyRequest, reply: FastifyReply) {
   const { lcid } = req.params as any;
 
-  await req.server.prisma.breakoutRoom.updateMany({
-    where: { liveCallId: lcid, isActive: true },
-    data: { isActive: false },
-  });
+  const [, liveCall] = await Promise.all([
+    req.server.prisma.breakoutRoom.updateMany({
+      where: { liveCallId: lcid, isActive: true },
+      data: { isActive: false },
+    }),
+    req.server.prisma.liveCall.findUnique({
+      where: { id: lcid },
+      select: { workshopId: true },
+    }),
+  ]);
 
-  // Notify all connected members in this live call room to return
-  req.server.io.to(`live:${lcid}`).emit('live_call:breakout_recall', { liveCallId: lcid });
+  if (liveCall) {
+    const enrollments = await req.server.prisma.workshopEnrollment.findMany({
+      where: { workshopId: liveCall.workshopId },
+      select: { memberId: true },
+    });
+    for (const { memberId } of enrollments) {
+      req.server.io.to(`user:${memberId}`).emit('live_call:breakout_recall', { liveCallId: lcid });
+    }
+  }
 
   return reply.send({ success: true, data: null, error: null });
 }

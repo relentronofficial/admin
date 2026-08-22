@@ -1657,7 +1657,6 @@ export default function WorkshopDetailPage() {
                               written:   { label: "WRITTEN",   color: "#8b5cf6" },
                               matching:  { label: "MATCH",     color: "#ec4899" },
                               flashcard: { label: "FLASHCARD", color: "#06b6d4" },
-                              live_call: { label: "LIVE CALL", color: "#22c55e" },
                             };
                             const meta = typeMeta[c.type] ?? typeMeta.watch;
                             return (
@@ -2356,7 +2355,6 @@ export default function WorkshopDetailPage() {
                     <option value="written">Written</option>
                     <option value="matching">Matching</option>
                     <option value="flashcard">Flashcard</option>
-                    <option value="live_call">Live Call</option>
                   </select>
                 </div>
               </div>

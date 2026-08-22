@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -7,6 +7,7 @@ import { useEpisodePlayback, usePostEpisodeProgress, useCompleteWorkshopEpisode 
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
+import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import toast from "react-hot-toast";
 
 export default function LearningPlayerPage() {
@@ -19,6 +20,7 @@ export default function LearningPlayerPage() {
   const [speed, setSpeed] = useState<string>("");
   const [quality, setQuality] = useState<string>("");
   const [isMarkedComplete, setIsMarkedComplete] = useState(false);
+  const [hlsFailed, setHlsFailed] = useState(false);
 
   const startRef = useRef<number>(Date.now());
   const completedRef = useRef(false);
@@ -51,7 +53,7 @@ export default function LearningPlayerPage() {
     );
   }
 
-  if (!playback?.videoUrl) {
+  if (!playback?.videoUrl && !playback?.hlsUrl) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-3" style={{ background: "#000" }}>
         <p className="text-sm text-white/75">{uiStrings?.errorGeneric}</p>
@@ -65,8 +67,8 @@ export default function LearningPlayerPage() {
     );
   }
 
+  const useHls = !!playback?.hlsUrl && !hlsFailed;
   const hasQualityChoice = playback.qualityOptions.length > 1;
-  const videoSrc = withResumeTime(normalizeBunnyUrl(playback.videoUrl), playback.resumeAtSeconds);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "#000" }}>
@@ -91,12 +93,22 @@ export default function LearningPlayerPage() {
           containerId="workshop-episode-root"
           showFullscreenButton={true}
         >
-          <iframe
-            src={videoSrc}
-            className="w-full h-full border-0"
-            allow="accelerometer; gyroscope; autoplay; encrypted-media"
-            title={playback.title}
-          />
+          {useHls ? (
+            <PlyrPlayer
+              hlsUrl={playback.hlsUrl!}
+              startAt={playback.resumeAtSeconds}
+              speed={parseFloat(speed) || 1}
+              autoplay={false}
+              onError={() => setHlsFailed(true)}
+            />
+          ) : (
+            <iframe
+              src={withResumeTime(normalizeBunnyUrl(playback.videoUrl!), playback.resumeAtSeconds)}
+              className="w-full h-full border-0"
+              allow="accelerometer; gyroscope; autoplay; encrypted-media"
+              title={playback.title}
+            />
+          )}
         </VideoWatermark>
 
         <div className="w-full max-w-5xl flex items-center gap-2 flex-wrap">
@@ -116,7 +128,7 @@ export default function LearningPlayerPage() {
               ))}
             </select>
 
-            {hasQualityChoice && (
+            {hasQualityChoice && !useHls && (
               <select
                 value={quality}
                 onChange={(e) => setQuality(e.target.value)}
