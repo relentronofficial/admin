@@ -105,6 +105,7 @@ export default async function RootLayout({
       </head>
       <body
         className={`${inter.variable} antialiased min-h-screen bg-background`}
+        suppressHydrationWarning
       >
         <Providers
           initialConfig={initialConfig}
