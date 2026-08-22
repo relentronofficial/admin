@@ -34,18 +34,14 @@ const _kMuted = Color(0xFF808080);
 // Support WhatsApp — update this number in production
 const _kSupportWhatsAppUrl = 'https://wa.me/919000000000';
 
-// ── Wizard step definition ────────────────────────────────────────────────────
+// ── Wizard step label helpers ─────────────────────────────────────────────────
 
-enum _Step { welcome, education, profile, documents, guidedMedia, review }
-
-const _stepOrder = [
-  _Step.welcome,
-  _Step.education,
-  _Step.profile,
-  _Step.documents,
-  _Step.guidedMedia,
-  _Step.review,
-];
+String _contentStepLabel(int index, int total) {
+  if (total == 1) return 'Before You Begin';
+  if (index == 0) return 'Before You Begin';
+  if (index == total - 1) return 'How It Works';
+  return 'Step ${index + 1}';
+}
 
 const _requiredFields = ['firstName', 'businessName', 'businessType', 'city', 'state'];
 
@@ -74,7 +70,7 @@ class OnboardingScreen extends ConsumerWidget {
         ),
         data: (state) {
           if (state.verificationStatus == 'under_review') {
-            return const _PendingReviewView();
+            return _PendingReviewView(submittedAt: state.onboardingSubmittedAt);
           }
           if (state.verificationStatus == 'verified' || state.onboardingCompleted) {
             return const _VerifiedView();
@@ -92,7 +88,8 @@ class OnboardingScreen extends ConsumerWidget {
 // ── Terminal states ────────────────────────────────────────────────────────────
 
 class _PendingReviewView extends ConsumerWidget {
-  const _PendingReviewView();
+  const _PendingReviewView({this.submittedAt});
+  final String? submittedAt;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -105,8 +102,16 @@ class _PendingReviewView extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _iconBox(Icons.hourglass_top_rounded, _kAmber),
+            const SizedBox(height: 20),
             Text('Application Submitted',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: context.tokens.textPrimary)),
+            const SizedBox(height: 8),
+            if (submittedAt != null)
+              Text(
+                'Submitted ${_formatRelativeDate(submittedAt!)}',
+                style: TextStyle(color: _kAmber, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
             const SizedBox(height: 12),
             Text(
               "Your onboarding has been submitted successfully and is waiting for admin approval. "
@@ -469,94 +474,96 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
   bool get _ready =>
       _missingFields.isEmpty && widget.state.documents.isNotEmpty;
 
-  VoidCallback? _onNext() {
-    final profilePage = _stepOrder.indexOf(_Step.profile);
-    final reviewPage = _stepOrder.indexOf(_Step.review);
-    if (_page == profilePage) return _saving ? null : _saveAndNext;
-    if (_page == reviewPage) return (_ready && !_submitting) ? _submit : null;
-    return () => _goTo(_page + 1);
-  }
-
-  String _nextLabel() {
-    if (_page == 0) return 'Get Started';
-    if (_page == _stepOrder.indexOf(_Step.profile)) {
-      return _saving ? 'Saving…' : 'Continue';
-    }
-    if (_page == _stepOrder.indexOf(_Step.review)) {
-      return _submitting ? 'Submitting…' : 'Submit Application';
-    }
-    return 'Continue';
-  }
-
   @override
   Widget build(BuildContext context) {
     final contentAsync = ref.watch(onboardingContentProvider);
-    if (contentAsync.isLoading && (_page == 1 || _page == 4)) {
+    final content = contentAsync.valueOrNull ?? const <OnboardingContentStep>[];
+
+    // Only include content steps that are explicitly active (null → treat as active
+    // for backwards compat with backends that don't return the isActive field).
+    final activeContent = content.where((c) => c.isActive != false).toList();
+
+    // Dynamic indices — depend on how many admin content steps are active.
+    final profileIdx = 1 + activeContent.length;   // welcome + N content steps
+    final reviewIdx  = profileIdx + 2;
+    final totalPages = reviewIdx + 1;
+
+    // Show skeleton while content is loading and the user is already on a
+    // content-step page (rare but possible if content fetch is slow).
+    final onContentStep = _page >= 1 && _page < profileIdx;
+    if (contentAsync.isLoading && onContentStep) {
       return const _ContentStepSkeleton();
     }
-    final content = contentAsync.valueOrNull ?? const <OnboardingContentStep>[];
-    // Only match steps that are active (null = not returned by old backend = treat as active)
-    OnboardingContentStep? find(String key) {
-      for (final c in content) {
-        if (c.stepKey == key && c.isActive != false) return c;
-      }
-      return null;
+
+    final pages = <Widget>[
+      const _WelcomeStep(),
+      ...activeContent.asMap().entries.map(
+        (e) => _ContentStep(
+          content: e.value,
+          stepLabel: _contentStepLabel(e.key, activeContent.length),
+        ),
+      ),
+      _ProfileStep(
+        profile: _profile,
+        onChanged: (k, v) => setState(() => _profile[k] = v),
+        onPickPhoto: _pickProfilePhoto,
+        uploadingPhoto: _uploadingPhoto,
+      ),
+      _DocumentsStep(
+        documentType: _documentType,
+        onTypeChanged: (v) => setState(() => _documentType = v),
+        uploading: _uploading,
+        onPick: _pickAndUploadDocument,
+        documents: widget.state.documents,
+        onDelete: _deleteDocument,
+        deleting: _deleting,
+      ),
+      _ReviewStep(
+        profile: _profile,
+        documentCount: widget.state.documents.length,
+        missingFields: _missingFields,
+        ready: _ready,
+      ),
+    ];
+
+    VoidCallback? onNext;
+    if (_page == profileIdx) {
+      onNext = _saving ? null : _saveAndNext;
+    } else if (_page == reviewIdx) {
+      onNext = (_ready && !_submitting) ? _submit : null;
+    } else {
+      onNext = () => _goTo(_page + 1);
+    }
+
+    String nextLabel;
+    if (_page == 0) {
+      nextLabel = 'Get Started';
+    } else if (_page == profileIdx) {
+      nextLabel = _saving ? 'Saving…' : 'Continue';
+    } else if (_page == reviewIdx) {
+      nextLabel = _submitting ? 'Submitting…' : 'Submit Application';
+    } else {
+      nextLabel = 'Continue';
     }
 
     return SafeArea(
       child: Column(
         children: [
-          // Changes requested banner
           if (widget.state.verificationStatus == 'changes_requested')
             _ChangesBanner(note: widget.state.onboardingReviewNote),
-
-          // Page content
           Expanded(
             child: PageView(
               controller: _pageController,
               physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _WelcomeStep(),
-                _ContentStep(
-                  content: find('introduction'),
-                  stepLabel: 'Before You Begin',
-                ),
-                _ProfileStep(
-                  profile: _profile,
-                  onChanged: (k, v) => setState(() => _profile[k] = v),
-                  onPickPhoto: _pickProfilePhoto,
-                  uploadingPhoto: _uploadingPhoto,
-                ),
-                _DocumentsStep(
-                  documentType: _documentType,
-                  onTypeChanged: (v) => setState(() => _documentType = v),
-                  uploading: _uploading,
-                  onPick: _pickAndUploadDocument,
-                  documents: widget.state.documents,
-                  onDelete: _deleteDocument,
-                  deleting: _deleting,
-                ),
-                _ContentStep(
-                  content: find('guided_instructions'),
-                  stepLabel: 'How It Works',
-                ),
-                _ReviewStep(
-                  profile: _profile,
-                  documentCount: widget.state.documents.length,
-                  missingFields: _missingFields,
-                  ready: _ready,
-                ),
-              ],
+              children: pages,
             ),
           ),
-
-          // Sticky bottom nav
           _BottomNav(
             currentPage: _page,
-            total: _stepOrder.length,
+            total: totalPages,
             onBack: _page > 0 ? () => _goTo(_page - 1) : null,
-            onNext: _onNext(),
-            nextLabel: _nextLabel(),
+            onNext: onNext,
+            nextLabel: nextLabel,
           ),
         ],
       ),

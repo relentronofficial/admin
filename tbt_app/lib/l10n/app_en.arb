@@ -46,5 +46,19 @@
   "authForgotPassword": "Forgot password?",
 
   "profileSignOutTitle": "Sign Out",
-  "profileSignOutConfirm": "Are you sure you want to sign out?"
+  "profileSignOutConfirm": "Are you sure you want to sign out?",
+
+  "profileTitle": "Elite Profile",
+  "profileEditTitle": "EDIT PROFILE",
+  "profileLoadError": "Failed to load profile",
+  "profileNameSaveError": "Failed to save name",
+  "profileAvatarGallery": "Choose from Gallery",
+  "profileAvatarCamera": "Take Photo",
+  "profileAvatarInvalidType": "Please select an image file",
+  "profileAvatarTooLarge": "Image must be under 5 MB",
+  "profileAvatarUploadError": "Avatar upload failed",
+  "profileSaveError": "Could not save profile",
+  "profileNotifSaveError": "Could not update preferences",
+  "profileDeviceRevokeError": "Could not revoke device",
+  "profileAppVersion": "App Version"
 }

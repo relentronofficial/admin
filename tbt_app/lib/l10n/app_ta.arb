@@ -43,5 +43,19 @@
   "authForgotPassword": "கடவுச்சொல் மறந்துவிட்டதா?",
 
   "profileSignOutTitle": "வெளியேறு",
-  "profileSignOutConfirm": "நிச்சயமாக வெளியேற வேண்டுமா?"
+  "profileSignOutConfirm": "நிச்சயமாக வெளியேற வேண்டுமா?",
+
+  "profileTitle": "எலைட் சுயவிவரம்",
+  "profileEditTitle": "சுயவிவரத்தை திருத்து",
+  "profileLoadError": "சுயவிவரத்தை ஏற்ற முடியவில்லை",
+  "profileNameSaveError": "பெயரை சேமிக்க முடியவில்லை",
+  "profileAvatarGallery": "கேலரியிலிருந்து தேர்ந்தெடு",
+  "profileAvatarCamera": "புகைப்படம் எடு",
+  "profileAvatarInvalidType": "படக் கோப்பை தேர்ந்தெடுக்கவும்",
+  "profileAvatarTooLarge": "படம் 5 MB-க்கு கீழே இருக்க வேண்டும்",
+  "profileAvatarUploadError": "அவதார் பதிவேற்றம் தோல்வியடைந்தது",
+  "profileSaveError": "சுயவிவரத்தை சேமிக்க முடியவில்லை",
+  "profileNotifSaveError": "விருப்பங்களை புதுப்பிக்க முடியவில்லை",
+  "profileDeviceRevokeError": "சாதனத்தை ரத்து செய்ய முடியவில்லை",
+  "profileAppVersion": "பயன்பாட்டு பதிப்பு"
 }

@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
+
+import '../../../core/extensions/build_context_ext.dart';
 
 import '../../../core/constants/routes.dart';
 import '../../../features/auth/providers/auth_provider.dart';
@@ -57,7 +60,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (mounted) {
         setState(() => _savingName = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save name')),
+          SnackBar(content: Text(context.l10n.profileNameSaveError)),
         );
       }
     }
@@ -77,14 +80,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ListTile(
               leading: Icon(Icons.photo_library_outlined,
                   color: context.tokens.textPrimary),
-              title: Text('Choose from Gallery',
+              title: Text(context.l10n.profileAvatarGallery,
                   style: TextStyle(color: context.tokens.textPrimary)),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
             ListTile(
               leading: Icon(Icons.camera_alt_outlined,
                   color: context.tokens.textPrimary),
-              title: Text('Take Photo',
+              title: Text(context.l10n.profileAvatarCamera,
                   style: TextStyle(color: context.tokens.textPrimary)),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
@@ -104,14 +107,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     // Same guards as the web upload path: image/* MIME + 5 MB cap. Applied
     // before the spinner so a rejected file doesn't flash a loading state.
     // The image_picker already scales max width to 800 px & quality 85, so
-    // most photos will land well under 5 MB — the check is defence for large
+    // most photos will land well under 5 MB â€” the check is defence for large
     // pre-existing files coming from Gallery.
     final ext = picked.name.split('.').last.toLowerCase();
     const validExts = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'heic'};
     if (!validExts.contains(ext)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select an image file')),
+          SnackBar(content: Text(context.l10n.profileAvatarInvalidType)),
         );
       }
       return;
@@ -120,7 +123,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (bytes.lengthInBytes > 5 * 1024 * 1024) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image must be under 5 MB')),
+          SnackBar(content: Text(context.l10n.profileAvatarTooLarge)),
         );
       }
       return;
@@ -139,7 +142,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Avatar upload failed')),
+          SnackBar(content: Text(context.l10n.profileAvatarUploadError)),
         );
       }
     } finally {
@@ -150,7 +153,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _shareProfile(Member member) async {
     final name = member.name;
     final url = 'https://app.tamilbusinesstribe.com/profile/${member.id}';
-    final text = 'Check out $name on Tamil Business Tribe — $url';
+    final text = 'Check out $name on Tamil Business Tribe â€” $url';
     await Share.share(text, subject: name);
   }
 
@@ -159,19 +162,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: context.tokens.bgModal,
-        title: Text('Sign Out',
+        title: Text(context.l10n.profileSignOutTitle,
             style: TextStyle(color: context.tokens.textPrimary)),
-        content: Text('Are you sure you want to sign out?',
+        content: Text(context.l10n.profileSignOutConfirm,
             style: TextStyle(color: context.tokens.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
+            child: Text(context.l10n.commonCancel,
                 style: TextStyle(color: context.tokens.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Sign Out',
+            child: Text(context.l10n.commonSignOut,
                 style: TextStyle(color: Theme.of(context).colorScheme.primary)),
           ),
         ],
@@ -216,7 +219,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                     Expanded(
                       child: Text(
-                        'Elite Profile',
+                        context.l10n.profileTitle,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: textColor,
@@ -260,12 +263,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Icon(Icons.error_outline,
                   color: context.tokens.textMuted, size: 40),
               const SizedBox(height: 12),
-              Text('Failed to load profile',
+              Text(context.l10n.profileLoadError,
                   style: TextStyle(color: context.tokens.textSecondary)),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => ref.invalidate(meNotifierProvider),
-                child: const Text('Retry'),
+                child: Text(context.l10n.commonRetry),
               ),
             ],
           ),
@@ -280,7 +283,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               onTapAvatar: _pickAvatar,
             ),
             const SizedBox(height: 24),
-            // ── Stats row (Streak · Connections · Points)
+            // ── Stats row (Streak Â· Connections Â· Points)
             const _StatsRowNew(),
             const SizedBox(height: 28),
             // ── Signature membership card
@@ -336,7 +339,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 16),
             // Retained backend-driven sections (below settings so they
-            // don't clutter the hero — kept because they surface DB
+            // don't clutter the hero â€” kept because they surface DB
             // truth: subscription, tiers, notif prefs, devices).
             const _SubscriptionSection(),
             const SizedBox(height: 16),
@@ -348,9 +351,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 24),
             _SettingsGroup(
               children: [
+                const _AppVersionRow(),
                 _SettingsLinkRow(
                   icon: Icons.logout_rounded,
-                  label: 'Sign Out',
+                  label: context.l10n.profileSignOutTitle,
                   danger: true,
                   onTap: _logout,
                 ),
@@ -395,7 +399,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 }
 
-// ── Hero section — gradient-ring avatar + name + role/location + ONLINE
+// ── Hero section â€” gradient-ring avatar + name + role/location + ONLINE
 //    pill + hero badge pills (10X Growth Club / Pillar of Sakthi).
 //    Matches co-worker's design spec.
 
@@ -455,7 +459,7 @@ class _HeroSectionState extends ConsumerState<_HeroSection> {
 
     return Column(
       children: [
-        // Avatar stack — outer gradient ring + inner bg + avatar image
+        // Avatar stack â€” outer gradient ring + inner bg + avatar image
         GestureDetector(
           onTap: widget.uploading ? null : widget.onTapAvatar,
           child: SizedBox(
@@ -673,7 +677,7 @@ class _HeroBadge extends StatelessWidget {
   }
 }
 
-// ── Stats row — 3 items (Daily Streak · Connections · TBT Points) with
+// ── Stats row â€” 3 items (Daily Streak Â· Connections Â· TBT Points) with
 //    vertical dividers between them. Wrapped in card decoration.
 
 class _StatsRowNew extends ConsumerWidget {
@@ -783,7 +787,7 @@ class _StatsRowNew extends ConsumerWidget {
   }
 }
 
-// ── Settings block — outer container with row list. Each row is a
+// ── Settings block â€” outer container with row list. Each row is a
 //    _SettingsLinkRow (icon + label + chevron). Custom dark toggle
 //    row for theme.
 
@@ -975,7 +979,7 @@ class _SettingsThemeRow extends ConsumerWidget {
   }
 }
 
-// ── Membership card + tabs shell — pull raw profile once, share among children.
+// ── Membership card + tabs shell â€” pull raw profile once, share among children.
 
 class _MembershipCardFromRaw extends ConsumerStatefulWidget {
   const _MembershipCardFromRaw({required this.member});
@@ -1001,7 +1005,7 @@ class _MembershipCardFromRawState
       final data = await fetchRawProfile(ref);
       if (mounted) setState(() => _raw = data);
     } catch (_) {
-      // fail silent — card still renders with fallbacks
+      // fail silent â€” card still renders with fallbacks
     }
   }
 
@@ -1073,480 +1077,6 @@ class _ProfileTabsFromRawState extends ConsumerState<_ProfileTabsFromRaw> {
   }
 }
 
-// ── Settings link tile (legal / connections shortcuts) ───────────────────────
-
-class _SettingsLinkTile extends StatelessWidget {
-  const _SettingsLinkTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: tokens.bgSurface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: tokens.borderCard),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: tokens.textSecondary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: tokens.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                Icon(Icons.chevron_right,
-                    color: tokens.textMuted, size: 20),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Avatar section ────────────────────────────────────────────────────────────
-
-class _AvatarSection extends StatelessWidget {
-  const _AvatarSection({
-    required this.member,
-    required this.uploading,
-    required this.onTap,
-  });
-
-  final Member member;
-  final bool uploading;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: context.tokens.bgSurface,
-      padding: const EdgeInsets.symmetric(vertical: 32),
-      child: Column(
-        children: [
-          Semantics(
-            label: 'Change profile photo',
-            button: true,
-            child: GestureDetector(
-            onTap: uploading ? null : onTap,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                _Avatar(avatarUrl: member.avatarUrl, name: member.name),
-                if (uploading)
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                    child: const Center(
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.camera_alt,
-                        color: Colors.white, size: 14),
-                  ),
-                ),
-              ],
-            ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            member.name,
-            style: TextStyle(
-              color: context.tokens.textPrimary,
-              fontFamily: 'Rajdhani',
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          // Plan chip + earned-badge chips wrap onto multiple lines if needed
-          // so long badge lists don't push the layout wider than the avatar.
-          _ProfileChipsRow(plan: member.membershipPlan),
-        ],
-      ),
-    );
-  }
-}
-
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.avatarUrl, required this.name});
-
-  final String? avatarUrl;
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    if (avatarUrl != null && avatarUrl!.isNotEmpty) {
-      final dpr = MediaQuery.devicePixelRatioOf(context);
-      return ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: avatarUrl!,
-          width: 80,
-          height: 80,
-          fit: BoxFit.cover,
-          memCacheWidth: (80 * dpr).round(),
-          memCacheHeight: (80 * dpr).round(),
-          placeholder: (_, __) => _Initials(name: name),
-          errorWidget: (_, __, ___) => _Initials(name: name),
-        ),
-      );
-    }
-    return _Initials(name: name);
-  }
-}
-
-class _Initials extends StatelessWidget {
-  const _Initials({required this.name});
-
-  final String name;
-
-  String get _initials {
-    final parts = name.trim().split(' ');
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 80,
-      height: 80,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          _initials,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            fontFamily: 'Rajdhani',
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PlanChip extends StatelessWidget {
-  const _PlanChip({required this.plan});
-
-  final String plan;
-
-  Color _color(BuildContext context) {
-    return switch (plan.toLowerCase()) {
-      'premium' => const Color(0xFF7c3aed),
-      'enterprise' => const Color(0xFF1d4ed8),
-      _ => context.tokens.textMuted,
-    };
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final planColor = _color(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: planColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: planColor.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        plan.toUpperCase(),
-        style: TextStyle(
-          color: planColor,
-          fontFamily: 'Rajdhani',
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
-}
-
-// ── Profile chips row (plan + earned badges) ─────────────────────────────────
-//
-// Mirrors the web profile header, which renders the plan badge next to any
-// earned achievement badges (`profile.badges` — `{id, label, color, bgColor}`
-// from GET /api/user/me). Reads from `fetchRawProfile` for consistency with
-// the neighbouring sections; the endpoint is cached by Dio so no extra hit.
-
-class _ProfileChipsRow extends ConsumerStatefulWidget {
-  const _ProfileChipsRow({required this.plan});
-  final String plan;
-
-  @override
-  ConsumerState<_ProfileChipsRow> createState() => _ProfileChipsRowState();
-}
-
-class _ProfileChipsRowState extends ConsumerState<_ProfileChipsRow> {
-  List<Map<String, dynamic>>? _badges;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final data = await fetchRawProfile(ref);
-      if (!mounted) return;
-      final list = (data['badges'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .toList();
-      setState(() => _badges = list);
-    } catch (_) {
-      // Silent — endpoint may not expose badges yet on legacy backends.
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final badges = _badges ?? const <Map<String, dynamic>>[];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          _PlanChip(plan: widget.plan),
-          for (final b in badges) _BadgeChip(badge: b),
-        ],
-      ),
-    );
-  }
-}
-
-class _BadgeChip extends StatelessWidget {
-  const _BadgeChip({required this.badge});
-  final Map<String, dynamic> badge;
-
-  Color? _parse(String? hex) {
-    if (hex == null) return null;
-    var s = hex.trim();
-    if (s.isEmpty) return null;
-    // Strip common CSS prefixes we can't render as a solid color.
-    s = s.replaceFirst('#', '');
-    if (s.length == 6) s = 'FF$s';
-    if (s.length != 8) return null;
-    final v = int.tryParse(s, radix: 16);
-    return v == null ? null : Color(v);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final label = (badge['label'] as String?) ?? '';
-    if (label.isEmpty) return const SizedBox.shrink();
-    final fg = _parse(badge['color'] as String?) ?? context.tokens.textPrimary;
-    final bg = _parse(badge['bgColor'] as String?) ??
-        context.tokens.textMuted.withValues(alpha: 0.12);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: fg,
-          fontFamily: 'Rajdhani',
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-}
-
-// ── Info section ──────────────────────────────────────────────────────────────
-
-class _InfoSection extends StatelessWidget {
-  const _InfoSection({required this.member});
-
-  final Member member;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
-        child: Column(
-          children: [
-            _InfoRow(
-              icon: Icons.person_outline,
-              label: 'NAME',
-              value: member.name,
-            ),
-            Divider(height: 1, color: context.tokens.borderCard),
-            if (member.email != null)
-              _InfoRow(
-                icon: Icons.email_outlined,
-                label: 'EMAIL',
-                value: member.email!,
-              ),
-            if (member.email != null)
-              Divider(height: 1, color: context.tokens.borderCard),
-            _InfoRow(
-              icon: Icons.phone_outlined,
-              label: 'PHONE',
-              value: member.phone,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          Icon(icon, color: context.tokens.textMuted, size: 18),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: 'Rajdhani',
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                    color: context.tokens.textMuted,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                      color: context.tokens.textPrimary, fontSize: 14),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Edit name section ─────────────────────────────────────────────────────────
-
-class _EditNameSection extends StatelessWidget {
-  const _EditNameSection({
-    required this.controller,
-    required this.saving,
-  });
-
-  final TextEditingController controller;
-  final bool saving;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'FULL NAME',
-            style: TextStyle(
-              fontFamily: 'Rajdhani',
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: context.tokens.textMuted,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: controller,
-            autofocus: true,
-            enabled: !saving,
-            style: TextStyle(color: context.tokens.textPrimary),
-            decoration: inputDecorationOf(context, 'Your full name'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ── Notification preferences section ─────────────────────────────────────────
 
 class _NotificationPrefsSection extends ConsumerStatefulWidget {
@@ -1580,7 +1110,7 @@ class _NotificationPrefsSectionState
       });
     } catch (_) {
       if (!mounted) return;
-      // Silent fail — legacy backends may not expose /preferences yet.
+      // Silent fail â€” legacy backends may not expose /preferences yet.
       setState(() => _loading = false);
     }
   }
@@ -1599,7 +1129,7 @@ class _NotificationPrefsSectionState
       if (mounted) setState(() => _prefs = prev);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update preferences')),
+          SnackBar(content: Text(context.l10n.profileNotifSaveError)),
         );
       }
     } finally {
@@ -1738,7 +1268,7 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not revoke device')),
+          SnackBar(content: Text(context.l10n.profileDeviceRevokeError)),
         );
       }
     } finally {
@@ -1906,7 +1436,7 @@ class _EditPersonalInfoSheetState
   final _goal90 = TextEditingController();
   final _businessEstablished = TextEditingController();
   final _dob = TextEditingController();
-  // 2026-07-28 — extended business fields for the Business tab
+  // 2026-07-28 â€” extended business fields for the Business tab
   final _role = TextEditingController();
   final _industry = TextEditingController();
   final _teamSize = TextEditingController();
@@ -1961,7 +1491,7 @@ class _EditPersonalInfoSheetState
       _annualTurnover.text = (data['annualTurnover'] as String?) ?? '';
       _gstNumber.text = (data['gstNumber'] as String?) ?? '';
       _goal90.text = (data['goalAfter90Days'] as String?) ?? '';
-      // API returns full ISO — keep just the date portion for the picker input.
+      // API returns full ISO â€” keep just the date portion for the picker input.
       final estabRaw = (data['businessEstablishedOn'] as String?) ?? '';
       _businessEstablished.text =
           estabRaw.contains('T') ? estabRaw.split('T').first : estabRaw;
@@ -2006,7 +1536,7 @@ class _EditPersonalInfoSheetState
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not save profile')),
+          SnackBar(content: Text(context.l10n.profileSaveError)),
         );
       }
     } finally {
@@ -2103,7 +1633,7 @@ class _EditPersonalInfoSheetState
                 ),
               ),
               Text(
-                'EDIT PROFILE',
+                context.l10n.profileEditTitle,
                 style: TextStyle(
                   fontFamily: 'Rajdhani',
                   fontSize: 13,
@@ -2154,7 +1684,7 @@ class _EditPersonalInfoSheetState
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: const Text('Cancel'),
+                        child: Text(context.l10n.commonCancel),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -2177,7 +1707,7 @@ class _EditPersonalInfoSheetState
                                   color: Colors.white,
                                 ),
                               )
-                            : const Text('Save'),
+                            : Text(context.l10n.commonSave),
                       ),
                     ),
                   ],
@@ -2186,135 +1716,6 @@ class _EditPersonalInfoSheetState
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ── Stats strip (Points / Streak / Health) ────────────────────────────────────
-
-class _StatsStrip extends ConsumerStatefulWidget {
-  const _StatsStrip();
-
-  @override
-  ConsumerState<_StatsStrip> createState() => _StatsStripState();
-}
-
-class _StatsStripState extends ConsumerState<_StatsStrip> {
-  Map<String, dynamic>? _data;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final data = await fetchRawProfile(ref);
-      if (mounted) {
-        setState(() {
-          _data = data;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading || _data == null) return const SizedBox.shrink();
-    final d = _data!;
-    final points = (d['totalPoints'] as num?)?.toInt() ?? 0;
-    final streak = (d['currentStreak'] as num?)?.toInt() ?? 0;
-    final health = (d['healthPct'] as num?)?.toInt() ??
-        (d['healthScore'] as num?)?.toInt() ??
-        0;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: _Stat(
-              icon: Icons.emoji_events_outlined,
-              value: '$points',
-              label: 'Points',
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _Stat(
-              icon: Icons.local_fire_department,
-              value: '${streak}d',
-              label: 'Streak',
-              color: const Color(0xFFf59e0b),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _Stat(
-              icon: Icons.favorite_outline,
-              value: '$health%',
-              label: 'Health',
-              color: const Color(0xFFef4444),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat({
-    required this.icon,
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: context.tokens.bgSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.tokens.borderCard),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              fontFamily: 'Rajdhani',
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              color: context.tokens.textMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -2357,9 +1758,9 @@ class _SubscriptionSectionState extends ConsumerState<_SubscriptionSection> {
   }
 
   String _fmtDate(String? iso) {
-    if (iso == null) return '—';
+    if (iso == null) return 'â€”';
     final dt = DateTime.tryParse(iso)?.toLocal();
-    if (dt == null) return '—';
+    if (dt == null) return 'â€”';
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 
@@ -2523,7 +1924,7 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
   }
 
   Widget _tierRow(Map<String, dynamic> t) {
-    final label = (t['label'] as String?) ?? (t['name'] as String?) ?? '—';
+    final label = (t['label'] as String?) ?? (t['name'] as String?) ?? 'â€”';
     final status = (t['status'] as String?) ?? 'locked';
     final unlocked = status == 'unlocked' || t['unlocked'] == true;
     final condition = t['unlockCondition'] as String? ?? '';
@@ -2575,64 +1976,57 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
   }
 }
 
-// ── Dark-mode toggle tile ─────────────────────────────────────────────────────
+// ── App version row ───────────────────────────────────────────────────────────
 
-class _ThemeToggleTile extends ConsumerWidget {
-  const _ThemeToggleTile();
+class _AppVersionRow extends StatefulWidget {
+  const _AppVersionRow();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(themeModeProvider);
-    final isDark = mode == ThemeMode.dark;
+  State<_AppVersionRow> createState() => _AppVersionRowState();
+}
+
+class _AppVersionRowState extends State<_AppVersionRow> {
+  String? _version;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) {
+        setState(() => _version = '${info.version} (${info.buildNumber})');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final text = isDark ? Colors.white : Colors.black;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(
-              isDark ? Icons.dark_mode : Icons.light_mode,
-              color: Theme.of(context).colorScheme.primary,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Dark mode',
-                    style: TextStyle(
-                      color: context.tokens.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Toggle app appearance',
-                    style: TextStyle(
-                      color: context.tokens.textMuted,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded,
+              color: Color(0xFFD30814), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              context.l10n.profileAppVersion,
+              style: TextStyle(
+                color: text,
+                fontSize: 14.5,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            Switch(
-              value: isDark,
-              onChanged: (v) => ref
-                  .read(themeModeProvider.notifier)
-                  .setMode(v ? ThemeMode.dark : ThemeMode.light),
-              activeColor: Theme.of(context).colorScheme.primary,
+          ),
+          Text(
+            _version ?? 'â€”',
+            style: TextStyle(
+              color: text.withValues(alpha: 0.5),
+              fontSize: 13,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

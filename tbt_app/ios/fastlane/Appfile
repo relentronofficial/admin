@@ -1,0 +1,2 @@
+app_identifier("com.tamilbusinesstribe.tbt_app")
+team_id(ENV["APPLE_TEAM_ID"])

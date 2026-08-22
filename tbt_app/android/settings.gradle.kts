@@ -21,6 +21,7 @@ plugins {
     id("com.android.application") version "8.7.0" apply false
     // START: FlutterFire Configuration
     id("com.google.gms.google-services") version("4.3.15") apply false
+    id("com.google.firebase.crashlytics") version "3.0.2" apply false
     // END: FlutterFire Configuration
     // Bumped from 1.8.22 → 2.1.20 so the compiler can read metadata from
     // dependencies compiled with newer Kotlin (e.g. package_info_plus 9.0.1
