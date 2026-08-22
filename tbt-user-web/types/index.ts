@@ -719,6 +719,7 @@ export interface EpisodePlayback {
   title: string;
   description?: string | null;
   videoUrl?: string | null;
+  hlsUrl?: string | null;
   videoType: string;
   durationSeconds?: number | null;
   resumeAtSeconds: number;
