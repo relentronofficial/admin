@@ -45,4 +45,7 @@ export const onboardingService = {
   deleteDocument: (id: string) => apiClient.delete<never, ApiResponse<null>>(`/api/onboarding/documents/${id}`),
 
   submit: () => apiClient.post<never, ApiResponse<{ verificationStatus: string; onboardingSubmittedAt: string }>>("/api/onboarding/submit", {}),
+
+  presignProfilePhoto: (data: { filename: string; contentType: string }) =>
+    apiClient.post<never, ApiResponse<{ uploadUrl: string; publicUrl: string }>>("/api/onboarding/photo/presign", data),
 };

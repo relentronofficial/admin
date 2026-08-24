@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { Video, Calendar } from "lucide-react";
+import { Video, Calendar, Camera, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import {
   useOnboardingState,
@@ -13,6 +13,7 @@ import {
   useRegisterOnboardingDocument,
   useDeleteOnboardingDocument,
   useSubmitOnboarding,
+  usePresignProfilePhoto,
 } from "@/lib/hooks/useOnboarding";
 import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
 import type { OnboardingContentStep } from "@/lib/api/services/onboarding.service";
@@ -23,8 +24,13 @@ import type { OnboardingContentStep } from "@/lib/api/services/onboarding.servic
 // comes from the onboarding_content table (useOnboardingContent). See
 // SELF_ONBOARDING_SPECKIT.md — this is a scope decision, not an oversight.
 
-type Step = "welcome" | "education" | "profile" | "documents" | "guided_media" | "review";
-const STEP_ORDER: Step[] = ["welcome", "education", "profile", "documents", "guided_media", "review"];
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+// Dynamic steps: "welcome", "education:<stepKey>", "profile", "documents", "review"
+// Step keys from the DB become "education:<stepKey>" segments.
+type FixedStep = "welcome" | "profile" | "documents" | "review";
+type DynamicStep = `education:${string}`;
+type Step = FixedStep | DynamicStep;
 
 const REQUIRED_FIELDS = ["firstName", "businessName", "businessType", "city", "state"] as const;
 
@@ -35,15 +41,21 @@ const DOCUMENT_TYPES = [
   { value: "other", label: "Other" },
 ];
 
+function buildStepOrder(contentSteps: OnboardingContentStep[]): Step[] {
+  const educationSteps: DynamicStep[] = contentSteps.map((c) => `education:${c.stepKey}` as DynamicStep);
+  return ["welcome", ...educationSteps, "profile", "documents", "review"];
+}
+
 // ─── Shared bits ────────────────────────────────────────────────────────────
 
-function ProgressBar({ step }: { step: Step }) {
-  const index = STEP_ORDER.indexOf(step);
-  const pct = Math.round(((index + 1) / STEP_ORDER.length) * 100);
+function ProgressBar({ step, stepOrder }: { step: Step; stepOrder: Step[] }) {
+  const index = stepOrder.indexOf(step);
+  const total = stepOrder.length;
+  const pct = Math.round(((index + 1) / total) * 100);
   return (
     <div className="mb-6">
       <div className="flex justify-between text-xs text-muted-foreground mb-2">
-        <span>Step {index + 1} of {STEP_ORDER.length}</span>
+        <span>Step {index + 1} of {total}</span>
         <span>{pct}%</span>
       </div>
       <div className="h-1.5 rounded-full bg-[var(--color-surface-overlay)] overflow-hidden">
@@ -53,8 +65,7 @@ function ProgressBar({ step }: { step: Step }) {
   );
 }
 
-function ContentBlock({ content }: { content?: OnboardingContentStep }) {
-  if (!content) return null;
+function ContentBlock({ content }: { content: OnboardingContentStep }) {
   const isHls = content.videoUrl?.endsWith(".m3u8");
   return (
     <div className="space-y-4">
@@ -73,6 +84,17 @@ function ContentBlock({ content }: { content?: OnboardingContentStep }) {
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <audio src={content.audioUrl} controls className="w-full" />
       )}
+    </div>
+  );
+}
+
+function ContentStepSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      <div className="h-4 rounded bg-[var(--color-surface-overlay)] w-3/4" />
+      <div className="h-4 rounded bg-[var(--color-surface-overlay)] w-full" />
+      <div className="h-4 rounded bg-[var(--color-surface-overlay)] w-5/6" />
+      <div className="rounded-xl bg-[var(--color-surface-overlay)] aspect-video" />
     </div>
   );
 }
@@ -146,10 +168,23 @@ function VerificationMeetingCard() {
   );
 }
 
-function PendingReviewView() {
+function relativeDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const diff = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diff / 86_400_000);
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
+}
+
+function PendingReviewView({ submittedAt }: { submittedAt: string | null }) {
+  const when = relativeDate(submittedAt);
   return (
     <div className="max-w-lg mx-auto text-center py-16">
       <h1 className="text-xl font-bold text-foreground mb-3">Application Submitted</h1>
+      {when && (
+        <p className="text-xs text-muted-foreground mb-2">Submitted {when}</p>
+      )}
       <p className="text-sm text-muted-foreground leading-relaxed">
         Your onboarding has been submitted successfully and is waiting for admin approval.
         We&apos;ll notify you as soon as it&apos;s reviewed.
@@ -160,12 +195,23 @@ function PendingReviewView() {
 }
 
 function RejectedView({ note }: { note: string | null }) {
+  const whatsappUrl = "https://wa.me/918778766710?text=Hi%2C%20my%20TBT%20application%20was%20not%20approved.%20Can%20you%20help%3F";
   return (
     <div className="max-w-lg mx-auto text-center py-16">
       <h1 className="text-xl font-bold text-foreground mb-3">Application Not Approved</h1>
-      <p className="text-sm text-muted-foreground leading-relaxed">
+      <p className="text-sm text-muted-foreground leading-relaxed mb-6">
         {note || "Your application was not approved. Please contact support for details."}
       </p>
+      <a
+        href={whatsappUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
+        style={{ background: "#25D366" }}
+      >
+        <MessageCircle size={16} />
+        Contact Support on WhatsApp
+      </a>
     </div>
   );
 }
@@ -177,24 +223,32 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   initialDocuments: { id: string; documentType: string; documentUrl: string; status: string }[];
   changesNote: string | null;
 }) {
-  const router = useRouter();
-  const { data: content } = useOnboardingContent();
+  const { data: contentSteps, isLoading: contentLoading } = useOnboardingContent();
   const saveProgress = useSaveOnboardingProgress();
-  const presign = usePresignOnboardingDocument();
+  const presignDoc = usePresignOnboardingDocument();
   const registerDoc = useRegisterOnboardingDocument();
   const deleteDoc = useDeleteOnboardingDocument();
+  const presignPhoto = usePresignProfilePhoto();
   const submit = useSubmitOnboarding();
+
+  const stepOrder = useMemo(
+    () => buildStepOrder(contentSteps ?? []),
+    [contentSteps],
+  );
 
   const [step, setStep] = useState<Step>("welcome");
   const [profile, setProfile] = useState<Record<string, any>>(initialProfile);
   const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0].value);
   const [uploading, setUploading] = useState(false);
-
-  const introContent = useMemo(() => content?.find((c) => c.stepKey === "introduction"), [content]);
-  const guidedContent = useMemo(() => content?.find((c) => c.stepKey === "guided_instructions"), [content]);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | undefined>(undefined);
 
   const missingFields = REQUIRED_FIELDS.filter((f) => !profile[f]);
   const readyToSubmit = missingFields.length === 0 && initialDocuments.length > 0;
+
+  const currentIndex = stepOrder.indexOf(step);
+  const prevStep = currentIndex > 0 ? stepOrder[currentIndex - 1] : undefined;
+  const nextStep = currentIndex < stepOrder.length - 1 ? stepOrder[currentIndex + 1] : undefined;
 
   const saveAndAdvance = async (next: Step) => {
     try {
@@ -205,10 +259,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     }
   };
 
-  const handleUpload = async (file: File) => {
+  const handleDocUpload = async (file: File) => {
     setUploading(true);
     try {
-      const { data } = await presign.mutateAsync({ filename: file.name, contentType: file.type, documentType });
+      const { data } = await presignDoc.mutateAsync({ filename: file.name, contentType: file.type, documentType });
       await fetch(data.uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       await registerDoc.mutateAsync({ documentType, documentUrl: data.publicUrl });
       toast.success("Document uploaded");
@@ -216,6 +270,20 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
       toast.error("Upload failed. Please try again.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handlePhotoUpload = async (file: File) => {
+    setPhotoUploading(true);
+    try {
+      const { data } = await presignPhoto.mutateAsync({ filename: file.name, contentType: file.type });
+      await fetch(data.uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      setProfile((p) => ({ ...p, profilePhotoUrl: data.publicUrl }));
+      toast.success("Photo uploaded");
+    } catch {
+      toast.error("Photo upload failed. Please try again.");
+    } finally {
+      setPhotoUploading(false);
     }
   };
 
@@ -230,7 +298,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
   return (
     <div className="py-8 px-4">
-      <ProgressBar step={step} />
+      <ProgressBar step={step} stepOrder={stepOrder} />
 
       {changesNote && (
         <div className="max-w-2xl mx-auto mb-6 p-4 rounded-xl text-sm" style={{ background: "color-mix(in srgb, var(--color-alert) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert) 30%, transparent)" }}>
@@ -239,8 +307,9 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         </div>
       )}
 
+      {/* ── Welcome ── */}
       {step === "welcome" && (
-        <StepShell title="Welcome to TBT 👋" onNext={() => setStep("education")}>
+        <StepShell title="Welcome to TBT 👋" onNext={() => setStep(stepOrder[1] ?? "profile")}>
           <p className="text-sm text-muted-foreground leading-relaxed">
             Let&apos;s get your account set up. This should take about 5–10 minutes — you can save your
             progress and come back anytime before submitting.
@@ -248,25 +317,77 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         </StepShell>
       )}
 
-      {step === "education" && (
-        <StepShell title="Before you start" onBack={() => setStep("welcome")} onNext={() => setStep("profile")}>
-          {introContent ? <ContentBlock content={introContent} /> : (
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              We&apos;ll ask you for a few business details and a document to verify your account.
-              Once submitted, our team reviews it and you&apos;ll be notified as soon as you&apos;re approved.
-            </p>
-          )}
-        </StepShell>
-      )}
+      {/* ── Dynamic education steps (one per onboarding_content row) ── */}
+      {step.startsWith("education:") && (() => {
+        const key = step.slice("education:".length);
+        const content = contentSteps?.find((c) => c.stepKey === key);
+        const title = content?.title || "Before you continue";
+        return (
+          <StepShell
+            title={title}
+            onBack={prevStep ? () => setStep(prevStep) : undefined}
+            onNext={() => setStep(nextStep ?? "review")}
+          >
+            {contentLoading ? (
+              <ContentStepSkeleton />
+            ) : content ? (
+              <ContentBlock content={content} />
+            ) : (
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                We&apos;ll ask you for a few business details and a document to verify your account.
+                Once submitted, our team reviews it and you&apos;ll be notified as soon as you&apos;re approved.
+              </p>
+            )}
+          </StepShell>
+        );
+      })()}
 
+      {/* ── Profile ── */}
       {step === "profile" && (
         <StepShell
           title="Tell us about your business"
-          onBack={() => setStep("education")}
-          onNext={() => saveAndAdvance("documents")}
+          onBack={prevStep ? () => setStep(prevStep) : undefined}
+          onNext={() => saveAndAdvance(nextStep ?? "review")}
           nextDisabled={saveProgress.isPending}
         >
-          <div className="space-y-4">
+          <div className="space-y-5">
+            {/* Profile photo */}
+            <div className="flex flex-col items-center gap-3 pb-2">
+              <div
+                className="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer group"
+                style={{ background: "var(--color-surface-overlay)", border: "2px dashed var(--color-border-subtle)" }}
+                onClick={() => photoInputRef.current?.click()}
+              >
+                {profile.profilePhotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.profilePhotoUrl as string} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Camera size={28} className="text-muted-foreground" />
+                  </div>
+                )}
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {photoUploading ? (
+                    <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Camera size={20} className="text-white" />
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo (optional)"}
+              </p>
+              <input
+                ref={photoInputRef as React.RefObject<HTMLInputElement>}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={photoUploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); e.target.value = ""; }}
+              />
+            </div>
+
+            {/* Text fields */}
             {[
               { key: "firstName", label: "First Name *" },
               { key: "lastName", label: "Last Name" },
@@ -292,8 +413,13 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         </StepShell>
       )}
 
+      {/* ── Documents ── */}
       {step === "documents" && (
-        <StepShell title="Upload a document" onBack={() => setStep("profile")} onNext={() => setStep("guided_media")}>
+        <StepShell
+          title="Upload a document"
+          onBack={prevStep ? () => setStep(prevStep) : undefined}
+          onNext={() => setStep(nextStep ?? "review")}
+        >
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Document Type</label>
@@ -310,7 +436,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               type="file"
               accept="image/*,application/pdf"
               disabled={uploading}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleDocUpload(f); e.target.value = ""; }}
               className="text-sm text-muted-foreground"
             />
             {initialDocuments.length > 0 && (
@@ -327,21 +453,12 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         </StepShell>
       )}
 
-      {step === "guided_media" && (
-        <StepShell title="A quick walkthrough" onBack={() => setStep("documents")} onNext={() => setStep("review")}>
-          {guidedContent ? <ContentBlock content={guidedContent} /> : (
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              You&apos;re almost done — review your details on the next screen and submit for approval.
-            </p>
-          )}
-        </StepShell>
-      )}
-
+      {/* ── Review & Submit ── */}
       {step === "review" && (
         <div className="max-w-2xl mx-auto">
           <h1 className="text-xl font-bold text-foreground mb-4">Review &amp; Submit</h1>
           <div className="space-y-2 mb-6">
-            {Object.entries(profile).filter(([, v]) => v).map(([key, value]) => (
+            {Object.entries(profile).filter(([k, v]) => v && k !== "profilePhotoUrl").map(([key, value]) => (
               <div key={key} className="flex justify-between text-sm py-2 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
                 <span className="text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
                 <span className="text-foreground">{String(value)}</span>
@@ -357,7 +474,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             </p>
           )}
           <div className="flex justify-between">
-            <button onClick={() => setStep("guided_media")} className="px-5 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={() => setStep(prevStep ?? "documents")}
+              className="px-5 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
               Back
             </button>
             <button
@@ -383,12 +503,12 @@ export default function OnboardingPage() {
   if (isLoading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>;
   if (!state) return <div className="py-16 text-center text-sm text-muted-foreground">Something went wrong. Please refresh.</div>;
 
-  if (state.verificationStatus === "under_review") return <PendingReviewView />;
+  if (state.verificationStatus === "under_review") return <PendingReviewView submittedAt={state.onboardingSubmittedAt} />;
   if (state.verificationStatus === "rejected") return <RejectedView note={state.onboardingReviewNote} />;
 
   return (
     <OnboardingWizard
-      initialProfile={state.profile}
+      initialProfile={state.profile as Record<string, any>}
       initialDocuments={state.documents}
       changesNote={state.verificationStatus === "changes_requested" ? state.onboardingReviewNote : null}
     />

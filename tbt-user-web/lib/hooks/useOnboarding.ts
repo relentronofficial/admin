@@ -49,6 +49,9 @@ export const useDeleteOnboardingDocument = () => {
   });
 };
 
+export const usePresignProfilePhoto = () =>
+  useMutation({ mutationFn: onboardingService.presignProfilePhoto });
+
 export const useSubmitOnboarding = () => {
   const queryClient = useQueryClient();
   return useMutation({
