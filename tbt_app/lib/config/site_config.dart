@@ -17,6 +17,7 @@ class SiteConfig with _$SiteConfig {
     String? loginBgUrl,
     String? loginBgMobileUrl,
     List<String>? loginBgImages,
+    @Default(300) int taskTimerSeconds,
   }) = _SiteConfig;
 
   factory SiteConfig.fromJson(Map<String, dynamic> json) =>

@@ -76,7 +76,7 @@ export default function BatchDayPage() {
   const { day } = useParams<{ day: string }>();
   const router = useRouter();
   const dayNumber = parseInt(day, 10);
-  const { uiStrings } = useSiteConfig();
+  const { uiStrings, config } = useSiteConfig();
 
   const { data: program, isLoading } = useMyBatchProgram();
   const queryClient = useQueryClient();
@@ -200,20 +200,22 @@ export default function BatchDayPage() {
 
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
 
+  const timerDuration = config?.taskTimerSeconds ?? 300;
+
   const startTaskTimer = (taskId: string) => {
     clearInterval(timerIntervalRef.current);
     timerTaskRef.current = taskId;
-    setTaskTimers((prev) => ({ ...prev, [taskId]: 300 }));
+    let remaining = timerDuration;
+    setTaskTimers((prev) => ({ ...prev, [taskId]: remaining }));
     timerIntervalRef.current = setInterval(() => {
-      setTaskTimers((prev) => {
-        const cur = prev[taskId] ?? 300;
-        if (cur <= 1) {
-          clearInterval(timerIntervalRef.current);
-          timerTaskRef.current = null;
-          return { ...prev, [taskId]: 0 };
-        }
-        return { ...prev, [taskId]: cur - 1 };
-      });
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(timerIntervalRef.current);
+        timerTaskRef.current = null;
+        setTaskTimers((prev) => ({ ...prev, [taskId]: 0 }));
+      } else {
+        setTaskTimers((prev) => ({ ...prev, [taskId]: remaining }));
+      }
     }, 1000);
   };
 
@@ -685,18 +687,22 @@ export default function BatchDayPage() {
                                 ? "rgba(34,197,94,0.12)"
                                 : timerWarn
                                   ? "rgba(239,68,68,0.1)"
-                                  : "var(--color-surface-overlay)",
+                                  : timerStarted
+                                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                                    : "var(--color-surface-overlay)",
                               color: timerDone
                                 ? "#22c55e"
                                 : timerWarn
                                   ? "#ef4444"
-                                  : "var(--color-text-subtle)",
+                                  : timerStarted
+                                    ? "var(--color-accent)"
+                                    : "var(--color-text-subtle)",
                               cursor: timerDone ? "default" : "pointer",
                             }}
                             title={timerDone ? "Time's up!" : timerStarted ? "Restart timer" : "Start 5-min focus timer"}
                           >
                             <Timer size={9} />
-                            {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : "5:00"}
+                            {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : fmtTime(timerDuration)}
                           </button>
                         )}
                       </div>

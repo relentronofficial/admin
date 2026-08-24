@@ -14,6 +14,7 @@ import '../providers/batch_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_loader.dart';
+import '../../../shared/providers/site_config_provider.dart';
 class BatchDayScreen extends ConsumerStatefulWidget {
   const BatchDayScreen({super.key, required this.day});
 
@@ -400,6 +401,11 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
                 .firstOrNull,
           );
 
+          final timerDurationSeconds = ref
+              .read(siteConfigNotifierProvider)
+              .valueOrNull
+              ?.taskTimerSeconds ?? 300;
+
           final listItems = <Widget>[
             _DayHeader(
               dayNumber: widget.day,
@@ -438,6 +444,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
                   proofType: pt,
                   description: meta?.description,
                   deliverables: meta?.deliverables,
+                  timerDurationSeconds: timerDurationSeconds,
                   responseController:
                       needsInput ? _ctrlFor(e.value.id) : null,
                   onResponseChanged:
@@ -746,6 +753,7 @@ class _TaskRow extends StatefulWidget {
     required this.readOnly,
     required this.onToggle,
     required this.onPickProof,
+    required this.timerDurationSeconds,
     this.proofType = 'watch',
     this.description,
     this.deliverables,
@@ -760,6 +768,7 @@ class _TaskRow extends StatefulWidget {
   final bool readOnly;
   final VoidCallback onToggle;
   final VoidCallback onPickProof;
+  final int timerDurationSeconds;
   final String proofType;
   final String? description;
   final String? deliverables;
@@ -771,9 +780,7 @@ class _TaskRow extends StatefulWidget {
 }
 
 class _TaskRowState extends State<_TaskRow> {
-  static const _timerDuration = 300; // 5 minutes
-
-  int _secondsLeft = _timerDuration;
+  late int _secondsLeft = widget.timerDurationSeconds;
   bool _timerStarted = false;
   Timer? _countdownTimer;
 
@@ -786,7 +793,7 @@ class _TaskRowState extends State<_TaskRow> {
   void _startTimer() {
     _countdownTimer?.cancel();
     setState(() {
-      _secondsLeft = _timerDuration;
+      _secondsLeft = widget.timerDurationSeconds;
       _timerStarted = true;
     });
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
@@ -821,12 +828,16 @@ class _TaskRowState extends State<_TaskRow> {
         ? const Color(0xFF22c55e)
         : _timerWarn
             ? Theme.of(context).colorScheme.primary
-            : context.tokens.textMuted;
+            : _timerStarted
+                ? Theme.of(context).colorScheme.primary
+                : context.tokens.textMuted;
     final timerBg = _timerDone
         ? const Color(0xFF22c55e).withValues(alpha: 0.12)
         : _timerWarn
             ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
-            : context.tokens.bgInput;
+            : _timerStarted
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+                : context.tokens.bgInput;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -943,7 +954,7 @@ class _TaskRowState extends State<_TaskRow> {
                                       ? "Time's up!"
                                       : _timerStarted
                                           ? _timerLabel
-                                          : '5:00',
+                                          : _timerLabel,
                                   style: TextStyle(
                                     color: timerColor,
                                     fontSize: 10,

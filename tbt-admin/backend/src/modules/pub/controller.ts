@@ -18,6 +18,10 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     });
   }
 
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number }>>(
+    'SELECT task_timer_seconds FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch(() => []);
+
   const data = {
     siteName: config.siteName,
     logoUrl: config.logoUrl ?? null,
@@ -35,6 +39,7 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     loginBgUrl: config.loginBgUrl ?? null,
     loginBgMobileUrl: config.loginBgMobileUrl ?? null,
     loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
+    taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
   };
   await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });

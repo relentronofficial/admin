@@ -114,6 +114,7 @@ export default function SiteConfigPage() {
     successColor: "#22c55e",
     bgPrimary: "#000000",
     bgSurface: "#111111",
+    taskTimerMinutes: 5,
   });
   const [loginBgImages, setLoginBgImages] = useState<string[]>([]);
 
@@ -124,7 +125,11 @@ export default function SiteConfigPage() {
 
   useEffect(() => {
     if (config) {
-      setForm(f => ({ ...f, ...config }));
+      setForm(f => ({
+        ...f,
+        ...config,
+        taskTimerMinutes: Math.round((config.taskTimerSeconds ?? 300) / 60),
+      }));
       if (Array.isArray(config.loginBgImages)) setLoginBgImages(config.loginBgImages);
     }
   }, [config]);
@@ -147,7 +152,12 @@ export default function SiteConfigPage() {
 
   const handleSave = async () => {
     try {
-      await updateConfig.mutateAsync({ ...form, loginBgImages });
+      const { taskTimerMinutes, ...rest } = form;
+      await updateConfig.mutateAsync({
+        ...rest,
+        loginBgImages,
+        taskTimerSeconds: Math.max(60, taskTimerMinutes * 60),
+      });
       toast.success("Site config saved");
     } catch (e: any) {
       toast.error(e.message || "Failed to save");
@@ -282,6 +292,19 @@ export default function SiteConfigPage() {
               type="number"
               value={form.splashDurationMs}
               onChange={e => set("splashDurationMs", Number(e.target.value))}
+              className="w-full bg-[#141414] border border-[#333] rounded-lg h-10 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Task Focus Timer (minutes)</label>
+            <p className="text-[10px] text-[#666] mb-2">Duration of the countdown timer shown on each batch-program task. Default: 5 minutes.</p>
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={form.taskTimerMinutes}
+              onChange={e => set("taskTimerMinutes", Math.max(1, Number(e.target.value)))}
               className="w-full bg-[#141414] border border-[#333] rounded-lg h-10 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
             />
           </div>

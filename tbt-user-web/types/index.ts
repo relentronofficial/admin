@@ -205,6 +205,7 @@ export interface SiteConfig {
   loginBgUrl?: string | null;
   loginBgMobileUrl?: string | null;
   loginBgImages?: string[] | null;
+  taskTimerSeconds?: number;
 }
 
 export interface NavItem {

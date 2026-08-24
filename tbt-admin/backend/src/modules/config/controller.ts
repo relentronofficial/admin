@@ -12,19 +12,32 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       data: { siteName: 'TBT', footerText: '© Tamil Business Tribe' },
     });
   }
-  return reply.send({ success: true, data: config, error: null });
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number }>>(
+    'SELECT task_timer_seconds FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch(() => []);
+  return reply.send({
+    success: true,
+    data: { ...config, taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300 },
+    error: null,
+  });
 }
 
 export async function updateSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
-  const body = req.body as any;
+  const { taskTimerSeconds, ...prismaBody } = req.body as any;
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
-    config = await req.server.prisma.siteConfig.create({ data: body });
+    config = await req.server.prisma.siteConfig.create({ data: prismaBody });
   } else {
-    config = await req.server.prisma.siteConfig.update({ where: { id: config.id }, data: body });
+    config = await req.server.prisma.siteConfig.update({ where: { id: config.id }, data: prismaBody });
+  }
+  if (taskTimerSeconds !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE site_configs SET task_timer_seconds = $1 WHERE id = $2::uuid',
+      Number(taskTimerSeconds), config.id
+    );
   }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
-  return reply.send({ success: true, data: config, error: null });
+  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300 }, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────
