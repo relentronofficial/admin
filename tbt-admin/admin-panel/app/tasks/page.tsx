@@ -40,6 +40,7 @@ const emptyTaskForm = (): Partial<TaskInitiativeInput> => ({
   basePoints: 100,
   proofType: "text",
   estimatedMinutes: 15,
+  timerSeconds: null,
   isMilestone: false,
   milestoneLabel: "",
   bonusPoints: 0,
@@ -60,6 +61,7 @@ const emptyInlineTaskForm = () => ({
   basePoints: 50,
   proofType: "text",
   estimatedMinutes: 15,
+  timerSeconds: null as number | null,
   isMilestone: false,
   milestoneLabel: "",
   bonusPoints: 0,
@@ -197,6 +199,7 @@ export default function TasksPage() {
       basePoints:       task.basePoints,
       proofType:        task.proofType,
       estimatedMinutes: task.estimatedMinutes,
+      timerSeconds:     task.timerSeconds ?? null,
       isMilestone:      task.isMilestone,
       milestoneLabel:   task.milestoneLabel || "",
       bonusPoints:      task.bonusPoints,
@@ -303,6 +306,7 @@ export default function TasksPage() {
       basePoints:       task.basePoints       ?? 50,
       proofType:        task.proofType        || "text",
       estimatedMinutes: task.estimatedMinutes ?? 15,
+      timerSeconds:     task.timerSeconds     ?? null,
       isMilestone:      task.isMilestone      ?? false,
       milestoneLabel:   task.milestoneLabel   || "",
       bonusPoints:      task.bonusPoints      ?? 0,
@@ -1197,7 +1201,7 @@ export default function TasksPage() {
                 <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Content URL</label>
                 <input value={taskForm.contentUrl ?? ""} onChange={e => setTaskField("contentUrl", e.target.value)} placeholder="https://…" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm" />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Base Points</label>
                   <input type="number" min={0} value={taskForm.basePoints ?? 100} onChange={e => setTaskField("basePoints", parseInt(e.target.value) || 0)} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm" />
@@ -1209,6 +1213,21 @@ export default function TasksPage() {
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Est. Minutes</label>
                   <input type="number" min={1} value={taskForm.estimatedMinutes ?? 15} onChange={e => setTaskField("estimatedMinutes", parseInt(e.target.value) || 15)} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">
+                    Focus Timer (min)
+                    <span className="ml-1 normal-case tracking-normal font-normal text-[#555]">— blank = use global</span>
+                  </label>
+                  <input
+                    type="number" min={1} placeholder="e.g. 5"
+                    value={taskForm.timerSeconds != null ? Math.round(taskForm.timerSeconds / 60) : ""}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setTaskField("timerSeconds", v === "" ? null : Math.max(1, parseInt(v) || 1) * 60);
+                    }}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm placeholder-[#444]"
+                  />
                 </div>
               </div>
               <div>
@@ -1284,6 +1303,21 @@ export default function TasksPage() {
                 <div>
                   <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Est. Minutes</label>
                   <input type="number" min={1} value={inlineForm.estimatedMinutes} onChange={e => setInlineForm(f => ({ ...f, estimatedMinutes: parseInt(e.target.value) || 15 }))} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">
+                    Focus Timer (min)
+                    <span className="ml-1 normal-case tracking-normal font-normal text-[#555]">— blank = use global setting</span>
+                  </label>
+                  <input
+                    type="number" min={1} placeholder="e.g. 5"
+                    value={inlineForm.timerSeconds != null ? Math.round(inlineForm.timerSeconds / 60) : ""}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setInlineForm(f => ({ ...f, timerSeconds: v === "" ? null : Math.max(1, parseInt(v) || 1) * 60 }));
+                    }}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm placeholder-[#444]"
+                  />
                 </div>
               </div>
               <div>

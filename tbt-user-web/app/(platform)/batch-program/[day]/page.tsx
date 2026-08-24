@@ -206,13 +206,13 @@ export default function BatchDayPage() {
 
   // ── Focus-mode gamification ───────────────────────────────────────────────
   // Alert shown before timer starts
-  const [focusDialog, setFocusDialog] = useState<{ taskId: string; taskTitle: string } | null>(null);
+  const [focusDialog, setFocusDialog] = useState<{ taskId: string; taskTitle: string; duration: number } | null>(null);
   // Tasks locked when timer expired without completion
   const [lockedTaskIds, setLockedTaskIds] = useState<Set<string>>(new Set());
   // Lifelines remaining this session (3 free, then coins)
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
   // Coin-spend confirmation for lifeline
-  const [coinDialog, setCoinDialog] = useState<{ taskId: string } | null>(null);
+  const [coinDialog, setCoinDialog] = useState<{ taskId: string; duration: number } | null>(null);
   // Ref so timer callback can read latest completedTaskIds without stale closure
   const completedTaskIdsRef = useRef<string[]>([]);
 
@@ -228,10 +228,10 @@ export default function BatchDayPage() {
 
   const timerDuration = config?.taskTimerSeconds ?? 300;
 
-  const startTaskTimer = (taskId: string) => {
+  const startTaskTimer = (taskId: string, duration?: number) => {
     clearInterval(timerIntervalRef.current);
     timerTaskRef.current = taskId;
-    let remaining = timerDuration;
+    let remaining = duration ?? timerDuration;
     setTaskTimers((prev) => ({ ...prev, [taskId]: remaining }));
     timerIntervalRef.current = setInterval(() => {
       remaining -= 1;
@@ -323,7 +323,7 @@ export default function BatchDayPage() {
   };
 
   // Called when user clicks an unchecked task — show focus-mode dialog
-  const handleTaskClick = (taskId: string, taskTitle: string) => {
+  const handleTaskClick = (taskId: string, taskTitle: string, duration: number) => {
     if (!canEdit) return;
     const done = completedTaskIds.includes(taskId);
     const locked = lockedTaskIds.has(taskId);
@@ -339,28 +339,28 @@ export default function BatchDayPage() {
       // Timer already running — just toggle
       toggleTask(taskId);
     } else {
-      setFocusDialog({ taskId, taskTitle });
+      setFocusDialog({ taskId, taskTitle, duration });
     }
   };
 
   // Use a free lifeline or open coin dialog
-  const handleUseLifeline = (taskId: string) => {
+  const handleUseLifeline = (taskId: string, duration: number) => {
     if (lifelinesLeft > 0) {
       setLifelinesLeft((n) => n - 1);
       setLockedTaskIds((prev) => { const s = new Set(prev); s.delete(taskId); return s; });
-      startTaskTimer(taskId);
+      startTaskTimer(taskId, duration);
       toast.success(`Lifeline used! ${lifelinesLeft - 1} free lifelines remaining.`);
     } else {
-      setCoinDialog({ taskId });
+      setCoinDialog({ taskId, duration });
     }
   };
 
   // Spend TBT coins for an extra lifeline
-  const handleSpendCoins = async (taskId: string) => {
+  const handleSpendCoins = async (taskId: string, duration: number) => {
     try {
       const res = await spendCoins.mutateAsync(LIFELINE_COIN_COST);
       setLockedTaskIds((prev) => { const s = new Set(prev); s.delete(taskId); return s; });
-      startTaskTimer(taskId);
+      startTaskTimer(taskId, duration);
       setCoinDialog(null);
       toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.remainingCoins} coins.`);
     } catch (err: any) {
@@ -451,7 +451,7 @@ export default function BatchDayPage() {
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
               This task will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
-              <strong>{fmtTime(timerDuration)}</strong> minutes if not completed.
+              <strong>{fmtTime(focusDialog.duration)}</strong> if not completed.
               You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
               After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
             </p>
@@ -464,7 +464,7 @@ export default function BatchDayPage() {
                 Cancel
               </button>
               <button
-                onClick={() => { toggleTask(focusDialog.taskId); startTaskTimer(focusDialog.taskId); setFocusDialog(null); }}
+                onClick={() => { toggleTask(focusDialog.taskId); startTaskTimer(focusDialog.taskId, focusDialog.duration); setFocusDialog(null); }}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
                 style={{ background: "var(--color-accent)" }}
               >
@@ -503,7 +503,7 @@ export default function BatchDayPage() {
               </div>
             </div>
             <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
-              Spending {LIFELINE_COIN_COST} TBT coins will reset the {fmtTime(timerDuration)} focus timer for this task.
+              Spending {LIFELINE_COIN_COST} TBT coins will reset the {fmtTime(coinDialog.duration)} focus timer for this task.
             </p>
             <div className="flex gap-3">
               <button
@@ -514,7 +514,7 @@ export default function BatchDayPage() {
                 Cancel
               </button>
               <button
-                onClick={() => handleSpendCoins(coinDialog.taskId)}
+                onClick={() => handleSpendCoins(coinDialog.taskId, coinDialog.duration)}
                 disabled={spendCoins.isPending || (me?.totalPoints ?? 0) < LIFELINE_COIN_COST}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
                 style={{ background: "#d97706" }}
@@ -783,10 +783,11 @@ export default function BatchDayPage() {
               const proof = taskSubmissions[task.id];
               const isUploading = uploadingTaskIds.has(task.id);
               const proofType = task.proofType ?? "watch";
+              const taskTimerDuration = (task as any).timerSeconds ?? timerDuration;
               const timerSecs = taskTimers[task.id];
               const timerStarted = timerSecs !== undefined;
               const timerDone = timerSecs === 0;
-              const timerWarn = timerStarted && !timerDone && (timerSecs ?? 300) <= 60;
+              const timerWarn = timerStarted && !timerDone && (timerSecs ?? taskTimerDuration) <= 60;
               const isTaskLocked = lockedTaskIds.has(task.id) && !done;
               const needsFileUpload = proofType === "image" || proofType === "file";
               const needsUrlInput   = proofType === "link"  || proofType === "video";
@@ -809,7 +810,7 @@ export default function BatchDayPage() {
 
                   {/* Task row — checkbox + title + meta */}
                   <div
-                    onClick={() => handleTaskClick(task.id, task.title)}
+                    onClick={() => handleTaskClick(task.id, task.title, taskTimerDuration)}
                     role="checkbox"
                     aria-checked={done}
                     className="w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all"
@@ -894,10 +895,10 @@ export default function BatchDayPage() {
                                     : "var(--color-text-subtle)",
                               cursor: timerDone ? "default" : "pointer",
                             }}
-                            title={timerDone ? "Time's up!" : timerStarted ? "Restart timer" : "Start 5-min focus timer"}
+                            title={timerDone ? "Time's up!" : timerStarted ? "Restart timer" : `Start ${fmtTime(taskTimerDuration)} focus timer`}
                           >
                             <Timer size={9} />
-                            {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : fmtTime(timerDuration)}
+                            {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : fmtTime(taskTimerDuration)}
                           </button>
                         )}
                       </div>
@@ -949,7 +950,7 @@ export default function BatchDayPage() {
                         </span>
                       </div>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleUseLifeline(task.id); }}
+                        onClick={(e) => { e.stopPropagation(); handleUseLifeline(task.id, taskTimerDuration); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 transition-opacity hover:opacity-80"
                         style={{ background: lifelinesLeft > 0 ? "var(--color-accent)" : "#d97706" }}
                       >

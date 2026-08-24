@@ -40,6 +40,7 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
       basePoints: body.basePoints,
       proofType: body.proofType,
       estimatedMinutes: body.estimatedMinutes,
+      timerSeconds: body.timerSeconds ?? null,
       isMilestone: body.isMilestone,
       milestoneLabel: body.milestoneLabel ?? null,
       bonusPoints: body.bonusPoints,

@@ -11,6 +11,7 @@ export const taskInitiativeSchema = z.object({
   basePoints: z.number().int().default(100),
   proofType: z.string().default('text'),
   estimatedMinutes: z.number().int().default(15),
+  timerSeconds: z.number().int().min(60).optional(),
   isMilestone: z.boolean().default(false),
   milestoneLabel: z.string().optional(),
   bonusPoints: z.number().int().default(0),

@@ -29,6 +29,7 @@ export const useMyBatchProgram = () =>
           bonusPoints: number;
           proofType: string;
           estimatedMinutes: number;
+          timerSeconds?: number | null;
           isMilestone: boolean;
           milestoneLabel?: string | null;
           sortOrder: number;

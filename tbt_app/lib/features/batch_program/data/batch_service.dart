@@ -19,6 +19,7 @@ class BatchTaskMeta {
     this.estimatedMinutes,
     this.contentUrl,
     this.responseValue,
+    this.timerSeconds,
   });
 
   final String proofType;
@@ -29,6 +30,8 @@ class BatchTaskMeta {
   final int? estimatedMinutes;
   final String? contentUrl;
   final String? responseValue;
+  /// Per-task focus timer override (seconds). Null = use global site config value.
+  final int? timerSeconds;
 }
 
 class BatchDayMeta {
@@ -114,6 +117,7 @@ class BatchService {
           estimatedMinutes: (t['estimatedMinutes'] as num?)?.toInt(),
           contentUrl: t['contentUrl'] as String?,
           responseValue: sub?['responseValue'] as String?,
+          timerSeconds: (t['timerSeconds'] as num?)?.toInt(),
         );
       }
 

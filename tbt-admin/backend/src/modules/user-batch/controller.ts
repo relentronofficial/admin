@@ -123,6 +123,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       bonusPoints: true,
       proofType: true,
       estimatedMinutes: true,
+      timerSeconds: true,
       isMilestone: true,
       milestoneLabel: true,
       sortOrder: true,

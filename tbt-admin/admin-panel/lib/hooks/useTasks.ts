@@ -12,6 +12,7 @@ export interface TaskInitiativeInput {
   basePoints?: number;
   proofType?: string;
   estimatedMinutes?: number;
+  timerSeconds?: number | null;
   isMilestone?: boolean;
   milestoneLabel?: string;
   bonusPoints?: number;

@@ -341,9 +341,12 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
   }
 
   void _showFocusDialog(int index, String taskId, String taskTitle) {
-    final timerSeconds =
+    final globalTimer =
         ref.read(siteConfigNotifierProvider).valueOrNull?.taskTimerSeconds ??
             300;
+    final timerSeconds =
+        ref.read(batchServiceProvider).taskMeta[taskId]?.timerSeconds ??
+            globalTimer;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -768,6 +771,8 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
                 final pt = meta?.proofType ?? 'watch';
                 final needsInput = pt == 'text' || pt == 'url';
                 final taskId = e.value.id;
+                final taskTimerSecs =
+                    meta?.timerSeconds ?? timerDurationSeconds;
                 return _TaskRow(
                   key: _keyFor(taskId),
                   task: e.value,
@@ -778,7 +783,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
                   proofType: pt,
                   description: meta?.description,
                   deliverables: meta?.deliverables,
-                  timerDurationSeconds: timerDurationSeconds,
+                  timerDurationSeconds: taskTimerSecs,
                   isLocked: _lockedTaskIds.contains(taskId) &&
                       !e.value.isCompleted,
                   responseController:
