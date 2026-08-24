@@ -457,11 +457,11 @@ export default function BatchDayPage() {
             </p>
             <div className="flex gap-3">
               <button
-                onClick={() => { toggleTask(focusDialog.taskId); setFocusDialog(null); }}
+                onClick={() => setFocusDialog(null)}
                 className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all"
                 style={{ borderColor: "var(--color-border-medium)", background: "transparent" }}
               >
-                Skip Timer
+                Cancel
               </button>
               <button
                 onClick={() => { toggleTask(focusDialog.taskId); startTaskTimer(focusDialog.taskId); setFocusDialog(null); }}

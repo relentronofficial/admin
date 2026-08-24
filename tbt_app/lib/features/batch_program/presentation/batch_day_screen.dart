@@ -392,11 +392,8 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              ctx.pop();
-              _onTaskToggled(index);
-            },
-            child: Text('Skip Timer',
+            onPressed: () => ctx.pop(),
+            child: Text('Cancel',
                 style: TextStyle(color: context.tokens.textMuted)),
           ),
           ElevatedButton.icon(
