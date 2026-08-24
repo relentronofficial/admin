@@ -133,6 +133,7 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
       ...(body.quizUnlockPercent !== undefined && { quizUnlockPercent: Number(body.quizUnlockPercent) }),
       ...(body.drmEnabled !== undefined && { drmEnabled: Boolean(body.drmEnabled) }),
       ...(body.bunnyDrmToken !== undefined && { bunnyDrmToken: body.bunnyDrmToken || null }),
+      timerSeconds: body.timerSeconds != null ? Number(body.timerSeconds) : null,
     },
   });
   bustHome(req);
@@ -150,6 +151,7 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   if (body.order !== undefined) data.order = body.order;
   if (body.quizUnlockPercent !== undefined) data.quizUnlockPercent = Number(body.quizUnlockPercent);
   if (body.drmEnabled !== undefined) data.drmEnabled = Boolean(body.drmEnabled);
+  if ('timerSeconds' in body) data.timerSeconds = body.timerSeconds != null ? Number(body.timerSeconds) : null;
   const episode = await req.server.prisma.courseEpisode.update({ where: { id: eid }, data });
   bustHome(req);
   return reply.send({ success: true, data: episode, error: null });

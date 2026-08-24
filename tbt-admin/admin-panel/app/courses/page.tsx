@@ -56,6 +56,7 @@ const EMPTY_EP = {
   durationSeconds: "", isVisible: true,
   quizUnlockPercent: "80", drmEnabled: false, bunnyDrmToken: "",
   quizData: null as any,
+  timerSeconds: "" as string | number,
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -668,6 +669,7 @@ function EpisodesTab({ course }: { course: any }) {
       quizUnlockPercent: String(ep.quizUnlockPercent ?? 80),
       drmEnabled: ep.drmEnabled ?? false,
       bunnyDrmToken: ep.bunnyDrmToken || "",
+      timerSeconds: ep.timerSeconds != null ? Math.round(ep.timerSeconds / 60) : "",
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
@@ -745,6 +747,7 @@ function EpisodesTab({ course }: { course: any }) {
       drmEnabled: epForm.drmEnabled,
       bunnyDrmToken: epForm.bunnyDrmToken || undefined,
       quizData,
+      timerSeconds: epForm.timerSeconds !== "" ? Math.max(1, parseInt(String(epForm.timerSeconds)) || 1) * 60 : null,
     };
     try {
       if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); toast.success("Episode updated"); }
@@ -880,6 +883,21 @@ function EpisodesTab({ course }: { course: any }) {
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Duration (seconds)</label>
             <input type="number" min="0" value={epForm.durationSeconds} onChange={e => setEpField("durationSeconds", e.target.value)}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+          </div>
+          {/* Focus timer */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">
+              Focus Timer (min) <span className="normal-case tracking-normal font-normal text-[#555]">— blank = use global</span>
+            </label>
+            <input
+              type="number" min={1} placeholder="e.g. 5"
+              value={epForm.timerSeconds !== "" ? epForm.timerSeconds : ""}
+              onChange={e => {
+                const v = e.target.value;
+                setEpField("timerSeconds", v === "" ? "" : Math.max(1, parseInt(v) || 1));
+              }}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs"
+            />
           </div>
           {/* Quiz unlock % */}
           <div>

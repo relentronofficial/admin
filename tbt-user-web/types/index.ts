@@ -100,6 +100,7 @@ export interface Lesson {
   hasQuiz?: boolean;
   quizUnlockPercent?: number;
   quizData?: { questions: any[]; cues?: Array<{ id: string; atSeconds: number; questions: any[] }> } | null;
+  timerSeconds?: number | null;
 }
 
 export interface CourseEnrollment {

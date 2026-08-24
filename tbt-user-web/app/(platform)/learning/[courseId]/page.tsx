@@ -6,7 +6,7 @@ import {
   ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award,
   Lock, Trophy, ChevronDown, ChevronUp, Copy, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
-  Brain, RefreshCw, PenLine,
+  Brain, RefreshCw, PenLine, Timer, Coins,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
@@ -19,6 +19,7 @@ import {
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
 } from "@/lib/hooks/useCourses";
+import { useSpendCoins } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -55,6 +56,10 @@ function lessonAlreadyDone(
   const resume = resumeAtSeconds ?? 0;
   if (dur > 0 && watched >= dur * 0.85) return true;
   return false;
+}
+
+function fmtTime(secs: number): string {
+  return `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, "0")}`;
 }
 
 function fmtDuration(seconds: number): string {
@@ -863,7 +868,7 @@ export default function CourseDetailPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const targetLessonId = searchParams.get("lesson");
-  const { uiStrings } = useSiteConfig();
+  const { uiStrings, config } = useSiteConfig();
   const qc = useQueryClient();
   const { data: course, isLoading } = useCourse(courseId);
   const { data: progressList } = useLessonProgress(courseId);
@@ -915,6 +920,19 @@ export default function CourseDetailPage({
   const [downloadingCert, setDownloadingCert] = useState(false);
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
   const { data: certData } = useCertificateEligibility(courseId);
+
+  // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
+  const MAX_FREE_LIFELINES = 3;
+  const LIFELINE_COIN_COST = 50;
+  const [focusLockedIds, setFocusLockedIds] = useState<Set<string>>(new Set());
+  const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
+  const [focusDialog, setFocusDialog] = useState<{ lesson: any; duration: number } | null>(null);
+  const [coinDialog, setCoinDialog] = useState<{ lesson: any; duration: number } | null>(null);
+  const [lessonTimers, setLessonTimers] = useState<Record<string, number>>({});
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const timerLessonRef = useRef<string | null>(null);
+  const spendCoins = useSpendCoins();
+  useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const [practiceOpen, setPracticeOpen] = useState(false);
@@ -1113,6 +1131,16 @@ export default function CourseDetailPage({
   );
   const completedIdsRef = useRef<Set<string>>(new Set());
   completedIdsRef.current = completedIds;
+
+  // Stop focus timer when active lesson completes
+  useEffect(() => {
+    const active = timerLessonRef.current;
+    if (active && completedIdsRef.current.has(active)) {
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+      setLessonTimers(prev => { const n = { ...prev }; delete n[active]; return n; });
+    }
+  }, [completedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Spaced repetition: lessons completed 3+ days ago (Ebbinghaus forgetting curve)
   const reviewDueIds = useMemo(() => {
@@ -1564,6 +1592,71 @@ export default function CourseDetailPage({
     topRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // ── Focus timer helpers ───────────────────────────────────────────────────
+  const getLessonTimerDuration = (lesson: any): number =>
+    lesson?.timerSeconds ?? config?.taskTimerSeconds ?? 300;
+
+  const startLessonTimer = (lessonId: string, duration: number) => {
+    clearInterval(timerIntervalRef.current);
+    timerLessonRef.current = lessonId;
+    let remaining = duration;
+    setLessonTimers(prev => ({ ...prev, [lessonId]: remaining }));
+    timerIntervalRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(timerIntervalRef.current);
+        timerLessonRef.current = null;
+        setLessonTimers(prev => ({ ...prev, [lessonId]: 0 }));
+        if (!completedIdsRef.current.has(lessonId)) {
+          setFocusLockedIds(prev => new Set([...prev, lessonId]));
+          toast.error("⏰ Time's up! Use a lifeline to unlock this lesson.", { duration: 4000 });
+        }
+      } else {
+        setLessonTimers(prev => ({ ...prev, [lessonId]: remaining }));
+      }
+    }, 1000);
+  };
+
+  const handleSelectLessonWithFocus = (lesson: any) => {
+    if (!lesson.videoUrl) return;
+    const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
+    if (isFocusLocked) return;
+    const timerStarted = lessonTimers[lesson.id] !== undefined;
+    if (timerStarted || completedIds.has(lesson.id) || lesson.isCompleted) {
+      handleSelectLesson(lesson);
+      return;
+    }
+    const duration = getLessonTimerDuration(lesson);
+    setFocusDialog({ lesson, duration });
+  };
+
+  const handleUseLifeline = (lesson: any, duration: number) => {
+    if (lifelinesLeft > 0) {
+      const remaining = lifelinesLeft - 1;
+      setLifelinesLeft(remaining);
+      setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
+      startLessonTimer(lesson.id, duration);
+      handleSelectLesson(lesson);
+      toast.success(`Lifeline used! ${remaining} free lifeline${remaining !== 1 ? "s" : ""} remaining.`);
+    } else {
+      setCoinDialog({ lesson, duration });
+    }
+  };
+
+  const handleSpendCoinsForLesson = async (lesson: any, duration: number) => {
+    try {
+      const res = await spendCoins.mutateAsync(LIFELINE_COIN_COST);
+      setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
+      startLessonTimer(lesson.id, duration);
+      handleSelectLesson(lesson);
+      setCoinDialog(null);
+      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.remainingCoins} coins.`);
+    } catch (err: any) {
+      setCoinDialog(null);
+      toast.error(err?.response?.data?.error ?? "Not enough TBT coins");
+    }
+  };
+
   const handleRewatch = () => {
     if (!selectedLesson) return;
     clearInterval(upNextTimerRef.current);
@@ -1593,6 +1686,101 @@ export default function CourseDetailPage({
 
   return (
     <div className="space-y-6 pb-12">
+
+      {/* ── Focus-Mode Start Dialog ─────────────────────────────────────── */}
+      {focusDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)" }}>
+                <Zap size={22} style={{ color: "var(--color-accent)" }} />
+              </div>
+              <div>
+                <p className="font-bold text-base">Focus Mode</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{focusDialog.lesson.title}</p>
+              </div>
+              <button onClick={() => setFocusDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
+                <X size={16} className="opacity-50" />
+              </button>
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+              This lesson will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
+              <strong>{fmtTime(focusDialog.duration)}</strong> if not completed.
+              You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
+              After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setFocusDialog(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all"
+                style={{ borderColor: "var(--color-border-medium)", background: "transparent" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { handleSelectLesson(focusDialog.lesson); startLessonTimer(focusDialog.lesson.id, focusDialog.duration); setFocusDialog(null); }}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                style={{ background: "var(--color-accent)" }}
+              >
+                <Zap size={14} />
+                Start Focus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Coin-Spend Lifeline Dialog ──────────────────────────────────── */}
+      {coinDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(251,191,36,0.15)" }}>
+                <Coins size={22} style={{ color: "#fbbf24" }} />
+              </div>
+              <div>
+                <p className="font-bold text-base">Use TBT Coins?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">No free lifelines remaining</p>
+              </div>
+              <button onClick={() => setCoinDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
+                <X size={16} className="opacity-50" />
+              </button>
+            </div>
+            <div className="rounded-xl p-4 space-y-2" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)" }}>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Lifeline cost</span>
+                <span className="font-bold" style={{ color: "#fbbf24" }}>{LIFELINE_COIN_COST} coins</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Your balance</span>
+                <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
+              </div>
+            </div>
+            <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
+              Spending {LIFELINE_COIN_COST} TBT coins will reset the {fmtTime(coinDialog.duration)} focus timer for this lesson.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCoinDialog(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border"
+                style={{ borderColor: "var(--color-border-medium)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSpendCoinsForLesson(coinDialog.lesson, coinDialog.duration)}
+                disabled={spendCoins.isPending || (me?.totalPoints ?? 0) < LIFELINE_COIN_COST}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                style={{ background: "#d97706" }}
+              >
+                {spendCoins.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+                Spend {LIFELINE_COIN_COST} Coins
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Back */}
       <button
         onClick={() => { selectedLesson ? setSelectedLesson(null) : router.back(); }}
@@ -1841,6 +2029,17 @@ export default function CourseDetailPage({
                 <RefreshCw size={9} /> {reviewDueIds.length} to review
               </span>
             )}
+            <span
+              className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background: lifelinesLeft > 0 ? "rgba(34,197,94,0.12)" : "rgba(251,191,36,0.12)",
+                color: lifelinesLeft > 0 ? "#22c55e" : "#fbbf24",
+              }}
+              title="Free lifelines remaining this session"
+            >
+              <Zap size={9} />
+              {lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}
+            </span>
             <button
               onClick={() => setPracticeOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
@@ -1860,126 +2059,169 @@ export default function CourseDetailPage({
             lessons.map((lesson, idx) => {
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
-              // Server-authoritative lock: backend returns `locked: true`
-              // on every episode strictly after the last-completed one
-              // (when the course has requireSequential enabled). Fall
-              // back to false so pre-fix backends don't gate anything.
               const isLocked = (lesson as any).locked === true;
+              const isFocusLocked = focusLockedIds.has(lesson.id) && !isCompleted;
               const hasVideo = !!lesson.videoUrl;
-              // A locked lesson has no videoUrl (backend strips it) so
-              // hasVideo is already false. Combining with `!isLocked`
-              // makes the intent explicit at the tap site.
-              const canPlay = hasVideo && !isLocked;
+              const canPlay = hasVideo && !isLocked && !isFocusLocked;
               const duration = isActive && liveRealDuration > 0 ? liveRealDuration : (lesson.durationSeconds ?? 0);
               const activeLessonDuration = (isActive && activeDuration > 0 ? activeDuration : duration) ?? 0;
               const livePct = isActive && liveWatched > 0 && activeLessonDuration > 0
                 ? Math.min(100, Math.round((liveWatched / activeLessonDuration) * 100))
                 : 0;
+              const focusTimerDuration = getLessonTimerDuration(lesson);
+              const timerSecs = lessonTimers[lesson.id];
+              const timerStarted = timerSecs !== undefined;
+              const timerDone = timerSecs === 0;
+              const timerWarn = timerStarted && !timerDone && (timerSecs ?? focusTimerDuration) <= 60;
 
               return (
-                <button
-                  key={lesson.id}
-                  onClick={() => canPlay && handleSelectLesson(lesson)}
-                  disabled={!canPlay}
-                  title={isLocked ? "Complete the previous lesson to unlock." : undefined}
-                  aria-disabled={!canPlay}
-                  className={cn(
-                    "w-full flex items-center gap-4 px-4 py-4 text-left transition-colors border-b last:border-b-0",
-                    canPlay
-                      ? "cursor-pointer hover:opacity-90"
-                      : "cursor-not-allowed opacity-60",
-                  )}
-                  style={{
-                    borderColor: "var(--color-border-subtle)",
-                    background: isActive
-                      ? "color-mix(in srgb, var(--color-accent) 18%, var(--color-bg-surface))"
-                      : "var(--color-bg-surface)",
-                  }}
-                >
-                  <span
-                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                <div key={lesson.id} className="border-b last:border-b-0" style={{ borderColor: "var(--color-border-subtle)" }}>
+                  <button
+                    onClick={() => canPlay && handleSelectLessonWithFocus(lesson)}
+                    disabled={!canPlay}
+                    title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
+                    aria-disabled={!canPlay}
+                    className={cn(
+                      "w-full flex items-center gap-4 px-4 py-4 text-left transition-colors",
+                      canPlay
+                        ? "cursor-pointer hover:opacity-90"
+                        : "cursor-not-allowed opacity-60",
+                    )}
                     style={{
-                      background: isLocked
-                        ? "var(--color-surface-overlay-md)"
-                        : isCompleted
-                          ? "var(--color-success)"
-                          : isActive
-                            ? "var(--color-accent)"
-                            : "var(--color-surface-overlay-lg)",
-                      color: isLocked
-                        ? "var(--color-text-disabled)"
-                        : isCompleted || isActive
-                          ? "#fff"
-                          : "var(--color-text-subtle)",
+                      background: isFocusLocked
+                        ? "rgba(239,68,68,0.04)"
+                        : isActive
+                          ? "color-mix(in srgb, var(--color-accent) 18%, var(--color-bg-surface))"
+                          : "var(--color-bg-surface)",
                     }}
                   >
-                    {isLocked
-                      ? <Lock size={13} />
-                      : isCompleted
-                        ? <CheckCircle2 size={14} />
-                        : idx + 1}
-                  </span>
+                    <span
+                      className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                      style={{
+                        background: isLocked || isFocusLocked
+                          ? "var(--color-surface-overlay-md)"
+                          : isCompleted
+                            ? "var(--color-success)"
+                            : isActive
+                              ? "var(--color-accent)"
+                              : "var(--color-surface-overlay-lg)",
+                        color: isLocked || isFocusLocked
+                          ? isFocusLocked ? "#ef4444" : "var(--color-text-disabled)"
+                          : isCompleted || isActive
+                            ? "#fff"
+                            : "var(--color-text-subtle)",
+                      }}
+                    >
+                      {isLocked || isFocusLocked
+                        ? <Lock size={13} />
+                        : isCompleted
+                          ? <CheckCircle2 size={14} />
+                          : idx + 1}
+                    </span>
 
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-strong)" }}>
-                      {lesson.title}
-                    </p>
-                    {duration && duration > 0 ? (
-                      <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-subtle)" }}>
-                        <Clock size={10} /> {fmtDuration(duration)}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-strong)" }}>
+                        {lesson.title}
                       </p>
-                    ) : lesson.description ? (
-                      <p className="text-xs truncate mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-                        {lesson.description}
-                      </p>
-                    ) : null}
-                    {/* Quiz badge + XP chip */}
-                    <div className="flex items-center gap-2 mt-1">
-                      {(lesson as any).hasQuiz && (
-                        <span
-                          className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide"
-                          style={{
-                            background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
-                            color: "var(--color-accent)",
-                          }}
-                        >
-                          Quiz
-                        </span>
-                      )}
-                      {((course as any).xpPerEpisode ?? 0) > 0 && (
-                        <span
-                          className="text-[10px] flex items-center gap-0.5 font-semibold"
-                          style={{ color: "var(--color-text-disabled)" }}
-                        >
-                          <Zap size={9} />+{(course as any).xpPerEpisode} XP
-                        </span>
-                      )}
-                      {reviewDueIds.includes(lesson.id) && (
-                        <span
-                          className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
-                          style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)", color: "#f59e0b" }}
-                        >
-                          <RefreshCw size={8} /> Review
-                        </span>
+                      {duration && duration > 0 ? (
+                        <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-subtle)" }}>
+                          <Clock size={10} /> {fmtDuration(duration)}
+                        </p>
+                      ) : lesson.description ? (
+                        <p className="text-xs truncate mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+                          {lesson.description}
+                        </p>
+                      ) : null}
+                      {/* Quiz badge + XP chip + focus timer */}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {(lesson as any).hasQuiz && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide"
+                            style={{
+                              background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
+                              color: "var(--color-accent)",
+                            }}
+                          >
+                            Quiz
+                          </span>
+                        )}
+                        {((course as any).xpPerEpisode ?? 0) > 0 && (
+                          <span
+                            className="text-[10px] flex items-center gap-0.5 font-semibold"
+                            style={{ color: "var(--color-text-disabled)" }}
+                          >
+                            <Zap size={9} />+{(course as any).xpPerEpisode} XP
+                          </span>
+                        )}
+                        {reviewDueIds.includes(lesson.id) && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
+                            style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)", color: "#f59e0b" }}
+                          >
+                            <RefreshCw size={8} /> Review
+                          </span>
+                        )}
+                        {/* Focus timer badge */}
+                        {!isCompleted && timerStarted && (
+                          <span
+                            className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                            style={{
+                              background: timerDone
+                                ? "rgba(34,197,94,0.12)"
+                                : timerWarn
+                                  ? "rgba(239,68,68,0.1)"
+                                  : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                              color: timerDone ? "#22c55e" : timerWarn ? "#ef4444" : "var(--color-accent)",
+                            }}
+                          >
+                            <Timer size={9} />
+                            {timerDone ? "Time's up!" : fmtTime(timerSecs!)}
+                          </span>
+                        )}
+                      </div>
+                      {/* Live progress bar for active lesson */}
+                      {isActive && livePct > 0 && (
+                        <div className="h-0.5 rounded-full overflow-hidden mt-1.5" style={{ background: "var(--color-progress-track)" }}>
+                          <div
+                            className="h-full rounded-full transition-all duration-1000"
+                            style={{ width: `${livePct}%`, background: "var(--color-accent)" }}
+                          />
+                        </div>
                       )}
                     </div>
-                    {/* Live progress bar for active lesson */}
-                    {isActive && livePct > 0 && (
-                      <div className="h-0.5 rounded-full overflow-hidden mt-1.5" style={{ background: "var(--color-progress-track)" }}>
-                        <div
-                          className="h-full rounded-full transition-all duration-1000"
-                          style={{ width: `${livePct}%`, background: "var(--color-accent)" }}
-                        />
-                      </div>
-                    )}
-                  </div>
 
-                  {isActive ? (
-                    <Play size={14} fill="currentColor" style={{ color: "var(--color-accent)", flexShrink: 0 }} />
-                  ) : isCompleted ? (
-                    <CheckCircle2 size={15} style={{ color: "var(--color-success)", flexShrink: 0 }} />
-                  ) : null}
-                </button>
+                    {isActive ? (
+                      <Play size={14} fill="currentColor" style={{ color: "var(--color-accent)", flexShrink: 0 }} />
+                    ) : isCompleted ? (
+                      <CheckCircle2 size={15} style={{ color: "var(--color-success)", flexShrink: 0 }} />
+                    ) : null}
+                  </button>
+
+                  {/* Focus-locked lifeline banner */}
+                  {isFocusLocked && (
+                    <div
+                      className="flex items-center justify-between gap-3 px-4 py-2.5"
+                      style={{ background: "rgba(239,68,68,0.06)", borderTop: "1px solid rgba(239,68,68,0.15)" }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Lock size={12} style={{ color: "#ef4444" }} />
+                        <span className="text-xs font-bold" style={{ color: "#ef4444" }}>
+                          Lesson locked — timer expired
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleUseLifeline(lesson, focusTimerDuration); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 transition-opacity hover:opacity-80"
+                        style={{ background: lifelinesLeft > 0 ? "var(--color-accent)" : "#d97706" }}
+                      >
+                        <Zap size={11} />
+                        {lifelinesLeft > 0
+                          ? `Get Lifeline (${lifelinesLeft} free)`
+                          : `Lifeline (${LIFELINE_COIN_COST} coins)`}
+                      </button>
+                    </div>
+                  )}
+                </div>
               );
             })
           )}
