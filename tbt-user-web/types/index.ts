@@ -1272,3 +1272,21 @@ export type AdEventType =
   | "load_error"
   | "frequency_blocked"
   | "schedule_blocked";
+
+// ─── Rituals ─────────────────────────────────────────────────────────────────
+
+export interface Habit {
+  id: string;
+  icon: string;
+  rawQuestion: string;
+  highlightWord: string;
+  subtitle: string;
+  sortOrder: number;
+  status: string;
+}
+
+export interface RitualsButtonsConfig {
+  id: string;
+  yesLabel: string;
+  notYetLabel: string;
+}

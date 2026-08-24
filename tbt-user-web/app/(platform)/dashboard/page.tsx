@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { useDashboardStats, useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useMe } from "@/lib/hooks/useUser";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
+import { MorningRitualCard } from "@/components/features/rituals/MorningRitualCard";
 
 export default function DashboardPage() {
   const { data: me } = useMe();
@@ -29,6 +30,9 @@ export default function DashboardPage() {
           {uiStrings?.dashboardSubtitle ?? "Here's what's happening with your learning journey."}
         </p>
       </div>
+
+      {/* Morning Ritual */}
+      <MorningRitualCard />
 
       {/* Stats */}
       {loadingStats ? (
