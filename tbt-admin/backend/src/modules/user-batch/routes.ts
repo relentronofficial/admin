@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import {
   getMyBatchHandler, saveDraftHandler, submitDayHandler,
   markAttendanceHandler, requestBreakHandler, getBatchCertificateHandler,
-  getMySubmissionsHandler,
+  getMySubmissionsHandler, spendCoinsHandler,
 } from './controller.js';
 
 export async function userBatchRoutes(fastify: FastifyInstance) {
@@ -15,4 +15,5 @@ export async function userBatchRoutes(fastify: FastifyInstance) {
   fastify.post('/:dayNumber/submit', submitDayHandler);
   fastify.post('/attendance', markAttendanceHandler);
   fastify.post('/break', requestBreakHandler);
+  fastify.post('/spend-coins', spendCoinsHandler);
 }

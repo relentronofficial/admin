@@ -690,6 +690,36 @@ export async function requestBreakHandler(req: FastifyRequest, reply: FastifyRep
   return reply.send({ success: true, data: record, error: null });
 }
 
+// POST /api/user-batch/spend-coins — deduct TBT coins for an extra lifeline
+export async function spendCoinsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const { amount } = (req.body as any) ?? {};
+  const cost = typeof amount === 'number' && amount > 0 ? amount : 50;
+
+  const [sumRow] = await req.server.prisma.$queryRawUnsafe<Array<{ sum: bigint }>>(
+    'SELECT COALESCE(SUM(points), 0)::bigint AS sum FROM tbt_activity_log WHERE member_id = $1::uuid',
+    memberId,
+  );
+  const currentCoins = Number(sumRow?.sum ?? 0);
+
+  if (currentCoins < cost) {
+    return reply.status(400).send({
+      success: false,
+      data: null,
+      error: `Insufficient TBT coins. You have ${currentCoins} coins but need ${cost}.`,
+    });
+  }
+
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, activity_date)
+     VALUES ($1::uuid, $2::int, 'lifeline_spend', NOW()::date)`,
+    memberId,
+    -cost,
+  );
+
+  return reply.send({ success: true, data: { remainingCoins: currentCoins - cost }, error: null });
+}
+
 // Admin: GET /api/batches/:id/pending — all pending approval records with task submissions
 export async function getPendingApprovalsHandler(
   req: FastifyRequest<{ Params: { id: string } }>,

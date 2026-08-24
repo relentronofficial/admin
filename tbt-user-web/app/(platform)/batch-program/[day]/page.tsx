@@ -20,6 +20,10 @@ import {
   UserCheck,
   Tag,
   Paperclip,
+  Lock,
+  Zap,
+  Coins,
+  X,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -28,8 +32,10 @@ import {
   useSubmitBatchDay,
   useMarkAttendance,
   useUploadTaskProof,
+  useSpendCoins,
   type TaskSubmissionProof,
 } from "@/lib/hooks/useBatchProgram";
+import { useMe } from "@/lib/hooks/useUser";
 import { getServerNow } from "@/lib/api/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useSocket } from "@/lib/socket/useSocket";
@@ -79,12 +85,17 @@ export default function BatchDayPage() {
   const { uiStrings, config } = useSiteConfig();
 
   const { data: program, isLoading } = useMyBatchProgram();
+  const { data: me } = useMe();
   const queryClient = useQueryClient();
   const { socket } = useSocket();
   const saveDraft = useSaveBatchDraft();
   const submitDay = useSubmitBatchDay();
   const markAttendance = useMarkAttendance();
+  const spendCoins = useSpendCoins();
   const { upload: uploadProof } = useUploadTaskProof();
+
+  const MAX_FREE_LIFELINES = 3;
+  const LIFELINE_COIN_COST = 50;
 
   const totalDays: number = (program as any)?.totalDays ?? 90;
 
@@ -193,12 +204,27 @@ export default function BatchDayPage() {
   const [uploadingTaskIds, setUploadingTaskIds] = useState<Set<string>>(new Set());
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  // ── Focus-mode gamification ───────────────────────────────────────────────
+  // Alert shown before timer starts
+  const [focusDialog, setFocusDialog] = useState<{ taskId: string; taskTitle: string } | null>(null);
+  // Tasks locked when timer expired without completion
+  const [lockedTaskIds, setLockedTaskIds] = useState<Set<string>>(new Set());
+  // Lifelines remaining this session (3 free, then coins)
+  const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
+  // Coin-spend confirmation for lifeline
+  const [coinDialog, setCoinDialog] = useState<{ taskId: string } | null>(null);
+  // Ref so timer callback can read latest completedTaskIds without stale closure
+  const completedTaskIdsRef = useRef<string[]>([]);
+
   // ── 5-minute focus timers (per-task, client-only) ─────────────────────────
   const [taskTimers, setTaskTimers] = useState<Record<string, number>>({});
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const timerTaskRef = useRef<string | null>(null);
 
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
+
+  // Keep ref in sync so the interval callback always reads latest completedTaskIds
+  useEffect(() => { completedTaskIdsRef.current = completedTaskIds; }, [completedTaskIds]);
 
   const timerDuration = config?.taskTimerSeconds ?? 300;
 
@@ -213,6 +239,11 @@ export default function BatchDayPage() {
         clearInterval(timerIntervalRef.current);
         timerTaskRef.current = null;
         setTaskTimers((prev) => ({ ...prev, [taskId]: 0 }));
+        // Lock the task if not yet completed
+        if (!completedTaskIdsRef.current.includes(taskId)) {
+          setLockedTaskIds((prev) => new Set([...prev, taskId]));
+          toast.error("⏰ Time's up! Use a lifeline to unlock this task.", { duration: 4000 });
+        }
       } else {
         setTaskTimers((prev) => ({ ...prev, [taskId]: remaining }));
       }
@@ -291,6 +322,53 @@ export default function BatchDayPage() {
     setDirty(true);
   };
 
+  // Called when user clicks an unchecked task — show focus-mode dialog
+  const handleTaskClick = (taskId: string, taskTitle: string) => {
+    if (!canEdit) return;
+    const done = completedTaskIds.includes(taskId);
+    const locked = lockedTaskIds.has(taskId);
+    if (done) {
+      // Unchecking is always allowed
+      toggleTask(taskId);
+      return;
+    }
+    if (locked) return; // locked tasks can only be unlocked via lifeline
+    // First time clicking: show focus-mode confirmation
+    const timerStarted = taskTimers[taskId] !== undefined;
+    if (timerStarted) {
+      // Timer already running — just toggle
+      toggleTask(taskId);
+    } else {
+      setFocusDialog({ taskId, taskTitle });
+    }
+  };
+
+  // Use a free lifeline or open coin dialog
+  const handleUseLifeline = (taskId: string) => {
+    if (lifelinesLeft > 0) {
+      setLifelinesLeft((n) => n - 1);
+      setLockedTaskIds((prev) => { const s = new Set(prev); s.delete(taskId); return s; });
+      startTaskTimer(taskId);
+      toast.success(`Lifeline used! ${lifelinesLeft - 1} free lifelines remaining.`);
+    } else {
+      setCoinDialog({ taskId });
+    }
+  };
+
+  // Spend TBT coins for an extra lifeline
+  const handleSpendCoins = async (taskId: string) => {
+    try {
+      const res = await spendCoins.mutateAsync(LIFELINE_COIN_COST);
+      setLockedTaskIds((prev) => { const s = new Set(prev); s.delete(taskId); return s; });
+      startTaskTimer(taskId);
+      setCoinDialog(null);
+      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.remainingCoins} coins.`);
+    } catch (err: any) {
+      setCoinDialog(null);
+      toast.error(err?.response?.data?.error ?? "Not enough TBT coins");
+    }
+  };
+
   const handleJournalChange = (val: string) => {
     setJournalEntry(val);
     setDirty(true);
@@ -354,6 +432,101 @@ export default function BatchDayPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
+
+      {/* ── Focus-Mode Start Dialog ─────────────────────────────────────── */}
+      {focusDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)" }}>
+                <Zap size={22} style={{ color: "var(--color-accent)" }} />
+              </div>
+              <div>
+                <p className="font-bold text-base">Focus Mode</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{focusDialog.taskTitle}</p>
+              </div>
+              <button onClick={() => setFocusDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
+                <X size={16} className="opacity-50" />
+              </button>
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+              This task will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
+              <strong>{fmtTime(timerDuration)}</strong> minutes if not completed.
+              You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
+              After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { toggleTask(focusDialog.taskId); setFocusDialog(null); }}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all"
+                style={{ borderColor: "var(--color-border-medium)", background: "transparent" }}
+              >
+                Skip Timer
+              </button>
+              <button
+                onClick={() => { toggleTask(focusDialog.taskId); startTaskTimer(focusDialog.taskId); setFocusDialog(null); }}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                style={{ background: "var(--color-accent)" }}
+              >
+                <Zap size={14} />
+                Start Focus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Coin-Spend Lifeline Dialog ──────────────────────────────────── */}
+      {coinDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(251,191,36,0.15)" }}>
+                <Coins size={22} style={{ color: "#fbbf24" }} />
+              </div>
+              <div>
+                <p className="font-bold text-base">Use TBT Coins?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">No free lifelines remaining</p>
+              </div>
+              <button onClick={() => setCoinDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
+                <X size={16} className="opacity-50" />
+              </button>
+            </div>
+            <div className="rounded-xl p-4 space-y-2" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)" }}>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Lifeline cost</span>
+                <span className="font-bold" style={{ color: "#fbbf24" }}>{LIFELINE_COIN_COST} coins</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Your balance</span>
+                <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
+              </div>
+            </div>
+            <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
+              Spending {LIFELINE_COIN_COST} TBT coins will reset the {fmtTime(timerDuration)} focus timer for this task.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCoinDialog(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border"
+                style={{ borderColor: "var(--color-border-medium)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSpendCoins(coinDialog.taskId)}
+                disabled={spendCoins.isPending || (me?.totalPoints ?? 0) < LIFELINE_COIN_COST}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                style={{ background: "#d97706" }}
+              >
+                {spendCoins.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+                Spend {LIFELINE_COIN_COST} Coins
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Back + nav */}
       <div className="flex items-center justify-between gap-4">
         <button
@@ -581,13 +754,28 @@ export default function BatchDayPage() {
             background: "var(--color-bg-surface)",
           }}
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
               {uiStrings?.batchChecklistLabel ?? "Checklist"}
             </h3>
-            <span className="text-xs text-muted-foreground">
-              {completedTaskIds.length}/{tasks.length} {uiStrings?.batchDoneLabel ?? "done"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {completedTaskIds.length}/{tasks.length} {uiStrings?.batchDoneLabel ?? "done"}
+              </span>
+              {canEdit && (
+                <span
+                  className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{
+                    background: lifelinesLeft > 0 ? "rgba(34,197,94,0.12)" : "rgba(251,191,36,0.12)",
+                    color: lifelinesLeft > 0 ? "#22c55e" : "#fbbf24",
+                  }}
+                  title="Free lifelines remaining this session"
+                >
+                  <Zap size={9} />
+                  {lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
           </div>
           <div className="space-y-3">
             {tasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((task) => {
@@ -599,6 +787,7 @@ export default function BatchDayPage() {
               const timerStarted = timerSecs !== undefined;
               const timerDone = timerSecs === 0;
               const timerWarn = timerStarted && !timerDone && (timerSecs ?? 300) <= 60;
+              const isTaskLocked = lockedTaskIds.has(task.id) && !done;
               const needsFileUpload = proofType === "image" || proofType === "file";
               const needsUrlInput   = proofType === "link"  || proofType === "video";
               const needsTextInput  = proofType === "text";
@@ -620,16 +809,22 @@ export default function BatchDayPage() {
 
                   {/* Task row — checkbox + title + meta */}
                   <div
-                    onClick={() => canEdit && toggleTask(task.id)}
+                    onClick={() => handleTaskClick(task.id, task.title)}
                     role="checkbox"
                     aria-checked={done}
                     className="w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all"
                     style={{
-                      borderColor: done
-                        ? "rgba(34,197,94,0.3)"
-                        : "var(--color-border-subtle)",
-                      background: done ? "rgba(34,197,94,0.06)" : "transparent",
-                      cursor: canEdit ? "pointer" : "default",
+                      borderColor: isTaskLocked
+                        ? "rgba(239,68,68,0.4)"
+                        : done
+                          ? "rgba(34,197,94,0.3)"
+                          : "var(--color-border-subtle)",
+                      background: isTaskLocked
+                        ? "rgba(239,68,68,0.05)"
+                        : done
+                          ? "rgba(34,197,94,0.06)"
+                          : "transparent",
+                      cursor: canEdit && !isTaskLocked ? "pointer" : "default",
                     }}
                   >
                     <div className="mt-0.5 shrink-0">
@@ -740,6 +935,31 @@ export default function BatchDayPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Locked banner — appears below locked task row */}
+                  {isTaskLocked && canEdit && (
+                    <div
+                      className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl"
+                      style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Lock size={13} style={{ color: "#ef4444" }} />
+                        <span className="text-xs font-bold" style={{ color: "#ef4444" }}>
+                          Task locked — timer expired
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleUseLifeline(task.id); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 transition-opacity hover:opacity-80"
+                        style={{ background: lifelinesLeft > 0 ? "var(--color-accent)" : "#d97706" }}
+                      >
+                        <Zap size={11} />
+                        {lifelinesLeft > 0
+                          ? `Get Lifeline (${lifelinesLeft} free)`
+                          : `Lifeline (${LIFELINE_COIN_COST} coins)`}
+                      </button>
+                    </div>
+                  )}
 
                   {/* Learning resource link */}
                   {task.contentUrl && (

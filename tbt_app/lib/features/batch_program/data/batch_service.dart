@@ -289,6 +289,20 @@ class BatchService {
     }
   }
 
+  // ── POST /api/user-batch/spend-coins ─────────────────────────────────────────
+
+  Future<int> spendCoins(int amount) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '$kUserBatch/spend-coins',
+        data: {'amount': amount},
+      );
+      return (res.data?['data']?['remainingCoins'] as num?)?.toInt() ?? 0;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['error'] ?? 'Not enough TBT coins');
+    }
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
   static BatchDayStatus _parseStatus(String? s) {

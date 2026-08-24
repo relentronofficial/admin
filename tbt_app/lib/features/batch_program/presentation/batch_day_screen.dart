@@ -40,6 +40,22 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
   final _notesController = TextEditingController();
   final _journalController = TextEditingController();
 
+  // ── Focus-mode gamification ──────────────────────────────────────────────────
+  int _lifelinesLeft = 3;
+  static const int _lifelineCoinCost = 50;
+  final Set<String> _lockedTaskIds = {};
+  bool _spendingCoins = false;
+  final Map<String, GlobalKey<_TaskRowState>> _taskRowKeys = {};
+
+  GlobalKey<_TaskRowState> _keyFor(String taskId) =>
+      _taskRowKeys.putIfAbsent(taskId, () => GlobalKey<_TaskRowState>());
+
+  String _fmtTimer(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
   @override
   void dispose() {
     _debounceTimer?.cancel();
@@ -272,6 +288,276 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
     }
   }
 
+  // ── Gamification handlers ────────────────────────────────────────────────────
+
+  void _handleTaskTap(int index, String taskId, String taskTitle) {
+    final task = _localTasks[index];
+    if (task.isCompleted) {
+      _onTaskToggled(index);
+      return;
+    }
+    if (_lockedTaskIds.contains(taskId)) return;
+    final timerStarted =
+        _taskRowKeys[taskId]?.currentState?._timerStarted ?? false;
+    if (timerStarted) {
+      _onTaskToggled(index);
+    } else {
+      _showFocusDialog(index, taskId, taskTitle);
+    }
+  }
+
+  void _onTimerExpired(int index, String taskId) {
+    if (_localTasks[index].isCompleted) return;
+    setState(() => _lockedTaskIds.add(taskId));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("⏰ Time's up! Use a lifeline to unlock this task."),
+        backgroundColor: Color(0xFFdc2626),
+        duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _handleLifeline(String taskId) {
+    if (_lifelinesLeft > 0) {
+      setState(() {
+        _lifelinesLeft--;
+        _lockedTaskIds.remove(taskId);
+      });
+      _taskRowKeys[taskId]?.currentState?._startTimer();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Lifeline used! $_lifelinesLeft free lifeline'
+            '${_lifelinesLeft == 1 ? '' : 's'} remaining.',
+          ),
+          backgroundColor: const Color(0xFF16a34a),
+        ),
+      );
+    } else {
+      _showCoinDialog(taskId);
+    }
+  }
+
+  void _showFocusDialog(int index, String taskId, String taskTitle) {
+    final timerSeconds =
+        ref.read(siteConfigNotifierProvider).valueOrNull?.taskTimerSeconds ??
+            300;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.tokens.bgModal,
+        title: Row(
+          children: [
+            Icon(Icons.bolt_rounded,
+                color: Theme.of(context).colorScheme.primary, size: 22),
+            const SizedBox(width: 8),
+            Text(
+              'Focus Mode',
+              style: TextStyle(
+                color: context.tokens.textPrimary,
+                fontFamily: 'Rajdhani',
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              taskTitle,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This task will be locked after ${_fmtTimer(timerSeconds)} if not '
+              'completed. You have $_lifelinesLeft free '
+              'lifeline${_lifelinesLeft != 1 ? "s" : ""} remaining. After that, '
+              'each lifeline costs $_lifelineCoinCost TBT coins.',
+              style: TextStyle(
+                color: context.tokens.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ctx.pop();
+              _onTaskToggled(index);
+            },
+            child: Text('Skip Timer',
+                style: TextStyle(color: context.tokens.textMuted)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              ctx.pop();
+              _onTaskToggled(index);
+              _taskRowKeys[taskId]?.currentState?._startTimer();
+            },
+            icon: const Icon(Icons.bolt_rounded, size: 15),
+            label: const Text(
+              'Start Focus',
+              style: TextStyle(
+                  fontFamily: 'Rajdhani',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCoinDialog(String taskId) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: context.tokens.bgModal,
+          title: Row(
+            children: [
+              const Icon(Icons.monetization_on_rounded,
+                  color: Color(0xFFfbbf24), size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'Use TBT Coins?',
+                style: TextStyle(
+                  color: context.tokens.textPrimary,
+                  fontFamily: 'Rajdhani',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFfbbf24).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: const Color(0xFFfbbf24).withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Lifeline cost',
+                        style: TextStyle(
+                            color: context.tokens.textMuted, fontSize: 13)),
+                    const Text('50 coins',
+                        style: TextStyle(
+                            color: Color(0xFFfbbf24),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Spending $_lifelineCoinCost TBT coins resets the focus timer for this task.',
+                style: TextStyle(
+                    color: context.tokens.textSecondary,
+                    fontSize: 13,
+                    height: 1.5),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => ctx.pop(),
+              child: Text('Cancel',
+                  style: TextStyle(color: context.tokens.textMuted)),
+            ),
+            ElevatedButton.icon(
+              onPressed: _spendingCoins
+                  ? null
+                  : () => _spendCoins(ctx, taskId, setLocal),
+              icon: _spendingCoins
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.monetization_on_rounded, size: 15),
+              label: Text(
+                'Spend $_lifelineCoinCost Coins',
+                style: const TextStyle(
+                    fontFamily: 'Rajdhani',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFd97706),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _spendCoins(
+      BuildContext dialogCtx, String taskId, StateSetter setLocal) async {
+    setLocal(() {});
+    setState(() => _spendingCoins = true);
+    try {
+      final remaining =
+          await ref.read(batchServiceProvider).spendCoins(_lifelineCoinCost);
+      setState(() {
+        _spendingCoins = false;
+        _lockedTaskIds.remove(taskId);
+      });
+      if (mounted) Navigator.of(dialogCtx).pop();
+      _taskRowKeys[taskId]?.currentState?._startTimer();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Lifeline activated! $_lifelineCoinCost coins deducted. '
+              'Remaining: $remaining coins.',
+            ),
+            backgroundColor: const Color(0xFF16a34a),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _spendingCoins = false);
+      if (mounted) Navigator.of(dialogCtx).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dayAsync = ref.watch(batchDayProvider(widget.day));
@@ -428,29 +714,85 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
               // Day description + optional resource link (backend `notes` +
               // `resourceUrl` — surfaced via BatchService.dayMeta).
               _DayNotes(dayNumber: widget.day),
-              const _SectionLabel(label: 'TASKS'),
+              // TASKS header + lifelines badge
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'TASKS',
+                      style: TextStyle(
+                        fontFamily: 'Rajdhani',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                        color: context.tokens.textMuted,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (!readOnly)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _lifelinesLeft > 0
+                              ? const Color(0xFF16a34a).withValues(alpha: 0.12)
+                              : const Color(0xFFd97706).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.bolt_rounded,
+                                size: 11,
+                                color: _lifelinesLeft > 0
+                                    ? const Color(0xFF4ade80)
+                                    : const Color(0xFFfbbf24)),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$_lifelinesLeft lifeline${_lifelinesLeft != 1 ? "s" : ""}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: _lifelinesLeft > 0
+                                    ? const Color(0xFF4ade80)
+                                    : const Color(0xFFfbbf24),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               ..._localTasks.asMap().entries.map((e) {
                 final meta =
                     ref.read(batchServiceProvider).taskMeta[e.value.id];
                 final pt = meta?.proofType ?? 'watch';
                 final needsInput = pt == 'text' || pt == 'url';
+                final taskId = e.value.id;
                 return _TaskRow(
+                  key: _keyFor(taskId),
                   task: e.value,
-                  proofName: _proofPaths[e.value.id],
-                  hasPublicUrl:
-                      _proofPublicUrls.containsKey(e.value.id),
-                  isUploading: _uploadingTaskId == e.value.id,
+                  proofName: _proofPaths[taskId],
+                  hasPublicUrl: _proofPublicUrls.containsKey(taskId),
+                  isUploading: _uploadingTaskId == taskId,
                   readOnly: readOnly,
                   proofType: pt,
                   description: meta?.description,
                   deliverables: meta?.deliverables,
                   timerDurationSeconds: timerDurationSeconds,
+                  isLocked: _lockedTaskIds.contains(taskId) &&
+                      !e.value.isCompleted,
                   responseController:
-                      needsInput ? _ctrlFor(e.value.id) : null,
+                      needsInput ? _ctrlFor(taskId) : null,
                   onResponseChanged:
                       needsInput ? (_) => _scheduleAutoSave() : null,
-                  onToggle: () => _onTaskToggled(e.key),
-                  onPickProof: () => _pickProof(e.value.id),
+                  onTaskTap: () =>
+                      _handleTaskTap(e.key, taskId, e.value.title),
+                  onPickProof: () => _pickProof(taskId),
+                  onLifeline: () => _handleLifeline(taskId),
+                  onTimerExpired: () => _onTimerExpired(e.key, taskId),
                 );
               }),
             ],
@@ -717,48 +1059,27 @@ class _DayNotes extends ConsumerWidget {
   }
 }
 
-// ── Section label ─────────────────────────────────────────────────────────────
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: 'Rajdhani',
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.5,
-          color: context.tokens.textMuted,
-        ),
-      ),
-    );
-  }
-}
-
 // ── Task row ──────────────────────────────────────────────────────────────────
 
 class _TaskRow extends StatefulWidget {
   const _TaskRow({
+    super.key,
     required this.task,
     required this.proofName,
     required this.hasPublicUrl,
     required this.isUploading,
     required this.readOnly,
-    required this.onToggle,
+    required this.onTaskTap,
     required this.onPickProof,
     required this.timerDurationSeconds,
+    this.isLocked = false,
     this.proofType = 'watch',
     this.description,
     this.deliverables,
     this.responseController,
     this.onResponseChanged,
+    this.onLifeline,
+    this.onTimerExpired,
   });
 
   final BatchTask task;
@@ -766,8 +1087,11 @@ class _TaskRow extends StatefulWidget {
   final bool hasPublicUrl;
   final bool isUploading;
   final bool readOnly;
-  final VoidCallback onToggle;
+  final bool isLocked;
+  final VoidCallback onTaskTap;
   final VoidCallback onPickProof;
+  final VoidCallback? onLifeline;
+  final VoidCallback? onTimerExpired;
   final int timerDurationSeconds;
   final String proofType;
   final String? description;
@@ -803,6 +1127,9 @@ class _TaskRowState extends State<_TaskRow> {
           _secondsLeft--;
         } else {
           t.cancel();
+          if (!widget.task.isCompleted) {
+            widget.onTimerExpired?.call();
+          }
         }
       });
     });
@@ -842,15 +1169,21 @@ class _TaskRowState extends State<_TaskRow> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: context.tokens.bgSurface,
+        color: widget.isLocked
+            ? const Color(0xFFdc2626).withValues(alpha: 0.05)
+            : context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: context.tokens.borderCard),
+        border: Border.all(
+          color: widget.isLocked
+              ? const Color(0xFFdc2626).withValues(alpha: 0.4)
+              : context.tokens.borderCard,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: widget.readOnly ? null : widget.onToggle,
+            onTap: widget.readOnly ? null : widget.onTaskTap,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -860,9 +1193,12 @@ class _TaskRowState extends State<_TaskRow> {
                   SizedBox(
                     width: 24,
                     height: 24,
-                    child: Checkbox(
+                    child: widget.isLocked
+                        ? const Icon(Icons.lock_outline,
+                            size: 18, color: Color(0xFFdc2626))
+                        : Checkbox(
                       value: widget.task.isCompleted,
-                      onChanged: widget.readOnly ? null : (_) => widget.onToggle(),
+                      onChanged: widget.readOnly ? null : (_) => widget.onTaskTap(),
                       activeColor: Theme.of(context).colorScheme.primary,
                       side: BorderSide(color: context.tokens.borderInput),
                       visualDensity: VisualDensity.compact,
@@ -1006,6 +1342,66 @@ class _TaskRowState extends State<_TaskRow> {
               ),
             ),
           ),
+          // Locked banner — shown when timer expired and task not completed
+          if (widget.isLocked && !widget.readOnly)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFdc2626).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: const Color(0xFFdc2626).withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline,
+                      size: 13, color: Color(0xFFdc2626)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Task locked — timer expired',
+                      style: const TextStyle(
+                        color: Color(0xFFdc2626),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: widget.onLifeline,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.bolt_rounded,
+                              size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Get Lifeline',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'Rajdhani',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           if (widget.proofName != null ||
               (widget.task.proofUrl != null && !widget.readOnly == false))
             Padding(

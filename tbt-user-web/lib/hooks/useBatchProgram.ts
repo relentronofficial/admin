@@ -119,6 +119,17 @@ export const useRequestBreak = () => {
   });
 };
 
+export const useSpendCoins = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (amount: number) => {
+      const res: any = await apiClient.post('/api/user-batch/spend-coins', { amount });
+      return res.data as { remainingCoins: number };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+};
+
 export const useDownloadBatchCertificate = () => {
   return useMutation({
     mutationFn: async () => {
