@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Circle,
   Clock,
+  Timer,
   AlertCircle,
   ExternalLink,
   Save,
@@ -191,6 +192,33 @@ export default function BatchDayPage() {
   const [taskSubmissions, setTaskSubmissions] = useState<Record<string, TaskSubmissionProof>>({});
   const [uploadingTaskIds, setUploadingTaskIds] = useState<Set<string>>(new Set());
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // ── 5-minute focus timers (per-task, client-only) ─────────────────────────
+  const [taskTimers, setTaskTimers] = useState<Record<string, number>>({});
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const timerTaskRef = useRef<string | null>(null);
+
+  useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
+
+  const startTaskTimer = (taskId: string) => {
+    clearInterval(timerIntervalRef.current);
+    timerTaskRef.current = taskId;
+    setTaskTimers((prev) => ({ ...prev, [taskId]: 300 }));
+    timerIntervalRef.current = setInterval(() => {
+      setTaskTimers((prev) => {
+        const cur = prev[taskId] ?? 300;
+        if (cur <= 1) {
+          clearInterval(timerIntervalRef.current);
+          timerTaskRef.current = null;
+          return { ...prev, [taskId]: 0 };
+        }
+        return { ...prev, [taskId]: cur - 1 };
+      });
+    }, 1000);
+  };
+
+  const fmtTime = (secs: number) =>
+    `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, "0")}`;
 
   useEffect(() => {
     if (progress) {
@@ -565,6 +593,10 @@ export default function BatchDayPage() {
               const proof = taskSubmissions[task.id];
               const isUploading = uploadingTaskIds.has(task.id);
               const proofType = task.proofType ?? "watch";
+              const timerSecs = taskTimers[task.id];
+              const timerStarted = timerSecs !== undefined;
+              const timerDone = timerSecs === 0;
+              const timerWarn = timerStarted && !timerDone && (timerSecs ?? 300) <= 60;
               const needsFileUpload = proofType === "image" || proofType === "file";
               const needsUrlInput   = proofType === "link"  || proofType === "video";
               const needsTextInput  = proofType === "text";
@@ -641,6 +673,32 @@ export default function BatchDayPage() {
                             ? (uiStrings?.batchOptionalLabel ?? "Optional")
                             : (uiStrings?.batchRequiredLabel ?? "Required")}
                         </span>
+                        {/* 5-minute focus timer */}
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); if (!timerDone) startTaskTimer(task.id); }}
+                            disabled={timerDone}
+                            className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors"
+                            style={{
+                              background: timerDone
+                                ? "rgba(34,197,94,0.12)"
+                                : timerWarn
+                                  ? "rgba(239,68,68,0.1)"
+                                  : "var(--color-surface-overlay)",
+                              color: timerDone
+                                ? "#22c55e"
+                                : timerWarn
+                                  ? "#ef4444"
+                                  : "var(--color-text-subtle)",
+                              cursor: timerDone ? "default" : "pointer",
+                            }}
+                            title={timerDone ? "Time's up!" : timerStarted ? "Restart timer" : "Start 5-min focus timer"}
+                          >
+                            <Timer size={9} />
+                            {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : "5:00"}
+                          </button>
+                        )}
                       </div>
                     </div>
                     {/* File upload icon for image/file types */}

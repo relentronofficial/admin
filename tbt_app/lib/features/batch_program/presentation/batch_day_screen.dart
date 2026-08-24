@@ -737,7 +737,7 @@ class _SectionLabel extends StatelessWidget {
 
 // ── Task row ──────────────────────────────────────────────────────────────────
 
-class _TaskRow extends StatelessWidget {
+class _TaskRow extends StatefulWidget {
   const _TaskRow({
     required this.task,
     required this.proofName,
@@ -766,13 +766,68 @@ class _TaskRow extends StatelessWidget {
   final TextEditingController? responseController;
   final ValueChanged<String>? onResponseChanged;
 
+  @override
+  State<_TaskRow> createState() => _TaskRowState();
+}
+
+class _TaskRowState extends State<_TaskRow> {
+  static const _timerDuration = 300; // 5 minutes
+
+  int _secondsLeft = _timerDuration;
+  bool _timerStarted = false;
+  Timer? _countdownTimer;
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _countdownTimer?.cancel();
+    setState(() {
+      _secondsLeft = _timerDuration;
+      _timerStarted = true;
+    });
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() {
+        if (_secondsLeft > 0) {
+          _secondsLeft--;
+        } else {
+          t.cancel();
+        }
+      });
+    });
+  }
+
+  String get _timerLabel {
+    final m = _secondsLeft ~/ 60;
+    final s = _secondsLeft % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  bool get _timerDone => _timerStarted && _secondsLeft == 0;
+  bool get _timerWarn => _timerStarted && !_timerDone && _secondsLeft <= 60;
+
   bool get _isFileProof =>
-      proofType == 'file' || proofType == 'image' || proofType == 'video';
-  bool get _isTextProof => proofType == 'text';
-  bool get _isUrlProof => proofType == 'url';
+      widget.proofType == 'file' || widget.proofType == 'image' || widget.proofType == 'video';
+  bool get _isTextProof => widget.proofType == 'text';
+  bool get _isUrlProof => widget.proofType == 'url';
 
   @override
   Widget build(BuildContext context) {
+    final timerColor = _timerDone
+        ? const Color(0xFF22c55e)
+        : _timerWarn
+            ? Theme.of(context).colorScheme.primary
+            : context.tokens.textMuted;
+    final timerBg = _timerDone
+        ? const Color(0xFF22c55e).withValues(alpha: 0.12)
+        : _timerWarn
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+            : context.tokens.bgInput;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -784,11 +839,10 @@ class _TaskRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: readOnly ? null : onToggle,
+            onTap: widget.readOnly ? null : widget.onToggle,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -796,13 +850,12 @@ class _TaskRow extends StatelessWidget {
                     width: 24,
                     height: 24,
                     child: Checkbox(
-                      value: task.isCompleted,
-                      onChanged: readOnly ? null : (_) => onToggle(),
+                      value: widget.task.isCompleted,
+                      onChanged: widget.readOnly ? null : (_) => widget.onToggle(),
                       activeColor: Theme.of(context).colorScheme.primary,
                       side: BorderSide(color: context.tokens.borderInput),
                       visualDensity: VisualDensity.compact,
-                      materialTapTargetSize:
-                          MaterialTapTargetSize.shrinkWrap,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -811,27 +864,28 @@ class _TaskRow extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          task.title,
+                          widget.task.title,
                           style: TextStyle(
-                            color: task.isCompleted
+                            color: widget.task.isCompleted
                                 ? context.tokens.textMuted
                                 : context.tokens.textPrimary,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            decoration: task.isCompleted
+                            decoration: widget.task.isCompleted
                                 ? TextDecoration.lineThrough
                                 : null,
                             height: 1.4,
                           ),
                         ),
                         const SizedBox(height: 4),
+                        // Type + Required/Optional chips
                         Row(
                           children: [
-                            Icon(_typeIcon(task.type),
+                            Icon(_typeIcon(widget.task.type),
                                 size: 12, color: context.tokens.textMuted),
                             const SizedBox(width: 4),
                             Text(
-                              _typeLabel(task.type),
+                              _typeLabel(widget.task.type),
                               style: TextStyle(
                                 color: context.tokens.textMuted,
                                 fontSize: 10,
@@ -843,7 +897,7 @@ class _TaskRow extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: task.isRequired
+                                color: widget.task.isRequired
                                     ? Theme.of(context)
                                         .colorScheme
                                         .primary
@@ -852,9 +906,9 @@ class _TaskRow extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                task.isRequired ? 'Required' : 'Optional',
+                                widget.task.isRequired ? 'Required' : 'Optional',
                                 style: TextStyle(
-                                  color: task.isRequired
+                                  color: widget.task.isRequired
                                       ? Theme.of(context).colorScheme.primary
                                       : context.tokens.textMuted,
                                   fontSize: 9,
@@ -865,15 +919,51 @@ class _TaskRow extends StatelessWidget {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 6),
+                        // ── 5-minute focus timer ──────────────────────────
+                        GestureDetector(
+                          onTap: (!widget.readOnly && !_timerDone)
+                              ? _startTimer
+                              : null,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: timerBg,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.timer_outlined,
+                                    size: 10, color: timerColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _timerDone
+                                      ? "Time's up!"
+                                      : _timerStarted
+                                          ? _timerLabel
+                                          : '5:00',
+                                  style: TextStyle(
+                                    color: timerColor,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
                   // File attach button only for file-shaped proofs.
-                  if (!readOnly && _isFileProof)
+                  if (!widget.readOnly && _isFileProof)
                     SizedBox(
                       width: 32,
                       height: 32,
-                      child: isUploading
+                      child: widget.isUploading
                           ? Center(
                               child: SizedBox(
                                 width: 14,
@@ -885,12 +975,12 @@ class _TaskRow extends StatelessWidget {
                               ),
                             )
                           : IconButton(
-                              onPressed: onPickProof,
+                              onPressed: widget.onPickProof,
                               icon: Icon(
-                                hasPublicUrl
+                                widget.hasPublicUrl
                                     ? Icons.attach_file
                                     : Icons.upload_file_outlined,
-                                color: hasPublicUrl
+                                color: widget.hasPublicUrl
                                     ? Theme.of(context).colorScheme.primary
                                     : context.tokens.textMuted,
                                 size: 18,
@@ -905,7 +995,8 @@ class _TaskRow extends StatelessWidget {
               ),
             ),
           ),
-          if (proofName != null || (task.proofUrl != null && !readOnly == false))
+          if (widget.proofName != null ||
+              (widget.task.proofUrl != null && !widget.readOnly == false))
             Padding(
               padding: const EdgeInsets.fromLTRB(46, 0, 12, 10),
               child: Row(
@@ -915,11 +1006,9 @@ class _TaskRow extends StatelessWidget {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      proofName ?? 'Proof attached',
+                      widget.proofName ?? 'Proof attached',
                       style: const TextStyle(
-                        color: Color(0xFF4ade80),
-                        fontSize: 10,
-                      ),
+                          color: Color(0xFF4ade80), fontSize: 10),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -928,46 +1017,53 @@ class _TaskRow extends StatelessWidget {
               ),
             ),
 
-          // Description + deliverables hint (both are optional per-task).
-          if (description != null && description!.isNotEmpty)
+          if (widget.description != null && widget.description!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(46, 0, 12, 6),
               child: Text(
-                description!,
-                style: TextStyle(color: context.tokens.textMuted, fontSize: 11, height: 1.4),
+                widget.description!,
+                style: TextStyle(
+                    color: context.tokens.textMuted,
+                    fontSize: 11,
+                    height: 1.4),
               ),
             ),
-          if (deliverables != null && deliverables!.isNotEmpty)
+          if (widget.deliverables != null && widget.deliverables!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(46, 0, 12, 6),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
                   color: context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  deliverables!,
+                  widget.deliverables!,
                   style: TextStyle(
-                      color: context.tokens.textSecondary, fontSize: 11, height: 1.4),
+                      color: context.tokens.textSecondary,
+                      fontSize: 11,
+                      height: 1.4),
                 ),
               ),
             ),
 
-          // Text / URL response input, when the task expects one.
-          if (!readOnly &&
+          // Text / URL response input.
+          if (!widget.readOnly &&
               (_isTextProof || _isUrlProof) &&
-              responseController != null)
+              widget.responseController != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(46, 4, 12, 12),
               child: TextField(
-                controller: responseController,
-                onChanged: onResponseChanged,
-                keyboardType:
-                    _isUrlProof ? TextInputType.url : TextInputType.multiline,
+                controller: widget.responseController,
+                onChanged: widget.onResponseChanged,
+                keyboardType: _isUrlProof
+                    ? TextInputType.url
+                    : TextInputType.multiline,
                 maxLines: _isUrlProof ? 1 : 4,
                 minLines: _isUrlProof ? 1 : 2,
-                style: TextStyle(color: context.tokens.textPrimary, fontSize: 13),
+                style: TextStyle(
+                    color: context.tokens.textPrimary, fontSize: 13),
                 decoration: InputDecoration(
                   isDense: true,
                   filled: true,
@@ -975,15 +1071,17 @@ class _TaskRow extends StatelessWidget {
                   hintText: _isUrlProof
                       ? 'Paste your link (https://…)'
                       : 'Type your response…',
-                  hintStyle:
-                      TextStyle(color: context.tokens.textMuted, fontSize: 12),
+                  hintStyle: TextStyle(
+                      color: context.tokens.textMuted, fontSize: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: context.tokens.borderCard),
+                    borderSide:
+                        BorderSide(color: context.tokens.borderCard),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: context.tokens.borderCard),
+                    borderSide:
+                        BorderSide(color: context.tokens.borderCard),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 8),
@@ -991,23 +1089,26 @@ class _TaskRow extends StatelessWidget {
               ),
             ),
 
-          // Read-only display of a previously-submitted text/URL response.
-          if (readOnly &&
+          // Read-only display of submitted text/URL response.
+          if (widget.readOnly &&
               (_isTextProof || _isUrlProof) &&
-              (responseController?.text.isNotEmpty ?? false))
+              (widget.responseController?.text.isNotEmpty ?? false))
             Padding(
               padding: const EdgeInsets.fromLTRB(46, 0, 12, 12),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: context.tokens.bgInput,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: context.tokens.borderCard),
                 ),
                 child: Text(
-                  responseController!.text,
+                  widget.responseController!.text,
                   style: TextStyle(
-                      color: context.tokens.textSecondary, fontSize: 12, height: 1.4),
+                      color: context.tokens.textSecondary,
+                      fontSize: 12,
+                      height: 1.4),
                 ),
               ),
             ),
