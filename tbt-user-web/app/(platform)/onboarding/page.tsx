@@ -759,7 +759,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <SkillSlider
                     key={key}
                     label={label}
-                    value={typeof profile[key] === "number" ? profile[key] : 5}
+                    value={typeof profile[key] === "number" ? profile[key] : 1}
                     onChange={(v) => setProfile((p) => ({ ...p, [key]: v }))}
                   />
                 ))}
