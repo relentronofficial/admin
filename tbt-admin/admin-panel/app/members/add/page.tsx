@@ -63,6 +63,21 @@ const memberSchema = z.object({
   hasVideoEditing: z.boolean().default(false),
   videoEditingDetails: z.string().optional(),
   notes: z.string().optional(),
+  hasWebsite: z.boolean().default(false),
+  weeklyWebsiteOrders: z.number().int().min(0).optional().nullable(),
+  skillBusinessFoundation: z.number().int().min(1).max(10).default(5),
+  skillContent: z.number().int().min(1).max(10).default(5),
+  skillFunnels: z.number().int().min(1).max(10).default(5),
+  skillAds: z.number().int().min(1).max(10).default(5),
+  skillSales: z.number().int().min(1).max(10).default(5),
+  skillOverallMarketing: z.number().int().min(1).max(10).default(5),
+  weeklyLearningHours: z.number().int().min(5).max(80).default(5),
+  teamSize: z.string().optional(),
+  businessStartedFrom: z.string().optional(),
+  instagramStats: z.string().optional(),
+  facebookStats: z.string().optional(),
+  websiteUrl: z.string().optional(),
+  revenueGoalAfterTbt: z.string().optional(),
   membershipPlan: z.string().default("free"),
   status: z.string().default("active"),
   verificationStatus: z.string().default("awaiting_kyc"),
@@ -120,6 +135,14 @@ export default function AddMemberPage() {
       marketingChannels: [],
       hasMarketingTeam: false,
       hasVideoEditing: false,
+      hasWebsite: false,
+      skillBusinessFoundation: 5,
+      skillContent: 5,
+      skillFunnels: 5,
+      skillAds: 5,
+      skillSales: 5,
+      skillOverallMarketing: 5,
+      weeklyLearningHours: 5,
     }
   });
 
@@ -128,6 +151,14 @@ export default function AddMemberPage() {
   const watchHasVideo = watch("hasVideoEditing");
   const watchMemberId = watch("memberId");
   const watchAccountManagerId = watch("accountManagerId");
+  const watchHasWebsite = watch("hasWebsite");
+  const watchSkillBF = watch("skillBusinessFoundation");
+  const watchSkillContent = watch("skillContent");
+  const watchSkillFunnels = watch("skillFunnels");
+  const watchSkillAds = watch("skillAds");
+  const watchSkillSales = watch("skillSales");
+  const watchSkillOM = watch("skillOverallMarketing");
+  const watchLearningHours = watch("weeklyLearningHours");
 
   const toggleChannel = (channel: string) => {
     if (watchChannels.includes(channel)) {
@@ -392,7 +423,7 @@ export default function AddMemberPage() {
               {/* Row 3 */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Turnover (Annual)</label>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Revenue Generated Until Now</label>
                   <select {...register("annualTurnover")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626] appearance-none cursor-pointer">
                     <option value="" disabled>Select...</option>
                     <option value="Under 10L">Under 10L</option>
@@ -404,8 +435,44 @@ export default function AddMemberPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Goal after 90 days</label>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Revenue Goal After TBT</label>
+                  <input {...register("revenueGoalAfterTbt")} placeholder="e.g. 1Cr in 12 months" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                </div>
+              </div>
+
+              {/* Row 3b */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Learning Goals (Goal after 90 days)</label>
                   <input {...register("goalAfter90Days")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Started From</label>
+                  <input {...register("businessStartedFrom")} placeholder="e.g. 2019 or Yet to Start" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                </div>
+              </div>
+
+              {/* Row 3c */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Total Members in Team</label>
+                  <input {...register("teamSize")} placeholder="e.g. 5" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Website URL</label>
+                  <input {...register("websiteUrl")} placeholder="https://yourbrand.com" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                </div>
+              </div>
+
+              {/* Row 3d */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Instagram Posts &amp; Followers</label>
+                  <input {...register("instagramStats")} placeholder="e.g. 120 posts, 4.2K followers" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Facebook Posts &amp; Followers</label>
+                  <input {...register("facebookStats")} placeholder="e.g. 80 posts, 2K followers" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
                 </div>
               </div>
 
@@ -532,7 +599,102 @@ export default function AddMemberPage() {
             </div>
           </section>
 
-          {/* SECTION 4: ACCOUNT MANAGEMENT */}
+          {/* SECTION 4: SKILLS & GROWTH */}
+          <section className="bg-[#141414] border border-[#1f1f1f] rounded-[12px] overflow-hidden">
+            <div className="px-8 pt-8 pb-4">
+              <h2 className="text-[20px] font-bold text-white uppercase">SKILLS & GROWTH</h2>
+              <p className="text-[13px] text-[#666] mt-1">Current skill levels and learning commitment.</p>
+            </div>
+            <div className="p-8 pt-4 space-y-8">
+
+              {/* Website */}
+              <div>
+                <p className="text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-3">Does the member have a website?</p>
+                <div className="flex gap-3">
+                  {([{ label: "Yes", val: true }, { label: "No", val: false }] as const).map(({ label, val }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => {
+                        setValue("hasWebsite", val, { shouldDirty: true });
+                        if (!val) setValue("weeklyWebsiteOrders", null as any, { shouldDirty: true });
+                      }}
+                      className={cn(
+                        "px-6 h-[40px] rounded-[8px] text-[13px] font-semibold border transition-colors",
+                        watchHasWebsite === val
+                          ? "bg-[#dc2626] text-white border-[#dc2626]"
+                          : "bg-[#1a1a1a] text-[#888] border-[#2a2a2a] hover:border-[#555]"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {watchHasWebsite && (
+                <div className="w-1/2">
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Weekly orders from website</label>
+                  <input
+                    type="number" min={0}
+                    {...register("weeklyWebsiteOrders", { valueAsNumber: true })}
+                    placeholder="e.g. 50"
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]"
+                  />
+                </div>
+              )}
+
+              {/* Skill sliders */}
+              <div>
+                <p className="text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-1">Rate skills (1–10)</p>
+                <p className="text-[12px] text-[#555] mb-5">1 = Beginner · 10 = Expert</p>
+                <div className="grid grid-cols-2 gap-x-10 gap-y-6">
+                  {([
+                    { name: "skillBusinessFoundation" as const, label: "Business Foundation", val: watchSkillBF },
+                    { name: "skillContent" as const, label: "Content", val: watchSkillContent },
+                    { name: "skillFunnels" as const, label: "Funnels", val: watchSkillFunnels },
+                    { name: "skillAds" as const, label: "Ads", val: watchSkillAds },
+                    { name: "skillSales" as const, label: "Sales", val: watchSkillSales },
+                    { name: "skillOverallMarketing" as const, label: "Overall Marketing", val: watchSkillOM },
+                  ] as const).map(({ name, label, val }) => (
+                    <div key={name}>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="text-[12px] text-[#aaa]">{label}</label>
+                        <span className="text-[14px] font-bold text-white tabular-nums">{val ?? 5}<span className="text-[#555] font-normal">/10</span></span>
+                      </div>
+                      <input
+                        type="range" min={1} max={10} step={1}
+                        {...register(name, { valueAsNumber: true })}
+                        className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
+                      />
+                      <div className="flex justify-between text-[11px] text-[#555] mt-1">
+                        <span>Beginner</span><span>Expert</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Learning hours slider */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase">Hours per week for learning</p>
+                  <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 5} <span className="text-[#555] text-[13px] font-normal">hrs/week</span></span>
+                </div>
+                <input
+                  type="range" min={5} max={80} step={5}
+                  {...register("weeklyLearningHours", { valueAsNumber: true })}
+                  className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
+                />
+                <div className="flex justify-between text-[11px] text-[#555] mt-1">
+                  <span>5 hrs</span><span>40 hrs</span><span>80 hrs</span>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          {/* SECTION 5: ACCOUNT MANAGEMENT */}
           <section className="bg-[#141414] border border-[#1f1f1f] rounded-[12px] overflow-hidden mb-12">
             <div className="px-8 pt-8 pb-4">
               <h2 className="text-[20px] font-bold text-white uppercase">ACCOUNT MANAGEMENT</h2>

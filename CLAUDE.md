@@ -28,7 +28,26 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 **Repo-root screenshots & audit scripts are throwaway artifacts.** The repo root contains hundreds of `.png`/`.jpeg` screenshots and one-off `.mjs` audit/test scripts (`admin-full-audit.mjs`, `test-*.mjs`, `*-audit.mjs`, etc.) from prior manual QA runs. Do not commit them, do not treat them as canonical tests, and do not delete them without asking — they're the user's local debugging trail.
 
-**Additional spec docs at repo root** — `tbt-admin/SPECKIT.md` is the workflow-audit implementation speckit (P0–P3 fix list for Members · Batches · Tasks). Check it before touching those modules to avoid re-litigating decisions. `SELF_ONBOARDING_SPECKIT.md` (repo root) is the full spec for the self-onboarding KYC wizard — **in progress as of 2026-08-18**; read it before touching `onboarding` or `onboarding-meetings` modules or the `verificationStatus`/`onboardingCompleted` member fields. `tbt_app/ONBOARDING_SPECKIT.md` tracks the 14 Flutter-side onboarding fixes (Sprint 1 in progress). `tbt_app/CHAT_GROUP_SPECKIT.md` is the Flutter chat group WhatsApp-parity roadmap (F-01 – F-22, P0/P1/P2 tiers); **Sprints 1 and 2 are committed** (F-01 swipe-to-reply, F-02 voice preview, F-03 member pin/unpin, F-04 scroll-to-bottom FAB, F-07 message info sheet, F-08 camera capture); **Sprint 3 is in progress (uncommitted)** — F-05 multi-select forward, F-06 link preview (`ChatGroupLinkPreview` model added), F-11/F-12 emoji picker (`emoji_picker_flutter` added to pubspec), F-15 media gallery (backend route `GET /api/chat-groups/:id/media` + Flutter `chat_group_media_gallery.dart`/`chat_group_media_preview.dart`); **Sprint 6 is done (uncommitted)** — F-17 lock-to-record (swipe-up on mic button locks recording, tap-to-stop), F-18 disappearing messages (backend `ALTER TABLE chat_groups ADD COLUMN disappearing_duration_seconds INT` + `PATCH /api/chat-groups/admin/:id/disappearing` + hourly BullMQ cron + Flutter banner + admin info-sheet picker), F-19 document extension color badges (`_ExtBadge`), F-21 location sharing (`geolocator` added + attach-sheet + location card). Check the speckit before adding any group-chat feature to avoid re-implementing done work or violating the planned API contracts.
+**Additional spec docs** — always read the relevant speckit before touching its module to avoid re-litigating decisions:
+
+| Speckit | Location | Scope / Status |
+|---|---|---|
+| `SPECKIT.md` | `tbt-admin/` | Workflow-audit P0–P3 fix list for Members · Batches · Tasks |
+| `SELF_ONBOARDING_SPECKIT.md` | repo root | Self-onboarding KYC wizard — **in progress 2026-08-18**; covers `onboarding`/`onboarding-meetings` modules, `verificationStatus`, `onboardingCompleted` |
+| `WEEKLY_CHECKLIST_SPECKIT.md` | repo root | Weekly rollup layer on top of batch program (required/optional tasks, per-week analytics, FCM push registration) — **implemented and committed** |
+| `TBT_ADS_SPECKIT.md` | repo root | Ad campaign system spec for Flutter mobile client — check before adding mobile ad features |
+| `COURSE_UX_SPECKIT.md` | repo root | Course UX & wiring fixes C-01–C-12 (heartbeat bug, URL sync, Practice Arena, catalog filters, reflections backend, etc.) — **complete 2026-08-25** |
+| `ONBOARDING_SPECKIT.md` | `tbt_app/` | 14 Flutter-side onboarding fixes (Sprint 1 in progress) |
+| `CHAT_GROUP_SPECKIT.md` | `tbt_app/` | Flutter chat group WhatsApp-parity roadmap F-01–F-22 — Sprints 1+2 committed, Sprint 3 in progress (F-05/06/11/12/15), Sprint 6 done uncommitted (F-17/18/19/21) |
+| `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port from co-worker app |
+| `WINS_SPECKIT.md` | `tbt_app/` | Flutter WINS leaderboard / gamification screen |
+| `PODCAST_SPECKIT.md` | `tbt_app/` | Flutter podcast feature port |
+| `COMMUNITY_SPECKIT.md` | `tbt_app/` | Flutter community feed v1 |
+| `COMMUNITY_FEED_V2_SPECKIT.md` | `tbt_app/` | Social-media-grade community overhaul (30 items, ~5–7 dev days) |
+| `EBOOK_SPECKIT.md` | `tbt_app/` | Ebook feature gap-fix plan (2026-08-01 audit findings) |
+| `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
+
+**`WORKSHOP_BUG_REPORT.md` (repo root)** — 6 bugs found in a 2026-08-21 static audit of the workshop module (BUG-WS-001 through BUG-WS-006); all 6 resolved in commit `cccdf538`. Read before touching workshop-related code.
 
 **Surgical updates over large rewrites** — prefer targeted data sanitation (handling nulls/empty strings, guarding one field) over refactoring entire controllers or modules. Minimal, non-breaking fixes only.
 
@@ -115,7 +134,7 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 ### Authentication — Two Completely Different Systems
 
 **Admin panel auth (Clerk):**
-- `clerkPlugin` (`backend/src/plugins/clerk.ts`) decorates Fastify with `fastify.authenticate` — verifies Clerk JWTs, used as `preHandler` on all admin-protected routes
+- `clerkPlugin` (`backend/src/plugins/clerk.ts`) decorates Fastify with `fastify.authenticate` — verifies Clerk JWTs, used as `preHandler` on all admin-protected routes. It sets **`request.user = verified.sub`** (the Clerk subject string, e.g. `"user_2abc..."`). There is NO `request.admin` object — it is never set. Admin controllers that need to attribute an action to an admin's DB record must look up by Clerk ID: `const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user } })`.
 - `ClerkProvider` wraps root layout. `AuthInterceptor` in `admin-panel/components/Providers.tsx` registers an Axios request interceptor that calls `getToken()` (token cached until 8 s before its `exp` claim; falls back to 52 s if `exp` is unreadable) and attaches `Authorization: Bearer <token>` to every `apiClient` call
 - Admin socket authenticates via Clerk token in `socket.handshake.auth.token`
 
@@ -253,10 +272,18 @@ Additional semantic tokens from `globals.css` (not API-injected — safe to use 
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`
-- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`)
-- `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`; backed by `lib/api/services/courses.service.ts`
+- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`), `useRequestBreak` (POST `/api/user-batch/break`), `useSpendCoins` (POST `/api/user-batch/spend-coins` — lifeline purchases; invalidates `["user","me"]` query key), `useDownloadBatchCertificate` (GET `/api/user-batch/certificate` — returns PDF blob, triggers browser download)
+- `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`, `useCourseCategories` (GET `/api/user/courses/categories`), `useReflections(courseId)` (GET reflections from backend), `useSaveReflection(courseId)` (POST reflection to backend — backs the `ReflectionModal`); backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
 - `lib/hooks/useAds.ts` — ad display logic: `useAdEngine` (fetches eligible ad, tracks impression/click/skip/close/complete). Backed by `lib/api/services/ads.service.ts`. Ad triggers live in `lib/ads/adTriggers.ts`; media pre-loading in `lib/ads/mediaRegistry.ts`; per-session frequency cap in `lib/ads/session.ts`; event batching in `lib/ads/trackingQueue.ts`.
+- `lib/hooks/useRituals.ts` — `useRitualHabits` (GET `/api/rituals/habits`), `useRitualsButtonsConfig` (GET `/api/rituals/buttons`); backed by `lib/api/services/rituals.service.ts`
+- `lib/hooks/useEbooks.ts` — `useEbookCategories`, `useFeaturedEbooks`, `useEbookBanners`, `useTrendingEbooks`, `useEbookLibrary`, `useEbook`, `useBookmarks`, `useToggleBookmark`, `useEbookProgress`, `useSubmitProgress`, `useContinueReading`, `useEbookReviews`, `useSubmitReview`, `useReadingStreak`, `useEbookAuthor`, `useHighlightsForBook`, `useAllHighlights`, `useCreateHighlight`, `useUpdateHighlight`, `useDeleteHighlight`
+- `lib/hooks/usePodcasts.ts` — `usePodcastCategories`, `usePodcastEpisodes`, `usePodcastEpisode`, `useFeaturedPodcastSeries`, `usePodcastSeries`, `useContinueListening`, `useSubmitPodcastProgress`, `useMarkPodcastCompleted`
+- `lib/hooks/useCommunity.ts` — community feed hooks (posts, comments, follow)
+- `lib/hooks/useChatGroups.ts` — `useMyChatGroups`, `useChatGroup`, `useChatGroupMessages`, `useSendChatGroupMessage`, `useEditChatGroupMessage`, `useDeleteChatGroupMessage`; also exports `chatGroupKeys`, `isLocallyMuted`, `getLocalMuteState`, `setLocalMuteState`
+- `lib/hooks/useSupport.ts` — helpdesk ticket hooks
+- `lib/hooks/useOnboarding.ts` — `useOnboardingState`, `useOnboardingContent`, `useSaveOnboardingProgress`, `usePresignOnboardingDocument`, `useRegisterOnboardingDocument`, `useDeleteOnboardingDocument`, `usePresignProfilePhoto` (circular photo picker — presign → PUT to R2 → store `profilePhotoUrl`), `useSubmitOnboarding`
+- `lib/hooks/useOnboardingMeetings.ts` — LiveKit verification meeting hooks for onboarding
 - All hooks are `"use client"` and use TanStack Query v5
 
 **Service layer:** User-web hooks delegate HTTP calls to `lib/api/services/*.service.ts` (thin wrappers over `apiClient`). When adding new user-web hooks, create or extend the relevant service file rather than calling `apiClient` directly from the hook.
@@ -283,11 +310,12 @@ Members with a paid `membershipPlan` set by admin bypass the `FreeInterceptor` e
 
 ### Self-Onboarding KYC Wizard (in progress — backend partially implemented)
 - **Backend** — `onboarding` module (`/api/onboarding`): member wizard CRUD (`GET/PATCH /api/onboarding`), KYC document presign + register/delete (`/api/onboarding/documents/*`), admin-authored content CRUD (`/api/onboarding/admin/content`), and `POST /api/onboarding/submit` (transitions member to `under_review`). Uses `KycDocument` Prisma model (dormant before this feature). Logic gated in `backend/src/lib/onboardingLogic.ts` (`canEditOnboarding`, `canSubmitOnboarding`, `checkOnboardingReadyToSubmit`). New `onboarding_content` table created via startup ALTER.
-- **Backend** — `onboarding-meetings` module (`/api/onboarding-meetings`): LiveKit verification meetings — admin lifecycle (create/start/end/cancel/mute/remove) + member join/leave. See `ONBOARDING_LIVE_MEETING_SPECKIT.md` in `tbt-admin/`.
+- **Backend** — `onboarding-meetings` module (`/api/onboarding-meetings`): LiveKit verification meetings — admin lifecycle (create/start/end/cancel/mute/remove) + member join/leave.
 - **Security boundary** — `onboardingUpdateSchema` in `onboarding/schema.ts` is the whitelist of member-editable fields. Never accept `status`, `verificationStatus`, `batchId`, `membershipPlan`, or `password` from the member's own PATCH — those stay admin-only via `updateMemberSchema`.
 - **KYC documents** — stored in `'kyc-documents'` R2 bucket (private, not public). The presigned URL handler already treats this bucket as private (`upload/controller.ts:136`).
 - **Admin approve/reject/request-changes** — extend `POST /api/members/:id/approve`; new `POST /api/members/:id/reject` and `POST /api/members/:id/request-changes`. All three reuse the same socket + notification pattern as the existing approve handler.
 - **`SubscriptionGate` exemption** — `pending + awaiting_kyc` must route to `/onboarding` (wizard), not the dead-end approval-wait screen. `pending + under_review | changes_requested` stays on the wait screen.
+- **Web wizard features** — profile photo upload (circular picker, presign → R2 PUT, stores `profilePhotoUrl`); content steps are fully dynamic from DB (`onboarding_content` rows — not fixed stepKeys); `onboardingSubmittedAt` timestamp shown as relative "Submitted X days ago" in PendingReviewView; WhatsApp "Contact Support" button in RejectedView. Step navigation is index-driven from DB content count.
 - **Spec docs** — `SELF_ONBOARDING_SPECKIT.md` (full backend + web + mobile spec); `tbt_app/ONBOARDING_SPECKIT.md` (14 Flutter fixes, Sprint 1 in progress).
 
 ### Login Flow (`components/auth/LoginScreen.tsx`)
@@ -470,7 +498,7 @@ Admin page: `admin-panel/app/podcasts/`. User pages: `app/(platform)/podcasts/` 
 Social feed inside the platform: composer, feed, comments, follow. Admin page: `admin-panel/app/community/`. User pages: `app/(platform)/community/`.
 
 ### Rituals (`/api/rituals`)
-Daily habit / streak module. Admin page: `admin-panel/app/rituals/`. Backend controller + routes only (no `schema.ts`).
+Daily habit / streak module. Admin page: `admin-panel/app/rituals/`. Backend controller + routes only (no `schema.ts`). User-web: `MorningRitualCard` component rendered on the dashboard between the welcome section and stats — collapsible, with progress bars, Yes/Not Yet habit answers, and a completion state. Hooks: `useRitualHabits` (GET `/api/rituals/habits`) and `useRitualsButtonsConfig` (GET `/api/rituals/buttons`) in `lib/hooks/useRituals.ts`.
 
 ### Group Chat — Chat Groups (`/api/chat-groups`) — WhatsApp parity
 Group chat (distinct from DM `/api/messages`). Admin page: `admin-panel/app/groups/` — edit-group modal, members roster, announcement-only toggle. User pages: `app/(platform)/messages/` (unified with DM). Phase 5 features: **voice notes, forward, pin, star, mute, DM media, reply-jump, @mentions, presence, in-group search, FCM push, read receipts, media, replies**. Flutter port lives in `tbt_app/lib/features/chat/`.
@@ -536,6 +564,7 @@ course_episodes:
   quiz_unlock_percent INT DEFAULT 80  -- % of episode watched before quiz unlocks
   drm_enabled BOOLEAN DEFAULT false
   bunny_drm_token TEXT
+  timer_seconds INT            -- per-lesson focus timer (null = use global taskTimerSeconds from site config)
 
 products:
   price DECIMAL(10,2)
@@ -552,6 +581,9 @@ site_configs:
 
 member_episode_progress:
   watched_segments TEXT        -- serialized segment ranges for DRM tracking
+
+tasks:
+  timer_seconds INT            -- per-task focus timer (null = use global taskTimerSeconds from site config)
 ```
 
 ### Admin Hooks (`useTbt.ts`)
@@ -617,7 +649,7 @@ POST /api/courses/:id/badges/:badgeId/award
     Not the same as `quizData` on a workshop `Challenge` row.
 17. **`useMarkLessonComplete` uses optimistic updates** — it updates the TanStack Query cache in `onMutate` when `isCompleted=true`. If you call it from a new context, ensure `courseId` is in scope for the correct `queryKey: ["user", "progress", courseId]`.
 18. **`lessonAlreadyDone` completion signals** — The function in `learning/[courseId]/page.tsx` uses exactly 3 signals: (a) `completedIds.has(lessonId)` (authoritative DB state), (b) `!!isCompleted` from course query, (c) `actualWatchedSecs >= durationSeconds * 0.85`. There is intentionally NO position proximity heuristic — it was removed because `|resumeAtSeconds - actualWatchedSecs| < 5` caused false positives for partially-watched lessons (e.g., watched 37 of 46s → detected as done). If `lessonAlreadyDone` returns `true`, the lesson-reset effect pre-sets `markCalledRef.current = true`, silently blocking all completion POSTs for that session without any error or UI indication.
-19. **Video player is HLS-first, iframe fallback** — Both the workshop player (`workshop/[slug]/page.tsx`) and course player (`learning/[courseId]/page.tsx`) use the same two-tier pattern:
+19. **Video player is HLS-first, iframe fallback** — The workshop player (`workshop/[slug]/page.tsx`), course player (`learning/[courseId]/page.tsx`), and standalone episode player (`(player)/episode/[workshopSlug]/[episodeId]/page.tsx`) all use the same two-tier pattern:
     - If `episode.hlsUrl` is set (and HLS hasn't errored): render `<PlyrPlayer>` (`components/features/video/PlyrPlayer.tsx` — Plyr + hls.js, lazy-imported). Use `ref={playerRef}` (type `PlyrPlayerHandle`) to read `.currentTime` and `.duration` imperatively. Props: `hlsUrl`, `startAt`, `speed`, `autoplay`, `onReady(duration)`, `onTimeUpdate(currentTime)`, `onPlay`, `onPause`, `onEnded`, `onSpeedChange`, `onError`. Set `hlsFailed=true` in `onError` to trigger iframe fallback.
     - Otherwise: render Bunny `<iframe>` and use postMessage. `timeupdate`, `pause`, and `ended` fire **automatically** without subscribing. `play` does NOT fire on autoplay — detect via `getCurrentTime`/`isPaused` responses after `ready`. `value.seconds` = playhead; `value.duration` = real duration (use on first message).
     The backend sets `videoType: 'hls' | 'iframe'` alongside `hlsUrl` to indicate which path applies.
@@ -625,8 +657,9 @@ POST /api/courses/:id/badges/:badgeId/award
 21. **`tsx watch` may not hot-reload** — the backend dev server (`npm run dev:backend`) uses `tsx watch` which doesn't reliably detect all file changes. After editing files in `backend/src/`, kill and restart the process if API behaviour doesn't change after saving.
 22. **Course player gamification layer** (`learning/[courseId]/page.tsx`) — three client-only features, all localStorage:
     - **Cue quizzes**: `firedCuesRef` (a `Set<string>`, reset on lesson switch) tracks which `cue.id`s have fired. `cueQuizActiveRef` (boolean ref) prevents re-triggering while modal is open. Flow: `handleVideoProgress` checks `quizData.cues` sorted by `atSeconds` → calls `pausePlayerRef.current()` → calls `document.exitFullscreen()` first if in fullscreen → sets `cueQuizModal`. `handleCloseCueQuiz` clears both refs.
-    - **Reflection modal** (`ReflectionModal`): fires 1.2 s after a lesson completes, but only when `!lesson.hasQuiz && justCompletedInSessionRef.current === true` (i.e., quiz-bearing lessons skip it; lessons that were already done before session load skip it). Saved to `localStorage["tbt_reflections"]` as `{ [courseId:lessonId]: { text, savedAt, lessonTitle } }`. UI strings: `reflectTitle`, `reflectPromptPrefix`, `reflectPromptSuffix`, `reflectPlaceholder`, `reflectSkipLabel`, `reflectSaveLabel`, `reflectSavedLabel`.
+    - **Reflection modal** (`ReflectionModal`): fires 1.2 s after a lesson completes, but only when `!lesson.hasQuiz && justCompletedInSessionRef.current === true` (quiz-bearing lessons skip it; already-done lessons skip it). Saved to the backend via `useSaveReflection` (C-11 — no longer localStorage-only); also cached in `localStorage["tbt_reflections"]` as `{ [courseId:lessonId]: { text, savedAt, lessonTitle } }`. UI strings: `reflectTitle`, `reflectPromptPrefix`, `reflectPromptSuffix`, `reflectPlaceholder`, `reflectSkipLabel`, `reflectSaveLabel`, `reflectSavedLabel`.
     - **Practice Arena modal** (`PracticeArenaModal`): pulls `(lesson as any).quizData?.questions` from all lessons in the course query, shuffles them into interleaved practice. No XP, no backend call.
+    - **XP flash** — `xpFlashedRef` (a `Set<string>`) tracks which lessonIds have already triggered the XP animation this session, preventing double-fires when both the completion path and the quiz-pass path run for the same lesson. Non-quiz lessons flash on `watchState === 'completed'`; quiz lessons flash on quiz pass.
     - **localStorage keys**: `tbt_cr_${courseId}` — completion timestamps `{ [lessonId]: timestampMs }`. `tbt_reflections` — global across all courses. `tbt_speed` — persisted playback speed.
     - **`Lesson` type does not include `quizData`** — the TypeScript interface in `types/index.ts` omits it; access as `(lesson as any).quizData` wherever needed.
 23. **Batch program `totalDays` is dynamic** — `totalDays = batch.program.durationDays + memberBatchSettings.extendedDays`. Never hardcode 90. `useMyBatchProgram` response now includes `totalDays`, `attendance` (array of `{ dayNumber, status, notes, markedAt }`), and `breaks` (array of break requests). Day objects include a `category` string field.
@@ -640,6 +673,10 @@ POST /api/courses/:id/badges/:badgeId/award
 31. **`chat-groups` raw SQL requires `::uuid` casts on every UUID param** — see commit `e3a5590f`. Missing the cast throws a Postgres type error at runtime. Example: `$queryRawUnsafe('SELECT ... WHERE id = $1::uuid', groupId)`.
 32. **`tbt_activity_log` DDL must be split into per-statement calls** — see commit `91d46316`. A single multi-statement `$executeRawUnsafe` for this table fails; split into one call per SQL statement in the `prisma.ts` startup block.
 33. **No auto-logout on 401/403** — do NOT add "redirect to `/login` on session expiry" logic to AuthInterceptors in user-web or mobile. Commit `524c003e` intentionally removed all auto-logout paths; sessions persist until manual sign-out. The refresh cookie must never be clobbered by an interceptor (see `c742c325`).
+34. **Focus timer gamification** — Both batch tasks and course episodes support an optional per-item focus timer. `tasks.timer_seconds` and `course_episodes.timer_seconds` are raw SQL columns (INT, nullable) added at startup. `null` means fall back to the global `taskTimerSeconds` site config value. Behavior: a focus dialog appears on first task/lesson click showing the timer duration; a countdown badge shows during the session; the item locks when the timer expires without completion; 3 free lifelines are granted per session; additional lifelines cost 50 TBT coins via coin spend. When writing create/update handlers for tasks or episodes, destructure `timerSeconds` and persist via `$executeRawUnsafe` rather than spreading into Prisma (same pattern as `batches.xp_per_day`).
+35. **`(req as any).admin` does not exist in admin controllers** — `fastify.authenticate` (Clerk) sets `request.user` (Clerk subject string), never `request.admin`. Writing `(req as any).admin?.id` will always be `undefined`. To get the admin's DB record: `const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user } })`.
+36. **`live:*` socket rooms are webinar-only** — Members join `live:{id}` only by emitting `join:live` in the webinar player. Workshop live-call events must be emitted to individual `user:{memberId}` rooms (not `live:{liveCallId}`). Emitting to `live:*` from a workshop context drops silently because no workshop participant ever joins that room.
+37. **`useSpendCoins` query key must be `["user", "me"]`** — the mutation invalidates `["user","me"]` so the coin balance in `useMe()` refreshes after a lifeline purchase. Using `['me']` (the old key) causes the balance to stay stale in the UI until the next full page load.
 
 ## Socket Events
 

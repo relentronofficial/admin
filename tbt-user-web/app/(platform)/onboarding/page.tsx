@@ -26,9 +26,9 @@ import type { OnboardingContentStep } from "@/lib/api/services/onboarding.servic
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// Dynamic steps: "welcome", "education:<stepKey>", "profile", "documents", "review"
+// Dynamic steps: "welcome", "education:<stepKey>", "profile", "skills", "documents", "review"
 // Step keys from the DB become "education:<stepKey>" segments.
-type FixedStep = "welcome" | "profile" | "documents" | "review";
+type FixedStep = "welcome" | "profile" | "skills" | "documents" | "review";
 type DynamicStep = `education:${string}`;
 type Step = FixedStep | DynamicStep;
 
@@ -43,7 +43,36 @@ const DOCUMENT_TYPES = [
 
 function buildStepOrder(contentSteps: OnboardingContentStep[]): Step[] {
   const educationSteps: DynamicStep[] = contentSteps.map((c) => `education:${c.stepKey}` as DynamicStep);
-  return ["welcome", ...educationSteps, "profile", "documents", "review"];
+  return ["welcome", ...educationSteps, "profile", "skills", "documents", "review"];
+}
+
+const SKILL_FIELDS = [
+  { key: "skillBusinessFoundation", label: "Business Foundation" },
+  { key: "skillContent", label: "Content" },
+  { key: "skillFunnels", label: "Funnels" },
+  { key: "skillAds", label: "Ads" },
+  { key: "skillSales", label: "Sales" },
+  { key: "skillOverallMarketing", label: "Overall Marketing" },
+] as const;
+
+function SkillSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1.5">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="text-sm font-bold tabular-nums" style={{ color: "var(--color-accent)" }}>{value}<span className="text-muted-foreground font-normal">/10</span></span>
+      </div>
+      <input
+        type="range" min={1} max={10} step={1} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full h-2 rounded-full appearance-none cursor-pointer"
+        style={{ accentColor: "var(--color-accent)" }}
+      />
+      <div className="flex justify-between text-xs text-muted-foreground mt-1">
+        <span>Beginner</span><span>Expert</span>
+      </div>
+    </div>
+  );
 }
 
 // ─── Shared bits ────────────────────────────────────────────────────────────
@@ -387,28 +416,362 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               />
             </div>
 
-            {/* Text fields */}
-            {[
-              { key: "firstName", label: "First Name *" },
-              { key: "lastName", label: "Last Name" },
-              { key: "city", label: "City *" },
-              { key: "state", label: "State *" },
-              { key: "businessName", label: "Business Name *" },
-              { key: "businessType", label: "Business Type *" },
-              { key: "productServiceType", label: "Product / Service Type" },
-              { key: "gstNumber", label: "GST Number" },
-              { key: "annualTurnover", label: "Annual Turnover" },
-            ].map(({ key, label }) => (
-              <div key={key}>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+            {/* Read-only contact info */}
+            <div className="grid grid-cols-2 gap-4">
+              {[{ key: "phone", label: "Phone" }, { key: "email", label: "Email" }].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+                  <input
+                    readOnly
+                    value={profile[key] ?? ""}
+                    className="w-full h-11 px-4 rounded-xl text-sm outline-none opacity-60 cursor-default"
+                    style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)", color: "var(--color-text-secondary)" }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Name */}
+            <div className="grid grid-cols-2 gap-4">
+              {[{ key: "firstName", label: "First Name *" }, { key: "lastName", label: "Last Name" }].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+                  <input
+                    value={profile[key] ?? ""}
+                    onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
+                    className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                    style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Location */}
+            <div className="grid grid-cols-2 gap-4">
+              {[{ key: "city", label: "City *" }, { key: "state", label: "State *" }].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+                  <input
+                    value={profile[key] ?? ""}
+                    onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
+                    className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                    style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Brand Name + Business Type */}
+            <div className="grid grid-cols-2 gap-4">
+              {[{ key: "businessName", label: "Brand Name *" }, { key: "businessType", label: "Business Type *" }].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+                  <input
+                    value={profile[key] ?? ""}
+                    onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
+                    className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                    style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Business Started From + Team Size */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Started From *</label>
                 <input
-                  value={profile[key] ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
+                  value={profile.businessStartedFrom ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, businessStartedFrom: e.target.value }))}
+                  placeholder="e.g. 2019 or Yet to Start"
                   className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
                   style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
                 />
               </div>
-            ))}
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Total Members in Your Team *</label>
+                <input
+                  value={profile.teamSize ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, teamSize: e.target.value }))}
+                  placeholder="e.g. 5"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+            </div>
+
+            {/* Offline/Online/Both */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">Offline / Online / Both *</label>
+              <div className="flex gap-3">
+                {(["offline", "online", "hybrid"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setProfile((p) => ({ ...p, preferredSessionMode: mode }))}
+                    className={cn(
+                      "flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-colors capitalize",
+                      profile.preferredSessionMode === mode ? "text-white border-transparent" : "text-muted-foreground"
+                    )}
+                    style={profile.preferredSessionMode === mode
+                      ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
+                      : { borderColor: "var(--color-border-subtle)" }}
+                  >
+                    {mode === "hybrid" ? "Both" : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Instagram Link + Instagram Stats */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Link *</label>
+                <input
+                  value={profile.instagramLink ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, instagramLink: e.target.value }))}
+                  placeholder="@username"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Posts &amp; Followers *</label>
+                <input
+                  value={profile.instagramStats ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, instagramStats: e.target.value }))}
+                  placeholder="e.g. 120 posts, 4.2K followers"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+            </div>
+
+            {/* Facebook Stats + Website Link */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Facebook Posts &amp; Followers *</label>
+                <input
+                  value={profile.facebookStats ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, facebookStats: e.target.value }))}
+                  placeholder="e.g. 80 posts, 2K followers"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Website Link *</label>
+                <input
+                  value={profile.websiteUrl ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, websiteUrl: e.target.value }))}
+                  placeholder="https://yourbrand.com"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+            </div>
+
+            {/* Social Media Handling */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">Social Media Handling *</label>
+              <div className="flex gap-3 mb-3">
+                {([{ label: "In-house", val: true }, { label: "Outsourced / None", val: false }] as const).map(({ label, val }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setProfile((p) => ({ ...p, hasMarketingTeam: val }))}
+                    className={cn(
+                      "flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-colors",
+                      profile.hasMarketingTeam === val ? "text-white border-transparent" : "text-muted-foreground"
+                    )}
+                    style={profile.hasMarketingTeam === val
+                      ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
+                      : { borderColor: "var(--color-border-subtle)" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {profile.hasMarketingTeam && (
+                <input
+                  value={profile.marketingTeamDetails ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, marketingTeamDetails: e.target.value }))}
+                  placeholder="Describe your social media team or agency"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              )}
+            </div>
+
+            {/* Video Editing */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">Video Editing *</label>
+              <div className="flex gap-3 mb-3">
+                {([{ label: "Yes", val: true }, { label: "No", val: false }] as const).map(({ label, val }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setProfile((p) => ({ ...p, hasVideoEditing: val }))}
+                    className={cn(
+                      "flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-colors",
+                      profile.hasVideoEditing === val ? "text-white border-transparent" : "text-muted-foreground"
+                    )}
+                    style={profile.hasVideoEditing === val
+                      ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
+                      : { borderColor: "var(--color-border-subtle)" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {profile.hasVideoEditing && (
+                <input
+                  value={profile.videoEditingDetails ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, videoEditingDetails: e.target.value }))}
+                  placeholder="In-house, outsourced, or tools used"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              )}
+            </div>
+
+            {/* Revenue fields */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Generated Until Now *</label>
+                <input
+                  value={profile.annualTurnover ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, annualTurnover: e.target.value }))}
+                  placeholder="e.g. 25L - 50L"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Goal After TBT *</label>
+                <input
+                  value={profile.revenueGoalAfterTbt ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, revenueGoalAfterTbt: e.target.value }))}
+                  placeholder="e.g. 1Cr in 12 months"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+            </div>
+
+            {/* Learning Goals + GST */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Learning Goals *</label>
+                <input
+                  value={profile.goalAfter90Days ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, goalAfter90Days: e.target.value }))}
+                  placeholder="What do you want to achieve?"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">GST Number *</label>
+                <input
+                  value={profile.gstNumber ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, gstNumber: e.target.value }))}
+                  placeholder="22AAAAA0000A1Z5"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+            </div>
+          </div>
+        </StepShell>
+      )}
+
+      {/* ── Skills & Growth ── */}
+      {step === "skills" && (
+        <StepShell
+          title="Your skills & learning goals"
+          onBack={prevStep ? () => setStep(prevStep) : undefined}
+          onNext={() => saveAndAdvance(nextStep ?? "review")}
+          nextDisabled={saveProgress.isPending}
+        >
+          <div className="space-y-7">
+            {/* Website question */}
+            <div>
+              <p className="text-sm font-medium text-foreground mb-3">Do you have a website?</p>
+              <div className="flex gap-3">
+                {([{ label: "Yes", val: true }, { label: "No", val: false }] as const).map(({ label, val }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setProfile((p) => ({ ...p, hasWebsite: val, ...(val === false && { weeklyWebsiteOrders: undefined }) }))}
+                    className={cn(
+                      "px-6 py-2.5 rounded-xl text-sm font-semibold border transition-colors",
+                      profile.hasWebsite === val
+                        ? "text-white border-transparent"
+                        : "text-muted-foreground"
+                    )}
+                    style={profile.hasWebsite === val
+                      ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
+                      : { borderColor: "var(--color-border-subtle)" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Weekly orders — only when website = yes */}
+            {profile.hasWebsite === true && (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                  Weekly orders from your website
+                </label>
+                <input
+                  type="number" min={0}
+                  value={profile.weeklyWebsiteOrders ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, weeklyWebsiteOrders: e.target.value === "" ? undefined : Number(e.target.value) }))}
+                  placeholder="e.g. 50"
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+            )}
+
+            {/* Skill sliders */}
+            <div>
+              <p className="text-sm font-medium text-foreground mb-1">Rate your skills</p>
+              <p className="text-xs text-muted-foreground mb-4">1 = Beginner &nbsp;·&nbsp; 10 = Expert</p>
+              <div className="space-y-5">
+                {SKILL_FIELDS.map(({ key, label }) => (
+                  <SkillSlider
+                    key={key}
+                    label={label}
+                    value={typeof profile[key] === "number" ? profile[key] : 5}
+                    onChange={(v) => setProfile((p) => ({ ...p, [key]: v }))}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Learning hours slider */}
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-sm font-medium text-foreground">Hours per week for learning</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: "var(--color-accent)" }}>
+                  {typeof profile.weeklyLearningHours === "number" ? profile.weeklyLearningHours : 5} hrs
+                </span>
+              </div>
+              <input
+                type="range" min={5} max={80} step={5}
+                value={typeof profile.weeklyLearningHours === "number" ? profile.weeklyLearningHours : 5}
+                onChange={(e) => setProfile((p) => ({ ...p, weeklyLearningHours: Number(e.target.value) }))}
+                className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                style={{ accentColor: "var(--color-accent)" }}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>5 hrs</span><span>40 hrs</span><span>80 hrs</span>
+              </div>
+            </div>
           </div>
         </StepShell>
       )}

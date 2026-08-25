@@ -427,6 +427,28 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS registered_office TEXT,
           ADD COLUMN IF NOT EXISTS target_network_description TEXT
       `),
+      // Skills & growth profile fields (2026-08-25)
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS has_website BOOLEAN,
+          ADD COLUMN IF NOT EXISTS weekly_website_orders INTEGER,
+          ADD COLUMN IF NOT EXISTS skill_business_foundation INTEGER,
+          ADD COLUMN IF NOT EXISTS skill_content INTEGER,
+          ADD COLUMN IF NOT EXISTS skill_funnels INTEGER,
+          ADD COLUMN IF NOT EXISTS skill_ads INTEGER,
+          ADD COLUMN IF NOT EXISTS skill_sales INTEGER,
+          ADD COLUMN IF NOT EXISTS skill_overall_marketing INTEGER,
+          ADD COLUMN IF NOT EXISTS weekly_learning_hours INTEGER
+      `),
+      // Onboarding profile completeness fields (2026-08-25)
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS business_started_from TEXT,
+          ADD COLUMN IF NOT EXISTS instagram_stats TEXT,
+          ADD COLUMN IF NOT EXISTS facebook_stats TEXT,
+          ADD COLUMN IF NOT EXISTS website_url TEXT,
+          ADD COLUMN IF NOT EXISTS revenue_goal_after_tbt TEXT
+      `),
       // Legal pages (2026-07-28) — Terms & Conditions / Privacy Policy
       // markdown bodies. Slug-based lookup via /api/pub/legal/:slug.
       // Sequenced with .then(...) so the INSERT doesn't race the CREATE

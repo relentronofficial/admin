@@ -55,6 +55,50 @@ async function ensureMasterEntry(
   }
 }
 
+async function writeSkillFields(prisma: any, memberId: string, fields: {
+  hasWebsite?: boolean | null;
+  weeklyWebsiteOrders?: number | null;
+  skillBusinessFoundation?: number | null;
+  skillContent?: number | null;
+  skillFunnels?: number | null;
+  skillAds?: number | null;
+  skillSales?: number | null;
+  skillOverallMarketing?: number | null;
+  weeklyLearningHours?: number | null;
+  teamSize?: string | null;
+  businessStartedFrom?: string | null;
+  instagramStats?: string | null;
+  facebookStats?: string | null;
+  websiteUrl?: string | null;
+  revenueGoalAfterTbt?: string | null;
+}) {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let pi = 1;
+  const add = (col: string, v: unknown) => { sets.push(`${col} = $${pi++}`); vals.push(v); };
+  if (fields.hasWebsite !== undefined) add('has_website', fields.hasWebsite);
+  if (fields.weeklyWebsiteOrders !== undefined) add('weekly_website_orders', fields.weeklyWebsiteOrders);
+  if (fields.skillBusinessFoundation !== undefined) add('skill_business_foundation', fields.skillBusinessFoundation);
+  if (fields.skillContent !== undefined) add('skill_content', fields.skillContent);
+  if (fields.skillFunnels !== undefined) add('skill_funnels', fields.skillFunnels);
+  if (fields.skillAds !== undefined) add('skill_ads', fields.skillAds);
+  if (fields.skillSales !== undefined) add('skill_sales', fields.skillSales);
+  if (fields.skillOverallMarketing !== undefined) add('skill_overall_marketing', fields.skillOverallMarketing);
+  if (fields.weeklyLearningHours !== undefined) add('weekly_learning_hours', fields.weeklyLearningHours);
+  if (fields.teamSize !== undefined) add('team_size', fields.teamSize);
+  if (fields.businessStartedFrom !== undefined) add('business_started_from', fields.businessStartedFrom);
+  if (fields.instagramStats !== undefined) add('instagram_stats', fields.instagramStats);
+  if (fields.facebookStats !== undefined) add('facebook_stats', fields.facebookStats);
+  if (fields.websiteUrl !== undefined) add('website_url', fields.websiteUrl);
+  if (fields.revenueGoalAfterTbt !== undefined) add('revenue_goal_after_tbt', fields.revenueGoalAfterTbt);
+  if (sets.length === 0) return;
+  vals.push(memberId);
+  await prisma.$executeRawUnsafe(
+    `UPDATE members SET ${sets.join(', ')} WHERE id = $${pi}::uuid`,
+    ...vals,
+  );
+}
+
 /**
  * Compose a Prisma `where` clause from the members-list query params.
  *
@@ -330,6 +374,21 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
       batchId,
       createdBy,
       password,
+      hasWebsite,
+      weeklyWebsiteOrders,
+      skillBusinessFoundation,
+      skillContent,
+      skillFunnels,
+      skillAds,
+      skillSales,
+      skillOverallMarketing,
+      weeklyLearningHours,
+      teamSize,
+      businessStartedFrom,
+      instagramStats,
+      facebookStats,
+      websiteUrl,
+      revenueGoalAfterTbt,
       ...restBody
     } = body;
 
@@ -394,6 +453,14 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
       throw prismaErr;
     }
 
+    // Write raw SQL skill/growth fields
+    await writeSkillFields(request.server.prisma, member.id, {
+      hasWebsite, weeklyWebsiteOrders,
+      skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
+      weeklyLearningHours,
+      teamSize, businessStartedFrom, instagramStats, facebookStats, websiteUrl, revenueGoalAfterTbt,
+    });
+
     // Mirror the location/business values into their master tables so
     // the next admin opening the dropdowns sees this member's values
     // as autocomplete suggestions. Fire-and-forget — a failure here
@@ -434,18 +501,24 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
 
 export async function getMemberHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  const member = await request.server.prisma.member.findUnique({
-    where: { id },
-    include: {
+  const [member, skillRows] = await Promise.all([
+    request.server.prisma.member.findUnique({
+      where: { id },
+      include: {
         accountManager: true,
         creator: true,
         batch: true,
         courseEnrollments: { include: { course: true } },
         kycDocuments: { orderBy: { createdAt: 'asc' } },
-    }
-  });
+      },
+    }),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT has_website AS "hasWebsite", weekly_website_orders AS "weeklyWebsiteOrders", skill_business_foundation AS "skillBusinessFoundation", skill_content AS "skillContent", skill_funnels AS "skillFunnels", skill_ads AS "skillAds", skill_sales AS "skillSales", skill_overall_marketing AS "skillOverallMarketing", weekly_learning_hours AS "weeklyLearningHours", team_size AS "teamSize", business_started_from AS "businessStartedFrom", instagram_stats AS "instagramStats", facebook_stats AS "facebookStats", website_url AS "websiteUrl", revenue_goal_after_tbt AS "revenueGoalAfterTbt" FROM members WHERE id = $1::uuid`,
+      id,
+    ),
+  ]);
   if (!member || (member as any).deletedAt) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
-  return reply.send({ success: true, data: member, error: null });
+  return reply.send({ success: true, data: { ...member, ...(skillRows[0] ?? {}) }, error: null });
 }
 
 export async function updateMemberHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -461,6 +534,21 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       createdBy,
       password,
       subscriptionEndsAt,
+      hasWebsite,
+      weeklyWebsiteOrders,
+      skillBusinessFoundation,
+      skillContent,
+      skillFunnels,
+      skillAds,
+      skillSales,
+      skillOverallMarketing,
+      weeklyLearningHours,
+      teamSize,
+      businessStartedFrom,
+      instagramStats,
+      facebookStats,
+      websiteUrl,
+      revenueGoalAfterTbt,
       ...restBody
     } = body as any;
 
@@ -567,6 +655,13 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
     const member = await request.server.prisma.member.update({
       where: { id },
       data
+    });
+
+    await writeSkillFields(request.server.prisma, id, {
+      hasWebsite, weeklyWebsiteOrders,
+      skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
+      weeklyLearningHours,
+      teamSize, businessStartedFrom, instagramStats, facebookStats, websiteUrl, revenueGoalAfterTbt,
     });
 
     // Same master-mirror as createMember. Only fires when the field

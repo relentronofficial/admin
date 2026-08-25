@@ -46,6 +46,21 @@ export const createMemberSchema = z.object({
   createdBy: z.string().optional(),
   currentTier: z.number().int().min(1).optional(),
   password: z.string().min(8, "Password must be at least 8 characters").optional(),
+  hasWebsite: z.boolean().optional(),
+  weeklyWebsiteOrders: z.number().int().min(0).optional().nullable(),
+  skillBusinessFoundation: z.number().int().min(1).max(10).optional().nullable(),
+  skillContent: z.number().int().min(1).max(10).optional().nullable(),
+  skillFunnels: z.number().int().min(1).max(10).optional().nullable(),
+  skillAds: z.number().int().min(1).max(10).optional().nullable(),
+  skillSales: z.number().int().min(1).max(10).optional().nullable(),
+  skillOverallMarketing: z.number().int().min(1).max(10).optional().nullable(),
+  weeklyLearningHours: z.number().int().min(5).max(80).optional().nullable(),
+  teamSize: z.string().optional(),
+  businessStartedFrom: z.string().optional(),
+  instagramStats: z.string().optional(),
+  facebookStats: z.string().optional(),
+  websiteUrl: z.string().optional(),
+  revenueGoalAfterTbt: z.string().optional(),
 });
 
 export const updateMemberSchema = createMemberSchema.partial().extend({

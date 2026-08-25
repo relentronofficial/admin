@@ -38,6 +38,21 @@ export const onboardingUpdateSchema = z.object({
   subIndustry: z.string().optional(),
   businessStage: z.enum(['idea', 'startup', 'growth', 'scaling']).optional(),
   currentChallenges: z.array(z.string()).optional(),
+  hasWebsite: z.boolean().optional(),
+  weeklyWebsiteOrders: z.number().int().min(0).optional().nullable(),
+  skillBusinessFoundation: z.number().int().min(1).max(10).optional().nullable(),
+  skillContent: z.number().int().min(1).max(10).optional().nullable(),
+  skillFunnels: z.number().int().min(1).max(10).optional().nullable(),
+  skillAds: z.number().int().min(1).max(10).optional().nullable(),
+  skillSales: z.number().int().min(1).max(10).optional().nullable(),
+  skillOverallMarketing: z.number().int().min(1).max(10).optional().nullable(),
+  weeklyLearningHours: z.number().int().min(5).max(80).optional().nullable(),
+  teamSize: z.string().optional(),
+  businessStartedFrom: z.string().optional(),
+  instagramStats: z.string().optional(),
+  facebookStats: z.string().optional(),
+  websiteUrl: z.string().optional(),
+  revenueGoalAfterTbt: z.string().optional(),
 }).strict();
 
 export const registerDocumentSchema = z.object({
