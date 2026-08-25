@@ -148,3 +148,25 @@ export const useRequestCourseAccess = () => {
     },
   });
 };
+
+export const useReflections = (courseId: string) =>
+  useQuery({
+    queryKey: ["course-reflections", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getReflections(courseId);
+      return res.data ?? [];
+    },
+    enabled: !!courseId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useSaveReflection = (courseId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lessonId, text }: { lessonId: string; text: string }) =>
+      coursesService.saveReflection(courseId, lessonId, text),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["course-reflections", courseId] });
+    },
+  });
+};

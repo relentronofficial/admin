@@ -18,6 +18,7 @@ import {
   useCourse, useLessonProgress, useMarkLessonComplete,
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
+  useSaveReflection, useReflections,
 } from "@/lib/hooks/useCourses";
 import { useSpendCoins } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
@@ -88,10 +89,13 @@ interface SelectedLesson {
 // Science: Testing yourself on mixed material from all lessons is more effective
 // than re-watching. Each retrieval attempt strengthens the memory trace.
 // (Roediger & Karpicke, 2006; Kornell & Bjork, 2008)
-function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => void }) {
+// Only pulls questions from lessons the member has already completed — showing
+// questions from unseen lessons spoils content and confuses learners.
+function PracticeArenaModal({ course, completedIds, onClose }: { course: any; completedIds: Set<string>; onClose: () => void }) {
   const questions = useMemo<Array<{ q: any; lessonTitle: string }>>(() => {
     const qs: Array<{ q: any; lessonTitle: string }> = [];
     for (const lesson of course?.lessons ?? []) {
+      if (!completedIds.has(lesson.id)) continue;
       const qd = (lesson as any).quizData;
       if (!qd?.questions?.length) continue;
       for (const q of qd.questions) {
@@ -104,7 +108,7 @@ function PracticeArenaModal({ course, onClose }: { course: any; onClose: () => v
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
-  }, [course]);
+  }, [course, completedIds]);
 
   const [idx, setIdx] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -291,6 +295,7 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
   const { uiStrings } = useSiteConfig();
   const [text, setText] = useState("");
   const [saved, setSaved] = useState(false);
+  const saveReflection = useSaveReflection(courseId);
 
   const title        = uiStrings?.reflectTitle        ?? "Reflect & Retain";
   const prefix       = uiStrings?.reflectPromptPrefix ?? "What's one thing from";
@@ -306,6 +311,7 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
       all[`${courseId}:${lessonId}`] = { text, savedAt: Date.now(), lessonTitle };
       localStorage.setItem("tbt_reflections", JSON.stringify(all));
     } catch {}
+    saveReflection.mutate({ lessonId, text });
     setSaved(true);
     setTimeout(() => onClose(true), 900);
   };
@@ -934,7 +940,19 @@ export default function CourseDetailPage({
   const spendCoins = useSpendCoins();
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
 
+  // "Don't show again" per-course focus dialog acknowledgement
+  const [focusAcknowledged, setFocusAcknowledged] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !!localStorage.getItem(`tbt_focus_ack_${courseId}`);
+  });
+  const toggleFocusAck = (checked: boolean) => {
+    setFocusAcknowledged(checked);
+    if (checked) localStorage.setItem(`tbt_focus_ack_${courseId}`, "1");
+    else localStorage.removeItem(`tbt_focus_ack_${courseId}`);
+  };
+
   // Gamification: Practice Arena + Reflection + Spaced Repetition
+  const { data: savedReflections } = useReflections(courseId);
   const [practiceOpen, setPracticeOpen] = useState(false);
   const [pendingReflection, setPendingReflection] = useState<{ lessonId: string; title: string } | null>(null);
   const [completionTimes, setCompletionTimes] = useState<Record<string, number>>({});
@@ -1036,18 +1054,26 @@ export default function CourseDetailPage({
     }
   }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load completion timestamps + reflection count from localStorage on mount
+  // Load completion timestamps from localStorage on mount
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(`tbt_cr_${courseId}`) || "{}");
       setCompletionTimes(stored);
     } catch {}
+  }, [courseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync reflection count: prefer backend total, fall back to localStorage count
+  useEffect(() => {
+    if (savedReflections && savedReflections.length > 0) {
+      setReflectionCount(savedReflections.length);
+      return;
+    }
     try {
       const all = JSON.parse(localStorage.getItem("tbt_reflections") || "{}");
       const count = Object.keys(all).filter(k => k.startsWith(`${courseId}:`)).length;
       setReflectionCount(count);
     } catch {}
-  }, [courseId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [courseId, savedReflections]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save completion timestamp + trigger reflection for no-quiz lessons
   useEffect(() => {
@@ -1088,10 +1114,25 @@ export default function CourseDetailPage({
   const doMarkCompleteRef = useRef<boolean>(false);
   const upNextTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
+  // Auto-advance preference — persisted to localStorage
+  const [autoAdvance, setAutoAdvance] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const v = localStorage.getItem("tbt_autoadvance");
+    return v === null ? true : v === "1";
+  });
+  const autoAdvanceRef = useRef(autoAdvance);
+  autoAdvanceRef.current = autoAdvance;
+  const toggleAutoAdvance = () => {
+    const next = !autoAdvance;
+    setAutoAdvance(next);
+    localStorage.setItem("tbt_autoadvance", next ? "1" : "0");
+  };
+
   // Stable up-next trigger via ref to avoid stale closures inside intervals
   const triggerUpNextRef = useRef<() => void>(() => {});
   triggerUpNextRef.current = useCallback(() => {
     clearInterval(upNextTimerRef.current);
+    if (!autoAdvanceRef.current) return;
     const lessons = courseRef.current?.lessons ?? [];
     const currentIdx = lessons.findIndex((l: any) => l.id === selectedLessonRef.current?.id);
     if (currentIdx < 0 || currentIdx >= lessons.length - 1) return;
@@ -1504,15 +1545,17 @@ export default function CourseDetailPage({
     };
   }, [selectedLesson?.id, courseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 30-second heartbeat (wall-clock elapsed — no player-event dependency) ──────
-  // Same approach as the workshop episode player: uses Date.now() elapsed time so
-  // progress is saved regardless of whether the Bunny iframe sends JS messages.
+  // ── 30-second heartbeat ──────────────────────────────────────────────────────
+  // Uses Date.now() elapsed so progress is saved even when the Bunny iframe sends
+  // no JS messages. Guard on isPlayingRef prevents wall-clock time from accumulating
+  // while the video is paused (would otherwise inflate watchedSeconds and falsely
+  // trigger the 85% completion threshold).
   useEffect(() => {
     if (!selectedLesson) return;
 
     const hb = setInterval(() => {
       const lesson = selectedLessonRef.current;
-      if (!lesson || markCalledRef.current) return;
+      if (!lesson || markCalledRef.current || !isPlayingRef.current) return;
       const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
       const delta = Math.min(30, elapsed - lastHeartbeatWatchedRef.current);
       if (delta <= 0) return;
@@ -1590,6 +1633,7 @@ export default function CourseDetailPage({
       isCompleted: alreadyDone,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
+    router.replace(`/learning/${courseId}?lesson=${lesson.id}`, { scroll: false });
   };
 
   // ── Focus timer helpers ───────────────────────────────────────────────────
@@ -1627,6 +1671,12 @@ export default function CourseDetailPage({
       return;
     }
     const duration = getLessonTimerDuration(lesson);
+    if (!duration) { handleSelectLesson(lesson); return; }
+    if (focusAcknowledged) {
+      handleSelectLesson(lesson);
+      startLessonTimer(lesson.id, duration);
+      return;
+    }
     setFocusDialog({ lesson, duration });
   };
 
@@ -1709,6 +1759,17 @@ export default function CourseDetailPage({
               You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
               After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
             </p>
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={focusAcknowledged}
+                onChange={(e) => toggleFocusAck(e.target.checked)}
+                className="w-4 h-4 rounded accent-[var(--color-accent)]"
+              />
+              <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
+                Don&apos;t show this again for this course
+              </span>
+            </label>
             <div className="flex gap-3">
               <button
                 onClick={() => setFocusDialog(null)}
@@ -1849,7 +1910,14 @@ export default function CourseDetailPage({
             </VideoWatermark>
 
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-lg font-semibold text-foreground leading-snug">{selectedLesson.title}</h2>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-semibold text-foreground leading-snug">{selectedLesson.title}</h2>
+                {(course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any)?.description && (
+                  <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>
+                    {(course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any)?.description}
+                  </p>
+                )}
+              </div>
               {(watchState === "completed" || !!selectedLesson.isCompleted) ? (
                 <span
                   className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
@@ -1930,6 +1998,14 @@ export default function CourseDetailPage({
                   <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>
                     {upNextCountdown}s
                   </span>
+                  <button
+                    onClick={toggleAutoAdvance}
+                    title={autoAdvance ? "Turn off auto-advance" : "Turn on auto-advance"}
+                    className="text-[10px] px-2 py-1 rounded-md transition-opacity hover:opacity-70"
+                    style={{ border: "1px solid var(--color-border-subtle)", color: "var(--color-text-subtle)" }}
+                  >
+                    Auto: {autoAdvance ? "On" : "Off"}
+                  </button>
                   <button
                     onClick={() => { clearInterval(upNextTimerRef.current); setUpNextCountdown(null); }}
                     className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
@@ -2123,15 +2199,16 @@ export default function CourseDetailPage({
                       <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-strong)" }}>
                         {lesson.title}
                       </p>
-                      {duration && duration > 0 ? (
+                      {duration && duration > 0 && (
                         <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-subtle)" }}>
                           <Clock size={10} /> {fmtDuration(duration)}
                         </p>
-                      ) : lesson.description ? (
-                        <p className="text-xs truncate mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+                      )}
+                      {!isActive && lesson.description && (
+                        <p className="text-xs line-clamp-1 mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
                           {lesson.description}
                         </p>
-                      ) : null}
+                      )}
                       {/* Quiz badge + XP chip + focus timer */}
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         {(lesson as any).hasQuiz && (
@@ -2371,7 +2448,7 @@ export default function CourseDetailPage({
 
       {/* Practice Arena modal */}
       {practiceOpen && (
-        <PracticeArenaModal course={course} onClose={() => setPracticeOpen(false)} />
+        <PracticeArenaModal course={course} completedIds={completedIds} onClose={() => setPracticeOpen(false)} />
       )}
 
       {/* Reflection modal — triggered after lesson completion */}

@@ -104,8 +104,13 @@ function EnrolledCourseCard({ enrollment }: { enrollment: any }) {
             </div>
           ) : (
             <div className="space-y-1">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-1.5">
                 <span className="text-[11px] text-muted-foreground">{pct}% complete</span>
+                {enrollment.totalLessons > 0 && (
+                  <span className="text-[11px] text-muted-foreground shrink-0">
+                    {enrollment.completedLessons ?? 0}/{enrollment.totalLessons}
+                  </span>
+                )}
               </div>
               <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
                 <div
@@ -266,13 +271,20 @@ function CourseCard({ course, isEnrolled, progress }: { course: any; isEnrolled:
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+const SORT_OPTIONS = [
+  { value: "newest",  label: "Newest" },
+  { value: "popular", label: "Popular" },
+] as const;
+
 export default function CoursesPage() {
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("all");
+  const [sort, setSort] = useState<"newest" | "popular">("newest");
 
   const { data: catalogData, isLoading: catalogLoading } = useCourses({
     search: search || undefined,
     level: level !== "all" ? level : undefined,
+    sort,
     limit: 24,
   });
   const { data: enrollments, isLoading: enrollLoading } = useMyEnrollments();
@@ -420,7 +432,7 @@ export default function CoursesPage() {
               onBlur={(e) => (e.target.style.borderColor = "var(--color-border-subtle)")}
             />
           </div>
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap items-center">
             {LEVELS.map(({ value, label }) => (
               <button
                 key={value}
@@ -443,6 +455,24 @@ export default function CoursesPage() {
                 {label}
               </button>
             ))}
+
+            {/* Sort selector */}
+            <div className="ml-auto sm:ml-2">
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as "newest" | "popular")}
+                className="h-10 px-3 pr-8 rounded-xl text-[12px] font-semibold outline-none cursor-pointer appearance-none"
+                style={{
+                  background: "var(--color-surface-overlay)",
+                  border: "1px solid var(--color-border-subtle)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                {SORT_OPTIONS.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -465,7 +495,7 @@ export default function CoursesPage() {
             <p className="text-muted-foreground text-sm font-medium">No courses found</p>
             {(search || level !== "all") && (
               <button
-                onClick={() => { setSearch(""); setLevel("all"); }}
+                onClick={() => { setSearch(""); setLevel("all"); setSort("newest"); }}
                 className="text-[12px] font-semibold transition-colors"
                 style={{ color: "var(--color-accent)" }}
               >

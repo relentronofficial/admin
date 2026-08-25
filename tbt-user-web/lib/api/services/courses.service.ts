@@ -7,6 +7,8 @@ export interface ListCoursesParams {
   search?: string;
   level?: string;
   enrolled?: boolean;
+  sort?: "newest" | "popular";
+  category?: string;
 }
 
 export const coursesService = {
@@ -50,4 +52,10 @@ export const coursesService = {
 
   requestAccess: (courseId: string) =>
     apiClient.post<never, ApiResponse<{ paymentId: string; paymentUrl: string }>>(`/api/user/courses/${courseId}/request-access`),
+
+  saveReflection: (courseId: string, lessonId: string, text: string) =>
+    apiClient.put<never, ApiResponse<{ saved: boolean }>>(`/api/user/courses/${courseId}/reflections/${lessonId}`, { text }),
+
+  getReflections: (courseId: string) =>
+    apiClient.get<never, ApiResponse<Array<{ lessonId: string; text: string; savedAt: string }>>>(`/api/user/courses/${courseId}/reflections`),
 };

@@ -46,7 +46,11 @@ function EnrolledCourseCard({ enrollment }: { enrollment: any }) {
         <div className="mt-auto pt-1 space-y-1.5">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{progress}% complete</span>
-            {isCompleted && <CheckCircle2 size={12} style={{ color: "var(--color-success)" }} />}
+            {enrollment.totalLessons > 0 ? (
+              <span>{enrollment.completedLessons ?? 0}/{enrollment.totalLessons} lessons</span>
+            ) : isCompleted ? (
+              <CheckCircle2 size={12} style={{ color: "var(--color-success)" }} />
+            ) : null}
           </div>
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track)" }}>
             <div
@@ -65,9 +69,12 @@ function EnrolledCourseCard({ enrollment }: { enrollment: any }) {
 
 export default function LearningPage() {
   const { data: enrollments, isLoading } = useMyEnrollments();
+  const list = (enrollments ?? []) as any[];
+  const inProgress = list.filter((e) => (e.progressPercent ?? 0) < 100 && !e.completedAt);
+  const done       = list.filter((e) => (e.progressPercent ?? 0) >= 100 || !!e.completedAt);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">My Learning</h2>
@@ -91,13 +98,7 @@ export default function LearningPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {[1, 2, 3].map((i) => <CardSkeleton key={i} />)}
         </div>
-      ) : enrollments && enrollments.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {enrollments.map((e: any) => (
-            <EnrolledCourseCard key={e.id} enrollment={e} />
-          ))}
-        </div>
-      ) : (
+      ) : list.length === 0 ? (
         <EmptyState
           icon={BookOpen}
           title="No courses yet"
@@ -112,6 +113,37 @@ export default function LearningPage() {
             </Link>
           }
         />
+      ) : (
+        <div className="space-y-10">
+          {inProgress.length > 0 && (
+            <section className="space-y-4">
+              <h3
+                className="text-sm font-bold uppercase tracking-widest"
+                style={{ color: "var(--color-text-subtle)" }}
+              >
+                In Progress ({inProgress.length})
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {inProgress.map((e: any) => <EnrolledCourseCard key={e.id} enrollment={e} />)}
+              </div>
+            </section>
+          )}
+
+          {done.length > 0 && (
+            <section className="space-y-4">
+              <h3
+                className="text-sm font-bold uppercase tracking-widest flex items-center gap-2"
+                style={{ color: "var(--color-text-subtle)" }}
+              >
+                <CheckCircle2 size={13} style={{ color: "var(--color-success, #22c55e)" }} />
+                Completed ({done.length})
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {done.map((e: any) => <EnrolledCourseCard key={e.id} enrollment={e} />)}
+              </div>
+            </section>
+          )}
+        </div>
       )}
     </div>
   );

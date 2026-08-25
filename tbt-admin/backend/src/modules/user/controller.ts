@@ -428,21 +428,29 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
 // ─── Courses (user-facing, published only) ────────────────────────────────────
 
 export async function listUserCoursesHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 24, search, level } = request.query as {
+  const { page = 1, limit = 24, search, level, sort, category } = request.query as {
     page?: number;
     limit?: number;
     search?: string;
     level?: string;
+    sort?: string;   // 'newest' (default) | 'popular' | 'featured'
+    category?: string; // categoryId UUID
   };
 
   const where: Record<string, unknown> = { isPublished: true };
   if (level) where.level = level;
+  if (category) where.categoryId = category;
   if (search?.trim()) {
     where.OR = [
       { title: { contains: search.trim(), mode: 'insensitive' } },
       { description: { contains: search.trim(), mode: 'insensitive' } },
     ];
   }
+
+  const orderBy =
+    sort === 'popular'  ? [{ isFeatured: 'desc' }, { enrollments: { _count: 'desc' } }] :
+    sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
+                          [{ isFeatured: 'desc' }, { createdAt: 'desc' }]; // newest (default)
 
   const [courses, total] = await Promise.all([
     (request.server.prisma.course.findMany as any)({
@@ -469,7 +477,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           select: { durationSeconds: true },
         },
       },
-      orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
+      orderBy,
       take: Number(limit),
       skip: (Number(page) - 1) * Number(limit),
     }) as Promise<any[]>,
@@ -1016,6 +1024,18 @@ export async function getEnrollmentsHandler(request: FastifyRequest, reply: Fast
     orderBy: { enrolledAt: 'desc' },
   }) as any[];
 
+  const completedRows = await request.server.prisma.$queryRawUnsafe<
+    Array<{ course_id: string; count: number }>
+  >(
+    `SELECT ce.course_id, COUNT(*)::int AS count
+     FROM course_episode_progress cep
+     JOIN course_episodes ce ON cep.episode_id = ce.id
+     WHERE cep.member_id = $1::uuid AND cep.completed = true
+     GROUP BY ce.course_id`,
+    request.memberId,
+  );
+  const completedMap = new Map(completedRows.map((r) => [r.course_id, Number(r.count)]));
+
   const data = enrollments.map((e: any) => ({
     id: e.id,
     courseId: e.courseId,
@@ -1023,6 +1043,8 @@ export async function getEnrollmentsHandler(request: FastifyRequest, reply: Fast
     enrolledAt: e.enrolledAt,
     completedAt: e.completedAt ?? null,
     progressPercent: e.progressPercentage,
+    completedLessons: completedMap.get(e.courseId) ?? 0,
+    totalLessons: e.course?.totalLessons ?? 0,
     course: {
       ...e.course,
       durationHours: e.course?.durationHours ? Number(e.course.durationHours) : null,
@@ -1426,6 +1448,42 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
   }
 
   return ok(reply, { attemptId: attempt.id, score, passed, correct, total: questions.length });
+}
+
+// ─── Course reflections ───────────────────────────────────────────────────────
+
+export async function upsertReflectionHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { courseId, lessonId } = request.params as { courseId: string; lessonId: string };
+  const { text } = request.body as { text: string };
+  if (!text?.trim()) return fail(reply, 400, 'text is required');
+
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO course_reflections (member_id, course_id, lesson_id, text, saved_at)
+     VALUES ($1::uuid, $2, $3, $4, NOW())
+     ON CONFLICT (member_id, course_id, lesson_id)
+     DO UPDATE SET text = EXCLUDED.text, saved_at = NOW()`,
+    request.memberId, courseId, lessonId, text.trim(),
+  );
+  return ok(reply, { saved: true });
+}
+
+export async function listReflectionsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { courseId } = request.params as { courseId: string };
+
+  const rows = await request.server.prisma.$queryRawUnsafe<
+    Array<{ lesson_id: string; text: string; saved_at: Date }>
+  >(
+    `SELECT lesson_id, text, saved_at FROM course_reflections
+     WHERE member_id = $1::uuid AND course_id = $2
+     ORDER BY saved_at DESC`,
+    request.memberId, courseId,
+  );
+
+  return ok(reply, rows.map((r) => ({
+    lessonId: r.lesson_id,
+    text: r.text,
+    savedAt: r.saved_at,
+  })));
 }
 
 // ─── Course XP & leaderboard ─────────────────────────────────────────────────

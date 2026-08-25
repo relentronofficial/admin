@@ -1290,6 +1290,23 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE UNIQUE INDEX IF NOT EXISTS notification_devices_fcm_token_key ON notification_devices(fcm_token);
         CREATE INDEX IF NOT EXISTS idx_notification_devices_member ON notification_devices(member_id);
       `),
+      // Course reflections — member's written reflections per lesson, synced to DB
+      // so they persist across devices (localStorage is the offline fallback only).
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS course_reflections (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          course_id TEXT NOT NULL,
+          lesson_id TEXT NOT NULL,
+          text TEXT NOT NULL,
+          saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(member_id, course_id, lesson_id)
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_course_reflections_member_course
+          ON course_reflections(member_id, course_id)
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
