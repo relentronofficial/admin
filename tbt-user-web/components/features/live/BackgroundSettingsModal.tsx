@@ -35,7 +35,7 @@ export function BackgroundSettingsModal({ onClose }: BackgroundSettingsModalProp
         await track.setProcessor(VirtualBackground("/backgrounds/office.jpg"));
       }
     } catch (e) {
-      console.error(e);
+      if (process.env.NODE_ENV === "development") console.error(e);
     } finally {
       setApplying(false);
     }

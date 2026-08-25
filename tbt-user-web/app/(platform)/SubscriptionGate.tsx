@@ -17,6 +17,7 @@ const PENDING_EXEMPT_PATHS = ["/onboarding"];
 
 function PendingInterceptor() {
   const [showPopup, setShowPopup] = useState(false);
+  const router = useRouter();
 
   // The user is already gated behind a click-blocker; stacking a fullscreen ad
   // on top of it is incoherent (TBT_ADS_SPECKIT.md §7.4). Suppression lasts as
@@ -26,7 +27,7 @@ function PendingInterceptor() {
 
   const handleLogout = async () => {
     try { await apiClient.post("/api/user-auth/logout", {}); } catch (_) {}
-    window.location.href = "/login";
+    router.push("/login");
   };
 
   return (
@@ -183,18 +184,26 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isLoading || isFetching || isError || isExempt || !me) return;
-    if ((me as any).status === "pending") return;
+    if ((me as any).status === "pending") {
+      // pending + awaiting_kyc → must reach the self-onboarding wizard.
+      // All other pending states (under_review, changes_requested, etc.) stay
+      // on their current page behind the PendingInterceptor.
+      if ((me as any).verificationStatus === "awaiting_kyc" && !isPendingExempt) {
+        router.replace("/onboarding");
+      }
+      return;
+    }
 
     const sub = (me as any).subscription;
-    // Only redirect when a subscription existed but has since expired
-    // No subscription at all (free plan) is handled by FreeInterceptor below
+    // Only redirect when a subscription existed but has since expired.
+    // No subscription at all (free plan) is handled by FreeInterceptor below.
     if (sub && new Date(sub.endDate) < new Date()) {
       router.replace("/Products");
     }
-  }, [me, isLoading, isFetching, isError, isExempt, router]);
+  }, [me, isLoading, isFetching, isError, isExempt, isPendingExempt, router]);
 
   // Pending users: page content visible, but every click opens the pending popup —
-  // except on the onboarding wizard itself, which they must be able to use.
+  // except awaiting_kyc (redirected above) and the onboarding wizard itself.
   if (!isLoading && !isFetching && me && (me as any).status === "pending" && !isPendingExempt) {
     return (
       <>

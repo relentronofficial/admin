@@ -15,10 +15,22 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "TBT",
+    default: "Tamil Business Tribe",
     template: "%s | TBT",
   },
-  description: "Your learning platform.",
+  description: "Tamil Business Tribe — business education, workshops, and community for Tamil entrepreneurs.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://app.tamilbusinesstribe.com"),
+  openGraph: {
+    type: "website",
+    siteName: "Tamil Business Tribe",
+    title: "Tamil Business Tribe",
+    description: "Business education, workshops, and community for Tamil entrepreneurs.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Tamil Business Tribe",
+    description: "Business education, workshops, and community for Tamil entrepreneurs.",
+  },
   icons: {
     icon: [
       { url: "/favicon.webp", type: "image/webp" },
@@ -26,6 +38,10 @@ export const metadata: Metadata = {
     ],
     shortcut: "/favicon.webp",
     apple: "/favicon.webp",
+  },
+  robots: {
+    index: false,
+    follow: false,
   },
 };
 
