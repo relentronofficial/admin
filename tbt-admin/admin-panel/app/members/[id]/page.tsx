@@ -176,7 +176,7 @@ export default function MemberDetailPage() {
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
                       {[
                         { label: "Business Name", value: member.businessName },
-                        { label: "Product / Service", value: member.productServiceType },
+                        { label: "Business Type", value: member.productServiceType },
                         { label: "Annual Turnover", value: member.annualTurnover },
                         { label: "GST Number", value: member.gstNumber },
                         { label: "Goal (90 Days)", value: member.goalAfter90Days },

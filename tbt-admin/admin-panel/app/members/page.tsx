@@ -805,7 +805,7 @@ export default function MembersListPage() {
                     </h4>
                     <div className="space-y-4 bg-[#0a0a0a]/30 p-5 rounded-xl border border-[#1f1f1f]">
                       <InfoItem label="Enterprise Name" value={viewingMember.businessName || 'N/A'} />
-                      <InfoItem label="Industry Segment" value={viewingMember.productServiceType || 'N/A'} />
+                      <InfoItem label="Business Type" value={viewingMember.productServiceType || 'N/A'} />
                       <InfoItem label="Established" value={safeFormatDate(viewingMember.businessEstablishedOn)} />
                       <InfoItem label="Annual Turnover" value={viewingMember.annualTurnover || 'N/A'} />
                       <InfoItem label="GST Identifier" value={viewingMember.gstNumber || 'N/A'} />
@@ -1027,32 +1027,13 @@ export default function MembersListPage() {
                         <input {...register("businessName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Type</label>
-                        <Controller
-                          name="businessType"
-                          control={control}
-                          render={({ field }) => (
-                            <CreatableSelect
-                              value={field.value ?? ""}
-                              onChange={field.onChange}
-                              options={businessTypes ?? []}
-                              onCreate={(name) => createBusinessType.mutateAsync(name)}
-                              isLoading={businessTypesLoading}
-                              placeholder="Search or add business type…"
-                            />
-                          )}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-5">
-                      <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Established On</label>
                         <input type="date" {...register("businessEstablishedOn")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm color-scheme-dark" />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Product/Service Type</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Type</label>
                         <select {...register("productServiceType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
                           <option value="">Select...</option>
                           <option value="Product-based">Product-based</option>
