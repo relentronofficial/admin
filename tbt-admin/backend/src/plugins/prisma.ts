@@ -664,6 +664,83 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         );
         CREATE INDEX IF NOT EXISTS idx_ebook_progress_member ON ebook_progress(member_id, updated_at DESC);
       `),
+      // Extended ebook tables — series, authors, publishers, reviews,
+      // streaks, highlights. These are Prisma-schema models that were
+      // added after the initial ebook startup SQL block; adding them
+      // here makes fresh and existing deployments self-heal without
+      // needing a separate prisma db push.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_series (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          title VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          description TEXT,
+          cover_url TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_authors (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          bio TEXT,
+          photo_url TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_publishers (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          logo_url TEXT,
+          country VARCHAR(64),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_reviews (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          book_id UUID NOT NULL REFERENCES ebooks(id) ON DELETE CASCADE,
+          rating INTEGER NOT NULL,
+          review_text TEXT,
+          status VARCHAR(20) NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (member_id, book_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ebook_reviews_book_status ON ebook_reviews(book_id, status);
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_reading_streaks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL UNIQUE REFERENCES members(id) ON DELETE CASCADE,
+          current_streak INTEGER NOT NULL DEFAULT 0,
+          longest_streak INTEGER NOT NULL DEFAULT 0,
+          last_read_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS ebook_highlights (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          book_id UUID NOT NULL REFERENCES ebooks(id) ON DELETE CASCADE,
+          page_number INTEGER NOT NULL,
+          selected_text TEXT NOT NULL,
+          highlight_color VARCHAR(32) DEFAULT 'yellow',
+          notes TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_ebook_highlights_member_book ON ebook_highlights(member_id, book_id);
+        CREATE INDEX IF NOT EXISTS idx_ebook_highlights_member_updated ON ebook_highlights(member_id, updated_at DESC);
+      `),
       // ── Helpdesk / Support Center (2026-07-20) ────────────────────
       // Ported from co-worker's FULL_MIGRATION.sql lines 432-495.
       // Named `helpdesk_*` (not `support_*`) because the primary has a
