@@ -1007,6 +1007,8 @@ export default function CourseDetailPage({
   // Tracks whether completion happened during THIS session (vs. pre-existing when lesson loaded).
   // Reflection modal should only fire for fresh completions, not for already-done lessons.
   const justCompletedInSessionRef = useRef(false);
+  // Prevents double XP flash when both lesson completion and quiz pass fire for the same lesson.
+  const xpFlashedRef = useRef<string | null>(null);
 
   // Mid-video cue quizzes
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
@@ -1280,6 +1282,7 @@ export default function CourseDetailPage({
     cueQuizActiveRef.current = false;
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
+    xpFlashedRef.current = null;
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
@@ -1294,6 +1297,21 @@ export default function CourseDetailPage({
     const serverConfirmed = completedIdsRef.current.has(selectedLesson.id) || !!selectedLesson.isCompleted;
     markCalledRef.current = serverConfirmed;
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // XP flash for non-quiz lessons on fresh completion (quiz lessons flash when quiz passes).
+  useEffect(() => {
+    if (watchState !== "completed" || !justCompletedInSessionRef.current) return;
+    const lessonId = selectedLessonRef.current?.id;
+    if (!lessonId || xpFlashedRef.current === lessonId) return;
+    const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
+    if (lessonData?.hasQuiz) return;
+    const xp = (courseRef.current as any)?.xpPerEpisode ?? 0;
+    if (xp <= 0) return;
+    xpFlashedRef.current = lessonId;
+    setXpFlash(xp);
+    const t = setTimeout(() => setXpFlash(null), 3000);
+    return () => clearTimeout(t);
+  }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once the player reports the real video duration, re-evaluate completion using
   // accurate duration (overrides wrong durationSeconds stored in DB).
@@ -2612,6 +2630,7 @@ export default function CourseDetailPage({
                     setQuizResult(result);
                     if (result.passed && (course as any).xpPerEpisode) {
                       setXpFlash((course as any).xpPerEpisode);
+                      xpFlashedRef.current = selectedLessonRef.current?.id ?? null;
                       setTimeout(() => setXpFlash(null), 3000);
                     }
                   } catch (e: any) {

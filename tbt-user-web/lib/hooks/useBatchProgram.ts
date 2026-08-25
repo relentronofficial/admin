@@ -127,7 +127,7 @@ export const useSpendCoins = () => {
       const res: any = await apiClient.post('/api/user-batch/spend-coins', { amount });
       return res.data as { remainingCoins: number };
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),
   });
 };
 
