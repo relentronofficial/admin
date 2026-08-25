@@ -463,17 +463,30 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
             {/* Brand Name + Business Type */}
             <div className="grid grid-cols-2 gap-4">
-              {[{ key: "businessName", label: "Brand Name *" }, { key: "businessType", label: "Business Type *" }].map(({ key, label }) => (
-                <div key={key}>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
-                  <input
-                    value={profile[key] ?? ""}
-                    onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
-                    className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                    style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                  />
-                </div>
-              ))}
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Brand Name *</label>
+                <input
+                  value={profile.businessName ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, businessName: e.target.value }))}
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Type *</label>
+                <select
+                  value={profile.productServiceType ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, productServiceType: e.target.value }))}
+                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
+                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                >
+                  <option value="" disabled>Select…</option>
+                  <option value="Product-based">Product-based</option>
+                  <option value="Service-based">Service-based</option>
+                  <option value="Both">Both</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
             </div>
 
             {/* Business Started From + Team Size */}

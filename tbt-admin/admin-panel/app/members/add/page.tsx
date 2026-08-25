@@ -377,23 +377,6 @@ export default function AddMemberPage() {
                   <input {...register("businessName")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626]" />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Type</label>
-                  <Controller
-                    name="businessType"
-                    control={control}
-                    render={({ field }) => (
-                      <CreatableSelect
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        options={businessTypes ?? []}
-                        onCreate={(name) => createBusinessType.mutateAsync(name)}
-                        isLoading={businessTypesLoading}
-                        placeholder="Search or add business type…"
-                      />
-                    )}
-                  />
-                </div>
-                <div>
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Established On</label>
                   <input type="date" {...register("businessEstablishedOn")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626] color-scheme-dark" />
                 </div>
@@ -402,7 +385,7 @@ export default function AddMemberPage() {
               {/* Row 2 */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Product/Service Type</label>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Type</label>
                   <select {...register("productServiceType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626] appearance-none cursor-pointer">
                     <option value="" disabled>Select...</option>
                     <option value="Product-based">Product-based</option>
