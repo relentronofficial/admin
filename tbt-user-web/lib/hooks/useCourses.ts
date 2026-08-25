@@ -149,6 +149,16 @@ export const useRequestCourseAccess = () => {
   });
 };
 
+export const useCourseCategories = () =>
+  useQuery({
+    queryKey: ["course-categories"],
+    queryFn: async () => {
+      const res = await coursesService.getCategories();
+      return res.data ?? [];
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
 export const useReflections = (courseId: string) =>
   useQuery({
     queryKey: ["course-reflections", courseId],

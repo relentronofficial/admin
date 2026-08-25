@@ -427,6 +427,15 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
 
 // ─── Courses (user-facing, published only) ────────────────────────────────────
 
+export async function listUserCourseCategories(request: FastifyRequest, reply: FastifyReply) {
+  const categories = await request.server.prisma.category.findMany({
+    where: { courses: { some: { isPublished: true } } },
+    select: { id: true, name: true },
+    orderBy: { sortOrder: 'asc' },
+  });
+  return ok(reply, categories);
+}
+
 export async function listUserCoursesHandler(request: FastifyRequest, reply: FastifyReply) {
   const { page = 1, limit = 24, search, level, sort, category } = request.query as {
     page?: number;
@@ -448,7 +457,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   }
 
   const orderBy =
-    sort === 'popular'  ? [{ isFeatured: 'desc' }, { enrollments: { _count: 'desc' } }] :
+    sort === 'popular'  ? [{ enrollments: { _count: 'desc' } }] :
     sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
                           [{ isFeatured: 'desc' }, { createdAt: 'desc' }]; // newest (default)
 

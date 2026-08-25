@@ -58,4 +58,7 @@ export const coursesService = {
 
   getReflections: (courseId: string) =>
     apiClient.get<never, ApiResponse<Array<{ lessonId: string; text: string; savedAt: string }>>>(`/api/user/courses/${courseId}/reflections`),
+
+  getCategories: () =>
+    apiClient.get<never, ApiResponse<Array<{ id: string; name: string }>>>("/api/user/courses/categories"),
 };

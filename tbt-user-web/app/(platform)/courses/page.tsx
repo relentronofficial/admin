@@ -7,7 +7,7 @@ import {
   Search, BookOpen, Play, Trophy, Zap, Clock, Lock,
   ChevronRight, Award, TrendingUp, CheckCircle2, Layers,
 } from "lucide-react";
-import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
+import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
 import { cn } from "@/lib/utils/cn";
 
 // ── Level config ──────────────────────────────────────────────────────────────
@@ -280,11 +280,15 @@ export default function CoursesPage() {
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("all");
   const [sort, setSort] = useState<"newest" | "popular">("newest");
+  const [category, setCategory] = useState("all");
+
+  const { data: categories } = useCourseCategories();
 
   const { data: catalogData, isLoading: catalogLoading } = useCourses({
     search: search || undefined,
     level: level !== "all" ? level : undefined,
     sort,
+    category: category !== "all" ? category : undefined,
     limit: 24,
   });
   const { data: enrollments, isLoading: enrollLoading } = useMyEnrollments();
@@ -456,6 +460,25 @@ export default function CoursesPage() {
               </button>
             ))}
 
+            {/* Category selector */}
+            {categories && categories.length > 0 && (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="h-10 px-3 pr-8 rounded-xl text-[12px] font-semibold outline-none cursor-pointer appearance-none"
+                style={{
+                  background: "var(--color-surface-overlay)",
+                  border: "1px solid var(--color-border-subtle)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                <option value="all">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            )}
+
             {/* Sort selector */}
             <div className="ml-auto sm:ml-2">
               <select
@@ -493,9 +516,9 @@ export default function CoursesPage() {
               <BookOpen size={24} className="text-muted-foreground opacity-20" />
             </div>
             <p className="text-muted-foreground text-sm font-medium">No courses found</p>
-            {(search || level !== "all") && (
+            {(search || level !== "all" || category !== "all") && (
               <button
-                onClick={() => { setSearch(""); setLevel("all"); setSort("newest"); }}
+                onClick={() => { setSearch(""); setLevel("all"); setSort("newest"); setCategory("all"); }}
                 className="text-[12px] font-semibold transition-colors"
                 style={{ color: "var(--color-accent)" }}
               >

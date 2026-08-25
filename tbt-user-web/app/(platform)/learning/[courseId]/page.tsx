@@ -77,6 +77,7 @@ function fmtDuration(seconds: number): string {
 interface SelectedLesson {
   id: string;
   title: string;
+  description?: string | null;
   videoUrl: string;
   hlsUrl?: string | null;
   durationSeconds: number;
@@ -371,6 +372,49 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
               {saved ? savedLabel : saveLabel}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reflections Viewer Modal ──────────────────────────────────────────────────
+function ReflectionsViewerModal({ reflections, lessons, onClose }: {
+  reflections: Array<{ lessonId: string; text: string; savedAt: string }>;
+  lessons: any[];
+  onClose: () => void;
+}) {
+  const lessonMap = new Map(lessons.map((l: any) => [l.id, l.title]));
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div
+        className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+        style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-medium)", maxHeight: "80vh" }}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: "var(--color-border-subtle)" }}>
+          <div className="flex items-center gap-2">
+            <PenLine size={14} style={{ color: "var(--color-accent)" }} />
+            <p className="text-sm font-bold text-foreground">My Reflections</p>
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}>
+              {reflections.length}
+            </span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:opacity-70 transition-opacity">
+            <X size={16} style={{ color: "var(--color-text-subtle)" }} />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 divide-y" style={{ borderColor: "var(--color-border-subtle)" }}>
+          {reflections.map((r) => (
+            <div key={r.lessonId} className="px-6 py-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--color-accent)" }}>
+                {lessonMap.get(r.lessonId) ?? "Lesson"}
+              </p>
+              <p className="text-sm text-foreground leading-relaxed">{r.text}</p>
+              <p className="text-xs mt-1.5" style={{ color: "var(--color-text-disabled)" }}>
+                {new Date(r.savedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -905,6 +949,7 @@ export default function CourseDetailPage({
   const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
   const [hlsFailed, setHlsFailed] = useState(false);
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
+  const [upNextVisible, setUpNextVisible] = useState(false);
   const [videoKey, setVideoKey] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(() => {
     if (typeof window !== "undefined") {
@@ -953,6 +998,7 @@ export default function CourseDetailPage({
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
+  const [reflectionsOpen, setReflectionsOpen] = useState(false);
   const [practiceOpen, setPracticeOpen] = useState(false);
   const [pendingReflection, setPendingReflection] = useState<{ lessonId: string; title: string } | null>(null);
   const [completionTimes, setCompletionTimes] = useState<Record<string, number>>({});
@@ -1026,6 +1072,7 @@ export default function CourseDetailPage({
         setSelectedLesson({
           id: target.id,
           title: target.title,
+          description: (target as any).description ?? null,
           videoUrl: target.videoUrl,
           hlsUrl: (target as any).hlsUrl ?? null,
           durationSeconds: target.durationSeconds ?? 0,
@@ -1132,10 +1179,13 @@ export default function CourseDetailPage({
   const triggerUpNextRef = useRef<() => void>(() => {});
   triggerUpNextRef.current = useCallback(() => {
     clearInterval(upNextTimerRef.current);
-    if (!autoAdvanceRef.current) return;
     const lessons = courseRef.current?.lessons ?? [];
     const currentIdx = lessons.findIndex((l: any) => l.id === selectedLessonRef.current?.id);
     if (currentIdx < 0 || currentIdx >= lessons.length - 1) return;
+    const next = lessons[currentIdx + 1];
+    if (!next?.videoUrl) return;
+    setUpNextVisible(true);
+    if (!autoAdvanceRef.current) return; // banner shows but no countdown
     let n = 5;
     setUpNextCountdown(n);
     upNextTimerRef.current = setInterval(() => {
@@ -1143,24 +1193,23 @@ export default function CourseDetailPage({
       if (n <= 0) {
         clearInterval(upNextTimerRef.current);
         setUpNextCountdown(null);
-        const next = lessons[currentIdx + 1];
-        if (next?.videoUrl) {
-          const nextDone = lessonAlreadyDone(
-            next.id, completedIdsRef.current, (next as any).isCompleted,
-            next.durationSeconds, (next as any).actualWatchedSecs, (next as any).resumeAtSeconds,
-          );
-          setSelectedLesson({
-            id: next.id,
-            title: next.title,
-            videoUrl: next.videoUrl,
-            hlsUrl: (next as any).hlsUrl ?? null,
-            durationSeconds: next.durationSeconds ?? 0,
-            resumeAtSeconds: nextDone ? 0 : ((next as any).resumeAtSeconds ?? 0),
-            actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
-            isCompleted: nextDone,
-          });
-          topRef.current?.scrollIntoView({ behavior: "smooth" });
-        }
+        setUpNextVisible(false);
+        const nextDone = lessonAlreadyDone(
+          next.id, completedIdsRef.current, (next as any).isCompleted,
+          next.durationSeconds, (next as any).actualWatchedSecs, (next as any).resumeAtSeconds,
+        );
+        setSelectedLesson({
+          id: next.id,
+          title: next.title,
+          description: (next as any).description ?? null,
+          videoUrl: next.videoUrl,
+          hlsUrl: (next as any).hlsUrl ?? null,
+          durationSeconds: next.durationSeconds ?? 0,
+          resumeAtSeconds: nextDone ? 0 : ((next as any).resumeAtSeconds ?? 0),
+          actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
+          isCompleted: nextDone,
+        });
+        topRef.current?.scrollIntoView({ behavior: "smooth" });
       } else {
         setUpNextCountdown(n);
       }
@@ -1226,6 +1275,7 @@ export default function CourseDetailPage({
     setLiveRealDuration(0);
     setHlsFailed(false);
     setUpNextCountdown(null);
+    setUpNextVisible(false);
     firedCuesRef.current = new Set();
     cueQuizActiveRef.current = false;
     setCueQuizModal(null);
@@ -1618,6 +1668,9 @@ export default function CourseDetailPage({
   const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
     setVideoKey(0);
+    clearInterval(upNextTimerRef.current);
+    setUpNextCountdown(null);
+    setUpNextVisible(false);
     const alreadyDone = lessonAlreadyDone(
       lesson.id, completedIds, lesson.isCompleted,
       lesson.durationSeconds, lesson.actualWatchedSecs, lesson.resumeAtSeconds,
@@ -1625,6 +1678,7 @@ export default function CourseDetailPage({
     setSelectedLesson({
       id: lesson.id,
       title: lesson.title,
+      description: lesson.description ?? null,
       videoUrl: lesson.videoUrl,
       hlsUrl: lesson.hlsUrl ?? null,
       durationSeconds: lesson.durationSeconds ?? 0,
@@ -1912,9 +1966,9 @@ export default function CourseDetailPage({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <h2 className="text-lg font-semibold text-foreground leading-snug">{selectedLesson.title}</h2>
-                {(course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any)?.description && (
+                {selectedLesson.description && (
                   <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>
-                    {(course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any)?.description}
+                    {selectedLesson.description}
                   </p>
                 )}
               </div>
@@ -1979,8 +2033,8 @@ export default function CourseDetailPage({
               );
             })()}
 
-            {/* Up-next countdown */}
-            {upNextCountdown !== null && nextLesson && (
+            {/* Up-next banner — shows on completion regardless of auto-advance setting */}
+            {upNextVisible && nextLesson && (
               <div
                 className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl text-sm"
                 style={{
@@ -1995,9 +2049,19 @@ export default function CourseDetailPage({
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>
-                    {upNextCountdown}s
-                  </span>
+                  {upNextCountdown !== null ? (
+                    <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>
+                      {upNextCountdown}s
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => { setUpNextVisible(false); handleSelectLessonWithFocus(nextLesson as any); }}
+                      className="text-xs px-2.5 py-1 rounded-md font-semibold text-white transition-opacity hover:opacity-90"
+                      style={{ background: "var(--color-accent)" }}
+                    >
+                      Play →
+                    </button>
+                  )}
                   <button
                     onClick={toggleAutoAdvance}
                     title={autoAdvance ? "Turn off auto-advance" : "Turn on auto-advance"}
@@ -2007,7 +2071,7 @@ export default function CourseDetailPage({
                     Auto: {autoAdvance ? "On" : "Off"}
                   </button>
                   <button
-                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextCountdown(null); }}
+                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextCountdown(null); setUpNextVisible(false); }}
                     className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
                     style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                   >
@@ -2017,8 +2081,8 @@ export default function CourseDetailPage({
               </div>
             )}
 
-            {/* Rewatch button (only when completed and not counting down) */}
-            {watchState === "completed" && upNextCountdown === null && (
+            {/* Rewatch button (only when completed and banner not showing) */}
+            {watchState === "completed" && !upNextVisible && (
               <button
                 onClick={handleRewatch}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
@@ -2308,10 +2372,11 @@ export default function CourseDetailPage({
       {/* XP + Streak */}
       <XpStreakWidget courseId={courseId} />
 
-      {/* Reflections panel — shows after first reflection saved */}
+      {/* Reflections panel — shows after first reflection saved; click to review */}
       {reflectionCount > 0 && (
-        <div
-          className="rounded-xl px-4 py-3 flex items-center gap-3"
+        <button
+          onClick={() => setReflectionsOpen(true)}
+          className="w-full rounded-xl px-4 py-3 flex items-center gap-3 text-left transition-opacity hover:opacity-80"
           style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
         >
           <PenLine size={14} style={{ color: "var(--color-accent)" }} />
@@ -2320,13 +2385,11 @@ export default function CourseDetailPage({
               Reflections
             </p>
             <p className="text-sm font-semibold text-foreground">
-              {reflectionCount} saved
+              {reflectionCount} saved — tap to review
             </p>
           </div>
-          <p className="text-xs" style={{ color: "var(--color-text-disabled)" }}>
-            Elaborative Interrogation at work
-          </p>
-        </div>
+          <ChevronDown size={14} style={{ color: "var(--color-text-disabled)" }} className="rotate-[-90deg]" />
+        </button>
       )}
 
       {/* Leaderboard */}
@@ -2461,6 +2524,15 @@ export default function CourseDetailPage({
             setPendingReflection(null);
             if (saved) setReflectionCount(c => c + 1);
           }}
+        />
+      )}
+
+      {/* Reflections viewer — opened from the panel */}
+      {reflectionsOpen && savedReflections && savedReflections.length > 0 && (
+        <ReflectionsViewerModal
+          reflections={savedReflections}
+          lessons={course?.lessons ?? []}
+          onClose={() => setReflectionsOpen(false)}
         />
       )}
 
