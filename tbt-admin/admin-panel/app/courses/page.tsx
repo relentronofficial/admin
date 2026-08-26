@@ -6,7 +6,7 @@ import {
   Plus, Trash2, Pencil, X, Loader2, BookOpen, Search, Film,
   Eye, EyeOff, AlertCircle, GripVertical, Save, Image as ImageIcon, Upload,
   Lock, BarChart2, Users, ShieldCheck, Trophy, CreditCard, Download, Filter,
-  CheckCircle2, Clock, ChevronLeft, ChevronRight,
+  CheckCircle2, Clock, ChevronLeft, ChevronRight, FileText, ListTodo, Link2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -18,8 +18,12 @@ import {
   useCourseAnalyticsAdmin, useCourseLeaderboardAdmin, useAtRiskMembers,
   useListCourseBadges, useCreateCourseBadge, useUpdateCourseBadge,
   useDeleteCourseBadge, useAwardCourseBadge,
+  useListEpisodeResources, useCreateEpisodeResource, useUpdateEpisodeResource,
+  useDeleteEpisodeResource, useReorderEpisodeResources,
+  useListEpisodeTasks, useCreateEpisodeTask, useUpdateEpisodeTask,
+  useDeleteEpisodeTask, useReorderEpisodeTasks,
 } from "@/lib/hooks/useTbt";
-import { useUploadImage, useCreateBunnyVideo } from "@/lib/hooks/useAdmin";
+import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
@@ -625,6 +629,8 @@ function EpisodesTab({ course }: { course: any }) {
   const [epErrors, setEpErrors] = useState<{ title?: string; video?: string }>({});
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
+  const [resourcesEp, setResourcesEp] = useState<any | null>(null);
+  const [tasksEp, setTasksEp] = useState<any | null>(null);
 
   useEffect(() => { setLocalEps(serverEps); setIsDirty(false); }, [data]);
 
@@ -823,7 +829,9 @@ function EpisodesTab({ course }: { course: any }) {
                 </div>
                 {!ep.isVisible && <EyeOff size={11} className="text-[#888] shrink-0" />}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                  <button aria-label={`Edit episode ${ep.title}`} title="Edit episode" onClick={() => openEdit(ep)} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
+                  <button aria-label="Manage resources" title="Resources" onClick={() => { setTasksEp(null); setResourcesEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-blue-400 rounded"><FileText size={12} /></button>
+                  <button aria-label="Manage tasks" title="Tasks" onClick={() => { setResourcesEp(null); setTasksEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-amber-400 rounded"><ListTodo size={12} /></button>
+                  <button aria-label={`Edit episode ${ep.title}`} title="Edit episode" onClick={() => { setResourcesEp(null); setTasksEp(null); openEdit(ep); }} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
                   <button aria-label={`Delete episode ${ep.title}`} title="Delete episode" onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={12} /></button>
                 </div>
               </div>
@@ -1063,6 +1071,12 @@ function EpisodesTab({ course }: { course: any }) {
           </div>
         </div>
       )}
+
+      {/* Episode resources modal */}
+      {resourcesEp && <EpisodeResourcesModal episode={resourcesEp} onClose={() => setResourcesEp(null)} />}
+
+      {/* Episode tasks modal */}
+      {tasksEp && <EpisodeTasksModal episode={tasksEp} onClose={() => setTasksEp(null)} />}
     </div>
   );
 }
@@ -1704,6 +1718,408 @@ function AnalyticsTab({ course }: { course: any }) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Episode Resources Modal ────────────────────────────────────────────
+const FILE_TYPES = ["pdf", "doc", "xlsx", "ppt", "video", "audio", "image", "archive", "other"];
+const EMPTY_RESOURCE = { title: "", fileUrl: "", previewUrl: "", fileType: "pdf", description: "", isVisible: true };
+
+function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: () => void }) {
+  const { data, isLoading } = useListEpisodeResources(episode.id);
+  const createRes = useCreateEpisodeResource(episode.id);
+  const updateRes = useUpdateEpisodeResource(episode.id);
+  const deleteRes = useDeleteEpisodeResource(episode.id);
+  const reorderRes = useReorderEpisodeResources(episode.id);
+  const getPresignedUrl = useGetPresignedUrl();
+
+  const serverItems: any[] = (data as any)?.data || [];
+  const [localItems, setLocalItems] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState<any>(EMPTY_RESOURCE);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const dragIdx = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setLocalItems(serverItems); setIsDirty(false); }, [data]);
+
+  const onDragStart = (i: number) => { dragIdx.current = i; };
+  const onDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setDragOver(i); };
+  const onDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const next = [...localItems];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalItems(next); setIsDirty(true); dragIdx.current = null; setDragOver(null);
+  };
+  const onDragEnd = () => { dragIdx.current = null; setDragOver(null); };
+
+  const handleSaveOrder = async () => {
+    try { await reorderRes.mutateAsync(localItems.map((r: any) => r.id)); setIsDirty(false); toast.success("Order saved"); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleUploadFile = async (file: File, field: "fileUrl" | "previewUrl") => {
+    try {
+      setUploading(field);
+      const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
+        filename: file.name, contentType: file.type,
+        bucket: "resources", pathPrefix: "episode-resources",
+      });
+      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      setForm((f: any) => ({ ...f, [field]: publicUrl }));
+      toast.success("Uploaded");
+    } catch (e: any) { toast.error(e.message || "Upload failed"); }
+    finally { setUploading(null); }
+  };
+
+  const openCreate = () => { setForm(EMPTY_RESOURCE); setEditing(null); setShowForm(true); };
+  const openEdit = (r: any) => { setForm({ title: r.title, fileUrl: r.fileUrl || "", previewUrl: r.previewUrl || "", fileType: r.fileType || "pdf", description: r.description || "", isVisible: r.isVisible ?? true }); setEditing(r); setShowForm(true); };
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { toast.error("Title required"); return; }
+    if (!form.fileUrl.trim()) { toast.error("File URL required"); return; }
+    try {
+      if (editing) { await updateRes.mutateAsync({ id: editing.id, ...form }); toast.success("Resource updated"); }
+      else { await createRes.mutateAsync(form); toast.success("Resource created"); }
+      setShowForm(false);
+    } catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleDelete = async (id: string) => {
+    try { await deleteRes.mutateAsync(id); toast.success("Deleted"); setDeleting(null); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[400] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="relative bg-[#141414] border border-[#2a2a2a] w-full max-w-lg rounded-xl shadow-2xl flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a] shrink-0">
+          <div className="flex items-center gap-2">
+            <FileText size={14} className="text-blue-400" />
+            <p className="text-[12px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-widest">Resources — {episode.title}</p>
+          </div>
+          <button onClick={onClose} className="text-[#666] hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between">
+            {isDirty ? (
+              <button onClick={handleSaveOrder} disabled={reorderRes.isPending}
+                className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                {reorderRes.isPending ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save Order
+              </button>
+            ) : <div />}
+            <button onClick={openCreate}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all">
+              <Plus size={10} /> Add Resource
+            </button>
+          </div>
+
+          {/* List */}
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-[#dc2626]" /></div>
+          ) : localItems.length === 0 && !showForm ? (
+            <div className="text-center py-8 space-y-1">
+              <FileText size={24} className="mx-auto text-[#444]" />
+              <p className="text-[11px] text-[#555] font-rajdhani uppercase font-bold">No resources yet</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {localItems.map((r: any, i: number) => (
+                <div key={r.id}
+                  draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDrop={e => onDrop(e, i)} onDragEnd={onDragEnd}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-move ${dragOver === i ? "border-blue-500/50 bg-blue-500/5" : "bg-[#1a1a1a] border-[#2a2a2a]"}`}>
+                  <GripVertical size={12} className="text-[#444] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-medium text-[#f0f0f0] truncate">{r.title}</p>
+                    <p className="text-[10px] text-[#666] uppercase font-rajdhani">{r.fileType}</p>
+                  </div>
+                  {!r.isVisible && <EyeOff size={11} className="text-[#555] shrink-0" />}
+                  {deleting === r.id ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => handleDelete(r.id)} className="text-[10px] text-red-400 font-rajdhani font-bold uppercase hover:text-red-300">Confirm</button>
+                      <button onClick={() => setDeleting(null)} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase hover:text-white">Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openEdit(r)} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={11} /></button>
+                      <button onClick={() => setDeleting(r.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={11} /></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Form */}
+          {showForm && (
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 space-y-2.5">
+              <p className="text-[10px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">{editing ? "Edit Resource" : "New Resource"}</p>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+                <input value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} placeholder="Resource title"
+                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">File Type</label>
+                <select value={form.fileType} onChange={e => setForm((f: any) => ({ ...f, fileType: e.target.value }))}
+                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]">
+                  {FILE_TYPES.map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">File URL *</label>
+                <div className="flex gap-2">
+                  <input value={form.fileUrl} onChange={e => setForm((f: any) => ({ ...f, fileUrl: e.target.value }))} placeholder="https://... or upload"
+                    className="flex-1 bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading === "fileUrl"}
+                    className="flex items-center gap-1 bg-[#2a2a2a] hover:bg-[#333] border border-[#333] text-[#a0a0a0] px-2 py-1.5 rounded text-[10px] font-rajdhani font-bold uppercase transition-all disabled:opacity-50">
+                    {uploading === "fileUrl" ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                  </button>
+                  <input ref={fileInputRef} type="file" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadFile(f, "fileUrl"); e.target.value = ""; }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Preview Image URL</label>
+                <div className="flex gap-2">
+                  <input value={form.previewUrl} onChange={e => setForm((f: any) => ({ ...f, previewUrl: e.target.value }))} placeholder="https://... (optional)"
+                    className="flex-1 bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                  <button type="button" onClick={() => previewInputRef.current?.click()} disabled={uploading === "previewUrl"}
+                    className="flex items-center gap-1 bg-[#2a2a2a] hover:bg-[#333] border border-[#333] text-[#a0a0a0] px-2 py-1.5 rounded text-[10px] font-rajdhani font-bold uppercase transition-all disabled:opacity-50">
+                    {uploading === "previewUrl" ? <Loader2 size={10} className="animate-spin" /> : <ImageIcon size={10} />}
+                  </button>
+                  <input ref={previewInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadFile(f, "previewUrl"); e.target.value = ""; }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description</label>
+                <textarea value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} rows={2} placeholder="Optional description"
+                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626] resize-none" />
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="res-visible" checked={form.isVisible} onChange={e => setForm((f: any) => ({ ...f, isVisible: e.target.checked }))} className="accent-red-600" />
+                <label htmlFor="res-visible" className="text-[11px] text-[#a0a0a0] font-rajdhani">Visible to members</label>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={handleSave} disabled={createRes.isPending || updateRes.isPending}
+                  className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                  {(createRes.isPending || updateRes.isPending) ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                  {editing ? "Update" : "Create"}
+                </button>
+                <button onClick={() => { setShowForm(false); setEditing(null); }} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase tracking-widest hover:text-white transition-colors px-2">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Episode Tasks Modal ────────────────────────────────────────────────
+const PROOF_TYPES = ["text", "image", "video", "link", "file", "watch"];
+const EMPTY_TASK_FORM = { title: "", description: "", deliverables: "", contentUrl: "", basePoints: 100, proofType: "text", estimatedMinutes: 15, isActive: true };
+
+function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => void }) {
+  const { data, isLoading } = useListEpisodeTasks(episode.id);
+  const createTask = useCreateEpisodeTask(episode.id);
+  const updateTask = useUpdateEpisodeTask(episode.id);
+  const deleteTask = useDeleteEpisodeTask(episode.id);
+  const reorderTask = useReorderEpisodeTasks(episode.id);
+
+  const serverItems: any[] = (data as any)?.data || [];
+  const [localItems, setLocalItems] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState<any>(EMPTY_TASK_FORM);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const dragIdx = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  useEffect(() => { setLocalItems(serverItems); setIsDirty(false); }, [data]);
+
+  const onDragStart = (i: number) => { dragIdx.current = i; };
+  const onDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setDragOver(i); };
+  const onDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const next = [...localItems];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalItems(next); setIsDirty(true); dragIdx.current = null; setDragOver(null);
+  };
+  const onDragEnd = () => { dragIdx.current = null; setDragOver(null); };
+
+  const handleSaveOrder = async () => {
+    try { await reorderTask.mutateAsync(localItems.map((t: any) => t.id)); setIsDirty(false); toast.success("Order saved"); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const openCreate = () => { setForm(EMPTY_TASK_FORM); setEditing(null); setShowForm(true); };
+  const openEdit = (t: any) => {
+    setForm({
+      title: t.title, description: t.description || "", deliverables: t.deliverables || "",
+      contentUrl: t.contentUrl || "", basePoints: t.basePoints ?? 100,
+      proofType: t.proofType || "text", estimatedMinutes: t.estimatedMinutes ?? 15,
+      isActive: t.isActive ?? true,
+    });
+    setEditing(t); setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { toast.error("Title required"); return; }
+    try {
+      const payload = { ...form, basePoints: Number(form.basePoints), estimatedMinutes: Number(form.estimatedMinutes) };
+      if (editing) { await updateTask.mutateAsync({ id: editing.id, ...payload }); toast.success("Task updated"); }
+      else { await createTask.mutateAsync(payload); toast.success("Task created"); }
+      setShowForm(false);
+    } catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleDelete = async (id: string) => {
+    try { await deleteTask.mutateAsync(id); toast.success("Deleted"); setDeleting(null); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[400] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="relative bg-[#141414] border border-[#2a2a2a] w-full max-w-lg rounded-xl shadow-2xl flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a] shrink-0">
+          <div className="flex items-center gap-2">
+            <ListTodo size={14} className="text-amber-400" />
+            <p className="text-[12px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-widest">Tasks — {episode.title}</p>
+          </div>
+          <button onClick={onClose} className="text-[#666] hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between">
+            {isDirty ? (
+              <button onClick={handleSaveOrder} disabled={reorderTask.isPending}
+                className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                {reorderTask.isPending ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save Order
+              </button>
+            ) : <div />}
+            <button onClick={openCreate}
+              className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all">
+              <Plus size={10} /> Add Task
+            </button>
+          </div>
+
+          {/* List */}
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-[#dc2626]" /></div>
+          ) : localItems.length === 0 && !showForm ? (
+            <div className="text-center py-8 space-y-1">
+              <ListTodo size={24} className="mx-auto text-[#444]" />
+              <p className="text-[11px] text-[#555] font-rajdhani uppercase font-bold">No tasks yet</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {localItems.map((t: any, i: number) => (
+                <div key={t.id}
+                  draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDrop={e => onDrop(e, i)} onDragEnd={onDragEnd}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-move ${dragOver === i ? "border-amber-500/50 bg-amber-500/5" : "bg-[#1a1a1a] border-[#2a2a2a]"}`}>
+                  <GripVertical size={12} className="text-[#444] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-medium text-[#f0f0f0] truncate">{t.title}</p>
+                    <p className="text-[10px] text-[#666] font-rajdhani uppercase">{t.proofType} · {t.basePoints} pts · {t.estimatedMinutes} min</p>
+                  </div>
+                  {!(t.isActive ?? true) && <EyeOff size={11} className="text-[#555] shrink-0" />}
+                  {deleting === t.id ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => handleDelete(t.id)} className="text-[10px] text-red-400 font-rajdhani font-bold uppercase hover:text-red-300">Confirm</button>
+                      <button onClick={() => setDeleting(null)} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase hover:text-white">Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openEdit(t)} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={11} /></button>
+                      <button onClick={() => setDeleting(t.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={11} /></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Form */}
+          {showForm && (
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 space-y-2.5">
+              <p className="text-[10px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">{editing ? "Edit Task" : "New Task"}</p>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+                <input value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} placeholder="Task title"
+                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description</label>
+                <textarea value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} rows={2} placeholder="What should the member do?"
+                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626] resize-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Deliverables</label>
+                <textarea value={form.deliverables} onChange={e => setForm((f: any) => ({ ...f, deliverables: e.target.value }))} rows={2} placeholder="What should they submit?"
+                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626] resize-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Content URL</label>
+                <input value={form.contentUrl} onChange={e => setForm((f: any) => ({ ...f, contentUrl: e.target.value }))} placeholder="https://... (optional reference link)"
+                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Proof Type</label>
+                  <select value={form.proofType} onChange={e => setForm((f: any) => ({ ...f, proofType: e.target.value }))}
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]">
+                    {PROOF_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Points</label>
+                  <input type="number" min={0} value={form.basePoints} onChange={e => setForm((f: any) => ({ ...f, basePoints: e.target.value }))}
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Est. Min</label>
+                  <input type="number" min={1} value={form.estimatedMinutes} onChange={e => setForm((f: any) => ({ ...f, estimatedMinutes: e.target.value }))}
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="task-active" checked={form.isActive} onChange={e => setForm((f: any) => ({ ...f, isActive: e.target.checked }))} className="accent-red-600" />
+                <label htmlFor="task-active" className="text-[11px] text-[#a0a0a0] font-rajdhani">Active (visible to members)</label>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={handleSave} disabled={createTask.isPending || updateTask.isPending}
+                  className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                  {(createTask.isPending || updateTask.isPending) ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                  {editing ? "Update" : "Create"}
+                </button>
+                <button onClick={() => { setShowForm(false); setEditing(null); }} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase tracking-widest hover:text-white transition-colors px-2">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

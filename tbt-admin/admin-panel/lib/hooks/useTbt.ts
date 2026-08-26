@@ -1814,3 +1814,83 @@ export const useSendTestBatchReport = () => {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['batch-report-history'] }); },
   });
 };
+
+// ── Episode Resources & Tasks ──────────────────────────────────────────
+
+export const useListEpisodeResources = (episodeId: string) =>
+  useQuery({
+    queryKey: ['episode-resources', episodeId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/courses/episodes/${episodeId}/resources`); return res; },
+    enabled: !!episodeId,
+  });
+
+export const useCreateEpisodeResource = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: any) => { const res: any = await apiClient.post(`/api/courses/episodes/${episodeId}/resources`, data); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-resources', episodeId] }); },
+  });
+};
+
+export const useUpdateEpisodeResource = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => { const res: any = await apiClient.put(`/api/courses/episodes/${episodeId}/resources/${id}`, data); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-resources', episodeId] }); },
+  });
+};
+
+export const useDeleteEpisodeResource = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { const res: any = await apiClient.delete(`/api/courses/episodes/${episodeId}/resources/${id}`); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-resources', episodeId] }); },
+  });
+};
+
+export const useReorderEpisodeResources = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => { const res: any = await apiClient.put(`/api/courses/episodes/${episodeId}/resources/reorder`, { ids }); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-resources', episodeId] }); },
+  });
+};
+
+export const useListEpisodeTasks = (episodeId: string) =>
+  useQuery({
+    queryKey: ['episode-tasks', episodeId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/courses/episodes/${episodeId}/tasks`); return res; },
+    enabled: !!episodeId,
+  });
+
+export const useCreateEpisodeTask = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: any) => { const res: any = await apiClient.post(`/api/courses/episodes/${episodeId}/tasks`, data); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-tasks', episodeId] }); },
+  });
+};
+
+export const useUpdateEpisodeTask = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => { const res: any = await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${id}`, data); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-tasks', episodeId] }); },
+  });
+};
+
+export const useDeleteEpisodeTask = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { const res: any = await apiClient.delete(`/api/courses/episodes/${episodeId}/tasks/${id}`); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-tasks', episodeId] }); },
+  });
+};
+
+export const useReorderEpisodeTasks = (episodeId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => { const res: any = await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/reorder`, { ids }); return res.data; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-tasks', episodeId] }); },
+  });
+};

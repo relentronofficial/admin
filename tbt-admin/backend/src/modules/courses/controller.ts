@@ -640,3 +640,163 @@ export async function unlockAllLessonsForMemberHandler(
     error: null,
   });
 }
+
+// ── Episode Resources ─────────────────────────────────────────────────────────
+
+export async function listEpisodeResourcesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { eid } = req.params as any;
+  const ids = await req.server.prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT id FROM app_resources WHERE course_episode_id = $1::uuid ORDER BY "order" ASC`,
+    eid
+  ).catch(() => []);
+  if (!ids.length) return reply.send({ success: true, data: [], error: null });
+  const resources = await req.server.prisma.appResource.findMany({
+    where: { id: { in: ids.map((r) => r.id) } },
+    orderBy: { order: 'asc' },
+  });
+  return reply.send({ success: true, data: resources, error: null });
+}
+
+export async function createEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { eid } = req.params as any;
+  const body = req.body as any;
+  const countRows = await req.server.prisma.$queryRawUnsafe<{ count: string }[]>(
+    `SELECT COUNT(*)::text AS count FROM app_resources WHERE course_episode_id = $1::uuid`, eid
+  ).catch(() => [{ count: '0' }]);
+  const order = parseInt(countRows[0]?.count ?? '0');
+  const resource = await req.server.prisma.appResource.create({
+    data: {
+      title: body.title,
+      author: body.author || null,
+      fileUrl: body.fileUrl,
+      previewUrl: body.previewUrl || null,
+      fileType: body.fileType || 'pdf',
+      fileTypeIconUrl: body.fileTypeIconUrl || null,
+      fileCount: body.fileCount ?? 1,
+      order,
+      isVisible: body.isVisible ?? true,
+      previewLabel: body.previewLabel || 'Preview',
+      downloadLabel: body.downloadLabel || 'Download',
+      description: body.description || null,
+    },
+  });
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE app_resources SET course_episode_id = $1::uuid WHERE id = $2::uuid`, eid, resource.id
+  );
+  return reply.status(201).send({ success: true, data: { ...resource, courseEpisodeId: eid }, error: null });
+}
+
+export async function updateEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { rid } = req.params as any;
+  const body = req.body as any;
+  const data: any = {};
+  ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'fileCount',
+    'isVisible', 'previewLabel', 'downloadLabel', 'description'].forEach(f => {
+    if (body[f] !== undefined) data[f] = body[f];
+  });
+  const resource = await req.server.prisma.appResource.update({ where: { id: rid }, data });
+  return reply.send({ success: true, data: resource, error: null });
+}
+
+export async function deleteEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { rid } = req.params as any;
+  await req.server.prisma.appResource.delete({ where: { id: rid } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function reorderEpisodeResourcesHandler(req: FastifyRequest, reply: FastifyReply) {
+  const body = req.body as any;
+  const ids: string[] = body.ids ?? [];
+  await Promise.all(ids.map((id, i) =>
+    req.server.prisma.appResource.update({ where: { id }, data: { order: i } })
+  ));
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// ── Episode Tasks ─────────────────────────────────────────────────────────────
+
+export async function listEpisodeTasksHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { eid } = req.params as any;
+  const rawRows = await req.server.prisma.$queryRawUnsafe<{ id: string; timer_seconds: number | null }[]>(
+    `SELECT id, timer_seconds FROM tasks WHERE course_episode_id = $1::uuid ORDER BY sort_order ASC`,
+    eid
+  ).catch(() => []);
+  if (!rawRows.length) return reply.send({ success: true, data: [], error: null });
+  const tasks = await req.server.prisma.task.findMany({
+    where: { id: { in: rawRows.map((r) => r.id) } },
+    orderBy: { sortOrder: 'asc' },
+  });
+  const timerMap = Object.fromEntries(rawRows.map((r) => [r.id, r.timer_seconds]));
+  return reply.send({
+    success: true,
+    data: tasks.map((t) => ({ ...t, timerSeconds: timerMap[t.id] ?? null })),
+    error: null,
+  });
+}
+
+export async function createEpisodeTaskHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { eid } = req.params as any;
+  const body = req.body as any;
+  const countRows = await req.server.prisma.$queryRawUnsafe<{ count: string }[]>(
+    `SELECT COUNT(*)::text AS count FROM tasks WHERE course_episode_id = $1::uuid`, eid
+  ).catch(() => [{ count: '0' }]);
+  const sortOrder = parseInt(countRows[0]?.count ?? '0');
+  const task = await req.server.prisma.task.create({
+    data: {
+      dayNumber: 1,
+      title: body.title,
+      description: body.description ?? null,
+      deliverables: body.deliverables ?? null,
+      contentUrl: body.contentUrl ?? null,
+      basePoints: body.basePoints ?? 100,
+      proofType: body.proofType ?? 'text',
+      estimatedMinutes: body.estimatedMinutes ?? 15,
+      isMilestone: false,
+      bonusPoints: 0,
+      sortOrder,
+    },
+  });
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE tasks SET course_episode_id = $1::uuid WHERE id = $2::uuid`, eid, task.id
+  );
+  const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
+  if (timerSecs !== null) {
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE tasks SET timer_seconds = $1 WHERE id = $2::uuid`, timerSecs, task.id
+    );
+  }
+  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs, courseEpisodeId: eid }, error: null });
+}
+
+export async function updateEpisodeTaskHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { tid } = req.params as any;
+  const body = req.body as any;
+  const data: any = {};
+  ['title', 'description', 'deliverables', 'contentUrl', 'basePoints',
+    'proofType', 'estimatedMinutes', 'isRequired', 'isActive'].forEach(f => {
+    if (body[f] !== undefined) data[f] = body[f];
+  });
+  const task = await req.server.prisma.task.update({ where: { id: tid }, data });
+  const timerSecs = 'timerSeconds' in body ? (body.timerSeconds != null ? Number(body.timerSeconds) : null) : undefined;
+  if (timerSecs !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE tasks SET timer_seconds = $1 WHERE id = $2::uuid`, timerSecs, tid
+    );
+  }
+  return reply.send({ success: true, data: { ...task, timerSeconds: timerSecs ?? null }, error: null });
+}
+
+export async function deleteEpisodeTaskHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { tid } = req.params as any;
+  await req.server.prisma.task.delete({ where: { id: tid } });
+  return reply.send({ success: true, data: null, error: null });
+}
+
+export async function reorderEpisodeTasksHandler(req: FastifyRequest, reply: FastifyReply) {
+  const body = req.body as any;
+  const ids: string[] = body.ids ?? [];
+  await Promise.all(ids.map((id, i) =>
+    req.server.prisma.task.update({ where: { id }, data: { sortOrder: i } })
+  ));
+  return reply.send({ success: true, data: null, error: null });
+}

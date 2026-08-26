@@ -12,6 +12,10 @@ import {
   listCourseBadgesHandler, createCourseBadgeHandler, updateCourseBadgeHandler,
   deleteCourseBadgeHandler, awardCourseBadgeHandler,
   resetMemberCourseProgressHandler, unlockAllLessonsForMemberHandler,
+  listEpisodeResourcesHandler, createEpisodeResourceHandler,
+  updateEpisodeResourceHandler, deleteEpisodeResourceHandler, reorderEpisodeResourcesHandler,
+  listEpisodeTasksHandler, createEpisodeTaskHandler,
+  updateEpisodeTaskHandler, deleteEpisodeTaskHandler, reorderEpisodeTasksHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
@@ -56,4 +60,18 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/:id/episodes/reorder', reorderCourseEpisodesHandler);
   fastify.put('/episodes/:eid', updateCourseEpisodeHandler);
   fastify.delete('/episodes/:eid', deleteCourseEpisodeHandler);
+
+  // Per-episode resources (static 'reorder' before /:rid to avoid param capture)
+  fastify.get('/episodes/:eid/resources', listEpisodeResourcesHandler);
+  fastify.post('/episodes/:eid/resources', createEpisodeResourceHandler);
+  fastify.put('/episodes/:eid/resources/reorder', reorderEpisodeResourcesHandler);
+  fastify.put('/episodes/:eid/resources/:rid', updateEpisodeResourceHandler);
+  fastify.delete('/episodes/:eid/resources/:rid', deleteEpisodeResourceHandler);
+
+  // Per-episode tasks
+  fastify.get('/episodes/:eid/tasks', listEpisodeTasksHandler);
+  fastify.post('/episodes/:eid/tasks', createEpisodeTaskHandler);
+  fastify.put('/episodes/:eid/tasks/reorder', reorderEpisodeTasksHandler);
+  fastify.put('/episodes/:eid/tasks/:tid', updateEpisodeTaskHandler);
+  fastify.delete('/episodes/:eid/tasks/:tid', deleteEpisodeTaskHandler);
 }
