@@ -61,6 +61,12 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
     req.server.prisma.siteConfig.findFirst(),
   ]);
 
+  const rawCols = config
+    ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown }>>(
+        'SELECT hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
+      ).catch(() => [])
+    : [];
+
   const data = {
     items,
     rightIcons: {
@@ -68,6 +74,7 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
       messages: config?.navShowMessages ?? true,
       profile: config?.navShowProfile ?? true,
     },
+    hiddenMenuKeys: (Array.isArray(rawCols[0]?.hidden_menu_keys) ? rawCols[0].hidden_menu_keys : []) as string[],
   };
   await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });

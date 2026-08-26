@@ -79,7 +79,7 @@ export default async function RootLayout({
 
   const [initialConfig, initialNav, initialUiStrings] = await Promise.all([
     fetchPublicJson<SiteConfig>("/api/pub/config/site"),
-    fetchPublicJson<{ items: NavItem[]; rightIcons: RightIcons }>("/api/pub/config/nav"),
+    fetchPublicJson<{ items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] }>("/api/pub/config/nav"),
     fetchPublicJson<UiStrings>("/api/pub/config/ui-strings"),
   ]);
 

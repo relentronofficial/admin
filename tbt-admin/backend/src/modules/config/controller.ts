@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { invalidateCache } from '../../lib/cache.js';
 
 const PUB_SITE_CONFIG_CACHE_KEY = 'pub:site-config:v2';
+const PUB_NAV_CACHE_KEY = 'pub:nav';
 
 // ── SITE CONFIG ───────────────────────────────────────────────────────
 
@@ -12,18 +13,22 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       data: { siteName: 'TBT', footerText: '© Tamil Business Tribe' },
     });
   }
-  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number }>>(
-    'SELECT task_timer_seconds FROM site_configs WHERE id = $1::uuid', config.id
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; hidden_menu_keys: unknown }>>(
+    'SELECT task_timer_seconds, hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
   return reply.send({
     success: true,
-    data: { ...config, taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300 },
+    data: {
+      ...config,
+      taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
+      hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
+    },
     error: null,
   });
 }
 
 export async function updateSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { taskTimerSeconds, ...prismaBody } = req.body as any;
+  const { taskTimerSeconds, hiddenMenuKeys, ...prismaBody } = req.body as any;
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
     config = await req.server.prisma.siteConfig.create({ data: prismaBody });
@@ -36,8 +41,15 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
       Number(taskTimerSeconds), config.id
     );
   }
+  if (hiddenMenuKeys !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE site_configs SET hidden_menu_keys = $1::jsonb WHERE id = $2::uuid',
+      JSON.stringify(hiddenMenuKeys), config.id
+    );
+  }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
-  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300 }, error: null });
+  void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
+  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, hiddenMenuKeys: hiddenMenuKeys ?? [] }, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────

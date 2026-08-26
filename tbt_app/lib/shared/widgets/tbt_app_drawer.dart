@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/routes.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../providers/me_provider.dart';
+import '../providers/site_config_provider.dart';
 import 'app_logo.dart';
 
 /// Glassmorphic left drawer — direct port of co-worker's `TbtAppDrawer`
@@ -106,6 +107,7 @@ class _TbtAppDrawerState extends ConsumerState<TbtAppDrawer>
     final me = ref.watch(meNotifierProvider).valueOrNull;
     final name = ((me as dynamic)?.name as String?)?.trim() ?? 'Member';
     final photoUrl = (me as dynamic)?.avatarUrl as String?;
+    final hiddenMenuKeys = ref.watch(navConfigNotifierProvider).valueOrNull?.hiddenMenuKeys ?? const <String>[];
 
     Widget animItem(int idx, Widget child) => FadeTransition(
           opacity: _itemFades[idx],
@@ -299,28 +301,30 @@ class _TbtAppDrawerState extends ConsumerState<TbtAppDrawer>
                           },
                         ),
                       ),
-                      animItem(
-                        1,
-                        _TbtDrawerItem(
-                          icon: Icons.emoji_events_rounded,
-                          label: 'TBT Leaderboard',
-                          onTap: () {
-                            Navigator.pop(context);
-                            GoRouter.of(context).push(AppRoutes.wins);
-                          },
+                      if (!hiddenMenuKeys.contains('wins'))
+                        animItem(
+                          1,
+                          _TbtDrawerItem(
+                            icon: Icons.emoji_events_rounded,
+                            label: 'TBT Leaderboard',
+                            onTap: () {
+                              Navigator.pop(context);
+                              GoRouter.of(context).push(AppRoutes.wins);
+                            },
+                          ),
                         ),
-                      ),
-                      animItem(
-                        2,
-                        _TbtDrawerItem(
-                          icon: Icons.groups_rounded,
-                          label: 'Community Feed',
-                          onTap: () {
-                            Navigator.pop(context);
-                            GoRouter.of(context).push(AppRoutes.community);
-                          },
+                      if (!hiddenMenuKeys.contains('community'))
+                        animItem(
+                          2,
+                          _TbtDrawerItem(
+                            icon: Icons.groups_rounded,
+                            label: 'Community Feed',
+                            onTap: () {
+                              Navigator.pop(context);
+                              GoRouter.of(context).push(AppRoutes.community);
+                            },
+                          ),
                         ),
-                      ),
                       animItem(
                         3,
                         _TbtDrawerItem(
@@ -343,39 +347,42 @@ class _TbtAppDrawerState extends ConsumerState<TbtAppDrawer>
                           },
                         ),
                       ),
-                      animItem(
-                        5,
-                        _TbtDrawerItem(
-                          icon: Icons.podcasts_rounded,
-                          label: 'Voice of Sakthi',
-                          onTap: () {
-                            Navigator.pop(context);
-                            GoRouter.of(context).push(AppRoutes.podcasts);
-                          },
+                      if (!hiddenMenuKeys.contains('podcasts'))
+                        animItem(
+                          5,
+                          _TbtDrawerItem(
+                            icon: Icons.podcasts_rounded,
+                            label: 'Voice of Sakthi',
+                            onTap: () {
+                              Navigator.pop(context);
+                              GoRouter.of(context).push(AppRoutes.podcasts);
+                            },
+                          ),
                         ),
-                      ),
-                      animItem(
-                        6,
-                        _TbtDrawerItem(
-                          icon: Icons.menu_book_rounded,
-                          label: 'E-Book Library',
-                          onTap: () {
-                            Navigator.pop(context);
-                            GoRouter.of(context).push(AppRoutes.ebooks);
-                          },
+                      if (!hiddenMenuKeys.contains('ebooks'))
+                        animItem(
+                          6,
+                          _TbtDrawerItem(
+                            icon: Icons.menu_book_rounded,
+                            label: 'E-Book Library',
+                            onTap: () {
+                              Navigator.pop(context);
+                              GoRouter.of(context).push(AppRoutes.ebooks);
+                            },
+                          ),
                         ),
-                      ),
-                      animItem(
-                        7,
-                        _TbtDrawerItem(
-                          icon: Icons.auto_awesome_rounded,
-                          label: 'Content Buddy AI',
-                          onTap: () {
-                            Navigator.pop(context);
-                            GoRouter.of(context).push(AppRoutes.aiContent);
-                          },
+                      if (!hiddenMenuKeys.contains('ai_content'))
+                        animItem(
+                          7,
+                          _TbtDrawerItem(
+                            icon: Icons.auto_awesome_rounded,
+                            label: 'Content Buddy AI',
+                            onTap: () {
+                              Navigator.pop(context);
+                              GoRouter.of(context).push(AppRoutes.aiContent);
+                            },
+                          ),
                         ),
-                      ),
                       animItem(
                         8,
                         _TbtDrawerItem(
@@ -399,17 +406,18 @@ class _TbtAppDrawerState extends ConsumerState<TbtAppDrawer>
                           },
                         ),
                       ),
-                      animItem(
-                        10,
-                        _TbtDrawerItem(
-                          icon: Icons.support_agent_rounded,
-                          label: 'Support',
-                          onTap: () {
-                            Navigator.pop(context);
-                            GoRouter.of(context).push(AppRoutes.support);
-                          },
+                      if (!hiddenMenuKeys.contains('support'))
+                        animItem(
+                          10,
+                          _TbtDrawerItem(
+                            icon: Icons.support_agent_rounded,
+                            label: 'Support',
+                            onTap: () {
+                              Navigator.pop(context);
+                              GoRouter.of(context).push(AppRoutes.support);
+                            },
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),

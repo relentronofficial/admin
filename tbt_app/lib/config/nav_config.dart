@@ -9,6 +9,7 @@ class NavConfig with _$NavConfig {
   const factory NavConfig({
     @Default(<NavItem>[]) List<NavItem> items,
     @Default(RightIcons()) RightIcons rightIcons,
+    @Default(<String>[]) List<String> hiddenMenuKeys,
   }) = _NavConfig;
 
   factory NavConfig.fromJson(Map<String, dynamic> json) =>

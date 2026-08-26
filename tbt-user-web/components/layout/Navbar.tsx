@@ -204,6 +204,7 @@ function ProfileButton() {
   const { data: me } = useMe();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { hiddenMenuKeys } = useSiteConfig();
   const [open, setOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -253,34 +254,42 @@ function ProfileButton() {
             >
               Profile
             </Link>
-            <Link
-              href="/community"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
-            >
-              Community
-            </Link>
-            <Link
-              href="/ebooks"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
-            >
-              Ebooks
-            </Link>
-            <Link
-              href="/podcasts"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
-            >
-              Podcasts
-            </Link>
-            <Link
-              href="/support"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
-            >
-              Support
-            </Link>
+            {!hiddenMenuKeys.includes("community") && (
+              <Link
+                href="/community"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+              >
+                Community
+              </Link>
+            )}
+            {!hiddenMenuKeys.includes("ebooks") && (
+              <Link
+                href="/ebooks"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+              >
+                Ebooks
+              </Link>
+            )}
+            {!hiddenMenuKeys.includes("podcasts") && (
+              <Link
+                href="/podcasts"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+              >
+                Podcasts
+              </Link>
+            )}
+            {!hiddenMenuKeys.includes("support") && (
+              <Link
+                href="/support"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+              >
+                Support
+              </Link>
+            )}
             <button
               onClick={handleLogout}
               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)] transition-colors"
@@ -303,7 +312,7 @@ export function Navbar() {
   routerRef.current = router;
 
   const { sidebarOpen, setSidebarOpen, toggleSidebar, theme } = useUIStore();
-  const { config, nav, rightIcons } = useSiteConfig();
+  const { config, nav, rightIcons, hiddenMenuKeys } = useSiteConfig();
   const queryClient = useQueryClient();
 
   const [notifOpen, setNotifOpen] = useState(false);
@@ -499,50 +508,58 @@ export function Navbar() {
             const supportActive = pathname === "/support" || pathname.startsWith("/support/");
             return (
               <>
-                <Link
-                  href="/community"
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                    communityActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <GlowBg active={communityActive} />
-                  <span className="relative z-10">Community</span>
-                </Link>
-                <Link
-                  href="/ebooks"
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                    ebooksActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <GlowBg active={ebooksActive} />
-                  <span className="relative z-10">Ebooks</span>
-                </Link>
-                <Link
-                  href="/podcasts"
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                    podcastsActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <GlowBg active={podcastsActive} />
-                  <span className="relative z-10">Podcasts</span>
-                </Link>
-                <Link
-                  href="/support"
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                    supportActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <GlowBg active={supportActive} />
-                  <span className="relative z-10">Support</span>
-                </Link>
+                {!hiddenMenuKeys.includes("community") && (
+                  <Link
+                    href="/community"
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                      communityActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <GlowBg active={communityActive} />
+                    <span className="relative z-10">Community</span>
+                  </Link>
+                )}
+                {!hiddenMenuKeys.includes("ebooks") && (
+                  <Link
+                    href="/ebooks"
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                      ebooksActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <GlowBg active={ebooksActive} />
+                    <span className="relative z-10">Ebooks</span>
+                  </Link>
+                )}
+                {!hiddenMenuKeys.includes("podcasts") && (
+                  <Link
+                    href="/podcasts"
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                      podcastsActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <GlowBg active={podcastsActive} />
+                    <span className="relative z-10">Podcasts</span>
+                  </Link>
+                )}
+                {!hiddenMenuKeys.includes("support") && (
+                  <Link
+                    href="/support"
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                      supportActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <GlowBg active={supportActive} />
+                    <span className="relative z-10">Support</span>
+                  </Link>
+                )}
               </>
             );
           })()}
@@ -588,9 +605,9 @@ export function Navbar() {
             // Messages and Notifications are already right-side icons;
             // drop them here to avoid duplication.
             ...nav.filter((n) => n.href !== "/messages" && n.href !== "/notifications"),
-            { id: "__community", href: "/community", label: "Community" },
-            { id: "__ebooks", href: "/ebooks", label: "Ebooks" },
-            { id: "__podcasts", href: "/podcasts", label: "Podcasts" },
+            ...(!hiddenMenuKeys.includes("community") ? [{ id: "__community", href: "/community", label: "Community" }] : []),
+            ...(!hiddenMenuKeys.includes("ebooks") ? [{ id: "__ebooks", href: "/ebooks", label: "Ebooks" }] : []),
+            ...(!hiddenMenuKeys.includes("podcasts") ? [{ id: "__podcasts", href: "/podcasts", label: "Podcasts" }] : []),
           ].map(({ id, href, label }) => {
             const active =
               pathname === href ||
@@ -668,20 +685,22 @@ export function Navbar() {
           )}
 
           {/* Support */}
-          <Link
-            href="/support"
-            className={cn(
-              "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
-              pathname === "/support" || pathname.startsWith("/support/")
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-            aria-label="Support"
-            title="Support"
-          >
-            <GlowBg active={pathname === "/support" || pathname.startsWith("/support/")} />
-            <LifeBuoy size={17} className="relative z-10" />
-          </Link>
+          {!hiddenMenuKeys.includes("support") && (
+            <Link
+              href="/support"
+              className={cn(
+                "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
+                pathname === "/support" || pathname.startsWith("/support/")
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              aria-label="Support"
+              title="Support"
+            >
+              <GlowBg active={pathname === "/support" || pathname.startsWith("/support/")} />
+              <LifeBuoy size={17} className="relative z-10" />
+            </Link>
+          )}
 
           {/* Profile avatar */}
           {rightIcons.profile && (

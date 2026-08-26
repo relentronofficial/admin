@@ -3,10 +3,19 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Pencil, X, Loader2, GripVertical, Eye, EyeOff, AlertCircle, Navigation, Save } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useListNavItems, useCreateNavItem, useUpdateNavItem, useDeleteNavItem, useReorderNavItems } from "@/lib/hooks/useTbt";
+import { useListNavItems, useCreateNavItem, useUpdateNavItem, useDeleteNavItem, useReorderNavItems, useGetSiteConfig, useUpdateSiteConfig } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 
 const EMPTY = { label: "", href: "", isVisible: true };
+
+const PLATFORM_MENUS = [
+  { key: "community", label: "Community Feed", desc: "Web nav + mobile drawer" },
+  { key: "ebooks", label: "E-Book Library", desc: "Web nav + mobile drawer" },
+  { key: "podcasts", label: "Voice of Sakthi (Podcasts)", desc: "Web nav + mobile drawer + bottom tab" },
+  { key: "support", label: "Support", desc: "Web nav icon + mobile drawer" },
+  { key: "wins", label: "Wins / Leaderboard", desc: "Mobile bottom tab + drawer" },
+  { key: "ai_content", label: "Content Buddy AI", desc: "Mobile drawer" },
+];
 
 export default function NavigationPage() {
   const { data, isLoading } = useListNavItems();
@@ -14,6 +23,48 @@ export default function NavigationPage() {
   const updateItem = useUpdateNavItem();
   const deleteItem = useDeleteNavItem();
   const reorderItems = useReorderNavItems();
+
+  // Platform menus / right icons
+  const { data: siteConfigData, isLoading: siteConfigLoading } = useGetSiteConfig();
+  const updateSiteConfig = useUpdateSiteConfig();
+  const siteConfig = (siteConfigData as any)?.data;
+  const [hiddenMenuKeys, setHiddenMenuKeys] = useState<string[]>([]);
+  const [navShowNotifications, setNavShowNotifications] = useState(true);
+  const [navShowMessages, setNavShowMessages] = useState(true);
+  const [navShowProfile, setNavShowProfile] = useState(true);
+  const [platformSaving, setPlatformSaving] = useState(false);
+
+  useEffect(() => {
+    if (siteConfig) {
+      setHiddenMenuKeys(Array.isArray(siteConfig.hiddenMenuKeys) ? siteConfig.hiddenMenuKeys : []);
+      setNavShowNotifications(siteConfig.navShowNotifications ?? true);
+      setNavShowMessages(siteConfig.navShowMessages ?? true);
+      setNavShowProfile(siteConfig.navShowProfile ?? true);
+    }
+  }, [siteConfig]);
+
+  const toggleMenuKey = (key: string) => {
+    setHiddenMenuKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const handleSavePlatformMenus = async () => {
+    setPlatformSaving(true);
+    try {
+      await updateSiteConfig.mutateAsync({
+        hiddenMenuKeys,
+        navShowNotifications,
+        navShowMessages,
+        navShowProfile,
+      });
+      toast.success("Platform menus saved");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save");
+    } finally {
+      setPlatformSaving(false);
+    }
+  };
 
   const serverItems: any[] = (data as any)?.data || [];
 
@@ -210,6 +261,83 @@ export default function NavigationPage() {
               ))}
             </div>
           )}
+        </div>
+        {/* Platform Menus */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-1 bg-[#dc2626] rounded-full min-h-[40px]" />
+            <div>
+              <h2 className="font-rajdhani text-lg font-bold tracking-tight text-[#f0f0f0] uppercase">Platform Menus</h2>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Control which sections are visible to members on web and mobile.</p>
+            </div>
+          </div>
+
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Content Sections</span>
+            </div>
+            {siteConfigLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 size={24} className="animate-spin text-[#dc2626]" />
+              </div>
+            ) : (
+              <div className="divide-y divide-[#2a2a2a]">
+                {PLATFORM_MENUS.map(({ key, label, desc }) => {
+                  const hidden = hiddenMenuKeys.includes(key);
+                  return (
+                    <div key={key} className="flex items-center justify-between px-5 py-3.5">
+                      <div>
+                        <p className="text-sm font-medium text-[#f0f0f0]">{label}</p>
+                        <p className="text-[11px] text-[#777]">{desc}</p>
+                      </div>
+                      <button
+                        onClick={() => toggleMenuKey(key)}
+                        className={`p-1.5 rounded transition-all ${!hidden ? "text-blue-400 hover:bg-blue-400/10" : "text-[#777] hover:text-[#888]"}`}
+                        title={hidden ? "Hidden — click to show" : "Visible — click to hide"}
+                      >
+                        {hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Right-Side Icons (Web &amp; Mobile Top Bar)</span>
+            </div>
+            <div className="divide-y divide-[#2a2a2a]">
+              {[
+                { key: "notifications", label: "Notifications Bell", value: navShowNotifications, set: setNavShowNotifications },
+                { key: "messages", label: "Messages Icon", value: navShowMessages, set: setNavShowMessages },
+                { key: "profile", label: "Profile Avatar", value: navShowProfile, set: setNavShowProfile },
+              ].map(({ key, label, value, set }) => (
+                <div key={key} className="flex items-center justify-between px-5 py-3.5">
+                  <p className="text-sm font-medium text-[#f0f0f0]">{label}</p>
+                  <button
+                    onClick={() => set((v) => !v)}
+                    className={`p-1.5 rounded transition-all ${value ? "text-blue-400 hover:bg-blue-400/10" : "text-[#777] hover:text-[#888]"}`}
+                    title={value ? "Visible — click to hide" : "Hidden — click to show"}
+                  >
+                    {value ? <Eye size={16} /> : <EyeOff size={16} />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              onClick={handleSavePlatformMenus}
+              disabled={platformSaving}
+              className="flex items-center gap-2 bg-[#dc2626] text-white px-6 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all disabled:opacity-60"
+            >
+              {platformSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              Save Platform Menus
+            </button>
+          </div>
         </div>
       </div>
 

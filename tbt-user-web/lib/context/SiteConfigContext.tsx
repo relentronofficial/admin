@@ -14,6 +14,7 @@ interface SiteConfigContextValue {
   config: SiteConfig | null;
   nav: NavItem[];
   rightIcons: RightIcons;
+  hiddenMenuKeys: string[];
   uiStrings: UiStrings | null;
   isLoading: boolean;
 }
@@ -24,6 +25,7 @@ export const SiteConfigContext = createContext<SiteConfigContextValue>({
   config: null,
   nav: [],
   rightIcons: DEFAULT_RIGHT_ICONS,
+  hiddenMenuKeys: [],
   uiStrings: null,
   isLoading: true,
 });
@@ -73,7 +75,7 @@ async function fetchJson<T>(path: string): Promise<T | null> {
 interface SiteConfigProviderProps {
   children: React.ReactNode;
   initialConfig?: SiteConfig | null;
-  initialNav?: { items: NavItem[]; rightIcons: RightIcons } | null;
+  initialNav?: { items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] } | null;
   initialUiStrings?: UiStrings | null;
 }
 
@@ -86,6 +88,7 @@ export function SiteConfigProvider({
   const [config, setConfig] = useState<SiteConfig | null>(initialConfig ?? null);
   const [nav, setNav] = useState<NavItem[]>(initialNav?.items ?? []);
   const [rightIcons, setRightIcons] = useState<RightIcons>(initialNav?.rightIcons ?? DEFAULT_RIGHT_ICONS);
+  const [hiddenMenuKeys, setHiddenMenuKeys] = useState<string[]>(initialNav?.hiddenMenuKeys ?? []);
   const [uiStrings, setUiStrings] = useState<UiStrings | null>(initialUiStrings ?? null);
   const [isLoading, setIsLoading] = useState(!(initialConfig && initialNav && initialUiStrings));
 
@@ -104,7 +107,7 @@ export function SiteConfigProvider({
     async function bootstrap() {
       const [cfg, navData, strings] = await Promise.all([
         fetchJson<SiteConfig>("/api/pub/config/site"),
-        fetchJson<{ items: NavItem[]; rightIcons: RightIcons }>("/api/pub/config/nav"),
+        fetchJson<{ items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] }>("/api/pub/config/nav"),
         fetchJson<UiStrings>("/api/pub/config/ui-strings"),
       ]);
 
@@ -115,6 +118,7 @@ export function SiteConfigProvider({
       }
       if (navData?.items?.length) setNav(navData.items);
       if (navData?.rightIcons) setRightIcons(navData.rightIcons);
+      if (navData?.hiddenMenuKeys) setHiddenMenuKeys(navData.hiddenMenuKeys);
       if (strings) setUiStrings(strings);
       setIsLoading(false);
     }
@@ -130,7 +134,7 @@ export function SiteConfigProvider({
   }, [theme, config]);
 
   return (
-    <SiteConfigContext.Provider value={{ config, nav, rightIcons, uiStrings, isLoading }}>
+    <SiteConfigContext.Provider value={{ config, nav, rightIcons, hiddenMenuKeys, uiStrings, isLoading }}>
       {children}
     </SiteConfigContext.Provider>
   );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/nav_config.dart';
 import '../../core/constants/routes.dart';
 import '../../features/messages/providers/messages_provider.dart';
 import '../../features/notifications/providers/notifications_provider.dart';
@@ -21,6 +22,8 @@ class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final siteConfig = ref.watch(siteConfigNotifierProvider).valueOrNull;
+    final navConfig = ref.watch(navConfigNotifierProvider).valueOrNull;
+    final rightIcons = navConfig?.rightIcons ?? const RightIcons();
     final notifCount = ref.watch(unreadNotifCountNotifierProvider);
     final msgCount = ref.watch(unreadMessageCountNotifierProvider);
     final accent = context.tbt.accent;
@@ -33,28 +36,32 @@ class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
       titleSpacing: 16,
       title: _Logo(logoUrl: siteConfig?.logoUrl),
       actions: [
-        _IconWithBadge(
-          icon: Icons.mail_outline,
-          count: msgCount,
-          accentColor: accent,
-          semanticLabel: msgCount > 0
-              ? 'Messages, $msgCount unread'
-              : 'Messages',
-          // `push` so the back button returns to whichever screen the
-          // user tapped the icon from, instead of exiting the app.
-          onTap: () => context.push(AppRoutes.messages),
-        ),
-        const SizedBox(width: 4),
-        _IconWithBadge(
-          icon: Icons.notifications_outlined,
-          count: notifCount,
-          accentColor: accent,
-          semanticLabel: notifCount > 0
-              ? 'Notifications, $notifCount unread'
-              : 'Notifications',
-          onTap: () => context.push(AppRoutes.notifications),
-        ),
-        const SizedBox(width: 8),
+        if (rightIcons.messages) ...[
+          _IconWithBadge(
+            icon: Icons.mail_outline,
+            count: msgCount,
+            accentColor: accent,
+            semanticLabel: msgCount > 0
+                ? 'Messages, $msgCount unread'
+                : 'Messages',
+            // `push` so the back button returns to whichever screen the
+            // user tapped the icon from, instead of exiting the app.
+            onTap: () => context.push(AppRoutes.messages),
+          ),
+          const SizedBox(width: 4),
+        ],
+        if (rightIcons.notifications) ...[
+          _IconWithBadge(
+            icon: Icons.notifications_outlined,
+            count: notifCount,
+            accentColor: accent,
+            semanticLabel: notifCount > 0
+                ? 'Notifications, $notifCount unread'
+                : 'Notifications',
+            onTap: () => context.push(AppRoutes.notifications),
+          ),
+          const SizedBox(width: 8),
+        ],
       ],
     );
   }

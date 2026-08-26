@@ -23,6 +23,7 @@ NavConfig _$NavConfigFromJson(Map<String, dynamic> json) {
 mixin _$NavConfig {
   List<NavItem> get items => throw _privateConstructorUsedError;
   RightIcons get rightIcons => throw _privateConstructorUsedError;
+  List<String> get hiddenMenuKeys => throw _privateConstructorUsedError;
 
   /// Serializes this NavConfig to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -39,7 +40,7 @@ abstract class $NavConfigCopyWith<$Res> {
   factory $NavConfigCopyWith(NavConfig value, $Res Function(NavConfig) then) =
       _$NavConfigCopyWithImpl<$Res, NavConfig>;
   @useResult
-  $Res call({List<NavItem> items, RightIcons rightIcons});
+  $Res call({List<NavItem> items, RightIcons rightIcons, List<String> hiddenMenuKeys});
 
   $RightIconsCopyWith<$Res> get rightIcons;
 }
@@ -58,7 +59,7 @@ class _$NavConfigCopyWithImpl<$Res, $Val extends NavConfig>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? items = null, Object? rightIcons = null}) {
+  $Res call({Object? items = null, Object? rightIcons = null, Object? hiddenMenuKeys = null}) {
     return _then(
       _value.copyWith(
             items:
@@ -71,6 +72,11 @@ class _$NavConfigCopyWithImpl<$Res, $Val extends NavConfig>
                     ? _value.rightIcons
                     : rightIcons // ignore: cast_nullable_to_non_nullable
                         as RightIcons,
+            hiddenMenuKeys:
+                null == hiddenMenuKeys
+                    ? _value.hiddenMenuKeys
+                    : hiddenMenuKeys // ignore: cast_nullable_to_non_nullable
+                        as List<String>,
           )
           as $Val,
     );
@@ -96,7 +102,7 @@ abstract class _$$NavConfigImplCopyWith<$Res>
   ) = __$$NavConfigImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({List<NavItem> items, RightIcons rightIcons});
+  $Res call({List<NavItem> items, RightIcons rightIcons, List<String> hiddenMenuKeys});
 
   @override
   $RightIconsCopyWith<$Res> get rightIcons;
@@ -115,7 +121,7 @@ class __$$NavConfigImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? items = null, Object? rightIcons = null}) {
+  $Res call({Object? items = null, Object? rightIcons = null, Object? hiddenMenuKeys = null}) {
     return _then(
       _$NavConfigImpl(
         items:
@@ -128,6 +134,11 @@ class __$$NavConfigImplCopyWithImpl<$Res>
                 ? _value.rightIcons
                 : rightIcons // ignore: cast_nullable_to_non_nullable
                     as RightIcons,
+        hiddenMenuKeys:
+            null == hiddenMenuKeys
+                ? _value._hiddenMenuKeys
+                : hiddenMenuKeys // ignore: cast_nullable_to_non_nullable
+                    as List<String>,
       ),
     );
   }
@@ -139,7 +150,9 @@ class _$NavConfigImpl implements _NavConfig {
   const _$NavConfigImpl({
     final List<NavItem> items = const <NavItem>[],
     this.rightIcons = const RightIcons(),
-  }) : _items = items;
+    final List<String> hiddenMenuKeys = const <String>[],
+  }) : _items = items,
+       _hiddenMenuKeys = hiddenMenuKeys;
 
   factory _$NavConfigImpl.fromJson(Map<String, dynamic> json) =>
       _$$NavConfigImplFromJson(json);
@@ -157,9 +170,18 @@ class _$NavConfigImpl implements _NavConfig {
   @JsonKey()
   final RightIcons rightIcons;
 
+  final List<String> _hiddenMenuKeys;
+  @override
+  @JsonKey()
+  List<String> get hiddenMenuKeys {
+    if (_hiddenMenuKeys is EqualUnmodifiableListView) return _hiddenMenuKeys;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_hiddenMenuKeys);
+  }
+
   @override
   String toString() {
-    return 'NavConfig(items: $items, rightIcons: $rightIcons)';
+    return 'NavConfig(items: $items, rightIcons: $rightIcons, hiddenMenuKeys: $hiddenMenuKeys)';
   }
 
   @override
@@ -169,7 +191,8 @@ class _$NavConfigImpl implements _NavConfig {
             other is _$NavConfigImpl &&
             const DeepCollectionEquality().equals(other._items, _items) &&
             (identical(other.rightIcons, rightIcons) ||
-                other.rightIcons == rightIcons));
+                other.rightIcons == rightIcons) &&
+            const DeepCollectionEquality().equals(other._hiddenMenuKeys, _hiddenMenuKeys));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -178,6 +201,7 @@ class _$NavConfigImpl implements _NavConfig {
     runtimeType,
     const DeepCollectionEquality().hash(_items),
     rightIcons,
+    const DeepCollectionEquality().hash(_hiddenMenuKeys),
   );
 
   /// Create a copy of NavConfig
@@ -198,6 +222,7 @@ abstract class _NavConfig implements NavConfig {
   const factory _NavConfig({
     final List<NavItem> items,
     final RightIcons rightIcons,
+    final List<String> hiddenMenuKeys,
   }) = _$NavConfigImpl;
 
   factory _NavConfig.fromJson(Map<String, dynamic> json) =
@@ -207,6 +232,8 @@ abstract class _NavConfig implements NavConfig {
   List<NavItem> get items;
   @override
   RightIcons get rightIcons;
+  @override
+  List<String> get hiddenMenuKeys;
 
   /// Create a copy of NavConfig
   /// with the given fields replaced by the non-null parameter values.
