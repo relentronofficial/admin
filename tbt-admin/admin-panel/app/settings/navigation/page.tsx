@@ -8,11 +8,11 @@ import { toast } from "react-hot-toast";
 
 const EMPTY = { label: "", href: "", isVisible: true };
 
-const PLATFORM_MENUS = [
+const FIXED_MENUS = [
   { key: "community", label: "Community Feed", desc: "Web nav + mobile drawer" },
   { key: "ebooks", label: "E-Book Library", desc: "Web nav + mobile drawer" },
-  { key: "podcasts", label: "Voice of Sakthi (Podcasts)", desc: "Web nav + mobile drawer + bottom tab" },
-  { key: "support", label: "Support", desc: "Web nav icon + mobile drawer" },
+  { key: "podcasts", label: "Voice of Sakthi (Podcasts)", desc: "Web nav + mobile bottom tab + drawer" },
+  { key: "support", label: "Support", desc: "Web top-bar icon + mobile drawer" },
   { key: "wins", label: "Wins / Leaderboard", desc: "Mobile bottom tab + drawer" },
   { key: "ai_content", label: "Content Buddy AI", desc: "Mobile drawer" },
 ];
@@ -262,27 +262,66 @@ export default function NavigationPage() {
             </div>
           )}
         </div>
-        {/* Platform Menus */}
+        {/* Header Menu Visibility */}
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[40px]" />
             <div>
-              <h2 className="font-rajdhani text-lg font-bold tracking-tight text-[#f0f0f0] uppercase">Platform Menus</h2>
-              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Control which sections are visible to members on web and mobile.</p>
+              <h2 className="font-rajdhani text-lg font-bold tracking-tight text-[#f0f0f0] uppercase">Header Menu Visibility</h2>
+              <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Show or hide every item that appears in the web &amp; mobile header.</p>
             </div>
           </div>
 
+          {/* Custom nav links (from DB) */}
           <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Content Sections</span>
+            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Custom Nav Links</span>
+              <span className="text-[10px] text-[#555] font-rajdhani uppercase tracking-widest">Web nav bar + mobile drawer</span>
+            </div>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 size={22} className="animate-spin text-[#dc2626]" />
+              </div>
+            ) : serverItems.length === 0 ? (
+              <div className="px-5 py-4 text-[#555] text-sm">No custom nav links yet — add them above.</div>
+            ) : (
+              <div className="divide-y divide-[#2a2a2a]">
+                {serverItems.map((item: any) => (
+                  <div key={item.id} className="flex items-center justify-between px-5 py-3.5">
+                    <div>
+                      <p className="text-sm font-medium text-[#f0f0f0]">{item.label}</p>
+                      <p className="text-[11px] text-[#777] font-mono">{item.href}</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await updateItem.mutateAsync({ id: item.id, data: { isVisible: !item.isVisible } });
+                        } catch (e: any) { toast.error(e.message || "Failed"); }
+                      }}
+                      className={`p-1.5 rounded transition-all ${item.isVisible ? "text-blue-400 hover:bg-blue-400/10" : "text-[#777] hover:text-[#888]"}`}
+                      title={item.isVisible ? "Visible — click to hide" : "Hidden — click to show"}
+                    >
+                      {item.isVisible ? <Eye size={16} /> : <EyeOff size={16} />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Fixed platform sections */}
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Platform Sections</span>
+              <span className="text-[10px] text-[#555] font-rajdhani uppercase tracking-widest">Requires Save below</span>
             </div>
             {siteConfigLoading ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 size={24} className="animate-spin text-[#dc2626]" />
+              <div className="flex items-center justify-center py-8">
+                <Loader2 size={22} className="animate-spin text-[#dc2626]" />
               </div>
             ) : (
               <div className="divide-y divide-[#2a2a2a]">
-                {PLATFORM_MENUS.map(({ key, label, desc }) => {
+                {FIXED_MENUS.map(({ key, label, desc }) => {
                   const hidden = hiddenMenuKeys.includes(key);
                   return (
                     <div key={key} className="flex items-center justify-between px-5 py-3.5">
@@ -304,9 +343,11 @@ export default function NavigationPage() {
             )}
           </div>
 
+          {/* Right-side icons */}
           <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Right-Side Icons (Web &amp; Mobile Top Bar)</span>
+            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Top-Bar Icons</span>
+              <span className="text-[10px] text-[#555] font-rajdhani uppercase tracking-widest">Web &amp; Mobile — Requires Save below</span>
             </div>
             <div className="divide-y divide-[#2a2a2a]">
               {[
@@ -328,14 +369,15 @@ export default function NavigationPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-[#555]">Custom nav links save instantly. Platform Sections &amp; Top-Bar Icons need the button below.</p>
             <button
               onClick={handleSavePlatformMenus}
               disabled={platformSaving}
               className="flex items-center gap-2 bg-[#dc2626] text-white px-6 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all disabled:opacity-60"
             >
               {platformSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              Save Platform Menus
+              Save Changes
             </button>
           </div>
         </div>
