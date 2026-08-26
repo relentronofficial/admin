@@ -123,7 +123,6 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       bonusPoints: true,
       proofType: true,
       estimatedMinutes: true,
-      timerSeconds: true,
       isMilestone: true,
       milestoneLabel: true,
       sortOrder: true,
@@ -131,6 +130,20 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       isActive: true,
     },
   });
+
+  // timer_seconds is a raw SQL column not in Prisma schema — fetch separately
+  let programTasksWithTimer: any[] = programTasks;
+  if (programTasks.length > 0) {
+    const ids = programTasks.map((t: any) => t.id);
+    const placeholders = ids.map((_: any, i: number) => `$${i + 1}::uuid`).join(',');
+    const timerRows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; timer_seconds: number | null }>>(
+      `SELECT id::text, timer_seconds FROM tasks WHERE id IN (${placeholders})`,
+      ...ids
+    );
+    const timerMap: Record<string, number | null> = {};
+    for (const r of timerRows) timerMap[r.id] = r.timer_seconds;
+    programTasksWithTimer = programTasks.map((t: any) => ({ ...t, timerSeconds: timerMap[t.id] ?? null }));
+  }
 
   return reply.send({
     success: true,
@@ -142,7 +155,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       progress,
       attendance,
       breaks,
-      programTasks,
+      programTasks: programTasksWithTimer,
       mySubmissions,
     },
     error: null,

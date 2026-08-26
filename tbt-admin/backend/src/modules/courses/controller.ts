@@ -133,11 +133,17 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
       ...(body.quizUnlockPercent !== undefined && { quizUnlockPercent: Number(body.quizUnlockPercent) }),
       ...(body.drmEnabled !== undefined && { drmEnabled: Boolean(body.drmEnabled) }),
       ...(body.bunnyDrmToken !== undefined && { bunnyDrmToken: body.bunnyDrmToken || null }),
-      timerSeconds: body.timerSeconds != null ? Number(body.timerSeconds) : null,
     },
   });
+  const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
+  if (timerSecs !== null) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid',
+      timerSecs, episode.id
+    );
+  }
   bustHome(req);
-  return reply.status(201).send({ success: true, data: episode, error: null });
+  return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs }, error: null });
 }
 
 export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -151,10 +157,16 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   if (body.order !== undefined) data.order = body.order;
   if (body.quizUnlockPercent !== undefined) data.quizUnlockPercent = Number(body.quizUnlockPercent);
   if (body.drmEnabled !== undefined) data.drmEnabled = Boolean(body.drmEnabled);
-  if ('timerSeconds' in body) data.timerSeconds = body.timerSeconds != null ? Number(body.timerSeconds) : null;
+  const timerSecs = 'timerSeconds' in body ? (body.timerSeconds != null ? Number(body.timerSeconds) : null) : undefined;
   const episode = await req.server.prisma.courseEpisode.update({ where: { id: eid }, data });
+  if (timerSecs !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid',
+      timerSecs, episode.id
+    );
+  }
   bustHome(req);
-  return reply.send({ success: true, data: episode, error: null });
+  return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null }, error: null });
 }
 
 export async function deleteCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {

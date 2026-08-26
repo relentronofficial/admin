@@ -40,7 +40,6 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
       basePoints: body.basePoints,
       proofType: body.proofType,
       estimatedMinutes: body.estimatedMinutes,
-      timerSeconds: body.timerSeconds ?? null,
       isMilestone: body.isMilestone,
       milestoneLabel: body.milestoneLabel ?? null,
       bonusPoints: body.bonusPoints,
@@ -48,7 +47,14 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
     },
     include: { program: { select: { id: true, name: true } } },
   });
-  return reply.status(201).send({ success: true, data: task, error: null });
+  const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
+  if (timerSecs !== null) {
+    await request.server.prisma.$executeRawUnsafe(
+      'UPDATE tasks SET timer_seconds = $1 WHERE id = $2::uuid',
+      timerSecs, task.id
+    );
+  }
+  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs }, error: null });
 }
 
 export async function getTaskHandler(request: FastifyRequest, reply: FastifyReply) {
