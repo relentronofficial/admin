@@ -43,7 +43,7 @@ String _contentStepLabel(int index, int total) {
   return 'Step ${index + 1}';
 }
 
-const _requiredFields = ['firstName', 'businessName', 'businessType', 'city', 'state'];
+const _requiredFields = ['firstName', 'businessName', 'productServiceType', 'city', 'state'];
 
 const _documentTypes = [
   ('business_proof', 'Business Proof'),
@@ -923,6 +923,8 @@ class _ProfileStep extends StatelessWidget {
     final photoUrl = (profile['profilePhotoUrl'] as String?)?.isNotEmpty == true
         ? profile['profilePhotoUrl'] as String
         : null;
+    final phone = (profile['phone'] as String?) ?? '';
+    final email = (profile['email'] as String?) ?? '';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
@@ -972,8 +974,12 @@ class _ProfileStep extends StatelessWidget {
               ),
             ),
           ),
+
+          // Personal Information
           _sectionHeader(Icons.person_outline_rounded, 'Personal Information'),
           const SizedBox(height: 14),
+          if (phone.isNotEmpty) _readonlyField(phone, 'Phone'),
+          if (email.isNotEmpty) _readonlyField(email, 'Email'),
           _field(profile, onChanged, 'firstName', 'First Name *'),
           _field(profile, onChanged, 'lastName', 'Last Name'),
           Row(children: [
@@ -981,18 +987,53 @@ class _ProfileStep extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(child: _field(profile, onChanged, 'state', 'State *')),
           ]),
+
           const SizedBox(height: 22),
+
+          // Business Details
           _sectionHeader(Icons.business_outlined, 'Business Details'),
           const SizedBox(height: 14),
           _field(profile, onChanged, 'businessName', 'Business Name *'),
-          _field(profile, onChanged, 'businessType', 'Business Type *'),
-          _field(profile, onChanged, 'productServiceType', 'Product / Service'),
+          _dropdown(
+            profile: profile,
+            onChanged: onChanged,
+            key: 'productServiceType',
+            label: 'Business Type *',
+            options: const ['Product-based', 'Service-based', 'Both', 'Other'],
+          ),
           Row(children: [
-            Expanded(child: _field(profile, onChanged, 'gstNumber', 'GST Number')),
+            Expanded(child: _field(profile, onChanged, 'businessStartedFrom', 'Business Started From')),
             const SizedBox(width: 12),
-            Expanded(
-                child: _field(profile, onChanged, 'annualTurnover', 'Annual Turnover')),
+            Expanded(child: _field(profile, onChanged, 'teamSize', 'Total Team Members')),
           ]),
+          _sessionModeToggle(profile, onChanged),
+
+          const SizedBox(height: 22),
+
+          // Social & Online Presence
+          _sectionHeader(Icons.language_outlined, 'Social & Online Presence'),
+          const SizedBox(height: 14),
+          _field(profile, onChanged, 'instagramLink', 'Instagram Link'),
+          Row(children: [
+            Expanded(child: _field(profile, onChanged, 'instagramStats', 'Instagram Posts & Followers')),
+            const SizedBox(width: 12),
+            Expanded(child: _field(profile, onChanged, 'facebookStats', 'Facebook Posts & Followers')),
+          ]),
+          _field(profile, onChanged, 'websiteUrl', 'Website Link'),
+
+          const SizedBox(height: 22),
+
+          // Financial & Goals
+          _sectionHeader(Icons.trending_up_outlined, 'Financial & Goals'),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _field(profile, onChanged, 'annualTurnover', 'Revenue Until Now')),
+            const SizedBox(width: 12),
+            Expanded(child: _field(profile, onChanged, 'revenueGoalAfterTbt', 'Revenue Goal After TBT')),
+          ]),
+          _field(profile, onChanged, 'goalAfter90Days', 'Learning Goals'),
+          _field(profile, onChanged, 'gstNumber', 'GST Number'),
+
           const SizedBox(height: 8),
         ],
       ),
@@ -1044,6 +1085,100 @@ Widget _field(
         focusedBorder:
             OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kAccent)),
       ),
+    ),
+  );
+}
+
+Widget _readonlyField(String value, String label) => Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: _kMuted, fontSize: 13),
+          filled: true,
+          fillColor: const Color(0xFF101010),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+        ),
+        child: Text(value, style: const TextStyle(color: Color(0xFF606060), fontSize: 15)),
+      ),
+    );
+
+Widget _dropdown({
+  required Map<String, dynamic> profile,
+  required void Function(String, String) onChanged,
+  required String key,
+  required String label,
+  required List<String> options,
+}) {
+  final raw = (profile[key] as String?) ?? '';
+  final value = options.contains(raw) ? raw : null;
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: DropdownButtonFormField<String>(
+      value: value,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: _kMuted, fontSize: 13),
+        filled: true,
+        fillColor: _kSurface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kAccent)),
+      ),
+      dropdownColor: _kCard,
+      style: const TextStyle(color: _kText, fontSize: 15),
+      hint: const Text('Select…', style: TextStyle(color: _kMuted, fontSize: 15)),
+      items: options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+      onChanged: (v) { if (v != null) onChanged(key, v); },
+    ),
+  );
+}
+
+Widget _sessionModeToggle(Map<String, dynamic> profile, void Function(String, String) onChanged) {
+  const modes = ['offline', 'online', 'both'];
+  const labels = ['Offline', 'Online', 'Both'];
+  final current = (profile['preferredSessionMode'] as String?) ?? '';
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Preferred Session Mode', style: TextStyle(color: _kMuted, fontSize: 13)),
+        const SizedBox(height: 8),
+        Row(
+          children: List.generate(modes.length, (i) {
+            final selected = current == modes[i];
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(right: i < modes.length - 1 ? 8 : 0),
+                child: GestureDetector(
+                  onTap: () => onChanged('preferredSessionMode', modes[i]),
+                  child: Container(
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: selected ? _kAccent : _kSurface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: selected ? _kAccent : _kBorder),
+                    ),
+                    child: Text(
+                      labels[i],
+                      style: TextStyle(
+                        color: selected ? Colors.white : _kMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
     ),
   );
 }
