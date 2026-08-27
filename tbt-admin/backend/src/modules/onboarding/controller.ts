@@ -97,7 +97,7 @@ export async function getOnboardingHandler(req: FastifyRequest, reply: FastifyRe
     }),
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT ${SKILL_RAW_SELECT} FROM members WHERE id = $1::uuid`, memberId,
-    ),
+    ).catch(() => [] as any[]),
   ]);
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
