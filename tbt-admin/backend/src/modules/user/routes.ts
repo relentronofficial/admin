@@ -51,6 +51,8 @@ import {
   submitAssignmentHandler,
   getEpisodePlaybackHandler,
   postEpisodeProgressHandler,
+  getUserEpisodeResourcesHandler,
+  getUserEpisodeTasksHandler,
   getUserProductsHandler,
   submitProductInquiryHandler,
   getUserResourcesHandler,
@@ -208,6 +210,8 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Episodes ──────────────────────────────────────────────────────────────
   fastify.get('/episodes/:id/playback', getEpisodePlaybackHandler);
   fastify.post('/episodes/:id/progress', postEpisodeProgressHandler);
+  fastify.get('/episodes/:id/resources', getUserEpisodeResourcesHandler);
+  fastify.get('/episodes/:id/tasks', getUserEpisodeTasksHandler);
 
   // ── Products & Resources ──────────────────────────────────────────────────
   fastify.get('/products', getUserProductsHandler);

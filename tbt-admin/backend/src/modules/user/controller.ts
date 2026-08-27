@@ -3829,6 +3829,45 @@ export async function submitProductInquiryHandler(request: FastifyRequest, reply
   return reply.status(201).send({ success: true, data: { id: inquiry.id }, error: null });
 }
 
+export async function getUserEpisodeResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const ep = await (request.server.prisma as any).courseEpisode.findUnique({
+    where: { id: episodeId },
+    select: { courseId: true },
+  });
+  if (!ep) return fail(reply, 404, 'Episode not found');
+  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
+  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
+  const resources = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, title, description, file_url AS "fileUrl", file_type AS "fileType",
+            file_type_icon_url AS "fileTypeIconUrl", download_label AS "downloadLabel"
+     FROM app_resources
+     WHERE course_episode_id = $1::uuid AND is_visible = true
+     ORDER BY "order" ASC`,
+    episodeId,
+  );
+  return reply.send({ success: true, data: resources, error: null });
+}
+
+export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const ep = await (request.server.prisma as any).courseEpisode.findUnique({
+    where: { id: episodeId },
+    select: { courseId: true },
+  });
+  if (!ep) return fail(reply, 404, 'Episode not found');
+  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
+  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
+  const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, title, description, deliverables, estimated_minutes AS "estimatedMinutes"
+     FROM tasks
+     WHERE course_episode_id = $1::uuid
+     ORDER BY sort_order ASC`,
+    episodeId,
+  );
+  return reply.send({ success: true, data: tasks, error: null });
+}
+
 export async function getUserResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
   const { search, view = 'list', page = 1, limit = 20 } = request.query as {
     search?: string;

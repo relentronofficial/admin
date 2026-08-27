@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
+export type { EpisodeResource, EpisodeTask } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -183,3 +184,25 @@ export const useSaveReflection = (courseId: string) => {
     },
   });
 };
+
+export const useEpisodeResources = (episodeId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["episode-resources", episodeId],
+    queryFn: async () => {
+      const res = await coursesService.getEpisodeResources(episodeId!);
+      return res.data ?? [];
+    },
+    enabled: !!episodeId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useEpisodeTasks = (episodeId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["episode-tasks", episodeId],
+    queryFn: async () => {
+      const res = await coursesService.getEpisodeTasks(episodeId!);
+      return res.data ?? [];
+    },
+    enabled: !!episodeId,
+    staleTime: 5 * 60 * 1000,
+  });

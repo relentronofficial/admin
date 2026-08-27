@@ -16,6 +16,8 @@ import '../../../shared/providers/site_config_provider.dart';
 import '../../../shared/theme/tbt_theme.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/video/tbt_video_player_config.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../data/courses_service.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
@@ -59,6 +61,10 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   bool _quizShown = false;
   // Whether the lesson was already completed BEFORE this session opened
   bool _wasAlreadyCompleted = false;
+
+  // Episode resources & tasks
+  List<EpisodeResource> _resources = [];
+  List<EpisodeTask> _tasks = [];
 
   // Ad interruption (TBT_ADS_SPECKIT.md §7)
   VoidCallback? _deregisterFromAds;
@@ -133,6 +139,21 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
         _playback = playback;
         _loading = false;
       });
+
+      // Fetch resources & tasks in the background — failures are silent
+      final svc = ref.read(coursesServiceProvider);
+      unawaited(() async {
+        try {
+          final r = await svc.getEpisodeResources(widget.lessonId);
+          if (mounted) setState(() => _resources = r);
+        } catch (_) {}
+      }());
+      unawaited(() async {
+        try {
+          final t = await svc.getEpisodeTasks(widget.lessonId);
+          if (mounted) setState(() => _tasks = t);
+        } catch (_) {}
+      }());
 
       _startProgressTimer();
 
@@ -784,8 +805,226 @@ window.addEventListener('message', function(e) {
               ),
             ),
           ],
+          if (_resources.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            _buildResourcesSection(),
+          ],
+          if (_tasks.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _buildTasksSection(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildResourcesSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.tokens.borderCard),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Row(
+              children: [
+                Icon(Icons.download_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Resources (${_resources.length})',
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
+                    fontFamily: 'Rajdhani',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: context.tokens.borderCard),
+          ..._resources.map((r) => _buildResourceRow(r)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResourceRow(EpisodeResource r) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
+            children: [
+              Icon(Icons.insert_drive_file_outlined, size: 18, color: context.tokens.textSubtle),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.title,
+                      style: TextStyle(color: context.tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (r.description != null && r.description!.isNotEmpty)
+                      Text(
+                        r.description!,
+                        style: TextStyle(color: context.tokens.textSubtle, fontSize: 11, height: 1.4),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              if (r.fileUrl != null) ...[
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: () async {
+                    final uri = Uri.tryParse(r.fileUrl!);
+                    if (uri != null) {
+                      // Open in browser via url_launcher if available, else no-op
+                      // ignore: deprecated_member_use
+                      await launchUrl(uri, mode: LaunchMode.externalApplication).catchError((_) => false);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.download_rounded, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(
+                          r.downloadLabel ?? 'Download',
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (r != _resources.last)
+          Divider(height: 1, indent: 14, endIndent: 14, color: context.tokens.borderCard),
+      ],
+    );
+  }
+
+  Widget _buildTasksSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.tokens.borderCard),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Row(
+              children: [
+                Icon(Icons.checklist_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Tasks (${_tasks.length})',
+                  style: TextStyle(
+                    color: context.tokens.textPrimary,
+                    fontFamily: 'Rajdhani',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: context.tokens.borderCard),
+          ..._tasks.asMap().entries.map((e) => _buildTaskRow(e.key, e.value)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskRow(int index, EpisodeTask t) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t.title,
+                      style: TextStyle(color: context.tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3),
+                    ),
+                    if (t.description != null && t.description!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        t.description!,
+                        style: TextStyle(color: context.tokens.textSecondary, fontSize: 12, height: 1.5),
+                      ),
+                    ],
+                    if (t.deliverables != null && t.deliverables!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Deliverable: ${t.deliverables}',
+                        style: TextStyle(color: context.tokens.textSubtle, fontSize: 11, height: 1.4),
+                      ),
+                    ],
+                    if (t.estimatedMinutes != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.access_time_rounded, size: 11, color: context.tokens.textSubtle),
+                          const SizedBox(width: 3),
+                          Text(
+                            '~${t.estimatedMinutes} min',
+                            style: TextStyle(color: context.tokens.textSubtle, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (t != _tasks.last)
+          Divider(height: 1, indent: 14, endIndent: 14, color: context.tokens.borderCard),
+      ],
     );
   }
 }

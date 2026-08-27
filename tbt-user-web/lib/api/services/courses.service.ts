@@ -61,4 +61,28 @@ export const coursesService = {
 
   getCategories: () =>
     apiClient.get<never, ApiResponse<Array<{ id: string; name: string }>>>("/api/user/courses/categories"),
+
+  getEpisodeResources: (episodeId: string) =>
+    apiClient.get<never, ApiResponse<EpisodeResource[]>>(`/api/user/episodes/${episodeId}/resources`),
+
+  getEpisodeTasks: (episodeId: string) =>
+    apiClient.get<never, ApiResponse<EpisodeTask[]>>(`/api/user/episodes/${episodeId}/tasks`),
 };
+
+export interface EpisodeResource {
+  id: string;
+  title: string;
+  description?: string | null;
+  fileUrl?: string | null;
+  fileType?: string | null;
+  fileTypeIconUrl?: string | null;
+  downloadLabel?: string | null;
+}
+
+export interface EpisodeTask {
+  id: string;
+  title: string;
+  description?: string | null;
+  deliverables?: string | null;
+  estimatedMinutes?: number | null;
+}

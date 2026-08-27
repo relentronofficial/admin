@@ -7,6 +7,55 @@ import '../../../shared/api/dio_provider.dart';
 import '../../../shared/models/course.dart';
 import '../../../shared/models/lesson.dart';
 
+class EpisodeResource {
+  const EpisodeResource({
+    required this.id,
+    required this.title,
+    this.description,
+    this.fileUrl,
+    this.fileType,
+    this.downloadLabel,
+  });
+  final String id;
+  final String title;
+  final String? description;
+  final String? fileUrl;
+  final String? fileType;
+  final String? downloadLabel;
+
+  factory EpisodeResource.fromJson(Map<String, dynamic> j) => EpisodeResource(
+        id: j['id'] as String,
+        title: j['title'] as String? ?? '',
+        description: j['description'] as String?,
+        fileUrl: j['fileUrl'] as String?,
+        fileType: j['fileType'] as String?,
+        downloadLabel: j['downloadLabel'] as String?,
+      );
+}
+
+class EpisodeTask {
+  const EpisodeTask({
+    required this.id,
+    required this.title,
+    this.description,
+    this.deliverables,
+    this.estimatedMinutes,
+  });
+  final String id;
+  final String title;
+  final String? description;
+  final String? deliverables;
+  final int? estimatedMinutes;
+
+  factory EpisodeTask.fromJson(Map<String, dynamic> j) => EpisodeTask(
+        id: j['id'] as String,
+        title: j['title'] as String? ?? '',
+        description: j['description'] as String?,
+        deliverables: j['deliverables'] as String?,
+        estimatedMinutes: (j['estimatedMinutes'] as num?)?.toInt(),
+      );
+}
+
 class CourseAccessRequest {
   const CourseAccessRequest({this.paymentId, this.paymentUrl});
   final String? paymentId;
@@ -314,6 +363,30 @@ class CoursesService {
         }
       }
       return out;
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<List<EpisodeResource>> getEpisodeResources(String episodeId) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '$kUserEpisodes/$episodeId/resources',
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? [];
+      return list.cast<Map<String, dynamic>>().map(EpisodeResource.fromJson).toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<List<EpisodeTask>> getEpisodeTasks(String episodeId) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '$kUserEpisodes/$episodeId/tasks',
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? [];
+      return list.cast<Map<String, dynamic>>().map(EpisodeTask.fromJson).toList();
     } on DioException catch (e) {
       throw mapDioError(e);
     }
