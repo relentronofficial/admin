@@ -234,10 +234,10 @@ NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/tbt
 ### `SiteConfigProvider` (`lib/context/SiteConfigContext.tsx`)
 Fetches 3 unauthenticated endpoints in parallel on app load:
 - `GET /api/pub/config/site` → `SiteConfig` (theme, logos, splash)
-- `GET /api/pub/config/nav` → `NavItem[]` + `RightIcons` flags
+- `GET /api/pub/config/nav` → `NavItem[]` + `RightIcons` flags + `hiddenMenuKeys: string[]`
 - `GET /api/pub/config/ui-strings` → `UiStrings`
 
-Injects theme as CSS custom properties on `document.documentElement`.
+Injects theme as CSS custom properties on `document.documentElement`. Exposes `hiddenMenuKeys: string[]` from context — `Navbar.tsx` checks this before rendering Community, Ebooks, Podcasts, Support, and top-bar icons. Admin settings page (`/settings/navigation` → "Header Menu Visibility" panel) persists toggles via `hidden_menu_keys JSONB` on `site_configs` and invalidates both `pub:site-config` and `pub:nav` Redis cache keys immediately on save.
 
 **CRITICAL**: Every user-visible string must come from `uiStrings` (or `config`). Zero hardcoded label strings in `(platform)` pages.
 
@@ -575,19 +575,24 @@ products:
 app_resources:
   description TEXT             -- added via startup ALTER TABLE
   visibility JSONB             -- { batchIds: string[] } for batch access restriction
+  course_episode_id UUID FK    -- links resource to a specific course episode (ON DELETE CASCADE)
 
 site_configs:
   login_bg_images JSONB        -- array of background image URLs for login page
+  hidden_menu_keys JSONB       -- array of menu key strings to hide (managed via /settings/navigation)
 
 member_episode_progress:
   watched_segments TEXT        -- serialized segment ranges for DRM tracking
 
 tasks:
   timer_seconds INT            -- per-task focus timer (null = use global taskTimerSeconds from site config)
+  course_episode_id UUID FK    -- links task to a specific course episode (ON DELETE CASCADE)
 ```
 
 ### Admin Hooks (`useTbt.ts`)
 `useListVodCourses`, `useCreateVodCourse`, `useUpdateVodCourse`, `useDeleteVodCourse`, `useListCourseEpisodes`, `useCreateCourseEpisode`, `useUpdateCourseEpisode`, `useDeleteCourseEpisode`, `useReorderCourseEpisodes`, `useListCourseAccess`, `useGrantCourseAccess`, `useRevokeCourseAccess`, `useListCoursePayments`, `useApproveCoursePayment`, `useCourseAnalyticsAdmin`, `useCourseLeaderboardAdmin`, `useListCourseBadges`, `useCreateCourseBadge`, `useUpdateCourseBadge`, `useDeleteCourseBadge`, `useAwardCourseBadge`
+
+Per-episode resources and tasks (added 2026-08-26): `useListEpisodeResources`, `useCreateEpisodeResource`, `useUpdateEpisodeResource`, `useDeleteEpisodeResource`, `useReorderEpisodeResources`, `useListEpisodeTasks`, `useCreateEpisodeTask`, `useUpdateEpisodeTask`, `useDeleteEpisodeTask`, `useReorderEpisodeTasks`
 
 The admin courses UI lives in a single monolithic `admin-panel/app/courses/page.tsx` (same pattern as workshops). Uses `useCreateBunnyVideo` from `useAdmin` for Bunny Stream video creation.
 
@@ -611,6 +616,12 @@ GET /api/courses/:id/leaderboard
 GET/POST /api/courses/:id/badges
 PUT/DELETE /api/courses/:id/badges/:badgeId
 POST /api/courses/:id/badges/:badgeId/award
+GET/POST /api/courses/episodes/:eid/resources
+PUT/DELETE /api/courses/episodes/:eid/resources/:rid
+PUT /api/courses/episodes/:eid/resources/reorder
+GET/POST /api/courses/episodes/:eid/tasks
+PUT/DELETE /api/courses/episodes/:eid/tasks/:tid
+PUT /api/courses/episodes/:eid/tasks/reorder
 ```
 
 ### User-Web Course Routes
@@ -659,7 +670,7 @@ POST /api/courses/:id/badges/:badgeId/award
     - **Cue quizzes**: `firedCuesRef` (a `Set<string>`, reset on lesson switch) tracks which `cue.id`s have fired. `cueQuizActiveRef` (boolean ref) prevents re-triggering while modal is open. Flow: `handleVideoProgress` checks `quizData.cues` sorted by `atSeconds` → calls `pausePlayerRef.current()` → calls `document.exitFullscreen()` first if in fullscreen → sets `cueQuizModal`. `handleCloseCueQuiz` clears both refs.
     - **Reflection modal** (`ReflectionModal`): fires 1.2 s after a lesson completes, but only when `!lesson.hasQuiz && justCompletedInSessionRef.current === true` (quiz-bearing lessons skip it; already-done lessons skip it). Saved to the backend via `useSaveReflection` (C-11 — no longer localStorage-only); also cached in `localStorage["tbt_reflections"]` as `{ [courseId:lessonId]: { text, savedAt, lessonTitle } }`. UI strings: `reflectTitle`, `reflectPromptPrefix`, `reflectPromptSuffix`, `reflectPlaceholder`, `reflectSkipLabel`, `reflectSaveLabel`, `reflectSavedLabel`.
     - **Practice Arena modal** (`PracticeArenaModal`): pulls `(lesson as any).quizData?.questions` from all lessons in the course query, shuffles them into interleaved practice. No XP, no backend call.
-    - **XP flash** — `xpFlashedRef` (a `Set<string>`) tracks which lessonIds have already triggered the XP animation this session, preventing double-fires when both the completion path and the quiz-pass path run for the same lesson. Non-quiz lessons flash on `watchState === 'completed'`; quiz lessons flash on quiz pass.
+    - **XP flash** — `xpFlashedRef` (`useRef<string | null>(null)`) tracks the last lessonId that triggered the XP animation, preventing double-fires when both the completion path and the quiz-pass path run for the same lesson. Non-quiz lessons flash on `watchState === 'completed'`; quiz lessons flash on quiz pass. Reset to `null` on lesson switch.
     - **localStorage keys**: `tbt_cr_${courseId}` — completion timestamps `{ [lessonId]: timestampMs }`. `tbt_reflections` — global across all courses. `tbt_speed` — persisted playback speed.
     - **`Lesson` type does not include `quizData`** — the TypeScript interface in `types/index.ts` omits it; access as `(lesson as any).quizData` wherever needed.
 23. **Batch program `totalDays` is dynamic** — `totalDays = batch.program.durationDays + memberBatchSettings.extendedDays`. Never hardcode 90. `useMyBatchProgram` response now includes `totalDays`, `attendance` (array of `{ dayNumber, status, notes, markedAt }`), and `breaks` (array of break requests). Day objects include a `category` string field.
