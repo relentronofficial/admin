@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +9,14 @@ import '../../../shared/api/services/auth_service.dart';
 
 import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+
+const _kBusinessTypes = [
+  'Product-based',
+  'Service-based',
+  'Both',
+  'Other',
+];
+
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
 
@@ -18,20 +26,29 @@ class SignupScreen extends ConsumerStatefulWidget {
 
 class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
+  final _businessNameController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _stateController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
+  String? _businessType;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+    _businessNameController.dispose();
+    _cityController.dispose();
+    _stateController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
     super.dispose();
@@ -43,10 +60,19 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     try {
       final phone = _phoneController.text.trim();
       final email = _emailController.text.trim();
+      final businessName = _businessNameController.text.trim();
+      final city = _cityController.text.trim();
+      final state = _stateController.text.trim();
+
       await ref.read(authServiceProvider).signup({
-        'name': _nameController.text.trim(),
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
         'phone': phone,
         if (email.isNotEmpty) 'email': email,
+        if (businessName.isNotEmpty) 'businessName': businessName,
+        if (city.isNotEmpty) 'city': city,
+        if (state.isNotEmpty) 'state': state,
+        if (_businessType != null) 'productServiceType': _businessType,
         'password': _passwordController.text,
       });
       if (!mounted) return;
@@ -92,7 +118,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 Text(
                   'CREATE ACCOUNT',
                   style: TextStyle(
-          fontFamily: 'Rajdhani',
+                    fontFamily: 'Rajdhani',
                     fontSize: 28,
                     fontWeight: FontWeight.w700,
                     color: context.tokens.textPrimary,
@@ -103,7 +129,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 Text(
                   'Join Tamil Business Tribe',
                   style: TextStyle(
-          fontFamily: 'Rajdhani',
+                    fontFamily: 'Rajdhani',
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: context.tokens.textMuted,
@@ -112,17 +138,47 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 ),
                 const SizedBox(height: 36),
 
-                // ── Full name ────────────────────────────────────────────────
-                const _FieldLabel('FULL NAME'),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _nameController,
-                  textCapitalization: TextCapitalization.words,
-                  style: TextStyle(color: context.tokens.textPrimary),
-                  decoration: _inputDecoration('Enter your full name'),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Full name is required'
-                      : null,
+                // ── First name + Last name ────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _FieldLabel('FIRST NAME'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _firstNameController,
+                            textCapitalization: TextCapitalization.words,
+                            style: TextStyle(color: context.tokens.textPrimary),
+                            decoration: _inputDecoration('First name'),
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Required'
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _FieldLabel('LAST NAME'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _lastNameController,
+                            textCapitalization: TextCapitalization.words,
+                            style: TextStyle(color: context.tokens.textPrimary),
+                            decoration: _inputDecoration('Last name'),
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Required'
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 20),
 
@@ -149,6 +205,65 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   keyboardType: TextInputType.emailAddress,
                   style: TextStyle(color: context.tokens.textPrimary),
                   decoration: _inputDecoration('Enter your email address'),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Business name ─────────────────────────────────────────────
+                const _FieldLabel('BUSINESS NAME (OPTIONAL)'),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _businessNameController,
+                  textCapitalization: TextCapitalization.words,
+                  style: TextStyle(color: context.tokens.textPrimary),
+                  decoration: _inputDecoration('Your business name'),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Business type dropdown ─────────────────────────────────────
+                const _FieldLabel('BUSINESS TYPE (OPTIONAL)'),
+                const SizedBox(height: 8),
+                _BusinessTypeDropdown(
+                  value: _businessType,
+                  onChanged: (v) => setState(() => _businessType = v),
+                  inputDecoration: _inputDecoration('Select business type'),
+                ),
+                const SizedBox(height: 20),
+
+                // ── City + State ──────────────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _FieldLabel('CITY (OPTIONAL)'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _cityController,
+                            textCapitalization: TextCapitalization.words,
+                            style: TextStyle(color: context.tokens.textPrimary),
+                            decoration: _inputDecoration('City'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _FieldLabel('STATE (OPTIONAL)'),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _stateController,
+                            textCapitalization: TextCapitalization.words,
+                            style: TextStyle(color: context.tokens.textPrimary),
+                            decoration: _inputDecoration('State'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 20),
 
@@ -241,7 +356,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                         : Text(
                             'CREATE ACCOUNT',
                             style: TextStyle(
-          fontFamily: 'Rajdhani',
+                              fontFamily: 'Rajdhani',
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
@@ -315,6 +430,32 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
         ),
       );
+}
+
+class _BusinessTypeDropdown extends StatelessWidget {
+  const _BusinessTypeDropdown({
+    required this.value,
+    required this.onChanged,
+    required this.inputDecoration,
+  });
+
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final InputDecoration inputDecoration;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      onChanged: onChanged,
+      decoration: inputDecoration,
+      dropdownColor: context.tokens.bgInput,
+      style: TextStyle(color: context.tokens.textPrimary, fontSize: 14),
+      items: _kBusinessTypes
+          .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+          .toList(),
+    );
+  }
 }
 
 class _FieldLabel extends StatelessWidget {
