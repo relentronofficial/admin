@@ -865,6 +865,14 @@ function EpisodesTab({ course }: { course: any }) {
           {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
           {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
           {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
+          {ep.timerSeconds != null ? (
+            <span title="Episode timer (overrides section)" className="text-[9px] bg-[#dc2626]/15 text-[#dc2626] border border-[#dc2626]/30 px-1.5 rounded font-bold">⏱ {Math.round(ep.timerSeconds / 60)}m</span>
+          ) : (() => {
+            const sec = localSections.find((s: any) => s.id === ep.sectionId);
+            return sec?.timerSeconds != null ? (
+              <span title="Inheriting section timer" className="text-[9px] bg-white/5 text-[#666] border border-[#333] px-1.5 rounded font-bold">⏱ ~{Math.round(sec.timerSeconds / 60)}m</span>
+            ) : null;
+          })()}
         </div>
       </div>
       {!ep.isVisible && <EyeOff size={11} className="text-[#888] shrink-0" />}
@@ -1051,21 +1059,29 @@ function EpisodesTab({ course }: { course: any }) {
             <input type="number" min="0" value={epForm.durationSeconds} onChange={e => setEpField("durationSeconds", e.target.value)}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
           </div>
-          {/* Focus timer */}
-          <div>
-            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">
-              Focus Timer (min) <span className="normal-case tracking-normal font-normal text-[#555]">— blank = use global</span>
-            </label>
-            <input
-              type="number" min={1} placeholder="e.g. 5"
-              value={epForm.timerSeconds !== "" ? epForm.timerSeconds : ""}
-              onChange={e => {
-                const v = e.target.value;
-                setEpField("timerSeconds", v === "" ? "" : Math.max(1, parseInt(v) || 1));
-              }}
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs"
-            />
-          </div>
+          {/* Episode focus timer */}
+          {(() => {
+            const epSection = localSections.find((s: any) => s.id === epForm.sectionId);
+            const fallbackLabel = epSection?.timerSeconds != null
+              ? `blank = section default (${Math.round(epSection.timerSeconds / 60)}m)`
+              : 'blank = site default';
+            return (
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">
+                  Episode Timer (min) <span className="normal-case tracking-normal font-normal text-[#555]">— {fallbackLabel}</span>
+                </label>
+                <input
+                  type="number" min={1} placeholder="e.g. 5"
+                  value={epForm.timerSeconds !== "" ? epForm.timerSeconds : ""}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setEpField("timerSeconds", v === "" ? "" : Math.max(1, parseInt(v) || 1));
+                  }}
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs"
+                />
+              </div>
+            );
+          })()}
           {/* Quiz unlock % */}
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Quiz Unlock at % watched</label>
@@ -1247,7 +1263,7 @@ function EpisodesTab({ course }: { course: any }) {
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Focus Timer <span className="text-[#555] normal-case tracking-normal font-normal">(minutes, optional — overrides global default for lessons in this section)</span></label>
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Episode Default Timer <span className="text-[#555] normal-case tracking-normal font-normal">(minutes, optional — applies to all episodes in this section that have no own timer)</span></label>
               <input
                 type="number" min={1} placeholder="e.g. 30"
                 value={sectionForm.timerMinutes !== "" ? sectionForm.timerMinutes : ""}
