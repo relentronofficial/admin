@@ -52,6 +52,21 @@ export interface HelpdeskTicket {
   updatedAt: string;
   category?: { id: string; name: string; slug: string } | null;
   member?: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
+  /** Set when this ticket was raised from a group-chat message (either by
+   * the message owner or by an admin) — see chat-groups raise-ticket routes. */
+  chatGroupId?: string | null;
+  chatMessageId?: string | null;
+  chatMessageSenderId?: string | null;
+  chatMessageSnapshot?: string | null;
+  raisedByAdminId?: string | null;
+  /** Only populated on the single-ticket detail fetch (adminGetTicketHandler). */
+  chatContext?: {
+    groupId: string | null;
+    groupName: string | null;
+    messageId: string | null;
+    senderMemberId: string | null;
+    senderName: string | null;
+  } | null;
 }
 export interface HelpdeskFeedback {
   id: string;

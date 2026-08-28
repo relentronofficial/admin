@@ -228,6 +228,47 @@ export async function adminListTicketsHandler(req: FastifyRequest, reply: Fastif
   });
 }
 
+/**
+ * Enriches a "raised from a group-chat message" ticket with human-readable
+ * group/sender names for the admin detail view. Chat-group tables are raw
+ * SQL (not Prisma models — see chat-groups/controller.ts), so this is a
+ * couple of small targeted lookups rather than a Prisma include. Returns
+ * null for ordinary (non-chat) tickets so the frontend can skip the section.
+ */
+async function loadChatContext(
+  req: FastifyRequest,
+  ticket: { chatGroupId: string | null; chatMessageId: string | null; chatMessageSenderId: string | null },
+) {
+  if (!ticket.chatGroupId && !ticket.chatMessageId) return null;
+
+  const [groupRows, senderRow] = await Promise.all([
+    ticket.chatGroupId
+      ? req.server.prisma.$queryRawUnsafe<Array<{ id: string; name: string }>>(
+          `SELECT id, name FROM chat_groups WHERE id = $1::uuid`,
+          ticket.chatGroupId,
+        )
+      : Promise.resolve([]),
+    ticket.chatMessageSenderId
+      ? req.server.prisma.member.findUnique({
+          where: { id: ticket.chatMessageSenderId },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    groupId: ticket.chatGroupId,
+    groupName: groupRows[0]?.name ?? null,
+    messageId: ticket.chatMessageId,
+    senderMemberId: ticket.chatMessageSenderId,
+    senderName: senderRow
+      ? [senderRow.firstName, senderRow.lastName].filter(Boolean).join(' ') || 'Member'
+      : ticket.chatMessageSenderId
+        ? 'Deleted member'
+        : null,
+  };
+}
+
 export async function adminGetTicketHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as { id: string };
   const row = await req.server.prisma.helpdeskTicket.findUnique({
@@ -235,7 +276,8 @@ export async function adminGetTicketHandler(req: FastifyRequest, reply: FastifyR
     include: ticketInclude,
   });
   if (!row) return fail(reply, 404, 'not_found', 'Ticket not found.');
-  return ok(reply, row);
+  const chatContext = await loadChatContext(req, row);
+  return ok(reply, { ...row, chatContext });
 }
 
 export async function adminUpdateTicketStatusHandler(req: FastifyRequest, reply: FastifyReply) {

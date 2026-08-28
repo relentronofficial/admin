@@ -178,6 +178,15 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       // Backfill display_number for pre-existing rows so every historical
       // ticket also gets a printable ID.
       prisma.$executeRawUnsafe(`UPDATE helpdesk_tickets SET display_number = nextval('helpdesk_ticket_display_seq') WHERE display_number IS NULL`),
+      // "Raise Ticket from a group-chat message" (2026-08-28). No FK
+      // constraints — a deleted group/message must not cascade-delete the
+      // ticket; chat_message_snapshot keeps the historical record instead.
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS chat_group_id UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS chat_message_id UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS chat_message_sender_member_id UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS chat_message_snapshot TEXT`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS raised_by_admin_id UUID`),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_helpdesk_tickets_chat_message ON helpdesk_tickets(chat_message_id)`),
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS helpdesk_ticket_replies (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

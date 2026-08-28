@@ -13,7 +13,7 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    include: ['src/modules/ads/**/*.test.ts', 'src/lib/batchReportLogic.test.ts', 'src/lib/onboardingLogic.test.ts', 'src/lib/onboardingMeetingLogic.test.ts', 'src/lib/weekChecklistLogic.test.ts'],
+    include: ['src/modules/ads/**/*.test.ts', 'src/lib/batchReportLogic.test.ts', 'src/lib/onboardingLogic.test.ts', 'src/lib/onboardingMeetingLogic.test.ts', 'src/lib/weekChecklistLogic.test.ts', 'src/lib/chatMessageActionRules.test.ts'],
     environment: 'node',
     // These tests touch no database, no network and no Fastify instance. If one
     // ever needs to, it belongs in a different file with a different config —

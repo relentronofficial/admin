@@ -65,6 +65,7 @@ import 'features/ebooks/presentation/ebook_detail_screen.dart';
 import 'features/ebooks/presentation/ebook_reader_screen.dart';
 import 'features/ebooks/presentation/ebook_bookmarks_screen.dart';
 import 'features/support/presentation/support_screen.dart';
+import 'features/support/domain/support_models.dart' show ChatMessageTicketContext;
 import 'features/support/presentation/support_contact_screen.dart';
 import 'features/support/presentation/support_feedback_screen.dart';
 import 'features/support/presentation/support_my_tickets_screen.dart';
@@ -521,7 +522,11 @@ List<RouteBase> _buildRoutes() => [
       GoRoute(
         path: AppRoutes.supportContact,
         name: RouteNames.supportContact,
-        builder: (_, __) => const SupportContactScreen(),
+        builder: (_, state) => SupportContactScreen(
+          chatContext: state.extra is ChatMessageTicketContext
+              ? state.extra as ChatMessageTicketContext
+              : null,
+        ),
       ),
       GoRoute(
         path: AppRoutes.supportFeedback,

@@ -11,6 +11,8 @@ import {
   adminUnpinMessageHandler,
   adminSetAnnouncementOnlyHandler,
   adminSetDisappearingHandler,
+  adminListGroupMessagesHandler,
+  adminRaiseTicketHandler,
   memberListMyGroupsHandler,
   memberGetGroupHandler,
   memberListMessagesHandler,
@@ -32,6 +34,7 @@ import {
   memberUnpinMessageHandler,
   memberMessageInfoHandler,
   memberListGroupMediaHandler,
+  memberRaiseTicketHandler,
 } from './controller.js';
 
 /**
@@ -56,6 +59,8 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
       adminScope.delete('/:id/messages/:messageId/pin', adminUnpinMessageHandler);
       adminScope.patch('/:id/announcement-only', adminSetAnnouncementOnlyHandler);
       adminScope.patch('/:id/disappearing', adminSetDisappearingHandler);
+      adminScope.get('/:id/messages', adminListGroupMessagesHandler);
+      adminScope.post('/:id/messages/:messageId/raise-ticket', adminRaiseTicketHandler);
     },
     { prefix: '/admin' },
   );
@@ -78,6 +83,7 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
     userScope.post('/:id/messages/:messageId/pin', memberPinMessageHandler);
     userScope.delete('/:id/messages/:messageId/pin', memberUnpinMessageHandler);
     userScope.get('/:id/messages/:messageId/info', memberMessageInfoHandler);
+    userScope.post('/:id/messages/:messageId/raise-ticket', memberRaiseTicketHandler);
     userScope.post('/:id/mute', memberMuteGroupHandler);
     userScope.post('/:id/read', memberMarkReadHandler);
     userScope.get('/:id/search', memberSearchMessagesHandler);
