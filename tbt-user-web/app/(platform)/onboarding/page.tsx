@@ -281,7 +281,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
   const saveAndAdvance = async (next: Step) => {
     try {
-      await saveProgress.mutateAsync(profile);
+      // Strip read-only fields that come back from GET but are not in the
+      // backend's strict update schema (phone, email). Sending them causes a
+      // 400 because the schema uses .strict() to block field-injection attacks.
+      const { phone: _p, email: _e, ...editable } = profile as any;
+      await saveProgress.mutateAsync(editable);
       setStep(next);
     } catch {
       toast.error("Couldn't save your progress. Please try again.");

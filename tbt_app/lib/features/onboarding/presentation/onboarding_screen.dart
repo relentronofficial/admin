@@ -336,7 +336,11 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
   @override
   void initState() {
     super.initState();
-    _profile = Map<String, dynamic>.from(widget.state.profile);
+    // Strip read-only fields (phone, email) — the backend schema is .strict()
+    // and rejects unknown keys to block field-injection attacks.
+    _profile = Map<String, dynamic>.from(widget.state.profile)
+      ..remove('phone')
+      ..remove('email');
   }
 
   @override
