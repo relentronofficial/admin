@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/apiClient";
+import type { HelpdeskTicket } from "@/lib/hooks/useHelpdesk";
 
 export interface AdminChatGroup {
   id: string;
@@ -30,6 +31,22 @@ export interface AdminChatGroupMember {
 
 export interface AdminChatGroupDetail extends AdminChatGroup {
   members: AdminChatGroupMember[];
+}
+
+export interface AdminChatGroupMessage {
+  id: string;
+  groupId: string;
+  senderMemberId: string | null;
+  senderAdminId: string | null;
+  body: string | null;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  isSystem: boolean;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  deletedForEveryone: boolean;
+  sender: { id: string; firstName: string | null; lastName: string | null; profilePhotoUrl: string | null } | null;
 }
 
 interface CreateGroupBody {
@@ -177,5 +194,55 @@ export function useAdminUnpinGroupMessage() {
       qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id] });
       qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.id, "messages"] });
     },
+  });
+}
+
+/**
+ * Admin-only recent-messages reader for a group — powers the "Messages"
+ * modal used to raise a ticket from a message. Read-only; not a full
+ * chat viewer (see GroupMessagesModal.tsx).
+ */
+export function useAdminListGroupMessages(groupId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "chat-group", groupId, "messages"],
+    queryFn: async () => {
+      const res = await apiClient.get(`/api/chat-groups/admin/${groupId}/messages`, {
+        params: { limit: 50 },
+      });
+      return (res as unknown as { data: AdminChatGroupMessage[] }).data ?? [];
+    },
+    enabled: !!groupId,
+    staleTime: 15 * 1000,
+  });
+}
+
+/**
+ * Admin raises a ticket from a group-chat message. Reuses the existing
+ * HelpdeskTicket infra — the created ticket shows up in the normal
+ * /support Tickets tab. `POST /admin/:id/messages/:messageId/raise-ticket`.
+ */
+export function useAdminRaiseTicketFromMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      messageId,
+      subject,
+      message,
+      priority,
+    }: {
+      groupId: string;
+      messageId: string;
+      subject: string;
+      message: string;
+      priority?: "low" | "medium" | "high";
+    }) => {
+      const res = await apiClient.post(
+        `/api/chat-groups/admin/${groupId}/messages/${messageId}/raise-ticket`,
+        { subject, message, priority },
+      );
+      return (res as unknown as { data: HelpdeskTicket }).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
   });
 }

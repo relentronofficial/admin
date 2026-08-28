@@ -19,13 +19,19 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:go_router/go_router.dart';
+
+import '../../../core/constants/routes.dart';
+import '../../../core/exceptions/app_exception.dart';
 import '../../../features/community/presentation/image_viewer.dart';
 import '../../../features/community/presentation/video_viewer.dart';
+import '../../../features/support/domain/support_models.dart';
 import '../../../shared/providers/me_provider.dart';
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../data/chat_groups_service.dart';
+import '../domain/chat_group_message_rules.dart';
 import '../domain/chat_group_models.dart';
 import '../providers/chat_group_providers.dart';
 import 'chat_group_info_sheet.dart';
@@ -605,6 +611,20 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
         _editing = null;
       });
       _clearPendingMedia();
+    } on AppException catch (e) {
+      // Surfaces the backend's own message — e.g. the 5-minute edit-window
+      // rejection ("Messages can only be edited within 5 minutes.") — so a
+      // client whose clock disagrees with the server still sees why the
+      // edit failed, instead of a generic "Failed to send."
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), behavior: SnackBarBehavior.floating),
+        );
+      }
+      if (_editing != null && mounted) {
+        setState(() => _editing = null);
+        _composerCtl.clear();
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -985,6 +1005,19 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
                             ? () => _openMessageInfoSheet(
                                 context, msg.id)
                             : null,
+                        onRaiseTicket: isMine && !msg.isDeleted && !msg.isSystem
+                            ? () => context.push(
+                                  AppRoutes.supportContact,
+                                  extra: ChatMessageTicketContext(
+                                    groupId: widget.groupId,
+                                    groupName: detail?.name ?? 'Group',
+                                    messageId: msg.id,
+                                    messageBody: msg.body,
+                                    messageMediaType: msg.mediaType,
+                                    senderName: msg.sender?.displayName,
+                                  ),
+                                )
+                            : null,
                       ),
                     );
                     // F-13: insert unread separator below the first read message.
@@ -1354,7 +1387,7 @@ class _ChatGroupScreenState extends ConsumerState<ChatGroupScreen> {
             if (_editing != null)
               _ComposerBanner(
                 icon: Icons.edit_rounded,
-                label: 'Editing message · 15-min window',
+                label: 'Editing message · 5-min window',
                 onClose: () {
                   setState(() => _editing = null);
                   _composerCtl.clear();
@@ -2263,6 +2296,7 @@ class _MessageBubble extends StatelessWidget {
     required this.onToggleStar,
     this.onPinToggle,
     this.onInfo,
+    this.onRaiseTicket,
   });
   final ChatGroupMessage message;
   final bool isMine;
@@ -2283,6 +2317,14 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback onToggleStar;
   final VoidCallback? onPinToggle;
   final VoidCallback? onInfo;
+  /// Null for another member's message — "Raise Ticket" is only offered to
+  /// the message owner (backend re-enforces this regardless).
+  final VoidCallback? onRaiseTicket;
+
+  /// Client-side mirror of the backend's 5-minute edit window — purely a
+  /// UX convenience to hide the action once it's certain to be rejected.
+  /// The backend is the real gate (see chatMessageActionRules.ts).
+  bool get _withinEditWindow => canEditMessageClientSide(message.createdAt);
 
   @override
   Widget build(BuildContext context) {
@@ -2683,13 +2725,23 @@ class _MessageBubble extends StatelessWidget {
                 ),
               if (isMine &&
                   message.mediaUrl == null &&
-                  message.body != null)
+                  message.body != null &&
+                  _withinEditWindow)
                 ListTile(
                   leading: const Icon(Icons.edit_rounded),
                   title: const Text('Edit'),
                   onTap: () {
                     Navigator.pop(bs);
                     onEdit();
+                  },
+                ),
+              if (onRaiseTicket != null)
+                ListTile(
+                  leading: const Icon(Icons.confirmation_num_outlined),
+                  title: const Text('Raise Ticket'),
+                  onTap: () {
+                    Navigator.pop(bs);
+                    onRaiseTicket!();
                   },
                 ),
               ListTile(

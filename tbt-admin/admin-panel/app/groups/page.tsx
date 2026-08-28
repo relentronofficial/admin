@@ -16,6 +16,7 @@ import {
   type AdminChatGroup,
 } from "@/lib/hooks/useChatGroups";
 import { EditGroupModal } from "@/components/groups/EditGroupModal";
+import { GroupMessagesModal } from "@/components/groups/GroupMessagesModal";
 import toast from "react-hot-toast";
 import { formatDistanceToNow } from "date-fns";
 
@@ -32,6 +33,7 @@ export default function AdminGroupsPage() {
   const { data: groups = [], isLoading } = useAdminListGroups();
   const [createOpen, setCreateOpen] = useState(false);
   const [editGroup, setEditGroup] = useState<AdminChatGroup | null>(null);
+  const [messagesGroup, setMessagesGroup] = useState<AdminChatGroup | null>(null);
   const deleteGroup = useAdminDeleteGroup();
 
   return (
@@ -71,6 +73,7 @@ export default function AdminGroupsPage() {
                 key={g.id}
                 group={g}
                 onEdit={() => setEditGroup(g)}
+                onViewMessages={() => setMessagesGroup(g)}
                 onDelete={() => {
                   if (confirm(`Delete "${g.name}"? This removes the group and every message.`)) {
                     deleteGroup.mutate(g.id, {
@@ -89,6 +92,9 @@ export default function AdminGroupsPage() {
       {editGroup && (
         <EditGroupModal group={editGroup} onClose={() => setEditGroup(null)} />
       )}
+      {messagesGroup && (
+        <GroupMessagesModal group={messagesGroup} onClose={() => setMessagesGroup(null)} />
+      )}
     </DashboardLayout>
   );
 }
@@ -96,10 +102,12 @@ export default function AdminGroupsPage() {
 function GroupRow({
   group,
   onEdit,
+  onViewMessages,
   onDelete,
 }: {
   group: AdminChatGroup;
   onEdit: () => void;
+  onViewMessages: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -134,6 +142,14 @@ function GroupRow({
       <div className="text-[11px] text-[#606060] uppercase tracking-widest">
         {formatDistanceToNow(new Date(group.lastMessageAt), { addSuffix: true })}
       </div>
+      <button
+        onClick={onViewMessages}
+        aria-label="View messages"
+        title="View messages / raise a ticket"
+        className="p-2 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
+      >
+        <MessageSquare size={14} />
+      </button>
       <button
         onClick={onEdit}
         aria-label="Edit group"

@@ -175,6 +175,26 @@ class SupportTicket {
       );
 }
 
+/// Carries the "attached message" context when Raise Ticket is opened from
+/// a Group Chat message long-press action. Passed as `extra` on the
+/// `AppRoutes.supportContact` route push — see `chat_group_screen.dart`.
+class ChatMessageTicketContext {
+  const ChatMessageTicketContext({
+    required this.groupId,
+    required this.groupName,
+    required this.messageId,
+    this.messageBody,
+    this.messageMediaType,
+    this.senderName,
+  });
+  final String groupId;
+  final String groupName;
+  final String messageId;
+  final String? messageBody;
+  final String? messageMediaType;
+  final String? senderName;
+}
+
 class SupportReply {
   const SupportReply({
     required this.id,

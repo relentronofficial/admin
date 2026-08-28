@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/routes.dart';
+import '../../../core/exceptions/app_exception.dart';
 import '../../../shared/api/dio_provider.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
+import '../../chat_groups/data/chat_groups_service.dart';
 import '../data/support_service.dart';
 import '../domain/support_models.dart';
 import '../providers/support_providers.dart';
@@ -17,8 +19,17 @@ import '../providers/support_providers.dart';
 /// After a successful submit swaps the form for an inline success card
 /// showing the assigned `#TBT-{n}` id + a "View ticket" CTA that jumps
 /// into the chat thread.
+///
+/// When opened from a Group Chat message's "Raise Ticket" long-press
+/// action, [chatContext] is passed via the route's `extra` — the original
+/// message renders as a read-only quoted card and submit goes through the
+/// message-linked endpoint (`ChatGroupsService.raiseTicketFromMessage`)
+/// instead of the generic ticket endpoint, so the backend can enforce
+/// "only the message owner may raise a ticket for it" and attach the
+/// group/message reference to the created ticket.
 class SupportContactScreen extends ConsumerStatefulWidget {
-  const SupportContactScreen({super.key});
+  const SupportContactScreen({super.key, this.chatContext});
+  final ChatMessageTicketContext? chatContext;
   @override
   ConsumerState<SupportContactScreen> createState() =>
       _SupportContactScreenState();
@@ -44,6 +55,17 @@ class _SupportContactScreenState extends ConsumerState<SupportContactScreen> {
 
   // On successful submit we swap the form for a confirmation card.
   SupportTicket? _submittedTicket;
+
+  bool get _isChatTicket => widget.chatContext != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final ctx = widget.chatContext;
+    if (ctx != null) {
+      _subjectCtl.text = 'Message flagged in ${ctx.groupName}';
+    }
+  }
 
   @override
   void dispose() {
@@ -172,6 +194,7 @@ class _SupportContactScreenState extends ConsumerState<SupportContactScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isChatTicket) return _submitChatTicket();
 
     // Block if any upload is still running or failed.
     final anyUploading = _slots.any((s) => s.uploading);
@@ -213,6 +236,35 @@ class _SupportContactScreenState extends ConsumerState<SupportContactScreen> {
     }
   }
 
+  /// Submits via the message-linked endpoint — the backend derives
+  /// ownership from the authenticated session + the message row, never
+  /// from anything this form sends, and re-checks for an existing active
+  /// ticket on the same message (409 → surfaced verbatim below).
+  Future<void> _submitChatTicket() async {
+    final ctx = widget.chatContext!;
+    setState(() => _busy = true);
+    try {
+      final ticket = await ref.read(chatGroupsServiceProvider).raiseTicketFromMessage(
+            ctx.groupId,
+            ctx.messageId,
+            subject: _subjectCtl.text.trim(),
+            message: _messageCtl.text.trim(),
+            priority: _priority,
+          );
+      ref.invalidate(myTicketsProvider);
+      if (!mounted) return;
+      setState(() => _submittedTicket = ticket);
+    } on AppException catch (e) {
+      if (!mounted) return;
+      _toast(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      _toast('Could not raise ticket. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -242,65 +294,69 @@ class _SupportContactScreenState extends ConsumerState<SupportContactScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _fieldLabel('YOUR NAME'),
-          TextFormField(
-            controller: _nameCtl,
-            decoration: _inputDecoration('Enter your name'),
-            style: TextStyle(color: tokens.textPrimary),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Required' : null,
-          ),
-          const SizedBox(height: 14),
-          _fieldLabel('EMAIL'),
-          TextFormField(
-            controller: _emailCtl,
-            keyboardType: TextInputType.emailAddress,
-            decoration: _inputDecoration('you@example.com'),
-            style: TextStyle(color: tokens.textPrimary),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Required';
-              if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim())) {
-                return 'Invalid email';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 14),
-          _fieldLabel('PHONE (OPTIONAL)'),
-          TextFormField(
-            controller: _phoneCtl,
-            keyboardType: TextInputType.phone,
-            decoration: _inputDecoration('e.g. +91 90000 00000'),
-            style: TextStyle(color: tokens.textPrimary),
-          ),
-          const SizedBox(height: 14),
-          categories.maybeWhen(
-            data: (cats) => cats.isEmpty
-                ? const SizedBox.shrink()
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _fieldLabel('CATEGORY'),
-                      DropdownButtonFormField<String?>(
-                        value: _categoryId,
-                        dropdownColor: tokens.bgSurface,
-                        decoration: _inputDecoration('— none —'),
-                        style: TextStyle(color: tokens.textPrimary),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                              value: null, child: Text('— none —')),
-                          ...cats.map((c) => DropdownMenuItem<String?>(
-                                value: c.id,
-                                child: Text(c.name),
-                              )),
-                        ],
-                        onChanged: (v) => setState(() => _categoryId = v),
-                      ),
-                      const SizedBox(height: 14),
-                    ],
-                  ),
-            orElse: () => const SizedBox.shrink(),
-          ),
+          if (_isChatTicket) _ChatMessageQuoteCard(ticketContext: widget.chatContext!),
+          if (_isChatTicket) const SizedBox(height: 16),
+          if (!_isChatTicket) ...[
+            _fieldLabel('YOUR NAME'),
+            TextFormField(
+              controller: _nameCtl,
+              decoration: _inputDecoration('Enter your name'),
+              style: TextStyle(color: tokens.textPrimary),
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: 14),
+            _fieldLabel('EMAIL'),
+            TextFormField(
+              controller: _emailCtl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: _inputDecoration('you@example.com'),
+              style: TextStyle(color: tokens.textPrimary),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Required';
+                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim())) {
+                  return 'Invalid email';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 14),
+            _fieldLabel('PHONE (OPTIONAL)'),
+            TextFormField(
+              controller: _phoneCtl,
+              keyboardType: TextInputType.phone,
+              decoration: _inputDecoration('e.g. +91 90000 00000'),
+              style: TextStyle(color: tokens.textPrimary),
+            ),
+            const SizedBox(height: 14),
+            categories.maybeWhen(
+              data: (cats) => cats.isEmpty
+                  ? const SizedBox.shrink()
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _fieldLabel('CATEGORY'),
+                        DropdownButtonFormField<String?>(
+                          value: _categoryId,
+                          dropdownColor: tokens.bgSurface,
+                          decoration: _inputDecoration('— none —'),
+                          style: TextStyle(color: tokens.textPrimary),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                                value: null, child: Text('— none —')),
+                            ...cats.map((c) => DropdownMenuItem<String?>(
+                                  value: c.id,
+                                  child: Text(c.name),
+                                )),
+                          ],
+                          onChanged: (v) => setState(() => _categoryId = v),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                    ),
+              orElse: () => const SizedBox.shrink(),
+            ),
+          ],
           _fieldLabel('PRIORITY'),
           const SizedBox(height: 4),
           _ChipGroup(
@@ -331,27 +387,29 @@ class _SupportContactScreenState extends ConsumerState<SupportContactScreen> {
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? 'Required' : null,
           ),
-          const SizedBox(height: 14),
-          _fieldLabel('REPLY VIA (OPTIONAL)'),
-          const SizedBox(height: 4),
-          _ChipGroup(
-            options: const [
-              _ChipOpt(value: 'email', label: 'Email'),
-              _ChipOpt(value: 'whatsapp', label: 'WhatsApp'),
-              _ChipOpt(value: 'phone', label: 'Phone'),
-            ],
-            selected: _preferredContact ?? '',
-            allowClear: true,
-            onChanged: (v) => setState(() =>
-                _preferredContact = _preferredContact == v ? null : v),
-          ),
-          const SizedBox(height: 16),
-          _AttachmentsBlock(
-            slots: _slots,
-            onAdd: _pickAttachments,
-            onRemove: _removeSlot,
-            maxCount: _kMaxAttachmentCount,
-          ),
+          if (!_isChatTicket) ...[
+            const SizedBox(height: 14),
+            _fieldLabel('REPLY VIA (OPTIONAL)'),
+            const SizedBox(height: 4),
+            _ChipGroup(
+              options: const [
+                _ChipOpt(value: 'email', label: 'Email'),
+                _ChipOpt(value: 'whatsapp', label: 'WhatsApp'),
+                _ChipOpt(value: 'phone', label: 'Phone'),
+              ],
+              selected: _preferredContact ?? '',
+              allowClear: true,
+              onChanged: (v) => setState(() =>
+                  _preferredContact = _preferredContact == v ? null : v),
+            ),
+            const SizedBox(height: 16),
+            _AttachmentsBlock(
+              slots: _slots,
+              onAdd: _pickAttachments,
+              onRemove: _removeSlot,
+              maxCount: _kMaxAttachmentCount,
+            ),
+          ],
           const SizedBox(height: 22),
           FilledButton(
             onPressed: _busy ? null : _submit,
@@ -549,6 +607,61 @@ class _SupportContactScreenState extends ConsumerState<SupportContactScreen> {
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: kColorAccent),
+      ),
+    );
+  }
+}
+
+// ── Chat-message context (Raise Ticket from a group-chat message) ──
+
+class _ChatMessageQuoteCard extends StatelessWidget {
+  const _ChatMessageQuoteCard({required this.ticketContext});
+  final ChatMessageTicketContext ticketContext;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kColorAccent.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: kColorAccent, width: 3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.forum_outlined, size: 14, color: tokens.textMuted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Attached from ${ticketContext.groupName}'
+                  '${ticketContext.senderName != null ? " · ${ticketContext.senderName}" : ""}',
+                  style: TextStyle(
+                    color: tokens.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            ticketContext.messageBody?.trim().isNotEmpty == true
+                ? ticketContext.messageBody!
+                : (ticketContext.messageMediaType != null
+                    ? '[${ticketContext.messageMediaType}]'
+                    : ''),
+            style: TextStyle(color: tokens.textPrimary, fontSize: 13),
+            maxLines: 5,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }

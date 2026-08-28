@@ -4,8 +4,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api.dart';
+import '../../../core/exceptions/app_exception.dart';
 import '../../../shared/api/dio_client.dart';
 import '../../../shared/api/dio_provider.dart';
+import '../../support/domain/support_models.dart';
 import '../domain/chat_group_models.dart';
 // StarredMessage is exported from chat_group_models.dart.
 
@@ -93,6 +95,36 @@ class ChatGroupsService {
         data: {'body': body},
       );
       return ChatGroupMessage.fromJson(res.data?['data'] as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Raises a support ticket from a message — only the sender may call this
+  /// for their own message (backend re-checks ownership from the DB; the
+  /// client-side gating is a UX convenience only). Reuses the existing
+  /// HelpdeskTicket infra via `/api/chat-groups/:id/messages/:messageId/raise-ticket`.
+  /// Throws [ValidationException] with `'A ticket has already been raised
+  /// for this message.'` when the backend finds an active duplicate.
+  Future<SupportTicket> raiseTicketFromMessage(
+    String id,
+    String messageId, {
+    required String subject,
+    required String message,
+    String priority = 'medium',
+  }) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/chat-groups/$id/messages/$messageId/raise-ticket',
+        data: {
+          'subject': subject,
+          'message': message,
+          'priority': priority,
+        },
+      );
+      final data = res.data?['data'];
+      if (data == null) throw const ServerException('Ticket submit returned no data.');
+      return SupportTicket.fromJson(data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw mapDioError(e);
     }

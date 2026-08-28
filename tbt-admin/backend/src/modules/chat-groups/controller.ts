@@ -23,6 +23,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { getPresenceBulk, getPresenceBulkWithDb } from '../../plugins/socket.js';
 import { notifyMembers, filterUnmutedMembers } from '../../lib/notifications.js';
+import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { canEditMessage, canRaiseTicketForMessage, isBlockingDuplicateStatus } from '../../lib/chatMessageActionRules.js';
 
 type RawGroupRow = {
   id: string;
@@ -803,10 +805,18 @@ export async function memberEditMessageHandler(req: FastifyRequest<{ Params: { i
     id,
   );
   if (rows.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
-  if (rows[0].sender_member_id !== memberId) return fail(reply, 403, 'FORBIDDEN', 'Only the sender can edit.');
-  if (rows[0].deleted_at) return fail(reply, 400, 'BAD_REQUEST', 'Cannot edit a deleted message.');
-  const ageMs = Date.now() - new Date(rows[0].created_at).getTime();
-  if (ageMs > 15 * 60 * 1000) return fail(reply, 400, 'TOO_LATE', 'Messages can only be edited within 15 minutes.');
+
+  const check = canEditMessage({
+    senderMemberId: rows[0].sender_member_id,
+    requesterMemberId: memberId,
+    createdAt: new Date(rows[0].created_at),
+    deletedAt: rows[0].deleted_at ? new Date(rows[0].deleted_at) : null,
+    now: new Date(),
+  });
+  if (!check.allowed) {
+    const status = check.code === 'FORBIDDEN' ? 403 : 400;
+    return fail(reply, status, check.code ?? 'FORBIDDEN', check.message ?? 'Cannot edit this message.');
+  }
 
   const updated = await req.server.prisma.$queryRawUnsafe<RawMessageRow[]>(
     `UPDATE chat_group_messages SET body = $1, edited_at = NOW() WHERE id = $2::uuid RETURNING *`,
@@ -852,6 +862,258 @@ export async function memberDeleteMessageHandler(req: FastifyRequest<{ Params: {
   if (io) io.to(`group:${id}`).emit('group:message:deleted', { messageId, forEveryone });
 
   return ok(reply, { deleted: true, forEveryone });
+}
+
+// ── Raise Ticket from a message (member + admin) ────────────────────────────
+//
+// Reuses the existing HelpdeskTicket model/infra (backend/src/modules/
+// helpdesk) rather than a parallel ticket system. The message row is always
+// re-read from the DB inside the handler — ownership/authorization is never
+// derived from the request body.
+
+interface RaiseTicketBody {
+  subject?: string;
+  message?: string;
+  priority?: string;
+  preferredContact?: string;
+}
+
+type RawTicketSourceRow = {
+  sender_member_id: string | null;
+  sender_admin_id: string | null;
+  body: string | null;
+  media_type: string | null;
+  is_system: boolean;
+  deleted_at: Date | null;
+};
+
+function validateRaiseTicketBody(
+  body: RaiseTicketBody | undefined,
+): { subject: string; message: string; priority: string; preferredContact: string | null } | null {
+  const subject = typeof body?.subject === 'string' ? body.subject.trim() : '';
+  const message = typeof body?.message === 'string' ? body.message.trim() : '';
+  if (!subject || subject.length > 255 || !message) return null;
+  const priority = ['low', 'medium', 'high'].includes(body?.priority ?? '') ? (body!.priority as string) : 'medium';
+  const preferredContact = ['email', 'whatsapp', 'phone'].includes(body?.preferredContact ?? '')
+    ? (body!.preferredContact as string)
+    : null;
+  return { subject, message, priority, preferredContact };
+}
+
+function ticketMessageSnapshot(row: RawTicketSourceRow): string | null {
+  return row.body ?? (row.media_type ? `[${row.media_type}]` : null);
+}
+
+/** Member scope — the caller may only raise a ticket for their own message. */
+export async function memberRaiseTicketHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: RaiseTicketBody }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const memberId = (req as any).memberId as string;
+
+  if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
+
+  const parsed = validateRaiseTicketBody(req.body);
+  if (!parsed) return fail(reply, 400, 'BAD_REQUEST', 'Subject and message are required.');
+
+  const rows = await req.server.prisma.$queryRawUnsafe<RawTicketSourceRow[]>(
+    `SELECT sender_member_id, sender_admin_id, body, media_type, is_system, deleted_at
+     FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  if (rows.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+
+  const check = canRaiseTicketForMessage({
+    senderMemberId: rows[0].sender_member_id,
+    senderAdminId: rows[0].sender_admin_id,
+    requesterMemberId: memberId,
+    isSystem: rows[0].is_system,
+    deletedAt: rows[0].deleted_at,
+    isAdminCaller: false,
+  });
+  if (!check.allowed) {
+    const status = check.code === 'NOT_OWN_MESSAGE' ? 403 : 400;
+    return fail(reply, status, check.code ?? 'FORBIDDEN', check.message ?? 'Cannot raise a ticket for this message.');
+  }
+
+  const existing = await req.server.prisma.helpdeskTicket.findFirst({
+    where: { chatMessageId: messageId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true },
+  });
+  if (existing && isBlockingDuplicateStatus(existing.status)) {
+    return fail(reply, 409, 'DUPLICATE_TICKET', 'A ticket has already been raised for this message.');
+  }
+
+  const member = await req.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { firstName: true, lastName: true, email: true, phone: true },
+  });
+  if (!member) return fail(reply, 404, 'NOT_FOUND', 'Member not found.');
+
+  const created = await req.server.prisma.helpdeskTicket.create({
+    data: {
+      memberId,
+      name: [member.firstName, member.lastName].filter(Boolean).join(' ') || 'Member',
+      email: member.email,
+      phone: member.phone,
+      subject: parsed.subject,
+      message: parsed.message,
+      priority: parsed.priority,
+      preferredContact: parsed.preferredContact,
+      chatGroupId: id,
+      chatMessageId: messageId,
+      chatMessageSenderId: memberId,
+      chatMessageSnapshot: ticketMessageSnapshot(rows[0]),
+      status: 'new',
+    },
+  });
+
+  const io = (req.server as any).io;
+  if (io) {
+    io.to('admin').emit('admin:helpdesk_ticket', {
+      ticketId: created.id,
+      subject: created.subject,
+      submitterName: created.name,
+      createdAt: created.createdAt,
+      source: 'chat_group',
+    });
+  }
+  void createAdminNotification(req.server.prisma, {
+    title: 'New Support Ticket (from Group Chat)',
+    body: `${created.name}: ${created.subject}`,
+    type: 'helpdesk_ticket',
+    metadata: { ticketId: created.id },
+  });
+
+  return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+/** Admin scope (Clerk) — may raise a ticket from any accessible message. */
+export async function adminRaiseTicketHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: RaiseTicketBody }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+
+  const parsed = validateRaiseTicketBody(req.body);
+  if (!parsed) return fail(reply, 400, 'BAD_REQUEST', 'Subject and message are required.');
+
+  const rows = await req.server.prisma.$queryRawUnsafe<RawTicketSourceRow[]>(
+    `SELECT sender_member_id, sender_admin_id, body, media_type, is_system, deleted_at
+     FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  if (rows.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+
+  const check = canRaiseTicketForMessage({
+    senderMemberId: rows[0].sender_member_id,
+    senderAdminId: rows[0].sender_admin_id,
+    requesterMemberId: '',
+    isSystem: rows[0].is_system,
+    deletedAt: rows[0].deleted_at,
+    isAdminCaller: true,
+  });
+  if (!check.allowed) {
+    return fail(reply, 400, check.code ?? 'BAD_REQUEST', check.message ?? 'Cannot raise a ticket for this message.');
+  }
+
+  const existing = await req.server.prisma.helpdeskTicket.findFirst({
+    where: { chatMessageId: messageId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true },
+  });
+  if (existing && isBlockingDuplicateStatus(existing.status)) {
+    return fail(reply, 409, 'DUPLICATE_TICKET', 'A ticket has already been raised for this message.');
+  }
+
+  // Resolve the acting admin (Clerk-authed caller) for `raisedByAdminId`.
+  const clerkId = req.user as string | undefined;
+  const actingAdmin = clerkId
+    ? await req.server.prisma.admin.findUnique({
+        where: { clerkId },
+        select: { id: true, fullName: true, email: true },
+      })
+    : null;
+
+  // Ticket "name"/"email" identify who the ticket is ABOUT (the flagged
+  // message's sender), not who filed it — the acting admin is tracked
+  // separately via raisedByAdminId.
+  let senderName = 'Group message';
+  let senderEmail = actingAdmin?.email ?? 'support@internal';
+  let senderPhone: string | null = null;
+  if (rows[0].sender_member_id) {
+    const senderMember = await req.server.prisma.member.findUnique({
+      where: { id: rows[0].sender_member_id },
+      select: { firstName: true, lastName: true, email: true, phone: true },
+    });
+    if (senderMember) {
+      senderName = [senderMember.firstName, senderMember.lastName].filter(Boolean).join(' ') || 'Member';
+      senderEmail = senderMember.email;
+      senderPhone = senderMember.phone;
+    }
+  } else if (rows[0].sender_admin_id) {
+    const senderAdmin = await req.server.prisma.admin.findUnique({
+      where: { id: rows[0].sender_admin_id },
+      select: { fullName: true, email: true },
+    });
+    if (senderAdmin) {
+      senderName = senderAdmin.fullName || senderAdmin.email;
+      senderEmail = senderAdmin.email;
+    }
+  }
+
+  const created = await req.server.prisma.helpdeskTicket.create({
+    data: {
+      name: senderName,
+      email: senderEmail,
+      phone: senderPhone,
+      subject: parsed.subject,
+      message: parsed.message,
+      priority: parsed.priority,
+      preferredContact: parsed.preferredContact,
+      chatGroupId: id,
+      chatMessageId: messageId,
+      chatMessageSenderId: rows[0].sender_member_id,
+      chatMessageSnapshot: ticketMessageSnapshot(rows[0]),
+      raisedByAdminId: actingAdmin?.id ?? null,
+      status: 'new',
+    },
+  });
+
+  return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+/**
+ * Admin scope (Clerk) — read-only recent messages for a group, so an admin
+ * can pick a message to raise a ticket from. Admin panel has no live group-
+ * chat viewer; this is a minimal reader, not a parity port of the member
+ * chat screen. No membership check — Clerk auth already gates admin access.
+ */
+export async function adminListGroupMessagesHandler(
+  req: FastifyRequest<{ Params: { id: string }; Querystring: { before?: string; limit?: string } }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const before = req.query.before ? new Date(req.query.before) : null;
+
+  const rows = await req.server.prisma.$queryRawUnsafe<RawMessageRow[]>(
+    `SELECT * FROM chat_group_messages
+     WHERE group_id = $1::uuid
+       AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    id,
+    before,
+    limit,
+  );
+
+  const hydrated = await hydrateSenders(req, rows.reverse());
+  return ok(reply, hydrated.map(messageJson));
 }
 
 export async function memberToggleReactionHandler(req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: { emoji: string } }>, reply: FastifyReply) {

@@ -3014,12 +3014,24 @@ model HelpdeskTicket {
   status           String    @default("new") @db.VarChar(50)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  // "Raise Ticket from a group-chat message" (2026-08-28). No FK constraints —
+  // the group/message may be hard-deleted later and the ticket must still
+  // retain its historical record via chatMessageSnapshot. chatMessageSenderId
+  // is the member who sent the flagged message; raisedByAdminId is set only
+  // when an admin (not the message owner) raised the ticket via the admin
+  // panel — member-raised tickets keep using the existing `memberId` field.
+  chatGroupId          String?   @map("chat_group_id") @db.Uuid
+  chatMessageId        String?   @map("chat_message_id") @db.Uuid
+  chatMessageSenderId  String?   @map("chat_message_sender_member_id") @db.Uuid
+  chatMessageSnapshot  String?   @map("chat_message_snapshot")
+  raisedByAdminId      String?   @map("raised_by_admin_id") @db.Uuid
   member           Member?             @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
   category         HelpdeskCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   replies          HelpdeskTicketReply[]
 
   @@index([status])
   @@index([memberId, createdAt(sort: Desc)])
+  @@index([chatMessageId])
   @@map("helpdesk_tickets")
 }
 

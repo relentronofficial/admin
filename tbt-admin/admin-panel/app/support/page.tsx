@@ -417,6 +417,40 @@ function TicketDetailPanel({
       </div>
 
       <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        {(ticket.chatGroupId || ticket.chatContext) && (
+          <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest font-rajdhani">
+                Raised from Group Chat
+              </span>
+              {ticket.raisedByAdminId && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[#a0a0a0] uppercase tracking-widest font-rajdhani">
+                  Raised by admin
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-[#a0a0a0] space-y-1">
+              <div>
+                Group: <span className="text-[#f0f0f0]">{ticket.chatContext?.groupName ?? "—"}</span>
+              </div>
+              <div>
+                Original sender:{" "}
+                <span className="text-[#f0f0f0]">{ticket.chatContext?.senderName ?? "—"}</span>
+              </div>
+              {ticket.chatMessageSnapshot && (
+                <div className="mt-2 rounded bg-black/30 border border-white/10 p-2">
+                  <div className="text-[9px] font-bold text-[#666] uppercase tracking-widest font-rajdhani mb-1">
+                    Original message
+                  </div>
+                  <div className="text-[12px] text-[#f0f0f0] whitespace-pre-wrap break-words">
+                    {ticket.chatMessageSnapshot}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div>
           <div className="text-[10px] font-bold text-[#666] uppercase tracking-widest font-rajdhani mb-2">
             Message
