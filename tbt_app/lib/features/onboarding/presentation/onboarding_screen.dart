@@ -341,6 +341,17 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
     _profile = Map<String, dynamic>.from(widget.state.profile)
       ..remove('phone')
       ..remove('email');
+    // Split currentChallenges array into individual challenge fields for the UI.
+    final challenges = _profile['currentChallenges'];
+    if (challenges is List) {
+      _profile['challenge1'] = challenges.isNotEmpty ? (challenges[0]?.toString() ?? '') : '';
+      _profile['challenge2'] = challenges.length > 1 ? (challenges[1]?.toString() ?? '') : '';
+      _profile['challenge3'] = challenges.length > 2 ? (challenges[2]?.toString() ?? '') : '';
+      _profile.remove('currentChallenges');
+    }
+    // Ensure marketingChannels is always a mutable List<String>.
+    final mc = _profile['marketingChannels'];
+    _profile['marketingChannels'] = mc is List ? List<String>.from(mc) : <String>[];
   }
 
   @override
@@ -361,7 +372,17 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
   Future<void> _saveAndNext() async {
     setState(() => _saving = true);
     try {
-      await ref.read(onboardingRepositoryProvider).saveProgress(_profile);
+      // Combine challenge fields into currentChallenges array and strip them.
+      final toSave = Map<String, dynamic>.from(_profile)
+        ..remove('phone')
+        ..remove('email');
+      final challenges = [
+        (toSave.remove('challenge1') as String? ?? ''),
+        (toSave.remove('challenge2') as String? ?? ''),
+        (toSave.remove('challenge3') as String? ?? ''),
+      ].where((c) => c.isNotEmpty).toList();
+      toSave['currentChallenges'] = challenges;
+      await ref.read(onboardingRepositoryProvider).saveProgress(toSave);
       _goTo(_page + 1);
     } catch (_) {
       if (mounted) {
@@ -512,6 +533,14 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
         onChanged: (k, v) => setState(() => _profile[k] = v),
         onPickPhoto: _pickProfilePhoto,
         uploadingPhoto: _uploadingPhoto,
+        onToggleMarketingChannel: (channel) {
+          setState(() {
+            final mc = (_profile['marketingChannels'] as List<String>? ?? []);
+            _profile['marketingChannels'] = mc.contains(channel)
+                ? mc.where((c) => c != channel).toList()
+                : [...mc, channel];
+          });
+        },
       ),
       _DocumentsStep(
         documentType: _documentType,
@@ -916,11 +945,13 @@ class _ProfileStep extends StatelessWidget {
     required this.onChanged,
     required this.onPickPhoto,
     required this.uploadingPhoto,
+    required this.onToggleMarketingChannel,
   });
   final Map<String, dynamic> profile;
-  final void Function(String key, String value) onChanged;
+  final void Function(String key, dynamic value) onChanged;
   final VoidCallback onPickPhoto;
   final bool uploadingPhoto;
+  final void Function(String channel) onToggleMarketingChannel;
 
   @override
   Widget build(BuildContext context) {
@@ -987,9 +1018,23 @@ class _ProfileStep extends StatelessWidget {
           _field(profile, onChanged, 'firstName', 'First Name *'),
           _field(profile, onChanged, 'lastName', 'Last Name'),
           Row(children: [
+            Expanded(child: _field(profile, onChanged, 'dob', 'Date of Birth (YYYY-MM-DD)')),
+            const SizedBox(width: 12),
+            Expanded(child: _dropdown(
+              profile: profile,
+              onChanged: onChanged,
+              key: 'gender',
+              label: 'Gender',
+              options: const ['male', 'female', 'other', 'prefer_not_to_say'],
+              displayLabels: const ['Male', 'Female', 'Other', 'Prefer not to say'],
+            )),
+          ]),
+          Row(children: [
             Expanded(child: _field(profile, onChanged, 'city', 'City *')),
             const SizedBox(width: 12),
             Expanded(child: _field(profile, onChanged, 'state', 'State *')),
+            const SizedBox(width: 12),
+            Expanded(child: _field(profile, onChanged, 'pincode', 'Pincode')),
           ]),
 
           const SizedBox(height: 22),
@@ -997,7 +1042,11 @@ class _ProfileStep extends StatelessWidget {
           // Business Details
           _sectionHeader(Icons.business_outlined, 'Business Details'),
           const SizedBox(height: 14),
-          _field(profile, onChanged, 'businessName', 'Business Name *'),
+          Row(children: [
+            Expanded(child: _field(profile, onChanged, 'businessName', 'Business Name *')),
+            const SizedBox(width: 12),
+            Expanded(child: _field(profile, onChanged, 'businessEstablishedOn', 'Established On (YYYY-MM-DD)')),
+          ]),
           _dropdown(
             profile: profile,
             onChanged: onChanged,
@@ -1031,12 +1080,59 @@ class _ProfileStep extends StatelessWidget {
           _sectionHeader(Icons.trending_up_outlined, 'Financial & Goals'),
           const SizedBox(height: 14),
           Row(children: [
-            Expanded(child: _field(profile, onChanged, 'annualTurnover', 'Revenue Until Now')),
+            Expanded(child: _dropdown(
+              profile: profile,
+              onChanged: onChanged,
+              key: 'annualTurnover',
+              label: 'Revenue Until Now',
+              options: const ['Under 10L', '10L - 25L', '25L - 50L', '50L - 1Cr', '1Cr - 5Cr', '5Cr+'],
+            )),
             const SizedBox(width: 12),
             Expanded(child: _field(profile, onChanged, 'revenueGoalAfterTbt', 'Revenue Goal After TBT')),
           ]),
           _field(profile, onChanged, 'goalAfter90Days', 'Learning Goals'),
           _field(profile, onChanged, 'gstNumber', 'GST Number'),
+
+          const SizedBox(height: 22),
+
+          // Marketing
+          _sectionHeader(Icons.campaign_outlined, 'Marketing Channels'),
+          const SizedBox(height: 14),
+          _marketingChannelChips(profile, onToggleMarketingChannel),
+          _field(profile, onChanged, 'marketingChannelName', 'Name of Marketing Channel'),
+          _field(profile, onChanged, 'domainHostingDetails', 'Domain & Hosting Details'),
+          _multilineField(profile, onChanged, 'businessAddress', 'Business Address'),
+
+          const SizedBox(height: 22),
+
+          // Key Challenges
+          _sectionHeader(Icons.flag_outlined, 'Key Challenges'),
+          const SizedBox(height: 14),
+          _field(profile, onChanged, 'challenge1', 'Challenge 1 (Primary obstacle)'),
+          _field(profile, onChanged, 'challenge2', 'Challenge 2 (Secondary concern)'),
+          _field(profile, onChanged, 'challenge3', 'Challenge 3 (Other support needed)'),
+
+          const SizedBox(height: 22),
+
+          // Support & Operations
+          _sectionHeader(Icons.support_agent_outlined, 'Support & Operations'),
+          const SizedBox(height: 14),
+          _toggleWithDetail(
+            profile: profile,
+            onChanged: onChanged,
+            key: 'hasMarketingTeam',
+            label: 'Social Media Handling — In-house?',
+            detailKey: 'marketingTeamDetails',
+            detailHint: 'Describe your team or agency',
+          ),
+          _toggleWithDetail(
+            profile: profile,
+            onChanged: onChanged,
+            key: 'hasVideoEditing',
+            label: 'Video Editing — In-house?',
+            detailKey: 'videoEditingDetails',
+            detailHint: 'In-house, outsourced, or tools used',
+          ),
 
           const SizedBox(height: 8),
         ],
@@ -1065,7 +1161,7 @@ Widget _sectionHeader(IconData icon, String label) {
 
 Widget _field(
   Map<String, dynamic> profile,
-  void Function(String, String) onChanged,
+  void Function(String, dynamic) onChanged,
   String key,
   String label,
 ) {
@@ -1093,6 +1189,135 @@ Widget _field(
   );
 }
 
+Widget _multilineField(
+  Map<String, dynamic> profile,
+  void Function(String, dynamic) onChanged,
+  String key,
+  String label,
+) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: TextFormField(
+      initialValue: (profile[key] ?? '').toString(),
+      style: const TextStyle(color: _kText, fontSize: 15),
+      maxLines: 3,
+      onChanged: (v) => onChanged(key, v),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: _kMuted, fontSize: 13),
+        filled: true,
+        fillColor: _kSurface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kAccent)),
+      ),
+    ),
+  );
+}
+
+const _kMarketingChannels = ['SEO', 'Paid Ads', 'Social Media', 'Email', 'Referral', 'Offline'];
+
+Widget _marketingChannelChips(
+  Map<String, dynamic> profile,
+  void Function(String channel) onToggle,
+) {
+  final selected = List<String>.from(profile['marketingChannels'] as List? ?? []);
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _kMarketingChannels.map((ch) {
+        final active = selected.contains(ch);
+        return GestureDetector(
+          onTap: () => onToggle(ch),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: active ? _kAccent : _kSurface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: active ? _kAccent : _kBorder),
+            ),
+            child: Text(
+              ch,
+              style: TextStyle(
+                color: active ? Colors.white : _kMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    ),
+  );
+}
+
+Widget _toggleWithDetail({
+  required Map<String, dynamic> profile,
+  required void Function(String, dynamic) onChanged,
+  required String key,
+  required String label,
+  required String detailKey,
+  required String detailHint,
+}) {
+  final isOn = profile[key] == true;
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => onChanged(key, !isOn),
+          child: Row(
+            children: [
+              Text(label, style: const TextStyle(color: _kMuted, fontSize: 13)),
+              const Spacer(),
+              Container(
+                width: 44,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: isOn ? _kAccent : const Color(0xFF444444),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 200),
+                  alignment: isOn ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (isOn) ...[
+          const SizedBox(height: 8),
+          TextFormField(
+            initialValue: (profile[detailKey] ?? '').toString(),
+            style: const TextStyle(color: _kText, fontSize: 14),
+            onChanged: (v) => onChanged(detailKey, v),
+            decoration: InputDecoration(
+              hintText: detailHint,
+              hintStyle: const TextStyle(color: _kMuted, fontSize: 13),
+              filled: true,
+              fillColor: _kSurface,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kBorder)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kAccent)),
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
 Widget _readonlyField(String value, String label) => Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: InputDecorator(
@@ -1111,10 +1336,11 @@ Widget _readonlyField(String value, String label) => Padding(
 
 Widget _dropdown({
   required Map<String, dynamic> profile,
-  required void Function(String, String) onChanged,
+  required void Function(String, dynamic) onChanged,
   required String key,
   required String label,
   required List<String> options,
+  List<String>? displayLabels,
 }) {
   final raw = (profile[key] as String?) ?? '';
   final value = options.contains(raw) ? raw : null;
@@ -1135,13 +1361,16 @@ Widget _dropdown({
       dropdownColor: _kCard,
       style: const TextStyle(color: _kText, fontSize: 15),
       hint: const Text('Select…', style: TextStyle(color: _kMuted, fontSize: 15)),
-      items: options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+      items: options.asMap().entries.map((e) => DropdownMenuItem(
+        value: e.value,
+        child: Text(displayLabels != null ? displayLabels[e.key] : e.value),
+      )).toList(),
       onChanged: (v) { if (v != null) onChanged(key, v); },
     ),
   );
 }
 
-Widget _sessionModeToggle(Map<String, dynamic> profile, void Function(String, String) onChanged) {
+Widget _sessionModeToggle(Map<String, dynamic> profile, void Function(String, dynamic) onChanged) {
   const modes = ['offline', 'online', 'both'];
   const labels = ['Offline', 'Online', 'Both'];
   final current = (profile['preferredSessionMode'] as String?) ?? '';

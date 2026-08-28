@@ -41,6 +41,17 @@ const DOCUMENT_TYPES = [
   { value: "other", label: "Other" },
 ];
 
+const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline"];
+
+const ANNUAL_TURNOVER_OPTIONS = [
+  "Under 10L",
+  "10L - 25L",
+  "25L - 50L",
+  "50L - 1Cr",
+  "1Cr - 5Cr",
+  "5Cr+",
+];
+
 function buildStepOrder(contentSteps: OnboardingContentStep[]): Step[] {
   const educationSteps: DynamicStep[] = contentSteps.map((c) => `education:${c.stepKey}` as DynamicStep);
   return ["welcome", ...educationSteps, "profile", "skills", "documents", "review"];
@@ -266,7 +277,23 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   );
 
   const [step, setStep] = useState<Step>("welcome");
-  const [profile, setProfile] = useState<Record<string, any>>(initialProfile);
+
+  // Split currentChallenges array into individual challenge fields for the UI,
+  // and ensure marketingChannels is always an array.
+  const [profile, setProfile] = useState<Record<string, any>>(() => {
+    const p = { ...initialProfile };
+    if (Array.isArray(p.currentChallenges)) {
+      p.challenge1 = p.currentChallenges[0] ?? "";
+      p.challenge2 = p.currentChallenges[1] ?? "";
+      p.challenge3 = p.currentChallenges[2] ?? "";
+      delete p.currentChallenges;
+    }
+    if (!Array.isArray(p.marketingChannels)) {
+      p.marketingChannels = [];
+    }
+    return p;
+  });
+
   const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0].value);
   const [uploading, setUploading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -279,13 +306,26 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const prevStep = currentIndex > 0 ? stepOrder[currentIndex - 1] : undefined;
   const nextStep = currentIndex < stepOrder.length - 1 ? stepOrder[currentIndex + 1] : undefined;
 
+  const toggleMarketingChannel = (channel: string) => {
+    setProfile((p) => {
+      const current = (p.marketingChannels as string[]) || [];
+      return {
+        ...p,
+        marketingChannels: current.includes(channel)
+          ? current.filter((c: string) => c !== channel)
+          : [...current, channel],
+      };
+    });
+  };
+
   const saveAndAdvance = async (next: Step) => {
     try {
-      // Strip read-only fields that come back from GET but are not in the
-      // backend's strict update schema (phone, email). Sending them causes a
-      // 400 because the schema uses .strict() to block field-injection attacks.
-      const { phone: _p, email: _e, ...editable } = profile as any;
-      await saveProgress.mutateAsync(editable);
+      // Strip read-only fields (phone, email) and combine challenge fields into
+      // currentChallenges array before sending — the backend schema uses .strict()
+      // and won't accept extra fields.
+      const { phone: _p, email: _e, challenge1, challenge2, challenge3, ...editable } = profile as any;
+      const currentChallenges = [challenge1, challenge2, challenge3].filter(Boolean);
+      await saveProgress.mutateAsync({ ...editable, currentChallenges });
       setStep(next);
     } catch {
       toast.error("Couldn't save your progress. Please try again.");
@@ -328,6 +368,9 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
       toast.error(err?.response?.data?.error || "Please complete all required fields first.");
     }
   };
+
+  const inputCls = "w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none";
+  const inputStyle = { background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" };
 
   return (
     <div className="py-8 px-4">
@@ -443,46 +486,106 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <input
                     value={profile[key] ?? ""}
                     onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
-                    className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                    style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                    className={inputCls}
+                    style={inputStyle}
                   />
                 </div>
               ))}
             </div>
 
-            {/* Location */}
+            {/* DOB + Gender */}
             <div className="grid grid-cols-2 gap-4">
-              {[{ key: "city", label: "City *" }, { key: "state", label: "State *" }].map(({ key, label }) => (
-                <div key={key}>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
-                  <input
-                    value={profile[key] ?? ""}
-                    onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
-                    className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                    style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                  />
-                </div>
-              ))}
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Date of Birth</label>
+                <input
+                  type="date"
+                  value={profile.dob ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, dob: e.target.value }))}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Gender</label>
+                <select
+                  value={profile.gender ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, gender: e.target.value }))}
+                  className={inputCls}
+                  style={inputStyle}
+                >
+                  <option value="" disabled>Select…</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                  <option value="prefer_not_to_say">Prefer not to say</option>
+                </select>
+              </div>
             </div>
 
-            {/* Brand Name + Business Type */}
+            {/* Location — city, state, pincode */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">City *</label>
+                <input
+                  value={profile.city ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, city: e.target.value }))}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">State *</label>
+                <input
+                  value={profile.state ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, state: e.target.value }))}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Pincode</label>
+                <input
+                  value={profile.pincode ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, pincode: e.target.value }))}
+                  placeholder="600001"
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            {/* Brand Name + Business Established On */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Brand Name *</label>
                 <input
                   value={profile.businessName ?? ""}
                   onChange={(e) => setProfile((p) => ({ ...p, businessName: e.target.value }))}
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  className={inputCls}
+                  style={inputStyle}
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Established On</label>
+                <input
+                  type="date"
+                  value={profile.businessEstablishedOn ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, businessEstablishedOn: e.target.value }))}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            {/* Business Type + Instagram Link */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Type *</label>
                 <select
                   value={profile.productServiceType ?? ""}
                   onChange={(e) => setProfile((p) => ({ ...p, productServiceType: e.target.value }))}
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  className={inputCls}
+                  style={inputStyle}
                 >
                   <option value="" disabled>Select…</option>
                   <option value="Product-based">Product-based</option>
@@ -491,33 +594,119 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <option value="Other">Other</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Link *</label>
+                <input
+                  value={profile.instagramLink ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, instagramLink: e.target.value }))}
+                  placeholder="@username"
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
             </div>
 
-            {/* Business Started From + Team Size */}
+            {/* Revenue Generated + Revenue Goal */}
             <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Generated Until Now *</label>
+                <select
+                  value={profile.annualTurnover ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, annualTurnover: e.target.value }))}
+                  className={inputCls}
+                  style={inputStyle}
+                >
+                  <option value="" disabled>Select…</option>
+                  {ANNUAL_TURNOVER_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Goal After TBT *</label>
+                <input
+                  value={profile.revenueGoalAfterTbt ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, revenueGoalAfterTbt: e.target.value }))}
+                  placeholder="e.g. 1Cr in 12 months"
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            {/* Learning Goals + Business Started From */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Learning Goals *</label>
+                <input
+                  value={profile.goalAfter90Days ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, goalAfter90Days: e.target.value }))}
+                  placeholder="What do you want to achieve?"
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Started From *</label>
                 <input
                   value={profile.businessStartedFrom ?? ""}
                   onChange={(e) => setProfile((p) => ({ ...p, businessStartedFrom: e.target.value }))}
                   placeholder="e.g. 2019 or Yet to Start"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  className={inputCls}
+                  style={inputStyle}
                 />
               </div>
+            </div>
+
+            {/* Team Size + Website URL */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Total Members in Your Team *</label>
                 <input
                   value={profile.teamSize ?? ""}
                   onChange={(e) => setProfile((p) => ({ ...p, teamSize: e.target.value }))}
                   placeholder="e.g. 5"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Website URL</label>
+                <input
+                  value={profile.websiteUrl ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, websiteUrl: e.target.value }))}
+                  placeholder="https://yourbrand.com"
+                  className={inputCls}
+                  style={inputStyle}
                 />
               </div>
             </div>
 
-            {/* Offline/Online/Both */}
+            {/* Instagram Stats + Facebook Stats */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Posts &amp; Followers *</label>
+                <input
+                  value={profile.instagramStats ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, instagramStats: e.target.value }))}
+                  placeholder="e.g. 120 posts, 4.2K followers"
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Facebook Posts &amp; Followers *</label>
+                <input
+                  value={profile.facebookStats ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, facebookStats: e.target.value }))}
+                  placeholder="e.g. 80 posts, 2K followers"
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            {/* Preferred Session Mode */}
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-2">Offline / Online / Both *</label>
               <div className="flex gap-3">
@@ -540,51 +729,100 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               </div>
             </div>
 
-            {/* Instagram Link + Instagram Stats */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Link *</label>
-                <input
-                  value={profile.instagramLink ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, instagramLink: e.target.value }))}
-                  placeholder="@username"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Posts &amp; Followers *</label>
-                <input
-                  value={profile.instagramStats ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, instagramStats: e.target.value }))}
-                  placeholder="e.g. 120 posts, 4.2K followers"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
+            {/* GST Number */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">GST Number *</label>
+              <input
+                value={profile.gstNumber ?? ""}
+                onChange={(e) => setProfile((p) => ({ ...p, gstNumber: e.target.value }))}
+                placeholder="22AAAAA0000A1Z5"
+                className={inputCls}
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Existing Marketing Channels */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">Existing Marketing Channel</label>
+              <div className="flex flex-wrap gap-2">
+                {MARKETING_CHANNELS.map((channel) => {
+                  const active = ((profile.marketingChannels as string[]) || []).includes(channel);
+                  return (
+                    <button
+                      key={channel}
+                      type="button"
+                      onClick={() => toggleMarketingChannel(channel)}
+                      className={cn(
+                        "px-4 py-2 rounded-full text-sm font-medium border transition-colors",
+                        active ? "text-white border-transparent" : "text-muted-foreground"
+                      )}
+                      style={active
+                        ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
+                        : { borderColor: "var(--color-border-subtle)" }}
+                    >
+                      {channel}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Facebook Stats + Website Link */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Facebook Posts &amp; Followers *</label>
-                <input
-                  value={profile.facebookStats ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, facebookStats: e.target.value }))}
-                  placeholder="e.g. 80 posts, 2K followers"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Website Link *</label>
-                <input
-                  value={profile.websiteUrl ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, websiteUrl: e.target.value }))}
-                  placeholder="https://yourbrand.com"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
+            {/* Name of Marketing Channel */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Name of the Marketing Channel</label>
+              <input
+                value={profile.marketingChannelName ?? ""}
+                onChange={(e) => setProfile((p) => ({ ...p, marketingChannelName: e.target.value }))}
+                placeholder="e.g. Facebook Ads account name"
+                className={inputCls}
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Domain & Hosting Details */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Domain &amp; Hosting Details</label>
+              <input
+                value={profile.domainHostingDetails ?? ""}
+                onChange={(e) => setProfile((p) => ({ ...p, domainHostingDetails: e.target.value }))}
+                placeholder="Provider, expiry dates, etc."
+                className={inputCls}
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Business Address */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Address</label>
+              <textarea
+                value={profile.businessAddress ?? ""}
+                onChange={(e) => setProfile((p) => ({ ...p, businessAddress: e.target.value }))}
+                rows={3}
+                className="w-full px-4 py-3 rounded-xl text-sm text-foreground outline-none resize-none"
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Key Challenges */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">Key Challenges</label>
+              <div className="space-y-3">
+                {[
+                  { key: "challenge1", placeholder: "Primary business obstacle" },
+                  { key: "challenge2", placeholder: "Secondary concern" },
+                  { key: "challenge3", placeholder: "Other support needed" },
+                ].map(({ key, placeholder }, i) => (
+                  <div key={key} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-muted-foreground w-4 shrink-0">{i + 1}.</span>
+                    <input
+                      value={profile[key] ?? ""}
+                      onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
+                      placeholder={placeholder}
+                      className={cn(inputCls, "flex-1")}
+                      style={inputStyle}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -614,8 +852,8 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   value={profile.marketingTeamDetails ?? ""}
                   onChange={(e) => setProfile((p) => ({ ...p, marketingTeamDetails: e.target.value }))}
                   placeholder="Describe your social media team or agency"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  className={inputCls}
+                  style={inputStyle}
                 />
               )}
             </div>
@@ -646,58 +884,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   value={profile.videoEditingDetails ?? ""}
                   onChange={(e) => setProfile((p) => ({ ...p, videoEditingDetails: e.target.value }))}
                   placeholder="In-house, outsourced, or tools used"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+                  className={inputCls}
+                  style={inputStyle}
                 />
               )}
-            </div>
-
-            {/* Revenue fields */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Generated Until Now *</label>
-                <input
-                  value={profile.annualTurnover ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, annualTurnover: e.target.value }))}
-                  placeholder="e.g. 25L - 50L"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Goal After TBT *</label>
-                <input
-                  value={profile.revenueGoalAfterTbt ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, revenueGoalAfterTbt: e.target.value }))}
-                  placeholder="e.g. 1Cr in 12 months"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
-              </div>
-            </div>
-
-            {/* Learning Goals + GST */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Learning Goals *</label>
-                <input
-                  value={profile.goalAfter90Days ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, goalAfter90Days: e.target.value }))}
-                  placeholder="What do you want to achieve?"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">GST Number *</label>
-                <input
-                  value={profile.gstNumber ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, gstNumber: e.target.value }))}
-                  placeholder="22AAAAA0000A1Z5"
-                  className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
-                  style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
-                />
-              </div>
             </div>
           </div>
         </StepShell>
@@ -838,12 +1028,23 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         <div className="max-w-2xl mx-auto">
           <h1 className="text-xl font-bold text-foreground mb-4">Review &amp; Submit</h1>
           <div className="space-y-2 mb-6">
-            {Object.entries(profile).filter(([k, v]) => v && k !== "profilePhotoUrl").map(([key, value]) => (
+            {Object.entries(profile).filter(([k, v]) => v && k !== "profilePhotoUrl" && !k.startsWith("challenge")).map(([key, value]) => (
               <div key={key} className="flex justify-between text-sm py-2 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
                 <span className="text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
-                <span className="text-foreground">{String(value)}</span>
+                <span className="text-foreground">{Array.isArray(value) ? value.join(", ") : String(value)}</span>
               </div>
             ))}
+            {/* Show challenges if any */}
+            {([profile.challenge1, profile.challenge2, profile.challenge3].filter(Boolean) as string[]).length > 0 && (
+              <div className="py-2 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
+                <span className="text-muted-foreground text-sm">Key Challenges</span>
+                <ul className="mt-1 space-y-0.5">
+                  {([profile.challenge1, profile.challenge2, profile.challenge3].filter(Boolean) as string[]).map((c, i) => (
+                    <li key={i} className="text-sm text-foreground">{i + 1}. {c}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
           <p className="text-sm text-muted-foreground mb-2">{initialDocuments.length} document(s) uploaded</p>
           {!readyToSubmit && (
