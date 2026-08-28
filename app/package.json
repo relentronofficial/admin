@@ -1,0 +1,35 @@
+{
+  "name": "psychometric-assessment-app",
+  "version": "1.0.0",
+  "description": "Tamil Business Tribe — Psychometric Assessment Platform",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "seed": "node backend/scripts/seed.js",
+    "seed:dummy": "node backend/scripts/seedDummyData.js",
+    "seed:matrix": "node backend/scripts/seedBusinessMatrixDummy.js",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.7.0",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.0.0",
+    "json2csv": "^6.0.0-alpha.2",
+    "jsonwebtoken": "^9.0.0",
+    "mongoose": "^7.3.1",
+    "morgan": "^1.10.0",
+    "msedge-tts": "^2.0.7",
+    "nodemailer": "^6.9.3",
+    "pdfkit": "^0.13.0"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "nodemon": "^3.0.1",
+    "supertest": "^7.2.2"
+  }
+}
