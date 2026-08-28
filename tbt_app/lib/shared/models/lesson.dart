@@ -39,6 +39,10 @@ class Lesson with _$Lesson {
     @Default(false) bool completedByThreshold,
     // 0..100, may be null if backend can't compute the exact fraction.
     int? watchPercent,
+    // Section grouping (null = unsectioned)
+    String? sectionId,
+    String? sectionTitle,
+    int? sectionOrder,
   }) = _Lesson;
 
   factory Lesson.fromJson(Map<String, dynamic> json) =>

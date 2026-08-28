@@ -104,14 +104,112 @@ export async function deleteCourseHandler(req: FastifyRequest, reply: FastifyRep
   return reply.send({ success: true, data: null, error: null });
 }
 
+// ── COURSE SECTIONS ───────────────────────────────────────────────────
+
+export async function listCourseSectionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as any;
+  const sections = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, course_id, title, description, sort_order, created_at
+     FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
+    id,
+  );
+  return reply.send({ success: true, data: sections.map(s => ({
+    id: s.id, courseId: s.course_id, title: s.title,
+    description: s.description, sortOrder: Number(s.sort_order), createdAt: s.created_at,
+  })) });
+}
+
+export async function createCourseSectionHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as any;
+  const { title, description } = req.body as any;
+  if (!title?.trim()) return reply.status(400).send({ success: false, error: 'title is required' });
+  const [countRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT COUNT(*) AS cnt FROM course_sections WHERE course_id = $1::uuid`, id,
+  );
+  const sortOrder = Number(countRow?.cnt ?? 0);
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO course_sections (course_id, title, description, sort_order)
+     VALUES ($1::uuid, $2, $3, $4) RETURNING *`,
+    id, title.trim(), description?.trim() ?? null, sortOrder,
+  );
+  bustHome(req);
+  return reply.status(201).send({ success: true, data: {
+    id: row.id, courseId: row.course_id, title: row.title,
+    description: row.description, sortOrder: Number(row.sort_order), createdAt: row.created_at,
+  }});
+}
+
+export async function updateCourseSectionHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { sectionId } = req.params as any;
+  const { title, description } = req.body as any;
+  const sets: string[] = []; const vals: any[] = []; let idx = 1;
+  if (title !== undefined) { sets.push(`title = $${idx++}`); vals.push(title.trim()); }
+  if (description !== undefined) { sets.push(`description = $${idx++}`); vals.push(description?.trim() ?? null); }
+  if (!sets.length) return reply.status(400).send({ success: false, error: 'Nothing to update' });
+  vals.push(sectionId);
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE course_sections SET ${sets.join(', ')} WHERE id = $${idx}::uuid RETURNING *`, ...vals,
+  );
+  if (!row) return reply.status(404).send({ success: false, error: 'Section not found' });
+  bustHome(req);
+  return reply.send({ success: true, data: {
+    id: row.id, courseId: row.course_id, title: row.title,
+    description: row.description, sortOrder: Number(row.sort_order), createdAt: row.created_at,
+  }});
+}
+
+export async function deleteCourseSectionHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { sectionId } = req.params as any;
+  // Nullify section_id on orphaned episodes before deleting
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE course_episodes SET section_id = NULL WHERE section_id = $1::uuid`, sectionId,
+  );
+  await req.server.prisma.$executeRawUnsafe(
+    `DELETE FROM course_sections WHERE id = $1::uuid`, sectionId,
+  );
+  bustHome(req);
+  return reply.send({ success: true });
+}
+
+export async function reorderCourseSectionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { ids } = req.body as any;
+  if (!Array.isArray(ids)) return reply.status(400).send({ success: false, error: 'ids must be an array' });
+  await Promise.all(
+    ids.map((id: string, i: number) =>
+      req.server.prisma.$executeRawUnsafe(
+        `UPDATE course_sections SET sort_order = $1 WHERE id = $2::uuid`, i, id,
+      ),
+    ),
+  );
+  bustHome(req);
+  return reply.send({ success: true });
+}
+
 // ── COURSE EPISODES ───────────────────────────────────────────────────
 
 export async function listCourseEpisodesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
-  const episodes = await req.server.prisma.courseEpisode.findMany({
-    where: { courseId: id },
-    orderBy: { order: 'asc' },
-  });
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT e.*, e.section_id, e.timer_seconds,
+       s.title AS section_title, s.sort_order AS section_sort_order
+     FROM course_episodes e
+     LEFT JOIN course_sections s ON s.id = e.section_id
+     WHERE e.course_id = $1::uuid
+     ORDER BY e."order" ASC`,
+    id,
+  );
+  const episodes = rows.map(e => ({
+    id: e.id, courseId: e.course_id, title: e.title,
+    thumbnailUrl: e.thumbnail_url, videoUrl: e.video_url,
+    bunnyVideoId: e.bunny_video_id, durationSeconds: Number(e.duration_seconds ?? 0),
+    order: Number(e.order ?? 0), isVisible: e.is_visible,
+    quizData: e.quiz_data, quizUnlockPercent: Number(e.quiz_unlock_percent ?? 80),
+    drmEnabled: e.drm_enabled, bunnyDrmToken: e.bunny_drm_token,
+    timerSeconds: e.timer_seconds != null ? Number(e.timer_seconds) : null,
+    sectionId: e.section_id ?? null, sectionTitle: e.section_title ?? null,
+    sectionSortOrder: e.section_sort_order != null ? Number(e.section_sort_order) : null,
+    createdAt: e.created_at, updatedAt: e.updated_at,
+  }));
   return reply.send({ success: true, data: episodes, error: null });
 }
 
@@ -136,14 +234,17 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
     },
   });
   const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
-  if (timerSecs !== null) {
-    await req.server.prisma.$executeRawUnsafe(
-      'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid',
-      timerSecs, episode.id
-    );
-  }
+  const sectionId = body.sectionId || null;
+  await Promise.all([
+    timerSecs !== null ? req.server.prisma.$executeRawUnsafe(
+      'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid', timerSecs, episode.id
+    ) : Promise.resolve(),
+    sectionId ? req.server.prisma.$executeRawUnsafe(
+      'UPDATE course_episodes SET section_id = $1::uuid WHERE id = $2::uuid', sectionId, episode.id
+    ) : Promise.resolve(),
+  ]);
   bustHome(req);
-  return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs }, error: null });
+  return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs, sectionId }, error: null });
 }
 
 export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -158,15 +259,22 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   if (body.quizUnlockPercent !== undefined) data.quizUnlockPercent = Number(body.quizUnlockPercent);
   if (body.drmEnabled !== undefined) data.drmEnabled = Boolean(body.drmEnabled);
   const timerSecs = 'timerSeconds' in body ? (body.timerSeconds != null ? Number(body.timerSeconds) : null) : undefined;
+  const sectionId = 'sectionId' in body ? (body.sectionId || null) : undefined;
   const episode = await req.server.prisma.courseEpisode.update({ where: { id: eid }, data });
+  const rawUpdates: Promise<any>[] = [];
   if (timerSecs !== undefined) {
-    await req.server.prisma.$executeRawUnsafe(
-      'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid',
-      timerSecs, episode.id
-    );
+    rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+      'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid', timerSecs, episode.id
+    ));
   }
+  if (sectionId !== undefined) {
+    rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+      'UPDATE course_episodes SET section_id = $1 WHERE id = $2::uuid', sectionId, episode.id
+    ));
+  }
+  if (rawUpdates.length) await Promise.all(rawUpdates);
   bustHome(req);
-  return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null }, error: null });
+  return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null, sectionId: sectionId ?? null }, error: null });
 }
 
 export async function deleteCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {

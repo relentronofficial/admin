@@ -625,6 +625,33 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     }).map((s) => [s.episodeId, s]),
   );
 
+  // Fetch sections and episode→section mapping (raw SQL columns not in Prisma schema)
+  const [sectionRows, episodeSectionRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, title, description, sort_order FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
+      id,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT e.id AS episode_id, e.section_id, s.title AS section_title, s.sort_order AS section_sort_order
+       FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
+       WHERE e.course_id = $1::uuid`,
+      id,
+    ),
+  ]).catch(() => [[], []] as [any[], any[]]);
+
+  const sections = (sectionRows as any[]).map((s) => ({
+    id: s.id, title: s.title, description: s.description ?? null,
+    sortOrder: Number(s.sort_order),
+  }));
+
+  const episodeSectionMap = new Map(
+    (episodeSectionRows as any[]).map((r) => [r.episode_id, {
+      sectionId: r.section_id ?? null,
+      sectionTitle: r.section_title ?? null,
+      sectionOrder: r.section_sort_order != null ? Number(r.section_sort_order) : null,
+    }]),
+  );
+
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
     const lockState = lockStatesByEpisode.get(ep.id);
@@ -690,6 +717,9 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       unlocked: lockState?.unlocked ?? true,
       completedByThreshold: lockState?.completed ?? false,
       watchPercent: lockState?.watchPercent ?? null,
+      sectionId: episodeSectionMap.get(ep.id)?.sectionId ?? null,
+      sectionTitle: episodeSectionMap.get(ep.id)?.sectionTitle ?? null,
+      sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
     };
   });
 
@@ -716,6 +746,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     requireSequential: (course as any).requireSequential ?? true,
     completionThresholdPercent: (course as any).completionThresholdPercent ?? 95,
     lessons,
+    sections,
     _count: { lessons: lessons.length, enrollments: course._count?.enrollments ?? 0 },
     upsellCourses,
     crossSellCourses,

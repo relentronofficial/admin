@@ -16,6 +16,8 @@ import {
   updateEpisodeResourceHandler, deleteEpisodeResourceHandler, reorderEpisodeResourcesHandler,
   listEpisodeTasksHandler, createEpisodeTaskHandler,
   updateEpisodeTaskHandler, deleteEpisodeTaskHandler, reorderEpisodeTasksHandler,
+  listCourseSectionsHandler, createCourseSectionHandler,
+  updateCourseSectionHandler, deleteCourseSectionHandler, reorderCourseSectionsHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
@@ -53,6 +55,13 @@ export async function courseRoutes(fastify: FastifyInstance) {
   // Per-member progression controls (sequential-unlock admin overrides)
   fastify.post('/:id/members/:memberId/reset-progress', resetMemberCourseProgressHandler);
   fastify.post('/:id/members/:memberId/unlock-all', unlockAllLessonsForMemberHandler);
+
+  // Sections (static 'reorder' before /:sectionId to avoid param capture)
+  fastify.get('/:id/sections', listCourseSectionsHandler);
+  fastify.post('/:id/sections', createCourseSectionHandler);
+  fastify.put('/:id/sections/reorder', reorderCourseSectionsHandler);
+  fastify.put('/:id/sections/:sectionId', updateCourseSectionHandler);
+  fastify.delete('/:id/sections/:sectionId', deleteCourseSectionHandler);
 
   // Episodes
   fastify.get('/:id/episodes', listCourseEpisodesHandler);

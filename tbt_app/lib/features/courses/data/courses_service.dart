@@ -125,6 +125,18 @@ class CoursesService {
     }
   }
 
+  // Companion fetch for sections — same build_runner workaround as pending payment.
+  Future<List<Map<String, dynamic>>> getCourseSections(String courseId) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('$kUserCourses/$courseId');
+      final data = res.data?['data'] as Map<String, dynamic>? ?? {};
+      final raw = data['sections'] as List<dynamic>? ?? [];
+      return raw.cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   // Companion fetch for the pendingPayment sub-object. The backend returns it
   // in the same course-detail payload, but adding a field to the freezed
   // `CourseDetail` class requires build_runner regen — which is currently

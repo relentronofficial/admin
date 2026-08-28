@@ -115,6 +115,8 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
     final progressAsync = ref.watch(lessonProgressProvider(widget.courseId));
     final pendingPayment =
         ref.watch(coursePendingPaymentProvider(widget.courseId)).valueOrNull;
+    final sections =
+        ref.watch(courseSectionsProvider(widget.courseId)).valueOrNull ?? [];
 
     return Scaffold(
       appBar: AppBar(
@@ -205,47 +207,12 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
                         ),
                       )
                     else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (_, i) {
-                            final lesson = course.lessons[i];
-                            final isLocked = lesson.locked;
-                            // Same policy as the web: locked lessons refuse
-                            // the tap entirely and show a SnackBar hint.
-                            // Only the backend can grant playback (via
-                            // returning a videoUrl); the client never
-                            // decides on its own.
-                            final canOpen = course.hasAccess && !isLocked;
-                            return _LessonRow(
-                              lesson: lesson,
-                              index: i,
-                              isCompleted:
-                                  completedIds.contains(lesson.id) ||
-                                  lesson.completedByThreshold,
-                              isLocked: isLocked,
-                              hasAccess: course.hasAccess,
-                              accent: accent,
-                              onTap: canOpen
-                                  ? () => context.push(
-                                        '/learning/${widget.courseId}/${lesson.id}',
-                                      )
-                                  : (isLocked
-                                      ? () {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Complete the previous lesson to unlock.',
-                                              ),
-                                              duration: Duration(seconds: 2),
-                                            ),
-                                          );
-                                        }
-                                      : null),
-                            );
-                          },
-                          childCount: course.lessons.length,
-                        ),
+                      _LessonListSliver(
+                        course: course,
+                        completedIds: completedIds,
+                        courseId: widget.courseId,
+                        accent: accent,
+                        sections: sections,
                       ),
                     SliverToBoxAdapter(
                       child: _CertificateCta(
@@ -626,6 +593,138 @@ class _ProgressSection extends StatelessWidget {
           ),
           const SizedBox(height: 12),
         ],
+      ),
+    );
+  }
+}
+
+// ── Lesson list sliver (flat or section-grouped) ─────────────────────────────
+
+class _LessonListSliver extends StatefulWidget {
+  const _LessonListSliver({
+    required this.course,
+    required this.completedIds,
+    required this.courseId,
+    required this.accent,
+    this.sections = const [],
+  });
+  final CourseDetail course;
+  final Set<String> completedIds;
+  final String courseId;
+  final Color accent;
+  final List<Map<String, dynamic>> sections;
+
+  @override
+  State<_LessonListSliver> createState() => _LessonListSliverState();
+}
+
+class _LessonListSliverState extends State<_LessonListSliver> {
+  final Set<String> _collapsed = {};
+
+  void _toggle(String sectionId) =>
+      setState(() => _collapsed.contains(sectionId) ? _collapsed.remove(sectionId) : _collapsed.add(sectionId));
+
+  Widget _lessonRow(BuildContext context, Lesson lesson, int globalIdx) {
+    final isLocked = lesson.locked;
+    final canOpen = widget.course.hasAccess && !isLocked;
+    return _LessonRow(
+      lesson: lesson,
+      index: globalIdx,
+      isCompleted: widget.completedIds.contains(lesson.id) || lesson.completedByThreshold,
+      isLocked: isLocked,
+      hasAccess: widget.course.hasAccess,
+      accent: widget.accent,
+      onTap: canOpen
+          ? () => context.push('/learning/${widget.courseId}/${lesson.id}')
+          : (isLocked
+              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Complete the previous lesson to unlock.'), duration: Duration(seconds: 2)),
+                  )
+              : null),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lessons = widget.course.lessons;
+    final sections = widget.sections;
+
+    if (sections.isEmpty) {
+      // Flat list — no sections
+      return SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (_, i) => _lessonRow(context, lessons[i], i),
+          childCount: lessons.length,
+        ),
+      );
+    }
+
+    // Build section → lessons map
+    final sectionMap = <String, List<Lesson>>{};
+    final List<Lesson> unsectioned = [];
+    for (var i = 0; i < lessons.length; i++) {
+      final sid = lessons[i].sectionId;
+      if (sid != null) {
+        sectionMap.putIfAbsent(sid, () => []).add(lessons[i]);
+      } else {
+        unsectioned.add(lessons[i]);
+      }
+    }
+
+    // Build widgets
+    final items = <Widget>[];
+    for (final sec in sections) {
+      final sid = sec['id'] as String;
+      final title = sec['title'] as String? ?? 'Section';
+      final sectionLessons = sectionMap[sid] ?? [];
+      if (sectionLessons.isEmpty) continue;
+      final isCollapsed = _collapsed.contains(sid);
+      final completedInSection = sectionLessons.where((l) => widget.completedIds.contains(l.id)).length;
+
+      items.add(
+        InkWell(
+          onTap: () => _toggle(sid),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            color: Colors.white.withAlpha(5),
+            child: Row(
+              children: [
+                AnimatedRotation(
+                  turns: isCollapsed ? -0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.expand_more, size: 16, color: Colors.white54),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(title, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5))),
+                Text('$completedInSection/${sectionLessons.length}',
+                    style: TextStyle(
+                      color: completedInSection == sectionLessons.length ? Colors.green : Colors.white38,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    )),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      if (!isCollapsed) {
+        for (var i = 0; i < sectionLessons.length; i++) {
+          items.add(_lessonRow(context, sectionLessons[i], lessons.indexOf(sectionLessons[i])));
+        }
+      }
+    }
+
+    if (unsectioned.isNotEmpty) {
+      for (final l in unsectioned) {
+        items.add(_lessonRow(context, l, lessons.indexOf(l)));
+      }
+    }
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (_, i) => items[i],
+        childCount: items.length,
       ),
     );
   }

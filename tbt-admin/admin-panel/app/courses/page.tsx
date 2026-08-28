@@ -6,14 +6,17 @@ import {
   Plus, Trash2, Pencil, X, Loader2, BookOpen, Search, Film,
   Eye, EyeOff, AlertCircle, GripVertical, Save, Image as ImageIcon, Upload,
   Lock, BarChart2, Users, ShieldCheck, Trophy, CreditCard, Download, Filter,
-  CheckCircle2, Clock, ChevronLeft, ChevronRight, FileText, ListTodo, Link2,
-  MessageSquare, Star, ThumbsUp,
+  CheckCircle2, Clock, ChevronLeft, ChevronRight, ChevronDown, FileText, ListTodo, Link2,
+  MessageSquare, Star, ThumbsUp, Layers,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListVodCourses, useCreateVodCourse, useUpdateVodCourse, useDeleteVodCourse,
   useListCourseEpisodes, useCreateCourseEpisode, useUpdateCourseEpisode,
-  useDeleteCourseEpisode, useReorderCourseEpisodes, useListTiers,
+  useDeleteCourseEpisode, useReorderCourseEpisodes,
+  useListCourseSections, useCreateCourseSection, useUpdateCourseSection,
+  useDeleteCourseSection, useReorderCourseSections,
+  useListTiers,
   useListCourseAccess, useGrantCourseAccess, useRevokeCourseAccess,
   useListCoursePayments, useApproveCoursePayment,
   useCourseAnalyticsAdmin, useCourseLeaderboardAdmin, useAtRiskMembers,
@@ -64,6 +67,7 @@ const EMPTY_EP = {
   quizUnlockPercent: "80", drmEnabled: false, bunnyDrmToken: "",
   quizData: null as any,
   timerSeconds: "" as string | number,
+  sectionId: null as string | null,
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -617,18 +621,24 @@ function EpisodesTab({ course }: { course: any }) {
   const deleteEp = useDeleteCourseEpisode(course.id);
   const reorderEp = useReorderCourseEpisodes(course.id);
 
+  // Section hooks
+  const { data: sectionsData } = useListCourseSections(course.id);
+  const createSection = useCreateCourseSection(course.id);
+  const updateSection = useUpdateCourseSection(course.id);
+  const deleteSection = useDeleteCourseSection(course.id);
+  const reorderSections = useReorderCourseSections(course.id);
+
   const serverEps: any[] = (data as any)?.data || [];
+  const serverSections: any[] = (sectionsData as any) ?? [];
   const [localEps, setLocalEps] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  const [localSections, setLocalSections] = useState<any[]>([]);
+  const [isSectionsDirty, setIsSectionsDirty] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingEp, setEditingEp] = useState<any>(null);
   const [epForm, setEpForm] = useState<any>(EMPTY_EP);
   const [deletingEp, setDeletingEp] = useState<string | null>(null);
   const [epUploading, setEpUploading] = useState<string | null>(null);
-  // Inline validation errors keyed by field. Set on Save-attempt, cleared
-  // when the field gains a value. The toast still fires but is easy to
-  // miss on a slow connection or if the user scrolls away — the inline
-  // hint stays put until fixed.
   const [epErrors, setEpErrors] = useState<{ title?: string; video?: string }>({});
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -636,7 +646,17 @@ function EpisodesTab({ course }: { course: any }) {
   const [tasksEp, setTasksEp] = useState<any | null>(null);
   const [feedbackEp, setFeedbackEp] = useState<any | null>(null);
 
+  // Section management state
+  const [showSectionForm, setShowSectionForm] = useState(false);
+  const [editingSection, setEditingSection] = useState<any>(null);
+  const [sectionForm, setSectionForm] = useState({ title: "", description: "" });
+  const [deletingSection, setDeletingSection] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const sectionDragIdx = useRef<number | null>(null);
+  const [sectionDragOver, setSectionDragOver] = useState<number | null>(null);
+
   useEffect(() => { setLocalEps(serverEps); setIsDirty(false); }, [data]);
+  useEffect(() => { setLocalSections(serverSections); setIsSectionsDirty(false); }, [sectionsData]);
 
   const setEpField = (k: string, v: any) => setEpForm((f: any) => ({ ...f, [k]: v }));
 
@@ -667,7 +687,10 @@ function EpisodesTab({ course }: { course: any }) {
       video.src = url;
     });
 
-  const openCreate = () => { setEpForm(EMPTY_EP); setEditingEp(null); setEpErrors({}); setShowForm(true); };
+  const openCreate = (sectionId?: string | null) => {
+    setEpForm({ ...EMPTY_EP, sectionId: sectionId ?? null });
+    setEditingEp(null); setEpErrors({}); setShowForm(true);
+  };
   const openEdit = (ep: any) => {
     // Normalise stored cues: add atTime display field
     const rawCues = ep.quizData?.cues ?? [];
@@ -680,6 +703,7 @@ function EpisodesTab({ course }: { course: any }) {
       drmEnabled: ep.drmEnabled ?? false,
       bunnyDrmToken: ep.bunnyDrmToken || "",
       timerSeconds: ep.timerSeconds != null ? Math.round(ep.timerSeconds / 60) : "",
+      sectionId: ep.sectionId ?? null,
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
@@ -758,6 +782,7 @@ function EpisodesTab({ course }: { course: any }) {
       bunnyDrmToken: epForm.bunnyDrmToken || undefined,
       quizData,
       timerSeconds: epForm.timerSeconds !== "" ? Math.max(1, parseInt(String(epForm.timerSeconds)) || 1) * 60 : null,
+      sectionId: epForm.sectionId || null,
     };
     try {
       if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); toast.success("Episode updated"); }
@@ -780,10 +805,100 @@ function EpisodesTab({ course }: { course: any }) {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const thumbInputRef = useRef<HTMLInputElement>(null);
 
+  // Section drag handlers
+  const onSectionDragStart = (i: number) => { sectionDragIdx.current = i; };
+  const onSectionDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setSectionDragOver(i); };
+  const onSectionDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = sectionDragIdx.current;
+    if (from === null || from === dropIdx) { setSectionDragOver(null); return; }
+    const next = [...localSections];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalSections(next); setIsSectionsDirty(true); sectionDragIdx.current = null; setSectionDragOver(null);
+  };
+  const onSectionDragEnd = () => { sectionDragIdx.current = null; setSectionDragOver(null); };
+
+  const handleSaveSectionOrder = async () => {
+    try { await reorderSections.mutateAsync(localSections.map((s: any) => s.id)); setIsSectionsDirty(false); toast.success("Section order saved"); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleSaveSection = async () => {
+    if (!sectionForm.title.trim()) { toast.error("Title required"); return; }
+    try {
+      if (editingSection) {
+        await updateSection.mutateAsync({ sectionId: editingSection.id, title: sectionForm.title, description: sectionForm.description || undefined });
+        toast.success("Section updated");
+      } else {
+        await createSection.mutateAsync({ title: sectionForm.title, description: sectionForm.description || undefined });
+        toast.success("Section created");
+      }
+      setShowSectionForm(false); setEditingSection(null); setSectionForm({ title: "", description: "" });
+    } catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleDeleteSection = async (id: string) => {
+    try { await deleteSection.mutateAsync(id); toast.success("Section deleted"); setDeletingSection(null); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const renderEpRow = (ep: any, i: number) => (
+    <div key={ep.id} draggable
+      onDragStart={() => onDragStart(i)}
+      onDragOver={e => onDragOver(e, i)}
+      onDrop={e => onDrop(e, i)}
+      onDragEnd={onDragEnd}
+      className={`flex items-center gap-3 px-4 py-2.5 select-none transition-all group
+        ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
+        ${dragIdx.current === i ? "opacity-30" : ""}`}>
+      <GripVertical size={13} className="text-[#666] cursor-grab shrink-0" />
+      <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{ep.order + 1}</span>
+      {ep.thumbnailUrl && (
+        <img src={ep.thumbnailUrl} alt="" className="w-10 h-7 object-cover rounded border border-[#333] shrink-0" />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-medium text-[#f0f0f0] truncate">{ep.title}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="text-[10px] text-[#888]">{fmtDuration(ep.durationSeconds)}</p>
+          {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
+          {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
+          {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
+        </div>
+      </div>
+      {!ep.isVisible && <EyeOff size={11} className="text-[#888] shrink-0" />}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+        <button title="Resources" onClick={() => { setTasksEp(null); setFeedbackEp(null); setResourcesEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-blue-400 rounded"><FileText size={12} /></button>
+        <button title="Tasks" onClick={() => { setResourcesEp(null); setFeedbackEp(null); setTasksEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-amber-400 rounded"><ListTodo size={12} /></button>
+        <button title="Feedback" onClick={() => { setResourcesEp(null); setTasksEp(null); setFeedbackEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-purple-400 rounded"><MessageSquare size={12} /></button>
+        <button title="Edit" onClick={() => { setResourcesEp(null); setTasksEp(null); setFeedbackEp(null); openEdit(ep); }} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
+        <button title="Delete" onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={12} /></button>
+      </div>
+    </div>
+  );
+
+  const hasSections = localSections.length > 0;
+  // Group episodes by section when sections exist
+  const epsBySection = new Map<string | null, any[]>();
+  if (hasSections) {
+    localSections.forEach((s: any) => epsBySection.set(s.id, []));
+    epsBySection.set(null, []);
+    localEps.forEach((ep: any) => {
+      const key = ep.sectionId && epsBySection.has(ep.sectionId) ? ep.sectionId : null;
+      epsBySection.get(key)!.push(ep);
+    });
+  }
+
   return (
     <div className="flex flex-col h-full">
-      {/* Episode list header */}
-      <div className="p-3 border-b border-[#222] flex items-center justify-between shrink-0 bg-[#1a1a1a]/30">
+      {/* Header bar */}
+      <div className="p-3 border-b border-[#222] flex items-center gap-2 shrink-0 bg-[#1a1a1a]/30 flex-wrap">
+        {isSectionsDirty && (
+          <button onClick={handleSaveSectionOrder} disabled={reorderSections.isPending}
+            className="flex items-center gap-1 bg-purple-500/20 border border-purple-500/40 text-purple-400 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest font-rajdhani hover:bg-purple-500/30">
+            {reorderSections.isPending ? <Loader2 size={9} className="animate-spin" /> : <Save size={9} />} Save Sections
+          </button>
+        )}
         {isDirty && (
           <button onClick={handleSaveOrder} disabled={reorderEp.isPending}
             className="flex items-center gap-1 bg-[#dc2626]/20 border border-[#dc2626]/40 text-[#dc2626] px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest font-rajdhani hover:bg-[#dc2626]/30">
@@ -791,9 +906,13 @@ function EpisodesTab({ course }: { course: any }) {
           </button>
         )}
         <div className="flex-1" />
-        <button onClick={openCreate}
+        <button onClick={() => { setShowSectionForm(true); setEditingSection(null); setSectionForm({ title: "", description: "" }); }}
+          className="flex items-center gap-1 bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] px-2 py-1.5 rounded font-rajdhani font-bold text-[10px] tracking-widest uppercase hover:border-purple-500/60 hover:text-purple-400">
+          <Plus size={10} /> Section
+        </button>
+        <button onClick={() => openCreate()}
           className="flex items-center gap-1 bg-[#dc2626] text-white px-3 py-1.5 rounded font-rajdhani font-bold text-[11px] tracking-widest uppercase hover:bg-red-700">
-          <Plus size={12} /> Add Episode
+          <Plus size={12} /> Episode
         </button>
       </div>
 
@@ -801,46 +920,77 @@ function EpisodesTab({ course }: { course: any }) {
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-[#dc2626]" /></div>
-        ) : localEps.length === 0 ? (
-          <div className="text-center py-12 space-y-2">
-            <Film size={28} className="mx-auto text-[#666]" />
-            <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-xs">No episodes yet</p>
-          </div>
+        ) : !hasSections ? (
+          // ── Flat list (no sections) ──────────────────────────────────
+          localEps.length === 0 ? (
+            <div className="text-center py-12 space-y-2">
+              <Film size={28} className="mx-auto text-[#666]" />
+              <p className="text-[#888] font-rajdhani font-bold uppercase tracking-widest text-xs">No episodes yet</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[#222]">{localEps.map((ep: any, i: number) => renderEpRow(ep, i))}</div>
+          )
         ) : (
-          <div className="divide-y divide-[#222]">
-            {localEps.map((ep: any, i: number) => (
-              <div key={ep.id} draggable
-                onDragStart={() => onDragStart(i)}
-                onDragOver={e => onDragOver(e, i)}
-                onDrop={e => onDrop(e, i)}
-                onDragEnd={onDragEnd}
-                className={`flex items-center gap-3 px-4 py-3 select-none transition-all group
-                  ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
-                  ${dragIdx.current === i ? "opacity-30" : ""}`}>
-                <GripVertical size={13} className="text-[#666] cursor-grab shrink-0" />
-                <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{i + 1}</span>
-                {ep.thumbnailUrl && (
-                  <img src={ep.thumbnailUrl} alt="" className="w-10 h-7 object-cover rounded border border-[#333] shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-medium text-[#f0f0f0] truncate">{ep.title}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <p className="text-[10px] text-[#888]">{fmtDuration(ep.durationSeconds)}</p>
-                    {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
-                    {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
-                    {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
+          // ── Sectioned view ──────────────────────────────────────────
+          <div>
+            {localSections.map((sec: any, si: number) => {
+              const eps = epsBySection.get(sec.id) ?? [];
+              const collapsed = collapsedSections.has(sec.id);
+              return (
+                <div key={sec.id} draggable
+                  onDragStart={() => onSectionDragStart(si)}
+                  onDragOver={e => onSectionDragOver(e, si)}
+                  onDrop={e => onSectionDrop(e, si)}
+                  onDragEnd={onSectionDragEnd}
+                  className={`${sectionDragOver === si ? "border-t-2 border-purple-500" : ""}`}>
+                  {/* Section header */}
+                  <div className="flex items-center gap-2 px-3 py-2 bg-[#181818] border-b border-[#222] group/sec">
+                    <GripVertical size={13} className="text-[#555] cursor-grab shrink-0" />
+                    <button onClick={() => setCollapsedSections(prev => {
+                      const next = new Set(prev);
+                      if (next.has(sec.id)) next.delete(sec.id); else next.add(sec.id);
+                      return next;
+                    })} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+                      <ChevronDown size={12} className={`text-[#888] transition-transform shrink-0 ${collapsed ? "-rotate-90" : ""}`} />
+                      <span className="text-[11px] font-bold text-[#d0d0d0] font-rajdhani uppercase tracking-wider truncate">{sec.title}</span>
+                      <span className="text-[10px] text-[#666] ml-1 shrink-0">({eps.length})</span>
+                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover/sec:opacity-100 transition-all shrink-0">
+                      <button title="Rename section" onClick={() => { setEditingSection(sec); setSectionForm({ title: sec.title, description: sec.description ?? "" }); setShowSectionForm(true); }}
+                        className="p-1 text-[#777] hover:text-yellow-400 rounded"><Pencil size={11} /></button>
+                      <button title="Delete section" onClick={() => setDeletingSection(sec.id)}
+                        className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={11} /></button>
+                    </div>
+                    <button onClick={() => openCreate(sec.id)}
+                      className="flex items-center gap-0.5 text-[9px] text-[#dc2626] hover:text-red-400 font-rajdhani font-bold uppercase tracking-widest px-1 shrink-0">
+                      <Plus size={9} /> Add
+                    </button>
                   </div>
+                  {/* Section episodes */}
+                  {!collapsed && (
+                    <div className="divide-y divide-[#1e1e1e] bg-[#0f0f0f]/40">
+                      {eps.length === 0 ? (
+                        <p className="text-[10px] text-[#555] px-10 py-2 font-rajdhani italic">No episodes in this section</p>
+                      ) : (
+                        eps.map((ep: any, i: number) => renderEpRow(ep, localEps.indexOf(ep)))
+                      )}
+                    </div>
+                  )}
                 </div>
-                {!ep.isVisible && <EyeOff size={11} className="text-[#888] shrink-0" />}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                  <button aria-label="Manage resources" title="Resources" onClick={() => { setTasksEp(null); setFeedbackEp(null); setResourcesEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-blue-400 rounded"><FileText size={12} /></button>
-                  <button aria-label="Manage tasks" title="Tasks" onClick={() => { setResourcesEp(null); setFeedbackEp(null); setTasksEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-amber-400 rounded"><ListTodo size={12} /></button>
-                  <button aria-label="Manage feedback questions" title="Feedback" onClick={() => { setResourcesEp(null); setTasksEp(null); setFeedbackEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-purple-400 rounded"><MessageSquare size={12} /></button>
-                  <button aria-label={`Edit episode ${ep.title}`} title="Edit episode" onClick={() => { setResourcesEp(null); setTasksEp(null); setFeedbackEp(null); openEdit(ep); }} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
-                  <button aria-label={`Delete episode ${ep.title}`} title="Delete episode" onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={12} /></button>
+              );
+            })}
+            {/* Unsectioned */}
+            {(epsBySection.get(null)?.length ?? 0) > 0 && (
+              <div>
+                <div className="flex items-center gap-2 px-3 py-2 bg-[#181818] border-b border-[#222]">
+                  <span className="text-[10px] font-bold text-[#888] font-rajdhani uppercase tracking-wider">Unsectioned</span>
+                  <span className="text-[10px] text-[#555]">({epsBySection.get(null)?.length})</span>
+                </div>
+                <div className="divide-y divide-[#1e1e1e] bg-[#0f0f0f]/20">
+                  {epsBySection.get(null)!.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep)))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
@@ -1040,6 +1190,19 @@ function EpisodesTab({ course }: { course: any }) {
             })()}
           </div>
 
+          {/* Section assignment */}
+          {localSections.length > 0 && (
+            <div>
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani flex items-center gap-1"><Layers size={9} /> Section</label>
+              <select value={epForm.sectionId ?? ""} onChange={e => setEpField("sectionId", e.target.value || null)}
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs appearance-none">
+                <option value="">— No section (Unsectioned) —</option>
+                {localSections.map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* Visible */}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setEpField("isVisible", !epForm.isVisible)}
@@ -1056,6 +1219,54 @@ function EpisodesTab({ course }: { course: any }) {
               className="flex-1 py-2 bg-[#dc2626] hover:bg-red-700 text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest rounded flex items-center justify-center gap-1 disabled:opacity-60">
               {(createEp.isPending || updateEp.isPending) && <Loader2 size={11} className="animate-spin" />} Save
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Section form modal */}
+      {showSectionForm && (
+        <div className="fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4">
+          <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-sm rounded-xl p-5 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">{editingSection ? "Rename Section" : "New Section"}</p>
+              <button onClick={() => setShowSectionForm(false)} className="text-[#777] hover:text-white"><X size={14} /></button>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+              <input value={sectionForm.title} onChange={e => setSectionForm(f => ({ ...f, title: e.target.value }))}
+                autoFocus
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description <span className="text-[#555] normal-case tracking-normal font-normal">(optional)</span></label>
+              <input value={sectionForm.description} onChange={e => setSectionForm(f => ({ ...f, description: e.target.value }))}
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setShowSectionForm(false)} className="flex-1 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded">Cancel</button>
+              <button onClick={handleSaveSection} disabled={createSection.isPending || updateSection.isPending}
+                className="flex-1 py-2 bg-[#dc2626] hover:bg-red-700 text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest rounded flex items-center justify-center gap-1 disabled:opacity-60">
+                {(createSection.isPending || updateSection.isPending) && <Loader2 size={11} className="animate-spin" />} Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section delete confirm */}
+      {deletingSection && (
+        <div className="fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4">
+          <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-xs rounded-xl p-6 text-center shadow-2xl">
+            <AlertCircle className="text-red-500 mx-auto mb-3" size={28} />
+            <p className="font-rajdhani font-bold uppercase text-[#f0f0f0] mb-1">Delete this section?</p>
+            <p className="text-[11px] text-[#888] mb-4">Episodes in this section will become unsectioned.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setDeletingSection(null)} className="flex-1 py-2 bg-[#1a1a1a] border border-[#333] rounded text-[#a0a0a0] font-rajdhani font-bold text-[11px] uppercase">Cancel</button>
+              <button onClick={() => handleDeleteSection(deletingSection)} disabled={deleteSection.isPending}
+                className="flex-1 py-2 bg-[#dc2626] rounded text-white font-rajdhani font-bold text-[11px] uppercase flex items-center justify-center gap-1 disabled:opacity-60">
+                {deleteSection.isPending && <Loader2 size={11} className="animate-spin" />} Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1363,6 +1363,27 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           UNIQUE(member_id, question_id)
         )
       `),
+      // ── Course Sections (2026-08-28) ───────────────────────────────
+      // Groups episodes within a course into named chapters/sections.
+      // section_id on course_episodes is nullable: NULL = unsectioned.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS course_sections (
+          id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          course_id  UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+          title      TEXT NOT NULL,
+          description TEXT,
+          sort_order INT NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_course_sections_course
+          ON course_sections(course_id)
+      `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE course_episodes
+          ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES course_sections(id) ON DELETE SET NULL
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

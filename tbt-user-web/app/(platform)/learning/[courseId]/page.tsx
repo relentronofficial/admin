@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award,
@@ -875,31 +875,47 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
             {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"} — Preview
           </div>
           <div>
-            {lessons.map((lesson: any, idx: number) => (
-              <div
-                key={lesson.id}
-                className="flex items-center gap-4 px-4 py-4 border-b last:border-b-0"
-                style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
-              >
-                <span
-                  className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                  style={{ background: "var(--color-surface-overlay-md)", color: "var(--color-text-disabled)" }}
-                >
-                  {idx + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-normal)" }}>
-                    {lesson.title}
-                  </p>
-                  {lesson.durationSeconds > 0 && (
-                    <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-disabled)" }}>
-                      <Clock size={10} /> {fmtDuration(lesson.durationSeconds)}
-                    </p>
-                  )}
-                </div>
-                <Lock size={13} style={{ color: "var(--color-text-disabled)", flexShrink: 0 }} />
-              </div>
-            ))}
+            {(() => {
+              const previewSections: any[] = course.sections ?? [];
+              let lastSectionId: string | null = undefined as any;
+              return lessons.map((lesson: any, idx: number) => {
+                const sid = previewSections.length > 0 ? ((lesson as any).sectionId ?? null) : null;
+                const showHeader = previewSections.length > 0 && sid !== lastSectionId;
+                const sec = sid ? previewSections.find((s: any) => s.id === sid) : null;
+                lastSectionId = sid;
+                return (
+                  <React.Fragment key={lesson.id}>
+                    {showHeader && (
+                      <div className="px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}>
+                        {sec?.title ?? "General"}
+                      </div>
+                    )}
+                    <div
+                      className="flex items-center gap-4 px-4 py-4 border-b last:border-b-0"
+                      style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
+                    >
+                      <span
+                        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                        style={{ background: "var(--color-surface-overlay-md)", color: "var(--color-text-disabled)" }}
+                      >
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-normal)" }}>
+                          {lesson.title}
+                        </p>
+                        {lesson.durationSeconds > 0 && (
+                          <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-disabled)" }}>
+                            <Clock size={10} /> {fmtDuration(lesson.durationSeconds)}
+                          </p>
+                        )}
+                      </div>
+                      <Lock size={13} style={{ color: "var(--color-text-disabled)", flexShrink: 0 }} />
+                    </div>
+                  </React.Fragment>
+                );
+              });
+            })()}
           </div>
         </div>
       )}
@@ -1018,6 +1034,9 @@ export default function CourseDetailPage({
   const justCompletedInSessionRef = useRef(false);
   // Prevents double XP flash when both lesson completion and quiz pass fire for the same lesson.
   const xpFlashedRef = useRef<string | null>(null);
+
+  // Section accordion state — start all sections expanded; collapse all except the active lesson's section
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
   // Mid-video cue quizzes
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
@@ -1821,6 +1840,10 @@ export default function CourseDetailPage({
 
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
 
+  // Sections — group lessons by sectionId when sections exist
+  const courseSections: any[] = (course as any)?.sections ?? [];
+  const globalLessonIdx = new Map(lessons.map((l: any, i: number) => [l.id, i]));
+
   return (
     <div className="space-y-6 pb-12">
 
@@ -2314,6 +2337,17 @@ export default function CourseDetailPage({
             </p>
           ) : (
             lessons.map((lesson, idx) => {
+              // Section grouping — prepend a header before the first lesson of each section
+              const lessonSectionId = courseSections.length > 0 ? ((lesson as any).sectionId ?? "__unsectioned__") : null;
+              const prevSectionId = courseSections.length > 0 && idx > 0 ? (((lessons[idx - 1]) as any).sectionId ?? "__unsectioned__") : null;
+              const isFirstInSection = courseSections.length > 0 && (idx === 0 || lessonSectionId !== prevSectionId);
+              const section = lessonSectionId && lessonSectionId !== "__unsectioned__"
+                ? courseSections.find((s: any) => s.id === lessonSectionId) : null;
+              const isSectionCollapsed = lessonSectionId !== null && collapsedSections.has(lessonSectionId);
+              const sectionLessons = section
+                ? lessons.filter((l: any) => ((l as any).sectionId ?? null) === section.id)
+                : lessons.filter((l: any) => !((l as any).sectionId));
+              const completedCount = sectionLessons.filter((l: any) => completedIds.has(l.id)).length;
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
               const isLocked = (lesson as any).locked === true;
@@ -2332,7 +2366,29 @@ export default function CourseDetailPage({
               const timerWarn = timerStarted && !timerDone && (timerSecs ?? focusTimerDuration) <= 60;
 
               return (
-                <div key={lesson.id} className="border-b last:border-b-0" style={{ borderColor: "var(--color-border-subtle)" }}>
+                <React.Fragment key={lesson.id}>
+                  {/* Section header — rendered before first lesson in each group */}
+                  {isFirstInSection && courseSections.length > 0 && (
+                    section ? (
+                      <button
+                        onClick={() => setCollapsedSections(prev => { const next = new Set(prev); if (next.has(lessonSectionId!)) next.delete(lessonSectionId!); else next.add(lessonSectionId!); return next; })}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left border-b"
+                        style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}
+                      >
+                        <ChevronDown size={13} className={`shrink-0 transition-transform ${isSectionCollapsed ? "-rotate-90" : ""}`} style={{ color: "var(--color-text-subtle)" }} />
+                        <p className="flex-1 text-xs font-bold uppercase tracking-wide truncate" style={{ color: "var(--color-text-normal)" }}>{section.title}</p>
+                        <span className="text-[10px] shrink-0 font-semibold" style={{ color: completedCount === sectionLessons.length ? "var(--color-success)" : "var(--color-text-disabled)" }}>
+                          {completedCount}/{sectionLessons.length}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}>
+                        General
+                      </div>
+                    )
+                  )}
+                  {!isSectionCollapsed && (
+                  <div className="border-b last:border-b-0" style={{ borderColor: "var(--color-border-subtle)" }}>
                   <button
                     onClick={() => canPlay && handleSelectLessonWithFocus(lesson)}
                     disabled={!canPlay}
@@ -2479,7 +2535,9 @@ export default function CourseDetailPage({
                       </button>
                     </div>
                   )}
-                </div>
+                  </div>
+                  )}
+                </React.Fragment>
               );
             })
           )}

@@ -46,7 +46,11 @@ mixin _$Lesson {
   // display purposes and `isCompleted` for legacy compatibility.
   bool get completedByThreshold =>
       throw _privateConstructorUsedError; // 0..100, may be null if backend can't compute the exact fraction.
-  int? get watchPercent => throw _privateConstructorUsedError;
+  int? get watchPercent =>
+      throw _privateConstructorUsedError; // Section grouping (null = unsectioned)
+  String? get sectionId => throw _privateConstructorUsedError;
+  String? get sectionTitle => throw _privateConstructorUsedError;
+  int? get sectionOrder => throw _privateConstructorUsedError;
 
   /// Serializes this Lesson to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -80,6 +84,9 @@ abstract class $LessonCopyWith<$Res> {
     bool locked,
     bool completedByThreshold,
     int? watchPercent,
+    String? sectionId,
+    String? sectionTitle,
+    int? sectionOrder,
   });
 }
 
@@ -115,6 +122,9 @@ class _$LessonCopyWithImpl<$Res, $Val extends Lesson>
     Object? locked = null,
     Object? completedByThreshold = null,
     Object? watchPercent = freezed,
+    Object? sectionId = freezed,
+    Object? sectionTitle = freezed,
+    Object? sectionOrder = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -203,6 +213,21 @@ class _$LessonCopyWithImpl<$Res, $Val extends Lesson>
                     ? _value.watchPercent
                     : watchPercent // ignore: cast_nullable_to_non_nullable
                         as int?,
+            sectionId:
+                freezed == sectionId
+                    ? _value.sectionId
+                    : sectionId // ignore: cast_nullable_to_non_nullable
+                        as String?,
+            sectionTitle:
+                freezed == sectionTitle
+                    ? _value.sectionTitle
+                    : sectionTitle // ignore: cast_nullable_to_non_nullable
+                        as String?,
+            sectionOrder:
+                freezed == sectionOrder
+                    ? _value.sectionOrder
+                    : sectionOrder // ignore: cast_nullable_to_non_nullable
+                        as int?,
           )
           as $Val,
     );
@@ -235,6 +260,9 @@ abstract class _$$LessonImplCopyWith<$Res> implements $LessonCopyWith<$Res> {
     bool locked,
     bool completedByThreshold,
     int? watchPercent,
+    String? sectionId,
+    String? sectionTitle,
+    int? sectionOrder,
   });
 }
 
@@ -269,6 +297,9 @@ class __$$LessonImplCopyWithImpl<$Res>
     Object? locked = null,
     Object? completedByThreshold = null,
     Object? watchPercent = freezed,
+    Object? sectionId = freezed,
+    Object? sectionTitle = freezed,
+    Object? sectionOrder = freezed,
   }) {
     return _then(
       _$LessonImpl(
@@ -357,6 +388,21 @@ class __$$LessonImplCopyWithImpl<$Res>
                 ? _value.watchPercent
                 : watchPercent // ignore: cast_nullable_to_non_nullable
                     as int?,
+        sectionId:
+            freezed == sectionId
+                ? _value.sectionId
+                : sectionId // ignore: cast_nullable_to_non_nullable
+                    as String?,
+        sectionTitle:
+            freezed == sectionTitle
+                ? _value.sectionTitle
+                : sectionTitle // ignore: cast_nullable_to_non_nullable
+                    as String?,
+        sectionOrder:
+            freezed == sectionOrder
+                ? _value.sectionOrder
+                : sectionOrder // ignore: cast_nullable_to_non_nullable
+                    as int?,
       ),
     );
   }
@@ -383,6 +429,9 @@ class _$LessonImpl implements _Lesson {
     this.locked = false,
     this.completedByThreshold = false,
     this.watchPercent,
+    this.sectionId,
+    this.sectionTitle,
+    this.sectionOrder,
   });
 
   factory _$LessonImpl.fromJson(Map<String, dynamic> json) =>
@@ -442,10 +491,17 @@ class _$LessonImpl implements _Lesson {
   // 0..100, may be null if backend can't compute the exact fraction.
   @override
   final int? watchPercent;
+  // Section grouping (null = unsectioned)
+  @override
+  final String? sectionId;
+  @override
+  final String? sectionTitle;
+  @override
+  final int? sectionOrder;
 
   @override
   String toString() {
-    return 'Lesson(id: $id, title: $title, type: $type, hlsUrl: $hlsUrl, videoUrl: $videoUrl, videoType: $videoType, durationSeconds: $durationSeconds, duration: $duration, order: $order, hasQuiz: $hasQuiz, isCompleted: $isCompleted, resumeAtSeconds: $resumeAtSeconds, actualWatchedSecs: $actualWatchedSecs, quizUnlockPercent: $quizUnlockPercent, locked: $locked, completedByThreshold: $completedByThreshold, watchPercent: $watchPercent)';
+    return 'Lesson(id: $id, title: $title, type: $type, hlsUrl: $hlsUrl, videoUrl: $videoUrl, videoType: $videoType, durationSeconds: $durationSeconds, duration: $duration, order: $order, hasQuiz: $hasQuiz, isCompleted: $isCompleted, resumeAtSeconds: $resumeAtSeconds, actualWatchedSecs: $actualWatchedSecs, quizUnlockPercent: $quizUnlockPercent, locked: $locked, completedByThreshold: $completedByThreshold, watchPercent: $watchPercent, sectionId: $sectionId, sectionTitle: $sectionTitle, sectionOrder: $sectionOrder)';
   }
 
   @override
@@ -479,12 +535,18 @@ class _$LessonImpl implements _Lesson {
             (identical(other.completedByThreshold, completedByThreshold) ||
                 other.completedByThreshold == completedByThreshold) &&
             (identical(other.watchPercent, watchPercent) ||
-                other.watchPercent == watchPercent));
+                other.watchPercent == watchPercent) &&
+            (identical(other.sectionId, sectionId) ||
+                other.sectionId == sectionId) &&
+            (identical(other.sectionTitle, sectionTitle) ||
+                other.sectionTitle == sectionTitle) &&
+            (identical(other.sectionOrder, sectionOrder) ||
+                other.sectionOrder == sectionOrder));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     runtimeType,
     id,
     title,
@@ -503,7 +565,10 @@ class _$LessonImpl implements _Lesson {
     locked,
     completedByThreshold,
     watchPercent,
-  );
+    sectionId,
+    sectionTitle,
+    sectionOrder,
+  ]);
 
   /// Create a copy of Lesson
   /// with the given fields replaced by the non-null parameter values.
@@ -538,6 +603,9 @@ abstract class _Lesson implements Lesson {
     final bool locked,
     final bool completedByThreshold,
     final int? watchPercent,
+    final String? sectionId,
+    final String? sectionTitle,
+    final int? sectionOrder,
   }) = _$LessonImpl;
 
   factory _Lesson.fromJson(Map<String, dynamic> json) = _$LessonImpl.fromJson;
@@ -581,7 +649,13 @@ abstract class _Lesson implements Lesson {
   @override
   bool get completedByThreshold; // 0..100, may be null if backend can't compute the exact fraction.
   @override
-  int? get watchPercent;
+  int? get watchPercent; // Section grouping (null = unsectioned)
+  @override
+  String? get sectionId;
+  @override
+  String? get sectionTitle;
+  @override
+  int? get sectionOrder;
 
   /// Create a copy of Lesson
   /// with the given fields replaced by the non-null parameter values.

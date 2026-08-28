@@ -1948,3 +1948,55 @@ export const useVideoFeedbackResponses = (episodeId: string, episodeType = 'cour
     queryFn: async () => { const res: any = await apiClient.get(`/api/video-feedback/admin/episodes/${episodeId}/responses`, { params: { episodeType } }); return res; },
     enabled: !!episodeId,
   });
+
+// ── COURSE SECTIONS ───────────────────────────────────────────────────
+
+export const useListCourseSections = (courseId: string) =>
+  useQuery({
+    queryKey: ['course-sections', courseId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/courses/${courseId}/sections`); return res?.data ?? []; },
+    enabled: !!courseId,
+  });
+
+export const useCreateCourseSection = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { title: string; description?: string }) => {
+      const res: any = await apiClient.post(`/api/courses/${courseId}/sections`, body); return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-sections', courseId] }),
+  });
+};
+
+export const useUpdateCourseSection = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ sectionId, ...body }: { sectionId: string; title?: string; description?: string }) => {
+      const res: any = await apiClient.put(`/api/courses/${courseId}/sections/${sectionId}`, body); return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-sections', courseId] }),
+  });
+};
+
+export const useDeleteCourseSection = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (sectionId: string) => {
+      const res: any = await apiClient.delete(`/api/courses/${courseId}/sections/${sectionId}`); return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['course-sections', courseId] });
+      qc.invalidateQueries({ queryKey: ['course-episodes', courseId] });
+    },
+  });
+};
+
+export const useReorderCourseSections = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res: any = await apiClient.put(`/api/courses/${courseId}/sections/reorder`, { ids }); return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-sections', courseId] }),
+  });
+};

@@ -62,6 +62,14 @@ final courseXpProvider =
   return ref.read(coursesServiceProvider).getCourseXp(courseId);
 });
 
+// ── Course sections — companion to courseDetailProvider ───────────────────────
+// Same build_runner workaround: sections are in the same response payload but
+// we can't add them to the frozen CourseDetail without regen.
+final courseSectionsProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, courseId) {
+  return ref.read(coursesServiceProvider).getCourseSections(courseId);
+});
+
 // ── Pending payment for a course — companion to courseDetailProvider ──────────
 // Same SDK-pin caveat as courseXpProvider — read as a separate provider so we
 // don't need to regenerate freezed for CourseDetail. Callers invalidate this
