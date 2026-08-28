@@ -391,6 +391,78 @@ class CoursesService {
       throw mapDioError(e);
     }
   }
+
+  Future<List<VideoFeedbackQuestion>> getVideoFeedbackQuestions(
+    String episodeId, {
+    String episodeType = 'course',
+  }) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/video-feedback/episodes/$episodeId/questions',
+        queryParameters: {'episodeType': episodeType},
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? [];
+      return list
+          .cast<Map<String, dynamic>>()
+          .map(VideoFeedbackQuestion.fromJson)
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> submitVideoFeedback(
+    String episodeId,
+    List<VideoFeedbackResponse> responses, {
+    String episodeType = 'course',
+  }) async {
+    try {
+      await _dio.post<void>(
+        '/api/video-feedback/episodes/$episodeId/responses',
+        data: {
+          'episodeType': episodeType,
+          'responses': responses.map((r) => r.toJson()).toList(),
+        },
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+}
+
+class VideoFeedbackQuestion {
+  const VideoFeedbackQuestion({
+    required this.id,
+    required this.questionText,
+    required this.questionType,
+  });
+  final String id;
+  final String questionText;
+  final String questionType; // 'rating' or 'yes_no'
+
+  factory VideoFeedbackQuestion.fromJson(Map<String, dynamic> j) =>
+      VideoFeedbackQuestion(
+        id: j['id'] as String,
+        questionText: j['questionText'] as String? ?? '',
+        questionType: j['questionType'] as String? ?? 'rating',
+      );
+}
+
+class VideoFeedbackResponse {
+  const VideoFeedbackResponse({
+    required this.questionId,
+    this.ratingValue,
+    this.yesNoValue,
+  });
+  final String questionId;
+  final int? ratingValue;
+  final bool? yesNoValue;
+
+  Map<String, dynamic> toJson() => {
+        'questionId': questionId,
+        if (ratingValue != null) 'ratingValue': ratingValue,
+        if (yesNoValue != null) 'yesNoValue': yesNoValue,
+      };
 }
 
 final coursesServiceProvider = Provider<CoursesService>(

@@ -1894,3 +1894,57 @@ export const useReorderEpisodeTasks = (episodeId: string) => {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-tasks', episodeId] }); },
   });
 };
+
+// ── VIDEO FEEDBACK (admin) ─────────────────────────────────────────────
+
+export const useVideoFeedbackQuestions = (episodeId: string, episodeType = 'course') =>
+  useQuery({
+    queryKey: ['vf-questions', episodeId, episodeType],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/video-feedback/admin/episodes/${episodeId}/questions`, { params: { episodeType } }); return res; },
+    enabled: !!episodeId,
+  });
+
+export const useCreateVideoFeedbackQuestion = (episodeId: string, episodeType = 'course') => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { questionText: string; questionType: string; sortOrder?: number }) => {
+      const res: any = await apiClient.post(`/api/video-feedback/admin/episodes/${episodeId}/questions`, { ...data, episodeType });
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vf-questions', episodeId, episodeType] }),
+  });
+};
+
+export const useUpdateVideoFeedbackQuestion = (episodeId: string, episodeType = 'course') => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ questionId, ...data }: { questionId: string; questionText?: string; questionType?: string; sortOrder?: number; isActive?: boolean }) => {
+      const res: any = await apiClient.put(`/api/video-feedback/admin/questions/${questionId}`, data);
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vf-questions', episodeId, episodeType] }),
+  });
+};
+
+export const useDeleteVideoFeedbackQuestion = (episodeId: string, episodeType = 'course') => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (questionId: string) => { await apiClient.delete(`/api/video-feedback/admin/questions/${questionId}`); },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vf-questions', episodeId, episodeType] }),
+  });
+};
+
+export const useReorderVideoFeedbackQuestions = (episodeId: string, episodeType = 'course') => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => { const res: any = await apiClient.put(`/api/video-feedback/admin/episodes/${episodeId}/questions/reorder`, { ids }); return res.data; },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['vf-questions', episodeId, episodeType] }),
+  });
+};
+
+export const useVideoFeedbackResponses = (episodeId: string, episodeType = 'course') =>
+  useQuery({
+    queryKey: ['vf-responses', episodeId, episodeType],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/video-feedback/admin/episodes/${episodeId}/responses`, { params: { episodeType } }); return res; },
+    enabled: !!episodeId,
+  });

@@ -30,6 +30,8 @@ import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
+import { FeedbackModal } from "@/components/features/video/FeedbackModal";
+import { useVideoFeedbackQuestions } from "@/lib/hooks/useVideoFeedback";
 import type { Lesson } from "@/types";
 
 type WatchState = "not_started" | "watching" | "paused" | "completed";
@@ -1005,6 +1007,9 @@ export default function CourseDetailPage({
   const [reflectionsOpen, setReflectionsOpen] = useState(false);
   const [practiceOpen, setPracticeOpen] = useState(false);
   const [pendingReflection, setPendingReflection] = useState<{ lessonId: string; title: string } | null>(null);
+  const [feedbackEpisodeId, setFeedbackEpisodeId] = useState<string | null>(null);
+  const feedbackShownRef = useRef<Set<string>>(new Set());
+  const { data: feedbackQuestions = [] } = useVideoFeedbackQuestions(feedbackEpisodeId);
   const [completionTimes, setCompletionTimes] = useState<Record<string, number>>({});
   const [reflectionCount, setReflectionCount] = useState(0);
   const reflectedRef = useRef<Set<string>>(new Set());
@@ -1144,6 +1149,12 @@ export default function CourseDetailPage({
     if (!lesson?.hasQuiz && !reflectedRef.current.has(lid) && justCompletedInSessionRef.current) {
       reflectedRef.current.add(lid);
       setTimeout(() => setPendingReflection({ lessonId: lid, title }), 1200);
+    }
+    // Trigger feedback modal for fresh completions (after reflection if applicable)
+    if (justCompletedInSessionRef.current && !feedbackShownRef.current.has(lid)) {
+      feedbackShownRef.current.add(lid);
+      const delay = (!lesson?.hasQuiz && !reflectedRef.current.has(lid)) ? 1200 : 400;
+      setTimeout(() => setFeedbackEpisodeId(lid), delay);
     }
   }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2618,6 +2629,16 @@ export default function CourseDetailPage({
       {/* Practice Arena modal */}
       {practiceOpen && (
         <PracticeArenaModal course={course} completedIds={completedIds} onClose={() => setPracticeOpen(false)} />
+      )}
+
+      {/* Video feedback modal — triggered after lesson completion */}
+      {feedbackEpisodeId && feedbackQuestions.length > 0 && (
+        <FeedbackModal
+          episodeId={feedbackEpisodeId}
+          episodeType="course"
+          questions={feedbackQuestions}
+          onClose={() => setFeedbackEpisodeId(null)}
+        />
       )}
 
       {/* Reflection modal — triggered after lesson completion */}

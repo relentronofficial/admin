@@ -21,6 +21,7 @@ import { courseRoutes } from './modules/courses/routes.js';
 import { taskRoutes } from './modules/tasks/routes.js';
 import { chatGroupsRoutes } from './modules/chat-groups/routes.js';
 import { adsRoutes } from './modules/ads/routes.js';
+import { videoFeedbackRoutes } from './modules/video-feedback/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
 import { webinarRoutes } from './modules/webinar/routes.js';
 import { dashboardRoutes } from './modules/dashboard/routes.js';
@@ -200,6 +201,7 @@ async function bootstrap() {
     await fastify.register(ritualsRoutes, { prefix: '/api/rituals' });
     await fastify.register(chatGroupsRoutes, { prefix: '/api/chat-groups' });
     await fastify.register(adsRoutes, { prefix: '/api/ads' });
+    await fastify.register(videoFeedbackRoutes, { prefix: '/api/video-feedback' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);

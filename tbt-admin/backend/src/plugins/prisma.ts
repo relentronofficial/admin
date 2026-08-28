@@ -1332,6 +1332,37 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE INDEX IF NOT EXISTS idx_course_reflections_member_course
           ON course_reflections(member_id, course_id)
       `),
+      // ── Video Feedback (2026-08-28) ────────────────────────────────
+      // Admin-configured questions per episode; member responses.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS video_feedback_questions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          episode_id TEXT NOT NULL,
+          episode_type VARCHAR(20) NOT NULL DEFAULT 'course',
+          question_text TEXT NOT NULL,
+          question_type VARCHAR(10) NOT NULL DEFAULT 'rating',
+          sort_order INT NOT NULL DEFAULT 0,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_vfq_episode
+          ON video_feedback_questions(episode_id, episode_type)
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS video_feedback_responses (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          question_id UUID NOT NULL REFERENCES video_feedback_questions(id) ON DELETE CASCADE,
+          episode_id TEXT NOT NULL,
+          episode_type VARCHAR(20) NOT NULL DEFAULT 'course',
+          rating_value INT CHECK (rating_value >= 1 AND rating_value <= 10),
+          yes_no_value BOOLEAN,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(member_id, question_id)
+        )
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });

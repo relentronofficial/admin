@@ -7,6 +7,7 @@ import {
   Eye, EyeOff, AlertCircle, GripVertical, Save, Image as ImageIcon, Upload,
   Lock, BarChart2, Users, ShieldCheck, Trophy, CreditCard, Download, Filter,
   CheckCircle2, Clock, ChevronLeft, ChevronRight, FileText, ListTodo, Link2,
+  MessageSquare, Star, ThumbsUp,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -22,6 +23,8 @@ import {
   useDeleteEpisodeResource, useReorderEpisodeResources,
   useListEpisodeTasks, useCreateEpisodeTask, useUpdateEpisodeTask,
   useDeleteEpisodeTask, useReorderEpisodeTasks,
+  useVideoFeedbackQuestions, useCreateVideoFeedbackQuestion, useUpdateVideoFeedbackQuestion,
+  useDeleteVideoFeedbackQuestion, useReorderVideoFeedbackQuestions, useVideoFeedbackResponses,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
@@ -631,6 +634,7 @@ function EpisodesTab({ course }: { course: any }) {
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [resourcesEp, setResourcesEp] = useState<any | null>(null);
   const [tasksEp, setTasksEp] = useState<any | null>(null);
+  const [feedbackEp, setFeedbackEp] = useState<any | null>(null);
 
   useEffect(() => { setLocalEps(serverEps); setIsDirty(false); }, [data]);
 
@@ -829,9 +833,10 @@ function EpisodesTab({ course }: { course: any }) {
                 </div>
                 {!ep.isVisible && <EyeOff size={11} className="text-[#888] shrink-0" />}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                  <button aria-label="Manage resources" title="Resources" onClick={() => { setTasksEp(null); setResourcesEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-blue-400 rounded"><FileText size={12} /></button>
-                  <button aria-label="Manage tasks" title="Tasks" onClick={() => { setResourcesEp(null); setTasksEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-amber-400 rounded"><ListTodo size={12} /></button>
-                  <button aria-label={`Edit episode ${ep.title}`} title="Edit episode" onClick={() => { setResourcesEp(null); setTasksEp(null); openEdit(ep); }} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
+                  <button aria-label="Manage resources" title="Resources" onClick={() => { setTasksEp(null); setFeedbackEp(null); setResourcesEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-blue-400 rounded"><FileText size={12} /></button>
+                  <button aria-label="Manage tasks" title="Tasks" onClick={() => { setResourcesEp(null); setFeedbackEp(null); setTasksEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-amber-400 rounded"><ListTodo size={12} /></button>
+                  <button aria-label="Manage feedback questions" title="Feedback" onClick={() => { setResourcesEp(null); setTasksEp(null); setFeedbackEp(ep); setShowForm(false); }} className="p-1 text-[#777] hover:text-purple-400 rounded"><MessageSquare size={12} /></button>
+                  <button aria-label={`Edit episode ${ep.title}`} title="Edit episode" onClick={() => { setResourcesEp(null); setTasksEp(null); setFeedbackEp(null); openEdit(ep); }} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={12} /></button>
                   <button aria-label={`Delete episode ${ep.title}`} title="Delete episode" onClick={() => setDeletingEp(ep.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={12} /></button>
                 </div>
               </div>
@@ -1077,6 +1082,9 @@ function EpisodesTab({ course }: { course: any }) {
 
       {/* Episode tasks modal */}
       {tasksEp && <EpisodeTasksModal episode={tasksEp} onClose={() => setTasksEp(null)} />}
+
+      {/* Episode feedback modal */}
+      {feedbackEp && <EpisodeFeedbackModal episode={feedbackEp} onClose={() => setFeedbackEp(null)} />}
     </div>
   );
 }
@@ -2180,6 +2188,204 @@ function LeaderboardTab({ course }: { course: any }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Episode Feedback Modal ─────────────────────────────────────────────
+function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () => void }) {
+  const { data, isLoading } = useVideoFeedbackQuestions(episode.id, 'course');
+  const { data: responsesData } = useVideoFeedbackResponses(episode.id, 'course');
+  const create = useCreateVideoFeedbackQuestion(episode.id, 'course');
+  const update = useUpdateVideoFeedbackQuestion(episode.id, 'course');
+  const remove = useDeleteVideoFeedbackQuestion(episode.id, 'course');
+  const reorder = useReorderVideoFeedbackQuestions(episode.id, 'course');
+  const feedbackDragIdx = useRef<number | null>(null);
+  const [feedbackDragOver, setFeedbackDragOver] = useState<number | null>(null);
+  const [localItems, setLocalItems] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ questionText: '', questionType: 'rating' });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'questions' | 'analytics'>('questions');
+
+  const serverItems: any[] = (data as any)?.data || [];
+  const responses: any[] = (responsesData as any)?.data || [];
+
+  useEffect(() => { setLocalItems(serverItems); setIsDirty(false); }, [data]);
+
+  const openCreate = () => { setForm({ questionText: '', questionType: 'rating' }); setEditId(null); setShowForm(true); };
+  const openEdit = (q: any) => { setForm({ questionText: q.questionText, questionType: q.questionType }); setEditId(q.id); setShowForm(true); };
+
+  const handleSave = async () => {
+    if (!form.questionText.trim()) return;
+    if (editId) {
+      await update.mutateAsync({ questionId: editId, questionText: form.questionText, questionType: form.questionType });
+    } else {
+      await create.mutateAsync({ questionText: form.questionText, questionType: form.questionType, sortOrder: localItems.length });
+    }
+    setShowForm(false);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = feedbackDragIdx.current;
+    if (from === null || from === dropIdx) { setFeedbackDragOver(null); return; }
+    const next = [...localItems];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalItems(next);
+    setIsDirty(true);
+    feedbackDragIdx.current = null;
+    setFeedbackDragOver(null);
+  };
+
+  const handleSaveOrder = async () => {
+    await reorder.mutateAsync(localItems.map((i: any) => i.id));
+    setIsDirty(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl w-full max-w-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a]">
+          <div>
+            <h3 className="text-[13px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider flex items-center gap-2">
+              <MessageSquare size={14} className="text-purple-400" />
+              Feedback Questions
+            </h3>
+            <p className="text-[11px] text-[#666] mt-0.5 truncate max-w-xs">{episode.title}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isDirty && (
+              <button onClick={handleSaveOrder} disabled={reorder.isPending} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors">
+                <Save size={11} />{reorder.isPending ? 'Saving…' : 'Save Order'}
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 text-[#666] hover:text-white rounded transition-colors"><X size={16} /></button>
+          </div>
+        </div>
+
+        <div className="flex gap-1 px-5 pt-3">
+          {(['questions', 'analytics'] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide font-rajdhani rounded-lg transition-colors ${activeTab === tab ? 'bg-[#dc2626] text-white' : 'text-[#666] hover:text-[#f0f0f0]'}`}>
+              {tab === 'questions' ? 'Questions' : 'Analytics'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
+          {activeTab === 'questions' && (
+            <>
+              {isLoading ? (
+                <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-[#dc2626]" /></div>
+              ) : (
+                localItems.map((q: any, idx: number) => (
+                  <div
+                    key={q.id}
+                    draggable
+                    onDragStart={() => { feedbackDragIdx.current = idx; }}
+                    onDragOver={e => { e.preventDefault(); setFeedbackDragOver(idx); }}
+                    onDrop={e => handleDrop(e, idx)}
+                    onDragLeave={() => setFeedbackDragOver(null)}
+                    className={`flex items-start gap-2 p-3 rounded-lg border transition-colors ${feedbackDragOver === idx ? 'border-[#dc2626] bg-[#1a0000]' : 'border-[#2a2a2a] bg-[#1a1a1a]'}`}
+                  >
+                    <GripVertical size={13} className="text-[#444] shrink-0 mt-0.5 cursor-grab" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] text-[#f0f0f0]">{q.questionText}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${q.questionType === 'rating' ? 'bg-amber-500/15 text-amber-400' : 'bg-green-500/15 text-green-400'}`}>
+                          {q.questionType === 'rating' ? <Star size={9} /> : <ThumbsUp size={9} />}
+                          {q.questionType === 'rating' ? 'Rating 1–10' : 'Yes / No'}
+                        </span>
+                        {!q.isActive && <span className="text-[10px] text-[#666] italic">inactive</span>}
+                        <span className="text-[10px] text-[#555]">{q.responseCount ?? 0} responses</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => update.mutateAsync({ questionId: q.id, isActive: !q.isActive })} title={q.isActive ? 'Deactivate' : 'Activate'} className="p-1 text-[#666] hover:text-amber-400 rounded transition-colors">
+                        {q.isActive ? <Eye size={12} /> : <EyeOff size={12} />}
+                      </button>
+                      <button onClick={() => openEdit(q)} className="p-1 text-[#666] hover:text-green-400 rounded transition-colors"><Pencil size={12} /></button>
+                      <button onClick={() => remove.mutateAsync(q.id)} className="p-1 text-[#666] hover:text-red-400 rounded transition-colors"><Trash2 size={12} /></button>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {showForm ? (
+                <div className="p-3 border border-[#333] bg-[#1a1a1a] rounded-lg space-y-3">
+                  <textarea
+                    value={form.questionText}
+                    onChange={e => setForm(f => ({ ...f, questionText: e.target.value }))}
+                    placeholder="Question text…"
+                    rows={2}
+                    className="w-full bg-[#111] border border-[#2a2a2a] rounded-lg px-3 py-2 text-[12px] text-white resize-none outline-none focus:border-[#dc2626]"
+                  />
+                  <div className="flex gap-2">
+                    <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-[11px] font-bold transition-colors ${form.questionType === 'rating' ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-[#333] text-[#666] hover:border-[#555]'}`}>
+                      <input type="radio" className="sr-only" checked={form.questionType === 'rating'} onChange={() => setForm(f => ({ ...f, questionType: 'rating' }))} />
+                      <Star size={11} /> Rating (1–10)
+                    </label>
+                    <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-[11px] font-bold transition-colors ${form.questionType === 'yes_no' ? 'border-green-500 bg-green-500/10 text-green-400' : 'border-[#333] text-[#666] hover:border-[#555]'}`}>
+                      <input type="radio" className="sr-only" checked={form.questionType === 'yes_no'} onChange={() => setForm(f => ({ ...f, questionType: 'yes_no' }))} />
+                      <ThumbsUp size={11} /> Yes / No
+                    </label>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setShowForm(false)} className="px-3 py-1.5 text-[11px] text-[#666] hover:text-white rounded-lg transition-colors">Cancel</button>
+                    <button onClick={handleSave} disabled={create.isPending || update.isPending || !form.questionText.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors disabled:opacity-50">
+                      {(create.isPending || update.isPending) ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                      {editId ? 'Update' : 'Add'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={openCreate} className="flex items-center gap-1.5 w-full px-3 py-2 border border-dashed border-[#333] hover:border-[#dc2626] text-[#666] hover:text-[#dc2626] rounded-lg text-[11px] transition-colors">
+                  <Plus size={12} /> Add question
+                </button>
+              )}
+            </>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="space-y-3">
+              {responses.length === 0 ? (
+                <p className="text-[12px] text-[#555] text-center py-6">No responses yet.</p>
+              ) : responses.map((r: any) => (
+                <div key={r.questionId} className="p-3 border border-[#2a2a2a] bg-[#1a1a1a] rounded-lg">
+                  <p className="text-[11px] text-[#a0a0a0] mb-2">{r.questionText}</p>
+                  <div className="flex items-center gap-4">
+                    {r.questionType === 'rating' ? (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <Star size={13} className="text-amber-400" />
+                          <span className="text-[13px] font-bold text-[#f0f0f0]">{r.avgRating ? Number(r.avgRating).toFixed(1) : '—'}</span>
+                          <span className="text-[10px] text-[#555]">avg</span>
+                        </div>
+                        <span className="text-[11px] text-[#555]">{r.responseCount} responses</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <ThumbsUp size={12} className="text-green-400" />
+                          <span className="text-[12px] font-bold text-[#f0f0f0]">{r.yesCount}</span>
+                          <span className="text-[10px] text-[#555]">Yes</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <ThumbsUp size={12} className="text-red-400 rotate-180" />
+                          <span className="text-[12px] font-bold text-[#f0f0f0]">{r.noCount}</span>
+                          <span className="text-[10px] text-[#555]">No</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

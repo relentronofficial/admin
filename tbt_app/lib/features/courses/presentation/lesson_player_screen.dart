@@ -19,6 +19,7 @@ import '../../../shared/video/tbt_video_player_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/courses_service.dart';
+import 'widgets/feedback_modal.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
 class LessonPlayerScreen extends ConsumerStatefulWidget {
@@ -65,6 +66,10 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   // Episode resources & tasks
   List<EpisodeResource> _resources = [];
   List<EpisodeTask> _tasks = [];
+
+  // Feedback questions loaded after completion
+  List<VideoFeedbackQuestion> _feedbackQuestions = [];
+  bool _feedbackShown = false;
 
   // Ad interruption (TBT_ADS_SPECKIT.md §7)
   VoidCallback? _deregisterFromAds;
@@ -391,6 +396,31 @@ window.addEventListener('message', function(e) {
         )
         .catchError((_) {});
     _maybeShowReflection();
+    _maybeShowFeedback();
+  }
+
+  Future<void> _maybeShowFeedback() async {
+    if (_feedbackShown || _wasAlreadyCompleted) return;
+    _feedbackShown = true;
+    try {
+      final questions = await ref
+          .read(coursesServiceProvider)
+          .getVideoFeedbackQuestions(widget.lessonId);
+      if (questions.isEmpty) return;
+      if (!mounted) return;
+      setState(() => _feedbackQuestions = questions);
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => FeedbackModal(
+          episodeId: widget.lessonId,
+          questions: questions,
+          onDismiss: () => Navigator.of(context).pop(),
+        ),
+      );
+    } catch (_) {}
   }
 
   // ── Position change — drives cue quizzes + 85% completion (CC-33) ────────────
