@@ -676,6 +676,7 @@ class _LessonListSliverState extends State<_LessonListSliver> {
     for (final sec in sections) {
       final sid = sec['id'] as String;
       final title = sec['title'] as String? ?? 'Section';
+      final sectionTimerSecs = sec['timerSeconds'] as int?;
       final sectionLessons = sectionMap[sid] ?? [];
       if (sectionLessons.isEmpty) continue;
       final isCollapsed = _collapsed.contains(sid);
@@ -696,6 +697,26 @@ class _LessonListSliverState extends State<_LessonListSliver> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(child: Text(title, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5))),
+                if (sectionTimerSecs != null) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: widget.accent.withAlpha(30),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.timer_outlined, size: 10, color: widget.accent),
+                        const SizedBox(width: 2),
+                        Text('${(sectionTimerSecs / 60).round()}m',
+                            style: TextStyle(color: widget.accent, fontSize: 10, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 6),
                 Text('$completedInSection/${sectionLessons.length}',
                     style: TextStyle(
                       color: completedInSection == sectionLessons.length ? Colors.green : Colors.white38,

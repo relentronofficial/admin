@@ -649,7 +649,7 @@ function EpisodesTab({ course }: { course: any }) {
   // Section management state
   const [showSectionForm, setShowSectionForm] = useState(false);
   const [editingSection, setEditingSection] = useState<any>(null);
-  const [sectionForm, setSectionForm] = useState({ title: "", description: "" });
+  const [sectionForm, setSectionForm] = useState({ title: "", description: "", timerMinutes: "" as string | number });
   const [deletingSection, setDeletingSection] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const sectionDragIdx = useRef<number | null>(null);
@@ -826,15 +826,16 @@ function EpisodesTab({ course }: { course: any }) {
 
   const handleSaveSection = async () => {
     if (!sectionForm.title.trim()) { toast.error("Title required"); return; }
+    const timerSeconds = sectionForm.timerMinutes !== "" ? Math.max(1, parseInt(String(sectionForm.timerMinutes)) || 1) * 60 : null;
     try {
       if (editingSection) {
-        await updateSection.mutateAsync({ sectionId: editingSection.id, title: sectionForm.title, description: sectionForm.description || undefined });
+        await updateSection.mutateAsync({ sectionId: editingSection.id, title: sectionForm.title, description: sectionForm.description || undefined, timerSeconds });
         toast.success("Section updated");
       } else {
-        await createSection.mutateAsync({ title: sectionForm.title, description: sectionForm.description || undefined });
+        await createSection.mutateAsync({ title: sectionForm.title, description: sectionForm.description || undefined, timerSeconds });
         toast.success("Section created");
       }
-      setShowSectionForm(false); setEditingSection(null); setSectionForm({ title: "", description: "" });
+      setShowSectionForm(false); setEditingSection(null); setSectionForm({ title: "", description: "", timerMinutes: "" });
     } catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
@@ -906,7 +907,7 @@ function EpisodesTab({ course }: { course: any }) {
           </button>
         )}
         <div className="flex-1" />
-        <button onClick={() => { setShowSectionForm(true); setEditingSection(null); setSectionForm({ title: "", description: "" }); }}
+        <button onClick={() => { setShowSectionForm(true); setEditingSection(null); setSectionForm({ title: "", description: "", timerMinutes: "" }); }}
           className="flex items-center gap-1 bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] px-2 py-1.5 rounded font-rajdhani font-bold text-[10px] tracking-widest uppercase hover:border-purple-500/60 hover:text-purple-400">
           <Plus size={10} /> Section
         </button>
@@ -953,10 +954,13 @@ function EpisodesTab({ course }: { course: any }) {
                     })} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
                       <ChevronDown size={12} className={`text-[#888] transition-transform shrink-0 ${collapsed ? "-rotate-90" : ""}`} />
                       <span className="text-[11px] font-bold text-[#d0d0d0] font-rajdhani uppercase tracking-wider truncate">{sec.title}</span>
+                      {sec.timerSeconds != null && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#dc2626]/10 text-[#dc2626] font-bold shrink-0">⏱ {Math.round(sec.timerSeconds / 60)}m</span>
+                      )}
                       <span className="text-[10px] text-[#666] ml-1 shrink-0">({eps.length})</span>
                     </button>
                     <div className="flex items-center gap-1 opacity-0 group-hover/sec:opacity-100 transition-all shrink-0">
-                      <button title="Rename section" onClick={() => { setEditingSection(sec); setSectionForm({ title: sec.title, description: sec.description ?? "" }); setShowSectionForm(true); }}
+                      <button title="Rename section" onClick={() => { setEditingSection(sec); setSectionForm({ title: sec.title, description: sec.description ?? "", timerMinutes: sec.timerSeconds != null ? Math.round(sec.timerSeconds / 60) : "" }); setShowSectionForm(true); }}
                         className="p-1 text-[#777] hover:text-yellow-400 rounded"><Pencil size={11} /></button>
                       <button title="Delete section" onClick={() => setDeletingSection(sec.id)}
                         className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={11} /></button>
@@ -1241,6 +1245,15 @@ function EpisodesTab({ course }: { course: any }) {
               <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description <span className="text-[#555] normal-case tracking-normal font-normal">(optional)</span></label>
               <input value={sectionForm.description} onChange={e => setSectionForm(f => ({ ...f, description: e.target.value }))}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Focus Timer <span className="text-[#555] normal-case tracking-normal font-normal">(minutes, optional — overrides global default for lessons in this section)</span></label>
+              <input
+                type="number" min={1} placeholder="e.g. 30"
+                value={sectionForm.timerMinutes !== "" ? sectionForm.timerMinutes : ""}
+                onChange={e => setSectionForm(f => ({ ...f, timerMinutes: e.target.value === "" ? "" : Math.max(1, parseInt(e.target.value) || 1) }))}
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs"
+              />
             </div>
             <div className="flex gap-2 pt-1">
               <button onClick={() => setShowSectionForm(false)} className="flex-1 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded">Cancel</button>

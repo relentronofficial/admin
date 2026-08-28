@@ -109,42 +109,51 @@ export async function deleteCourseHandler(req: FastifyRequest, reply: FastifyRep
 export async function listCourseSectionsHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   const sections = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, course_id, title, description, sort_order, created_at
+    `SELECT id, course_id, title, description, sort_order, timer_seconds, created_at
      FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
     id,
   );
   return reply.send({ success: true, data: sections.map(s => ({
     id: s.id, courseId: s.course_id, title: s.title,
-    description: s.description, sortOrder: Number(s.sort_order), createdAt: s.created_at,
+    description: s.description, sortOrder: Number(s.sort_order),
+    timerSeconds: s.timer_seconds != null ? Number(s.timer_seconds) : null,
+    createdAt: s.created_at,
   })) });
 }
 
 export async function createCourseSectionHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
-  const { title, description } = req.body as any;
+  const { title, description, timerSeconds } = req.body as any;
   if (!title?.trim()) return reply.status(400).send({ success: false, error: 'title is required' });
+  const timerSecs = timerSeconds != null && timerSeconds !== '' ? Number(timerSeconds) : null;
   const [countRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT COUNT(*) AS cnt FROM course_sections WHERE course_id = $1::uuid`, id,
   );
   const sortOrder = Number(countRow?.cnt ?? 0);
   const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `INSERT INTO course_sections (course_id, title, description, sort_order)
-     VALUES ($1::uuid, $2, $3, $4) RETURNING *`,
-    id, title.trim(), description?.trim() ?? null, sortOrder,
+    `INSERT INTO course_sections (course_id, title, description, sort_order, timer_seconds)
+     VALUES ($1::uuid, $2, $3, $4, $5) RETURNING *`,
+    id, title.trim(), description?.trim() ?? null, sortOrder, timerSecs,
   );
   bustHome(req);
   return reply.status(201).send({ success: true, data: {
     id: row.id, courseId: row.course_id, title: row.title,
-    description: row.description, sortOrder: Number(row.sort_order), createdAt: row.created_at,
+    description: row.description, sortOrder: Number(row.sort_order),
+    timerSeconds: row.timer_seconds != null ? Number(row.timer_seconds) : null,
+    createdAt: row.created_at,
   }});
 }
 
 export async function updateCourseSectionHandler(req: FastifyRequest, reply: FastifyReply) {
   const { sectionId } = req.params as any;
-  const { title, description } = req.body as any;
+  const { title, description, timerSeconds } = req.body as any;
   const sets: string[] = []; const vals: any[] = []; let idx = 1;
   if (title !== undefined) { sets.push(`title = $${idx++}`); vals.push(title.trim()); }
   if (description !== undefined) { sets.push(`description = $${idx++}`); vals.push(description?.trim() ?? null); }
+  if (timerSeconds !== undefined) {
+    const timerSecs = timerSeconds !== '' && timerSeconds !== null ? Number(timerSeconds) : null;
+    sets.push(`timer_seconds = $${idx++}`); vals.push(timerSecs);
+  }
   if (!sets.length) return reply.status(400).send({ success: false, error: 'Nothing to update' });
   vals.push(sectionId);
   const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
@@ -154,7 +163,9 @@ export async function updateCourseSectionHandler(req: FastifyRequest, reply: Fas
   bustHome(req);
   return reply.send({ success: true, data: {
     id: row.id, courseId: row.course_id, title: row.title,
-    description: row.description, sortOrder: Number(row.sort_order), createdAt: row.created_at,
+    description: row.description, sortOrder: Number(row.sort_order),
+    timerSeconds: row.timer_seconds != null ? Number(row.timer_seconds) : null,
+    createdAt: row.created_at,
   }});
 }
 

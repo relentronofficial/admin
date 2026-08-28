@@ -1961,7 +1961,7 @@ export const useListCourseSections = (courseId: string) =>
 export const useCreateCourseSection = (courseId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { title: string; description?: string }) => {
+    mutationFn: async (body: { title: string; description?: string; timerSeconds?: number | null }) => {
       const res: any = await apiClient.post(`/api/courses/${courseId}/sections`, body); return res.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['course-sections', courseId] }),
@@ -1971,7 +1971,7 @@ export const useCreateCourseSection = (courseId: string) => {
 export const useUpdateCourseSection = (courseId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ sectionId, ...body }: { sectionId: string; title?: string; description?: string }) => {
+    mutationFn: async ({ sectionId, ...body }: { sectionId: string; title?: string; description?: string; timerSeconds?: number | null }) => {
       const res: any = await apiClient.put(`/api/courses/${courseId}/sections/${sectionId}`, body); return res.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['course-sections', courseId] }),

@@ -628,11 +628,11 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   // Fetch sections and episode→section mapping (raw SQL columns not in Prisma schema)
   const [sectionRows, episodeSectionRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, title, description, sort_order FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
+      `SELECT id, title, description, sort_order, timer_seconds FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
       id,
     ),
     request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT e.id AS episode_id, e.section_id, s.title AS section_title, s.sort_order AS section_sort_order
+      `SELECT e.id AS episode_id, e.section_id, s.title AS section_title, s.sort_order AS section_sort_order, s.timer_seconds AS section_timer_seconds
        FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
        WHERE e.course_id = $1::uuid`,
       id,
@@ -642,6 +642,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   const sections = (sectionRows as any[]).map((s) => ({
     id: s.id, title: s.title, description: s.description ?? null,
     sortOrder: Number(s.sort_order),
+    timerSeconds: s.timer_seconds != null ? Number(s.timer_seconds) : null,
   }));
 
   const episodeSectionMap = new Map(
@@ -649,6 +650,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionId: r.section_id ?? null,
       sectionTitle: r.section_title ?? null,
       sectionOrder: r.section_sort_order != null ? Number(r.section_sort_order) : null,
+      sectionTimerSeconds: r.section_timer_seconds != null ? Number(r.section_timer_seconds) : null,
     }]),
   );
 
@@ -720,6 +722,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionId: episodeSectionMap.get(ep.id)?.sectionId ?? null,
       sectionTitle: episodeSectionMap.get(ep.id)?.sectionTitle ?? null,
       sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
+      sectionTimerSeconds: episodeSectionMap.get(ep.id)?.sectionTimerSeconds ?? null,
     };
   });
 

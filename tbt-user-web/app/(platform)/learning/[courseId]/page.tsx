@@ -1744,7 +1744,7 @@ export default function CourseDetailPage({
 
   // ── Focus timer helpers ───────────────────────────────────────────────────
   const getLessonTimerDuration = (lesson: any): number =>
-    lesson?.timerSeconds ?? config?.taskTimerSeconds ?? 300;
+    lesson?.timerSeconds ?? (lesson?.sectionTimerSeconds ?? null) ?? config?.taskTimerSeconds ?? 300;
 
   const startLessonTimer = (lessonId: string, duration: number) => {
     clearInterval(timerIntervalRef.current);
@@ -2377,6 +2377,12 @@ export default function CourseDetailPage({
                       >
                         <ChevronDown size={13} className={`shrink-0 transition-transform ${isSectionCollapsed ? "-rotate-90" : ""}`} style={{ color: "var(--color-text-subtle)" }} />
                         <p className="flex-1 text-xs font-bold uppercase tracking-wide truncate" style={{ color: "var(--color-text-normal)" }}>{section.title}</p>
+                        {(section as any).timerSeconds != null && (
+                          <span className="text-[10px] shrink-0 font-bold flex items-center gap-0.5 px-1.5 py-0.5 rounded" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
+                            <Timer size={9} />
+                            {Math.round((section as any).timerSeconds / 60)}m
+                          </span>
+                        )}
                         <span className="text-[10px] shrink-0 font-semibold" style={{ color: completedCount === sectionLessons.length ? "var(--color-success)" : "var(--color-text-disabled)" }}>
                           {completedCount}/{sectionLessons.length}
                         </span>

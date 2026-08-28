@@ -1384,6 +1384,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ALTER TABLE course_episodes
           ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES course_sections(id) ON DELETE SET NULL
       `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE course_sections
+          ADD COLUMN IF NOT EXISTS timer_seconds INT
+      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
