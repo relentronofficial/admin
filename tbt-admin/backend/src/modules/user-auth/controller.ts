@@ -527,10 +527,11 @@ export async function me(fastify: FastifyInstance, request: any, reply: any) {
 
 // POST /api/user-auth/signup  (public — self-registration)
 export async function signup(fastify: FastifyInstance, request: any, reply: any) {
-  const { firstName, lastName, phone, email, password, businessName, city, state } =
+  const { firstName, lastName, phone, email, password, businessName, city, state, productServiceType } =
     request.body as {
       firstName: string; lastName?: string; phone: string; email: string;
       password: string; businessName?: string; city?: string; state?: string;
+      productServiceType?: string;
     };
 
   if (!firstName || !phone || !email || !password) {
@@ -568,6 +569,7 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
       businessName: businessName || null,
       city: city || null,
       state: state || null,
+      productServiceType: productServiceType || null,
       status: 'pending',
       membershipPlan: 'free',
     },
