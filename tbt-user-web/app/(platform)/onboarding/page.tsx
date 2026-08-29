@@ -320,7 +320,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
   useEffect(() => {
     apiClient.get("/api/location/states?countryCode=IN").then((res) => {
-      setStates((res as any).data?.data ?? []);
+      setStates((res as any).data ?? []);
     }).catch(() => {});
   }, []);
 
@@ -335,7 +335,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   useEffect(() => {
     if (!selectedStateCode) { setCities([]); return; }
     apiClient.get(`/api/location/cities?countryCode=IN&stateCode=${selectedStateCode}`).then((res) => {
-      setCities((res as any).data?.data ?? []);
+      setCities((res as any).data ?? []);
     }).catch(() => {});
   }, [selectedStateCode]);
 
