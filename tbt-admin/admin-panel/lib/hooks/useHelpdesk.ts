@@ -33,6 +33,24 @@ export interface HelpdeskSettings {
   buttonText: string;
   bannerImage: string | null;
   status: string;
+  alarmRepeatIntervalSeconds: number;
+  escalationMinutes: number;
+}
+export type HelpdeskTicketStatus =
+  | "new"
+  | "acknowledged"
+  | "in_progress"
+  | "waiting_for_user"
+  | "resolved"
+  | "closed";
+export type HelpdeskTicketPriority = "low" | "medium" | "high" | "urgent";
+export interface HelpdeskTicketActivity {
+  action: string;
+  previousValue?: string | null;
+  newValue?: string | null;
+  actorType?: "admin" | "member" | "system";
+  actorId?: string | null;
+  createdAt: string;
 }
 export interface HelpdeskTicket {
   id: string;
@@ -47,11 +65,23 @@ export interface HelpdeskTicket {
   adminNotes: string | null;
   adminReply: string | null;
   adminRepliedAt: string | null;
-  status: "new" | "in_progress" | "resolved" | "closed";
+  priority: HelpdeskTicketPriority;
+  status: HelpdeskTicketStatus;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  assignedTo: string | null;
+  escalatedAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  displayNumber: number | null;
   createdAt: string;
   updatedAt: string;
   category?: { id: string; name: string; slug: string } | null;
   member?: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
+  acknowledgedByAdmin?: { id: string; fullName: string } | null;
+  assignedToAdmin?: { id: string; fullName: string } | null;
+  replies?: { id: string; body: string; isFromAdmin: boolean; isInternal?: boolean; authorName: string | null; createdAt: string }[];
+  activityLog?: HelpdeskTicketActivity[];
   /** Set when this ticket was raised from a group-chat message (either by
    * the message owner or by an admin) — see chat-groups raise-ticket routes. */
   chatGroupId?: string | null;
@@ -68,6 +98,15 @@ export interface HelpdeskTicket {
     senderName: string | null;
   } | null;
 }
+export interface HelpdeskAnalytics {
+  totalTickets: number;
+  byStatus: { status: string; count: number }[];
+  byPriority: { priority: string; count: number }[];
+  byCategory: { category: string; count: number }[];
+  avgAcknowledgeSeconds: number | null;
+  avgResolutionSeconds: number | null;
+  teamPerformance: { adminId: string; adminName: string; ticketCount: number; avgResolutionSeconds: number | null }[];
+}
 export interface HelpdeskFeedback {
   id: string;
   memberId: string | null;
@@ -80,7 +119,15 @@ export interface HelpdeskFeedback {
   member?: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
 }
 export interface HelpdeskDashboard {
-  tickets: { new: number; inProgress: number; resolved: number; closed: number; total: number };
+  tickets: {
+    new: number;
+    acknowledged: number;
+    inProgress: number;
+    waitingForUser: number;
+    resolved: number;
+    closed: number;
+    total: number;
+  };
   feedback: { total: number; averageRating: number | null };
   faqs: number;
   categories: number;
@@ -204,6 +251,10 @@ export const useListHelpdeskTickets = (params: {
   status?: string;
   categoryId?: string;
   search?: string;
+  priority?: string;
+  assignedTo?: string;
+  dateFrom?: string;
+  dateTo?: string;
 } = {}) =>
   useQuery({
     queryKey: ["helpdesk", "tickets", params],
@@ -214,6 +265,10 @@ export const useListHelpdeskTickets = (params: {
       if (params.status && params.status !== "all") q.set("status", params.status);
       if (params.categoryId) q.set("categoryId", params.categoryId);
       if (params.search) q.set("search", params.search);
+      if (params.priority && params.priority !== "all") q.set("priority", params.priority);
+      if (params.assignedTo && params.assignedTo !== "all") q.set("assignedTo", params.assignedTo);
+      if (params.dateFrom) q.set("dateFrom", params.dateFrom);
+      if (params.dateTo) q.set("dateTo", params.dateTo);
       const res: any = await apiClient.get(`/api/helpdesk/admin/tickets?${q.toString()}`);
       return res as {
         data: HelpdeskTicket[];
@@ -258,16 +313,61 @@ export const useUpdateTicketStatus = () => {
 export const useReplyHelpdeskTicket = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, reply }: { id: string; reply: string }) => {
+    mutationFn: async ({ id, reply, isInternal }: { id: string; reply: string; isInternal?: boolean }) => {
       const res: any = await apiClient.post(
         `/api/helpdesk/admin/tickets/${id}/reply`,
-        { reply },
+        { reply, isInternal },
       );
       return res?.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
   });
 };
+
+/** The dedicated "ACKNOWLEDGE & STOP ALARM" action — only path (besides
+ * replying to a new ticket) that may leave the 'new' status. */
+export const useAcknowledgeTicket = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res: any = await apiClient.post(`/api/helpdesk/admin/tickets/${id}/acknowledge`, {});
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
+  });
+};
+
+export const useAssignTicket = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, assignedTo }: { id: string; assignedTo: string | null }) => {
+      const res: any = await apiClient.post(`/api/helpdesk/admin/tickets/${id}/assign`, { assignedTo });
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
+  });
+};
+
+export const useUpdateTicketPriority = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, priority }: { id: string; priority: HelpdeskTicketPriority }) => {
+      const res: any = await apiClient.patch(`/api/helpdesk/admin/tickets/${id}/priority`, { priority });
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
+  });
+};
+
+export const useHelpdeskAnalytics = () =>
+  useQuery({
+    queryKey: ["helpdesk", "analytics"],
+    queryFn: async (): Promise<HelpdeskAnalytics> => {
+      const res: any = await apiClient.get("/api/helpdesk/admin/analytics");
+      return res?.data;
+    },
+    staleTime: 30_000,
+  });
 
 export const useDeleteHelpdeskTicket = () => {
   const qc = useQueryClient();

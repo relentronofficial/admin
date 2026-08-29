@@ -12,6 +12,10 @@
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { notifyMember } from '../../lib/memberNotifications.js';
+import { getActingAdmin, canManageHelpdeskSettings } from '../../lib/adminRole.js';
+import { logTicketActivity, listTicketActivity, toMemberSafeActivity } from '../../lib/helpdeskActivityLog.js';
+import { canAcknowledge, isValidStatusTransition, type TicketStatus } from '../../lib/helpdeskTicketRules.js';
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -20,11 +24,22 @@ import {
   updateSettingsSchema,
   submitTicketSchema,
   updateTicketStatusSchema,
+  updateTicketPrioritySchema,
+  assignTicketSchema,
   replyTicketSchema,
   memberReplySchema,
   submitFeedbackSchema,
   updateFeedbackStatusSchema,
 } from './schema.js';
+
+const TICKET_STATUS_LABELS: Record<string, string> = {
+  new: 'New',
+  acknowledged: 'Acknowledged',
+  in_progress: 'In Progress',
+  waiting_for_user: 'Waiting for Your Reply',
+  resolved: 'Resolved',
+  closed: 'Closed',
+};
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
   return reply.send({ success: true, data, error: null, ...extra });
@@ -167,6 +182,14 @@ export async function adminGetSettingsHandler(req: FastifyRequest, reply: Fastif
 export async function adminUpdateSettingsHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = updateSettingsSchema.safeParse(nullifyEmpty(req.body as any));
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  if (
+    (parsed.data.alarmRepeatIntervalSeconds !== undefined || parsed.data.escalationMinutes !== undefined)
+  ) {
+    const actingAdmin = await getActingAdmin(req);
+    if (!canManageHelpdeskSettings(actingAdmin?.role)) {
+      return fail(reply, 403, 'forbidden', 'Alarm settings are restricted to Admin/Super Admin.');
+    }
+  }
   const current = await ensureSettings(req);
   const updated = await req.server.prisma.helpdeskSettings.update({
     where: { id: current.id },
@@ -181,12 +204,15 @@ export async function adminUpdateSettingsHandler(req: FastifyRequest, reply: Fas
 const ticketInclude = {
   category: { select: { id: true, name: true, slug: true } },
   member: { select: { id: true, firstName: true, lastName: true, email: true } },
+  acknowledgedByAdmin: { select: { id: true, fullName: true } },
+  assignedToAdmin: { select: { id: true, fullName: true } },
   replies: {
     orderBy: { createdAt: 'asc' as const },
     select: {
       id: true,
       body: true,
       isFromAdmin: true,
+      isInternal: true,
       authorName: true,
       createdAt: true,
     },
@@ -194,7 +220,7 @@ const ticketInclude = {
 };
 
 export async function adminListTicketsHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { page = '1', limit = '25', status, categoryId, search } =
+  const { page = '1', limit = '25', status, categoryId, search, priority, assignedTo, dateFrom, dateTo } =
     req.query as Record<string, string>;
   const p = Math.max(1, Number(page) || 1);
   const l = Math.min(100, Math.max(1, Number(limit) || 25));
@@ -202,11 +228,25 @@ export async function adminListTicketsHandler(req: FastifyRequest, reply: Fastif
   const where: any = {};
   if (status && status !== 'all') where.status = status;
   if (categoryId) where.categoryId = categoryId;
+  if (priority && priority !== 'all') where.priority = priority;
+  if (assignedTo && assignedTo !== 'all') where.assignedTo = assignedTo === 'unassigned' ? null : assignedTo;
+  if (dateFrom || dateTo) {
+    where.createdAt = {
+      ...(dateFrom && { gte: new Date(dateFrom) }),
+      ...(dateTo && { lte: new Date(dateTo) }),
+    };
+  }
   if (search && search.trim()) {
+    const trimmed = search.trim();
+    // Accept the ticket's own display format ("#TBT-1024", "TBT-1024") as
+    // well as the bare number ("1024") when searching by ticket id.
+    const numericPart = trimmed.replace(/^#?\s*TBT-?/i, '').trim();
+    const displayNumber = numericPart && !Number.isNaN(Number(numericPart)) ? Number(numericPart) : undefined;
     where.OR = [
-      { subject: { contains: search.trim(), mode: 'insensitive' } },
-      { email: { contains: search.trim(), mode: 'insensitive' } },
-      { name: { contains: search.trim(), mode: 'insensitive' } },
+      { subject: { contains: trimmed, mode: 'insensitive' } },
+      { email: { contains: trimmed, mode: 'insensitive' } },
+      { name: { contains: trimmed, mode: 'insensitive' } },
+      ...(displayNumber !== undefined ? [{ displayNumber }] : []),
     ];
   }
 
@@ -276,28 +316,209 @@ export async function adminGetTicketHandler(req: FastifyRequest, reply: FastifyR
     include: ticketInclude,
   });
   if (!row) return fail(reply, 404, 'not_found', 'Ticket not found.');
-  const chatContext = await loadChatContext(req, row);
-  return ok(reply, { ...row, chatContext });
+  const [chatContext, activityLog] = await Promise.all([
+    loadChatContext(req, row),
+    listTicketActivity(req.server.prisma, id),
+  ]);
+  return ok(reply, { ...row, chatContext, activityLog });
 }
+
+/** Member-visible copy per status, used by both the status-update and
+ *  acknowledge/assign/priority handlers below. */
+const MEMBER_STATUS_MESSAGES: Partial<Record<TicketStatus, string>> = {
+  acknowledged: 'Our support team has seen your ticket and will get back to you shortly.',
+  waiting_for_user: 'We need more information from you to continue — please reply on your ticket.',
+  resolved: 'Your support ticket has been marked resolved.',
+  closed: 'Your support ticket has been closed.',
+};
 
 export async function adminUpdateTicketStatusHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as { id: string };
   const parsed = updateTicketStatusSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  const before = await req.server.prisma.helpdeskTicket.findUnique({
+    where: { id },
+    select: { status: true, memberId: true, subject: true, resolvedAt: true, closedAt: true },
+  });
+  if (!before) return fail(reply, 404, 'not_found', 'Ticket not found.');
+
+  const nextStatus = parsed.data.status;
+  if (!isValidStatusTransition(before.status as TicketStatus, nextStatus as TicketStatus)) {
+    return fail(
+      reply,
+      400,
+      'invalid_transition',
+      before.status === 'new'
+        ? 'A new ticket must be acknowledged before its status can change.'
+        : `Cannot move a ticket from ${before.status} to ${nextStatus}.`,
+    );
+  }
+
+  const actingAdmin = await getActingAdmin(req);
+  const now = new Date();
   try {
     const updated = await req.server.prisma.helpdeskTicket.update({
       where: { id },
       data: {
-        status: parsed.data.status,
+        status: nextStatus,
         ...(parsed.data.adminNotes !== undefined && { adminNotes: parsed.data.adminNotes }),
+        ...(nextStatus === 'resolved' && !before.resolvedAt && { resolvedAt: now }),
+        ...(nextStatus === 'closed' && !before.closedAt && { closedAt: now }),
       },
       include: ticketInclude,
     });
+
+    void logTicketActivity(req.server.prisma, {
+      ticketId: id,
+      actorType: 'admin',
+      actorId: actingAdmin?.id ?? null,
+      action: 'status_changed',
+      previousValue: before.status,
+      newValue: nextStatus,
+    });
+
+    const memberMessage = MEMBER_STATUS_MESSAGES[nextStatus as TicketStatus];
+    if (before.memberId && memberMessage) {
+      void notifyMember(req.server.prisma, req.server.io, req.server.redis ?? null, {
+        memberId: before.memberId,
+        title: `Ticket ${TICKET_STATUS_LABELS[nextStatus] ?? nextStatus}`,
+        message: memberMessage,
+        type: 'helpdesk_status',
+        actionUrl: `/support/tickets/${id}`,
+      });
+    }
+    req.server.io.to('admin').emit('admin:helpdesk_ticket_updated', { ticketId: id, status: nextStatus });
+
     return ok(reply, updated);
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Ticket not found.');
     throw err;
   }
+}
+
+/**
+ * Dedicated "ACKNOWLEDGE & STOP ALARM" action — the only path (besides
+ * replying to a new ticket, below) that may move a ticket out of 'new'.
+ * Broadcasts admin:helpdesk_ticket_acknowledged so every connected Account
+ * Team client stops *this ticket's* alarm immediately, independent of any
+ * other unacknowledged ticket.
+ */
+export async function acknowledgeTicketHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const before = await req.server.prisma.helpdeskTicket.findUnique({
+    where: { id },
+    select: { status: true, memberId: true },
+  });
+  if (!before) return fail(reply, 404, 'not_found', 'Ticket not found.');
+  if (!canAcknowledge(before.status as TicketStatus)) {
+    return fail(reply, 400, 'invalid_transition', 'Ticket has already been acknowledged.');
+  }
+
+  const actingAdmin = await getActingAdmin(req);
+  const now = new Date();
+  const updated = await req.server.prisma.helpdeskTicket.update({
+    where: { id },
+    data: { status: 'acknowledged', acknowledgedAt: now, acknowledgedBy: actingAdmin?.id ?? null },
+    include: ticketInclude,
+  });
+
+  void logTicketActivity(req.server.prisma, {
+    ticketId: id,
+    actorType: 'admin',
+    actorId: actingAdmin?.id ?? null,
+    action: 'acknowledged',
+    previousValue: 'new',
+    newValue: 'acknowledged',
+  });
+
+  req.server.io.to('admin').emit('admin:helpdesk_ticket_acknowledged', {
+    ticketId: id,
+    acknowledgedBy: actingAdmin?.id ?? null,
+    acknowledgedByName: actingAdmin?.fullName ?? null,
+    acknowledgedAt: now,
+  });
+
+  if (before.memberId) {
+    void notifyMember(req.server.prisma, req.server.io, req.server.redis ?? null, {
+      memberId: before.memberId,
+      title: 'Ticket Acknowledged',
+      message: MEMBER_STATUS_MESSAGES.acknowledged!,
+      type: 'helpdesk_status',
+      actionUrl: `/support/tickets/${id}`,
+    });
+  }
+
+  return ok(reply, updated);
+}
+
+export async function assignTicketHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = assignTicketSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  const before = await req.server.prisma.helpdeskTicket.findUnique({
+    where: { id },
+    select: { memberId: true, assignedTo: true },
+  });
+  if (!before) return fail(reply, 404, 'not_found', 'Ticket not found.');
+
+  const actingAdmin = await getActingAdmin(req);
+  const updated = await req.server.prisma.helpdeskTicket.update({
+    where: { id },
+    data: { assignedTo: parsed.data.assignedTo },
+    include: ticketInclude,
+  });
+
+  void logTicketActivity(req.server.prisma, {
+    ticketId: id,
+    actorType: 'admin',
+    actorId: actingAdmin?.id ?? null,
+    action: 'assigned',
+    previousValue: before.assignedTo,
+    newValue: parsed.data.assignedTo,
+  });
+  req.server.io.to('admin').emit('admin:helpdesk_ticket_updated', { ticketId: id, assignedTo: parsed.data.assignedTo });
+
+  if (before.memberId && parsed.data.assignedTo) {
+    void notifyMember(req.server.prisma, req.server.io, req.server.redis ?? null, {
+      memberId: before.memberId,
+      title: 'Ticket Assigned',
+      message: 'Your support ticket has been assigned to a team member.',
+      type: 'helpdesk_status',
+      actionUrl: `/support/tickets/${id}`,
+    });
+  }
+
+  return ok(reply, updated);
+}
+
+export async function updateTicketPriorityHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = updateTicketPrioritySchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  const before = await req.server.prisma.helpdeskTicket.findUnique({ where: { id }, select: { priority: true } });
+  if (!before) return fail(reply, 404, 'not_found', 'Ticket not found.');
+
+  const actingAdmin = await getActingAdmin(req);
+  const updated = await req.server.prisma.helpdeskTicket.update({
+    where: { id },
+    data: { priority: parsed.data.priority },
+    include: ticketInclude,
+  });
+
+  void logTicketActivity(req.server.prisma, {
+    ticketId: id,
+    actorType: 'admin',
+    actorId: actingAdmin?.id ?? null,
+    action: 'priority_changed',
+    previousValue: before.priority,
+    newValue: parsed.data.priority,
+  });
+  req.server.io.to('admin').emit('admin:helpdesk_ticket_updated', { ticketId: id, priority: parsed.data.priority });
+
+  return ok(reply, updated);
 }
 
 /**
@@ -317,6 +538,7 @@ export async function adminReplyTicketHandler(req: FastifyRequest, reply: Fastif
   if (trimmedReply.length === 0) {
     return fail(reply, 400, 'invalid_input', 'Reply body is required.');
   }
+  const isInternal = parsed.data.isInternal === true;
   try {
     const before = await req.server.prisma.helpdeskTicket.findUnique({
       where: { id },
@@ -327,15 +549,17 @@ export async function adminReplyTicketHandler(req: FastifyRequest, reply: Fastif
     // Resolve author display name from the Clerk-authed admin, so the
     // thread bubble can label who replied. Falls back to "Support" if
     // the admin isn't found in the mirrored Admin table.
-    let authorName = 'Support';
-    const clerkId = req.user as string | undefined;
-    if (clerkId) {
-      const admin = await req.server.prisma.admin.findUnique({
-        where: { clerkId },
-        select: { fullName: true, email: true },
-      });
-      authorName = admin?.fullName || admin?.email || 'Support';
-    }
+    const actingAdmin = await req.server.prisma.admin.findUnique({
+      where: { clerkId: req.user },
+      select: { id: true, fullName: true, email: true },
+    });
+    const authorName = actingAdmin?.fullName || actingAdmin?.email || 'Support';
+
+    // A reply to a still-new ticket counts as engaging with it — this is
+    // the one other path (besides the dedicated Acknowledge button) that
+    // may leave 'new' (see helpdeskTicketRules.ts). Internal notes never
+    // touch status/alarm — they're not member-visible engagement.
+    const implicitlyAcknowledges = !isInternal && before.status === 'new';
 
     // Append the thread row, then update the ticket's mirrored scalars
     // and status in a single transaction so nothing else races between.
@@ -343,9 +567,12 @@ export async function adminReplyTicketHandler(req: FastifyRequest, reply: Fastif
       req.server.prisma.helpdeskTicket.update({
         where: { id },
         data: {
-          adminReply: trimmedReply,
-          adminRepliedAt: new Date(),
-          ...(before.status === 'new' ? { status: 'in_progress' } : {}),
+          ...(!isInternal && { adminReply: trimmedReply, adminRepliedAt: new Date() }),
+          ...(implicitlyAcknowledges && {
+            status: 'acknowledged',
+            acknowledgedAt: new Date(),
+            acknowledgedBy: actingAdmin?.id ?? null,
+          }),
         },
         include: ticketInclude,
       }),
@@ -354,35 +581,47 @@ export async function adminReplyTicketHandler(req: FastifyRequest, reply: Fastif
           ticketId: id,
           body: trimmedReply,
           isFromAdmin: true,
+          isInternal,
           authorName,
         },
       }),
     ]);
 
-    // Notify the member (if this ticket is linked to a member row)
-    // — mirrors the admin_notifications pattern but on the member side.
-    if (before.memberId) {
-      req.server.io.to(`user:${before.memberId}`).emit('notification', {
-        type: 'helpdesk_reply',
-        title: 'Support replied to your ticket',
-        body: before.subject,
-        metadata: { ticketId: id },
+    if (implicitlyAcknowledges) {
+      void logTicketActivity(req.server.prisma, {
+        ticketId: id,
+        actorType: 'admin',
+        actorId: actingAdmin?.id ?? null,
+        action: 'acknowledged',
+        previousValue: 'new',
+        newValue: 'acknowledged',
       });
-      try {
-        await req.server.prisma.notification.create({
-          data: {
-            memberId: before.memberId,
-            // NotificationType enum has no helpdesk-specific value; use
-            // `system` and carry the semantic subtype in `data`.
-            type: 'system',
-            title: 'Support replied to your ticket',
-            body: before.subject,
-            data: { kind: 'helpdesk_reply', ticketId: id } as any,
-          },
-        });
-      } catch (err) {
-        req.server.log.warn({ err, ticketId: id }, 'Failed to persist helpdesk_reply notification');
-      }
+      req.server.io.to('admin').emit('admin:helpdesk_ticket_acknowledged', {
+        ticketId: id,
+        acknowledgedBy: actingAdmin?.id ?? null,
+        acknowledgedByName: actingAdmin?.fullName ?? null,
+        acknowledgedAt: new Date(),
+      });
+    }
+    void logTicketActivity(req.server.prisma, {
+      ticketId: id,
+      actorType: 'admin',
+      actorId: actingAdmin?.id ?? null,
+      action: isInternal ? 'internal_note_added' : 'replied',
+    });
+
+    // Notify the member — skipped entirely for internal notes, which are
+    // never member-visible. Uses the notifyMember helper (AppNotification +
+    // socket), not the dead `prisma.notification.create` table the member
+    // notification center never reads.
+    if (before.memberId && !isInternal) {
+      void notifyMember(req.server.prisma, req.server.io, req.server.redis ?? null, {
+        memberId: before.memberId,
+        title: 'Support replied to your ticket',
+        message: before.subject,
+        type: 'helpdesk_reply',
+        actionUrl: `/support/tickets/${id}`,
+      });
     }
     return ok(reply, updated);
   } catch (err: any) {
@@ -465,7 +704,9 @@ export async function adminDeleteFeedbackHandler(req: FastifyRequest, reply: Fas
 export async function adminDashboardHandler(req: FastifyRequest, reply: FastifyReply) {
   const [
     newTickets,
+    acknowledgedTickets,
     inProgressTickets,
+    waitingForUserTickets,
     resolvedTickets,
     closedTickets,
     totalFeedback,
@@ -474,7 +715,9 @@ export async function adminDashboardHandler(req: FastifyRequest, reply: FastifyR
     categories,
   ] = await Promise.all([
     req.server.prisma.helpdeskTicket.count({ where: { status: 'new' } }),
+    req.server.prisma.helpdeskTicket.count({ where: { status: 'acknowledged' } }),
     req.server.prisma.helpdeskTicket.count({ where: { status: 'in_progress' } }),
+    req.server.prisma.helpdeskTicket.count({ where: { status: 'waiting_for_user' } }),
     req.server.prisma.helpdeskTicket.count({ where: { status: 'resolved' } }),
     req.server.prisma.helpdeskTicket.count({ where: { status: 'closed' } }),
     req.server.prisma.helpdeskFeedback.count(),
@@ -488,10 +731,18 @@ export async function adminDashboardHandler(req: FastifyRequest, reply: FastifyR
   return ok(reply, {
     tickets: {
       new: newTickets,
+      acknowledged: acknowledgedTickets,
       inProgress: inProgressTickets,
+      waitingForUser: waitingForUserTickets,
       resolved: resolvedTickets,
       closed: closedTickets,
-      total: newTickets + inProgressTickets + resolvedTickets + closedTickets,
+      total:
+        newTickets +
+        acknowledgedTickets +
+        inProgressTickets +
+        waitingForUserTickets +
+        resolvedTickets +
+        closedTickets,
     },
     feedback: {
       total: totalFeedback,
@@ -499,6 +750,66 @@ export async function adminDashboardHandler(req: FastifyRequest, reply: FastifyR
     },
     faqs,
     categories,
+  });
+}
+
+/**
+ * Analytics — restricted to admin/super_admin (see canManageHelpdeskSettings).
+ * Read-only raw-SQL aggregation; no side effects.
+ */
+export async function adminAnalyticsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const actingAdmin = await getActingAdmin(req);
+  if (!canManageHelpdeskSettings(actingAdmin?.role)) {
+    return fail(reply, 403, 'forbidden', 'Analytics is restricted to Admin/Super Admin.');
+  }
+
+  const prisma = req.server.prisma;
+  const [
+    byStatus,
+    byPriority,
+    byCategory,
+    avgTimes,
+    byAssignee,
+  ] = await Promise.all([
+    prisma.helpdeskTicket.groupBy({ by: ['status'], _count: { _all: true } }),
+    prisma.helpdeskTicket.groupBy({ by: ['priority'], _count: { _all: true } }),
+    prisma.$queryRawUnsafe<Array<{ category_name: string | null; count: bigint }>>(`
+      SELECT c.name AS category_name, COUNT(t.id) AS count
+        FROM helpdesk_tickets t
+        LEFT JOIN helpdesk_categories c ON c.id = t.category_id
+       GROUP BY c.name
+    `),
+    prisma.$queryRawUnsafe<Array<{ avg_ack_seconds: number | null; avg_resolution_seconds: number | null }>>(`
+      SELECT
+        AVG(EXTRACT(EPOCH FROM (acknowledged_at - created_at))) FILTER (WHERE acknowledged_at IS NOT NULL) AS avg_ack_seconds,
+        AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))) FILTER (WHERE resolved_at IS NOT NULL) AS avg_resolution_seconds
+      FROM helpdesk_tickets
+    `),
+    prisma.$queryRawUnsafe<Array<{ admin_id: string; admin_name: string; ticket_count: bigint; avg_resolution_seconds: number | null }>>(`
+      SELECT a.id AS admin_id, a.full_name AS admin_name, COUNT(t.id) AS ticket_count,
+             AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))) FILTER (WHERE t.resolved_at IS NOT NULL) AS avg_resolution_seconds
+        FROM helpdesk_tickets t
+        JOIN admins a ON a.id = t.assigned_to
+       GROUP BY a.id, a.full_name
+       ORDER BY ticket_count DESC
+    `),
+  ]);
+
+  const totalTickets = byStatus.reduce((sum, r) => sum + r._count._all, 0);
+
+  return ok(reply, {
+    totalTickets,
+    byStatus: byStatus.map((r) => ({ status: r.status, count: r._count._all })),
+    byPriority: byPriority.map((r) => ({ priority: r.priority, count: r._count._all })),
+    byCategory: byCategory.map((r) => ({ category: r.category_name ?? 'Uncategorized', count: Number(r.count) })),
+    avgAcknowledgeSeconds: avgTimes[0]?.avg_ack_seconds ?? null,
+    avgResolutionSeconds: avgTimes[0]?.avg_resolution_seconds ?? null,
+    teamPerformance: byAssignee.map((r) => ({
+      adminId: r.admin_id,
+      adminName: r.admin_name,
+      ticketCount: Number(r.ticket_count),
+      avgResolutionSeconds: r.avg_resolution_seconds,
+    })),
   });
 }
 
@@ -595,6 +906,12 @@ export async function submitTicketHandler(req: FastifyRequest, reply: FastifyRep
     type: 'helpdesk_ticket',
     metadata: { ticketId: created.id },
   });
+  void logTicketActivity(req.server.prisma, {
+    ticketId: created.id,
+    actorType: req.memberId ? 'member' : 'system',
+    actorId: req.memberId ?? null,
+    action: 'created',
+  });
   return reply.status(201).send({ success: true, data: created, error: null });
 }
 
@@ -609,7 +926,9 @@ export async function getMyTicketDetailHandler(req: FastifyRequest, reply: Fasti
     where: { id, memberId: req.memberId! },
     include: {
       category: { select: { id: true, name: true, slug: true } },
+      // Internal (Account-Team-only) notes must never reach the member.
       replies: {
+        where: { isInternal: false },
         orderBy: { createdAt: 'asc' },
         select: {
           id: true,
@@ -622,7 +941,8 @@ export async function getMyTicketDetailHandler(req: FastifyRequest, reply: Fasti
     },
   });
   if (!row) return fail(reply, 404, 'not_found', 'Ticket not found.');
-  return ok(reply, row);
+  const activityLog = toMemberSafeActivity(await listTicketActivity(req.server.prisma, id));
+  return ok(reply, { ...row, activityLog });
 }
 
 /**
@@ -673,6 +993,12 @@ export async function postMemberReplyHandler(req: FastifyRequest, reply: Fastify
     body: `${ticket.name}: ${ticket.subject}`,
     type: 'helpdesk_ticket',
     metadata: { ticketId: id },
+  });
+  void logTicketActivity(req.server.prisma, {
+    ticketId: id,
+    actorType: 'member',
+    actorId: req.memberId ?? null,
+    action: 'replied',
   });
 
   return reply.status(201).send({ success: true, data: created, error: null });

@@ -639,7 +639,7 @@ Socket.IO rooms and the events each room receives:
 
 | Room | Events emitted |
 |---|---|
-| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`) |
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`), `admin:helpdesk_ticket` (new ticket/reply — alarm starts), `admin:helpdesk_ticket_acknowledged` (`{ ticketId, acknowledgedBy, acknowledgedAt }` — alarm stops for that ticket only), `admin:helpdesk_ticket_escalated` (unacknowledged past `escalationMinutes`), `admin:helpdesk_ticket_updated` (assign/status/priority — list refresh only) |
 | `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`), `course:access_granted` (`{ courseId }`) |
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |

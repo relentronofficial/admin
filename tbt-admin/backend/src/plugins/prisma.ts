@@ -191,6 +191,65 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         )
       `),
       prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS helpdesk_ticket_replies_ticket_id_created_at_idx ON helpdesk_ticket_replies(ticket_id, created_at)`),
+      // Support alarm system (2026-08-29) — `status` gains 'acknowledged' and
+      // 'waiting_for_user'. status === 'new' IS "alarm active, unacknowledged"
+      // (no separate boolean column). See helpdeskTicketRules.ts.
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS acknowledged_by UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS assigned_to UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_helpdesk_tickets_assigned_to ON helpdesk_tickets(assigned_to)`),
+      // Widen the original CREATE TABLE's inline, unnamed CHECK. Postgres's
+      // default naming convention for an unnamed column constraint is
+      // `<table>_<column>_check`, but we don't rely on that guess — this
+      // looks up whatever CHECK constraint actually exists on the `status`
+      // column via the catalog and drops it by its real name, then adds our
+      // own (named) constraint back. Idempotent: on every subsequent
+      // startup this finds and re-drops the constraint it added last time
+      // (by column, not by name) before re-adding it — safe even if a
+      // future edit changes the allowed value list again.
+      prisma.$executeRawUnsafe(`
+        DO $$
+        DECLARE
+          cname text;
+        BEGIN
+          SELECT con.conname INTO cname
+            FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = ANY(con.conkey)
+           WHERE rel.relname = 'helpdesk_tickets'
+             AND att.attname = 'status'
+             AND con.contype = 'c'
+           LIMIT 1;
+          IF cname IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE helpdesk_tickets DROP CONSTRAINT %I', cname);
+          END IF;
+        END $$;
+      `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE helpdesk_tickets ADD CONSTRAINT helpdesk_tickets_status_check
+          CHECK (status IN ('new', 'acknowledged', 'in_progress', 'waiting_for_user', 'resolved', 'closed'))
+      `),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_ticket_replies ADD COLUMN IF NOT EXISTS is_internal BOOLEAN NOT NULL DEFAULT false`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_settings ADD COLUMN IF NOT EXISTS alarm_repeat_interval_seconds INT NOT NULL DEFAULT 30`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_settings ADD COLUMN IF NOT EXISTS escalation_minutes INT NOT NULL DEFAULT 10`),
+      // Immutable audit trail — raw SQL only (no Prisma model), same
+      // convention as admin_notifications. Written via helpdeskActivityLog.ts.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_ticket_activity_log (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          ticket_id UUID NOT NULL REFERENCES helpdesk_tickets(id) ON DELETE CASCADE,
+          actor_type VARCHAR(20) NOT NULL,
+          actor_id UUID,
+          action VARCHAR(50) NOT NULL,
+          previous_value TEXT,
+          new_value TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_helpdesk_ticket_activity_log_ticket ON helpdesk_ticket_activity_log(ticket_id, created_at)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS snapshot_days INT`),

@@ -32,6 +32,10 @@ import {
   useListHelpdeskTickets,
   useGetHelpdeskTicket,
   useUpdateTicketStatus,
+  useAcknowledgeTicket,
+  useAssignTicket,
+  useUpdateTicketPriority,
+  useHelpdeskAnalytics,
   useReplyHelpdeskTicket,
   useDeleteHelpdeskTicket,
   useListHelpdeskFeedback,
@@ -40,9 +44,11 @@ import {
   type HelpdeskCategory,
   type HelpdeskFaq,
   type HelpdeskTicket,
+  type HelpdeskTicketStatus,
+  type HelpdeskTicketPriority,
   type HelpdeskFeedback,
 } from "@/lib/hooks/useHelpdesk";
-import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+import { useGetPresignedUrl, useListAdmins, useMe } from "@/lib/hooks/useAdmin";
 import { toast } from "react-hot-toast";
 import {
   MessageSquare,
@@ -60,8 +66,14 @@ import {
   Mail,
   Phone,
   MessageCircle,
+  BellRing,
+  BarChart3,
+  UserCheck,
+  History,
 } from "lucide-react";
 import { format } from "date-fns";
+
+const HELPDESK_MANAGER_ROLES = new Set(["admin", "super_admin"]);
 
 const labelCls =
   "block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani";
@@ -87,30 +99,66 @@ function StatChip({ label, value, accent }: { label: string; value: string | num
   );
 }
 
-const STATUS_LABELS: Record<HelpdeskTicket["status"], string> = {
+const STATUS_LABELS: Record<HelpdeskTicketStatus, string> = {
   new: "New",
+  acknowledged: "Acknowledged",
   in_progress: "In Progress",
+  waiting_for_user: "Waiting for User",
   resolved: "Resolved",
   closed: "Closed",
 };
 
-const statusPill = (s: HelpdeskTicket["status"]) => {
-  const map: Record<HelpdeskTicket["status"], string> = {
+const statusPill = (s: HelpdeskTicketStatus) => {
+  const map: Record<HelpdeskTicketStatus, string> = {
     new: "text-blue-400 bg-blue-500/10 border-blue-500/30",
+    acknowledged: "text-purple-400 bg-purple-500/10 border-purple-500/30",
     in_progress: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
+    waiting_for_user: "text-orange-400 bg-orange-500/10 border-orange-500/30",
     resolved: "text-green-400 bg-green-500/10 border-green-500/30",
     closed: "text-[#a0a0a0] bg-white/5 border-white/10",
   };
   return map[s];
 };
 
-type Tab = "tickets" | "feedback" | "faqs" | "categories" | "settings";
+const PRIORITY_LABELS: Record<HelpdeskTicketPriority, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
+
+const priorityPill = (p: HelpdeskTicketPriority) => {
+  const map: Record<HelpdeskTicketPriority, string> = {
+    low: "text-green-400 bg-green-500/10 border-green-500/30",
+    medium: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
+    high: "text-orange-400 bg-orange-500/10 border-orange-500/30",
+    urgent: "text-red-400 bg-red-500/10 border-red-500/30",
+  };
+  return map[p];
+};
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  created: "Ticket created",
+  acknowledged: "Acknowledged",
+  status_changed: "Status changed",
+  priority_changed: "Priority changed",
+  assigned: "Assigned",
+  replied: "Reply sent",
+  internal_note_added: "Internal note added",
+  escalated: "⚠️ Escalated (unacknowledged)",
+  resolved: "Resolved",
+  closed: "Closed",
+};
+
+type Tab = "tickets" | "feedback" | "faqs" | "categories" | "settings" | "analytics";
 
 export default function SupportPage() {
   const [tab, setTab] = useState<Tab>("tickets");
   const [initialTicketId, setInitialTicketId] = useState<string | null>(null);
   const [initialFeedbackId, setInitialFeedbackId] = useState<string | null>(null);
   const { data: stats } = useHelpdeskDashboard();
+  const { data: me } = useMe();
+  const canManageSettings = HELPDESK_MANAGER_ROLES.has(me?.role);
 
   // Read ?tab= + ?id= injected by the topbar notification bell so a
   // click on a helpdesk_ticket / helpdesk_feedback notification lands
@@ -144,19 +192,25 @@ export default function SupportPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-5">
-          <StatChip label="New" value={stats?.tickets.new ?? "—"} accent="text-blue-400" />
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-2 mb-5">
+          <StatChip label="New (Alarming)" value={stats?.tickets.new ?? "—"} accent="text-blue-400" />
+          <StatChip
+            label="Acknowledged"
+            value={stats?.tickets.acknowledged ?? "—"}
+            accent="text-purple-400"
+          />
           <StatChip
             label="In Progress"
             value={stats?.tickets.inProgress ?? "—"}
             accent="text-yellow-400"
           />
+          <StatChip
+            label="Waiting for User"
+            value={stats?.tickets.waitingForUser ?? "—"}
+            accent="text-orange-400"
+          />
           <StatChip label="Resolved" value={stats?.tickets.resolved ?? "—"} accent="text-green-400" />
           <StatChip label="Feedback" value={stats?.feedback.total ?? "—"} />
-          <StatChip
-            label="Avg Rating"
-            value={stats?.feedback.averageRating != null ? stats.feedback.averageRating.toFixed(2) : "—"}
-          />
           <StatChip label="FAQs" value={stats?.faqs ?? "—"} />
         </div>
 
@@ -168,6 +222,7 @@ export default function SupportPage() {
               { id: "faqs", label: "FAQs", icon: Book },
               { id: "categories", label: "Categories", icon: Folder },
               { id: "settings", label: "Settings", icon: SettingsIcon },
+              ...(canManageSettings ? [{ id: "analytics" as Tab, label: "Analytics", icon: BarChart3 }] : []),
             ] as { id: Tab; label: string; icon: any }[]
           ).map((t) => {
             const Icon = t.icon;
@@ -193,7 +248,8 @@ export default function SupportPage() {
         {tab === "feedback" && <FeedbackTab initialSelectedId={initialFeedbackId} />}
         {tab === "faqs" && <FaqsTab />}
         {tab === "categories" && <CategoriesTab />}
-        {tab === "settings" && <SettingsTab />}
+        {tab === "settings" && <SettingsTab canManageAlarmSettings={canManageSettings} />}
+        {tab === "analytics" && canManageSettings && <AnalyticsTab />}
       </div>
     </DashboardLayout>
   );
@@ -206,8 +262,12 @@ export default function SupportPage() {
 function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }) {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
+  const { data: adminsRes } = useListAdmins({ limit: 100 });
+  const admins: { id: string; fullName: string }[] = adminsRes?.data ?? [];
   React.useEffect(() => {
     if (initialSelectedId) setSelectedId(initialSelectedId);
   }, [initialSelectedId]);
@@ -215,6 +275,8 @@ function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }
     page,
     limit: 25,
     status: statusFilter,
+    priority: priorityFilter,
+    assignedTo: assigneeFilter,
     search,
   });
 
@@ -247,18 +309,39 @@ function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }
             }}
           >
             <option value="all">All statuses</option>
-            <option value="new">New</option>
-            <option value="in_progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-            <option value="closed">Closed</option>
+            {(Object.keys(STATUS_LABELS) as HelpdeskTicketStatus[]).map((s) => (
+              <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+            ))}
+          </select>
+          <select
+            className={inputCls + " w-32"}
+            value={priorityFilter}
+            onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}
+          >
+            <option value="all">All priorities</option>
+            {(Object.keys(PRIORITY_LABELS) as HelpdeskTicketPriority[]).map((p) => (
+              <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
+            ))}
+          </select>
+          <select
+            className={inputCls + " w-36"}
+            value={assigneeFilter}
+            onChange={(e) => { setAssigneeFilter(e.target.value); setPage(1); }}
+          >
+            <option value="all">Anyone</option>
+            <option value="unassigned">Unassigned</option>
+            {admins.map((a) => (
+              <option key={a.id} value={a.id}>{a.fullName}</option>
+            ))}
           </select>
         </div>
 
         <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
-          <div className="grid grid-cols-[2fr_1.5fr_120px_100px] px-4 py-3 border-b border-[#2a2a2a] text-[10px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">
+          <div className="grid grid-cols-[2fr_1.5fr_110px_100px_90px] px-4 py-3 border-b border-[#2a2a2a] text-[10px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">
             <span>Subject / Name</span>
             <span>Email</span>
             <span>Status</span>
+            <span>Priority</span>
             <span>Date</span>
           </div>
           {isLoading && (
@@ -274,12 +357,17 @@ function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }
               key={t.id}
               onClick={() => setSelectedId(t.id)}
               className={
-                "grid grid-cols-[2fr_1.5fr_120px_100px] px-4 py-3 border-b border-[#2a2a2a]/50 last:border-b-0 items-center text-left w-full transition-colors " +
-                (selectedId === t.id ? "bg-[#dc2626]/10" : "hover:bg-white/[0.02]")
+                "grid grid-cols-[2fr_1.5fr_110px_100px_90px] px-4 py-3 border-b border-[#2a2a2a]/50 last:border-b-0 items-center text-left w-full transition-colors " +
+                (selectedId === t.id ? "bg-[#dc2626]/10" : "hover:bg-white/[0.02]") +
+                (t.status === "new" ? " animate-pulse" : "")
               }
             >
               <div className="min-w-0">
-                <div className="text-[13px] text-white font-medium truncate">{t.subject}</div>
+                <div className="text-[13px] text-white font-medium truncate">
+                  {t.status === "new" && "🔔 "}
+                  {t.displayNumber ? `#TBT-${t.displayNumber} · ` : ""}
+                  {t.subject}
+                </div>
                 <div className="text-[11px] text-[#888] truncate">{t.name}</div>
               </div>
               <span className="text-[12px] text-[#a0a0a0] truncate">{t.email}</span>
@@ -290,6 +378,14 @@ function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }
                 }
               >
                 {STATUS_LABELS[t.status]}
+              </span>
+              <span
+                className={
+                  "text-[10px] px-2 py-0.5 rounded uppercase tracking-widest font-rajdhani font-bold w-fit border " +
+                  priorityPill(t.priority)
+                }
+              >
+                {PRIORITY_LABELS[t.priority]}
               </span>
               <span className="text-[11px] text-[#666]">
                 {format(new Date(t.createdAt), "d MMM")}
@@ -334,15 +430,22 @@ function TicketDetailPanel({
 }) {
   const { data: ticket, isLoading } = useGetHelpdeskTicket(ticketId);
   const updateStatus = useUpdateTicketStatus();
+  const acknowledge = useAcknowledgeTicket();
+  const assign = useAssignTicket();
+  const updatePriority = useUpdateTicketPriority();
   const postReply = useReplyHelpdeskTicket();
   const del = useDeleteHelpdeskTicket();
+  const { data: adminsRes } = useListAdmins({ limit: 100 });
+  const admins: { id: string; fullName: string }[] = adminsRes?.data ?? [];
   const [notes, setNotes] = useState("");
   const [reply, setReply] = useState("");
+  const [isInternal, setIsInternal] = useState(false);
 
   React.useEffect(() => {
     setNotes(ticket?.adminNotes ?? "");
-    setReply(ticket?.adminReply ?? "");
-  }, [ticket?.id, ticket?.adminNotes, ticket?.adminReply]);
+    setReply("");
+    setIsInternal(false);
+  }, [ticket?.id, ticket?.adminNotes]);
 
   if (!ticketId) {
     return (
@@ -359,10 +462,37 @@ function TicketDetailPanel({
     );
   }
 
-  const onStatusChange = async (status: HelpdeskTicket["status"]) => {
+  const onStatusChange = async (status: HelpdeskTicketStatus) => {
     try {
       await updateStatus.mutateAsync({ id: ticket.id, status, adminNotes: notes });
       toast.success("Status updated");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Update failed — a ticket must be acknowledged before its status can change.");
+    }
+  };
+
+  const onAcknowledge = async () => {
+    try {
+      await acknowledge.mutateAsync(ticket.id);
+      toast.success("Acknowledged — alarm stopped for this ticket");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Acknowledge failed");
+    }
+  };
+
+  const onAssign = async (assignedTo: string) => {
+    try {
+      await assign.mutateAsync({ id: ticket.id, assignedTo: assignedTo || null });
+      toast.success(assignedTo ? "Ticket assigned" : "Ticket unassigned");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Assign failed");
+    }
+  };
+
+  const onPriorityChange = async (priority: HelpdeskTicketPriority) => {
+    try {
+      await updatePriority.mutateAsync({ id: ticket.id, priority });
+      toast.success("Priority updated");
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message ?? "Update failed");
     }
@@ -378,9 +508,12 @@ function TicketDetailPanel({
   };
 
   const onSendReply = async () => {
+    if (!reply.trim()) return;
     try {
-      await postReply.mutateAsync({ id: ticket.id, reply });
-      toast.success(reply.trim() ? "Reply sent" : "Reply cleared");
+      await postReply.mutateAsync({ id: ticket.id, reply, isInternal });
+      toast.success(isInternal ? "Internal note added" : "Reply sent");
+      setReply("");
+      setIsInternal(false);
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message ?? "Reply failed");
     }
@@ -401,7 +534,10 @@ function TicketDetailPanel({
     <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden flex flex-col">
       <div className="px-4 py-3 border-b border-[#2a2a2a] flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-white truncate">{ticket.subject}</div>
+          <div className="text-[13px] font-semibold text-white truncate">
+            {ticket.displayNumber ? `#TBT-${ticket.displayNumber} — ` : ""}
+            {ticket.subject}
+          </div>
           <div className="text-[11px] text-[#888]">
             {ticket.name} · {ticket.email}
             {ticket.phone && ` · ${ticket.phone}`}
@@ -410,13 +546,70 @@ function TicketDetailPanel({
             {format(new Date(ticket.createdAt), "d MMM yyyy, HH:mm")}
             {ticket.category && ` · ${ticket.category.name}`}
           </div>
+          {ticket.acknowledgedByAdmin && (
+            <div className="text-[10px] text-purple-400 mt-0.5">
+              <UserCheck size={10} className="inline mr-1" />
+              Acknowledged by {ticket.acknowledgedByAdmin.fullName}
+              {ticket.acknowledgedAt && ` at ${format(new Date(ticket.acknowledgedAt), "d MMM, HH:mm")}`}
+            </div>
+          )}
+          {ticket.escalatedAt && (
+            <div className="text-[10px] text-red-400 font-bold mt-0.5">
+              ⚠️ Escalated at {format(new Date(ticket.escalatedAt), "d MMM, HH:mm")}
+            </div>
+          )}
         </div>
         <button onClick={onClose} className="p-1 rounded hover:bg-white/5 text-[#a0a0a0]">
           <X size={16} />
         </button>
       </div>
 
+      {ticket.status === "new" && (
+        <div className="px-4 py-3 bg-[#dc2626]/10 border-b border-[#dc2626]/40 flex items-center justify-between gap-3">
+          <span className="text-[12px] font-bold text-[#dc2626] flex items-center gap-2">
+            <BellRing size={14} className="animate-pulse" /> ALARM ACTIVE — unacknowledged
+          </span>
+          <button
+            onClick={onAcknowledge}
+            disabled={acknowledge.isPending}
+            className="px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40"
+          >
+            {acknowledge.isPending ? "…" : "Acknowledge & Stop Alarm"}
+          </button>
+        </div>
+      )}
+
       <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Priority</label>
+            <select
+              className={inputCls}
+              value={ticket.priority}
+              disabled={updatePriority.isPending}
+              onChange={(e) => onPriorityChange(e.target.value as HelpdeskTicketPriority)}
+            >
+              {(Object.keys(PRIORITY_LABELS) as HelpdeskTicketPriority[]).map((p) => (
+                <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Assigned To</label>
+            <select
+              className={inputCls}
+              value={ticket.assignedTo ?? ""}
+              disabled={assign.isPending}
+              onChange={(e) => onAssign(e.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {admins.map((a) => (
+                <option key={a.id} value={a.id}>{a.fullName}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {(ticket.chatGroupId || ticket.chatContext) && (
           <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
             <div className="flex items-center gap-2 mb-2">
@@ -476,48 +669,85 @@ function TicketDetailPanel({
           </div>
         )}
 
-        <div>
-          <label className={labelCls}>Status</label>
-          <div className="flex flex-wrap gap-1.5">
-            {(["new", "in_progress", "resolved", "closed"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => onStatusChange(s)}
-                disabled={updateStatus.isPending}
-                className={
-                  "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest font-rajdhani border transition-colors " +
-                  (ticket.status === s
-                    ? statusPill(s) + " ring-2 ring-white/10"
-                    : "border-[#2a2a2a] text-[#a0a0a0] hover:border-[#dc2626] hover:text-white")
-                }
-              >
-                {STATUS_LABELS[s]}
-              </button>
-            ))}
+        {ticket.status !== "new" && (
+          <div>
+            <label className={labelCls}>Status</label>
+            <div className="flex flex-wrap gap-1.5">
+              {(["acknowledged", "in_progress", "waiting_for_user", "resolved", "closed"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => onStatusChange(s)}
+                  disabled={updateStatus.isPending || s === ticket.status}
+                  className={
+                    "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest font-rajdhani border transition-colors disabled:cursor-default " +
+                    (ticket.status === s
+                      ? statusPill(s) + " ring-2 ring-white/10"
+                      : "border-[#2a2a2a] text-[#a0a0a0] hover:border-[#dc2626] hover:text-white")
+                  }
+                >
+                  {STATUS_LABELS[s]}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {(ticket.replies?.length ?? 0) > 0 && (
+          <div>
+            <label className={labelCls}>Conversation</label>
+            <div className="space-y-2 max-h-64 overflow-y-auto rounded-lg border border-[#2a2a2a] p-2 bg-black/20">
+              {ticket.replies!.map((r) => (
+                <div
+                  key={r.id}
+                  className={
+                    "rounded-lg px-3 py-2 text-[12px] " +
+                    (r.isInternal
+                      ? "bg-yellow-500/10 border border-yellow-500/30"
+                      : r.isFromAdmin
+                        ? "bg-[#dc2626]/10 border border-[#dc2626]/20"
+                        : "bg-white/5 border border-white/10")
+                  }
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest font-rajdhani text-[#a0a0a0]">
+                      {r.isInternal ? `🔒 Internal · ${r.authorName ?? "Support"}` : r.authorName ?? (r.isFromAdmin ? "Support" : ticket.name)}
+                    </span>
+                    <span className="text-[9px] text-[#666]">{format(new Date(r.createdAt), "d MMM, HH:mm")}</span>
+                  </div>
+                  <div className="text-[#f0f0f0] whitespace-pre-wrap">{r.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
-          <label className={labelCls}>
-            Reply to Member{ticket.adminRepliedAt && (
-              <span className="ml-2 text-[9px] font-normal text-[#888] normal-case tracking-normal">
-                sent {format(new Date(ticket.adminRepliedAt), "d MMM yyyy, HH:mm")}
-              </span>
-            )}
-          </label>
+          <label className={labelCls}>{isInternal ? "Internal Note" : "Reply to Member"}</label>
           <textarea
             className={textareaCls}
             value={reply}
-            placeholder="Type a reply the member will see in their My Tickets…"
+            placeholder={
+              isInternal
+                ? "Note visible only to the Account Team — the member never sees this…"
+                : "Type a reply the member will see in their My Tickets…"
+            }
             onChange={(e) => setReply(e.target.value)}
           />
-          <div className="mt-2 flex items-center justify-end gap-2">
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-[11px] text-[#a0a0a0] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isInternal}
+                onChange={(e) => setIsInternal(e.target.checked)}
+              />
+              Internal note (not visible to member)
+            </label>
             <button
               onClick={onSendReply}
-              disabled={postReply.isPending}
+              disabled={postReply.isPending || !reply.trim()}
               className="px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40"
             >
-              {postReply.isPending ? "Sending…" : ticket.adminReply ? "Update Reply" : "Send Reply"}
+              {postReply.isPending ? "Sending…" : isInternal ? "Add Note" : "Send Reply"}
             </button>
           </div>
         </div>
@@ -545,6 +775,29 @@ function TicketDetailPanel({
             </button>
           </div>
         </div>
+
+        {(ticket.activityLog?.length ?? 0) > 0 && (
+          <div>
+            <label className={labelCls}>
+              <History size={11} className="inline mr-1" /> Activity Timeline
+            </label>
+            <div className="space-y-2">
+              {ticket.activityLog!.map((a, i) => (
+                <div key={i} className="flex items-center gap-3 text-[11px]">
+                  <span className="text-[#666] w-24 flex-shrink-0">
+                    {format(new Date(a.createdAt), "d MMM, HH:mm")}
+                  </span>
+                  <span className="text-[#f0f0f0]">
+                    {ACTIVITY_LABELS[a.action] ?? a.action}
+                    {a.newValue && !["replied", "internal_note_added", "created"].includes(a.action) && (
+                      <span className="text-[#888]"> → {a.newValue}</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1100,7 +1353,7 @@ function CategoryForm({
 // SETTINGS
 // ────────────────────────────────────────────────────────────────
 
-function SettingsTab() {
+function SettingsTab({ canManageAlarmSettings }: { canManageAlarmSettings: boolean }) {
   const { data: settings, isLoading } = useGetHelpdeskSettings();
   const update = useUpdateHelpdeskSettings();
 
@@ -1122,8 +1375,13 @@ function SettingsTab() {
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
 
   const save = async () => {
+    // Non-admin/super_admin never sends alarm fields, even unchanged — the
+    // backend 403s any request that includes them from a role without
+    // alarm-settings access (see adminUpdateSettingsHandler).
+    const { alarmRepeatIntervalSeconds, escalationMinutes, ...rest } = form;
+    const payload = canManageAlarmSettings ? form : rest;
     try {
-      await update.mutateAsync(form);
+      await update.mutateAsync(payload);
       toast.success("Settings saved");
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message ?? "Save failed");
@@ -1235,6 +1493,42 @@ function SettingsTab() {
           </select>
         </div>
       </div>
+
+      {canManageAlarmSettings && (
+        <div className="mt-6 pt-4 border-t border-[#2a2a2a]">
+          <div className="text-[12px] font-bold text-white uppercase tracking-widest font-rajdhani mb-1 flex items-center gap-2">
+            <BellRing size={13} className="text-[#dc2626]" /> Ticket Alarm (Admin / Super Admin only)
+          </div>
+          <p className="text-[11px] text-[#888] mb-3">
+            Controls how often the Account Team dashboard re-alerts for unacknowledged tickets, and when a ticket escalates.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Alarm Repeat Interval (seconds)</label>
+              <input
+                type="number"
+                min={5}
+                max={600}
+                className={inputCls}
+                value={form.alarmRepeatIntervalSeconds ?? 30}
+                onChange={(e) => set("alarmRepeatIntervalSeconds", Number(e.target.value) || 30)}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Escalate After (minutes unacknowledged)</label>
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                className={inputCls}
+                value={form.escalationMinutes ?? 10}
+                onChange={(e) => set("escalationMinutes", Number(e.target.value) || 10)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 flex justify-end">
         <button
           onClick={save}
@@ -1243,6 +1537,97 @@ function SettingsTab() {
         >
           {update.isPending && <Loader2 size={12} className="animate-spin" />} Save Settings
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// ANALYTICS (admin / super_admin only)
+// ────────────────────────────────────────────────────────────────
+
+function secondsToHuman(s: number | null): string {
+  if (s == null) return "—";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${(m / 60).toFixed(1)}h`;
+}
+
+function AnalyticsTab() {
+  const { data, isLoading } = useHelpdeskAnalytics();
+
+  if (isLoading || !data) {
+    return (
+      <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-8 text-center">
+        <Loader2 className="inline animate-spin text-[#666]" size={16} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatChip label="Total Tickets" value={data.totalTickets} />
+        <StatChip label="Avg. Time to Acknowledge" value={secondsToHuman(data.avgAcknowledgeSeconds)} accent="text-purple-400" />
+        <StatChip label="Avg. Resolution Time" value={secondsToHuman(data.avgResolutionSeconds)} accent="text-green-400" />
+        <StatChip
+          label="Unassigned"
+          value={Math.max(0, data.totalTickets - data.teamPerformance.reduce((s, t) => s + t.ticketCount, 0))}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+          <div className={labelCls}>By Status</div>
+          <div className="space-y-1.5">
+            {data.byStatus.map((r) => (
+              <div key={r.status} className="flex items-center justify-between text-[12px]">
+                <span className="text-[#a0a0a0]">{STATUS_LABELS[r.status as HelpdeskTicketStatus] ?? r.status}</span>
+                <span className="text-white font-bold">{r.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+          <div className={labelCls}>By Priority</div>
+          <div className="space-y-1.5">
+            {data.byPriority.map((r) => (
+              <div key={r.priority} className="flex items-center justify-between text-[12px]">
+                <span className="text-[#a0a0a0]">{PRIORITY_LABELS[r.priority as HelpdeskTicketPriority] ?? r.priority}</span>
+                <span className="text-white font-bold">{r.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+          <div className={labelCls}>By Category</div>
+          <div className="space-y-1.5">
+            {data.byCategory.map((r) => (
+              <div key={r.category} className="flex items-center justify-between text-[12px]">
+                <span className="text-[#a0a0a0] truncate">{r.category}</span>
+                <span className="text-white font-bold">{r.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[1fr_120px_140px] px-4 py-3 border-b border-[#2a2a2a] text-[10px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">
+          <span>Team Member</span>
+          <span>Tickets</span>
+          <span>Avg. Resolution</span>
+        </div>
+        {data.teamPerformance.length === 0 && (
+          <div className="p-8 text-center text-[#666] text-[12px]">No assigned tickets yet.</div>
+        )}
+        {data.teamPerformance.map((t) => (
+          <div key={t.adminId} className="grid grid-cols-[1fr_120px_140px] px-4 py-3 border-b border-[#2a2a2a]/50 last:border-b-0 items-center">
+            <span className="text-[13px] text-white">{t.adminName}</span>
+            <span className="text-[12px] text-[#a0a0a0]">{t.ticketCount}</span>
+            <span className="text-[12px] text-[#a0a0a0]">{secondsToHuman(t.avgResolutionSeconds)}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

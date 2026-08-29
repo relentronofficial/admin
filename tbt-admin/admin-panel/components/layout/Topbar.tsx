@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { Bell, Settings, Check, CheckCheck, Megaphone, Users, ShoppingBag, Video, BookOpen, Info, ClipboardList } from "lucide-react";
+import { Bell, BellRing, Settings, Check, CheckCheck, Megaphone, Users, ShoppingBag, Video, BookOpen, Info, ClipboardList } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import {
@@ -13,6 +13,7 @@ import {
 import { getAdminSocket } from "@/lib/socket/client";
 import { toast } from "react-hot-toast";
 import { resolveNotificationRoute } from "@/lib/utils/notificationRouter";
+import { useUnacknowledgedTicketsCount } from "@/components/support/HelpdeskAlarmProvider";
 
 // ── Type icon map ─────────────────────────────────────────────────────────────
 
@@ -155,6 +156,8 @@ export function Topbar() {
   const panelRef  = useRef<HTMLDivElement>(null);
 
   const { data: unreadCount = 0 } = useAdminUnreadCount();
+  const router = useRouter();
+  const unacknowledgedTickets = useUnacknowledgedTicketsCount();
 
   // Listen for day submissions from members
   useEffect(() => {
@@ -222,6 +225,25 @@ export function Topbar() {
 
       {/* Right actions */}
       <div className="ml-auto flex items-center gap-3.5">
+
+        {/* Unacknowledged support tickets — pulsing, distinct from the
+            regular (non-pulsing) admin-notifications bell below */}
+        {unacknowledgedTickets > 0 && (
+          <button
+            onClick={() => router.push("/support?tab=tickets&status=new")}
+            className="relative w-8 h-8 bg-[#1f1f1f] border border-[#dc2626] rounded-md flex items-center justify-center text-[#dc2626] hover:bg-[#2a2a2a] transition-all shadow-sm animate-pulse"
+            aria-label="Unacknowledged support tickets"
+            title="Unacknowledged support tickets — click to view"
+          >
+            <BellRing size={15} strokeWidth={2} />
+            <span
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1 leading-none"
+              style={{ background: "#dc2626", boxShadow: "0 0 0 2px #111" }}
+            >
+              {unacknowledgedTickets > 99 ? "99+" : unacknowledgedTickets}
+            </span>
+          </button>
+        )}
 
         {/* Pending submissions badge */}
         <button
