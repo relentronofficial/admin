@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Video, Calendar, Camera, MessageCircle } from "lucide-react";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/hooks/useOnboarding";
 import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
 import type { OnboardingContentStep } from "@/lib/api/services/onboarding.service";
+import apiClient from "@/lib/api/client";
 
 // Wizard chrome (labels/copy) is hardcoded here rather than sourced from
 // uiStrings — the *educational content* (step 2/5 text+audio+video) is the
@@ -311,6 +312,32 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const [uploading, setUploading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | undefined>(undefined);
+
+  // Location dropdowns — states loaded once, cities cascade from selected state
+  const [states, setStates] = useState<{ name: string; isoCode: string }[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [selectedStateCode, setSelectedStateCode] = useState<string>("");
+
+  useEffect(() => {
+    apiClient.get("/api/location/states?countryCode=IN").then((res) => {
+      setStates((res as any).data?.data ?? []);
+    }).catch(() => {});
+  }, []);
+
+  // When states load, resolve the already-saved state name → isoCode for city fetch
+  useEffect(() => {
+    if (!states.length || !profile.state) return;
+    const match = states.find((s) => s.name === profile.state);
+    if (match && match.isoCode !== selectedStateCode) setSelectedStateCode(match.isoCode);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [states]);
+
+  useEffect(() => {
+    if (!selectedStateCode) { setCities([]); return; }
+    apiClient.get(`/api/location/cities?countryCode=IN&stateCode=${selectedStateCode}`).then((res) => {
+      setCities((res as any).data?.data ?? []);
+    }).catch(() => {});
+  }, [selectedStateCode]);
 
   // Update a profile field and clear its error in one call
   const setField = (key: string, value: unknown) => {
@@ -610,27 +637,44 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               </div>
             </div>
 
-            {/* Location */}
+            {/* Location — state first so city cascade works */}
             <div className="grid grid-cols-3 gap-4">
+              <div data-field-error={errors.state ? true : undefined}>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">State *</label>
+                <select
+                  value={states.find((s) => s.name === profile.state)?.isoCode ?? ""}
+                  onChange={(e) => {
+                    const s = states.find((st) => st.isoCode === e.target.value);
+                    if (!s) return;
+                    setField("state", s.name);
+                    setSelectedStateCode(s.isoCode);
+                    setField("city", "");
+                  }}
+                  className={inputCls}
+                  style={fieldStyle("state")}
+                >
+                  <option value="">Select state…</option>
+                  {states.map((s) => (
+                    <option key={s.isoCode} value={s.isoCode}>{s.name}</option>
+                  ))}
+                </select>
+                <FieldError error={errors.state} />
+              </div>
               <div data-field-error={errors.city ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">City *</label>
-                <input
+                <select
                   value={profile.city ?? ""}
                   onChange={(e) => setField("city", e.target.value)}
                   className={inputCls}
                   style={fieldStyle("city")}
-                />
+                  disabled={!selectedStateCode}
+                >
+                  <option value="">{selectedStateCode ? "Select city…" : "Select state first"}</option>
+                  {cities.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
                 <FieldError error={errors.city} />
-              </div>
-              <div data-field-error={errors.state ? true : undefined}>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">State *</label>
-                <input
-                  value={profile.state ?? ""}
-                  onChange={(e) => setField("state", e.target.value)}
-                  className={inputCls}
-                  style={fieldStyle("state")}
-                />
-                <FieldError error={errors.state} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Pincode</label>
