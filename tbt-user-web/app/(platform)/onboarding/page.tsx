@@ -322,10 +322,14 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     try {
       // Strip read-only fields (phone, email) and combine challenge fields into
       // currentChallenges array before sending — the backend schema uses .strict()
-      // and won't accept extra fields.
+      // and won't accept extra fields. Also strip null/undefined values because
+      // z.string().optional() and z.enum().optional() do NOT accept null.
       const { phone: _p, email: _e, challenge1, challenge2, challenge3, ...editable } = profile as any;
       const currentChallenges = [challenge1, challenge2, challenge3].filter(Boolean);
-      await saveProgress.mutateAsync({ ...editable, currentChallenges });
+      const body = Object.fromEntries(
+        Object.entries({ ...editable, currentChallenges }).filter(([, v]) => v !== null && v !== undefined)
+      );
+      await saveProgress.mutateAsync(body);
       setStep(next);
     } catch {
       toast.error("Couldn't save your progress. Please try again.");
