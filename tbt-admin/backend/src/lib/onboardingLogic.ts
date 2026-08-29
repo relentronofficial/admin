@@ -47,7 +47,7 @@ export function canApproveMember(params: {
 
 /** Minimal required fields to submit — deliberately smaller than the full
  * ~25-field admin form (see SELF_ONBOARDING_SPECKIT.md §11 item 1). */
-export const REQUIRED_ONBOARDING_FIELDS = ['firstName', 'businessName', 'businessType', 'city', 'state'] as const;
+export const REQUIRED_ONBOARDING_FIELDS = ['firstName', 'businessName', 'productServiceType', 'city', 'state'] as const;
 
 export interface OnboardingReadyCheck {
   valid: boolean;

@@ -26,13 +26,14 @@ import type { OnboardingContentStep } from "@/lib/api/services/onboarding.servic
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// Dynamic steps: "welcome", "education:<stepKey>", "profile", "skills", "documents", "review"
-// Step keys from the DB become "education:<stepKey>" segments.
 type FixedStep = "welcome" | "profile" | "skills" | "documents" | "review";
 type DynamicStep = `education:${string}`;
 type Step = FixedStep | DynamicStep;
 
-const REQUIRED_FIELDS = ["firstName", "businessName", "businessType", "city", "state"] as const;
+// Fields checked by the backend submit gate and the frontend review page.
+// productServiceType is the "Business Type" the wizard collects — businessType
+// is a separate unused DB column, so we check productServiceType here.
+const REQUIRED_FIELDS = ["firstName", "businessName", "productServiceType", "city", "state"] as const;
 
 const DOCUMENT_TYPES = [
   { value: "business_proof", label: "Business Proof" },
@@ -65,6 +66,17 @@ const SKILL_FIELDS = [
   { key: "skillSales", label: "Sales" },
   { key: "skillOverallMarketing", label: "Overall Marketing" },
 ] as const;
+
+// ─── Micro-components ────────────────────────────────────────────────────────
+
+function FieldError({ error }: { error?: string }) {
+  if (!error) return null;
+  return (
+    <p className="text-xs mt-1.5 font-medium" style={{ color: "var(--color-alert, #ef4444)" }}>
+      {error}
+    </p>
+  );
+}
 
 function SkillSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
@@ -278,9 +290,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
   const [step, setStep] = useState<Step>("welcome");
 
-  // Split currentChallenges array into individual challenge fields for the UI,
-  // and ensure marketingChannels is always an array.
-  const [profile, setProfile] = useState<Record<string, any>>(() => {
+  const [profile, setProfileState] = useState<Record<string, any>>(() => {
     const p = { ...initialProfile };
     if (Array.isArray(p.currentChallenges)) {
       p.challenge1 = p.currentChallenges[0] ?? "";
@@ -294,10 +304,64 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     return p;
   });
 
+  // Per-field validation errors shown inline
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
   const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0].value);
   const [uploading, setUploading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | undefined>(undefined);
+
+  // Update a profile field and clear its error in one call
+  const setField = (key: string, value: unknown) => {
+    setProfileState((p) => ({ ...p, [key]: value }));
+    if (errors[key]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  // Dynamic border style — red when field has an error
+  const fieldStyle = (key: string) => ({
+    background: "var(--color-surface-overlay)",
+    border: `1px solid ${errors[key] ? "var(--color-alert, #ef4444)" : "var(--color-border-subtle)"}`,
+  });
+
+  // Validate the profile step — returns true if valid
+  const validateProfileStep = (): boolean => {
+    const errs: Record<string, string> = {};
+    const str = (k: string) => (profile[k] ?? "").toString().trim();
+
+    if (!str("firstName")) errs.firstName = "First name is required";
+    if (!str("city")) errs.city = "City is required";
+    if (!str("state")) errs.state = "State is required";
+    if (!str("businessName")) errs.businessName = "Brand name is required";
+    if (!str("productServiceType")) errs.productServiceType = "Please select a business type";
+    if (!str("instagramLink")) errs.instagramLink = "Instagram link is required";
+    if (!str("annualTurnover")) errs.annualTurnover = "Please select your revenue range";
+    if (!str("revenueGoalAfterTbt")) errs.revenueGoalAfterTbt = "Revenue goal is required";
+    if (!str("goalAfter90Days")) errs.goalAfter90Days = "Learning goal is required";
+    if (!str("businessStartedFrom")) errs.businessStartedFrom = "This field is required";
+    if (!str("teamSize")) errs.teamSize = "Team size is required";
+    if (!str("instagramStats")) errs.instagramStats = "Instagram stats are required";
+    if (!str("facebookStats")) errs.facebookStats = "Facebook stats are required";
+    if (!str("gstNumber")) errs.gstNumber = "GST number is required";
+    if (profile.preferredSessionMode == null) {
+      errs.preferredSessionMode = "Please select a session mode";
+    }
+    if (profile.hasMarketingTeam == null) {
+      errs.hasMarketingTeam = "Please select an option";
+    }
+    if (profile.hasVideoEditing == null) {
+      errs.hasVideoEditing = "Please select an option";
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
 
   const missingFields = REQUIRED_FIELDS.filter((f) => !profile[f]);
   const readyToSubmit = missingFields.length === 0 && initialDocuments.length > 0;
@@ -307,7 +371,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const nextStep = currentIndex < stepOrder.length - 1 ? stepOrder[currentIndex + 1] : undefined;
 
   const toggleMarketingChannel = (channel: string) => {
-    setProfile((p) => {
+    setProfileState((p) => {
       const current = (p.marketingChannels as string[]) || [];
       return {
         ...p,
@@ -319,11 +383,20 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   };
 
   const saveAndAdvance = async (next: Step) => {
+    // Run step-specific validation before hitting the server
+    if (step === "profile" && !validateProfileStep()) {
+      // Scroll to the first invalid field
+      setTimeout(() => {
+        const el = document.querySelector("[data-field-error]");
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+      return;
+    }
+
     try {
-      // Strip read-only fields (phone, email) and combine challenge fields into
-      // currentChallenges array before sending — the backend schema uses .strict()
-      // and won't accept extra fields. Strip null/undefined/empty-string values because
-      // z.string().optional() does NOT accept null, and z.string().min(1) rejects "".
+      // Strip read-only fields, combine challenge fields, strip null/undefined/empty-string
+      // values — the backend schema uses .strict() and z.string().optional() rejects null,
+      // z.string().min(1) rejects "".
       const { phone: _p, email: _e, challenge1, challenge2, challenge3, ...editable } = profile as any;
       const currentChallenges = [challenge1, challenge2, challenge3].filter(Boolean);
       const body = Object.fromEntries(
@@ -359,7 +432,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     try {
       const { data } = await presignPhoto.mutateAsync({ filename: file.name, contentType: file.type });
       await fetch(data.uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      setProfile((p) => ({ ...p, profilePhotoUrl: data.publicUrl }));
+      setProfileState((p) => ({ ...p, profilePhotoUrl: data.publicUrl }));
       toast.success("Photo uploaded");
     } catch {
       toast.error("Photo upload failed. Please try again.");
@@ -378,7 +451,6 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   };
 
   const inputCls = "w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none";
-  const inputStyle = { background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" };
 
   return (
     <div className="py-8 px-4">
@@ -401,7 +473,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         </StepShell>
       )}
 
-      {/* ── Dynamic education steps (one per onboarding_content row) ── */}
+      {/* ── Dynamic education steps ── */}
       {step.startsWith("education:") && (() => {
         const key = step.slice("education:".length);
         const content = contentSteps?.find((c) => c.stepKey === key);
@@ -488,17 +560,25 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
             {/* Name */}
             <div className="grid grid-cols-2 gap-4">
-              {[{ key: "firstName", label: "First Name *" }, { key: "lastName", label: "Last Name" }].map(({ key, label }) => (
-                <div key={key}>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
-                  <input
-                    value={profile[key] ?? ""}
-                    onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
-                    className={inputCls}
-                    style={inputStyle}
-                  />
-                </div>
-              ))}
+              <div data-field-error={errors.firstName ? true : undefined}>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">First Name *</label>
+                <input
+                  value={profile.firstName ?? ""}
+                  onChange={(e) => setField("firstName", e.target.value)}
+                  className={inputCls}
+                  style={fieldStyle("firstName")}
+                />
+                <FieldError error={errors.firstName} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Last Name</label>
+                <input
+                  value={profile.lastName ?? ""}
+                  onChange={(e) => setField("lastName", e.target.value)}
+                  className={inputCls}
+                  style={fieldStyle("lastName")}
+                />
+              </div>
             </div>
 
             {/* DOB + Gender */}
@@ -507,19 +587,19 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Date of Birth</label>
                 <input
                   type="date"
-                  value={profile.dob ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, dob: e.target.value }))}
+                  value={profile.dob ? (typeof profile.dob === "string" ? profile.dob.slice(0, 10) : new Date(profile.dob).toISOString().slice(0, 10)) : ""}
+                  onChange={(e) => setField("dob", e.target.value)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("dob")}
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Gender</label>
                 <select
                   value={profile.gender ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, gender: e.target.value }))}
+                  onChange={(e) => setField("gender", e.target.value || null)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("gender")}
                 >
                   <option value="" disabled>Select…</option>
                   <option value="male">Male</option>
@@ -530,70 +610,73 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               </div>
             </div>
 
-            {/* Location — city, state, pincode */}
+            {/* Location */}
             <div className="grid grid-cols-3 gap-4">
-              <div>
+              <div data-field-error={errors.city ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">City *</label>
                 <input
                   value={profile.city ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, city: e.target.value }))}
+                  onChange={(e) => setField("city", e.target.value)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("city")}
                 />
+                <FieldError error={errors.city} />
               </div>
-              <div>
+              <div data-field-error={errors.state ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">State *</label>
                 <input
                   value={profile.state ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, state: e.target.value }))}
+                  onChange={(e) => setField("state", e.target.value)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("state")}
                 />
+                <FieldError error={errors.state} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Pincode</label>
                 <input
                   value={profile.pincode ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, pincode: e.target.value }))}
+                  onChange={(e) => setField("pincode", e.target.value)}
                   placeholder="600001"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("pincode")}
                 />
               </div>
             </div>
 
             {/* Brand Name + Business Established On */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div data-field-error={errors.businessName ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Brand Name *</label>
                 <input
                   value={profile.businessName ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, businessName: e.target.value }))}
+                  onChange={(e) => setField("businessName", e.target.value)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("businessName")}
                 />
+                <FieldError error={errors.businessName} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Established On</label>
                 <input
                   type="date"
-                  value={profile.businessEstablishedOn ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, businessEstablishedOn: e.target.value }))}
+                  value={profile.businessEstablishedOn ? (typeof profile.businessEstablishedOn === "string" ? profile.businessEstablishedOn.slice(0, 10) : new Date(profile.businessEstablishedOn).toISOString().slice(0, 10)) : ""}
+                  onChange={(e) => setField("businessEstablishedOn", e.target.value)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("businessEstablishedOn")}
                 />
               </div>
             </div>
 
             {/* Business Type + Instagram Link */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div data-field-error={errors.productServiceType ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Type *</label>
                 <select
                   value={profile.productServiceType ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, productServiceType: e.target.value }))}
+                  onChange={(e) => setField("productServiceType", e.target.value || null)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("productServiceType")}
                 >
                   <option value="" disabled>Select…</option>
                   <option value="Product-based">Product-based</option>
@@ -601,152 +684,163 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <option value="Both">Both</option>
                   <option value="Other">Other</option>
                 </select>
+                <FieldError error={errors.productServiceType} />
               </div>
-              <div>
+              <div data-field-error={errors.instagramLink ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Link *</label>
                 <input
                   value={profile.instagramLink ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, instagramLink: e.target.value }))}
+                  onChange={(e) => setField("instagramLink", e.target.value)}
                   placeholder="@username"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("instagramLink")}
                 />
+                <FieldError error={errors.instagramLink} />
               </div>
             </div>
 
             {/* Revenue Generated + Revenue Goal */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div data-field-error={errors.annualTurnover ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Generated Until Now *</label>
                 <select
                   value={profile.annualTurnover ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, annualTurnover: e.target.value }))}
+                  onChange={(e) => setField("annualTurnover", e.target.value || null)}
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("annualTurnover")}
                 >
                   <option value="" disabled>Select…</option>
                   {ANNUAL_TURNOVER_OPTIONS.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
+                <FieldError error={errors.annualTurnover} />
               </div>
-              <div>
+              <div data-field-error={errors.revenueGoalAfterTbt ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Revenue Goal After TBT *</label>
                 <input
                   value={profile.revenueGoalAfterTbt ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, revenueGoalAfterTbt: e.target.value }))}
+                  onChange={(e) => setField("revenueGoalAfterTbt", e.target.value)}
                   placeholder="e.g. 1Cr in 12 months"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("revenueGoalAfterTbt")}
                 />
+                <FieldError error={errors.revenueGoalAfterTbt} />
               </div>
             </div>
 
             {/* Learning Goals + Business Started From */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div data-field-error={errors.goalAfter90Days ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Learning Goals *</label>
                 <input
                   value={profile.goalAfter90Days ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, goalAfter90Days: e.target.value }))}
+                  onChange={(e) => setField("goalAfter90Days", e.target.value)}
                   placeholder="What do you want to achieve?"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("goalAfter90Days")}
                 />
+                <FieldError error={errors.goalAfter90Days} />
               </div>
-              <div>
+              <div data-field-error={errors.businessStartedFrom ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Started From *</label>
                 <input
                   value={profile.businessStartedFrom ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, businessStartedFrom: e.target.value }))}
+                  onChange={(e) => setField("businessStartedFrom", e.target.value)}
                   placeholder="e.g. 2019 or Yet to Start"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("businessStartedFrom")}
                 />
+                <FieldError error={errors.businessStartedFrom} />
               </div>
             </div>
 
             {/* Team Size + Website URL */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div data-field-error={errors.teamSize ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Total Members in Your Team *</label>
                 <input
                   value={profile.teamSize ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, teamSize: e.target.value }))}
+                  onChange={(e) => setField("teamSize", e.target.value)}
                   placeholder="e.g. 5"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("teamSize")}
                 />
+                <FieldError error={errors.teamSize} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Website URL</label>
                 <input
                   value={profile.websiteUrl ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, websiteUrl: e.target.value }))}
+                  onChange={(e) => setField("websiteUrl", e.target.value)}
                   placeholder="https://yourbrand.com"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("websiteUrl")}
                 />
               </div>
             </div>
 
             {/* Instagram Stats + Facebook Stats */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div data-field-error={errors.instagramStats ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Instagram Posts &amp; Followers *</label>
                 <input
                   value={profile.instagramStats ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, instagramStats: e.target.value }))}
+                  onChange={(e) => setField("instagramStats", e.target.value)}
                   placeholder="e.g. 120 posts, 4.2K followers"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("instagramStats")}
                 />
+                <FieldError error={errors.instagramStats} />
               </div>
-              <div>
+              <div data-field-error={errors.facebookStats ? true : undefined}>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">Facebook Posts &amp; Followers *</label>
                 <input
                   value={profile.facebookStats ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, facebookStats: e.target.value }))}
+                  onChange={(e) => setField("facebookStats", e.target.value)}
                   placeholder="e.g. 80 posts, 2K followers"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("facebookStats")}
                 />
+                <FieldError error={errors.facebookStats} />
               </div>
             </div>
 
             {/* Preferred Session Mode */}
-            <div>
+            <div data-field-error={errors.preferredSessionMode ? true : undefined}>
               <label className="block text-xs font-medium text-muted-foreground mb-2">Offline / Online / Both *</label>
               <div className="flex gap-3">
                 {(["offline", "online", "hybrid"] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
-                    onClick={() => setProfile((p) => ({ ...p, preferredSessionMode: mode }))}
+                    onClick={() => setField("preferredSessionMode", mode)}
                     className={cn(
                       "flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-colors capitalize",
                       profile.preferredSessionMode === mode ? "text-white border-transparent" : "text-muted-foreground"
                     )}
                     style={profile.preferredSessionMode === mode
                       ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
-                      : { borderColor: "var(--color-border-subtle)" }}
+                      : { borderColor: errors.preferredSessionMode ? "var(--color-alert, #ef4444)" : "var(--color-border-subtle)" }}
                   >
                     {mode === "hybrid" ? "Both" : mode.charAt(0).toUpperCase() + mode.slice(1)}
                   </button>
                 ))}
               </div>
+              <FieldError error={errors.preferredSessionMode} />
             </div>
 
             {/* GST Number */}
-            <div>
+            <div data-field-error={errors.gstNumber ? true : undefined}>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">GST Number *</label>
               <input
                 value={profile.gstNumber ?? ""}
-                onChange={(e) => setProfile((p) => ({ ...p, gstNumber: e.target.value }))}
+                onChange={(e) => setField("gstNumber", e.target.value)}
                 placeholder="22AAAAA0000A1Z5"
                 className={inputCls}
-                style={inputStyle}
+                style={fieldStyle("gstNumber")}
               />
+              <FieldError error={errors.gstNumber} />
             </div>
 
             {/* Existing Marketing Channels */}
@@ -780,10 +874,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Name of the Marketing Channel</label>
               <input
                 value={profile.marketingChannelName ?? ""}
-                onChange={(e) => setProfile((p) => ({ ...p, marketingChannelName: e.target.value }))}
+                onChange={(e) => setField("marketingChannelName", e.target.value)}
                 placeholder="e.g. Facebook Ads account name"
                 className={inputCls}
-                style={inputStyle}
+                style={fieldStyle("marketingChannelName")}
               />
             </div>
 
@@ -792,10 +886,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Domain &amp; Hosting Details</label>
               <input
                 value={profile.domainHostingDetails ?? ""}
-                onChange={(e) => setProfile((p) => ({ ...p, domainHostingDetails: e.target.value }))}
+                onChange={(e) => setField("domainHostingDetails", e.target.value)}
                 placeholder="Provider, expiry dates, etc."
                 className={inputCls}
-                style={inputStyle}
+                style={fieldStyle("domainHostingDetails")}
               />
             </div>
 
@@ -804,10 +898,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Address</label>
               <textarea
                 value={profile.businessAddress ?? ""}
-                onChange={(e) => setProfile((p) => ({ ...p, businessAddress: e.target.value }))}
+                onChange={(e) => setField("businessAddress", e.target.value)}
                 rows={3}
                 className="w-full px-4 py-3 rounded-xl text-sm text-foreground outline-none resize-none"
-                style={inputStyle}
+                style={fieldStyle("businessAddress")}
               />
             </div>
 
@@ -824,10 +918,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                     <span className="text-xs font-bold text-muted-foreground w-4 shrink-0">{i + 1}.</span>
                     <input
                       value={profile[key] ?? ""}
-                      onChange={(e) => setProfile((p) => ({ ...p, [key]: e.target.value }))}
+                      onChange={(e) => setField(key, e.target.value)}
                       placeholder={placeholder}
                       className={cn(inputCls, "flex-1")}
-                      style={inputStyle}
+                      style={fieldStyle(key)}
                     />
                   </div>
                 ))}
@@ -835,65 +929,67 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             </div>
 
             {/* Social Media Handling */}
-            <div>
+            <div data-field-error={errors.hasMarketingTeam ? true : undefined}>
               <label className="block text-xs font-medium text-muted-foreground mb-2">Social Media Handling *</label>
               <div className="flex gap-3 mb-3">
                 {([{ label: "In-house", val: true }, { label: "Outsourced / None", val: false }] as const).map(({ label, val }) => (
                   <button
                     key={label}
                     type="button"
-                    onClick={() => setProfile((p) => ({ ...p, hasMarketingTeam: val }))}
+                    onClick={() => setField("hasMarketingTeam", val)}
                     className={cn(
                       "flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-colors",
                       profile.hasMarketingTeam === val ? "text-white border-transparent" : "text-muted-foreground"
                     )}
                     style={profile.hasMarketingTeam === val
                       ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
-                      : { borderColor: "var(--color-border-subtle)" }}
+                      : { borderColor: errors.hasMarketingTeam ? "var(--color-alert, #ef4444)" : "var(--color-border-subtle)" }}
                   >
                     {label}
                   </button>
                 ))}
               </div>
+              <FieldError error={errors.hasMarketingTeam} />
               {profile.hasMarketingTeam && (
                 <input
                   value={profile.marketingTeamDetails ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, marketingTeamDetails: e.target.value }))}
+                  onChange={(e) => setField("marketingTeamDetails", e.target.value)}
                   placeholder="Describe your social media team or agency"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("marketingTeamDetails")}
                 />
               )}
             </div>
 
             {/* Video Editing */}
-            <div>
+            <div data-field-error={errors.hasVideoEditing ? true : undefined}>
               <label className="block text-xs font-medium text-muted-foreground mb-2">Video Editing *</label>
               <div className="flex gap-3 mb-3">
                 {([{ label: "Yes", val: true }, { label: "No", val: false }] as const).map(({ label, val }) => (
                   <button
                     key={label}
                     type="button"
-                    onClick={() => setProfile((p) => ({ ...p, hasVideoEditing: val }))}
+                    onClick={() => setField("hasVideoEditing", val)}
                     className={cn(
                       "flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-colors",
                       profile.hasVideoEditing === val ? "text-white border-transparent" : "text-muted-foreground"
                     )}
                     style={profile.hasVideoEditing === val
                       ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
-                      : { borderColor: "var(--color-border-subtle)" }}
+                      : { borderColor: errors.hasVideoEditing ? "var(--color-alert, #ef4444)" : "var(--color-border-subtle)" }}
                   >
                     {label}
                   </button>
                 ))}
               </div>
+              <FieldError error={errors.hasVideoEditing} />
               {profile.hasVideoEditing && (
                 <input
                   value={profile.videoEditingDetails ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, videoEditingDetails: e.target.value }))}
+                  onChange={(e) => setField("videoEditingDetails", e.target.value)}
                   placeholder="In-house, outsourced, or tools used"
                   className={inputCls}
-                  style={inputStyle}
+                  style={fieldStyle("videoEditingDetails")}
                 />
               )}
             </div>
@@ -918,12 +1014,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <button
                     key={label}
                     type="button"
-                    onClick={() => setProfile((p) => ({ ...p, hasWebsite: val, ...(val === false && { weeklyWebsiteOrders: undefined }) }))}
+                    onClick={() => setField("hasWebsite", val)}
                     className={cn(
                       "px-6 py-2.5 rounded-xl text-sm font-semibold border transition-colors",
-                      profile.hasWebsite === val
-                        ? "text-white border-transparent"
-                        : "text-muted-foreground"
+                      profile.hasWebsite === val ? "text-white border-transparent" : "text-muted-foreground"
                     )}
                     style={profile.hasWebsite === val
                       ? { background: "var(--color-accent)", borderColor: "var(--color-accent)" }
@@ -944,7 +1038,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 <input
                   type="number" min={0}
                   value={profile.weeklyWebsiteOrders ?? ""}
-                  onChange={(e) => setProfile((p) => ({ ...p, weeklyWebsiteOrders: e.target.value === "" ? undefined : Number(e.target.value) }))}
+                  onChange={(e) => setField("weeklyWebsiteOrders", e.target.value === "" ? undefined : Number(e.target.value))}
                   placeholder="e.g. 50"
                   className="w-full h-11 px-4 rounded-xl text-sm text-foreground outline-none"
                   style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
@@ -962,7 +1056,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                     key={key}
                     label={label}
                     value={typeof profile[key] === "number" ? profile[key] : 1}
-                    onChange={(v) => setProfile((p) => ({ ...p, [key]: v }))}
+                    onChange={(v) => setField(key, v)}
                   />
                 ))}
               </div>
@@ -979,7 +1073,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <input
                 type="range" min={5} max={80} step={5}
                 value={typeof profile.weeklyLearningHours === "number" ? profile.weeklyLearningHours : 5}
-                onChange={(e) => setProfile((p) => ({ ...p, weeklyLearningHours: Number(e.target.value) }))}
+                onChange={(e) => setField("weeklyLearningHours", Number(e.target.value))}
                 className="w-full h-2 rounded-full appearance-none cursor-pointer"
                 style={{ accentColor: "var(--color-accent)" }}
               />
@@ -1042,7 +1136,6 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 <span className="text-foreground">{Array.isArray(value) ? value.join(", ") : String(value)}</span>
               </div>
             ))}
-            {/* Show challenges if any */}
             {([profile.challenge1, profile.challenge2, profile.challenge3].filter(Boolean) as string[]).length > 0 && (
               <div className="py-2 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
                 <span className="text-muted-foreground text-sm">Key Challenges</span>
