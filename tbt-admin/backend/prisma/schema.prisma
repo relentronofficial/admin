@@ -229,6 +229,8 @@ model Admin {
   reviewedTasks   TaskSubmission[] @relation("TaskReviewer")
   hostedWebinars  Webinar[]        @relation("WebinarHost")
   assignedTickets SupportTicket[]  @relation("TicketAssignee")
+  acknowledgedHelpdeskTickets HelpdeskTicket[] @relation("HelpdeskTicketAcknowledgedBy")
+  assignedHelpdeskTickets     HelpdeskTicket[] @relation("HelpdeskTicketAssignee")
   auditLogs       AuditLog[]
   resources       Resource[]
   updatedSettings Setting[]        @relation("SettingUpdater")
@@ -2959,6 +2961,8 @@ model HelpdeskSettings {
   buttonText     String   @default("Contact Us") @map("button_text") @db.VarChar(100)
   bannerImage    String?  @map("banner_image")
   status         String   @default("active") @db.VarChar(50)
+  alarmRepeatIntervalSeconds Int @default(30) @map("alarm_repeat_interval_seconds")
+  escalationMinutes          Int @default(10) @map("escalation_minutes")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -3028,13 +3032,28 @@ model HelpdeskTicket {
   chatMessageSenderId  String?   @map("chat_message_sender_member_id") @db.Uuid
   chatMessageSnapshot  String?   @map("chat_message_snapshot")
   raisedByAdminId      String?   @map("raised_by_admin_id") @db.Uuid
+  // Alarm/lifecycle fields (2026-08-29) — `status` gains `acknowledged` and
+  // `waiting_for_user` values; `status === 'new'` IS "alarm active,
+  // unacknowledged" (no separate boolean — one status field stays the single
+  // source of truth). See helpdeskTicketRules.ts for the pure transition/alarm
+  // logic and helpdeskEscalation.ts for the escalation sweep that sets
+  // escalatedAt.
+  acknowledgedAt   DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  acknowledgedBy   String?   @map("acknowledged_by") @db.Uuid
+  assignedTo       String?   @map("assigned_to") @db.Uuid
+  escalatedAt      DateTime? @map("escalated_at") @db.Timestamptz(6)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  closedAt         DateTime? @map("closed_at") @db.Timestamptz(6)
   member           Member?             @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
   category         HelpdeskCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   replies          HelpdeskTicketReply[]
+  acknowledgedByAdmin Admin? @relation("HelpdeskTicketAcknowledgedBy", fields: [acknowledgedBy], references: [id], onDelete: SetNull)
+  assignedToAdmin     Admin? @relation("HelpdeskTicketAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([memberId, createdAt(sort: Desc)])
   @@index([chatMessageId])
+  @@index([assignedTo])
   @@map("helpdesk_tickets")
 }
 
@@ -3047,6 +3066,7 @@ model HelpdeskTicketReply {
   ticketId    String   @map("ticket_id") @db.Uuid
   body        String
   isFromAdmin Boolean  @default(false) @map("is_from_admin")
+  isInternal  Boolean  @default(false) @map("is_internal")
   authorName  String?  @map("author_name") @db.VarChar(255)
   memberId    String?  @map("member_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

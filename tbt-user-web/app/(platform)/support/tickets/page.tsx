@@ -5,16 +5,10 @@ import { ArrowLeft, Reply, Inbox } from "lucide-react";
 
 import { useMyTickets, ticketDisplayId } from "@/lib/hooks/useSupport";
 import type { SupportTicket, SupportTicketStatus } from "@/types";
-
-const STATUS_MAP: Record<SupportTicketStatus, { color: string; label: string }> = {
-  new: { color: "#60a5fa", label: "New" },
-  in_progress: { color: "#facc15", label: "In Progress" },
-  resolved: { color: "#4ade80", label: "Resolved" },
-  closed: { color: "#a0a0a0", label: "Closed" },
-};
+import { SUPPORT_STATUS_MAP } from "@/lib/constants/supportStatus";
 
 function StatusBadge({ status }: { status: SupportTicketStatus }) {
-  const { color, label } = STATUS_MAP[status] ?? STATUS_MAP.new;
+  const { color, label } = SUPPORT_STATUS_MAP[status] ?? SUPPORT_STATUS_MAP.new;
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider"

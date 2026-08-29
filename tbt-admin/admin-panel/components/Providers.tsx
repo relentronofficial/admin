@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import apiClient from "../lib/api/apiClient";
 import { initAdminSocket, getAdminSocket } from "@/lib/socket/client";
+import { HelpdeskAlarmProvider } from "@/components/support/HelpdeskAlarmProvider";
 
 // Token cache — read actual exp from JWT so we never use a token past its expiry
 let _cachedToken: string | null = null;
@@ -145,6 +146,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthInterceptor />
+      <HelpdeskAlarmProvider />
       {children}
       <Toaster 
         position="top-right"

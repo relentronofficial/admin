@@ -841,8 +841,14 @@ export interface Faq {
   category?: SupportCategoryRef | null;
 }
 
-export type SupportTicketStatus = "new" | "in_progress" | "resolved" | "closed";
-export type SupportTicketPriority = "low" | "medium" | "high";
+export type SupportTicketStatus =
+  | "new"
+  | "acknowledged"
+  | "in_progress"
+  | "waiting_for_user"
+  | "resolved"
+  | "closed";
+export type SupportTicketPriority = "low" | "medium" | "high" | "urgent";
 export type SupportPreferredContact = "email" | "whatsapp" | "phone";
 
 export interface SupportReply {
@@ -851,6 +857,12 @@ export interface SupportReply {
   isFromAdmin: boolean;
   createdAt: string;
   authorName?: string | null;
+}
+
+export interface SupportTicketActivity {
+  action: string;
+  newValue?: string | null;
+  createdAt: string;
 }
 
 export interface SupportTicket {
@@ -868,6 +880,9 @@ export interface SupportTicket {
   adminReply?: string | null;
   adminRepliedAt?: string | null;
   replies?: SupportReply[];
+  /** Member-safe subset of the ticket's activity log (see toMemberSafeActivity
+   * on the backend) — action + timestamp only, no actor identity. */
+  activityLog?: SupportTicketActivity[];
 }
 
 // ─── Community ────────────────────────────────────────────────────────────────
