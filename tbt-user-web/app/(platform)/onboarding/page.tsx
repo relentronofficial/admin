@@ -322,17 +322,21 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     try {
       // Strip read-only fields (phone, email) and combine challenge fields into
       // currentChallenges array before sending — the backend schema uses .strict()
-      // and won't accept extra fields. Also strip null/undefined values because
-      // z.string().optional() and z.enum().optional() do NOT accept null.
+      // and won't accept extra fields. Strip null/undefined/empty-string values because
+      // z.string().optional() does NOT accept null, and z.string().min(1) rejects "".
       const { phone: _p, email: _e, challenge1, challenge2, challenge3, ...editable } = profile as any;
       const currentChallenges = [challenge1, challenge2, challenge3].filter(Boolean);
       const body = Object.fromEntries(
-        Object.entries({ ...editable, currentChallenges }).filter(([, v]) => v !== null && v !== undefined)
+        Object.entries({ ...editable, currentChallenges })
+          .filter(([, v]) => v !== null && v !== undefined && v !== "")
       );
       await saveProgress.mutateAsync(body);
       setStep(next);
-    } catch {
-      toast.error("Couldn't save your progress. Please try again.");
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || "Couldn't save your progress. Please try again.";
+      // eslint-disable-next-line no-console
+      console.error("[onboarding] saveAndAdvance error:", err);
+      toast.error(msg);
     }
   };
 
