@@ -37,6 +37,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `WEEKLY_CHECKLIST_SPECKIT.md` | repo root | Weekly rollup layer on top of batch program (required/optional tasks, per-week analytics, FCM push registration) — **implemented and committed** |
 | `TBT_ADS_SPECKIT.md` | repo root | Ad campaign system spec for Flutter mobile client — check before adding mobile ad features |
 | `COURSE_UX_SPECKIT.md` | repo root | Course UX & wiring fixes C-01–C-12 (heartbeat bug, URL sync, Practice Arena, catalog filters, reflections backend, etc.) — **complete 2026-08-25** |
+| `COURSE_SECTIONS_SPECKIT.md` | repo root | Course sections (chapters) feature — two-level course structure (Section → Episode), backward-compat with existing flat episodes, collapsible accordion in lesson sidebar — **complete 2026-08-29** |
 | `ONBOARDING_SPECKIT.md` | `tbt_app/` | 14 Flutter-side onboarding fixes (Sprint 1 in progress) |
 | `CHAT_GROUP_SPECKIT.md` | `tbt_app/` | Flutter chat group WhatsApp-parity roadmap F-01–F-22 — Sprints 1+2 committed, Sprint 3 in progress (F-05/06/11/12/15), Sprint 6 done uncommitted (F-17/18/19/21) |
 | `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port from co-worker app |
@@ -94,6 +95,18 @@ npm run prisma:migrate -w backend
 npm run prisma:studio -w backend
 npx prisma db seed                   # Run from backend/ — creates super admin
 ```
+
+**Dev helper scripts** (run from `tbt-admin/backend/` with `node scripts/<name>.mjs`, requires `backend/.env`):
+
+| Script | Purpose |
+|---|---|
+| `mint-test-jwt.mjs` | Print a 2-hour JWT for the first active member (curl testing) |
+| `prep-test-account.mjs` | Set a specific member to `pending+awaiting_kyc` + known password for onboarding flow testing; saves backup to `.test-account-backup.json` |
+| `restore-test-account.mjs` | Revert member to pre-test state from `.test-account-backup.json` |
+| `set-test-password.mjs` | Set a known password on a member by phone number |
+| `seed-ads.mjs` / `seed-ebooks.mjs` / `seed-podcasts.mjs` etc. | One-shot seed scripts for individual content verticals |
+| `find-kyc-member.mjs` | Locate a member in various onboarding states for debugging |
+| `send-test-report.mjs` | Trigger a batch WhatsApp report send without waiting for cron |
 
 ### User Web (from `tbt-user-web/`)
 

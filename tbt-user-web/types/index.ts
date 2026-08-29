@@ -70,6 +70,7 @@ export interface Course {
   xpPerEpisode?: number;
   passingScorePercent?: number;
   lessons?: Lesson[];
+  sections?: { id: string; title: string; description?: string | null; sortOrder: number; timerSeconds?: number | null }[];
   instructor?: {
     id: string;
     fullName: string;
@@ -101,6 +102,10 @@ export interface Lesson {
   quizUnlockPercent?: number;
   quizData?: { questions: any[]; cues?: Array<{ id: string; atSeconds: number; questions: any[] }> } | null;
   timerSeconds?: number | null;
+  sectionId?: string | null;
+  sectionTitle?: string | null;
+  sectionOrder?: number | null;
+  sectionTimerSeconds?: number | null;
 }
 
 export interface CourseEnrollment {

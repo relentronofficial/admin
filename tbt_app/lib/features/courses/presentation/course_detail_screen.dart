@@ -624,9 +624,10 @@ class _LessonListSliverState extends State<_LessonListSliver> {
   void _toggle(String sectionId) =>
       setState(() => _collapsed.contains(sectionId) ? _collapsed.remove(sectionId) : _collapsed.add(sectionId));
 
-  Widget _lessonRow(BuildContext context, Lesson lesson, int globalIdx) {
+  Widget _lessonRow(BuildContext context, Lesson lesson, int globalIdx, {int? sectionTimerSecs}) {
     final isLocked = lesson.locked;
     final canOpen = widget.course.hasAccess && !isLocked;
+    final effectiveTimer = lesson.timerSeconds ?? sectionTimerSecs;
     return _LessonRow(
       lesson: lesson,
       index: globalIdx,
@@ -634,6 +635,7 @@ class _LessonListSliverState extends State<_LessonListSliver> {
       isLocked: isLocked,
       hasAccess: widget.course.hasAccess,
       accent: widget.accent,
+      effectiveTimerSeconds: effectiveTimer,
       onTap: canOpen
           ? () => context.push('/learning/${widget.courseId}/${lesson.id}')
           : (isLocked
@@ -731,7 +733,7 @@ class _LessonListSliverState extends State<_LessonListSliver> {
 
       if (!isCollapsed) {
         for (var i = 0; i < sectionLessons.length; i++) {
-          items.add(_lessonRow(context, sectionLessons[i], lessons.indexOf(sectionLessons[i])));
+          items.add(_lessonRow(context, sectionLessons[i], lessons.indexOf(sectionLessons[i]), sectionTimerSecs: sectionTimerSecs));
         }
       }
     }
@@ -761,6 +763,7 @@ class _LessonRow extends StatelessWidget {
     required this.hasAccess,
     required this.accent,
     this.isLocked = false,
+    this.effectiveTimerSeconds,
     this.onTap,
   });
 
@@ -770,6 +773,7 @@ class _LessonRow extends StatelessWidget {
   final bool hasAccess;
   final Color accent;
   final bool isLocked;
+  final int? effectiveTimerSeconds;
   final VoidCallback? onTap;
 
   @override
@@ -844,6 +848,20 @@ class _LessonRow extends StatelessWidget {
                         color: context.tokens.textMuted,
                         fontSize: 11,
                       ),
+                    ),
+                  ],
+                  if (effectiveTimerSeconds != null && effectiveTimerSeconds! > 0) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.timer_outlined, size: 10, color: accent.withAlpha(180)),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${(effectiveTimerSeconds! / 60).round()}m timer',
+                          style: TextStyle(color: accent.withAlpha(180), fontSize: 10, fontWeight: FontWeight.w600),
+                        ),
+                      ],
                     ),
                   ],
                 ],

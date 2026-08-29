@@ -39,6 +39,9 @@ class Lesson with _$Lesson {
     @Default(false) bool completedByThreshold,
     // 0..100, may be null if backend can't compute the exact fraction.
     int? watchPercent,
+    // Focus timer for this episode (seconds). Null = no per-episode timer.
+    // The effective timer is this value OR the section's timerSeconds if set.
+    int? timerSeconds,
     // Section grouping (null = unsectioned)
     String? sectionId,
     String? sectionTitle,
