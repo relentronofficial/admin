@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assessment — Tamil Business Tribe</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/assets/css/tailwind.css" />
+  <link rel="stylesheet" href="/assets/css/custom.css" />
+  <style>
+    /* ============ Candidate Assessment — Clean, Neat & Balanced Layout ====== */
+    :root{ --r:#CB1417; --r-dark:#970F12; --r-light:#FEF2F2; --r-soft:#FDE8E8; --ink:#111827; --ink2:#1F2937; --muted:#6B7280; --line:#E5E7EB; --line2:#E2E8F0; }
+    body{ background:#F8FAFC; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+    .q-section{ display:none; }
+    .q-section.active{ display:block; }
+    .visually-hidden{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+    /* Wrap text naturally without breaking layout */
+    .qc-text, .qc-cat, .qc-range, .qc-instr, .dim-name, .side-cur .t, .side-cur .s, .opt label{ white-space:normal; overflow-wrap:anywhere; word-break:normal; min-width:0; }
+    .dim-name, .side-cur > div{ min-width:0; }
+
+    /* subtle background pattern */
+    .assess-dots{ position:fixed; inset:0; z-index:0; pointer-events:none;
+      background-image:radial-gradient(circle, rgba(203,20,23,.07) 1.1px, transparent 1.2px);
+      background-size:24px 24px;
+      -webkit-mask-image:radial-gradient(1100px 700px at 100% 0%, #000 0%, transparent 60%), radial-gradient(900px 500px at 0% 100%, #000 0%, transparent 60%);
+      mask-image:radial-gradient(1100px 700px at 100% 0%, #000 0%, transparent 60%), radial-gradient(900px 500px at 0% 100%, #000 0%, transparent 60%);
+      opacity:.5; }
+
+    /* ---- Header ---- */
+    .a-head{ position:sticky; top:0; z-index:50; background:#fff; border-bottom:1px solid var(--line); box-shadow:0 1px 3px rgba(0,0,0,.03); }
+    .a-head-in{ max-width:1200px; margin:0 auto; height:64px; padding:0 24px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .brand{ display:flex; align-items:center; gap:11px; min-width:0; }
+    .brand img{ width:36px; height:36px; object-fit:contain; filter: brightness(0); }
+    .brand-t{ font-size:18px; font-weight:800; color:var(--ink); line-height:1.1; letter-spacing:-.02em; }
+    .brand-t .r{ color:var(--r); }
+    .brand-s{ font-size:11px; font-weight:500; color:var(--muted); margin-top:1px; }
+    .brand-accent{ height:2px; width:22px; background:var(--r); border-radius:2px; margin-top:3px; }
+    .h-mid{ display:flex; align-items:center; gap:14px; flex:1; justify-content:center; }
+    .h-count{ text-align:center; white-space:nowrap; }
+    .h-count b{ font-size:16px; font-weight:800; color:var(--ink); }
+    .h-count .m{ color:#9CA3AF; font-weight:800; }
+    .h-count span{ display:block; font-size:11px; color:var(--muted); font-weight:500; margin-top:1px; }
+    .h-bar{ width:180px; height:7px; background:#EEF0F3; border-radius:999px; overflow:hidden; }
+    .h-bar>i{ display:block; height:100%; width:0; background:var(--r); border-radius:999px; transition:width .4s ease; }
+    .h-timer{ display:flex; align-items:center; gap:8px; padding-left:16px; border-left:1px solid var(--line); white-space:nowrap; }
+    .h-timer svg{ width:17px; height:17px; }
+    .h-timer .tv{ font-size:16px; font-weight:800; color:var(--r); font-variant-numeric:tabular-nums; }
+    .h-timer .tl{ font-size:11px; font-weight:500; color:var(--muted); }
+
+    /* ---- Body layout ---- */
+    .a-body{ position:relative; z-index:1; max-width:1200px; margin:0 auto; padding:20px 24px 100px; display:grid; grid-template-columns:290px minmax(0,1fr); gap:24px; align-items:start; }
+
+    /* ---- Sidebar ---- */
+    .a-side{ position:sticky; top:84px; background:#fff; border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:0 2px 10px rgba(16,24,40,.04); max-height:calc(100vh - 104px); overflow-y:auto; scrollbar-width:thin; scrollbar-color:#CBD5E1 transparent; }
+    .a-side::-webkit-scrollbar{ width:5px; }
+    .a-side::-webkit-scrollbar-thumb{ background:#CBD5E1; border-radius:999px; }
+    .side-h{ font-size:14.5px; font-weight:800; color:var(--ink); }
+    .side-prog{ height:6px; background:#EEF0F3; border-radius:999px; overflow:hidden; margin:8px 0 5px; }
+    .side-prog>i{ display:block; height:100%; width:0; background:var(--r); border-radius:999px; transition:width .4s ease; }
+    .side-sub{ font-size:11.5px; color:var(--muted); font-weight:500; }
+    .side-div{ height:1px; background:var(--line); margin:10px 0; }
+    .side-cap{ font-size:11.5px; font-weight:800; color:var(--ink); margin-bottom:8px; text-transform:uppercase; letter-spacing:.03em; }
+    .side-cur{ display:flex; align-items:center; gap:10px; background:var(--r); color:#fff; border-radius:12px; padding:9px 12px; margin-bottom:10px; box-shadow:0 3px 10px rgba(203,20,23,.18); }
+    .side-cur .ic{ width:18px; text-align:center; }
+    .side-cur .t{ font-weight:800; font-size:13.5px; line-height:1.2; }
+    .side-cur .s{ font-size:11px; opacity:.95; margin-top:2px; }
+    .dim{ width:100%; text-align:left; display:flex; align-items:center; gap:9px; padding:6px 9px; border-radius:999px; cursor:pointer; background:transparent; border:none; transition:all .15s ease; margin-bottom:2px; }
+    .dim:hover{ background:#F1F5F9; }
+    .dim.active{ background:var(--r-light); }
+    .dim:disabled{ cursor:default; }
+    .dim-n{ width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; background:#E2E8F0; color:#64748B; flex-shrink:0; }
+    .dim.active .dim-n{ background:var(--r); color:#fff; }
+    .dim.done .dim-n{ background:var(--ink); color:#fff; }
+    .dim-name{ font-size:13px; color:#374151; font-weight:500; }
+    .dim.active .dim-name{ color:var(--r); font-weight:700; }
+    .side-tip{ margin-top:10px; background:var(--r-light); border:1px solid #FCA5A5; border-radius:12px; padding:10px 12px; }
+    .side-tip .th{ display:flex; align-items:center; gap:6px; color:var(--r); font-weight:800; font-size:12.5px; }
+    .side-tip p{ font-size:11.5px; color:#4B5563; margin-top:3px; line-height:1.4; }
+
+    /* mobile overview toggle */
+    .side-toggle{ display:none; }
+
+    /* ---- Question card ---- */
+    .a-main{ min-width:0; }
+    .qcard{ background:#fff; border:1px solid var(--line); border-radius:18px; padding:24px 28px; box-shadow:0 2px 14px -2px rgba(16,24,40,.04), 0 1px 4px -1px rgba(16,24,40,.02); }
+    .qc-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:18px; }
+    .qc-head-l{ display:flex; align-items:center; gap:12px; min-width:0; }
+    .qc-num{ width:38px; height:38px; border-radius:11px; background:var(--r); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; flex-shrink:0; box-shadow:0 3px 10px rgba(203,20,23,.2); }
+    .qc-cat{ font-size:18px; font-weight:800; color:var(--ink); line-height:1.25; letter-spacing:-.01em; }
+    .qc-range{ font-size:12.5px; font-weight:500; color:var(--muted); margin-top:2px; }
+    .bm{ border:none; background:transparent; cursor:pointer; color:#94A3B8; padding:6px; flex-shrink:0; border-radius:8px; transition:all .15s ease; }
+    .bm:hover{ color:#F3B4B5; background:#FEF2F2; }
+    .bm.on{ color:var(--r); }
+    .bm.on:hover{ color:var(--r-dark); }
+    .bm svg{ fill:none; } .bm.on svg{ fill:currentColor; }
+    .fbtn-review.on svg{ fill:currentColor; }
+    .qc-instr{ font-size:13px; font-style:italic; color:var(--muted); margin-bottom:10px; line-height:1.45; }
+    .qc-img{ max-width:100%; border-radius:12px; margin-bottom:16px; border:1px solid var(--line); }
+    .qc-text{ font-size:17.5px; font-weight:700; color:var(--ink2); line-height:1.5; margin-bottom:16px; }
+    .qc-hint{ font-size:12px; color:var(--muted); margin:-8px 0 12px; }
+    .qc-qnum{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:var(--r); color:#fff; font-size:12.5px; font-weight:700; margin-right:8px; flex-shrink:0; }
+    .qc-item{ margin-bottom:22px; padding-bottom:22px; border-bottom:1px solid var(--line); }
+    .qc-item:last-child{ margin-bottom:0; padding-bottom:0; border-bottom:none; }
+
+    /* audio controls */
+    .a-audio{ display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+    .abtn{ display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:8px 16px; border-radius:9px; font-size:13px; font-weight:700; cursor:pointer; background:#fff; transition:all .15s ease; }
+    .abtn svg{ width:15px; height:15px; }
+    .abtn-play{ border:1.5px solid var(--r); color:var(--r); min-width:9rem; }
+    .abtn-play:hover{ background:var(--r-light); box-shadow:0 2px 8px rgba(203,20,23,.12); }
+    .abtn-stop{ border:1.5px solid var(--line2); color:#4B5563; }
+    .abtn-stop:hover{ border-color:#CBD5E1; background:#F8FAFC; }
+    .abtn:disabled{ opacity:.5; cursor:not-allowed; }
+    .audio-icon{ display:inline-flex; }
+    .a-error{ flex-basis:100%; font-size:12px; color:var(--r); margin-top:2px; }
+
+    /* answer options */
+    .opt{ display:block; margin-bottom:10px; }
+    .opt:last-child{ margin-bottom:0; }
+    .opt input{ position:absolute; opacity:0; width:1px; height:1px; }
+    .opt label{ display:flex; align-items:center; gap:13px; padding:13px 18px; border:1.5px solid var(--line2); border-radius:12px; cursor:pointer; background:#fff; color:#374151; font-size:14.5px; font-weight:500; line-height:1.45; transition:border-color .15s ease, background .15s ease, color .15s ease, transform .15s ease, box-shadow .15s ease; }
+    .opt label:hover{ border-color:#F3B4B5; background:#FEFBFB; transform:translateY(-1px); box-shadow:0 2px 8px rgba(0,0,0,.03); }
+    .opt-ind{ width:20px; height:20px; border:2px solid #CBD5E1; flex-shrink:0; position:relative; transition:border-color .15s ease; border-radius:50%; }
+    .opt-ind.sq{ border-radius:6px; }
+    .opt input:checked + label{ border-color:var(--r); background:var(--r-light); color:var(--ink); font-weight:600; box-shadow:0 2px 8px rgba(203,20,23,.06); }
+    .opt input:checked + label .opt-ind{ border-color:var(--r); }
+    .opt input:checked + label .opt-ind::after{ content:''; position:absolute; inset:4px; border-radius:50%; background:var(--r); }
+    .opt-ind.sq::after{ border-radius:2px; }
+    .opt input:focus-visible + label{ outline:2px solid var(--r); outline-offset:2px; }
+    .opt input:disabled + label{ opacity:.55; cursor:not-allowed; }
+
+    /* ranking */
+    .rk{ display:flex; align-items:center; gap:12px; padding:13px 18px; border:1.5px solid var(--line2); border-radius:12px; margin-bottom:10px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.02); }
+    .rk-n{ width:26px; height:26px; border-radius:50%; background:var(--r); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; flex-shrink:0; }
+    .rk-btn{ width:32px; height:28px; display:flex; align-items:center; justify-content:center; border:1px solid var(--line2); border-radius:7px; background:#fff; cursor:pointer; font-size:12px; transition:all .15s ease; }
+    .rk-btn:disabled{ opacity:.3; cursor:not-allowed; }
+    .rk-btn:not(:disabled):hover{ border-color:var(--r); color:var(--r); background:var(--r-light); }
+
+    /* ---- Bottom action bar ---- */
+    .a-foot{ position:fixed; left:0; right:0; bottom:0; z-index:45; background:#fff; border-top:1px solid var(--line); box-shadow:0 -4px 16px rgba(16,24,40,.05); }
+    .a-foot-in{ max-width:1200px; margin:0 auto; padding:10px 24px; display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .fbtn{ display:inline-flex; align-items:center; justify-content:center; gap:7px; height:42px; min-height:42px; padding:0 20px; border-radius:9px; font-size:13.5px; font-weight:600; cursor:pointer; border:1.5px solid transparent; transition:all .15s ease; }
+    .fbtn svg{ width:17px; height:17px; }
+    .fbtn-prev{ background:#fff; border-color:var(--line2); color:#374151; }
+    .fbtn-prev:hover:not(:disabled){ border-color:#CBD5E1; background:#F8FAFC; box-shadow:0 2px 6px rgba(0,0,0,.03); }
+    .fbtn-prev:disabled{ opacity:.4; cursor:not-allowed; }
+    .fbtn-review{ background:var(--r-light); color:var(--r); }
+    .fbtn-review:hover{ background:var(--r-soft); }
+    .fbtn-review.on{ background:var(--r); color:#fff; }
+    .fbtn-next{ background:var(--r); color:#fff; min-width:190px; font-weight:700; box-shadow:0 4px 12px rgba(203,20,23,.2); }
+    .fbtn-next:hover:not(:disabled){ background:var(--r-dark); box-shadow:0 6px 16px rgba(203,20,23,.28); }
+    .fbtn-next:disabled{ opacity:.65; cursor:not-allowed; box-shadow:none; }
+    .foot-unanswered{ font-size:12.5px; font-weight:600; color:var(--r); text-align:center; margin-top:-6px; padding:0 24px 6px; }
+
+    /* ---- Responsive ---- */
+    @media (max-width:1024px){
+      .a-body{ grid-template-columns:1fr; padding:16px 16px 110px; gap:16px; }
+      .a-side{ position:static; top:auto; max-height:none; overflow:visible; }
+      .side-toggle{ display:flex; align-items:center; justify-content:space-between; width:100%; background:#fff; border:1px solid var(--line); border-radius:14px; padding:13px 16px; font-weight:800; color:var(--ink); font-size:14px; cursor:pointer; }
+      .side-toggle .chev{ transition:transform .2s; color:var(--muted); }
+      .side-toggle.open .chev{ transform:rotate(180deg); }
+      .a-side.collapsed{ display:none; }
+    }
+    @media (min-width:1025px){
+      .side-toggle{ display:none !important; }
+      .a-side{ display:block !important; }
+    }
+    @media (max-width:760px){
+      .a-head-in{ padding:10px 16px; gap:10px; flex-wrap:wrap; height:auto; }
+      .brand img{ width:34px; height:34px; }
+      .brand-t{ font-size:16.5px; } .brand-s{ display:none; } .brand-accent{ display:none; }
+      .h-mid{ order:3; width:100%; justify-content:space-between; gap:10px; }
+      .h-count b{ font-size:14.5px; } .h-count span{ font-size:10.5px; }
+      .h-bar{ width:auto; flex:1; }
+      .h-timer{ padding-left:10px; }
+      .h-timer .tv{ font-size:16px; } .h-timer .tl{ display:none; }
+      .qcard{ padding:18px 16px; border-radius:16px; }
+      .qc-text{ font-size:16px; }
+      .qc-num{ width:34px; height:34px; font-size:14.5px; } .qc-cat{ font-size:16px; }
+      .opt label{ padding:12px 14px; font-size:14px; gap:10px; border-radius:11px; }
+      .a-foot-in{ padding:8px 14px; gap:8px; }
+      .fbtn{ padding:0 12px; font-size:12.5px; gap:5px; flex:1; height:40px; min-height:40px; }
+      .fbtn-next{ min-width:0; }
+      .fbtn-prev .lbl-full{ display:none; }
+    }
+    @media (max-width:380px){
+      .fbtn{ padding:0 8px; font-size:12px; }
+      .fbtn-review .lbl-full{ display:none; }
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div id="toast-container"></div>
+  <div class="assess-dots" aria-hidden="true"></div>
+
+  <!-- Header -->
+  <header class="a-head">
+    <div class="a-head-in">
+      <div class="brand">
+        <img src="/assets/tbt-logo.png" alt="Tamil Business Tribe" />
+        <div>
+          <div class="brand-t">Tamil <span class="r">Business</span> Tribe</div>
+          <div class="brand-s">Discover Your Business DNA</div>
+          <div class="brand-accent"></div>
+        </div>
+      </div>
+      <div class="h-mid">
+        <div class="h-count">
+          <span id="progress-text"><b>0</b><span class="m"> / 0</span></span>
+          <span>Questions Completed</span>
+        </div>
+        <div class="h-bar"><i id="progress-bar" style="width:0%"></i></div>
+      </div>
+      <div class="h-timer">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+        <div><div class="tv" id="timer-display" role="timer" aria-live="off">30:00</div><div class="tl">Time Remaining</div></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="a-body">
+    <!-- Mobile overview toggle (hidden on desktop) -->
+    <button type="button" id="side-toggle" class="side-toggle" onclick="toggleSidebar()" aria-expanded="false" aria-controls="a-side">
+      <span>Assessment Progress</span><span class="chev" aria-hidden="true">▾</span>
+    </button>
+
+    <!-- Overview sidebar (populated by renderSidebar) -->
+    <aside class="a-side collapsed" id="a-side" aria-label="Assessment overview"></aside>
+
+    <!-- Main question area -->
+    <main class="a-main">
+      <div id="loading" class="text-center py-20" role="status" aria-live="polite">
+        <div class="spinner mx-auto mb-4"></div>
+        <p style="color:var(--muted)">Loading questions...</p>
+      </div>
+      <div id="question-container"></div>
+    </main>
+  </div>
+
+  <!-- Fixed bottom action bar -->
+  <div class="a-foot" id="a-foot" style="display:none">
+    <p id="unanswered-msg" class="foot-unanswered" role="alert"></p>
+    <div class="a-foot-in">
+      <button id="btn-prev" class="fbtn fbtn-prev" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+        <span class="lbl-full">Previous</span>
+      </button>
+      <button id="btn-review" class="fbtn fbtn-review" type="button" aria-pressed="false">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+        <span><span class="lbl-full">Mark for </span>Review</span>
+      </button>
+      <div>
+        <button id="btn-next" class="fbtn fbtn-next" type="button">
+          <span>Save &amp; Continue</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+        </button>
+        <button id="btn-submit" class="fbtn fbtn-next" type="button" style="display:none">Submit Assessment</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/js/env.js"></script>
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/validator.js"></script>
+  <script src="/assets/js/timer.js"></script>
+  <script>
+    const token = api.requireAuth('user');
+    api.protectBack(); // a bfcache back-restore must re-run these guards
+    const sessionId = localStorage.getItem('tbt_session_id');
+    const expiresAt = localStorage.getItem('tbt_session_expires');
+    // Guard order (only when authenticated, so an unauthenticated hit is left to
+    // requireAuth above → login, not bounced to instructions):
+    //   no validated code this login → back to the access-code page;
+    //   no active session snapshot   → assessment never started/already submitted
+    //                                   → back to the instructions/start page.
+    if (token) {
+      if (!api.requireCode()) { /* redirecting to /assessment-code */ }
+      else if (!sessionId || !expiresAt) window.location.replace('/instructions');
+    }
+
+    let sections = [], renderUnits = [], answers = {}, timedOut = {}, timeSpent = {}, questionStartTimes = {}, currentSection = 0, timer, questionTimer = null;
+    let markedSections = new Set();   // render-unit indices flagged "Mark for Review"
+    let sideCats = [], unitStart = [], unitEnd = [];  // sidebar section model (built in renderSidebar)
+    // Every question shows a single "Play Question" button. What it speaks:
+    // if the admin authored a Spoken explanation for the question, THAT is read
+    // aloud (browser voice); otherwise it plays the question's uploaded clip /
+    // cached neural audio / the question text via Web Speech. Only ONE question's
+    // audio OR speech may be live at a time — see stopAllPlayback, the single
+    // choke point that prevents any overlap.
+    let audioUrls = {};       // qid -> uploaded audio data URI (priority source)
+    let questionTexts = {};   // qid -> plain question text (text-to-speech source)
+    let explanationTexts = {}; // qid -> admin-authored spoken explanation (spoken by Play when set)
+    let explanationTanglish = {}; // qid -> true when the explanation is Tanglish (romanized Tamil)
+    let questionLang = {};    // qid -> 'en' | 'ta' (the question's saved language)
+    let currentAudio = null;  // live HTMLAudioElement (uploaded-audio mode)
+    let currentUtterance = null; // live SpeechSynthesisUtterance (tts mode)
+    let activeQid = null;     // question whose audio/speech is currently live
+    let activeMode = null;    // 'audio' | 'tts'
+    let activeState = 'idle'; // 'idle' | 'playing' | 'paused' | 'ended'
+    let ttsTick = null;       // keep-alive interval so Chrome doesn't auto-pause long speech
+    const TTS_OK = typeof window !== 'undefined' && 'speechSynthesis' in window && typeof window.SpeechSynthesisUtterance === 'function';
+    // Cached neural-TTS audio (studio quality, generated offline): which
+    // questions have it, and per-question object URLs once fetched.
+    let neuralReady = {};      // qid -> true when the server has fresh cached audio
+    let neuralAudioUrls = {};  // qid -> objectURL | 'none' | undefined (unfetched)
+    let neuralExpReady = {};   // qid -> true when server has fresh EXPLANATION audio
+    let neuralExpUrls = {};    // qid -> objectURL | 'none' | undefined (unfetched)
+    let playToken = 0;         // invalidates in-flight audio fetches on nav / new play
+    const NEURAL_BASE = (window.TBT_API_BASE || '') + '/api/v1';
+
+    // Keyed by sessionId so a stale in-progress answer set from a previous
+    // (already-submitted) session is never applied to a new one.
+    const autosaveKey = () => `tbt_assessment_answers_${sessionId}`;
+
+    function restoreAutosave() {
+      try {
+        const raw = localStorage.getItem(autosaveKey());
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved.answers) answers = saved.answers;
+        if (saved.timedOut) timedOut = saved.timedOut;
+        if (saved.timeSpent) timeSpent = saved.timeSpent;
+        if (Array.isArray(saved.marked)) markedSections = new Set(saved.marked);
+      } catch { /* corrupt/old autosave payload — ignore and start fresh */ }
+    }
+
+    function saveAutosave() {
+      localStorage.setItem(autosaveKey(), JSON.stringify({ answers, timedOut, timeSpent, marked: [...markedSections] }));
+    }
+
+    async function loadQuestions() {
+      const { ok, data } = await api.get('/assessment/questions', token);
+      // Render an inline error + Retry instead of a permanent spinner, and
+      // guard data.data so a malformed OK response can't throw below.
+      if (!ok || !data || !data.data) {
+        document.getElementById('loading').innerHTML =
+          '<p class="mb-4" style="color:var(--tbt-danger)">' + ((data && data.message) || "Couldn't load your questions. Please check your connection.") + '</p>' +
+          '<button class="btn btn-primary" onclick="location.reload()">Retry</button>';
+        return;
+      }
+      sections = data.data;
+      // Index both audio sources for every question: the uploaded clip (if any)
+      // takes priority, and every question also exposes its text for the
+      // text-to-speech fallback so EVERY question gets a working audio button.
+      audioUrls = {}; questionTexts = {}; explanationTexts = {}; explanationTanglish = {}; questionLang = {}; neuralReady = {}; neuralExpReady = {};
+      sections.forEach((s) => s.questions.forEach((q) => {
+        if (q.hasAudio && q.audioUrl) audioUrls[q._id] = q.audioUrl;
+        if (q.neuralAudio) neuralReady[q._id] = true;
+        if (q.neuralExplanationAudio) neuralExpReady[q._id] = true;
+        questionTexts[q._id] = q.text || '';
+        explanationTexts[q._id] = q.explanationAudioText || '';
+        explanationTanglish[q._id] = !!q.explanationIsTanglish;
+        questionLang[q._id] = q.language === 'ta' ? 'ta' : 'en';
+      }));
+      restoreAutosave();
+      renderUnits = buildRenderUnits(sections);
+      renderQuestions();
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('a-foot').style.display = '';
+
+      // remainingSeconds (server-recalculated, so it accounts for time
+      // already elapsed) is a plain number of seconds; AssessmentTimer's
+      // constructor treats a `number` as a relative duration and anything
+      // else as an absolute expiry, so passing it straight through is safe.
+      timer = new AssessmentTimer(data.remainingSeconds !== undefined ? data.remainingSeconds : expiresAt,
+        ({ minutes, seconds }) => {
+          const t = document.getElementById('timer-display');
+          t.textContent = `${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+          // Warning states: >5m primary red, ≤5m amber, ≤1m bright danger red.
+          const total = minutes * 60 + seconds;
+          t.style.color = total <= 60 ? '#DC2626' : total <= 300 ? '#F59E0B' : 'var(--r)';
+        },
+        () => submitAssessment(true)
+      );
+      timer.start();
+      showSection(0);
+    }
+
+    // Categories containing only LIKERT_SCALE questions batch into one
+    // section per category, exactly as before. Every other question type
+    // explodes into its own one-question "unit" so it gets a dedicated
+    // counter/next-gate — MULTI_SELECT and RANKING get their own kind since
+    // they render and record answers differently from the single-select
+    // (radio) family (NUMERICAL_ABILITY, PERCENTAGE_TYPE, PUZZLE_TYPE,
+    // LOGICAL_ABILITY, VERBAL_ABILITY, IMAGE_BASED, SITUATIONAL). All unit
+    // kinds still map 1:1 onto a `.q-section` div, so the dot-nav/prev-next/
+    // progress-bar machinery below needs no other changes.
+    // How many LIKERT questions share one page. The likert questions of a
+    // category used to render as a single (arbitrarily long) page; they're now
+    // paginated in forward order so the candidate answers a fixed handful, hits
+    // Next, and continues from the next one (page 1 = Q1–5, page 2 = Q6–10, …).
+    const LIKERT_PAGE_SIZE = 1;
+    function buildRenderUnits(sections) {
+      const units = [];
+      const isLikert = (q) => q.questionType === 'LIKERT_SCALE' || !q.questionType;
+      sections.forEach((section) => {
+        // Walk the section's questions IN THE SET'S ORDER: batch consecutive
+        // Likert items into fixed-size pages, emit each other type inline where
+        // it sits. This keeps the admin-chosen order (so the first question is
+        // exactly what's first in the set); a pure-Likert section batches the
+        // same 5-per-page as before.
+        const qs = section.questions;
+        let i = 0;
+        while (i < qs.length) {
+          if (isLikert(qs[i])) {
+            const batch = [];
+            while (i < qs.length && isLikert(qs[i]) && batch.length < LIKERT_PAGE_SIZE) { batch.push(qs[i]); i++; }
+            units.push({ kind: 'batch', typeName: section.typeName, typeIcon: section.typeIcon, questions: batch });
+          } else {
+            const q = qs[i];
+            const kind = q.questionType === 'MULTI_SELECT' ? 'multiselect' : q.questionType === 'RANKING' ? 'ranking' : 'single';
+            units.push({ kind, typeName: section.typeName, typeIcon: section.typeIcon, question: q });
+            i++;
+          }
+        }
+      });
+      return units;
+    }
+
+    function allQuestionsFlat() {
+      return sections.flatMap((s) => s.questions);
+    }
+
+    // Whether a non-batch unit currently has a submittable answer. A
+    // MULTI_SELECT needs >=1 checked box; a RANKING is always "answered"
+    // once its section has been visited (showSection seeds `answers` with
+    // the displayed order — reordering is an optional refinement, not a
+    // forced interaction, same as a real-world ranking exercise). Delegates
+    // to isAnswered(), defined further down (function declarations hoist).
+    function hasAnswer(unit) {
+      // A batch (one or more Likert questions on a page) counts as answered only
+      // when EVERY question on it is answered — so Next/Save & Continue can't be
+      // used to skip a question without answering it.
+      if (unit.kind === 'batch') return unit.questions.every(isAnswered);
+      return isAnswered(unit.question);
+    }
+
+    // Shared question-card header: red number circle + section/dimension name +
+    // question range + a Mark-for-Review bookmark. `ui` is the render-unit index.
+    function cardHeader(unit, ui, num, total) {
+      // Range shown is the whole SECTION/dimension the current question belongs
+      // to (e.g. Communication = "Questions 1–4 of 57"); the circle shows the
+      // current question number.
+      const cat = (sideCats || []).find((c) => c.units.includes(ui));
+      const s = cat ? catStart(cat) : num, e = cat ? catEnd(cat) : num;
+      const range = s === e ? `Question ${s} of ${total}` : `Questions ${s}–${e} of ${total}`;
+      const on = markedSections.has(ui);
+      return `
+        <div class="qc-head">
+          <div class="qc-head-l">
+            <div class="qc-num">${num}</div>
+            <div>
+              <div class="qc-cat">${unit.typeName || 'Question'}</div>
+              <div class="qc-range">${range}</div>
+            </div>
+          </div>
+          <button type="button" class="bm ${on ? 'on' : ''}" id="bm-${ui}" onclick="toggleReview(${ui})" aria-label="Mark this section for review" aria-pressed="${on}">
+            <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+          </button>
+        </div>`;
+    }
+
+    function optionRadio(q, isCheckbox) {
+      const selected = isCheckbox ? new Set(answers[q._id] || []) : null;
+      const shape = isCheckbox ? 'sq' : '';
+      const disabled = timedOut[q._id] ? 'disabled' : '';
+      return q.options.map((opt) => {
+        const checked = isCheckbox ? selected.has(opt._id) : answers[q._id] === opt._id;
+        const handler = isCheckbox
+          ? `onchange="toggleMultiSelect('${q._id}','${opt._id}', this.checked)"`
+          : `onchange="recordAnswer('${q._id}','${opt._id}')"`;
+        return `
+          <div class="opt">
+            <input type="${isCheckbox ? 'checkbox' : 'radio'}" name="q_${q._id}" id="opt_${opt._id}" value="${opt._id}" ${handler} ${checked ? 'checked' : ''} ${disabled} />
+            <label for="opt_${opt._id}"><span class="opt-ind ${shape}"></span><span>${opt.optionText}</span></label>
+          </div>`;
+      }).join('');
+    }
+
+    function renderLikertBatch(unit, totalQuestions, questionOffset, ui) {
+      const multi = unit.questions.length > 1;
+      return `
+        <div class="qcard">
+          ${cardHeader(unit, ui, questionOffset + 1, totalQuestions)}
+          ${unit.questions.map((q, qi) => `
+            <div class="${multi ? 'qc-item' : ''}">
+              <p class="qc-text">${multi ? `<span class="qc-qnum">${questionOffset + qi + 1}</span>` : ''}${q.text}</p>
+              ${renderAudio(q)}
+              <div id="options-${q._id}">${optionRadio(q, false)}</div>
+            </div>
+          `).join('')}
+        </div>`;
+    }
+
+    // Inline SVG glyphs — speaker (play), bars (pause), circular arrow (replay),
+    // square (stop) — sized to sit inside the shared .btn styling, inheriting
+    // colour via currentColor.
+    const AUDIO_ICONS = {
+      play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>',
+      pause: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>',
+      replay: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>',
+      stop: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>',
+    };
+
+    // Renders the audio control for EVERY question (below the text, above the
+    // options — see each render*()). No dependency on the admin "Has audio"
+    // flag: uploaded audio plays when present, otherwise the text is spoken.
+    function renderAudio(q) {
+      return `
+        <div class="a-audio" id="audio-wrap-${q._id}">
+          <button type="button" class="abtn abtn-play" id="audio-btn-${q._id}"
+            onclick="togglePlayback('${q._id}')" aria-label="Play question audio">
+            <span class="audio-icon" id="audio-icon-${q._id}">${AUDIO_ICONS.play}</span>
+            <span id="audio-label-${q._id}">Play Question</span>
+          </button>
+          <button type="button" class="abtn abtn-stop" id="audio-stop-${q._id}"
+            onclick="stopPlayback('${q._id}')" aria-label="Stop audio">
+            <span class="audio-icon">${AUDIO_ICONS.stop}</span><span>Stop</span>
+          </button>
+          <span class="a-error hidden" id="audio-error-${q._id}" role="alert"></span>
+        </div>`;
+    }
+
+    function setAudioIcon(qid, state) {
+      const el = document.getElementById(`audio-icon-${qid}`);
+      if (el) el.innerHTML = AUDIO_ICONS[state] || AUDIO_ICONS.play;
+    }
+
+    // Reflect playback state on a question's button, and show the Stop button
+    // only while something is playing or paused:
+    //  'play'   -> "Play Question" (idle/stopped)   Stop hidden
+    //  'pause'  -> "Pause"  (currently playing)     Stop shown
+    //  'resume' -> "Resume" (paused mid-playback)   Stop shown
+    //  'replay' -> "Replay" (finished)              Stop hidden
+    function setAudioState(qid, state) {
+      const label = document.getElementById(`audio-label-${qid}`);
+      const btn = document.getElementById(`audio-btn-${qid}`);
+      if (!label) return;
+      const map = { play: ['Play Question', 'play'], pause: ['Pause', 'pause'], resume: ['Resume', 'play'], replay: ['Replay', 'replay'] };
+      const [text, icon] = map[state] || map.play;
+      label.textContent = text;
+      setAudioIcon(qid, icon);
+      // Stop stays visible at all times (matches the reference); it simply
+      // resets when nothing is playing.
+      if (btn) btn.setAttribute('aria-label', `${text} — question audio`);
+    }
+
+    function showAudioError(qid, msg) {
+      const el = document.getElementById(`audio-error-${qid}`);
+      if (el) { el.textContent = msg || 'Audio could not be played. Please try again.'; el.classList.remove('hidden'); }
+    }
+    function hideAudioError(qid) {
+      const el = document.getElementById(`audio-error-${qid}`);
+      if (el) { el.textContent = ''; el.classList.add('hidden'); }
+    }
+
+    // Web Speech voices load asynchronously; cache them and refresh on change.
+    let voicesCache = [];
+    function refreshVoices() { if (TTS_OK) { try { voicesCache = window.speechSynthesis.getVoices() || []; } catch { voicesCache = []; } } }
+    if (TTS_OK) { refreshVoices(); try { window.speechSynthesis.onvoiceschanged = refreshVoices; } catch { /* ignore */ } }
+
+    // Does this device actually have a Tamil voice? Used to decide whether a
+    // Tanglish explanation should be transliterated to Tamil script (only worth
+    // it if a Tamil voice can read it) or read as-is in romanized form.
+    function hasTamilVoice() {
+      const list = (voicesCache && voicesCache.length) ? voicesCache : (TTS_OK ? (window.speechSynthesis.getVoices() || []) : []);
+      return list.some((v) => (v.lang || '').toLowerCase().startsWith('ta'));
+    }
+
+    // Gentle, human-ish prosody: a touch slower for clarity, natural pitch — so
+    // the read sounds calm and clear rather than fast and robotic.
+    const TTS_RATE = 0.9, TTS_PITCH = 1.0, TTS_VOLUME = 1;
+
+    // Rank voices so the most natural/human-sounding one wins: neural/natural
+    // engines first, then online/enhanced/premium and Google voices, then a few
+    // well-known pleasant named voices. This is what makes it sound less like a
+    // bot (far more impactful than rate/pitch).
+    function scoreVoice(v) {
+      const n = ((v && v.name) || '').toLowerCase();
+      let s = 0;
+      if (/natural|neural/.test(n)) s += 6;
+      if (/online|enhanced|premium/.test(n)) s += 3;
+      if (/google/.test(n)) s += 3;
+      if (/zira|aria|jenny|sonia|libby|emma|ava|samantha|nova|serena|karen|heera/.test(n)) s += 2;
+      if (v && v.default) s += 1;
+      return s;
+    }
+    function bestVoice(list) { return list.length ? list.slice().sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] : null; }
+
+    // Tanglish (Tamil written in English letters) -> Tamil script, so a Tamil
+    // voice can read it instead of an English voice mispronouncing romanized
+    // Tamil. Rule-based longest-match: consonant+vowel -> consonant letter +
+    // matra; a bare consonant gets pulli (்); a standalone vowel uses its
+    // independent letter; anything already Tamil / punctuation passes through.
+    // Romanization is ambiguous, so the output is approximate by design.
+    const TL_VOWELS = [['au','ஔ','ௌ'],['ai','ஐ','ை'],['aa','ஆ','ா'],['ee','ஏ','ே'],['ii','ஈ','ீ'],['oo','ஓ','ோ'],['uu','ஊ','ூ'],['a','அ',''],['i','இ','ி'],['u','உ','ு'],['e','எ','ெ'],['o','ஒ','ொ']];
+    const TL_CONS = [['ng','ங'],['nj','ஞ'],['ch','ச'],['sh','ஷ'],['zh','ழ'],['th','த'],['dh','த'],['kh','க'],['gh','க'],['ph','ப'],['bh','ப'],['k','க'],['g','க'],['c','ச'],['j','ஜ'],['t','ட'],['d','ட'],['n','ந'],['p','ப'],['b','ப'],['m','ம'],['y','ய'],['r','ர'],['l','ல'],['v','வ'],['w','வ'],['s','ஸ'],['h','ஹ'],['f','ஃப'],['x','க்ஸ'],['q','க']];
+    function tanglishToTamil(input) {
+      const src = String(input || ''), s = src.toLowerCase();
+      const isTa = (ch) => ch >= '஀' && ch <= '௿';
+      const matchAt = (arr, pos) => { for (const e of arr) if (s.startsWith(e[0], pos)) return e; return null; };
+      let out = '', i = 0;
+      while (i < s.length) {
+        if (isTa(src[i])) { out += src[i]; i++; continue; }
+        const c = matchAt(TL_CONS, i);
+        if (c) { i += c[0].length; const v = matchAt(TL_VOWELS, i); if (v) { out += c[1] + v[2]; i += v[0].length; } else out += c[1] + '்'; continue; }
+        const v = matchAt(TL_VOWELS, i);
+        if (v) { out += v[1]; i += v[0].length; continue; }
+        out += src[i]; i++;
+      }
+      return out;
+    }
+
+    // Autonomously detect Tanglish (romanized Tamil) vs English so the right
+    // voice is used even without the admin flag. Mirrors utils/tanglish.js.
+    const TL_LEX = new Set('unga ungal ungala ungaluku ungalukku ungaloda naan nee neenga ninga avan ava avanga avaru naanga naama namma namba idhu adhu ithu athu indha intha andha enna yaar yaaru eppadi epdi ippadi appadi panna pannu pannunga pannanum pandrom seyya seyyanum sollu sollavum solli sonna kelvi bathil pathil badhil romba konjam illa illai irukku iruku unda aana aanaal aanalum venum vendum theriyum puriyum padi padikka padichu padikkanum kooda mattum ellam ella ellaam oru rendu moonu naalu nalla seri sari vanakkam nandri anbu kashtam kashtamana moolam moolama mudiyum mudiyathu aagum aachu vaanga ponga irunga kudunga kaatunga ninaivu yosanai yosichu therinjukonga therinjukanum'.split(/\s+/));
+    const TL_SUF = ['nga', 'kku', 'ku', 'nu', 'la', 'um', 'dhu', 'dham', 'aana', 'aachu', 'anum', 'avum', 'itten', 'ittu', 'kanum', 'kuthu'];
+    const EN_STOP = new Set('the a an is am are was were be been being to of in on at for and or but with you your yours i we they he she it this that these those how what why when where which who will would can could should shall may might must do does did done read each option pick closest handle customer complaint question checks check respond answer choose select following apply all best most from about into over under please note here there than then them their our have has had not no yes if else while because so such very more less first second third only also just like get got make made take give given use used word meaning sentence passage correct below'.split(/\s+/));
+    function detectTanglish(text) {
+      const s = String(text || '').toLowerCase();
+      if (!s.trim() || /[஀-௿]/.test(s)) return false;
+      const words = s.split(/[^a-z]+/).filter((w) => w.length > 1);
+      if (words.length < 2) return false;
+      let ta = 0, en = 0;
+      for (const w of words) {
+        if (EN_STOP.has(w)) { en += 1; continue; }
+        if (TL_LEX.has(w)) { ta += 2; continue; }
+        if (TL_SUF.some((suf) => w.length > suf.length + 1 && w.endsWith(suf))) { ta += 1; continue; }
+        if (/zh|kk|tt|pp|nn|dh|ng|aa|oo/.test(w)) ta += 0.5;
+      }
+      return ta > en && ta >= words.length * 0.35;
+    }
+
+    // Choose a voice for `text`. When `forceLang` ('en'|'ta') is given — e.g.
+    // from the question's saved language — it wins; otherwise fall back to
+    // detecting Tamil script (U+0B80–U+0BFF) in the text. English otherwise.
+    function pickSpeech(text, forceLang) {
+      const isTamil = forceLang ? forceLang === 'ta' : /[஀-௿]/.test(text || '');
+      const want = isTamil ? 'ta' : 'en';
+      let lang = isTamil ? 'ta-IN' : 'en-US';
+      const list = (voicesCache && voicesCache.length) ? voicesCache : (TTS_OK ? (window.speechSynthesis.getVoices() || []) : []);
+      let voice = bestVoice(list.filter((v) => (v.lang || '').toLowerCase().startsWith(want)));
+      if (!voice) {
+        // Preferred-language voice unavailable — fall back to the best English
+        // voice (then any) and MATCH lang to it. A lang/voice mismatch (e.g.
+        // lang 'ta-IN' with an English voice) silences some engines, so aligning
+        // them guarantees the text is still read aloud.
+        voice = bestVoice(list.filter((v) => (v.lang || '').toLowerCase().startsWith('en'))) || bestVoice(list) || null;
+        if (voice && voice.lang) lang = voice.lang;
+      }
+      return { lang, voice };
+    }
+
+    // Stop and release ANY live playback (uploaded audio OR speech) and reset
+    // the active button. The single choke point that guarantees no overlap and
+    // that navigation/submit/exit never leaves audio running.
+    function stopAllPlayback() {
+      const prev = activeQid;
+      if (ttsTick) { clearInterval(ttsTick); ttsTick = null; }
+      if (currentAudio) { const a = currentAudio; currentAudio = null; try { a.pause(); } catch { /* ignore */ } a.src = ''; }
+      if (TTS_OK) {
+        // Cancel ONLY when something is actually queued/speaking. An
+        // unconditional cancel() immediately before a speak() makes Chrome
+        // silently drop the new utterance (the cancel->speak race) — the reason
+        // speech failed to start on real devices.
+        const ss = window.speechSynthesis;
+        if (currentUtterance || ss.speaking || ss.pending) { currentUtterance = null; try { ss.cancel(); } catch { /* ignore */ } }
+      }
+      activeQid = null; activeMode = null; activeState = 'idle';
+      if (prev) setAudioState(prev, 'play');
+    }
+
+    // Uploaded-audio playback. Handlers are guarded on element IDENTITY because
+    // stopping sets src='' which fires a spurious 'error' on the dead element.
+    function startAudio(qid, url) {
+      const audio = new Audio(url);
+      currentAudio = audio; activeQid = qid; activeMode = 'audio'; activeState = 'playing';
+      audio.addEventListener('ended', () => { if (currentAudio === audio) { activeState = 'ended'; activeQid = qid; setAudioState(qid, 'replay'); } });
+      audio.addEventListener('error', () => {
+        if (currentAudio !== audio) return;
+        currentAudio = null; activeQid = null; activeMode = null; activeState = 'idle';
+        setAudioState(qid, 'play'); showAudioError(qid);
+      });
+      setAudioState(qid, 'pause');
+      const p = audio.play();
+      if (p && typeof p.catch === 'function') p.catch(() => { if (currentAudio === audio) { activeState = 'idle'; setAudioState(qid, 'play'); showAudioError(qid); } });
+    }
+
+    // Text-to-speech playback of the question text (the fallback for questions
+    // with no uploaded clip). Uses window.speechSynthesis / SpeechSynthesisUtterance.
+    function startTts(qid, text, forceLang) {
+      text = (text || '').trim();
+      if (!TTS_OK) { setAudioState(qid, 'play'); showAudioError(qid, 'Audio is not supported in this browser.'); return; }
+      if (!text) { showAudioError(qid, 'No text to read.'); return; }
+      const ss = window.speechSynthesis;
+      const u = new SpeechSynthesisUtterance(text);
+      const { lang, voice } = pickSpeech(text, forceLang);
+      u.lang = lang; if (voice) u.voice = voice;
+      u.rate = TTS_RATE; u.pitch = TTS_PITCH; u.volume = TTS_VOLUME;
+      currentUtterance = u; activeQid = qid; activeMode = 'tts'; activeState = 'playing';
+      let started = false;
+      const fail = (msg) => { if (currentUtterance !== u) return; if (ttsTick) { clearInterval(ttsTick); ttsTick = null; } currentUtterance = null; activeQid = null; activeMode = null; activeState = 'idle'; setAudioState(qid, 'play'); showAudioError(qid, msg); };
+      u.onstart = () => { if (currentUtterance === u) { started = true; activeState = 'playing'; setAudioState(qid, 'pause'); } };
+      u.onend = () => { if (currentUtterance !== u) return; if (ttsTick) { clearInterval(ttsTick); ttsTick = null; } currentUtterance = null; activeQid = qid; activeMode = null; activeState = 'ended'; setAudioState(qid, 'replay'); };
+      u.onerror = () => fail('Speech could not be played on this device.');
+      setAudioState(qid, 'pause');
+      const speak = () => {
+        if (currentUtterance !== u) return;
+        try {
+          ss.speak(u);
+          if (ss.paused) ss.resume();               // Chrome can start globally paused — nudge it.
+          // Keep-alive: Chrome auto-pauses long utterances after ~15s; a periodic
+          // resume() (only while genuinely playing) prevents mid-question cutoff.
+          if (ttsTick) clearInterval(ttsTick);
+          ttsTick = setInterval(() => { if (currentUtterance === u && activeState === 'playing' && ss.speaking && !ss.paused) { try { ss.resume(); } catch { /* ignore */ } } else if (currentUtterance !== u) { clearInterval(ttsTick); ttsTick = null; } }, 8000);
+        } catch { fail('Speech could not be played on this device.'); }
+      };
+      // Dodge the cancel()->speak() race: if the engine is still winding down
+      // from a previous utterance, cancel then speak on the next tick.
+      if (ss.speaking || ss.pending) { try { ss.cancel(); } catch { /* ignore */ } setTimeout(speak, 90); }
+      else speak();
+      // If nothing actually starts within a grace period (e.g. no installed voice
+      // for the language), surface a clear message instead of failing silently.
+      setTimeout(() => { if (currentUtterance === u && !started && !ss.paused && !ss.speaking) fail('No speech voice is available on this device or browser.'); }, 2500);
+    }
+
+    // Fetch (and object-URL-cache) a question's cached neural mp3. Returns the
+    // object URL, or 'none' if the server has no audio for it.
+    async function fetchNeural(qid) {
+      if (neuralAudioUrls[qid] !== undefined) return neuralAudioUrls[qid];
+      try {
+        const res = await fetch(`${NEURAL_BASE}/assessment/questions/${qid}/audio`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return (neuralAudioUrls[qid] = 'none');
+        const url = URL.createObjectURL(await res.blob());
+        return (neuralAudioUrls[qid] = url);
+      } catch { return (neuralAudioUrls[qid] = 'none'); }
+    }
+
+    // Same, for a question's cached neural EXPLANATION mp3 (Tamil/Tanglish).
+    async function fetchExplanationAudio(qid) {
+      if (neuralExpUrls[qid] !== undefined) return neuralExpUrls[qid];
+      try {
+        const res = await fetch(`${NEURAL_BASE}/assessment/questions/${qid}/explanation-audio`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return (neuralExpUrls[qid] = 'none');
+        const url = URL.createObjectURL(await res.blob());
+        return (neuralExpUrls[qid] = url);
+      } catch { return (neuralExpUrls[qid] = 'none'); }
+    }
+
+    function setLoading(qid) { const l = document.getElementById(`audio-label-${qid}`); if (l) l.textContent = 'Loading…'; }
+
+    // Begin playback for a question from the start, after stopping anything
+    // else. Priority: admin-uploaded audio -> cached neural TTS (studio quality)
+    // -> browser speech synthesis. Async because neural audio is fetched lazily;
+    // a playToken guard aborts a fetch the user has already navigated past.
+    async function startPlayback(qid) {
+      stopAllPlayback();
+      const myToken = ++playToken;
+      hideAudioError(qid);
+      const lang = questionLang[qid] === 'ta' ? 'ta' : 'en';
+      // A spoken explanation is a TAMIL-content helper, so it's only used for
+      // questions whose saved language is Tamil. An English question (the
+      // default, including the first question) always reads its own English
+      // text — a Tamil explanation/voice never makes it "become Tamil".
+      const explanationRaw = (explanationTexts[qid] || '').trim();
+      if (explanationRaw && lang === 'ta') {
+        // 0a) Server-generated neural audio (studio-quality Tamil, works on
+        //     ANY device — no Tamil voice needed). Preferred when available.
+        if (neuralExpReady[qid]) {
+          let url = neuralExpUrls[qid];
+          if (url === undefined) { setLoading(qid); url = await fetchExplanationAudio(qid); if (myToken !== playToken) return; }
+          if (url && url !== 'none') { startAudio(qid, url); return; }
+        }
+        // 0b) Browser-voice fallback: transliterate Tanglish -> Tamil when the
+        //     device has a Tamil voice, else read the romanized text aloud.
+        let explanation = explanationRaw;
+        const isTanglish = explanationTanglish[qid] || detectTanglish(explanationRaw);
+        if (isTanglish && hasTamilVoice()) explanation = tanglishToTamil(explanation);
+        startTts(qid, explanation, 'ta');
+        return;
+      }
+      if (audioUrls[qid]) { startAudio(qid, audioUrls[qid]); return; }         // 1) uploaded
+      if (neuralReady[qid]) {                                                  // 2) cached neural
+        let url = neuralAudioUrls[qid];
+        if (url === undefined) { setLoading(qid); url = await fetchNeural(qid); if (myToken !== playToken) return; }
+        if (url && url !== 'none') { startAudio(qid, url); return; }
+      }
+      startTts(qid, questionTexts[qid], lang);                                 // 3) browser speech, in the question's language
+    }
+
+    function pausePlayback(qid) {
+      if (activeMode === 'audio' && currentAudio) { try { currentAudio.pause(); } catch { /* ignore */ } }
+      else if (activeMode === 'tts' && TTS_OK) { try { window.speechSynthesis.pause(); } catch { /* ignore */ } }
+      activeState = 'paused'; setAudioState(qid, 'resume');
+    }
+
+    function resumePlayback(qid) {
+      if (activeMode === 'audio' && currentAudio) { const p = currentAudio.play(); if (p && typeof p.catch === 'function') p.catch(() => { setAudioState(qid, 'play'); showAudioError(qid); }); }
+      else if (activeMode === 'tts' && TTS_OK) { try { window.speechSynthesis.resume(); } catch { /* ignore */ } }
+      activeState = 'playing'; setAudioState(qid, 'pause');
+    }
+
+    // Primary button — play / pause / resume / replay depending on state.
+    function togglePlayback(qid) {
+      if (activeQid !== qid) return startPlayback(qid);          // idle, or another question was active
+      if (activeState === 'playing') return pausePlayback(qid);
+      if (activeState === 'paused') return resumePlayback(qid);
+      return startPlayback(qid);                                 // 'ended'/'idle' -> replay / start
+    }
+
+    // Secondary Stop button — stop and reset to "Play Question".
+    function stopPlayback(qid) { stopAllPlayback(); setAudioState(qid, 'play'); }
+
+    // Re-point a freshly re-rendered button at the live playback state (used
+    // when a RANKING section re-renders mid-play after a reorder).
+    function syncAudioButton(qid) {
+      if (activeQid !== qid) return setAudioState(qid, 'play');
+      if (activeState === 'ended') return setAudioState(qid, 'replay');
+      if (activeState === 'paused') return setAudioState(qid, 'resume');
+      if (activeState === 'playing') return setAudioState(qid, 'pause');
+      setAudioState(qid, 'play');
+    }
+
+    function renderMcqSingle(unit, ui, globalIndex, totalQuestions) {
+      const q = unit.question;
+      const timerHtml = q.timeLimitSeconds
+        ? `<div class="qc-hint" style="text-align:right;color:var(--r);font-weight:700"><span id="q-timer-${q._id}">--:--</span> left</div>`
+        : '';
+      return `
+        <div class="qcard">
+          ${cardHeader(unit, ui, globalIndex, totalQuestions)}
+          ${timerHtml}
+          ${q.instructionText ? `<p class="qc-instr">${q.instructionText}</p>` : ''}
+          ${q.imageUrl ? `<img src="${q.imageUrl}" alt="Assessment question image" class="qc-img" />` : ''}
+          <p class="qc-text">${q.text}</p>
+          ${renderAudio(q)}
+          <div id="options-${q._id}">${optionRadio(q, false)}</div>
+        </div>`;
+    }
+
+    function renderMultiSelect(unit, ui, globalIndex, totalQuestions) {
+      const q = unit.question;
+      return `
+        <div class="qcard">
+          ${cardHeader(unit, ui, globalIndex, totalQuestions)}
+          ${q.instructionText ? `<p class="qc-instr">${q.instructionText}</p>` : ''}
+          ${q.imageUrl ? `<img src="${q.imageUrl}" alt="Assessment question image" class="qc-img" />` : ''}
+          <p class="qc-text">${q.text}</p>
+          <p class="qc-hint">Select all that apply.</p>
+          ${renderAudio(q)}
+          <div id="options-${q._id}">${optionRadio(q, true)}</div>
+        </div>`;
+    }
+
+    function renderRanking(unit, ui, globalIndex, totalQuestions) {
+      const q = unit.question;
+      const order = answers[q._id] || q.options.map(o => o._id);
+      const optionById = Object.fromEntries(q.options.map(o => [o._id, o]));
+      return `
+        <div class="qcard">
+          ${cardHeader(unit, ui, globalIndex, totalQuestions)}
+          ${q.instructionText ? `<p class="qc-instr">${q.instructionText}</p>` : ''}
+          <p class="qc-text">${q.text}</p>
+          <p class="qc-hint">Use the arrows to arrange in your preferred order (top = first).</p>
+          ${renderAudio(q)}
+          <div id="options-${q._id}">
+            ${order.map((optId, i) => `
+              <div class="rk">
+                <span class="rk-n">${i + 1}</span>
+                <span style="flex:1;font-size:15px">${optionById[optId].optionText}</span>
+                <div class="flex flex-col gap-1 shrink-0">
+                  <button type="button" aria-label="Move up" class="rk-btn" onclick="moveRankingItem('${q._id}', ${i}, -1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+                  <button type="button" aria-label="Move down" class="rk-btn" onclick="moveRankingItem('${q._id}', ${i}, 1)" ${i === order.length - 1 ? 'disabled' : ''}>▼</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+    }
+
+    function renderUnitHTML(unit, ui, globalIndex, totalQuestions) {
+      if (unit.kind === 'multiselect') return renderMultiSelect(unit, ui, globalIndex, totalQuestions);
+      if (unit.kind === 'ranking') return renderRanking(unit, ui, globalIndex, totalQuestions);
+      return renderMcqSingle(unit, ui, globalIndex, totalQuestions);
+    }
+
+    function renderQuestions() {
+      const container = document.getElementById('question-container');
+      const flat = allQuestionsFlat();
+      const totalQuestions = flat.length;
+      buildSideModel();   // sideCats/unitStart/unitEnd — cardHeader needs the section ranges
+      let questionOffset = 0;
+      renderUnits.forEach((unit, ui) => {
+        const sec = document.createElement('div');
+        sec.className = 'q-section';
+        sec.id = `section-${ui}`;
+        if (unit.kind === 'batch') {
+          sec.innerHTML = renderLikertBatch(unit, totalQuestions, questionOffset, ui);
+          questionOffset += unit.questions.length;
+        } else {
+          const globalIndex = flat.indexOf(unit.question) + 1;
+          sec.innerHTML = renderUnitHTML(unit, ui, globalIndex, totalQuestions);
+          questionOffset += 1;
+        }
+        container.appendChild(sec);
+      });
+      renderSidebar();
+    }
+
+    // Elapsed time since this question's section was first shown (see
+    // showSection), refreshed on every interaction so the stored value
+    // reflects time-to-last-change rather than time-to-first-change.
+    function markTimeSpent(qId) {
+      const start = questionStartTimes[qId];
+      if (start) timeSpent[qId] = Math.round((Date.now() - start) / 1000);
+    }
+
+    function recordAnswer(qId, optId) {
+      answers[qId] = optId;
+      markTimeSpent(qId);
+      // Once answered, the per-question timer's only job (forcing an answer
+      // before time runs out) is done — stop it so it doesn't auto-advance
+      // the candidate away from a question they already answered and may
+      // still be reviewing.
+      const unit = renderUnits[currentSection];
+      if (unit && unit.kind === 'single' && unit.question._id === qId) stopQuestionTimer();
+      saveAutosave();
+      updateProgress();
+    }
+
+    function toggleMultiSelect(qId, optId, checked) {
+      const set = new Set(answers[qId] || []);
+      if (checked) set.add(optId); else set.delete(optId);
+      answers[qId] = [...set];
+      markTimeSpent(qId);
+      const unit = renderUnits[currentSection];
+      if (unit && unit.kind === 'multiselect' && unit.question._id === qId && set.size > 0) stopQuestionTimer();
+      saveAutosave();
+      updateProgress();
+    }
+
+    function moveRankingItem(qId, idx, dir) {
+      const order = answers[qId];
+      if (!order) return;
+      const j = idx + dir;
+      if (j < 0 || j >= order.length) return;
+      [order[idx], order[j]] = [order[j], order[idx]];
+      markTimeSpent(qId);
+      saveAutosave();
+      const unit = renderUnits[currentSection];
+      if (unit && unit.kind === 'ranking' && unit.question._id === qId) {
+        const flat = allQuestionsFlat();
+        document.getElementById(`section-${currentSection}`).innerHTML =
+          renderRanking(unit, currentSection, flat.indexOf(unit.question) + 1, flat.length);
+        // The re-render recreated this question's audio button — restore its
+        // label/icon to match any clip still playing.
+        syncAudioButton(qId);
+      }
+    }
+
+    function stopQuestionTimer() {
+      if (questionTimer) { questionTimer.stop(); questionTimer = null; }
+    }
+
+    function startQuestionTimer(q) {
+      const qExpiresAt = new Date(Date.now() + q.timeLimitSeconds * 1000).toISOString();
+      questionTimer = new AssessmentTimer(qExpiresAt,
+        ({ minutes, seconds }) => {
+          const el = document.getElementById(`q-timer-${q._id}`);
+          if (el) el.textContent = `${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+        },
+        () => {
+          timedOut[q._id] = true;
+          markTimeSpent(q._id);
+          saveAutosave();
+          document.querySelectorAll(`#options-${q._id} input`).forEach((inp) => inp.disabled = true);
+          if (currentSection < renderUnits.length - 1) showSection(currentSection + 1);
+          else updateProgress();
+        }
+      );
+      questionTimer.start();
+    }
+
+    // Reset the viewport to the top of the page. Uses the two-argument
+    // scrollTo(x, y) form plus documentElement/body scrollTop fallbacks: the
+    // options form — window.scrollTo({ top, behavior }) — is a silent no-op in
+    // several packaged-app WebView runtimes, which left each new question page
+    // opening at the previous page's scroll position. Instant (not smooth) so
+    // the new page simply appears at the top with no scroll-up animation or
+    // flicker, and only ever called on explicit Next/Previous navigation so
+    // browser Back/Forward scroll restoration is untouched.
+    function scrollToTop() {
+      window.scrollTo(0, 0);
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
+    }
+
+    function showSection(idx) {
+      document.querySelectorAll('.q-section').forEach((s,i) => s.classList.toggle('active', i === idx));
+      currentSection = idx;
+      stopQuestionTimer();
+      // Leaving a section stops its audio/speech — moving to the next/previous
+      // question never leaves the previous playback running.
+      stopAllPlayback();
+      playToken++; // invalidate any neural-audio fetch still in flight
+      const unit = renderUnits[idx];
+      // Warm cached neural audio for this section's questions so Play is instant.
+      (unit.kind === 'batch' ? unit.questions : [unit.question]).forEach((q) => {
+        if (q && neuralReady[q._id] && neuralAudioUrls[q._id] === undefined) fetchNeural(q._id);
+        if (q && neuralExpReady[q._id] && neuralExpUrls[q._id] === undefined) fetchExplanationAudio(q._id);
+      });
+      // Time-to-answer is measured from the first time a question's section
+      // is actually shown, not from page load — a batch section shows all
+      // its questions at once, so every one of them starts its clock here.
+      const startedQuestions = unit.kind === 'batch' ? unit.questions : [unit.question];
+      startedQuestions.forEach((q) => { if (!questionStartTimes[q._id]) questionStartTimes[q._id] = Date.now(); });
+      // A RANKING question is seeded with its displayed order the first time
+      // its section is shown — reordering from there is optional, not a
+      // forced interaction (see hasAnswer()).
+      if (unit.kind === 'ranking' && !answers[unit.question._id]) {
+        answers[unit.question._id] = unit.question.options.map((o) => o._id);
+      }
+      if (unit.kind === 'single' && unit.question.timeLimitSeconds && !answers[unit.question._id] && !timedOut[unit.question._id]) {
+        startQuestionTimer(unit.question);
+      }
+      updateFooter();
+      updateProgress();   // also refreshes the sidebar highlight
+      // Moving to a section always shows it from its first question — otherwise
+      // a long previous page leaves the candidate scrolled to the bottom and the
+      // new page's question 1 starts off-screen.
+      scrollToTop();
+      // On mobile, collapse the overview drawer after jumping to a section.
+      const side = document.getElementById('a-side');
+      if (side && window.matchMedia('(max-width:1024px)').matches) {
+        side.classList.add('collapsed');
+        const tg = document.getElementById('side-toggle'); if (tg) { tg.classList.remove('open'); tg.setAttribute('aria-expanded', 'false'); }
+      }
+      // Move keyboard/screen-reader focus to the newly shown section so assistive
+      // tech isn't left on the now-hidden previous control. preventScroll keeps
+      // scrollToTop's reset intact.
+      const activeSection = document.querySelectorAll('.q-section')[idx];
+      if (activeSection) { activeSection.setAttribute('tabindex', '-1'); activeSection.focus({ preventScroll: true }); }
+    }
+
+    // Whether a raw question (not a render unit) currently has a
+    // submittable answer — used for the progress bar, mirroring
+    // hasAnswer()'s per-type rules.
+    function isAnswered(q) {
+      const val = answers[q._id];
+      if (q.questionType === 'MULTI_SELECT') return Array.isArray(val) && val.length > 0;
+      if (q.questionType === 'RANKING') return Array.isArray(val) && val.length === q.options.length;
+      return !!val;
+    }
+
+    // Whether a question is "done" for submission-gating purposes: answered,
+    // OR explicitly timed out. A per-question timeout permanently disables
+    // that question's inputs (see startQuestionTimer), so it can never
+    // become isAnswered() again — gating manual submit on isAnswered() alone
+    // would trap the candidate forever after a single timeout, unable to
+    // submit until the global timer force-submits. The Next-button gate
+    // already carries this same exception; the submit gate must match it.
+    function isResolved(q) {
+      return isAnswered(q) || !!timedOut[q._id];
+    }
+
+    function updateProgress() {
+      const all = allQuestionsFlat();
+      const answered = all.filter(isAnswered).length;
+      // Header count = the CURRENT question's position, so it updates every time
+      // the question changes (navigation), not only when an answer is recorded.
+      const cu = renderUnits[currentSection];
+      const curQ = cu ? (cu.kind === 'batch' ? cu.questions[0] : cu.question) : null;
+      const pos = curQ ? all.indexOf(curQ) + 1 : 0;
+      const pt = document.getElementById('progress-text');
+      if (pt) pt.innerHTML = `<b>${pos}</b><span class="m"> / ${all.length}</span>`;
+      // Progress bar = how many are actually answered (completion).
+      const pb = document.getElementById('progress-bar');
+      if (pb) pb.style.width = `${all.length ? (answered / all.length) * 100 : 0}%`;
+      updateSidebar();
+    }
+
+    // ---- Sidebar (assessment overview) ----------------------------------
+    // Categories = distinct section names across render-units, in order. A
+    // category can span several render-unit "pages" (e.g. paginated Likert).
+    function buildSideModel() {
+      unitStart = []; unitEnd = [];
+      let off = 0;
+      renderUnits.forEach((u, ui) => {
+        const n = u.kind === 'batch' ? u.questions.length : 1;
+        unitStart[ui] = off + 1; unitEnd[ui] = off + n; off += n;
+      });
+      sideCats = []; const seen = new Map();
+      renderUnits.forEach((u, ui) => {
+        const name = u.typeName || 'Questions';
+        if (!seen.has(name)) { seen.set(name, sideCats.length); sideCats.push({ name, icon: u.typeIcon || '📋', first: ui, units: [] }); }
+        sideCats[seen.get(name)].units.push(ui);
+      });
+    }
+    const catStart = (c) => Math.min(...c.units.map((ui) => unitStart[ui]));
+    const catEnd = (c) => Math.max(...c.units.map((ui) => unitEnd[ui]));
+    const catQuestions = (c) => c.units.flatMap((ui) => renderUnits[ui].kind === 'batch' ? renderUnits[ui].questions : [renderUnits[ui].question]);
+
+    function renderSidebar() {
+      buildSideModel();
+      const total = allQuestionsFlat().length;
+      const answered = allQuestionsFlat().filter(isAnswered).length;
+      const c0 = sideCats[0];
+      document.getElementById('a-side').innerHTML = `
+        <div class="side-h">Assessment Progress</div>
+        <div class="side-prog"><i id="side-bar" style="width:${total ? (answered/total*100) : 0}%"></i></div>
+        <div class="side-sub" id="side-count">${answered} of ${total} Questions</div>
+        <div class="side-div"></div>
+        <div class="side-cap">Current Section</div>
+        <div class="side-cur" id="side-cur">
+          <span class="ic" id="side-cur-ic">${c0 ? c0.icon : '📋'}</span>
+          <div><div class="t" id="side-cur-name">${c0 ? c0.name : ''}</div><div class="s" id="side-cur-range">${c0 ? `Questions ${catStart(c0)}–${catEnd(c0)}` : ''}</div></div>
+        </div>
+        <div class="side-cap">Assessment Sections</div>
+        <div id="side-dims">
+          ${sideCats.map((c, ci) => `
+            <button type="button" class="dim" id="dim-${ci}" onclick="showSection(${c.first})">
+              <span class="dim-n">${ci + 1}</span><span class="dim-name">${c.name}</span>
+            </button>`).join('')}
+        </div>`;
+      updateSidebar();
+    }
+
+    function updateSidebar() {
+      if (!sideCats.length) return;
+      const total = allQuestionsFlat().length;
+      const answered = allQuestionsFlat().filter(isAnswered).length;
+      const sb = document.getElementById('side-bar'); if (sb) sb.style.width = `${total ? (answered/total*100) : 0}%`;
+      const sc = document.getElementById('side-count'); if (sc) sc.textContent = `${answered} of ${total} Questions`;
+      const curName = renderUnits[currentSection] ? (renderUnits[currentSection].typeName || 'Questions') : '';
+      sideCats.forEach((c, ci) => {
+        const el = document.getElementById(`dim-${ci}`); if (!el) return;
+        const active = c.name === curName;
+        const done = catQuestions(c).every(isAnswered);
+        el.classList.toggle('active', active);
+        el.classList.toggle('done', done && !active);
+        if (active) {
+          const n = document.getElementById('side-cur-name'); if (n) n.textContent = c.name;
+          const r = document.getElementById('side-cur-range'); if (r) r.textContent = `Questions ${catStart(c)}–${catEnd(c)}`;
+          const i = document.getElementById('side-cur-ic'); if (i) i.textContent = c.icon || '📋';
+        }
+      });
+    }
+
+    // ---- Bottom action bar + Mark for Review ----------------------------
+    function updateFooter() {
+      const last = currentSection === renderUnits.length - 1;
+      const prev = document.getElementById('btn-prev'); if (prev) prev.disabled = currentSection === 0;
+      const next = document.getElementById('btn-next'); if (next) next.style.display = last ? 'none' : '';
+      const submit = document.getElementById('btn-submit'); if (submit) submit.style.display = last ? '' : 'none';
+      const review = document.getElementById('btn-review');
+      if (review) { const on = markedSections.has(currentSection); review.classList.toggle('on', on); review.setAttribute('aria-pressed', on); }
+      const msg = document.getElementById('unanswered-msg'); if (msg && !last) msg.textContent = '';
+    }
+
+    function toggleReview(ui) {
+      if (markedSections.has(ui)) markedSections.delete(ui); else markedSections.add(ui);
+      saveAutosave();
+      const on = markedSections.has(ui);
+      const bm = document.getElementById(`bm-${ui}`);
+      if (bm) { bm.classList.toggle('on', on); bm.setAttribute('aria-pressed', on); }
+      updateFooter();
+    }
+
+    function toggleSidebar() {
+      const side = document.getElementById('a-side');
+      const btn = document.getElementById('side-toggle');
+      const nowCollapsed = side.classList.toggle('collapsed');
+      btn.classList.toggle('open', !nowCollapsed);
+      btn.setAttribute('aria-expanded', String(!nowCollapsed));
+    }
+
+    document.getElementById('btn-prev').addEventListener('click', () => { if (currentSection > 0) showSection(currentSection - 1); });
+    document.getElementById('btn-next').addEventListener('click', () => {
+      const unit = renderUnits[currentSection];
+      // Require an answer before moving on. Timed single questions may pass once
+      // they've timed out (their inputs are locked); everything else must be
+      // answered — including Likert pages, which previously slipped through.
+      const timedOutHere = unit.kind !== 'batch' && !!timedOut[unit.question._id];
+      if (!hasAnswer(unit) && !timedOutHere) {
+        showToast('Please select an answer before continuing.', 'error');
+        return;
+      }
+      showSection(currentSection + 1);
+    });
+    document.getElementById('btn-review').addEventListener('click', () => toggleReview(currentSection));
+    document.getElementById('btn-submit').addEventListener('click', () => submitAssessment(false));
+
+    // Builds one payload entry per active question, in the shape the
+    // backend's per-questionType `referencedOptionIds` expects: a single
+    // answerOptionId for LIKERT/SITUATIONAL/single-correct-answer types, an
+    // answerOptionIds array for MULTI_SELECT, an orderedOptionIds array for
+    // RANKING. isAnswered(q) is the single source of truth for whether a
+    // question has a submittable answer — anything else (never visited
+    // before a global auto-submit cutoff, or a per-question timeout) MUST
+    // get an explicit status, because routes/assessment.js's validator
+    // rejects the whole submission if any entry has neither an answer field
+    // nor a status. A bare {questionId} with nothing else previously slipped
+    // through here whenever the global timer fired before every question had
+    // been visited, failing submission entirely.
+    function buildAnswerPayload(allQuestions) {
+      return allQuestions.map((q) => {
+        const entry = { questionId: q._id };
+        if (isAnswered(q)) {
+          if (q.questionType === 'MULTI_SELECT') entry.answerOptionIds = answers[q._id];
+          else if (q.questionType === 'RANKING') entry.orderedOptionIds = answers[q._id];
+          else entry.answerOptionId = answers[q._id];
+          entry.status = timedOut[q._id] ? 'timeout' : 'answered';
+        } else {
+          entry.status = timedOut[q._id] ? 'timeout' : 'skipped';
+        }
+        if (timeSpent[q._id] != null) entry.timeTakenSeconds = timeSpent[q._id];
+        return entry;
+      });
+    }
+
+    async function submitAssessment(auto) {
+      if (timer) timer.stop();
+      stopQuestionTimer();
+      stopAllPlayback();
+      playToken++;
+      const allQuestions = allQuestionsFlat();
+      const resolvedCount = allQuestions.filter(isResolved).length;
+
+      if (!auto && resolvedCount < allQuestions.length) {
+        const unanswered = allQuestions.length - resolvedCount;
+        document.getElementById('unanswered-msg').textContent = `⚠️ ${unanswered} question(s) unanswered. Please answer all questions before submitting.`;
+        return;
+      }
+
+      const answerPayload = buildAnswerPayload(allQuestions);
+      const btn = document.getElementById('btn-submit');
+      btn.disabled = true; btn.textContent = 'Submitting...';
+      const { ok, data } = await api.post('/assessment/submit', { sessionId, answers: answerPayload, autoSubmitted: auto }, token);
+      if (!ok) { showToast(data.message || 'Submission failed.', 'error'); btn.disabled = false; btn.textContent = 'Submit Assessment'; return; }
+      localStorage.removeItem('tbt_session_id'); localStorage.removeItem('tbt_session_expires'); localStorage.removeItem(autosaveKey());
+      const user = api.getUser(); if (user) { user.hasCompletedAssessment = true; api.setUser(user); }
+      // replace() so the browser Back button cannot return to the just-submitted
+      // assessment (the session is gone; this keeps the workflow one-directional).
+      window.location.replace('/result');
+    }
+
+    // Exiting the assessment (closing the tab, navigating away, mobile
+    // backgrounding) stops any audio/speech so it never outlives the page.
+    window.addEventListener('pagehide', stopAllPlayback);
+    window.addEventListener('beforeunload', stopAllPlayback);
+
+    loadQuestions();
+  </script>
+</body>
+</html>
