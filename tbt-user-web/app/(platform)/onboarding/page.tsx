@@ -403,6 +403,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const [uploading, setUploading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | undefined>(undefined);
+  const [isDark, setIsDark] = useState(true);
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains("dark"));
+  }, []);
 
   // Location dropdowns
   const [states, setStates] = useState<{ name: string; isoCode: string }[]>([]);
@@ -434,9 +438,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     if (errors[key]) setErrors((prev) => { const n = { ...prev }; delete n[key]; return n; });
   };
 
-  const inputStyle = (key: string) => ({
+  const inputStyle = (key: string): React.CSSProperties => ({
     background: OVERLAY,
     border: `1.5px solid ${errors[key] ? "var(--color-alert, #ef4444)" : BORDER}`,
+    colorScheme: isDark ? "dark" : "light",
   });
 
   const validateProfileStep = (): boolean => {
@@ -1103,7 +1108,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   value={documentType}
                   onChange={(e) => setDocumentType(e.target.value)}
                   className={INPUT_CLS}
-                  style={{ background: OVERLAY, border: `1.5px solid ${BORDER}` }}
+                  style={{ background: OVERLAY, border: `1.5px solid ${BORDER}`, colorScheme: isDark ? "dark" : "light" }}
                 >
                   {DOCUMENT_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
