@@ -711,14 +711,20 @@ export async function deleteMemberHandler(request: FastifyRequest, reply: Fastif
   const { id } = request.params as { id: string };
   const member = await request.server.prisma.member.findUnique({
     where: { id },
-    select: { id: true, deletedAt: true } as any,
+    select: { id: true, phone: true, email: true, deletedAt: true } as any,
   });
   if (!member || (member as any).deletedAt) {
     return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
   }
+  // Anonymize phone/email so their unique DB slots are freed — lets the same
+  // person re-register after an admin-delete without hitting constraint errors.
   await request.server.prisma.member.update({
     where: { id },
-    data: { deletedAt: new Date() } as any,
+    data: {
+      deletedAt: new Date(),
+      phone: `${(member as any).phone}_deleted_${id}`,
+      email: `${(member as any).email}_deleted_${id}`,
+    } as any,
   });
   return reply.send({ success: true, data: null, error: null });
 }

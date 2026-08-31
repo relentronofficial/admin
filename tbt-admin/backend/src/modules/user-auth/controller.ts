@@ -544,8 +544,8 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
   const phoneVariants = normalizePhoneForLookup(phone);
 
   const [existingPhone, existingEmail] = await Promise.all([
-    fastify.prisma.member.findFirst({ where: { phone: { in: phoneVariants } } as any, select: { id: true } as any }),
-    fastify.prisma.member.findUnique({ where: { email }, select: { id: true } }),
+    fastify.prisma.member.findFirst({ where: { phone: { in: phoneVariants }, deletedAt: null } as any, select: { id: true } as any }),
+    fastify.prisma.member.findFirst({ where: { email, deletedAt: null } as any, select: { id: true } as any }),
   ]);
 
   if (existingPhone) {
