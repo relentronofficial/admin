@@ -13,6 +13,7 @@
      *
      * --color-locked is a static design token (PRD §8, not from API).
      */
+    color-scheme: light;
     --color-locked: #4a4a4a;
 
     /* Light-mode values — active when html.dark is absent */
@@ -73,6 +74,7 @@
 
   /* Dark mode — all original values preserved + new semantic tokens */
   .dark {
+    color-scheme: dark;
     --background: 0 0% 0%;          /* #000000 — page background */
     --foreground: 0 0% 100%;        /* #ffffff — primary text */
     --card: 0 0% 6.7%;              /* #111111 — surface (midpoint of #0f0f0f–#1a1a1a) */
