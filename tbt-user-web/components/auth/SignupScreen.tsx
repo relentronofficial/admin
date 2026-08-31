@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone, User, Mail, Building2, MapPin, MessageSquare } from "lucide-react";
@@ -25,6 +25,11 @@ export function SignupScreen() {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [productServiceType, setProductServiceType] = useState("");
+
+  // Location dropdowns
+  const [states, setStates] = useState<{ name: string; isoCode: string }[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [selectedStateCode, setSelectedStateCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   // OTP step
@@ -108,6 +113,19 @@ export function SignupScreen() {
       setError(err.message || "Failed to resend OTP");
     }
   }, [phone]);
+
+  useEffect(() => {
+    apiClient.get("/api/location/states?countryCode=IN")
+      .then((res: any) => setStates(res.data || []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedStateCode) { setCities([]); return; }
+    apiClient.get(`/api/location/cities?countryCode=IN&stateCode=${selectedStateCode}`)
+      .then((res: any) => setCities(res.data || []))
+      .catch(() => {});
+  }, [selectedStateCode]);
 
   return (
     <div className="relative w-full min-h-screen flex items-center justify-center bg-black px-4 py-8">
@@ -241,23 +259,45 @@ export function SignupScreen() {
                   </select>
                 </div>
 
-                {/* City + State */}
+                {/* State + City */}
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="City" focused={focused === "city"}>
-                    <input type="text" value={city} onChange={e => setCity(e.target.value)}
-                      onFocus={() => setFocused("city")} onBlur={() => setFocused(null)}
-                      placeholder="City"
-                      className="w-full bg-transparent pl-10 pr-4 py-[12px] text-white text-[13px] placeholder-white/20 outline-none"
-                      style={{ caretColor: "#dc2626" }} />
-                    <FieldIcon focused={focused === "city"}><MapPin className="w-[14px] h-[14px]" /></FieldIcon>
-                  </Field>
                   <Field label="State" focused={focused === "state"}>
-                    <input type="text" value={state} onChange={e => setState(e.target.value)}
-                      onFocus={() => setFocused("state")} onBlur={() => setFocused(null)}
-                      placeholder="State"
-                      className="w-full bg-transparent pl-10 pr-4 py-[12px] text-white text-[13px] placeholder-white/20 outline-none"
-                      style={{ caretColor: "#dc2626" }} />
                     <FieldIcon focused={focused === "state"}><MapPin className="w-[14px] h-[14px]" /></FieldIcon>
+                    <select
+                      value={state}
+                      onChange={e => {
+                        const s = states.find(s => s.name === e.target.value);
+                        setState(e.target.value);
+                        setSelectedStateCode(s?.isoCode ?? "");
+                        setCity("");
+                      }}
+                      onFocus={() => setFocused("state")} onBlur={() => setFocused(null)}
+                      className="w-full bg-transparent pl-10 pr-4 py-[12px] text-[13px] outline-none appearance-none cursor-pointer"
+                      style={{ color: state ? "white" : "rgba(255,255,255,0.2)", colorScheme: "dark" }}
+                    >
+                      <option value="" style={{ color: "#888", background: "#1a1a1a" }}>State</option>
+                      {states.map(s => (
+                        <option key={s.isoCode} value={s.name} style={{ color: "#f0f0f0", background: "#1a1a1a" }}>{s.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="City" focused={focused === "city"}>
+                    <FieldIcon focused={focused === "city"}><MapPin className="w-[14px] h-[14px]" /></FieldIcon>
+                    <select
+                      value={city}
+                      onChange={e => setCity(e.target.value)}
+                      onFocus={() => setFocused("city")} onBlur={() => setFocused(null)}
+                      disabled={!selectedStateCode}
+                      className="w-full bg-transparent pl-10 pr-4 py-[12px] text-[13px] outline-none appearance-none cursor-pointer disabled:opacity-40"
+                      style={{ color: city ? "white" : "rgba(255,255,255,0.2)", colorScheme: "dark" }}
+                    >
+                      <option value="" style={{ color: "#888", background: "#1a1a1a" }}>
+                        {selectedStateCode ? "City" : "Select state first"}
+                      </option>
+                      {cities.map(c => (
+                        <option key={c} value={c} style={{ color: "#f0f0f0", background: "#1a1a1a" }}>{c}</option>
+                      ))}
+                    </select>
                   </Field>
                 </div>
 
