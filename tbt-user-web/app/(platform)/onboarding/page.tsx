@@ -14,8 +14,7 @@ import {
   useOnboardingState,
   useOnboardingContent,
   useSaveOnboardingProgress,
-  usePresignOnboardingDocument,
-  useRegisterOnboardingDocument,
+  useUploadOnboardingDocument,
   useDeleteOnboardingDocument,
   useSubmitOnboarding,
   usePresignProfilePhoto,
@@ -379,8 +378,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 }) {
   const { data: contentSteps, isLoading: contentLoading } = useOnboardingContent();
   const saveProgress = useSaveOnboardingProgress();
-  const presignDoc = usePresignOnboardingDocument();
-  const registerDoc = useRegisterOnboardingDocument();
+  const uploadDoc = useUploadOnboardingDocument();
   const deleteDoc = useDeleteOnboardingDocument();
   const presignPhoto = usePresignProfilePhoto();
   const submit = useSubmitOnboarding();
@@ -511,9 +509,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const handleDocUpload = async (file: File) => {
     setUploading(true);
     try {
-      const { data } = await presignDoc.mutateAsync({ filename: file.name, contentType: file.type, documentType });
-      await fetch(data.uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      await registerDoc.mutateAsync({ documentType, documentUrl: data.publicUrl });
+      await uploadDoc.mutateAsync({ file, documentType });
       toast.success("Document uploaded");
     } catch {
       toast.error("Upload failed. Please try again.");

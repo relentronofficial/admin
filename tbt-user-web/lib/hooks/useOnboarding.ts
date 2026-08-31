@@ -41,6 +41,15 @@ export const useRegisterOnboardingDocument = () => {
   });
 };
 
+export const useUploadOnboardingDocument = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, documentType }: { file: File; documentType: string }) =>
+      onboardingService.uploadDocument(file, documentType),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["onboarding", "state"] }),
+  });
+};
+
 export const useDeleteOnboardingDocument = () => {
   const queryClient = useQueryClient();
   return useMutation({

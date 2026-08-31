@@ -42,6 +42,16 @@ export const onboardingService = {
   registerDocument: (data: { documentType: string; documentUrl: string }) =>
     apiClient.post<never, ApiResponse<OnboardingDocument>>("/api/onboarding/documents", data),
 
+  uploadDocument: async (file: File, documentType: string): Promise<ApiResponse<OnboardingDocument>> => {
+    const params = new URLSearchParams({ documentType, filename: file.name });
+    const buffer = await file.arrayBuffer();
+    return apiClient.post<never, ApiResponse<OnboardingDocument>>(
+      `/api/onboarding/documents/upload?${params}`,
+      buffer,
+      { headers: { "Content-Type": file.type }, maxBodyLength: Infinity },
+    );
+  },
+
   deleteDocument: (id: string) => apiClient.delete<never, ApiResponse<null>>(`/api/onboarding/documents/${id}`),
 
   submit: () => apiClient.post<never, ApiResponse<{ verificationStatus: string; onboardingSubmittedAt: string }>>("/api/onboarding/submit", {}),
