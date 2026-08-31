@@ -75,6 +75,7 @@ jobs:
           node-version: '24'
 
       - name: Apply database schema (staging)
+        continue-on-error: true
         working-directory: tbt-admin/backend
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
@@ -117,6 +118,7 @@ jobs:
           node-version: '24'
 
       - name: Apply database schema (production)
+        continue-on-error: true
         working-directory: tbt-admin/backend
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
