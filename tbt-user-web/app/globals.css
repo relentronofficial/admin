@@ -213,3 +213,19 @@
   0%   { background: color-mix(in srgb, var(--color-accent) 25%, transparent); }
   100% { background: transparent; }
 }
+
+/* Native <select> popup contrast fix.
+ * Setting color-scheme directly on the element (not just an ancestor) is required
+ * for Chrome to render the native dropdown popup with the correct dark/light palette.
+ * The option background/color rules serve as a fallback for browsers that support them. */
+.dark select {
+  color-scheme: dark;
+}
+.dark select option {
+  background-color: #1a1a1a;
+  color: #f0f0f0;
+}
+select option {
+  background-color: #ffffff;
+  color: #0d0d0d;
+}
