@@ -464,7 +464,7 @@ window.addEventListener('message', function(e) {
       final cueId = cue['id'] as String? ?? '';
       final atSecs = (cue['atSeconds'] as num?)?.toDouble() ?? 0;
       if (_firedCueIds.contains(cueId)) continue;
-      if (secs >= atSecs && secs < atSecs + 2) {
+      if (secs >= atSecs) {
         _firedCueIds.add(cueId);
         _cueQuizActive = true;
         // An open cue quiz is already a modal interruption; stacking a
