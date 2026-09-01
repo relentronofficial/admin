@@ -1318,13 +1318,21 @@ class _XpAndPracticeRow extends ConsumerWidget {
 
   Future<void> _openPractice(BuildContext context, WidgetRef ref) async {
     try {
+      // Derive completed lesson IDs from the already-loaded progress provider
+      // so we only surface questions from lessons the member has finished.
+      final progress = await ref.read(lessonProgressProvider(courseId).future);
+      final completedIds = progress
+          .where((p) => p.completed)
+          .map((p) => p.lessonId)
+          .toSet();
+
       final questions = await ref
           .read(coursesServiceProvider)
-          .getPracticeQuestions(courseId);
+          .getPracticeQuestions(courseId, completedLessonIds: completedIds);
       if (!context.mounted) return;
       if (questions.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No practice questions yet — complete lessons first')),
+          const SnackBar(content: Text('No practice questions yet — complete some lessons first')),
         );
         return;
       }

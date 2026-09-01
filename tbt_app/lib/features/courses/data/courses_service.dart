@@ -346,10 +346,13 @@ class CoursesService {
     }
   }
 
-  /// Aggregate every quiz question across every lesson in a course, for the
-  /// Practice Arena (client-side retrieval practice). Reads raw quizData off
-  /// the course detail response — the freezed Lesson model drops it.
-  Future<List<Map<String, dynamic>>> getPracticeQuestions(String courseId) async {
+  /// Aggregate quiz questions from completed lessons only, for the Practice
+  /// Arena. Only lessons whose IDs appear in [completedLessonIds] are
+  /// included — prevents spoiling content from lessons not yet watched.
+  Future<List<Map<String, dynamic>>> getPracticeQuestions(
+    String courseId, {
+    required Set<String> completedLessonIds,
+  }) async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(
         '$kUserCourses/$courseId',
@@ -359,6 +362,8 @@ class CoursesService {
           .cast<Map<String, dynamic>>();
       final out = <Map<String, dynamic>>[];
       for (final lesson in lessons) {
+        final lessonId = lesson['id'] as String? ?? '';
+        if (!completedLessonIds.contains(lessonId)) continue;
         final quiz = lesson['quizData'];
         if (quiz is Map<String, dynamic>) {
           final qs = quiz['questions'];
