@@ -54,7 +54,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS quiz_unlock_percent INTEGER NOT NULL DEFAULT 80,
           ADD COLUMN IF NOT EXISTS drm_enabled BOOLEAN NOT NULL DEFAULT false,
           ADD COLUMN IF NOT EXISTS bunny_drm_token TEXT,
-          ADD COLUMN IF NOT EXISTS timer_seconds INT
+          ADD COLUMN IF NOT EXISTS timer_seconds INT,
+          ADD COLUMN IF NOT EXISTS description TEXT
       `),
       // products
       prisma.$executeRawUnsafe(`

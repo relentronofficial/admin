@@ -2479,6 +2479,7 @@ model CourseEpisode {
   id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   courseId        String                  @map("course_id") @db.Uuid
   title           String
+  description     String?
   thumbnailUrl    String?                 @map("thumbnail_url")
   videoUrl        String                  @map("video_url")
   bunnyVideoId    String?                 @map("bunny_video_id")

@@ -700,7 +700,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     return {
       id: ep.id,
       title: ep.title,
-      description: null as string | null,
+      description: ep.description ?? null,
       videoUrl,
       hlsUrl,
       duration: ep.durationSeconds ? Math.round(ep.durationSeconds / 60) : null,
@@ -3451,6 +3451,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
       select: {
         id: true,
         title: true,
+        description: true,
         videoUrl: true,
         bunnyVideoId: true,
         durationSeconds: true,
@@ -3485,7 +3486,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
     return ok(reply, {
       id: courseEp.id,
       title: courseEp.title,
-      description: null as string | null,
+      description: courseEp.description ?? null,
       videoUrl: courseEp.videoUrl,
       hlsUrl: courseHlsUrl,
       videoType: courseHlsUrl ? 'hls' : 'iframe',
