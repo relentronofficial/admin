@@ -385,6 +385,18 @@ class CoursesService {
     }
   }
 
+  Future<void> saveReflection(
+      String courseId, String lessonId, String text) async {
+    try {
+      await _dio.put<void>(
+        '$kUserCourses/$courseId/reflections/$lessonId',
+        data: {'text': text},
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   Future<List<EpisodeResource>> getEpisodeResources(String episodeId) async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(

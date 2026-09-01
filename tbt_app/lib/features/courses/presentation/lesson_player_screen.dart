@@ -608,6 +608,7 @@ window.addEventListener('message', function(e) {
   }
 
   Future<void> _saveReflection(String text) async {
+    // Persist locally first so the save feels instant and works offline.
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(kPrefReflections) ?? '{}';
     final Map<String, dynamic> map;
@@ -623,6 +624,13 @@ window.addEventListener('message', function(e) {
       'lessonTitle': _playback?.title ?? '',
     };
     await prefs.setString(kPrefReflections, json.encode(map));
+
+    // Persist to backend fire-and-forget — local copy already saved above so
+    // a network failure does not affect the user-visible outcome.
+    ref
+        .read(coursesServiceProvider)
+        .saveReflection(widget.courseId, widget.lessonId, text)
+        .catchError((_) {});
   }
 
   // ── Speed persistence ─────────────────────────────────────────────────────────
