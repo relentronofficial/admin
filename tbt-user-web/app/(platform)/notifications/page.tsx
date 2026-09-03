@@ -88,7 +88,11 @@ export default function NotificationsPage() {
 
   async function handleClick(n: Notification) {
     if (!n.isRead) markRead.mutate(n.id);
-    if (n.actionUrl) router.push(n.actionUrl);
+    if (n.actionUrl) {
+      // /messages/{id} has no dedicated route — rewrite to query-param form
+      const url = n.actionUrl.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
+      router.push(url);
+    }
   }
 
   const groups = groupByDate(notifications);

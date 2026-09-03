@@ -135,13 +135,17 @@ export const useDownloadBatchCertificate = () => {
   return useMutation({
     mutationFn: async () => {
       const res = await apiClient.get('/api/user-batch/certificate', { responseType: 'blob' } as any);
-      const blob = new Blob([(res as any).data ?? res as any], { type: 'application/pdf' });
+      const blob = (res as any) instanceof Blob
+        ? (res as any)
+        : new Blob([res as any], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = 'batch-certificate.pdf';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   });
 };
