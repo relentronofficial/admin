@@ -67,3 +67,35 @@ export const useBusinessTypes = () => useMasters("business-types");
 export const useCreateCity = () => useCreateMaster("cities");
 export const useCreateState = () => useCreateMaster("states");
 export const useCreateBusinessType = () => useCreateMaster("business-types");
+
+// Location-API backed hooks — pull from the country-state-city library via
+// /api/location/* endpoints. Always pre-populated (unlike master DB tables
+// which start empty), so dropdowns show data immediately.
+
+export function useLocationStates() {
+  return useQuery({
+    queryKey: ["location", "states"],
+    queryFn: async (): Promise<CreatableOption[]> => {
+      const res: any = await apiClient.get("/api/location/states?countryCode=IN");
+      return ((res?.data ?? []) as { name: string; isoCode: string }[]).map((s) => ({
+        id: s.isoCode,
+        name: s.name,
+      }));
+    },
+    staleTime: 60 * 60_000,
+  });
+}
+
+export function useLocationCities(stateIsoCode?: string) {
+  return useQuery({
+    queryKey: ["location", "cities", stateIsoCode],
+    queryFn: async (): Promise<CreatableOption[]> => {
+      const res: any = await apiClient.get(
+        `/api/location/cities?countryCode=IN&stateCode=${stateIsoCode}`,
+      );
+      return ((res?.data ?? []) as string[]).map((name) => ({ id: name, name }));
+    },
+    enabled: !!stateIsoCode,
+    staleTime: 60 * 60_000,
+  });
+}

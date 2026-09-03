@@ -25,8 +25,8 @@ import { useListBatches } from "@/lib/hooks/useTbt";
 import { useClerk } from "@clerk/nextjs";
 import CreatableSelect from "@/components/shared/CreatableSelect";
 import {
-  useCities, useStates, useBusinessTypes,
-  useCreateCity, useCreateState, useCreateBusinessType,
+  useCreateCity,
+  useLocationStates, useLocationCities,
 } from "@/lib/hooks/useMasters";
 
 const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline"];
@@ -108,15 +108,10 @@ export default function AddMemberPage() {
   const createMember = useCreateMember();
   const uploadImage = useUploadImage();
 
-  // Master-data lists power the City / State / BusinessType dropdowns.
-  // Cached for 5 min inside the hook so opening the form multiple
-  // times doesn't refetch.
-  const { data: cities, isLoading: citiesLoading } = useCities();
-  const { data: states, isLoading: statesLoading } = useStates();
-  const { data: businessTypes, isLoading: businessTypesLoading } = useBusinessTypes();
+  // Location-API backed dropdowns — populated from country-state-city library.
+  // Cities load dynamically once a state is selected (cascading).
   const createCity = useCreateCity();
-  const createState = useCreateState();
-  const createBusinessType = useCreateBusinessType();
+  const { data: locationStates, isLoading: statesLoading } = useLocationStates();
 
   const {
     register,
@@ -159,6 +154,16 @@ export default function AddMemberPage() {
   const watchSkillSales = watch("skillSales");
   const watchSkillOM = watch("skillOverallMarketing");
   const watchLearningHours = watch("weeklyLearningHours");
+  const watchState = watch("state");
+
+  // Find the ISO code for the selected state so we can fetch cities for it.
+  const selectedStateIsoCode = locationStates?.find((s) => s.name === watchState)?.id ?? "";
+  const { data: locationCities, isLoading: citiesLoading } = useLocationCities(selectedStateIsoCode);
+
+  // Clear city whenever the state changes.
+  useEffect(() => {
+    setValue("city", "");
+  }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleChannel = (channel: string) => {
     if (watchChannels.includes(channel)) {
@@ -328,10 +333,11 @@ export default function AddMemberPage() {
                       <CreatableSelect
                         value={field.value ?? ""}
                         onChange={field.onChange}
-                        options={cities ?? []}
+                        options={locationCities ?? []}
                         onCreate={(name) => createCity.mutateAsync(name)}
                         isLoading={citiesLoading}
-                        placeholder="Search or add city…"
+                        placeholder={selectedStateIsoCode ? "Search or add city…" : "Select a state first"}
+                        disabled={!selectedStateIsoCode}
                       />
                     )}
                   />
@@ -345,10 +351,9 @@ export default function AddMemberPage() {
                       <CreatableSelect
                         value={field.value ?? ""}
                         onChange={field.onChange}
-                        options={states ?? []}
-                        onCreate={(name) => createState.mutateAsync(name)}
+                        options={locationStates ?? []}
                         isLoading={statesLoading}
-                        placeholder="Search or add state…"
+                        placeholder="Search state…"
                       />
                     )}
                   />
