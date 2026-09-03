@@ -1277,7 +1277,12 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   if (existingProgress?.completed) {
     finalIsCompleted = true;
   } else if (effectiveDuration > 0) {
-    finalIsCompleted = cumulativeActualSecs / effectiveDuration >= thresholdFraction;
+    const watchFraction = cumulativeActualSecs / effectiveDuration;
+    // An explicit user action (Mark Complete button) is intentional — honour it at
+    // the minimum threshold (0.5) rather than the stricter configured threshold.
+    // Auto-completion (heartbeats and onEnded) still requires the full threshold.
+    const required = requestedCompletion === true ? 0.5 : thresholdFraction;
+    finalIsCompleted = watchFraction >= required;
   } else if (requestedCompletion === true && cumulativeActualSecs >= 5) {
     // Legacy fallback — episode has no duration metadata.
     finalIsCompleted = true;

@@ -88,6 +88,7 @@ interface SelectedLesson {
   resumeAtSeconds?: number;
   actualWatchedSecs?: number;
   isCompleted?: boolean;
+  sectionId?: string | null;
 }
 
 // ── Practice Arena Modal (Retrieval Practice + Interleaving) ─────────────────
@@ -877,7 +878,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
           <div>
             {(() => {
               const previewSections: any[] = course.sections ?? [];
-              let lastSectionId: string | null = undefined as any;
+              let lastSectionId: string | null = null;
               return lessons.map((lesson: any, idx: number) => {
                 const sid = previewSections.length > 0 ? ((lesson as any).sectionId ?? null) : null;
                 const showHeader = previewSections.length > 0 && sid !== lastSectionId;
@@ -984,7 +985,7 @@ export default function CourseDetailPage({
   const [certCopied, setCertCopied] = useState(false);
 
   // Quiz modal state
-  const [quizModal, setQuizModal] = useState<{ episodeId: string; quizData: any } | null>(null);
+  const [quizModal, setQuizModal] = useState<{ episodeId: string; questions: any[] } | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [quizResult, setQuizResult] = useState<any>(null);
   const [xpFlash, setXpFlash] = useState<number | null>(null);
@@ -1020,6 +1021,24 @@ export default function CourseDetailPage({
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
+  const localReflections = useMemo(() => {
+    if (savedReflections && savedReflections.length > 0) return [];
+    try {
+      const all = JSON.parse(localStorage.getItem("tbt_reflections") || "{}");
+      return Object.entries(all)
+        .filter(([k]) => k.startsWith(`${courseId}:`))
+        .map(([k, v]: [string, any]) => ({
+          lessonId: k.split(":")[1],
+          text: v.text as string,
+          savedAt: typeof v.savedAt === "number"
+            ? new Date(v.savedAt).toISOString()
+            : (v.savedAt as string),
+        }));
+    } catch { return []; }
+  }, [courseId, savedReflections]);
+  const visibleReflections = (savedReflections && savedReflections.length > 0)
+    ? savedReflections
+    : localReflections;
   const [reflectionsOpen, setReflectionsOpen] = useState(false);
   const [practiceOpen, setPracticeOpen] = useState(false);
   const [pendingReflection, setPendingReflection] = useState<{ lessonId: string; title: string } | null>(null);
@@ -1109,6 +1128,7 @@ export default function CourseDetailPage({
           resumeAtSeconds: alreadyDone ? 0 : ((target as any).resumeAtSeconds ?? 0),
           actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
           isCompleted: alreadyDone,
+          sectionId: (target as any).sectionId ?? null,
         });
       }
     }
@@ -1117,19 +1137,20 @@ export default function CourseDetailPage({
   // Show quiz modal on first episode completion
   const quizTriggeredForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (watchState === "completed" && selectedLesson && !quizTriggeredForRef.current) {
-      const lesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id);
-      if (lesson?.hasQuiz) {
-        quizTriggeredForRef.current = selectedLesson.id;
-        setQuizModal({ episodeId: selectedLesson.id, quizData: lesson });
-        setQuizAnswers({});
-        setQuizResult(null);
-      }
-    }
-    if (!selectedLesson || watchState !== "completed") {
-      quizTriggeredForRef.current = null;
-    }
+    if (!selectedLesson || watchState !== "completed") return;
+    if (quizTriggeredForRef.current === selectedLesson.id) return;
+    const lesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id);
+    if (!lesson?.hasQuiz) return;
+    quizTriggeredForRef.current = selectedLesson.id;
+    setQuizModal({ episodeId: selectedLesson.id, questions: (lesson as any).quizData?.questions ?? [] });
+    setQuizAnswers({});
+    setQuizResult(null);
   }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset quiz trigger guard only when the lesson changes, not on every watchState transition.
+  useEffect(() => {
+    quizTriggeredForRef.current = null;
+  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load completion timestamps from localStorage on mount
   useEffect(() => {
@@ -1244,6 +1265,7 @@ export default function CourseDetailPage({
           resumeAtSeconds: nextDone ? 0 : ((next as any).resumeAtSeconds ?? 0),
           actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
           isCompleted: nextDone,
+          sectionId: (next as any).sectionId ?? null,
         });
         topRef.current?.scrollIntoView({ behavior: "smooth" });
       } else {
@@ -1445,16 +1467,18 @@ export default function CourseDetailPage({
     // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
     const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
     if (!lessonData?.hasQuiz) triggerUpNextRef.current();
-    const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
     const allLessons = courseRef.current?.lessons ?? [];
     const willBeAllDone = allLessons.length > 0 &&
       allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
     if (willBeAllDone) {
       setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
     }
+    const playhead = lastPlayheadRef.current > 0
+      ? Math.floor(lastPlayheadRef.current)
+      : (selectedLesson.resumeAtSeconds ?? 0);
     markComplete.mutate({
       lessonId: selectedLesson.id,
-      watchedSeconds: Math.floor(lastPlayheadRef.current > 0 ? lastPlayheadRef.current : (selectedLesson.resumeAtSeconds ?? 0) + elapsed),
+      watchedSeconds: playhead,
       isCompleted: true,
       videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
     });
@@ -1738,6 +1762,7 @@ export default function CourseDetailPage({
       resumeAtSeconds: alreadyDone ? 0 : (lesson.resumeAtSeconds ?? 0),
       actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
       isCompleted: alreadyDone,
+      sectionId: (lesson as any).sectionId ?? null,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
     router.replace(`/learning/${courseId}?lesson=${lesson.id}`, { scroll: false });
@@ -1844,6 +1869,17 @@ export default function CourseDetailPage({
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
   const globalLessonIdx = new Map(lessons.map((l: any, i: number) => [l.id, i]));
+
+  // Collapse all sections except the one containing the active lesson.
+  useEffect(() => {
+    if (courseSections.length === 0) return;
+    const activeSectionId = (selectedLesson as any)?.sectionId ?? "__unsectioned__";
+    setCollapsedSections(new Set<string>(
+      courseSections
+        .map((s: any) => s.id)
+        .filter((id: string) => id !== activeSectionId)
+    ));
+  }, [courseSections.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6 pb-12">
@@ -2052,7 +2088,7 @@ export default function CourseDetailPage({
             {/* 85% completion progress indicator */}
             {watchState !== "completed" && !selectedLesson.isCompleted && activeDuration > 0 && liveWatched > 0 && (() => {
               const pct = Math.min(100, Math.round((liveWatched / activeDuration) * 100));
-              const toComplete = Math.max(0, Math.ceil(activeDuration * 0.85 - liveWatched));
+              const toComplete = Math.max(0, Math.ceil(activeDuration * 0.95 - liveWatched));
               const currentLesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any;
               const hasQuiz = !!currentLesson?.hasQuiz;
               const quizUnlockPct: number = currentLesson?.quizUnlockPercent ?? 80;
@@ -2062,7 +2098,7 @@ export default function CourseDetailPage({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs" style={{ color: "var(--color-text-subtle)" }}>
                     <span>{pct}% watched</span>
-                    {pct < 85 ? (
+                    {pct < 95 ? (
                       <span>
                         {toComplete > 60
                           ? `${Math.ceil(toComplete / 60)}m to complete`
@@ -2076,8 +2112,8 @@ export default function CourseDetailPage({
                     <div
                       className="h-full rounded-full transition-all duration-1000"
                       style={{
-                        width: `${Math.min(100, Math.round((pct / 85) * 100))}%`,
-                        background: pct >= 85 ? "var(--color-success)" : "var(--color-accent)",
+                        width: `${Math.min(100, Math.round((pct / 95) * 100))}%`,
+                        background: pct >= 95 ? "var(--color-success)" : "var(--color-accent)",
                       }}
                     />
                   </div>
@@ -2720,9 +2756,9 @@ export default function CourseDetailPage({
       )}
 
       {/* Reflections viewer — opened from the panel */}
-      {reflectionsOpen && savedReflections && savedReflections.length > 0 && (
+      {reflectionsOpen && reflectionCount > 0 && visibleReflections.length > 0 && (
         <ReflectionsViewerModal
-          reflections={savedReflections}
+          reflections={visibleReflections}
           lessons={course?.lessons ?? []}
           onClose={() => setReflectionsOpen(false)}
         />
@@ -2748,7 +2784,7 @@ export default function CourseDetailPage({
             <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: "var(--color-border-subtle)" }}>
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Episode Quiz</p>
-                <p className="text-sm font-semibold text-foreground mt-0.5">{quizModal.quizData?.title ?? "Quiz"}</p>
+                <p className="text-sm font-semibold text-foreground mt-0.5">Quiz</p>
               </div>
               {!quizResult && (
                 <button onClick={() => handleCloseQuiz(false)} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -2792,7 +2828,7 @@ export default function CourseDetailPage({
               </div>
             ) : (
               <QuizQuestions
-                quizData={quizModal.quizData}
+                questions={quizModal.questions}
                 courseId={courseId}
                 episodeId={quizModal.episodeId}
                 answers={quizAnswers}
@@ -2823,16 +2859,12 @@ export default function CourseDetailPage({
 
 // ── Quiz questions component ──────────────────────────────────────────────────
 function QuizQuestions({
-  quizData, courseId, episodeId, answers, setAnswers, onSubmit, isSubmitting,
+  questions, courseId, episodeId, answers, setAnswers, onSubmit, isSubmitting,
 }: {
-  quizData: any; courseId: string; episodeId: string;
+  questions: any[]; courseId: string; episodeId: string;
   answers: Record<string, string>; setAnswers: (a: Record<string, string>) => void;
   onSubmit: (a: Record<string, string>) => void; isSubmitting: boolean;
 }) {
-  const questions: any[] =
-    quizData?.quizData?.questions ??
-    quizData?.lessons?.find?.((l: any) => l.id === episodeId)?.quizData?.questions ??
-    [];
 
   if (!questions.length) {
     return (
