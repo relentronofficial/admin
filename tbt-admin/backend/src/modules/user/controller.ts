@@ -1233,26 +1233,27 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     }).catch(() => {});
   }
 
-  const cumulativeActualSecs = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
+  // Use the higher of (existing + delta) or the current playhead position.
+  // The "video ended" call sends watchedSeconds ≈ videoDuration with no deltaSeconds,
+  // so safeDelta is 0 — but the playhead is authoritative evidence of how far the
+  // member got. EXCESSIVE_SKIPPING is already logged above when the jump is large.
+  const cumulativeActualSecs = Math.max(
+    (existingProgress?.actualWatchedSecs ?? 0) + safeDelta,
+    watchedSeconds ?? 0,
+  );
 
   // Server-authoritative completion. The trust model:
   //   * A completion that's already been recorded stays completed
   //     (idempotent — rewatching a completed lesson doesn't "un-complete").
-  //   * Otherwise, completion requires the cumulative *fraud-scrubbed*
-  //     watched seconds to exceed `threshold%` of the episode's real
-  //     duration. `safeDelta` is already capped at 30s per heartbeat
-  //     so a modified client can't skip to completion by sending
-  //     one huge delta.
-  //   * The client's `requestedCompletion` flag is IGNORED here — it
-  //     was previously trusted as a hint from the player's "ended"
-  //     event, but that's exactly the vector the prompt's security
-  //     requirement wants closed. Server decides completion, not
-  //     client.
+  //   * Otherwise, completion requires the cumulative watched seconds
+  //     to exceed `threshold%` of the episode's real duration.
+  //     `cumulativeActualSecs` is the max of fraud-scrubbed heartbeat
+  //     accumulation and the reported playhead — the playhead at "ended"
+  //     equals the video duration, so a natural viewing always qualifies.
   //   * Fallback: when the episode has no `durationSeconds` recorded
   //     (metadata missing), we still honor the client's flag AS A
   //     LAST RESORT so pre-migration courses without duration data
-  //     don't become impossible to complete. Once metadata is
-  //     backfilled, the fallback goes cold naturally.
+  //     don't become impossible to complete.
   const thresholdFraction =
     Math.max(0.5, Math.min(1, (courseUnlockCfg?.completionThresholdPercent ?? 95) / 100));
   if (existingProgress?.completed) {
@@ -1260,26 +1261,25 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   } else if (episode.durationSeconds && episode.durationSeconds > 0) {
     finalIsCompleted = cumulativeActualSecs / episode.durationSeconds >= thresholdFraction;
   } else if (requestedCompletion === true && cumulativeActualSecs >= 5) {
-    // Legacy fallback — episode has no duration metadata. Trust the
-    // client's flag ONLY if there's some evidence of watching.
+    // Legacy fallback — episode has no duration metadata.
     finalIsCompleted = true;
   }
 
   const progress = await (request.server.prisma as any).courseEpisodeProgress.upsert({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    create: { 
-      memberId: request.memberId, 
-      episodeId, 
-      completed: finalIsCompleted, 
+    create: {
+      memberId: request.memberId,
+      episodeId,
+      completed: finalIsCompleted,
       completedAt: finalIsCompleted ? now : null,
       lastWatchedSecs: watchedSeconds ?? 0,
-      actualWatchedSecs: safeDelta
+      actualWatchedSecs: cumulativeActualSecs,
     },
-    update: { 
-      completed: finalIsCompleted ? true : undefined, 
+    update: {
+      completed: finalIsCompleted ? true : undefined,
       completedAt: (finalIsCompleted && !existingProgress?.completed) ? now : undefined,
       lastWatchedSecs: watchedSeconds ?? undefined,
-      actualWatchedSecs: { increment: safeDelta }
+      actualWatchedSecs: cumulativeActualSecs,
     },
   });
 
