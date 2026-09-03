@@ -55,8 +55,12 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
   function handleClick(n: Notification) {
     onClose();
     if (!n.isRead) markRead.mutate(n.id);
-    if (n.actionUrl) router.push(n.actionUrl);
-    else router.push("/notifications");
+    if (n.actionUrl) {
+      const url = n.actionUrl.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
+      router.push(url);
+    } else {
+      router.push("/notifications");
+    }
   }
 
   return (
@@ -348,8 +352,12 @@ export function Navbar() {
                 }}
                 onClick={() => {
                   toast.dismiss(t.id);
-                  if (payload.actionUrl) routerRef.current.push(payload.actionUrl);
-                  else routerRef.current.push("/notifications");
+                  if (payload.actionUrl) {
+                    const url = payload.actionUrl.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
+                    routerRef.current.push(url);
+                  } else {
+                    routerRef.current.push("/notifications");
+                  }
                 }}
               >
                 <div
