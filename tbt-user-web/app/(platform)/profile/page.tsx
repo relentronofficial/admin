@@ -364,7 +364,7 @@ function NotificationPrefsSection() {
               onClick={() => toggle(key)}
               disabled={updatePrefs.isPending}
               className="relative w-9 h-5 rounded-full transition-colors disabled:opacity-50"
-              style={{ background: on ? "var(--color-accent)" : "var(--color-bg-surface, #333)" }}
+              style={{ background: on ? "var(--color-accent)" : "#9ca3af" }}
             >
               <div
                 className={cn(
