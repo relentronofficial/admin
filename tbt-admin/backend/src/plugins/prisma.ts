@@ -1376,34 +1376,38 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           UNIQUE(member_id, question_id)
         )
       `),
-      // ── Course Sections (2026-08-28) ───────────────────────────────
-      // Groups episodes within a course into named chapters/sections.
-      // section_id on course_episodes is nullable: NULL = unsectioned.
-      prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS course_sections (
-          id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          course_id  UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-          title      TEXT NOT NULL,
-          description TEXT,
-          sort_order INT NOT NULL DEFAULT 0,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `),
-      prisma.$executeRawUnsafe(`
-        CREATE INDEX IF NOT EXISTS idx_course_sections_course
-          ON course_sections(course_id)
-      `),
-      prisma.$executeRawUnsafe(`
-        ALTER TABLE course_episodes
-          ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES course_sections(id) ON DELETE SET NULL
-      `),
-      prisma.$executeRawUnsafe(`
-        ALTER TABLE course_sections
-          ADD COLUMN IF NOT EXISTS timer_seconds INT
-      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
+
+    // ── Course Sections — must run SEQUENTIALLY after the parallel block ──
+    // CREATE TABLE must complete before the FK on course_episodes can reference
+    // it; running these in the parallel Promise.all above causes a race
+    // condition that silently drops the section_id column and the table itself.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS course_sections (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        course_id  UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        title      TEXT NOT NULL,
+        description TEXT,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_course_sections_course ON course_sections(course_id)
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES course_sections(id) ON DELETE SET NULL
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_sections ADD COLUMN IF NOT EXISTS timer_seconds INT
+    `).catch(() => {});
+    // timer_seconds on episodes was added to the parallel block but may have been
+    // skipped if the parallel block failed; ensure it exists here too.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS timer_seconds INT
+    `).catch(() => {});
 
     // Backfill: publish any active courses that were created before the admin
     // Publish toggle existed (the create handler now defaults isPublished=true,

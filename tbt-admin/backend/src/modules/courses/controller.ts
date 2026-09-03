@@ -869,10 +869,12 @@ export async function createEpisodeTaskHandler(req: FastifyRequest, reply: Fasti
       deliverables: body.deliverables ?? null,
       contentUrl: body.contentUrl ?? null,
       basePoints: body.basePoints ?? 100,
+      bonusPoints: body.bonusPoints ?? 0,
       proofType: body.proofType ?? 'text',
       estimatedMinutes: body.estimatedMinutes ?? 15,
-      isMilestone: false,
-      bonusPoints: 0,
+      isRequired: body.isRequired ?? true,
+      isMilestone: body.isMilestone ?? false,
+      milestoneLabel: body.milestoneLabel ?? null,
       sortOrder,
     },
   });
@@ -892,8 +894,8 @@ export async function updateEpisodeTaskHandler(req: FastifyRequest, reply: Fasti
   const { tid } = req.params as any;
   const body = req.body as any;
   const data: any = {};
-  ['title', 'description', 'deliverables', 'contentUrl', 'basePoints',
-    'proofType', 'estimatedMinutes', 'isRequired', 'isActive'].forEach(f => {
+  ['title', 'description', 'deliverables', 'contentUrl', 'basePoints', 'bonusPoints',
+    'proofType', 'estimatedMinutes', 'isRequired', 'isActive', 'isMilestone', 'milestoneLabel'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
   });
   const task = await req.server.prisma.task.update({ where: { id: tid }, data });
@@ -919,4 +921,32 @@ export async function reorderEpisodeTasksHandler(req: FastifyRequest, reply: Fas
     req.server.prisma.task.update({ where: { id }, data: { sortOrder: i } })
   ));
   return reply.send({ success: true, data: null, error: null });
+}
+
+export async function listEpisodeTaskSubmissionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { tid } = req.params as any;
+  const submissions = await req.server.prisma.taskSubmission.findMany({
+    where: { taskId: tid },
+    include: {
+      member: { select: { id: true, firstName: true, lastName: true, phone: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  return reply.send({ success: true, data: submissions, error: null });
+}
+
+export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { sid } = req.params as any;
+  const body = req.body as any;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user } });
+  const updated = await req.server.prisma.taskSubmission.update({
+    where: { id: sid },
+    data: {
+      status: body.status as any,
+      feedback: body.feedback ?? null,
+      reviewedBy: admin?.id ?? null,
+      reviewedAt: new Date(),
+    },
+  });
+  return reply.send({ success: true, data: updated, error: null });
 }

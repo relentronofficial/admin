@@ -16,6 +16,7 @@ import {
   updateEpisodeResourceHandler, deleteEpisodeResourceHandler, reorderEpisodeResourcesHandler,
   listEpisodeTasksHandler, createEpisodeTaskHandler,
   updateEpisodeTaskHandler, deleteEpisodeTaskHandler, reorderEpisodeTasksHandler,
+  listEpisodeTaskSubmissionsHandler, reviewEpisodeTaskSubmissionHandler,
   listCourseSectionsHandler, createCourseSectionHandler,
   updateCourseSectionHandler, deleteCourseSectionHandler, reorderCourseSectionsHandler,
 } from './controller.js';
@@ -83,4 +84,6 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/episodes/:eid/tasks/reorder', reorderEpisodeTasksHandler);
   fastify.put('/episodes/:eid/tasks/:tid', updateEpisodeTaskHandler);
   fastify.delete('/episodes/:eid/tasks/:tid', deleteEpisodeTaskHandler);
+  fastify.get('/episodes/:eid/tasks/:tid/submissions', listEpisodeTaskSubmissionsHandler);
+  fastify.put('/episodes/:eid/tasks/:tid/submissions/:sid/review', reviewEpisodeTaskSubmissionHandler);
 }

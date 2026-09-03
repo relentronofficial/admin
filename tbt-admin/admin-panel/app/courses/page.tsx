@@ -7,7 +7,7 @@ import {
   Eye, EyeOff, AlertCircle, GripVertical, Save, Image as ImageIcon, Upload,
   Lock, BarChart2, Users, ShieldCheck, Trophy, CreditCard, Download, Filter,
   CheckCircle2, Clock, ChevronLeft, ChevronRight, ChevronDown, FileText, ListTodo, Link2,
-  MessageSquare, Star, ThumbsUp, Layers,
+  MessageSquare, Star, ThumbsUp, Layers, Copy,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -26,6 +26,7 @@ import {
   useDeleteEpisodeResource, useReorderEpisodeResources,
   useListEpisodeTasks, useCreateEpisodeTask, useUpdateEpisodeTask,
   useDeleteEpisodeTask, useReorderEpisodeTasks,
+  useListEpisodeTaskSubmissions, useReviewEpisodeTaskSubmission,
   useVideoFeedbackQuestions, useCreateVideoFeedbackQuestion, useUpdateVideoFeedbackQuestion,
   useDeleteVideoFeedbackQuestion, useReorderVideoFeedbackQuestions, useVideoFeedbackResponses,
 } from "@/lib/hooks/useTbt";
@@ -2181,7 +2182,108 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
 
 // ── Episode Tasks Modal ────────────────────────────────────────────────
 const PROOF_TYPES = ["text", "image", "video", "link", "file", "watch"];
-const EMPTY_TASK_FORM = { title: "", description: "", deliverables: "", contentUrl: "", basePoints: 100, proofType: "text", estimatedMinutes: 15, isActive: true };
+const PROOF_BADGE: Record<string, string> = {
+  text: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  image: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  video: "bg-red-500/20 text-red-400 border-red-500/30",
+  link: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  file: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  watch: "bg-green-500/20 text-green-400 border-green-500/30",
+};
+const EMPTY_TASK_FORM = {
+  title: "", description: "", deliverables: "", contentUrl: "",
+  basePoints: 100, bonusPoints: 0, proofType: "text", estimatedMinutes: 15,
+  timerSeconds: "", isActive: true, isRequired: true, isMilestone: false, milestoneLabel: "",
+};
+
+function TaskSubmissionsPanel({ episodeId, taskId }: { episodeId: string; taskId: string }) {
+  const { data, isLoading, refetch } = useListEpisodeTaskSubmissions(episodeId, taskId);
+  const review = useReviewEpisodeTaskSubmission(episodeId, taskId);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState("");
+
+  const submissions: any[] = (data as any)?.data ?? [];
+
+  const handleApprove = async (id: string) => {
+    try { await review.mutateAsync({ id, status: "approved" }); toast.success("Approved"); refetch(); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleReject = async (id: string) => {
+    try {
+      await review.mutateAsync({ id, status: "rejected", feedback: feedback.trim() || undefined });
+      toast.success("Rejected"); setRejectingId(null); setFeedback(""); refetch();
+    } catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const statusBadge = (s: string) => ({
+    approved: <span className="text-[9px] font-bold uppercase font-rajdhani px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">Approved</span>,
+    rejected: <span className="text-[9px] font-bold uppercase font-rajdhani px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">Rejected</span>,
+    pending: <span className="text-[9px] font-bold uppercase font-rajdhani px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">Pending</span>,
+  } as any)[s] ?? null;
+
+  if (isLoading) return <div className="flex justify-center py-4"><Loader2 size={14} className="animate-spin text-[#dc2626]" /></div>;
+  if (!submissions.length) return <p className="py-3 text-center text-[11px] text-[#555] font-rajdhani uppercase font-bold">No submissions yet</p>;
+
+  return (
+    <div className="space-y-2">
+      {submissions.map((sub: any) => (
+        <div key={sub.id} className="bg-[#1e1e1e] border border-[#2a2a2a] rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-6 h-6 rounded-full bg-[#333] flex items-center justify-center text-[9px] font-bold text-[#a0a0a0] shrink-0">
+                {(sub.member?.firstName?.[0] ?? "?").toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-[#f0f0f0] truncate">{sub.member ? `${sub.member.firstName} ${sub.member.lastName ?? ""}`.trim() : "Unknown"}</p>
+                <p className="text-[9px] text-[#555]">{new Date(sub.createdAt).toLocaleDateString()}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {statusBadge(sub.status)}
+              {sub.proofType && (
+                <span className={`text-[9px] font-bold font-rajdhani uppercase px-1.5 py-0.5 rounded border ${PROOF_BADGE[sub.proofType] ?? "bg-[#333] text-[#888] border-[#444]"}`}>{sub.proofType}</span>
+              )}
+            </div>
+          </div>
+          {sub.responseValue && <p className="text-[11px] text-[#a0a0a0] bg-[#141414] rounded p-2 italic">"{sub.responseValue}"</p>}
+          {sub.proofUrl && (
+            <a href={sub.proofUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 underline">
+              <Link2 size={10} /> View proof
+            </a>
+          )}
+          {sub.feedback && <p className="text-[10px] text-[#777] italic">Note: "{sub.feedback}"</p>}
+          {sub.status === "pending" && (
+            rejectingId === sub.id ? (
+              <div className="space-y-1.5 pt-1.5 border-t border-[#2a2a2a]">
+                <textarea value={feedback} onChange={e => setFeedback(e.target.value)} rows={2} placeholder="Rejection reason (optional)"
+                  className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-red-500 resize-none" />
+                <div className="flex gap-2">
+                  <button onClick={() => handleReject(sub.id)} disabled={review.isPending}
+                    className="text-[10px] bg-red-600 hover:bg-red-700 text-white font-rajdhani font-bold uppercase tracking-widest px-2.5 py-1 rounded disabled:opacity-60">
+                    Confirm Reject
+                  </button>
+                  <button onClick={() => { setRejectingId(null); setFeedback(""); }} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase hover:text-white transition-colors">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 pt-1.5 border-t border-[#2a2a2a]">
+                <button onClick={() => handleApprove(sub.id)} disabled={review.isPending}
+                  className="flex items-center gap-1 text-[10px] bg-green-700/30 hover:bg-green-700/50 text-green-400 font-rajdhani font-bold uppercase tracking-widest px-2.5 py-1 rounded border border-green-700/30 disabled:opacity-60">
+                  <CheckCircle2 size={10} /> Approve
+                </button>
+                <button onClick={() => setRejectingId(sub.id)}
+                  className="flex items-center gap-1 text-[10px] bg-red-700/20 hover:bg-red-700/40 text-red-400 font-rajdhani font-bold uppercase tracking-widest px-2.5 py-1 rounded border border-red-700/30">
+                  <X size={10} /> Reject
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => void }) {
   const { data, isLoading } = useListEpisodeTasks(episode.id);
@@ -2193,10 +2295,13 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
   const serverItems: any[] = (data as any)?.data || [];
   const [localItems, setLocalItems] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  const [activeTab, setActiveTab] = useState<"tasks" | "submissions">("tasks");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>(EMPTY_TASK_FORM);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [selectedSubmissionTaskId, setSelectedSubmissionTaskId] = useState<string>("");
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
@@ -2210,8 +2315,7 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
     if (from === null || from === dropIdx) { setDragOver(null); return; }
     const next = [...localItems];
     const [moved] = next.splice(from, 1);
-    next.splice(dropIdx, 0, moved);
-    setLocalItems(next); setIsDirty(true); dragIdx.current = null; setDragOver(null);
+    next.splice(dropIdx, 0, moved); setLocalItems(next); setIsDirty(true); dragIdx.current = null; setDragOver(null);
   };
   const onDragEnd = () => { dragIdx.current = null; setDragOver(null); };
 
@@ -2220,24 +2324,32 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
     catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
+  const fillForm = (t: any) => ({
+    title: t.title, description: t.description || "", deliverables: t.deliverables || "",
+    contentUrl: t.contentUrl || "", basePoints: t.basePoints ?? 100, bonusPoints: t.bonusPoints ?? 0,
+    proofType: t.proofType || "text", estimatedMinutes: t.estimatedMinutes ?? 15,
+    timerSeconds: t.timerSeconds != null ? String(t.timerSeconds) : "",
+    isActive: t.isActive ?? true, isRequired: t.isRequired ?? true,
+    isMilestone: t.isMilestone ?? false, milestoneLabel: t.milestoneLabel || "",
+  });
+
   const openCreate = () => { setForm(EMPTY_TASK_FORM); setEditing(null); setShowForm(true); };
-  const openEdit = (t: any) => {
-    setForm({
-      title: t.title, description: t.description || "", deliverables: t.deliverables || "",
-      contentUrl: t.contentUrl || "", basePoints: t.basePoints ?? 100,
-      proofType: t.proofType || "text", estimatedMinutes: t.estimatedMinutes ?? 15,
-      isActive: t.isActive ?? true,
-    });
-    setEditing(t); setShowForm(true);
-  };
+  const openEdit = (t: any) => { setForm(fillForm(t)); setEditing(t); setShowForm(true); };
+  const openDuplicate = (t: any) => { setForm({ ...fillForm(t), title: `${t.title} (copy)` }); setEditing(null); setShowForm(true); };
 
   const handleSave = async () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
     try {
-      const payload = { ...form, basePoints: Number(form.basePoints), estimatedMinutes: Number(form.estimatedMinutes) };
-      if (editing) { await updateTask.mutateAsync({ id: editing.id, ...payload }); toast.success("Task updated"); }
+      const payload = {
+        ...form,
+        basePoints: Number(form.basePoints),
+        bonusPoints: Number(form.bonusPoints || 0),
+        estimatedMinutes: Number(form.estimatedMinutes),
+        timerSeconds: form.timerSeconds !== "" ? Number(form.timerSeconds) : null,
+      };
+      if (editing) { await updateTask.mutateAsync({ id: editing.id, data: payload }); toast.success("Task updated"); }
       else { await createTask.mutateAsync(payload); toast.success("Task created"); }
-      setShowForm(false);
+      setShowForm(false); setEditing(null);
     } catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
@@ -2248,124 +2360,226 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[400] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="relative bg-[#141414] border border-[#2a2a2a] w-full max-w-lg rounded-xl shadow-2xl flex flex-col max-h-[85vh]">
+      <div className="relative bg-[#141414] border border-[#2a2a2a] w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[88vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a] shrink-0">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[#2a2a2a] shrink-0">
           <div className="flex items-center gap-2">
             <ListTodo size={14} className="text-amber-400" />
             <p className="text-[12px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-widest">Tasks — {episode.title}</p>
+            {localItems.length > 0 && (
+              <span className="text-[9px] font-bold font-rajdhani uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">{localItems.length}</span>
+            )}
           </div>
           <button onClick={onClose} className="text-[#666] hover:text-white transition-colors"><X size={16} /></button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {/* Toolbar */}
-          <div className="flex items-center justify-between">
-            {isDirty ? (
-              <button onClick={handleSaveOrder} disabled={reorderTask.isPending}
-                className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
-                {reorderTask.isPending ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save Order
-              </button>
-            ) : <div />}
-            <button onClick={openCreate}
-              className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all">
-              <Plus size={10} /> Add Task
+        {/* Tabs */}
+        <div className="flex items-center gap-1 px-5 pt-3 pb-0 shrink-0 border-b border-[#1f1f1f]">
+          {(["tasks", "submissions"] as const).map(tab => (
+            <button key={tab} onClick={() => { setActiveTab(tab); setShowForm(false); }}
+              className={`text-[10px] font-bold font-rajdhani uppercase tracking-widest px-3 py-1.5 transition-colors border-b-2 ${activeTab === tab ? "text-amber-400 border-amber-400" : "text-[#555] border-transparent hover:text-[#888]"}`}>
+              {tab}
             </button>
-          </div>
+          ))}
+        </div>
 
-          {/* List */}
-          {isLoading ? (
-            <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-[#dc2626]" /></div>
-          ) : localItems.length === 0 && !showForm ? (
-            <div className="text-center py-8 space-y-1">
-              <ListTodo size={24} className="mx-auto text-[#444]" />
-              <p className="text-[11px] text-[#555] font-rajdhani uppercase font-bold">No tasks yet</p>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {localItems.map((t: any, i: number) => (
-                <div key={t.id}
-                  draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDrop={e => onDrop(e, i)} onDragEnd={onDragEnd}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-move ${dragOver === i ? "border-amber-500/50 bg-amber-500/5" : "bg-[#1a1a1a] border-[#2a2a2a]"}`}>
-                  <GripVertical size={12} className="text-[#444] shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-medium text-[#f0f0f0] truncate">{t.title}</p>
-                    <p className="text-[10px] text-[#666] font-rajdhani uppercase">{t.proofType} · {t.basePoints} pts · {t.estimatedMinutes} min</p>
-                  </div>
-                  {!(t.isActive ?? true) && <EyeOff size={11} className="text-[#555] shrink-0" />}
-                  {deleting === t.id ? (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => handleDelete(t.id)} className="text-[10px] text-red-400 font-rajdhani font-bold uppercase hover:text-red-300">Confirm</button>
-                      <button onClick={() => setDeleting(null)} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase hover:text-white">Cancel</button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => openEdit(t)} className="p-1 text-[#777] hover:text-green-400 rounded"><Pencil size={11} /></button>
-                      <button onClick={() => setDeleting(t.id)} className="p-1 text-[#777] hover:text-red-400 rounded"><Trash2 size={11} /></button>
-                    </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+
+          {/* ── TASKS TAB ─────────────────────────────────────────── */}
+          {activeTab === "tasks" && (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  {isDirty && (
+                    <button onClick={handleSaveOrder} disabled={reorderTask.isPending}
+                      className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                      {reorderTask.isPending ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save Order
+                    </button>
                   )}
                 </div>
-              ))}
-            </div>
+                <button onClick={openCreate}
+                  className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all">
+                  <Plus size={10} /> Add Task
+                </button>
+              </div>
+
+              {isLoading ? (
+                <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-[#dc2626]" /></div>
+              ) : localItems.length === 0 && !showForm ? (
+                <div className="text-center py-8 space-y-1">
+                  <ListTodo size={24} className="mx-auto text-[#444]" />
+                  <p className="text-[11px] text-[#555] font-rajdhani uppercase font-bold">No tasks yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {localItems.map((t: any, i: number) => (
+                    <div key={t.id}>
+                      <div
+                        draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDrop={e => onDrop(e, i)} onDragEnd={onDragEnd}
+                        className={`rounded-lg border transition-all ${dragOver === i ? "border-amber-500/50 bg-amber-500/5" : "bg-[#1a1a1a] border-[#2a2a2a]"} ${!(t.isActive ?? true) ? "opacity-50" : ""}`}>
+                        {/* Main row */}
+                        <div className="flex items-start gap-2 px-3 py-2.5">
+                          <GripVertical size={14} className="text-[#444] shrink-0 mt-0.5 cursor-move" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <p className="text-[12px] font-medium text-[#f0f0f0] truncate">{t.title}</p>
+                              {t.isMilestone && <Star size={10} className="text-amber-400 shrink-0" />}
+                              {!(t.isActive ?? true) && <EyeOff size={10} className="text-[#555] shrink-0" />}
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`text-[9px] font-bold font-rajdhani uppercase px-1.5 py-0.5 rounded border ${PROOF_BADGE[t.proofType] ?? "bg-[#333] text-[#888] border-[#444]"}`}>{t.proofType}</span>
+                              <span className="text-[9px] text-[#666] font-rajdhani">{t.basePoints} pts</span>
+                              {(t.bonusPoints ?? 0) > 0 && <span className="text-[9px] text-amber-400 font-rajdhani">+{t.bonusPoints} bonus</span>}
+                              <span className="text-[9px] text-[#555] font-rajdhani">{t.estimatedMinutes} min</span>
+                              {t.timerSeconds && <span className="flex items-center gap-0.5 text-[9px] text-orange-400 font-rajdhani"><Clock size={8} />{t.timerSeconds}s</span>}
+                              <span className={`text-[9px] font-rajdhani ${(t.isRequired ?? true) ? "text-[#555]" : "text-blue-400"}`}>{(t.isRequired ?? true) ? "Required" : "Optional"}</span>
+                              {t.isMilestone && t.milestoneLabel && <span className="text-[9px] text-amber-400 font-rajdhani">🏆 {t.milestoneLabel}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            {deleting === t.id ? (
+                              <>
+                                <button onClick={() => handleDelete(t.id)} className="text-[9px] text-red-400 font-rajdhani font-bold uppercase hover:text-red-300 px-1.5 py-1">✓ Confirm</button>
+                                <button onClick={() => setDeleting(null)} className="text-[9px] text-[#666] font-rajdhani font-bold uppercase hover:text-white px-1">Cancel</button>
+                              </>
+                            ) : (
+                              <>
+                                <button onClick={() => openEdit(t)} title="Edit" className="p-1.5 text-[#666] hover:text-green-400 rounded transition-colors"><Pencil size={11} /></button>
+                                <button onClick={() => openDuplicate(t)} title="Duplicate" className="p-1.5 text-[#666] hover:text-blue-400 rounded transition-colors"><Copy size={11} /></button>
+                                <button onClick={() => setDeleting(t.id)} title="Delete" className="p-1.5 text-[#666] hover:text-red-400 rounded transition-colors"><Trash2 size={11} /></button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {/* Submissions toggle */}
+                        <button onClick={() => setExpandedTaskId(prev => prev === t.id ? null : t.id)}
+                          className="w-full flex items-center gap-1.5 px-3 py-1.5 border-t border-[#222] text-[10px] text-[#555] hover:text-[#888] font-rajdhani font-bold uppercase tracking-widest transition-colors">
+                          <MessageSquare size={9} /> Submissions
+                          <ChevronDown size={9} className={`ml-auto transition-transform ${expandedTaskId === t.id ? "rotate-180" : ""}`} />
+                        </button>
+                      </div>
+                      {expandedTaskId === t.id && (
+                        <div className="ml-4 mt-1 pl-3 border-l border-[#2a2a2a]">
+                          <TaskSubmissionsPanel episodeId={episode.id} taskId={t.id} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Form */}
+              {showForm && (
+                <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">{editing ? "Edit Task" : "New Task"}</p>
+                    <button onClick={() => { setShowForm(false); setEditing(null); }} className="text-[#555] hover:text-white"><X size={13} /></button>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+                    <input value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} placeholder="Task title"
+                      className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description</label>
+                    <textarea value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} rows={2} placeholder="What should the member do?"
+                      className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626] resize-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Deliverables</label>
+                    <textarea value={form.deliverables} onChange={e => setForm((f: any) => ({ ...f, deliverables: e.target.value }))} rows={2} placeholder="What should they submit? (Expected output)"
+                      className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626] resize-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Content URL</label>
+                    <input value={form.contentUrl} onChange={e => setForm((f: any) => ({ ...f, contentUrl: e.target.value }))} placeholder="https://... (optional reference)"
+                      className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Proof Type</label>
+                      <select value={form.proofType} onChange={e => setForm((f: any) => ({ ...f, proofType: e.target.value }))}
+                        className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]">
+                        {PROOF_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Est. Minutes</label>
+                      <input type="number" min={1} value={form.estimatedMinutes} onChange={e => setForm((f: any) => ({ ...f, estimatedMinutes: e.target.value }))}
+                        className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Base Points</label>
+                      <input type="number" min={0} value={form.basePoints} onChange={e => setForm((f: any) => ({ ...f, basePoints: e.target.value }))}
+                        className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Bonus Points</label>
+                      <input type="number" min={0} value={form.bonusPoints} onChange={e => setForm((f: any) => ({ ...f, bonusPoints: e.target.value }))}
+                        className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Focus Timer (seconds — blank = global default)</label>
+                      <input type="number" min={0} value={form.timerSeconds} onChange={e => setForm((f: any) => ({ ...f, timerSeconds: e.target.value }))} placeholder="e.g. 300"
+                        className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.isActive} onChange={e => setForm((f: any) => ({ ...f, isActive: e.target.checked }))} className="accent-red-600" />
+                      <span className="text-[11px] text-[#a0a0a0] font-rajdhani">Active (visible)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.isRequired} onChange={e => setForm((f: any) => ({ ...f, isRequired: e.target.checked }))} className="accent-red-600" />
+                      <span className="text-[11px] text-[#a0a0a0] font-rajdhani">Required</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer col-span-2">
+                      <input type="checkbox" checked={form.isMilestone} onChange={e => setForm((f: any) => ({ ...f, isMilestone: e.target.checked }))} className="accent-amber-500" />
+                      <span className="text-[11px] text-[#a0a0a0] font-rajdhani">Mark as Milestone</span>
+                    </label>
+                  </div>
+                  {form.isMilestone && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-amber-500/80 uppercase tracking-widest mb-1 font-rajdhani">Milestone Label</label>
+                      <input value={form.milestoneLabel} onChange={e => setForm((f: any) => ({ ...f, milestoneLabel: e.target.value }))} placeholder="e.g. First Submission!"
+                        className="w-full bg-[#141414] border border-amber-500/30 rounded px-3 py-2 text-[12px] text-white outline-none focus:border-amber-500" />
+                    </div>
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={handleSave} disabled={createTask.isPending || updateTask.isPending}
+                      className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                      {(createTask.isPending || updateTask.isPending) ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                      {editing ? "Update" : "Create"}
+                    </button>
+                    <button onClick={() => { setShowForm(false); setEditing(null); }} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase tracking-widest hover:text-white transition-colors px-2">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
-          {/* Form */}
-          {showForm && (
-            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 space-y-2.5">
-              <p className="text-[10px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">{editing ? "Edit Task" : "New Task"}</p>
-              <div>
-                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
-                <input value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} placeholder="Task title"
-                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description</label>
-                <textarea value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} rows={2} placeholder="What should the member do?"
-                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626] resize-none" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Deliverables</label>
-                <textarea value={form.deliverables} onChange={e => setForm((f: any) => ({ ...f, deliverables: e.target.value }))} rows={2} placeholder="What should they submit?"
-                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626] resize-none" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Content URL</label>
-                <input value={form.contentUrl} onChange={e => setForm((f: any) => ({ ...f, contentUrl: e.target.value }))} placeholder="https://... (optional reference link)"
-                  className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Proof Type</label>
-                  <select value={form.proofType} onChange={e => setForm((f: any) => ({ ...f, proofType: e.target.value }))}
-                    className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]">
-                    {PROOF_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Points</label>
-                  <input type="number" min={0} value={form.basePoints} onChange={e => setForm((f: any) => ({ ...f, basePoints: e.target.value }))}
-                    className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Est. Min</label>
-                  <input type="number" min={1} value={form.estimatedMinutes} onChange={e => setForm((f: any) => ({ ...f, estimatedMinutes: e.target.value }))}
-                    className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="task-active" checked={form.isActive} onChange={e => setForm((f: any) => ({ ...f, isActive: e.target.checked }))} className="accent-red-600" />
-                <label htmlFor="task-active" className="text-[11px] text-[#a0a0a0] font-rajdhani">Active (visible to members)</label>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button onClick={handleSave} disabled={createTask.isPending || updateTask.isPending}
-                  className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
-                  {(createTask.isPending || updateTask.isPending) ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
-                  {editing ? "Update" : "Create"}
-                </button>
-                <button onClick={() => { setShowForm(false); setEditing(null); }} className="text-[10px] text-[#666] font-rajdhani font-bold uppercase tracking-widest hover:text-white transition-colors px-2">Cancel</button>
-              </div>
-            </div>
+          {/* ── SUBMISSIONS TAB ────────────────────────────────────── */}
+          {activeTab === "submissions" && (
+            <>
+              {localItems.length === 0 ? (
+                <div className="text-center py-8 text-[11px] text-[#555] font-rajdhani uppercase font-bold">No tasks yet — add tasks first</div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Select Task to Review</label>
+                    <select value={selectedSubmissionTaskId} onChange={e => setSelectedSubmissionTaskId(e.target.value)}
+                      className="w-full bg-[#1a1a1a] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]">
+                      <option value="">— choose a task —</option>
+                      {localItems.map((t: any) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                    </select>
+                  </div>
+                  {selectedSubmissionTaskId && (
+                    <TaskSubmissionsPanel episodeId={episode.id} taskId={selectedSubmissionTaskId} />
+                  )}
+                </>
+              )}
+            </>
           )}
         </div>
       </div>

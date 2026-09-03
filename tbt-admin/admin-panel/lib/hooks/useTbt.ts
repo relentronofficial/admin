@@ -1895,6 +1895,27 @@ export const useReorderEpisodeTasks = (episodeId: string) => {
   });
 };
 
+// ── EPISODE TASK SUBMISSIONS (admin) ──────────────────────────────────
+
+export const useListEpisodeTaskSubmissions = (episodeId: string, taskId: string | null) =>
+  useQuery({
+    queryKey: ['episode-task-submissions', episodeId, taskId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/courses/episodes/${episodeId}/tasks/${taskId}/submissions`); return res; },
+    enabled: !!episodeId && !!taskId,
+    staleTime: 30 * 1000,
+  });
+
+export const useReviewEpisodeTaskSubmission = (episodeId: string, taskId: string | null) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, feedback }: { id: string; status: string; feedback?: string }) => {
+      const res: any = await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${taskId}/submissions/${id}/review`, { status, feedback });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-task-submissions', episodeId, taskId] }); },
+  });
+};
+
 // ── VIDEO FEEDBACK (admin) ─────────────────────────────────────────────
 
 export const useVideoFeedbackQuestions = (episodeId: string, episodeType = 'course') =>
