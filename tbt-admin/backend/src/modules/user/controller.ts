@@ -1254,12 +1254,30 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   //     (metadata missing), we still honor the client's flag AS A
   //     LAST RESORT so pre-migration courses without duration data
   //     don't become impossible to complete.
+  // Use the client-reported video duration as authoritative when available —
+  // stored durationSeconds may be a placeholder (900–1800 s) from initial
+  // seeding and will cause the threshold check to fail for short test videos.
+  // Auto-patch the stored value when it diverges so future requests converge.
+  const effectiveDuration =
+    videoDuration && videoDuration > 0
+      ? videoDuration
+      : (episode.durationSeconds ?? 0);
+  if (
+    videoDuration &&
+    videoDuration > 0 &&
+    Math.abs(videoDuration - (episode.durationSeconds ?? 0)) > 5
+  ) {
+    await request.server.prisma.courseEpisode.update({
+      where: { id: episodeId },
+      data: { durationSeconds: Math.round(videoDuration) },
+    });
+  }
   const thresholdFraction =
     Math.max(0.5, Math.min(1, (courseUnlockCfg?.completionThresholdPercent ?? 95) / 100));
   if (existingProgress?.completed) {
     finalIsCompleted = true;
-  } else if (episode.durationSeconds && episode.durationSeconds > 0) {
-    finalIsCompleted = cumulativeActualSecs / episode.durationSeconds >= thresholdFraction;
+  } else if (effectiveDuration > 0) {
+    finalIsCompleted = cumulativeActualSecs / effectiveDuration >= thresholdFraction;
   } else if (requestedCompletion === true && cumulativeActualSecs >= 5) {
     // Legacy fallback — episode has no duration metadata.
     finalIsCompleted = true;

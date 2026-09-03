@@ -80,6 +80,9 @@ export const useMarkLessonComplete = (courseId: string) => {
     onSuccess: (_data, { isCompleted }) => {
       queryClient.invalidateQueries({ queryKey: ["user", "progress", courseId] });
       if (isCompleted) {
+        // Invalidate course data so the `locked` field on subsequent lessons
+        // refreshes immediately (sequential-unlock UI update).
+        queryClient.invalidateQueries({ queryKey: ["courses", courseId] });
         queryClient.invalidateQueries({ queryKey: ["user", "dashboard"] });
         queryClient.invalidateQueries({ queryKey: ["user", "enrollments"] });
         queryClient.invalidateQueries({ queryKey: ["course-xp", courseId] });
