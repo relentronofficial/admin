@@ -55,6 +55,16 @@ function groupByDate(items: Notification[]): { group: DateGroup; items: Notifica
   return DATE_ORDER.filter((g) => map.get(g)!.length > 0).map((g) => ({ group: g, items: map.get(g)! }));
 }
 
+// ── URL normalisation (fixes stale actionUrl values stored in DB) ─────────────
+
+function normalizeNotifUrl(url: string): string {
+  // /messages/{id} → /messages?conversation={id}  (no dedicated [id] route)
+  if (/^\/messages\/[^/]+$/.test(url)) return url.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
+  // /tbt/learning/{id} and /tbt/programs/{id} → /learning/{id}  (wrong /tbt prefix)
+  if (/^\/tbt\/(learning|programs)\//.test(url)) return url.replace(/^\/tbt\/(learning|programs)\//, '/learning/');
+  return url;
+}
+
 // ── Filter types ──────────────────────────────────────────────────────────────
 
 type NotifFilter = "all" | "unread";
@@ -88,11 +98,7 @@ export default function NotificationsPage() {
 
   async function handleClick(n: Notification) {
     if (!n.isRead) markRead.mutate(n.id);
-    if (n.actionUrl) {
-      // /messages/{id} has no dedicated route — rewrite to query-param form
-      const url = n.actionUrl.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
-      router.push(url);
-    }
+    if (n.actionUrl) router.push(normalizeNotifUrl(n.actionUrl));
   }
 
   const groups = groupByDate(notifications);

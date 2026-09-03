@@ -25,6 +25,12 @@ import { useMe } from "@/lib/hooks/useUser";
 import { ThemeToggle } from "./ThemeToggle";
 import type { Notification } from "@/types";
 
+function normalizeNotifUrl(url: string): string {
+  if (/^\/messages\/[^/]+$/.test(url)) return url.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
+  if (/^\/tbt\/(learning|programs)\//.test(url)) return url.replace(/^\/tbt\/(learning|programs)\//, '/learning/');
+  return url;
+}
+
 // ── Notification type icon config ─────────────────────────────────────────────
 
 const NOTIF_ICONS = {
@@ -55,12 +61,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
   function handleClick(n: Notification) {
     onClose();
     if (!n.isRead) markRead.mutate(n.id);
-    if (n.actionUrl) {
-      const url = n.actionUrl.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
-      router.push(url);
-    } else {
-      router.push("/notifications");
-    }
+    router.push(n.actionUrl ? normalizeNotifUrl(n.actionUrl) : "/notifications");
   }
 
   return (
@@ -352,12 +353,7 @@ export function Navbar() {
                 }}
                 onClick={() => {
                   toast.dismiss(t.id);
-                  if (payload.actionUrl) {
-                    const url = payload.actionUrl.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
-                    routerRef.current.push(url);
-                  } else {
-                    routerRef.current.push("/notifications");
-                  }
+                  routerRef.current.push(payload.actionUrl ? normalizeNotifUrl(payload.actionUrl) : "/notifications");
                 }}
               >
                 <div

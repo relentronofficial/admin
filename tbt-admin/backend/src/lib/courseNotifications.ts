@@ -33,7 +33,7 @@ export async function notifyCourseAccessGranted(ctx: Ctx & { courseId: string; c
   const { prisma, io, memberId, courseId, courseTitle } = ctx;
   const title = 'Course Access Granted';
   const body = `You now have access to "${courseTitle}". Start learning now!`;
-  await createInApp(prisma, memberId, title, body, 'course_access', `/tbt/programs/${courseId}`);
+  await createInApp(prisma, memberId, title, body, 'course_access', `/learning/${courseId}`);
   emit(io, memberId, title, body, 'course_access');
   // Dedicated event so the course page can invalidate its query cache immediately
   io?.to(`user:${memberId}`).emit('course:access_granted', { courseId });
@@ -46,7 +46,7 @@ export async function notifyCourseEnrolled(ctx: Ctx & { courseId: string; course
   const { prisma, io, memberId, courseId, courseTitle } = ctx;
   const title = 'Enrollment Confirmed';
   const body = `Welcome to "${courseTitle}"! Start your first lesson.`;
-  await createInApp(prisma, memberId, title, body, 'course_enroll', `/tbt/learning/${courseId}`);
+  await createInApp(prisma, memberId, title, body, 'course_enroll', `/learning/${courseId}`);
   emit(io, memberId, title, body, 'course_enroll');
   const { pushToken } = await getMemberNotifDetails(prisma, memberId);
   if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });
@@ -56,7 +56,7 @@ export async function notifyEpisodeCompleted(ctx: Ctx & { courseId: string; epis
   const { prisma, io, memberId, courseId, episodeTitle } = ctx;
   const title = 'Episode Completed';
   const body = `"${episodeTitle}" done! Keep the streak going.`;
-  await createInApp(prisma, memberId, title, body, 'episode_complete', `/tbt/learning/${courseId}`);
+  await createInApp(prisma, memberId, title, body, 'episode_complete', `/learning/${courseId}`);
   emit(io, memberId, title, body, 'episode_complete');
   const { pushToken } = await getMemberNotifDetails(prisma, memberId);
   if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });
@@ -66,7 +66,7 @@ export async function notifyCourseCompleted(ctx: Ctx & { courseId: string; cours
   const { prisma, io, memberId, courseId, courseTitle } = ctx;
   const title = 'Course Completed!';
   const body = `Congratulations! You completed "${courseTitle}". Download your certificate.`;
-  await createInApp(prisma, memberId, title, body, 'course_complete', `/tbt/learning/${courseId}`);
+  await createInApp(prisma, memberId, title, body, 'course_complete', `/learning/${courseId}`);
   emit(io, memberId, title, body, 'course_complete');
   const { phone, pushToken } = await getMemberNotifDetails(prisma, memberId);
   if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });
@@ -77,7 +77,7 @@ export async function notifyQuizPassed(ctx: Ctx & { courseId: string; episodeTit
   const { prisma, io, memberId, courseId, episodeTitle, score, xp } = ctx;
   const title = 'Quiz Passed!';
   const body = `You scored ${score}% on the "${episodeTitle}" quiz! +${xp} XP`;
-  await createInApp(prisma, memberId, title, body, 'quiz_pass', `/tbt/learning/${courseId}`);
+  await createInApp(prisma, memberId, title, body, 'quiz_pass', `/learning/${courseId}`);
   emit(io, memberId, title, body, 'quiz_pass');
   const { pushToken } = await getMemberNotifDetails(prisma, memberId);
   if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });

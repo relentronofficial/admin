@@ -134,10 +134,18 @@ export const useSpendCoins = () => {
 export const useDownloadBatchCertificate = () => {
   return useMutation({
     mutationFn: async () => {
-      const res = await apiClient.get('/api/user-batch/certificate', { responseType: 'blob' } as any);
-      const blob = (res as any) instanceof Blob
-        ? (res as any)
-        : new Blob([res as any], { type: 'application/pdf' });
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('tbt_device_id') ?? '') : '';
+      const response = await fetch(`${baseUrl}/api/user-batch/certificate`, {
+        credentials: 'include',
+        headers: { 'x-device-id': deviceId },
+      });
+      if (!response.ok) {
+        let msg = 'Failed to download certificate';
+        try { const j = await response.json(); msg = j.error ?? j.message ?? msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
