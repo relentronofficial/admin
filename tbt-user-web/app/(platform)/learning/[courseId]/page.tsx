@@ -1720,6 +1720,19 @@ export default function CourseDetailPage({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Collapse all sections except the one containing the active lesson.
+  // Must be before early returns — hooks must be called unconditionally.
+  useEffect(() => {
+    const sections: any[] = (course as any)?.sections ?? [];
+    if (sections.length === 0) return;
+    const activeSectionId = selectedLesson?.sectionId ?? "__unsectioned__";
+    setCollapsedSections(new Set<string>(
+      sections
+        .map((s: any) => s.id)
+        .filter((id: string) => id !== activeSectionId)
+    ));
+  }, [(course as any)?.sections?.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (isLoading) return <PageLoader />;
   if (!course) {
     return (
@@ -1869,17 +1882,6 @@ export default function CourseDetailPage({
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
   const globalLessonIdx = new Map(lessons.map((l: any, i: number) => [l.id, i]));
-
-  // Collapse all sections except the one containing the active lesson.
-  useEffect(() => {
-    if (courseSections.length === 0) return;
-    const activeSectionId = (selectedLesson as any)?.sectionId ?? "__unsectioned__";
-    setCollapsedSections(new Set<string>(
-      courseSections
-        .map((s: any) => s.id)
-        .filter((id: string) => id !== activeSectionId)
-    ));
-  }, [courseSections.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6 pb-12">
