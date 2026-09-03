@@ -242,8 +242,8 @@ export default function AddMemberPage() {
         {/* Form Container */}
         <div className="space-y-[32px]">
           
-          {/* SECTION 1: BASIC INFO */}
-          <section className="bg-[#141414] border border-[#1f1f1f] rounded-[12px] overflow-hidden">
+          {/* SECTION 1: BASIC INFO — no overflow-hidden so dropdowns aren't clipped */}
+          <section className="bg-[#141414] border border-[#1f1f1f] rounded-[12px]">
             <div className="px-8 pt-8 pb-4">
               <h2 className="text-[20px] font-bold text-white uppercase">BASIC INFO</h2>
               <p className="text-[13px] text-[#666] mt-1">Personal details and identity verification.</p>
