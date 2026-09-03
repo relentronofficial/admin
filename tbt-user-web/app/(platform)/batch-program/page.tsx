@@ -386,7 +386,7 @@ export default function BatchProgramPage() {
   const batchNotStarted = program?.batch
     ? new Date(program.batch.startsAt) > new Date()
     : false;
-  const batchCompleted = daysElapsed >= totalDays;
+  const batchCompleted = daysElapsed >= totalDays && (stats?.approved ?? 0) >= totalDays;
   const todayStatus = (progressMap[String(todayDay)]?.status ?? "not_started") as DayStatus;
 
   // Auto-scroll the day list to today's row once batch data loads
@@ -540,7 +540,9 @@ export default function BatchProgramPage() {
             </p>
           </div>
           <button
-            onClick={() => downloadCertificate.mutate()}
+            onClick={() => downloadCertificate.mutate(undefined, {
+              onError: (err: any) => toast.error(err?.message ?? 'Failed to download certificate'),
+            })}
             disabled={downloadCertificate.isPending}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex-shrink-0"
             style={{ background: "#22c55e", color: "#fff" }}
