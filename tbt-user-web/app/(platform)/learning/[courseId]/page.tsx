@@ -3,7 +3,7 @@
 import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award,
+  ChevronLeft, ChevronRight, CheckCircle2, Play, Loader2, X, Zap, Award,
   Lock, Trophy, ChevronDown, ChevronUp, Copy, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
   Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
@@ -937,6 +937,10 @@ export default function CourseDetailPage({
 }) {
   const { courseId } = use(params);
   const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const courseIdRef = useRef(courseId);
+  courseIdRef.current = courseId;
   const searchParams = useSearchParams();
   const targetLessonId = searchParams.get("lesson");
   const { uiStrings, config } = useSiteConfig();
@@ -1142,6 +1146,9 @@ export default function CourseDetailPage({
     const lesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id);
     if (!lesson?.hasQuiz) return;
     quizTriggeredForRef.current = selectedLesson.id;
+    // Ensure the video is paused before showing the quiz. The video has usually already ended
+    // naturally (safe), but in the 85%-threshold-completion edge case it may still be playing.
+    pausePlayerRef.current();
     setQuizModal({ episodeId: selectedLesson.id, questions: (lesson as any).quizData?.questions ?? [] });
     setQuizAnswers({});
     setQuizResult(null);
@@ -1267,6 +1274,7 @@ export default function CourseDetailPage({
           isCompleted: nextDone,
           sectionId: (next as any).sectionId ?? null,
         });
+        routerRef.current.replace(`/learning/${courseIdRef.current}?lesson=${next.id}`, { scroll: false });
         topRef.current?.scrollIntoView({ behavior: "smooth" });
       } else {
         setUpNextCountdown(n);
@@ -1498,7 +1506,11 @@ export default function CourseDetailPage({
       doMarkCompleteRef.current = false;
       justCompletedInSessionRef.current = true;
       setWatchState("completed");
-      triggerUpNextRef.current();
+      // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz.
+      // Same guard as handleVideoEnded (HLS path). Without this, the 5-second up-next countdown
+      // starts while the quiz modal is simultaneously opening, navigating away before the user answers.
+      const lessonDataForComplete = courseRef.current?.lessons?.find((l: any) => l.id === lesson.id);
+      if (!lessonDataForComplete?.hasQuiz) triggerUpNextRef.current();
       if (!markCalledRef.current) {
         markCalledRef.current = true;
         markComplete.mutate({ lessonId: lesson.id, isCompleted: true, watchedSeconds: Math.floor(lastPlayheadRef.current), videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
@@ -2087,6 +2099,35 @@ export default function CourseDetailPage({
               )}
             </div>
 
+            {/* Lesson navigation — Previous / counter / Next */}
+            {currentLessonIdx >= 0 && (
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  onClick={() => {
+                    if (currentLessonIdx > 0) handleSelectLessonWithFocus(lessons[currentLessonIdx - 1] as any);
+                  }}
+                  disabled={currentLessonIdx === 0 || !(lessons[currentLessonIdx - 1] as any)?.videoUrl}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
+                >
+                  <ChevronLeft size={12} /> Previous
+                </button>
+                <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
+                  {currentLessonIdx + 1} / {lessons.length}
+                </span>
+                <button
+                  onClick={() => {
+                    if (currentLessonIdx < lessons.length - 1) handleSelectLessonWithFocus(lessons[currentLessonIdx + 1] as any);
+                  }}
+                  disabled={currentLessonIdx === lessons.length - 1 || !(lessons[currentLessonIdx + 1] as any)?.videoUrl}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
+                >
+                  Next <ChevronRight size={12} />
+                </button>
+              </div>
+            )}
+
             {/* 85% completion progress indicator */}
             {watchState !== "completed" && !selectedLesson.isCompleted && activeDuration > 0 && liveWatched > 0 && (() => {
               const pct = Math.min(100, Math.round((liveWatched / activeDuration) * 100));
@@ -2321,6 +2362,26 @@ export default function CourseDetailPage({
                 </div>
               ))}
             </div>
+
+            {/* Start / Resume / Review button */}
+            {lessons.length > 0 && (() => {
+              const firstUnfinished = lessons.find((l: any) => !completedIds.has(l.id) && l.videoUrl);
+              const targetLesson = firstUnfinished ?? (lessons.find((l: any) => l.videoUrl) as any ?? null);
+              if (!targetLesson) return null;
+              const label =
+                completedIds.size === 0 ? "Start Learning"
+                : completedIds.size >= lessons.length ? "Review Course"
+                : "Resume Course";
+              return (
+                <button
+                  onClick={() => handleSelectLessonWithFocus(targetLesson as any)}
+                  className="w-full mt-2 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  style={{ background: "var(--color-accent)" }}
+                >
+                  <Play size={15} fill="white" /> {label}
+                </button>
+              );
+            })()}
           </div>
         )}
       </div>
