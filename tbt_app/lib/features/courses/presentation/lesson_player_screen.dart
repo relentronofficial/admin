@@ -372,6 +372,7 @@ window.addEventListener('message', function(e) {
     _progressTimer?.cancel();
     _progressTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_currentTime <= 0) return;
+      if (!_isMediaPlaying()) return;
       ref
           .read(coursesServiceProvider)
           .markLessonComplete(
