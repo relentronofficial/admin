@@ -1895,28 +1895,61 @@ export async function listUserProgramsHandler(request: FastifyRequest, reply: Fa
 
 export async function getUserProgramHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
+  const [program, enrollmentCount] = await Promise.all([
+    request.server.prisma.program.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        durationDays: true,
+        incubationDays: true,
+        status: true,
+        createdAt: true,
+        batches: {
+          // `status` is a raw-SQL column — cast to bypass typecheck.
+          where: { status: 'active' } as any,
+          select: { id: true, name: true },
+          take: 5,
+        },
+        tasks: {
+          where: { batchId: null, isActive: true },
+          orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            dayNumber: true,
+            estimatedMinutes: true,
+            isMilestone: true,
+            proofType: true,
+            basePoints: true,
+          },
+        },
+      },
+    }),
+    request.server.prisma.programEnrollment.count({
+      where: { memberId: request.memberId!, programId: id },
+    }),
+  ]);
+  if (!program) return fail(reply, 404, 'Program not found');
+  return ok(reply, { ...program, isEnrolled: enrollmentCount > 0 });
+}
+
+export async function enrollInProgramHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
   const program = await request.server.prisma.program.findUnique({
     where: { id },
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      durationDays: true,
-      incubationDays: true,
-      status: true,
-      createdAt: true,
-      batches: {
-        // `status` is a raw-SQL column (not in Prisma schema per CLAUDE.md
-        // "Raw SQL Columns"); cast to bypass typecheck. Runtime works because
-        // Prisma forwards unknown filter keys verbatim.
-        where: { status: 'active' } as any,
-        select: { id: true, name: true },
-        take: 5,
-      },
-    },
+    select: { id: true, status: true },
   });
   if (!program) return fail(reply, 404, 'Program not found');
-  return ok(reply, program);
+  if (program.status !== 'active') return fail(reply, 400, 'Program is not currently active');
+  await request.server.prisma.programEnrollment.upsert({
+    where: { memberId_programId: { memberId: request.memberId!, programId: id } },
+    create: { memberId: request.memberId!, programId: id },
+    update: {},
+  });
+  return reply.status(201).send({ success: true, data: { enrolled: true }, error: null });
 }
 
 // ─── Webinars ─────────────────────────────────────────────────────────────────

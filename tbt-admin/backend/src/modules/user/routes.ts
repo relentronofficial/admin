@@ -95,6 +95,7 @@ import {
   getMyInquiredProductsHandler,
   listUserProgramsHandler,
   getUserProgramHandler,
+  enrollInProgramHandler,
   getMyConnectionsHandler,
   getMyPostsHandler,
 } from './controller.js';
@@ -235,6 +236,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Programs ──────────────────────────────────────────────────────────────
   fastify.get('/programs', listUserProgramsHandler);
   fastify.get('/programs/:id', getUserProgramHandler);
+  fastify.post('/programs/:id/enroll', enrollInProgramHandler);
 
   // ── Global search ─────────────────────────────────────────────────────────
   fastify.get('/search', searchHandler);
