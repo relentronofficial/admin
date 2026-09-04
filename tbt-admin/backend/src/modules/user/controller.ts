@@ -1377,7 +1377,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     }
   }
 
-  void invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId!}`);
+  void invalidateCache(request.server.redis ?? null, `cont-learn:v2:${request.memberId!}`);
 
   return ok(reply, {
     lessonId: episodeId,
@@ -1684,9 +1684,12 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {
   const redis = request.server.redis ?? null;
-  const clKey = `cont-learn:${request.memberId}`;
+  const clKey = `cont-learn:v2:${request.memberId}`;
   const cachedCl = await cacheGet<unknown[]>(redis, clKey);
-  if (cachedCl) return ok(reply, cachedCl);
+  // Only serve cache when it actually has items — an empty [] is falsy-adjacent
+  // but truthy in JS, so `if (cachedCl)` would serve a stale empty result even
+  // after the user starts watching their first video.
+  if (cachedCl !== null && cachedCl.length > 0) return ok(reply, cachedCl);
 
   // Fetch recent activity across both types — no completion filter so recently-finished
   // items stay visible. Fetch more than needed so deduplication still yields up to 6.
@@ -1868,7 +1871,10 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     .slice(0, 6)
     .map(({ _ms: _ignored, ...rest }) => rest);
 
-  void cacheSet(redis, clKey, combined, 120);
+  // Only cache when there is at least one item — caching an empty result freezes
+  // the "No course in progress" state for 120 s even after the user watches their
+  // first lesson.
+  if (combined.length > 0) void cacheSet(redis, clKey, combined, 120);
   return ok(reply, combined);
 }
 
@@ -3878,7 +3884,7 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
   void Promise.all([
     recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, isCompleted && !existingProgress?.isCompleted ? 'episode_completed' : 'episode_watched', { episodeId }),
-    invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId}`),
+    invalidateCache(request.server.redis ?? null, `cont-learn:v2:${request.memberId}`),
     ...(wsSlug ? [invalidateCache(request.server.redis ?? null, `ws:detail:${request.memberId}:${wsSlug}`)] : []),
   ]).catch(() => {});
 
@@ -5247,7 +5253,7 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
   void Promise.all([
     recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, 'episode_completed', { episodeId: id }),
-    invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId!}`),
+    invalidateCache(request.server.redis ?? null, `cont-learn:v2:${request.memberId!}`),
   ]).catch(() => {});
 
   return ok(reply, { episodeId: id, isCompleted: true });
