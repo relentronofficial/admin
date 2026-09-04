@@ -27,10 +27,13 @@ export async function listBatchesHandler(req: FastifyRequest, reply: FastifyRepl
     },
   });
   if (batches.length > 0) {
-    const rawRows = await req.server.prisma.$queryRawUnsafe<{ id: string; status: string }[]>(
-      `SELECT id, status FROM batches WHERE id = ANY($1::uuid[])`,
-      batches.map(b => b.id),
-    );
+    let rawRows: { id: string; status: string }[] = [];
+    try {
+      rawRows = await req.server.prisma.$queryRawUnsafe<{ id: string; status: string }[]>(
+        `SELECT id, status FROM batches WHERE id = ANY($1::uuid[])`,
+        batches.map(b => b.id),
+      );
+    } catch { /* status column may not exist during cold-start; default to 'active' */ }
     const rawMap = Object.fromEntries(rawRows.map(r => [r.id, r]));
     const data = batches.map(b => {
       const batchStatus: string = rawMap[b.id]?.status ?? 'active';
