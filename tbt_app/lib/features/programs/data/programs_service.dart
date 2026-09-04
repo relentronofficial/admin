@@ -35,8 +35,45 @@ class TbtProgram {
       );
 }
 
+class TbtProgramTask {
+  final String id;
+  final String title;
+  final String? description;
+  final int dayNumber;
+  final int estimatedMinutes;
+  final bool isMilestone;
+  final String proofType;
+  final int basePoints;
+
+  const TbtProgramTask({
+    required this.id,
+    required this.title,
+    this.description,
+    required this.dayNumber,
+    required this.estimatedMinutes,
+    required this.isMilestone,
+    required this.proofType,
+    required this.basePoints,
+  });
+
+  factory TbtProgramTask.fromJson(Map<String, dynamic> j) => TbtProgramTask(
+        id: j['id'] as String,
+        title: j['title'] as String,
+        description: j['description'] as String?,
+        dayNumber: j['dayNumber'] as int? ?? 1,
+        estimatedMinutes: j['estimatedMinutes'] as int? ?? 15,
+        isMilestone: j['isMilestone'] as bool? ?? false,
+        proofType: j['proofType'] as String? ?? 'watch',
+        basePoints: j['basePoints'] as int? ?? 100,
+      );
+
+  int get weekNumber => ((dayNumber - 1) / 7).floor() + 1;
+}
+
 class TbtProgramDetail extends TbtProgram {
   final List<Map<String, String>> activeBatches;
+  final List<TbtProgramTask> tasks;
+  final bool isEnrolled;
 
   const TbtProgramDetail({
     required super.id,
@@ -46,6 +83,8 @@ class TbtProgramDetail extends TbtProgram {
     required super.incubationDays,
     required super.status,
     required this.activeBatches,
+    required this.tasks,
+    required this.isEnrolled,
   });
 
   factory TbtProgramDetail.fromJson(Map<String, dynamic> j) =>
@@ -62,6 +101,10 @@ class TbtProgramDetail extends TbtProgram {
                   'name': b['name'] as String,
                 })
             .toList(),
+        tasks: (j['tasks'] as List<dynamic>? ?? [])
+            .map((t) => TbtProgramTask.fromJson(t as Map<String, dynamic>))
+            .toList(),
+        isEnrolled: j['isEnrolled'] as bool? ?? false,
       );
 }
 
@@ -90,6 +133,14 @@ class ProgramsFeatureService {
       final data = res.data?['data'] as Map<String, dynamic>?;
       if (data == null) throw const ServerException('Program not found');
       return TbtProgramDetail.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> enrollInProgram(String id) async {
+    try {
+      await _dio.post<void>('$kUserPrograms/$id/enroll');
     } on DioException catch (e) {
       throw mapDioError(e);
     }
