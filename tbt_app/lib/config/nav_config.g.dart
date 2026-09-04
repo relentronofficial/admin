@@ -17,7 +17,8 @@ _$NavConfigImpl _$$NavConfigImplFromJson(Map<String, dynamic> json) =>
           json['rightIcons'] == null
               ? const RightIcons()
               : RightIcons.fromJson(json['rightIcons'] as Map<String, dynamic>),
-      hiddenMenuKeys: (json['hiddenMenuKeys'] as List<dynamic>?)
+      hiddenMenuKeys:
+          (json['hiddenMenuKeys'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           const <String>[],

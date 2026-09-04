@@ -40,7 +40,11 @@ abstract class $NavConfigCopyWith<$Res> {
   factory $NavConfigCopyWith(NavConfig value, $Res Function(NavConfig) then) =
       _$NavConfigCopyWithImpl<$Res, NavConfig>;
   @useResult
-  $Res call({List<NavItem> items, RightIcons rightIcons, List<String> hiddenMenuKeys});
+  $Res call({
+    List<NavItem> items,
+    RightIcons rightIcons,
+    List<String> hiddenMenuKeys,
+  });
 
   $RightIconsCopyWith<$Res> get rightIcons;
 }
@@ -59,7 +63,11 @@ class _$NavConfigCopyWithImpl<$Res, $Val extends NavConfig>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? items = null, Object? rightIcons = null, Object? hiddenMenuKeys = null}) {
+  $Res call({
+    Object? items = null,
+    Object? rightIcons = null,
+    Object? hiddenMenuKeys = null,
+  }) {
     return _then(
       _value.copyWith(
             items:
@@ -102,7 +110,11 @@ abstract class _$$NavConfigImplCopyWith<$Res>
   ) = __$$NavConfigImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({List<NavItem> items, RightIcons rightIcons, List<String> hiddenMenuKeys});
+  $Res call({
+    List<NavItem> items,
+    RightIcons rightIcons,
+    List<String> hiddenMenuKeys,
+  });
 
   @override
   $RightIconsCopyWith<$Res> get rightIcons;
@@ -121,7 +133,11 @@ class __$$NavConfigImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? items = null, Object? rightIcons = null, Object? hiddenMenuKeys = null}) {
+  $Res call({
+    Object? items = null,
+    Object? rightIcons = null,
+    Object? hiddenMenuKeys = null,
+  }) {
     return _then(
       _$NavConfigImpl(
         items:
@@ -169,7 +185,6 @@ class _$NavConfigImpl implements _NavConfig {
   @override
   @JsonKey()
   final RightIcons rightIcons;
-
   final List<String> _hiddenMenuKeys;
   @override
   @JsonKey()
@@ -192,7 +207,10 @@ class _$NavConfigImpl implements _NavConfig {
             const DeepCollectionEquality().equals(other._items, _items) &&
             (identical(other.rightIcons, rightIcons) ||
                 other.rightIcons == rightIcons) &&
-            const DeepCollectionEquality().equals(other._hiddenMenuKeys, _hiddenMenuKeys));
+            const DeepCollectionEquality().equals(
+              other._hiddenMenuKeys,
+              _hiddenMenuKeys,
+            ));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
