@@ -1934,16 +1934,16 @@ class _SkeletonBox extends StatelessWidget {
 /// [AnimatedCrossFade] (200 ms). No collapse back once expanded — Twitter
 /// / LinkedIn convention (users rarely want to re-hide what they just
 /// chose to read).
-class _ExpandableContent extends StatefulWidget {
+class _ExpandableContent extends ConsumerStatefulWidget {
   const _ExpandableContent({required this.text, this.maxLines = 4});
   final String text;
   final int maxLines;
 
   @override
-  State<_ExpandableContent> createState() => _ExpandableContentState();
+  ConsumerState<_ExpandableContent> createState() => _ExpandableContentState();
 }
 
-class _ExpandableContentState extends State<_ExpandableContent> {
+class _ExpandableContentState extends ConsumerState<_ExpandableContent> {
   bool _expanded = false;
 
   static const _style = TextStyle(
@@ -2020,22 +2020,26 @@ class _ExpandableContentState extends State<_ExpandableContent> {
     );
   }
 
-  void _handleMentionTap(BuildContext context, String name) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('@$name — mention linking coming soon.'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  // Item #26: resolve @name → member ID via search, then open profile.
+  Future<void> _handleMentionTap(BuildContext context, String name) async {
+    try {
+      final results = await ref
+          .read(communityServiceProvider)
+          .searchMembers(name, limit: 1);
+      if (!mounted) return;
+      if (results.isNotEmpty) {
+        AuthorProfileSheet.open(context, results.first.id);
+      }
+    } catch (_) {
+      // silently ignore — mention tap is best-effort
+    }
   }
 
+  // Item #27: push hashtag filtered feed.
   void _handleHashtagTap(BuildContext context, String tag) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('#$tag — hashtag feeds coming soon.'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => HashtagFeedScreen(tag: tag),
       ),
     );
   }
@@ -2945,18 +2949,24 @@ class _CommentRowState extends ConsumerState<_CommentRow> {
                             fontSize: 13,
                             height: 1.35,
                           ),
-                          onMention: (name) => ScaffoldMessenger.of(context)
-                              .showSnackBar(SnackBar(
-                            content: Text('@$name — profile linking coming soon.'),
-                            behavior: SnackBarBehavior.floating,
-                            duration: const Duration(seconds: 2),
-                          )),
-                          onHashtag: (tag) => ScaffoldMessenger.of(context)
-                              .showSnackBar(SnackBar(
-                            content: Text('#$tag — hashtag feeds coming soon.'),
-                            behavior: SnackBarBehavior.floating,
-                            duration: const Duration(seconds: 2),
-                          )),
+                          onMention: (name) async {
+                            try {
+                              final results = await ref
+                                  .read(communityServiceProvider)
+                                  .searchMembers(name, limit: 1);
+                              if (!mounted) return;
+                              if (results.isNotEmpty) {
+                                AuthorProfileSheet.open(
+                                    context, results.first.id);
+                              }
+                            } catch (_) {}
+                          },
+                          onHashtag: (tag) =>
+                              Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => HashtagFeedScreen(tag: tag),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -3060,6 +3070,138 @@ class _CommentRowState extends ConsumerState<_CommentRow> {
           child,
         ],
       ),
+    );
+  }
+}
+
+// ── Hashtag feed screen (item #27) ────────────────────────────────────
+//
+// Displays approved posts whose content contains `#tag`. Uses the
+// same CommunityPostCard widget as the main feed. Loads one page at a time;
+// a "Load more" button at the bottom replaces infinite scroll to keep
+// this screen simple — the main feed already has infinite scroll.
+
+class HashtagFeedScreen extends ConsumerStatefulWidget {
+  const HashtagFeedScreen({super.key, required this.tag});
+  final String tag;
+
+  @override
+  ConsumerState<HashtagFeedScreen> createState() => _HashtagFeedScreenState();
+}
+
+class _HashtagFeedScreenState extends ConsumerState<HashtagFeedScreen> {
+  final List<CommunityPost> _posts = [];
+  int _total = 0;
+  int _page = 1;
+  bool _loading = true;
+  bool _loadingMore = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch({bool more = false}) async {
+    if (more) {
+      setState(() => _loadingMore = true);
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final page = more ? _page + 1 : 1;
+      final result = await ref
+          .read(communityServiceProvider)
+          .hashtagFeed(widget.tag, page: page);
+      if (!mounted) return;
+      setState(() {
+        if (more) {
+          _posts.addAll(result.posts);
+          _page = page;
+        } else {
+          _posts
+            ..clear()
+            ..addAll(result.posts);
+          _page = 1;
+        }
+        _total = result.total;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = _loadingMore = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final clean = widget.tag.replaceAll(RegExp(r'^#'), '');
+    final hasMore = _posts.length < _total;
+
+    return Scaffold(
+      backgroundColor: tokens.bgPage,
+      appBar: AppBar(
+        backgroundColor: tokens.bgSurface,
+        title: Text(
+          '#$clean',
+          style: TextStyle(
+            color: tokens.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        iconTheme: IconThemeData(color: tokens.textPrimary),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Could not load posts.',
+                        style: TextStyle(color: tokens.textMuted),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: _fetch,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : _posts.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No posts with #$clean yet.',
+                        style: TextStyle(color: tokens.textMuted),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: _posts.length + (hasMore ? 1 : 0),
+                      itemBuilder: (ctx, i) {
+                        if (i == _posts.length) {
+                          return Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: _loadingMore
+                                ? const Center(
+                                    child: CircularProgressIndicator())
+                                : OutlinedButton(
+                                    onPressed: () => _fetch(more: true),
+                                    child: const Text('Load more'),
+                                  ),
+                          );
+                        }
+                        return CommunityPostCard(post: _posts[i]);
+                      },
+                    ),
     );
   }
 }

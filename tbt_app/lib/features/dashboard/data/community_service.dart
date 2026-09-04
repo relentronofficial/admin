@@ -513,6 +513,33 @@ class CommunityService {
     }
   }
 
+  /// Hashtag feed (item #27). Returns approved posts whose content contains
+  /// `#<tag>` (word-bounded, case-insensitive). Same shape as the main feed.
+  Future<({List<CommunityPost> posts, int total})> hashtagFeed(
+    String tag, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final clean = tag.replaceAll(RegExp(r'^#'), '');
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/community/hashtag/$clean/feed',
+        queryParameters: {'page': page, 'limit': limit},
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? const [];
+      final total = (res.data?['meta']?['total'] as int?) ?? 0;
+      return (
+        posts: list
+            .cast<Map<String, dynamic>>()
+            .map(CommunityPost.fromJson)
+            .toList(),
+        total: total,
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   /// Toggle follow relationship (item #21). Returns the new `following`
   /// state so the caller can reconcile optimistic UI.
   Future<bool> toggleFollow(String memberId) async {
