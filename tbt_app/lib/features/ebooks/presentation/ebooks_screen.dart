@@ -708,18 +708,25 @@ class _BookCover extends StatelessWidget {
               color: kColorBgInput,
               child: const Icon(Icons.menu_book, color: Color(0xFF444444), size: 28),
             )
-          : CachedNetworkImage(
-              imageUrl: url!,
-              width: width,
-              height: height,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(width: width, height: height, color: kColorBgInput),
-              errorWidget: (_, __, ___) => Container(
-                width: width,
-                height: height,
-                color: kColorBgInput,
-                child: const Icon(Icons.menu_book, color: Color(0xFF444444), size: 28),
-              ),
+          : Builder(
+              builder: (ctx) {
+                final dpr = MediaQuery.devicePixelRatioOf(ctx);
+                return CachedNetworkImage(
+                  imageUrl: url!,
+                  width: width,
+                  height: height,
+                  fit: BoxFit.cover,
+                  memCacheWidth: (width * dpr).round().clamp(1, 2000),
+                  memCacheHeight: (height * dpr).round().clamp(1, 2000),
+                  placeholder: (_, __) => Container(width: width, height: height, color: kColorBgInput),
+                  errorWidget: (_, __, ___) => Container(
+                    width: width,
+                    height: height,
+                    color: kColorBgInput,
+                    child: const Icon(Icons.menu_book, color: Color(0xFF444444), size: 28),
+                  ),
+                );
+              },
             ),
     );
   }
