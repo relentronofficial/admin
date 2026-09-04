@@ -63,11 +63,12 @@ final courseXpProvider =
 });
 
 // ── Course sections — companion to courseDetailProvider ───────────────────────
-// Same build_runner workaround: sections are in the same response payload but
-// we can't add them to the frozen CourseDetail without regen.
+// Waits for courseDetailProvider so the raw detail cache is populated, then
+// extracts sections from it — no second network request.
 final courseSectionsProvider = FutureProvider.autoDispose
-    .family<List<Map<String, dynamic>>, String>((ref, courseId) {
-  return ref.read(coursesServiceProvider).getCourseSections(courseId);
+    .family<List<Map<String, dynamic>>, String>((ref, courseId) async {
+  await ref.watch(courseDetailProvider(courseId).future);
+  return ref.read(coursesServiceProvider).getCourseSectionsFromDetail(courseId);
 });
 
 // ── Pending payment for a course — companion to courseDetailProvider ──────────

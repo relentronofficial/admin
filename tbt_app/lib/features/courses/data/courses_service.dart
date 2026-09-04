@@ -89,8 +89,13 @@ class CourseXp {
 }
 
 class CoursesService {
-  const CoursesService(this._dio);
+  CoursesService(this._dio);
   final Dio _dio;
+
+  // Raw response cache keyed by courseId. Populated by getCourseDetail() so
+  // companion providers (sections, pendingPayment) can extract their fields
+  // without issuing a second network request.
+  final Map<String, Map<String, dynamic>> _detailCache = {};
 
   Future<List<Course>> listCourses({
     int page = 1,
@@ -119,10 +124,20 @@ class CoursesService {
         '$kUserCourses/$courseId',
       );
       final data = res.data?['data'] as Map<String, dynamic>? ?? {};
+      _detailCache[courseId] = data;
       return CourseDetail.fromJson(data);
     } on DioException catch (e) {
       throw mapDioError(e);
     }
+  }
+
+  // Extracts sections from the cached detail response — no extra network call.
+  // Always call after courseDetailProvider has resolved (cache is guaranteed populated).
+  List<Map<String, dynamic>> getCourseSectionsFromDetail(String courseId) {
+    final data = _detailCache[courseId];
+    if (data == null) return [];
+    final raw = data['sections'] as List<dynamic>? ?? [];
+    return raw.cast<Map<String, dynamic>>();
   }
 
   // Companion fetch for sections — same build_runner workaround as pending payment.
