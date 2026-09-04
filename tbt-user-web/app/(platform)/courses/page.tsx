@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   Search, BookOpen, Play, Zap, Clock, Lock,
-  ChevronRight, Award, TrendingUp, CheckCircle2, Layers, SkipForward,
+  ChevronRight, Award, TrendingUp, CheckCircle2, Layers,
 } from "lucide-react";
 import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
@@ -81,10 +81,15 @@ function EnrolledCardSkeleton() {
   );
 }
 
-// ── Continue Learning card (specific last-watched lesson) ─────────────────────
+// ── Continue Learning card (course-level progress) ────────────────────────────
 
 function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
   const pct = item.progressPercent ?? 0;
+  const completedLessons = item.completedLessons ?? 0;
+  const videoWatchedPct =
+    item.durationSeconds && item.durationSeconds > 0 && item.lastWatchedSecs > 0
+      ? Math.min(100, Math.round((item.lastWatchedSecs / item.durationSeconds) * 100))
+      : 0;
   const resumeLink = `/learning/${item.id}?lesson=${item.lessonId}`;
 
   return (
@@ -128,7 +133,7 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
             <Play size={14} fill="white" className="text-white ml-0.5" />
           </div>
         </div>
-        {/* Progress bar on thumbnail */}
+        {/* Course completion bar on thumbnail */}
         <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: "rgba(0,0,0,0.5)" }}>
           <div className="h-full" style={{ width: `${pct}%`, background: "var(--color-accent)" }} />
         </div>
@@ -148,23 +153,27 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
           </h3>
           {item.lastLessonTitle && (
             <p className="text-[12px] text-muted-foreground mt-1 line-clamp-1 flex items-center gap-1.5">
-              <SkipForward size={11} />
+              <Play size={10} />
               {item.lastLessonTitle}
             </p>
           )}
         </div>
 
         <div className="space-y-2 mt-3">
-          {/* Progress row */}
+          {/* Videos completed row */}
           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>{pct}% complete</span>
-            {item.lastWatchedSecs > 0 && (
-              <span className="flex items-center gap-1">
-                <Play size={9} fill="currentColor" />
-                Resume at {formatSeconds(item.lastWatchedSecs)}
+            <span className="flex items-center gap-1.5">
+              <Layers size={10} />
+              {completedLessons} / {item.episodeCount} videos completed · {pct}% done
+            </span>
+            {videoWatchedPct > 0 && (
+              <span className="flex items-center gap-1 shrink-0 ml-2">
+                <Clock size={9} />
+                {videoWatchedPct}% of current video
               </span>
             )}
           </div>
+          {/* Course-level progress bar */}
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track, rgba(255,255,255,0.08))" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
@@ -554,13 +563,13 @@ export default function CoursesPage() {
         )}
       </section>
 
-      {/* ── 2. Enrolled Videos ───────────────────────────────────────── */}
+      {/* ── 2. Enrolled Courses ──────────────────────────────────────── */}
       {(enrollLoading || myEnrollments.length > 0) && (
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-foreground flex items-center gap-2">
               <BookOpen size={15} style={{ color: "var(--color-accent)" }} />
-              Enrolled Videos
+              Enrolled Courses
             </h2>
             {myEnrollments.length > 6 && (
               <Link href="/learning" className="text-[12px] font-semibold transition-colors" style={{ color: "var(--color-accent)" }}>

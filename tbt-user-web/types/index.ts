@@ -805,6 +805,9 @@ export interface ContinueLearningItem {
   remainingSecs: number;
   episodeOrder: number;
   episodeCount: number;
+  /** Courses only: number of episodes the member has fully completed. */
+  completedLessons?: number;
+  /** Courses: completed/total %. Workshops: playhead-based %. */
   progressPercent: number;
   isCompleted?: boolean;
   updatedAt: number;

@@ -1765,30 +1765,86 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     return true;
   });
 
+  // Batch-fetch per-course completion counts and next uncompleted episodes.
+  // Fixes two bugs: (a) progressPercent was episode-playhead %, not course %;
+  // (b) isCompleted was episode-level — finishing lesson 3 hid the entire course
+  // from Continue Learning even though lesson 4 hadn't been started yet.
+  const clCompletedMap = new Map<string, number>();
+  const clNextEpMap = new Map<string, { id: string; title: string; order: number }>();
+  if (dedupedCourses.length > 0) {
+    const courseIds = dedupedCourses.map(p => p.episode.courseId);
+    const phs = courseIds.map((_, i) => `$${i + 2}::uuid`).join(', ');
+    const [clRows, nextRows] = await Promise.all([
+      request.server.prisma.$queryRawUnsafe<Array<{ course_id: string; count: number }>>(
+        `SELECT ce.course_id, COUNT(*)::int AS count
+         FROM course_episode_progress cep
+         JOIN course_episodes ce ON cep.episode_id = ce.id
+         WHERE cep.member_id = $1::uuid AND cep.completed = true AND ce.course_id IN (${phs})
+         GROUP BY ce.course_id`,
+        request.memberId,
+        ...courseIds,
+      ),
+      request.server.prisma.$queryRawUnsafe<Array<{
+        course_id: string;
+        next_episode_id: string;
+        next_episode_title: string;
+        next_episode_order: number;
+      }>>(
+        `SELECT DISTINCT ON (ce.course_id) ce.course_id, ce.id AS next_episode_id,
+                ce.title AS next_episode_title, ce."order" AS next_episode_order
+         FROM course_episodes ce
+         LEFT JOIN course_episode_progress cep
+           ON cep.episode_id = ce.id AND cep.member_id = $1::uuid AND cep.completed = true
+         WHERE ce.course_id IN (${phs}) AND cep.episode_id IS NULL
+         ORDER BY ce.course_id, ce."order" ASC`,
+        request.memberId,
+        ...courseIds,
+      ),
+    ]);
+    for (const r of clRows) clCompletedMap.set(r.course_id, Number(r.count));
+    for (const r of nextRows) {
+      clNextEpMap.set(r.course_id, {
+        id: r.next_episode_id,
+        title: r.next_episode_title,
+        order: Number(r.next_episode_order),
+      });
+    }
+  }
+
   // Note: `_ms` is a private sort key stripped before the response goes over
   // the wire. `updatedAt` is returned as an ISO string so it matches the
   // Flutter WatchHistoryItem model (`String? updatedAt`) — earlier the raw
   // getTime() number caused a Dart TypeError at parse time in release mode,
   // which the dashboard surfaced as "Failed to load. Retry."
   const combined = [
-    ...dedupedCourses.map(p => ({
-      type: 'course' as const,
-      id: p.episode.courseId,
-      lessonId: p.episodeId,
-      title: p.episode.course.title,
-      thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
-      lastLessonTitle: p.episode.title,
-      challengeTitle: null as string | null,
-      lastWatchedSecs: p.lastWatchedSecs,
-      durationSeconds: p.episode.durationSeconds ?? null,
-      remainingSecs: Math.max(0, (p.episode.durationSeconds ?? 0) - p.lastWatchedSecs),
-      episodeOrder: p.episode.order,
-      episodeCount: p.episode.course._count.courseEpisodes,
-      progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
-      isCompleted: p.completed,
-      updatedAt: p.updatedAt.toISOString(),
-      _ms: p.updatedAt.getTime(),
-    })),
+    ...dedupedCourses.map(p => {
+      const episodeCount = p.episode.course._count.courseEpisodes;
+      const completedLessons = clCompletedMap.get(p.episode.courseId) ?? 0;
+      const nextEp = clNextEpMap.get(p.episode.courseId);
+      // Point to the next uncompleted episode; fall back to last-watched.
+      const targetId    = nextEp?.id    ?? p.episodeId;
+      const targetTitle = nextEp?.title ?? p.episode.title;
+      const targetOrder = nextEp?.order ?? p.episode.order;
+      return {
+        type: 'course' as const,
+        id: p.episode.courseId,
+        lessonId: targetId,
+        title: p.episode.course.title,
+        thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
+        lastLessonTitle: targetTitle,
+        challengeTitle: null as string | null,
+        lastWatchedSecs: p.lastWatchedSecs,
+        durationSeconds: p.episode.durationSeconds ?? null,
+        remainingSecs: Math.max(0, (p.episode.durationSeconds ?? 0) - p.lastWatchedSecs),
+        episodeOrder: targetOrder,
+        episodeCount,
+        completedLessons,
+        progressPercent: episodeCount > 0 ? Math.round((completedLessons / episodeCount) * 100) : 0,
+        isCompleted: episodeCount > 0 && completedLessons >= episodeCount,
+        updatedAt: p.updatedAt.toISOString(),
+        _ms: p.updatedAt.getTime(),
+      };
+    }),
     ...dedupedWorkshops.map(p => ({
       type: 'workshop' as const,
       id: p.episode.challenge.workshop.slug,
