@@ -1117,7 +1117,7 @@ export default function CourseDetailPage({
   useEffect(() => {
     if (course?.lessons && targetLessonId && !selectedLesson) {
       const target = course.lessons.find((l: any) => l.id === targetLessonId);
-      if (target && target.videoUrl) {
+      if (target && target.videoUrl && !(target as any).locked) {
         const alreadyDone = lessonAlreadyDone(
           target.id, completedIds, (target as any).isCompleted,
           target.durationSeconds, (target as any).actualWatchedSecs, (target as any).resumeAtSeconds,
@@ -1820,6 +1820,9 @@ export default function CourseDetailPage({
 
   const handleSelectLessonWithFocus = (lesson: any) => {
     if (!lesson.videoUrl) return;
+    // Sequential lock: block locked lessons unless the current one was just completed
+    // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
+    if ((lesson as any).locked === true && !justCompletedInSessionRef.current) return;
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
     if (isFocusLocked) return;
     const timerStarted = lessonTimers[lesson.id] !== undefined;
@@ -2119,7 +2122,11 @@ export default function CourseDetailPage({
                   onClick={() => {
                     if (currentLessonIdx < lessons.length - 1) handleSelectLessonWithFocus(lessons[currentLessonIdx + 1] as any);
                   }}
-                  disabled={currentLessonIdx === lessons.length - 1 || !(lessons[currentLessonIdx + 1] as any)?.videoUrl}
+                  disabled={
+                    currentLessonIdx === lessons.length - 1
+                    || !(lessons[currentLessonIdx + 1] as any)?.videoUrl
+                    || ((lessons[currentLessonIdx + 1] as any)?.locked === true && watchState !== "completed")
+                  }
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                 >
