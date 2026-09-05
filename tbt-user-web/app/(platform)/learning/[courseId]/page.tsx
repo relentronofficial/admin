@@ -1258,6 +1258,9 @@ export default function CourseDetailPage({
         clearInterval(upNextTimerRef.current);
         setUpNextCountdown(null);
         setUpNextVisible(false);
+        // Same reset as handleSelectLesson — prevents stale justCompleted state
+        // from triggering the reflection effect for the auto-advanced lesson.
+        justCompletedInSessionRef.current = false;
         const nextDone = lessonAlreadyDone(
           next.id, completedIdsRef.current, (next as any).isCompleted,
           next.durationSeconds, (next as any).actualWatchedSecs, (next as any).resumeAtSeconds,
@@ -1769,6 +1772,9 @@ export default function CourseDetailPage({
 
   const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
+    // Reset in-session completion flag synchronously so the completion effects
+    // for the OLD lesson don't bleed into the newly selected lesson's render cycle.
+    justCompletedInSessionRef.current = false;
     setVideoKey(0);
     clearInterval(upNextTimerRef.current);
     setUpNextCountdown(null);
