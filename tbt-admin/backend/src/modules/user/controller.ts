@@ -1684,7 +1684,7 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {
   const redis = request.server.redis ?? null;
-  const clKey = `cont-learn:v2:${request.memberId}`;
+  const clKey = `cont-learn:v3:${request.memberId}`;
   const cachedCl = await cacheGet<unknown[]>(redis, clKey);
   // Only serve cache when it actually has items — an empty [] is falsy-adjacent
   // but truthy in JS, so `if (cachedCl)` would serve a stale empty result even
@@ -1773,7 +1773,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
   // (b) isCompleted was episode-level — finishing lesson 3 hid the entire course
   // from Continue Learning even though lesson 4 hadn't been started yet.
   const clCompletedMap = new Map<string, number>();
-  const clNextEpMap = new Map<string, { id: string; title: string; order: number }>();
+  const clNextEpMap = new Map<string, { id: string; title: string; order: number; durationSeconds: number | null; lastWatchedSecs: number }>();
   if (dedupedCourses.length > 0) {
     const courseIds = dedupedCourses.map(p => p.episode.courseId);
     const phs = courseIds.map((_, i) => `$${i + 2}::uuid`).join(', ');
@@ -1792,13 +1792,19 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         next_episode_id: string;
         next_episode_title: string;
         next_episode_order: number;
+        next_duration_seconds: number | null;
+        next_watched_secs: number;
       }>>(
         `SELECT DISTINCT ON (ce.course_id) ce.course_id, ce.id AS next_episode_id,
-                ce.title AS next_episode_title, ce."order" AS next_episode_order
+                ce.title AS next_episode_title, ce."order" AS next_episode_order,
+                ce.duration_seconds AS next_duration_seconds,
+                COALESCE(partial.last_watched_secs, 0) AS next_watched_secs
          FROM course_episodes ce
-         LEFT JOIN course_episode_progress cep
-           ON cep.episode_id = ce.id AND cep.member_id = $1::uuid AND cep.completed = true
-         WHERE ce.course_id IN (${phs}) AND cep.episode_id IS NULL
+         LEFT JOIN course_episode_progress completed_cep
+           ON completed_cep.episode_id = ce.id AND completed_cep.member_id = $1::uuid AND completed_cep.completed = true
+         LEFT JOIN course_episode_progress partial
+           ON partial.episode_id = ce.id AND partial.member_id = $1::uuid
+         WHERE ce.course_id IN (${phs}) AND completed_cep.episode_id IS NULL
          ORDER BY ce.course_id, ce."order" ASC`,
         request.memberId,
         ...courseIds,
@@ -1810,6 +1816,8 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         id: r.next_episode_id,
         title: r.next_episode_title,
         order: Number(r.next_episode_order),
+        durationSeconds: r.next_duration_seconds != null ? Number(r.next_duration_seconds) : null,
+        lastWatchedSecs: Number(r.next_watched_secs),
       });
     }
   }
@@ -1836,9 +1844,9 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
         lastLessonTitle: targetTitle,
         challengeTitle: null as string | null,
-        lastWatchedSecs: p.lastWatchedSecs,
-        durationSeconds: p.episode.durationSeconds ?? null,
-        remainingSecs: Math.max(0, (p.episode.durationSeconds ?? 0) - p.lastWatchedSecs),
+        lastWatchedSecs: nextEp != null ? nextEp.lastWatchedSecs : p.lastWatchedSecs,
+        durationSeconds: nextEp != null ? nextEp.durationSeconds : (p.episode.durationSeconds ?? null),
+        remainingSecs: Math.max(0, ((nextEp != null ? nextEp.durationSeconds : p.episode.durationSeconds) ?? 0) - (nextEp != null ? nextEp.lastWatchedSecs : p.lastWatchedSecs)),
         episodeOrder: targetOrder,
         episodeCount,
         completedLessons,
