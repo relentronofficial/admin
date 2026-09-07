@@ -149,8 +149,6 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS hidden_menu_keys JSONB DEFAULT '[]'::jsonb`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS timer_seconds INT`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS member_id UUID REFERENCES members(id) ON DELETE SET NULL`).catch(() => {}),
-      prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE`).catch(() => {}),
-      prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS watched_segments TEXT`),
       prisma.$executeRawUnsafe(`ALTER TABLE member_xp ADD COLUMN IF NOT EXISTS episode_id UUID`),
       prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS member_xp_episode_dedup ON member_xp (member_id, episode_id) WHERE episode_id IS NOT NULL`),
@@ -1431,6 +1429,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // skipped if the parallel block failed; ensure it exists here too.
     await prisma.$executeRawUnsafe(`
       ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS timer_seconds INT
+    `).catch(() => {});
+    // course_episode_id FK columns — must run AFTER course_episodes is no longer
+    // being altered (same lock-contention reason as course_sections above).
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
     `).catch(() => {});
 
     // Backfill: publish any active courses that were created before the admin

@@ -4001,7 +4001,7 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
      WHERE course_episode_id = $1::uuid AND is_visible = true
      ORDER BY "order" ASC`,
     episodeId,
-  );
+  ).catch(() => [] as any[]);
   return reply.send({ success: true, data: resources, error: null });
 }
 
@@ -4020,7 +4020,7 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
      WHERE course_episode_id = $1::uuid
      ORDER BY sort_order ASC`,
     episodeId,
-  );
+  ).catch(() => [] as any[]);
   return reply.send({ success: true, data: tasks, error: null });
 }
 
