@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ZodError } from 'zod';
 import { taskInitiativeSchema, updateTaskSchema } from './schema.js';
 
 export async function listTasksHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -40,7 +41,16 @@ export async function listTasksHandler(request: FastifyRequest, reply: FastifyRe
 }
 
 export async function createTaskInitiativeHandler(request: FastifyRequest, reply: FastifyReply) {
-  const body = taskInitiativeSchema.parse(request.body);
+  let body: ReturnType<typeof taskInitiativeSchema.parse>;
+  try {
+    body = taskInitiativeSchema.parse(request.body);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      const msg = err.errors[0]?.message ?? 'Invalid input';
+      return reply.status(400).send({ success: false, data: null, error: msg });
+    }
+    throw err;
+  }
 
   const program = await request.server.prisma.program.findUnique({ where: { id: body.programId } });
   if (!program) {
