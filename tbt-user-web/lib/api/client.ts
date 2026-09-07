@@ -25,10 +25,38 @@ export function getServerNow(): number {
   return Date.now() + _serverTimeOffset;
 }
 
-// ── Response interceptor ────────────────────────────────────────────────────────
+// ── Proactive token refresh ──────────────────────────────────────────────────────
+// The backend issues a tbt_access cookie with a 15-minute TTL. To avoid a burst
+// of 401 console errors on page-load (all parallel queries firing before the
+// reactive interceptor can start a refresh), we stamp an expected expiry in
+// localStorage after every successful login or refresh and check it upfront in
+// the request interceptor. All concurrent callers await the same promise.
 
-let _isRefreshing = false;
-let _refreshQueue: Array<{ resolve: () => void; reject: (e: unknown) => void }> = [];
+const ACCESS_EXP_KEY = "tbt_access_exp";
+const ACCESS_LIFETIME_MS = 14.5 * 60 * 1000; // 30 s buffer before the 15-min server TTL
+
+let _refreshPromise: Promise<void> | null = null;
+
+function scheduleRefresh(): Promise<void> {
+  if (!_refreshPromise) {
+    _refreshPromise = axios
+      .post(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-auth/refresh`,
+        {},
+        { withCredentials: true },
+      )
+      .then(() => {
+        if (typeof window !== "undefined")
+          localStorage.setItem(ACCESS_EXP_KEY, String(Date.now() + ACCESS_LIFETIME_MS));
+      })
+      .finally(() => {
+        _refreshPromise = null;
+      });
+  }
+  return _refreshPromise;
+}
+
+// ── Response interceptor ─────────────────────────────────────────────────────────
 
 apiClient.interceptors.response.use(
   (response) => {
@@ -37,46 +65,31 @@ apiClient.interceptors.response.use(
       const serverMs = new Date(dateHeader).getTime();
       if (!isNaN(serverMs)) _serverTimeOffset = serverMs - Date.now();
     }
+    // Stamp expected expiry after a successful login (verify-otp) or refresh so
+    // the request interceptor can detect stale tokens proactively next time.
+    if (typeof window !== "undefined") {
+      const url = response.config?.url ?? "";
+      if (url.includes("/api/user-auth/verify-otp") || url.includes("/api/user-auth/refresh")) {
+        localStorage.setItem(ACCESS_EXP_KEY, String(Date.now() + ACCESS_LIFETIME_MS));
+      }
+    }
     return response.data;
   },
   async (error) => {
     const originalRequest = error.config;
 
-    // Auto-refresh on 401 (once per request).
-    // Skip for user-auth endpoints — a 401 there is a real credential/OTP error,
-    // not an expired session, so we should surface the error directly.
+    // Reactive refresh: catches the rare case where the proactive check was
+    // skipped (no localStorage hint, e.g. first-ever session or cleared storage).
+    // Skip for user-auth endpoints — a 401 there is a real credential error.
     const isAuthEndpoint = !!originalRequest?.url?.includes("/api/user-auth/");
     if (error.response?.status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
-
-      if (_isRefreshing) {
-        // Queue up callers while a refresh is already in-flight
-        return new Promise<void>((resolve, reject) => {
-          _refreshQueue.push({ resolve, reject });
-        }).then(() => apiClient(originalRequest));
-      }
-
-      _isRefreshing = true;
-
       try {
-        await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-auth/refresh`,
-          {},
-          { withCredentials: true },
-        );
-        _refreshQueue.forEach((p) => p.resolve());
-        _refreshQueue = [];
+        await scheduleRefresh();
         return apiClient(originalRequest);
-      } catch (refreshError) {
-        _refreshQueue.forEach((p) => p.reject(refreshError));
-        _refreshQueue = [];
-        // Redirect to login only if not already there
-        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-          window.location.href = "/login";
-        }
-        return Promise.reject(refreshError);
-      } finally {
-        _isRefreshing = false;
+      } catch {
+        // Refresh token is also expired — surface the 401.
+        // Do NOT redirect to /login: sessions persist until manual sign-out (CLAUDE.md §33).
       }
     }
 
@@ -90,19 +103,37 @@ apiClient.interceptors.response.use(
   },
 );
 
-// ── Request interceptor ─────────────────────────────────────────────────────────
-// Attach device ID for security telemetry. Cookies are sent automatically.
-apiClient.interceptors.request.use((config) => {
+// ── Request interceptor ──────────────────────────────────────────────────────────
+
+apiClient.interceptors.request.use(async (config) => {
   if (typeof window !== "undefined") {
     const deviceId = localStorage.getItem("tbt_device_id");
     if (deviceId) config.headers["x-device-id"] = deviceId;
+
+    // Proactive refresh: if the expiry hint says the access token is stale,
+    // refresh now so the request goes out with a fresh cookie. All callers
+    // that arrive while a refresh is in-flight await the same promise.
+    const isAuthPath = !!config.url?.includes("/api/user-auth/");
+    if (!isAuthPath) {
+      const exp = localStorage.getItem(ACCESS_EXP_KEY);
+      if (exp && Date.now() > parseInt(exp, 10)) {
+        try {
+          await scheduleRefresh();
+        } catch {
+          // Refresh failed; let the request proceed and the reactive path handle
+          // the 401 if the server still rejects it.
+        }
+      }
+    }
   }
   return config;
 });
 
-// No-op kept for callers that import it — no longer needed with cookie auth
+// No-op kept for callers that import it — not needed with cookie auth
 export function initApiClient(_getToken?: () => Promise<string | null>) {}
 
-export function getCachedTokenSync(): string | null { return null; }
+export function getCachedTokenSync(): string | null {
+  return null;
+}
 
 export default apiClient;
