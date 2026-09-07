@@ -1142,6 +1142,12 @@ export default function CourseDetailPage({
   const quizTriggeredForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedLesson || watchState !== "completed") return;
+    // Wait for any open cue quiz to be dismissed before stacking the end-of-lesson quiz.
+    // Without this guard, the iframe `ended` event (which arrives before the pause postMessage
+    // is processed) can fire doMarkComplete() while the cue quiz is still showing, causing
+    // both modals to render simultaneously (z-50 stack). When this effect re-runs after
+    // cueQuizModal becomes null the end-of-lesson quiz opens correctly.
+    if (cueQuizModal) return;
     if (quizTriggeredForRef.current === selectedLesson.id) return;
     const lesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id);
     if (!lesson?.hasQuiz) return;
@@ -1152,7 +1158,7 @@ export default function CourseDetailPage({
     setQuizModal({ episodeId: selectedLesson.id, questions: (lesson as any).quizData?.questions ?? [] });
     setQuizAnswers({});
     setQuizResult(null);
-  }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [watchState, selectedLesson?.id, cueQuizModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset quiz trigger guard only when the lesson changes, not on every watchState transition.
   useEffect(() => {
@@ -1716,7 +1722,15 @@ export default function CourseDetailPage({
   const handleCloseCueQuiz = useCallback(() => {
     setCueQuizModal(null);
     cueQuizActiveRef.current = false;
-    resumePlayerRef.current();
+    // Skip resume if the video already ended while the cue quiz was showing (iframe race:
+    // the `ended` postMessage can arrive before the pause postMessage is processed).
+    // markCalledRef is set by handleVideoEnded / doMarkComplete on natural completion.
+    // Calling resumePlayerRef on a completed video would replay from the beginning.
+    // The quiz trigger effect re-fires when cueQuizModal becomes null and will open
+    // the end-of-lesson quiz if watchState is still "completed".
+    if (!markCalledRef.current) {
+      resumePlayerRef.current();
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Must be declared before any early returns — useCallback is a hook and must run
