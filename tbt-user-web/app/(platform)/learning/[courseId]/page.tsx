@@ -680,7 +680,7 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
                   </span>
                   <span className="flex-1 truncate" style={{ color: isMe ? "var(--color-accent)" : "var(--color-text-normal)" }}>
                     {name}
-                    {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}>(you)</span>}
+                    {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}> (you)</span>}
                   </span>
                   <span className="text-xs font-bold flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
                     <Zap size={11} />{entry.totalXp ?? 0}
@@ -1092,6 +1092,17 @@ export default function CourseDetailPage({
       );
     }
   };
+
+  // Update browser tab title to course / lesson name (UX-02)
+  useEffect(() => {
+    const courseTitle = (course as any)?.title;
+    if (!courseTitle) return;
+    const siteTitle = config?.siteName ?? "TBT";
+    document.title = selectedLesson?.title
+      ? `${selectedLesson.title} | ${courseTitle} | ${siteTitle}`
+      : `${courseTitle} | ${siteTitle}`;
+    return () => { document.title = siteTitle; };
+  }, [(course as any)?.title, selectedLesson?.title, config?.siteName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Let the ad system interrupt and restore this lesson (TBT_ADS_SPECKIT.md §7).
   // Reuses the pause/resume refs already built above for cue quizzes — those
@@ -2874,7 +2885,9 @@ export default function CourseDetailPage({
             <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: "var(--color-border-subtle)" }}>
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Episode Quiz</p>
-                <p className="text-sm font-semibold text-foreground mt-0.5">Quiz</p>
+                <p className="text-sm font-semibold text-foreground mt-0.5">
+                  {(course as any)?.lessons?.find((l: any) => l.id === quizModal.episodeId)?.title ?? "Quiz"}
+                </p>
               </div>
               {!quizResult && (
                 <button onClick={() => handleCloseQuiz(false)} className="text-muted-foreground hover:text-foreground transition-colors">
