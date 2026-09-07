@@ -892,24 +892,16 @@ export async function getCertificateEligibilityHandler(request: FastifyRequest, 
   });
 
   let validCompletions = 0;
-  let totalRequiredSeconds = 0;
-  let totalWatchedSeconds = 0;
 
   for (const ep of episodes) {
     const prog = progress.find((p) => p.episodeId === ep.id);
-    const duration = ep.durationSeconds ?? 0;
-    const threshold = duration ? duration * 0.85 : 90;
-    
-    totalRequiredSeconds += duration;
-    totalWatchedSeconds += prog?.actualWatchedSecs ?? 0;
-
-    if (prog?.completed && (prog.actualWatchedSecs ?? 0) >= threshold) {
-      validCompletions++;
-    }
+    if (prog?.completed) validCompletions++;
   }
 
-  const completionPercentage = totalRequiredSeconds > 0 
-    ? Math.min(100, Math.round((totalWatchedSeconds / totalRequiredSeconds) * 100))
+  // Percentage based on completed lesson count — same definition as
+  // remainingLessons, so both numbers on the certificate card agree.
+  const completionPercentage = episodes.length > 0
+    ? Math.round((validCompletions / episodes.length) * 100)
     : 0;
 
   const eligible = validCompletions === episodes.length && episodes.length > 0;
