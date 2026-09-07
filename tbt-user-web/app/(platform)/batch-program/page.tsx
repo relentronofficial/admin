@@ -799,7 +799,7 @@ export default function BatchProgramPage() {
 
       {/* Calendar */}
       <div
-        className="rounded-2xl border p-5 space-y-4"
+        className="rounded-2xl border p-4 space-y-3 max-w-sm"
         style={{
           borderColor: "var(--color-border-subtle)",
           background: "var(--color-bg-surface)",
@@ -809,25 +809,25 @@ export default function BatchProgramPage() {
         <div className="flex items-center justify-between">
           <button
             onClick={() => setCalMonth((m) => subMonths(m, 1))}
-            className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
+            className="p-1 rounded-lg hover:opacity-70 transition-opacity"
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft size={16} />
           </button>
-          <p className="text-sm font-semibold">{format(calMonth, "MMMM yyyy")}</p>
+          <p className="text-xs font-semibold">{format(calMonth, "MMMM yyyy")}</p>
           <button
             onClick={() => setCalMonth((m) => addMonths(m, 1))}
-            className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
+            className="p-1 rounded-lg hover:opacity-70 transition-opacity"
           >
-            <ChevronRight size={18} />
+            <ChevronRight size={16} />
           </button>
         </div>
 
         {/* Weekday headers */}
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-0.5">
           {WEEKDAYS.map((d) => (
             <div
               key={d}
-              className="text-center text-[11px] font-bold text-muted-foreground py-1"
+              className="text-center text-[10px] font-bold text-muted-foreground py-0.5"
             >
               {d}
             </div>
@@ -835,7 +835,7 @@ export default function BatchProgramPage() {
         </div>
 
         {/* Calendar cells */}
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-0.5">
           {/* Empty cells for first weekday offset */}
           {Array.from({ length: firstDayOfWeek }, (_, i) => (
             <div key={`pad-${i}`} />
@@ -849,10 +849,10 @@ export default function BatchProgramPage() {
               return (
                 <div
                   key={i}
-                  className="aspect-square rounded-lg flex flex-col items-center justify-center"
+                  className="aspect-square rounded-md flex flex-col items-center justify-center"
                   style={{ background: "var(--color-surface-overlay-xs)" }}
                 >
-                  <span className="text-[11px] text-muted-foreground opacity-30">
+                  <span className="text-[10px] text-muted-foreground opacity-30">
                     {format(date, "d")}
                   </span>
                 </div>
@@ -882,7 +882,7 @@ export default function BatchProgramPage() {
               <Link
                 key={i}
                 href={`/batch-program/${dayNum}`}
-                className="aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all hover:scale-105 relative"
+                className="aspect-square rounded-md flex flex-col items-center justify-center gap-0.5 transition-all hover:scale-105 relative"
                 style={{
                   background: isToday
                     ? "color-mix(in srgb, var(--color-accent) 15%, transparent)"
@@ -892,7 +892,7 @@ export default function BatchProgramPage() {
                 }}
               >
                 <span
-                  className="text-[11px] font-semibold"
+                  className="text-[10px] font-semibold"
                   style={{ color: isToday ? "var(--color-accent)" : "inherit" }}
                 >
                   {format(date, "d")}
@@ -918,10 +918,10 @@ export default function BatchProgramPage() {
 
         {/* Legend */}
         <div
-          className="flex flex-wrap gap-3 pt-2 border-t"
+          className="flex flex-wrap gap-2 pt-1.5 border-t"
           style={{ borderColor: "var(--color-border-subtle)" }}
         >
-          <p className="text-[11px] text-muted-foreground w-full opacity-60">
+          <p className="text-[10px] text-muted-foreground w-full opacity-60">
             Larger dot = Attendance · Smaller dot = Task
           </p>
           {[
@@ -929,9 +929,9 @@ export default function BatchProgramPage() {
             { color: "#ef4444", label: uiStrings?.batchAbsentLabel ?? "Absent" },
             { color: "#60a5fa", label: uiStrings?.batchBreakLabel ?? "Break" },
           ].map((l) => (
-            <div key={l.label} className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ background: l.color }} />
-              <span className="text-[11px] text-muted-foreground">{l.label}</span>
+            <div key={l.label} className="flex items-center gap-1">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: l.color }} />
+              <span className="text-[10px] text-muted-foreground">{l.label}</span>
             </div>
           ))}
           {[
@@ -939,9 +939,9 @@ export default function BatchProgramPage() {
             { color: "#a78bfa", label: uiStrings?.batchStatusPendingReview ?? "Pending" },
             { color: "#ef4444", label: uiStrings?.batchStatusNeedsRevision ?? "Rejected" },
           ].map((l) => (
-            <div key={l.label} className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full opacity-70" style={{ background: l.color }} />
-              <span className="text-[11px] text-muted-foreground">{l.label}</span>
+            <div key={l.label} className="flex items-center gap-1">
+              <div className="w-1 h-1 rounded-full opacity-70" style={{ background: l.color }} />
+              <span className="text-[10px] text-muted-foreground">{l.label}</span>
             </div>
           ))}
         </div>
