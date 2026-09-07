@@ -281,7 +281,7 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   }
   if (sectionId !== undefined) {
     rawUpdates.push(req.server.prisma.$executeRawUnsafe(
-      'UPDATE course_episodes SET section_id = $1 WHERE id = $2::uuid', sectionId, episode.id
+      'UPDATE course_episodes SET section_id = $1::uuid WHERE id = $2::uuid', sectionId, episode.id
     ));
   }
   if (rawUpdates.length) await Promise.all(rawUpdates);
