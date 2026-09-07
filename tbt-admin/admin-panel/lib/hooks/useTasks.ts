@@ -19,6 +19,7 @@ export interface TaskInitiativeInput {
   sortOrder?: number;
   isRequired?: boolean;
   isActive?: boolean;
+  memberId?: string | null;
 }
 
 export const useCreateTaskInitiative = () => {

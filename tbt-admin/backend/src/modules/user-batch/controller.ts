@@ -225,14 +225,16 @@ export async function saveDraftHandler(
     });
   }
 
-  // Unified task submissions — upsert one row per task
+  // Unified task submissions — upsert one row per task.
+  // timer_started_at is set on INSERT only and never overwritten on UPDATE —
+  // this preserves the original first-open timestamp for server-side timer validation.
   if (taskSubmissionsInput && Object.keys(taskSubmissionsInput).length > 0) {
     for (const [taskId, proof] of Object.entries(taskSubmissionsInput)) {
       await req.server.prisma.$executeRawUnsafe(
         `INSERT INTO task_submissions
            (id, member_id, task_id, batch_id, day_progress_id, day_number,
-            response_value, proof_url, proof_type, status, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, 'pending', NOW(), NOW())
+            response_value, proof_url, proof_type, status, timer_started_at, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, 'pending', NOW(), NOW(), NOW())
          ON CONFLICT (member_id, task_id, batch_id, day_number)
          WHERE batch_id IS NOT NULL AND day_number IS NOT NULL
          DO UPDATE SET
@@ -310,6 +312,26 @@ export async function submitDayHandler(
       reviewNote: null,
     },
   });
+
+  // Server-side timer enforcement — flag any task submission where the member
+  // took longer than the task's timer_seconds to submit.  We do not block the
+  // submission; instead we set submitted_after_expiry=TRUE so admins can see
+  // the flag in the pending review panel and apply their own judgement.
+  // Grace period: 30 extra seconds to absorb network latency.
+  const TIMER_GRACE_SECONDS = 30;
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE task_submissions ts
+     SET submitted_after_expiry = TRUE
+     FROM tasks t
+     WHERE ts.task_id = t.id
+       AND ts.batch_id = $1::uuid
+       AND ts.member_id = $2::uuid
+       AND ts.day_number = $3
+       AND t.timer_seconds IS NOT NULL
+       AND ts.timer_started_at IS NOT NULL
+       AND EXTRACT(EPOCH FROM (NOW() - ts.timer_started_at)) > (t.timer_seconds + $4)`,
+    member.batchId, memberId, dayNum, TIMER_GRACE_SECONDS,
+  );
 
   // Auto-mark attendance as present on submit (if not already recorded)
   const onBreak = await req.server.prisma.$queryRawUnsafe<any[]>(
@@ -707,8 +729,13 @@ export async function requestBreakHandler(req: FastifyRequest, reply: FastifyRep
 // POST /api/user-batch/spend-coins — deduct TBT coins for an extra lifeline
 export async function spendCoinsHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
-  const { amount } = (req.body as any) ?? {};
+  const { amount, taskId, dayNumber } = (req.body as any) ?? {};
   const cost = typeof amount === 'number' && amount > 0 ? amount : 50;
+
+  const member = await req.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { batchId: true },
+  });
 
   const [sumRow] = await req.server.prisma.$queryRawUnsafe<Array<{ sum: bigint }>>(
     'SELECT COALESCE(SUM(points), 0)::bigint AS sum FROM tbt_activity_log WHERE member_id = $1::uuid',
@@ -729,6 +756,17 @@ export async function spendCoinsHandler(req: FastifyRequest, reply: FastifyReply
      VALUES ($1::uuid, $2::int, 'lifeline_spend', NOW()::date)`,
     memberId,
     -cost,
+  );
+
+  // Audit trail — log which task/day this lifeline was used for
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lifeline_usages (member_id, batch_id, task_id, day_number, coins_spent)
+     VALUES ($1::uuid, $2, $3, $4, $5)`,
+    memberId,
+    member?.batchId ?? null,
+    taskId ?? null,
+    typeof dayNumber === 'number' ? dayNumber : null,
+    cost,
   );
 
   return reply.send({ success: true, data: { remainingCoins: currentCoins - cost }, error: null });
@@ -754,8 +792,10 @@ export async function getPendingApprovalsHandler(
     const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT ts.id, ts.task_id as "taskId", ts.response_value as "responseValue",
               ts.proof_url as "proofUrl", ts.proof_type as "proofType", ts.status,
+              ts.submitted_after_expiry as "submittedAfterExpiry",
+              ts.timer_started_at as "timerStartedAt",
               t.title, t.base_points as "basePoints", t.proof_type as "taskProofType",
-              t.deliverables, t.is_milestone as "isMilestone"
+              t.deliverables, t.is_milestone as "isMilestone", t.timer_seconds as "timerSeconds"
        FROM task_submissions ts
        JOIN tasks t ON t.id = ts.task_id
        WHERE ts.day_progress_id = $1::uuid

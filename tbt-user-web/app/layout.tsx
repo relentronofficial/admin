@@ -66,7 +66,8 @@ async function fetchPublicJson<T>(path: string): Promise<T | null> {
 
 // Minified anti-flash script — runs synchronously before React hydration to apply
 // the saved theme class on <html> without a flash of the wrong theme.
-const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('tbt_theme');var t=s==='light'||s==='dark'?s:(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.classList.toggle('dark',t==='dark');document.documentElement.classList.toggle('light',t==='light');var m=365*24*60*60;document.cookie='tbt_theme='+t+'; path=/; max-age='+m+'; SameSite=Lax';}catch(e){document.documentElement.classList.add('dark');}})();`;
+// Default: light. Only applies dark if user has explicitly saved "dark".
+const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('tbt_theme');var t=s==='light'||s==='dark'?s:'light';document.documentElement.classList.toggle('dark',t==='dark');document.documentElement.classList.toggle('light',t==='light');var m=365*24*60*60;document.cookie='tbt_theme='+t+'; path=/; max-age='+m+'; SameSite=Lax';}catch(e){document.documentElement.classList.add('light');}})();`;
 
 export default async function RootLayout({
   children,
@@ -75,7 +76,8 @@ export default async function RootLayout({
 }) {
   const cookieStore = await cookies();
   const themeCookie = cookieStore.get("tbt_theme")?.value;
-  const initialThemeClass = themeCookie === "light" ? "light" : "dark";
+  // Default to light. Only apply dark if the user has explicitly saved "dark".
+  const initialThemeClass = themeCookie === "dark" ? "dark" : "light";
 
   const [initialConfig, initialNav, initialUiStrings] = await Promise.all([
     fetchPublicJson<SiteConfig>("/api/pub/config/site"),

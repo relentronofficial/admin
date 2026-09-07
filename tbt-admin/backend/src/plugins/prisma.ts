@@ -148,6 +148,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS task_timer_seconds INT NOT NULL DEFAULT 300`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS hidden_menu_keys JSONB DEFAULT '[]'::jsonb`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS timer_seconds INT`).catch(() => {}),
+      prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS member_id UUID REFERENCES members(id) ON DELETE SET NULL`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS watched_segments TEXT`),
@@ -317,7 +318,30 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ON task_submissions(member_id, task_id)
         WHERE batch_id IS NULL AND day_number IS NULL
       `),
+      // Server-side timer enforcement — tracks when a member first opens a task
+      // and flags submissions that arrive after the task's timer_seconds elapsed.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE task_submissions
+          ADD COLUMN IF NOT EXISTS timer_started_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS submitted_after_expiry BOOLEAN NOT NULL DEFAULT FALSE
+      `),
       // CREATE TABLE statements (idempotent)
+      // Lifeline audit trail — each row records one lifeline spend with task context.
+      // Separate from tbt_activity_log (coin balance) so admins can query:
+      //   "how many lifelines did this member use on Day 5?"
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS lifeline_usages (
+          id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          batch_id     UUID REFERENCES batches(id) ON DELETE SET NULL,
+          task_id      UUID REFERENCES tasks(id) ON DELETE SET NULL,
+          day_number   INT,
+          coins_spent  INT NOT NULL DEFAULT 50,
+          used_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_lifeline_usages_member ON lifeline_usages(member_id)`),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_lifeline_usages_batch_day ON lifeline_usages(batch_id, day_number)`),
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS product_inquiries (
           id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),

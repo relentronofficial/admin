@@ -16,6 +16,7 @@ export const taskInitiativeSchema = z.object({
   milestoneLabel: z.string().optional(),
   bonusPoints: z.number().int().default(0),
   sortOrder: z.number().int().default(0),
+  memberId: z.string().uuid().optional().nullable(),
 });
 
 export const updateTaskSchema = taskInitiativeSchema.partial().omit({ programId: true });

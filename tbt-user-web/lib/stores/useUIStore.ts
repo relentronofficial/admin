@@ -12,13 +12,13 @@ interface UIState {
 }
 
 function getInitialTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   try {
     const saved = localStorage.getItem("tbt_theme");
     if (saved === "light" || saved === "dark") return saved;
-    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    return "light"; // default: light theme when no preference is saved
   } catch {
-    return "dark";
+    return "light";
   }
 }
 

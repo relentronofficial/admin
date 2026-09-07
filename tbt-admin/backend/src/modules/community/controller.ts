@@ -1166,7 +1166,7 @@ export async function memberSubmitPostHandler(request: FastifyRequest, reply: Fa
   if (!parsed.success) {
     return reply
       .status(400)
-      .send({ success: false, data: null, error: { code: 'invalid_input', message: parsed.error.message } });
+      .send({ success: false, data: null, error: { code: 'invalid_input', message: parsed.error.issues[0]?.message ?? 'Invalid input' } });
   }
   const post = await request.server.prisma.post.create({
     data: {

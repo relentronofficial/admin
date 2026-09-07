@@ -976,8 +976,11 @@ export async function getBatchSubmissionsHandler(
             ts.response_value as "responseValue", ts.proof_url as "proofUrl",
             ts.proof_type as "proofType", ts.status, ts.feedback,
             ts.day_number as "dayNumber", ts.reviewed_at as "reviewedAt",
+            ts.submitted_after_expiry as "submittedAfterExpiry",
+            ts.timer_started_at as "timerStartedAt",
             t.title as "taskTitle", t.base_points as "basePoints",
             t.proof_type as "taskProofType", t.deliverables, t.is_milestone as "isMilestone",
+            t.timer_seconds as "timerSeconds",
             m.first_name as "firstName", m.last_name as "lastName",
             m.member_id as "memberCode", m.profile_photo_url as "profilePhotoUrl"
      FROM task_submissions ts

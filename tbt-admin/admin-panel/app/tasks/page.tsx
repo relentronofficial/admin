@@ -17,6 +17,7 @@ import {
   useListPrograms, useCreateProgram, useUpdateProgram, useDeleteProgram,
   useListBatches, useListBatchDays,
 } from "@/lib/hooks/useTbt";
+import { useListMembers } from "@/lib/hooks/useMembers";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +46,7 @@ const emptyTaskForm = (): Partial<TaskInitiativeInput> => ({
   milestoneLabel: "",
   bonusPoints: 0,
   sortOrder: 0,
+  memberId: null,
 });
 
 const emptyProgramForm = () => ({
@@ -82,6 +84,7 @@ export default function TasksPage() {
   const [editingTask, setEditingTask] = useState<any | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState<Partial<TaskInitiativeInput>>(emptyTaskForm());
+  const [memberSearch, setMemberSearch] = useState("");
 
   // ── Program state ─────────────────────────────────────────────────────────────
   const [programModalOpen, setProgramModalOpen] = useState(false);
@@ -114,6 +117,10 @@ export default function TasksPage() {
   // ── Hooks ─────────────────────────────────────────────────────────────────────
   const { data: tasksData, isLoading: tasksLoading } = useListTasks(programFilter ? { programId: programFilter } : undefined);
   const { data: programsData, isLoading: programsLoading } = useListPrograms();
+  const { data: membersData, isLoading: membersLoading } = useListMembers(
+    { page: 1, limit: 50, search: memberSearch, status: "active" },
+    { enabled: taskModalOpen },
+  );
   const { data: batchesData } = useListBatches();
   const { data: batchDaysData } = useListBatchDays(selectedBatchId);
   const { data: batchTasksData } = useListBatchTasks(selectedBatchId);
@@ -149,6 +156,7 @@ export default function TasksPage() {
   const checklistAllTasks: any[] = checklistAllTasksData ?? [];
   const submissions: any[] = (submissionsData as any)?.data ?? submissionsData ?? [];
   const overviewTasks: any[] = overviewTasksData ?? [];
+  const members: any[] = (membersData as any)?.data || [];
 
   const filteredTasks = tasks.filter(t =>
     !search || t.title?.toLowerCase().includes(search.toLowerCase())
@@ -182,12 +190,14 @@ export default function TasksPage() {
 
   const openCreateTask = () => {
     setEditingTask(null);
+    setMemberSearch("");
     setTaskForm({ ...emptyTaskForm(), programId: programFilter || "" });
     setTaskModalOpen(true);
   };
 
   const openEditTask = (task: any) => {
     setEditingTask(task);
+    setMemberSearch("");
     setTaskForm({
       programId:        task.programId  || "",
       stepId:           task.stepId     || "",
@@ -204,6 +214,7 @@ export default function TasksPage() {
       milestoneLabel:   task.milestoneLabel || "",
       bonusPoints:      task.bonusPoints,
       sortOrder:        task.sortOrder,
+      memberId:         task.memberId ?? null,
     });
     setTaskModalOpen(true);
   };
@@ -980,16 +991,34 @@ export default function TasksPage() {
                             <p className="text-[12px] text-[#a0a0a0] truncate">{sub.taskTitle || sub.task?.title || "—"}</p>
                             <p className="text-[10px] text-[#555] uppercase font-rajdhani font-bold">{sub.proofType || sub.task?.proofType || ""}</p>
                           </div>
-                          <div>
+                          <div className="flex items-center gap-2">
                             <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold font-rajdhani uppercase tracking-wider", statusCls)}>
                               {sub.status}
                             </span>
+                            {sub.submittedAfterExpiry && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-rajdhani uppercase tracking-wider bg-orange-500/15 text-orange-400">
+                                ⚠ Late
+                              </span>
+                            )}
                           </div>
                         </div>
                       </button>
 
                       {isExpanded && (
                         <div className="px-8 pb-5 pt-2 bg-[#141414] border-t border-[#1e1e1e]">
+                          {/* Timer enforcement warning */}
+                          {sub.submittedAfterExpiry && (
+                            <div className="mb-4 p-3 bg-orange-900/10 border border-orange-700/30 rounded-lg flex items-start gap-3">
+                              <span className="text-orange-400 mt-0.5">⚠</span>
+                              <div>
+                                <p className="text-[11px] font-bold text-orange-400 uppercase tracking-widest font-rajdhani mb-0.5">Timer Violation</p>
+                                <p className="text-[12px] text-orange-300/80">
+                                  This task was submitted after the {sub.timerSeconds ? `${Math.round(sub.timerSeconds / 60)}-minute` : ""} focus timer expired.
+                                  {sub.timerStartedAt && ` Timer started: ${new Date(sub.timerStartedAt).toLocaleString()}.`}
+                                </p>
+                              </div>
+                            </div>
+                          )}
                           {/* Proof display */}
                           <div className="mb-4 space-y-2">
                             <p className="text-[11px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">Proof</p>
@@ -1174,6 +1203,58 @@ export default function TasksPage() {
                   <option value="">Select program…</option>
                   {programs.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
+              </div>
+              {/* Member selector */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Assign to Member <span className="normal-case tracking-normal font-normal text-[#555]">— optional</span></label>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555] pointer-events-none" />
+                  <input
+                    value={memberSearch}
+                    onChange={e => { setMemberSearch(e.target.value); if (taskForm.memberId) setTaskField("memberId", null); }}
+                    placeholder={membersLoading ? "Loading members…" : "Search member by name or email…"}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 pl-9 pr-4 text-white outline-none focus:border-[#dc2626] text-sm"
+                  />
+                </div>
+                {/* Resolved member chip */}
+                {taskForm.memberId && (() => {
+                  const sel = members.find((m: any) => m.id === taskForm.memberId);
+                  const label = sel ? `${sel.firstName ?? ""} ${sel.lastName ?? ""}`.trim() || sel.email : (editingTask?.memberName ?? taskForm.memberId);
+                  return (
+                    <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-[#dc2626]/10 border border-[#dc2626]/30 rounded-lg text-[#f0f0f0] text-sm">
+                      <span className="flex-1 truncate">{label}</span>
+                      <button type="button" onClick={() => { setTaskField("memberId", null); setMemberSearch(""); }} className="text-[#888] hover:text-white transition-colors shrink-0"><X size={14} /></button>
+                    </div>
+                  );
+                })()}
+                {/* Dropdown results */}
+                {memberSearch && !taskForm.memberId && (
+                  <div className="mt-1 bg-[#141414] border border-[#2a2a2a] rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                    {membersLoading ? (
+                      <div className="flex items-center justify-center py-4"><Loader2 size={16} className="animate-spin text-[#555]" /></div>
+                    ) : members.length === 0 ? (
+                      <p className="text-[#555] text-sm px-4 py-3">No members found</p>
+                    ) : (
+                      members.filter((m: any) => {
+                        const q = memberSearch.toLowerCase();
+                        return `${m.firstName ?? ""} ${m.lastName ?? ""} ${m.email ?? ""}`.toLowerCase().includes(q);
+                      }).map((m: any) => (
+                        <button key={m.id} type="button"
+                          onClick={() => { setTaskField("memberId", m.id); setMemberSearch(""); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#1a1a1a] transition-colors text-left"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-[#dc2626]/20 flex items-center justify-center text-[10px] font-bold text-[#dc2626] shrink-0">
+                            {(m.firstName?.[0] ?? m.email?.[0] ?? "?").toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[13px] text-[#f0f0f0] truncate">{`${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "—"}</p>
+                            <p className="text-[11px] text-[#666] truncate">{m.email ?? ""}</p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

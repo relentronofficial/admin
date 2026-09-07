@@ -123,8 +123,8 @@ export const useRequestBreak = () => {
 export const useSpendCoins = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (amount: number) => {
-      const res: any = await apiClient.post('/api/user-batch/spend-coins', { amount });
+    mutationFn: async ({ amount, taskId, dayNumber }: { amount: number; taskId?: string; dayNumber?: number }) => {
+      const res: any = await apiClient.post('/api/user-batch/spend-coins', { amount, taskId, dayNumber });
       return res.data as { remainingCoins: number };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),

@@ -358,7 +358,7 @@ export default function BatchDayPage() {
   // Spend TBT coins for an extra lifeline
   const handleSpendCoins = async (taskId: string, duration: number) => {
     try {
-      const res = await spendCoins.mutateAsync(LIFELINE_COIN_COST);
+      const res = await spendCoins.mutateAsync({ amount: LIFELINE_COIN_COST, taskId, dayNumber });
       setLockedTaskIds((prev) => { const s = new Set(prev); s.delete(taskId); return s; });
       startTaskTimer(taskId, duration);
       setCoinDialog(null);

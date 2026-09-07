@@ -1861,7 +1861,7 @@ export default function CourseDetailPage({
 
   const handleSpendCoinsForLesson = async (lesson: any, duration: number) => {
     try {
-      const res = await spendCoins.mutateAsync(LIFELINE_COIN_COST);
+      const res = await spendCoins.mutateAsync({ amount: LIFELINE_COIN_COST });
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
       handleSelectLesson(lesson);

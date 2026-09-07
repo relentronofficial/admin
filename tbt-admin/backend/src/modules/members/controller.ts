@@ -364,7 +364,13 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
     // Check email uniqueness
     const existingEmail = await request.server.prisma.member.findUnique({ where: { email: body.email } });
     if (existingEmail) {
-      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'Email already exists' } });
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This email address is already registered.' } });
+    }
+
+    // Check phone uniqueness before touching Clerk so no rollback is needed on collision
+    const existingPhone = await request.server.prisma.member.findUnique({ where: { phone: body.phone } });
+    if (existingPhone) {
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This phone number is already registered.' } });
     }
 
     const {
@@ -446,9 +452,20 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
     try {
       member = await request.server.prisma.member.create({ data });
     } catch (prismaErr: any) {
-      // Roll back the Clerk user if DB insert fails
+      // Roll back the Clerk user on any DB failure
       if (clerkId) {
         await request.server.clerk.users.deleteUser(clerkId).catch(() => {});
+      }
+      // Handle unique constraint violations with a user-friendly message
+      if (prismaErr?.code === 'P2002') {
+        const target: string[] = prismaErr.meta?.target ?? [];
+        if (target.includes('phone')) {
+          return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This phone number is already registered.' } });
+        }
+        if (target.includes('email')) {
+          return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This email address is already registered.' } });
+        }
+        return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'A member with these details already exists.' } });
       }
       throw prismaErr;
     }
@@ -493,6 +510,17 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
         success: false,
         error: { code: 'VALIDATION_ERROR', message: 'Validation failed', fields: err.flatten().fieldErrors }
       });
+    }
+    // Safety net: P2002 that escaped the inner catch (e.g. memberId collision)
+    if (err?.code === 'P2002') {
+      const target: string[] = err.meta?.target ?? [];
+      if (target.includes('phone')) {
+        return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This phone number is already registered.' } });
+      }
+      if (target.includes('email')) {
+        return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This email address is already registered.' } });
+      }
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'A member with these details already exists.' } });
     }
     request.server.log.error({ err }, 'Failed to create member');
     return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message || 'Something went wrong' } });

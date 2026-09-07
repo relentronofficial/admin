@@ -293,7 +293,7 @@ export default function BatchesPage() {
   const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white text-sm outline-none focus:border-[#dc2626] transition-all";
   const labelCls = "block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani";
 
-  const BatchFormBody = () => (
+  const batchFormBodyJsx = (
     <div className="space-y-5">
       {formErr && (
         <p className="text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg px-4 py-2">{formErr}</p>
@@ -612,7 +612,7 @@ export default function BatchesPage() {
               </button>
             </div>
             <div className="p-6">
-              <BatchFormBody />
+              {batchFormBodyJsx}
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f1f]">
               <button onClick={() => setCreateOpen(false)} className="px-5 py-2.5 text-[#888] hover:text-white text-sm font-semibold transition-colors">
@@ -642,7 +642,7 @@ export default function BatchesPage() {
               </button>
             </div>
             <div className="p-6">
-              <BatchFormBody />
+              {batchFormBodyJsx}
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f1f]">
               <button onClick={() => setEditingBatch(null)} className="px-5 py-2.5 text-[#888] hover:text-white text-sm font-semibold transition-colors">

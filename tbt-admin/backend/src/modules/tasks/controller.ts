@@ -17,7 +17,26 @@ export async function listTasksHandler(request: FastifyRequest, reply: FastifyRe
     }),
     request.server.prisma.task.count({ where }),
   ]);
-  return reply.send({ success: true, data: tasks, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+
+  // Hydrate raw SQL columns (timer_seconds, member_id) not in Prisma schema
+  const taskIds = tasks.map((t) => t.id);
+  let rawRows: Array<{ id: string; timer_seconds: number | null; member_id: string | null; member_name: string | null }> = [];
+  if (taskIds.length > 0) {
+    rawRows = await request.server.prisma.$queryRawUnsafe<any[]>(`
+      SELECT t.id, t.timer_seconds, t.member_id,
+             CONCAT(m.first_name, ' ', m.last_name) AS member_name
+      FROM tasks t
+      LEFT JOIN members m ON m.id = t.member_id
+      WHERE t.id = ANY($1::uuid[])
+    `, taskIds);
+  }
+  const rawMap = new Map(rawRows.map((r) => [r.id, r]));
+  const enriched = tasks.map((t) => {
+    const raw = rawMap.get(t.id);
+    return { ...t, timerSeconds: raw?.timer_seconds ?? null, memberId: raw?.member_id ?? null, memberName: raw?.member_name ?? null };
+  });
+
+  return reply.send({ success: true, data: enriched, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
 }
 
 export async function createTaskInitiativeHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -48,13 +67,29 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
     include: { program: { select: { id: true, name: true } } },
   });
   const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
-  if (timerSecs !== null) {
+  const memberId = body.memberId ?? null;
+  if (timerSecs !== null || memberId !== null) {
+    const setClauses: string[] = [];
+    const vals: unknown[] = [];
+    let pi = 1;
+    if (timerSecs !== null) { setClauses.push(`timer_seconds = $${pi++}`); vals.push(timerSecs); }
+    if (memberId !== null)  { setClauses.push(`member_id = $${pi++}::uuid`); vals.push(memberId); }
+    vals.push(task.id);
     await request.server.prisma.$executeRawUnsafe(
-      'UPDATE tasks SET timer_seconds = $1 WHERE id = $2::uuid',
-      timerSecs, task.id
+      `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = $${pi}::uuid`,
+      ...vals
     );
   }
-  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs }, error: null });
+  // Fetch member name for the response
+  let memberName: string | null = null;
+  if (memberId) {
+    const member = await request.server.prisma.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true },
+    }).catch(() => null);
+    if (member) memberName = `${member.firstName ?? ''} ${member.lastName ?? ''}`.trim();
+  }
+  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs, memberId, memberName }, error: null });
 }
 
 export async function getTaskHandler(request: FastifyRequest, reply: FastifyReply) {
