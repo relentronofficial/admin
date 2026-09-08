@@ -115,6 +115,7 @@ export default function SiteConfigPage() {
     bgPrimary: "#000000",
     bgSurface: "#111111",
     taskTimerMinutes: 5,
+    freeLifelinesPerSession: 3,
   });
   const [loginBgImages, setLoginBgImages] = useState<string[]>([]);
 
@@ -129,6 +130,7 @@ export default function SiteConfigPage() {
         ...f,
         ...config,
         taskTimerMinutes: Math.round((config.taskTimerSeconds ?? 300) / 60),
+        freeLifelinesPerSession: config.freeLifelinesPerSession ?? 3,
       }));
       if (Array.isArray(config.loginBgImages)) setLoginBgImages(config.loginBgImages);
     }
@@ -152,11 +154,12 @@ export default function SiteConfigPage() {
 
   const handleSave = async () => {
     try {
-      const { taskTimerMinutes, ...rest } = form;
+      const { taskTimerMinutes, freeLifelinesPerSession, ...rest } = form;
       await updateConfig.mutateAsync({
         ...rest,
         loginBgImages,
         taskTimerSeconds: Math.max(60, taskTimerMinutes * 60),
+        freeLifelinesPerSession: Math.max(0, Math.min(20, Number(freeLifelinesPerSession ?? 3))),
       });
       toast.success("Site config saved");
     } catch (e: any) {
@@ -305,6 +308,19 @@ export default function SiteConfigPage() {
               max={60}
               value={form.taskTimerMinutes}
               onChange={e => set("taskTimerMinutes", Math.max(1, Number(e.target.value)))}
+              className="w-full bg-[#141414] border border-[#333] rounded-lg h-10 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Free Lifelines Per Session</label>
+            <p className="text-[10px] text-[#666] mb-2">Number of free lifelines members get per course session before coins are required. Default: 3. Range: 0–20.</p>
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={form.freeLifelinesPerSession}
+              onChange={e => set("freeLifelinesPerSession", Math.max(0, Math.min(20, Number(e.target.value))))}
               className="w-full bg-[#141414] border border-[#333] rounded-lg h-10 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
             />
           </div>

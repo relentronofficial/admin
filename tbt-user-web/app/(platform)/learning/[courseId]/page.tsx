@@ -995,7 +995,7 @@ export default function CourseDetailPage({
   const { data: episodeTasks = [] } = useEpisodeTasks(selectedLesson?.id);
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
-  const MAX_FREE_LIFELINES = 3;
+  const MAX_FREE_LIFELINES = 3; // fallback until config loads
   const LIFELINE_COIN_COST = 50;
   const [focusLockedIds, setFocusLockedIds] = useState<Set<string>>(new Set());
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
@@ -1007,9 +1007,19 @@ export default function CourseDetailPage({
   const timerEndTimeRef = useRef<number>(0);
   const timerDurationRef = useRef<number>(0);
   const lifelinesLeftRef = useRef(MAX_FREE_LIFELINES);
+  const lifelinesInitializedRef = useRef(false);
   const spendCoins = useSpendCoins();
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
   useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
+  // Sync free lifeline count from admin-controlled site config once it loads
+  useEffect(() => {
+    if (lifelinesInitializedRef.current) return;
+    if (config?.freeLifelinesPerSession != null) {
+      lifelinesInitializedRef.current = true;
+      setLifelinesLeft(config.freeLifelinesPerSession);
+      lifelinesLeftRef.current = config.freeLifelinesPerSession;
+    }
+  }, [config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // "Don't show again" per-course focus dialog acknowledgement
   const [focusAcknowledged, setFocusAcknowledged] = useState(() => {

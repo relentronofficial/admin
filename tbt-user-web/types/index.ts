@@ -212,6 +212,7 @@ export interface SiteConfig {
   loginBgMobileUrl?: string | null;
   loginBgImages?: string[] | null;
   taskTimerSeconds?: number;
+  freeLifelinesPerSession?: number;
 }
 
 export interface NavItem {
