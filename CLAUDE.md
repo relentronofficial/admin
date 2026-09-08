@@ -25,6 +25,11 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 **Repo-root screenshots & audit scripts are throwaway artifacts.** The repo root contains hundreds of `.png`/`.jpeg` screenshots and one-off `.mjs` audit/test scripts (`admin-full-audit.mjs`, `test-*.mjs`, `*-audit.mjs`, etc.) from prior manual QA runs. Do not commit them, do not treat them as canonical tests, and do not delete them without asking — they're the user's local debugging trail.
 
+**Tracked test suites at repo root (real, checked into git — not throwaway):**
+- `tests/` — k6 stress/spike/soak/scalability load tests, Node-based vulnerability/crash tests, and a disaster-recovery runbook. See `tests/README.md` for prerequisites and per-test env vars (`BASE_URL`, `ADMIN_TOKEN`, `USER_TOKEN`).
+- `load-test/` — additional k6 scenarios (`load-test/scenarios/`) plus PowerShell runners (`run.ps1`, `start-test.ps1`).
+- `e2e/ads.spec.ts` — Playwright e2e spec for the ad system, run via `npm run e2e:ads` from repo root.
+
 **Additional spec docs** — always read the relevant speckit before touching its module to avoid re-litigating decisions:
 
 | Speckit | Location | Scope / Status |
@@ -45,6 +50,8 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
 | `COURSE_BUG_FIXES_SPECKIT.md` | repo root | 15 confirmed bugs (C-F-1–C-F-15) across web + mobile course features — discovered 2026-09-01 static audit; **in progress** |
 | `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 missing mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **in progress 2026-09-08; all 5 features backend-complete, admin UI + user-web profile page implemented (uncommitted as of 2026-09-08)** |
+| `SOCKET_EVENTS.md` | `tbt-admin/` | Full Socket.IO event reference (event name, room, emitter, receiver, trigger, payload) — check before adding or renaming a socket event |
+| `LIVE_CALL_FEATURES_SPEC.md` | `tbt-admin/` | Workshop live-call feature spec — additive-only implementation groups ordered by risk |
 
 **`WORKSHOP_BUG_REPORT.md` (repo root)** — 6 bugs found in a 2026-08-21 static audit of the workshop module (BUG-WS-001 through BUG-WS-006); all 6 resolved in commit `cccdf538`. Read before touching workshop-related code.
 
@@ -558,6 +565,12 @@ Shared lookup data (categories, tags, dropdown options). Controller + routes onl
 - **`CoursePayment`** — payment ledger record. `method`: `"manual" | "razorpay" | "bank_transfer" | "upi" | "free" | "external"`. Approved by admin via `POST /api/courses/:id/payments/:paymentId/approve`.
 - **`MemberXP`** — XP ledger. `source`: `"episode_complete" | "quiz_pass"`. Amount comes from `course.xpPerEpisode`.
 - **`CourseBadge`** — manually awardable badge per course. Admin awards via `POST /api/courses/:id/badges/:badgeId/award`.
+
+### Sequential Lesson Unlock (added 2026-07-16 — real Prisma columns, not a raw-SQL ALTER)
+`Course.requireSequential` (`Boolean @default(true)`) + `Course.completionThresholdPercent` (`Int @default(95)`) gate every course's lesson order. The single source of truth is the pure function `computeLessonLockStates` in `backend/src/lib/lessonProgression.ts` — every consumer (course-detail response, the progress-POST guard, admin analytics) routes through it so the "locked" verdict can't drift between call sites. Rules: order comes from `episode.order` ascending; a lesson is completed once watched-seconds crosses `completionThresholdPercent` of its duration (or the legacy `isCompleted` flag, for pre-migration data with no duration); lesson 1 is always unlocked; every other lesson is locked until every strictly-earlier lesson is completed. When `requireSequential=false`, everything is unlocked.
+- **Server-enforced, not just UI**: the user-facing course-detail response (`user/controller.ts` around the `courseEpisodes.map` in `getCourseDetailHandler`) strips `videoUrl`/`hlsUrl`/`quizData` to `null` for locked episodes — a modified client gets no playable URL to intercept. `markLessonCompleteHandler` independently re-checks `isEpisodeUnlocked` before writing progress and 403s a write to a locked episode.
+- **Admin toggle**: `admin-panel/app/courses/page.tsx` course form exposes both fields (checkbox + threshold input, disabled when unchecked).
+- **Frontend** (`tbt-user-web/app/(platform)/learning/[courseId]/page.tsx`): each lesson in `course.lessons[]` carries a server-computed `locked: boolean`. Clicking a locked lesson (list item, Next-button, or `?lesson=` deep link) shows a `toast.error(..., { id: "lesson-locked" })` — the fixed toast id de-dupes repeated clicks instead of stacking. Do NOT use the HTML `disabled` attribute to block a locked lesson's button — a disabled button never fires `onClick`, so the click can't reach the toast; only guard on `!lesson.videoUrl` (a genuine dead end). Completing a lesson only ever shows an "up next" banner (`upNextVisible`) with a manual "Play →" button — there is intentionally **no** auto-advance/auto-play countdown to the next lesson (removed; see `triggerUpNextRef`). Unit tests for the pure lock logic live in `backend/src/lib/lessonProgression.test.ts`.
 
 ### Extended Fields (via startup `ALTER TABLE`)
 ```

@@ -931,10 +931,6 @@ export default function CourseDetailPage({
 }) {
   const { courseId } = use(params);
   const router = useRouter();
-  const routerRef = useRef(router);
-  routerRef.current = router;
-  const courseIdRef = useRef(courseId);
-  courseIdRef.current = courseId;
   const searchParams = useSearchParams();
   const targetLessonId = searchParams.get("lesson");
   const { uiStrings, config } = useSiteConfig();
@@ -1186,6 +1182,12 @@ export default function CourseDetailPage({
           const dur = (target as any).timerSeconds ?? config?.taskTimerSeconds ?? 300;
           setFocusDialog({ lesson: target, duration: dur });
         }
+      } else if (target && target.videoUrl && (target as any).locked) {
+        // Direct/deep-linked navigation to a locked lesson (e.g. a stale bookmark,
+        // shared link, or browser history entry) — tell the member why nothing opened
+        // instead of silently doing nothing.
+        urlFocusDialogShownRef.current = targetLessonId;
+        toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
       }
     }
   }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1888,7 +1890,8 @@ export default function CourseDetailPage({
     // Sequential lock: block locked lessons unless the current one was just completed
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
     if ((lesson as any).locked === true && !justCompletedInSessionRef.current) {
-      toast.error("Complete the previous lesson to unlock this one.", { id: "lesson-locked" });
+      // Fixed toast id de-dupes repeated clicks on the same locked lesson instead of stacking.
+      toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
       return;
     }
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
@@ -2289,6 +2292,11 @@ export default function CourseDetailPage({
                     currentLessonIdx === lessons.length - 1
                     || !(lessons[currentLessonIdx + 1] as any)?.videoUrl
                   }
+                  title={
+                    (lessons[currentLessonIdx + 1] as any)?.locked === true && watchState !== "completed"
+                      ? "Complete the previous lesson to unlock."
+                      : undefined
+                  }
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                 >
@@ -2365,7 +2373,7 @@ export default function CourseDetailPage({
                     Play →
                   </button>
                   <button
-                    onClick={() => setUpNextVisible(false)}
+                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextVisible(false); }}
                     className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
                     style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                   >
