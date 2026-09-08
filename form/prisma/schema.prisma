@@ -1,0 +1,61 @@
+// Prisma schema for job application form (Office Assistant)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model Application {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Position applied for
+  position  String   @default("Office Assistant")
+  status    String   @default("pending") // pending | shortlisted | rejected | hired
+
+  // Demographics
+  fullName      String
+  email         String
+  phone         String
+  dateOfBirth   DateTime
+  gender        String
+  maritalStatus String
+  nationality   String
+
+  // Aadhar
+  aadharNumber   String // stored last-4-only masked in list views
+  aadharFileUrl  String @db.Text // Vercel Blob URL
+  aadharFileName String
+
+  // Current GPS location (captured client-side)
+  currentLatitude  Float?
+  currentLongitude Float?
+  locationAccuracy Float?
+
+  // Current address (manual)
+  currentAddressLine1 String
+  currentAddressLine2 String?
+  currentCity         String
+  currentState        String
+  currentPincode      String
+
+  // Permanent address (manual)
+  permanentAddressLine1 String
+  permanentAddressLine2 String?
+  permanentCity         String
+  permanentState        String
+  permanentPincode      String
+
+  // Job-related
+  education       String
+  experienceYears Int
+  coverLetter     String? @db.Text
+
+  @@index([createdAt])
+  @@index([status])
+}
