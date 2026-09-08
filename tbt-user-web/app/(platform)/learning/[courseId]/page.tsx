@@ -1021,17 +1021,6 @@ export default function CourseDetailPage({
     }
   }, [config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // "Don't show again" per-course focus dialog acknowledgement
-  const [focusAcknowledged, setFocusAcknowledged] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !!localStorage.getItem(`tbt_focus_ack_${courseId}`);
-  });
-  const toggleFocusAck = (checked: boolean) => {
-    setFocusAcknowledged(checked);
-    if (checked) localStorage.setItem(`tbt_focus_ack_${courseId}`, "1");
-    else localStorage.removeItem(`tbt_focus_ack_${courseId}`);
-  };
-
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
   const localReflections = useMemo(() => {
@@ -1884,7 +1873,12 @@ export default function CourseDetailPage({
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
     if ((lesson as any).locked === true && !justCompletedInSessionRef.current) return;
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
-    if (isFocusLocked) return;
+    if (isFocusLocked) {
+      // Re-clicking a timed-out lesson costs a lifeline
+      const duration = getLessonTimerDuration(lesson);
+      if (duration) handleUseLifeline(lesson, duration);
+      return;
+    }
     const timerStarted = lessonTimers[lesson.id] !== undefined;
     if (timerStarted || completedIds.has(lesson.id) || lesson.isCompleted) {
       handleSelectLesson(lesson);
@@ -1892,11 +1886,7 @@ export default function CourseDetailPage({
     }
     const duration = getLessonTimerDuration(lesson);
     if (!duration) { handleSelectLesson(lesson); return; }
-    if (focusAcknowledged) {
-      handleSelectLesson(lesson);
-      startLessonTimer(lesson.id, duration);
-      return;
-    }
+    // Always show the Focus Mode dialog — no "don't show again" bypass
     setFocusDialog({ lesson, duration });
   };
 
@@ -2016,17 +2006,6 @@ export default function CourseDetailPage({
               You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
               After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
             </p>
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={focusAcknowledged}
-                onChange={(e) => toggleFocusAck(e.target.checked)}
-                className="w-4 h-4 rounded accent-[var(--color-accent)]"
-              />
-              <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                Don&apos;t show this again for this course
-              </span>
-            </label>
             <div className="flex gap-3">
               <button
                 onClick={() => setFocusDialog(null)}
