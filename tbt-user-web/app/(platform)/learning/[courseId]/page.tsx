@@ -1008,6 +1008,9 @@ export default function CourseDetailPage({
   const timerDurationRef = useRef<number>(0);
   const lifelinesLeftRef = useRef(MAX_FREE_LIFELINES);
   const lifelinesInitializedRef = useRef(false);
+  // Tracks the last lessonId for which the focus dialog was shown via URL auto-select,
+  // preventing an infinite loop when selectedLesson stays null (user hasn't confirmed yet).
+  const urlFocusDialogShownRef = useRef<string | null>(null);
   const spendCoins = useSpendCoins();
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
   useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
@@ -1124,28 +1127,36 @@ export default function CourseDetailPage({
 
   // Auto-select lesson from URL parameter once course data loads
   useEffect(() => {
-    if (course?.lessons && targetLessonId && !selectedLesson) {
+    if (course?.lessons && targetLessonId && !selectedLesson && urlFocusDialogShownRef.current !== targetLessonId) {
       const target = course.lessons.find((l: any) => l.id === targetLessonId);
       if (target && target.videoUrl && !(target as any).locked) {
         const alreadyDone = lessonAlreadyDone(
           target.id, completedIds, (target as any).isCompleted,
           target.durationSeconds, (target as any).actualWatchedSecs, (target as any).resumeAtSeconds,
         );
-        setSelectedLesson({
-          id: target.id,
-          title: target.title,
-          description: (target as any).description ?? null,
-          videoUrl: target.videoUrl,
-          hlsUrl: (target as any).hlsUrl ?? null,
-          durationSeconds: target.durationSeconds ?? 0,
-          resumeAtSeconds: alreadyDone ? 0 : ((target as any).resumeAtSeconds ?? 0),
-          actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
-          isCompleted: alreadyDone,
-          sectionId: (target as any).sectionId ?? null,
-        });
+        if (alreadyDone) {
+          // Completed lesson — auto-select and play immediately (no focus needed)
+          setSelectedLesson({
+            id: target.id,
+            title: target.title,
+            description: (target as any).description ?? null,
+            videoUrl: target.videoUrl,
+            hlsUrl: (target as any).hlsUrl ?? null,
+            durationSeconds: target.durationSeconds ?? 0,
+            resumeAtSeconds: 0,
+            actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
+            isCompleted: true,
+            sectionId: (target as any).sectionId ?? null,
+          });
+        } else {
+          // Incomplete lesson — show focus dialog instead of auto-playing
+          urlFocusDialogShownRef.current = targetLessonId;
+          const dur = (target as any).timerSeconds ?? config?.taskTimerSeconds ?? 300;
+          setFocusDialog({ lesson: target, duration: dur });
+        }
       }
     }
-  }, [course, targetLessonId, selectedLesson]);
+  }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show quiz modal on first episode completion
   const quizTriggeredForRef = useRef<string | null>(null);
@@ -1280,20 +1291,27 @@ export default function CourseDetailPage({
           next.id, completedIdsRef.current, (next as any).isCompleted,
           next.durationSeconds, (next as any).actualWatchedSecs, (next as any).resumeAtSeconds,
         );
-        setSelectedLesson({
-          id: next.id,
-          title: next.title,
-          description: (next as any).description ?? null,
-          videoUrl: next.videoUrl,
-          hlsUrl: (next as any).hlsUrl ?? null,
-          durationSeconds: next.durationSeconds ?? 0,
-          resumeAtSeconds: nextDone ? 0 : ((next as any).resumeAtSeconds ?? 0),
-          actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
-          isCompleted: nextDone,
-          sectionId: (next as any).sectionId ?? null,
-        });
         routerRef.current.replace(`/learning/${courseIdRef.current}?lesson=${next.id}`, { scroll: false });
         topRef.current?.scrollIntoView({ behavior: "smooth" });
+        if (nextDone) {
+          // Already completed — auto-play is fine
+          setSelectedLesson({
+            id: next.id,
+            title: next.title,
+            description: (next as any).description ?? null,
+            videoUrl: next.videoUrl,
+            hlsUrl: (next as any).hlsUrl ?? null,
+            durationSeconds: next.durationSeconds ?? 0,
+            resumeAtSeconds: 0,
+            actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
+            isCompleted: true,
+            sectionId: (next as any).sectionId ?? null,
+          });
+        } else {
+          // Incomplete lesson — show focus dialog; video plays only after user confirms
+          urlFocusDialogShownRef.current = next.id;
+          setFocusDialog({ lesson: next, duration: (next as any).timerSeconds ?? 300 });
+        }
       } else {
         setUpNextCountdown(n);
       }
