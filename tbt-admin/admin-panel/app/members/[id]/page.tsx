@@ -42,7 +42,7 @@ export default function MemberDetailPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("Info");
 
-  const { data: memberData, isLoading: memberLoading } = useGetMember(id);
+  const { data: memberData, isLoading: memberLoading, refetch: refetchMember } = useGetMember(id);
   const member = (memberData as any)?.data;
 
   const { data: progressData, isLoading: progressLoading } = useMemberProgress(id);
@@ -97,6 +97,7 @@ export default function MemberDetailPage() {
       toast.success(`Added ${amount} coins. New balance: ${res.data?.newBalance ?? "—"}`);
       setCoinAmount("");
       setCoinReason("");
+      refetchMember();
     } catch (e: any) { toast.error(e.message || "Failed to add coins"); }
   };
 
@@ -246,9 +247,16 @@ export default function MemberDetailPage() {
 
                 {/* TBT Coins */}
                 <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-4">
-                  <p className="text-[11px] font-bold text-[#dc2626] uppercase tracking-[2px] font-rajdhani flex items-center gap-2">
-                    <Coins size={13} /> TBT Coins
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-bold text-[#dc2626] uppercase tracking-[2px] font-rajdhani flex items-center gap-2">
+                      <Coins size={13} /> TBT Coins
+                    </p>
+                    {member?.coinBalance != null && (
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold" style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}>
+                        <Coins size={12} /> {member.coinBalance.toLocaleString()} coins
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[12px] text-[#888]">
                     Grant coins to this member. Coins are used to purchase extra lifelines in course focus-mode.
                   </p>

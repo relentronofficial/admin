@@ -529,7 +529,7 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
 
 export async function getMemberHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  const [member, skillRows] = await Promise.all([
+  const [member, skillRows, coinRows] = await Promise.all([
     request.server.prisma.member.findUnique({
       where: { id },
       include: {
@@ -544,9 +544,14 @@ export async function getMemberHandler(request: FastifyRequest, reply: FastifyRe
       `SELECT has_website AS "hasWebsite", weekly_website_orders AS "weeklyWebsiteOrders", skill_business_foundation AS "skillBusinessFoundation", skill_content AS "skillContent", skill_funnels AS "skillFunnels", skill_ads AS "skillAds", skill_sales AS "skillSales", skill_overall_marketing AS "skillOverallMarketing", weekly_learning_hours AS "weeklyLearningHours", team_size AS "teamSize", business_started_from AS "businessStartedFrom", instagram_stats AS "instagramStats", facebook_stats AS "facebookStats", website_url AS "websiteUrl", revenue_goal_after_tbt AS "revenueGoalAfterTbt" FROM members WHERE id = $1::uuid`,
       id,
     ),
+    request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
+      `SELECT COALESCE(SUM(points), 0) AS total FROM tbt_activity_log WHERE member_id = $1::uuid`,
+      id,
+    ),
   ]);
   if (!member || (member as any).deletedAt) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
-  return reply.send({ success: true, data: { ...member, ...(skillRows[0] ?? {}) }, error: null });
+  const coinBalance = Number(coinRows[0]?.total ?? 0);
+  return reply.send({ success: true, data: { ...member, ...(skillRows[0] ?? {}), coinBalance }, error: null });
 }
 
 export async function updateMemberHandler(request: FastifyRequest, reply: FastifyReply) {
