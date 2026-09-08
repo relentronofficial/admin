@@ -812,8 +812,7 @@ export async function requestCourseAccessHandler(request: FastifyRequest, reply:
     } catch {}
   }
 
-  const paymentUrl = course.paymentLinkUrl ?? 'https://tamilbusinesstribe.com';
-  return ok(reply, { paymentId, paymentUrl });
+  return ok(reply, { paymentId });
 }
 
 export async function enrollCourseHandler(request: FastifyRequest, reply: FastifyReply) {

@@ -47,6 +47,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `COMMUNITY_FEED_V2_SPECKIT.md` | `tbt_app/` | Social-media-grade community overhaul (30 items, ~5–7 dev days) |
 | `EBOOK_SPECKIT.md` | `tbt_app/` | Ebook feature gap-fix plan (2026-08-01 audit findings) |
 | `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
+| `COURSE_BUG_FIXES_SPECKIT.md` | repo root | 15 confirmed bugs (C-F-1–C-F-15) across web + mobile course features — discovered 2026-09-01 static audit; **in progress** |
 
 **`WORKSHOP_BUG_REPORT.md` (repo root)** — 6 bugs found in a 2026-08-21 static audit of the workshop module (BUG-WS-001 through BUG-WS-006); all 6 resolved in commit `cccdf538`. Read before touching workshop-related code.
 

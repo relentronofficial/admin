@@ -224,7 +224,13 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   const isPendingExempt = PENDING_EXEMPT_PATHS.some((p) => pathname.startsWith(p));
 
   useEffect(() => {
-    if (isLoading || isFetching || isError || isExempt || !me) return;
+    if (isLoading || isFetching) return;
+    // /api/user/me returned 401 — user is unauthenticated; send to login.
+    if (isError) {
+      router.replace("/login");
+      return;
+    }
+    if (isExempt || !me) return;
     if ((me as any).status === "pending") {
       // pending + awaiting_kyc → must reach the self-onboarding wizard.
       // All other pending states (under_review, changes_requested, etc.) stay

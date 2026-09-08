@@ -4,7 +4,7 @@ import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "r
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft, ChevronRight, CheckCircle2, Play, Loader2, X, Zap, Award,
-  Lock, Trophy, ChevronDown, ChevronUp, Copy, Check,
+  Lock, Trophy, ChevronDown, ChevronUp, Share2, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
   Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
 } from "lucide-react";
@@ -744,15 +744,9 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   const lessons = course.lessons ?? [];
 
   const handleGetAccess = async () => {
-    if (course.paymentLinkUrl) {
-      window.open(course.paymentLinkUrl, "_blank");
-      return;
-    }
     try {
-      const res = await requestAccess.mutateAsync(courseId);
-      const { paymentUrl } = (res as any).data ?? res;
-      if (paymentUrl) window.open(paymentUrl, "_blank");
-      else toast.success("Access request sent! We'll notify you shortly.");
+      await requestAccess.mutateAsync(courseId);
+      toast.success("Access request sent! We'll notify you shortly.");
     } catch (e: any) {
       toast.error(e.message || "Failed to request access.");
     }
@@ -858,9 +852,9 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
             style={{ background: "var(--color-accent)" }}
           >
             {requestAccess.isPending ? (
-              <><Loader2 size={14} className="animate-spin" /> Processing...</>
+              <><Loader2 size={14} className="animate-spin" /> Sending request...</>
             ) : (
-              <>{course.paymentLinkUrl ? <ExternalLink size={14} /> : <Lock size={14} />} Get Access</>
+              <><Lock size={14} /> Get Access</>
             )}
           </button>
         )}
@@ -987,6 +981,7 @@ export default function CourseDetailPage({
   const topRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<PlyrPlayerHandle | null>(null);
   const [certCopied, setCertCopied] = useState(false);
+  const [certSharing, setCertSharing] = useState(false);
 
   // Quiz modal state
   const [quizModal, setQuizModal] = useState<{ episodeId: string; questions: any[] } | null>(null);
@@ -1911,12 +1906,43 @@ export default function CourseDetailPage({
   };
 
   const handleShareCert = async () => {
-    if (!me?.id) return;
+    if (!me?.id || certSharing) return;
     const certId = btoa(`${me.id}:${courseId}`).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-    const url = `${window.location.origin}/verify/course/${certId}`;
+    const certUrl = `${window.location.origin}/verify/course/${certId}`;
+    const courseName = (course as any)?.title ?? "this course";
+    const shareText = `I have successfully completed the ${courseName} course on TBT Coaches Programs. View my certificate here: ${certUrl}`;
+
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      setCertSharing(true);
+      try {
+        await navigator.share({
+          title: `${courseName} — Certificate of Completion`,
+          text: shareText,
+          url: certUrl,
+        });
+      } catch (err: unknown) {
+        // AbortError = user dismissed the share sheet — no toast needed
+        if ((err as any)?.name !== "AbortError") {
+          try {
+            await navigator.clipboard.writeText(certUrl);
+            setCertCopied(true);
+            toast.success("Certificate link copied");
+            setTimeout(() => setCertCopied(false), 2000);
+          } catch {
+            toast.error("Failed to share certificate");
+          }
+        }
+      } finally {
+        setCertSharing(false);
+      }
+      return;
+    }
+
+    // Fallback: copy URL for browsers without Web Share API support
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(certUrl);
       setCertCopied(true);
+      toast.success("Certificate link copied");
       setTimeout(() => setCertCopied(false), 2000);
     } catch {
       toast.error("Failed to copy link");
@@ -2773,15 +2799,20 @@ export default function CourseDetailPage({
             {me?.id && (
               <button
                 onClick={handleShareCert}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                disabled={certSharing}
+                aria-label={certSharing ? "Sharing certificate..." : certCopied ? "Certificate link copied" : "Share certificate"}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
                 style={{
                   border: "1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)",
                   color: "var(--color-accent)",
                 }}
-                title="Copy shareable link"
               >
-                {certCopied ? <Check size={13} /> : <Copy size={13} />}
-                {certCopied ? "Copied!" : "Share"}
+                {certSharing
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : certCopied
+                  ? <Check size={13} />
+                  : <Share2 size={13} />}
+                {certSharing ? "Sharing..." : certCopied ? "Copied!" : "Share"}
               </button>
             )}
             <button
