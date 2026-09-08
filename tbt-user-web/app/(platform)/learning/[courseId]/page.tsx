@@ -2534,6 +2534,16 @@ export default function CourseDetailPage({
               <Zap size={9} />
               {lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}
             </span>
+            {me?.totalPoints != null && (
+              <span
+                className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}
+                title="Your TBT coin balance"
+              >
+                <Coins size={9} />
+                {me.totalPoints} coins
+              </span>
+            )}
             <button
               onClick={() => setPracticeOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
