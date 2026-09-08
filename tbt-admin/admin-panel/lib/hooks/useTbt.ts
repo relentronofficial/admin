@@ -2021,3 +2021,14 @@ export const useReorderCourseSections = (courseId: string) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['course-sections', courseId] }),
   });
 };
+
+export const useAddMemberCoins = (memberId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ amount, reason }: { amount: number; reason?: string }) => {
+      const res: any = await apiClient.post(`/api/members/${memberId}/coins`, { amount, reason });
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['member', memberId] }),
+  });
+};

@@ -1785,3 +1785,35 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
     return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
   }
 }
+
+export async function addMemberCoinsHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string };
+    const { amount, reason } = request.body as { amount: number; reason?: string };
+
+    if (!amount || !Number.isInteger(amount) || amount <= 0 || amount > 100000) {
+      return reply.status(400).send({ success: false, error: { code: 'INVALID_AMOUNT', message: 'amount must be a positive integer ≤ 100,000' } });
+    }
+
+    const member = await request.server.prisma.member.findUnique({ where: { id }, select: { id: true } });
+    if (!member) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+
+    const note = reason?.trim() || 'admin_grant';
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (id, member_id, source, points, created_at) VALUES (gen_random_uuid(), $1::uuid, $2, $3, NOW())`,
+      id, note, amount,
+    );
+
+    const rows = await request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
+      `SELECT COALESCE(SUM(points), 0) AS total FROM tbt_activity_log WHERE member_id = $1::uuid`,
+      id,
+    );
+    const newBalance = Number(rows[0]?.total ?? 0);
+
+    void invalidateCache(request.server.redis ?? null, `me:${id}`);
+    return reply.send({ success: true, data: { added: amount, newBalance }, error: null });
+  } catch (err: any) {
+    request.server.log.error({ err }, 'Failed to add coins to member');
+    return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+  }
+}

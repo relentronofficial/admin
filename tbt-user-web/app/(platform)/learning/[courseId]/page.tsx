@@ -1004,8 +1004,12 @@ export default function CourseDetailPage({
   const [lessonTimers, setLessonTimers] = useState<Record<string, number>>({});
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const timerLessonRef = useRef<string | null>(null);
+  const timerEndTimeRef = useRef<number>(0);
+  const timerDurationRef = useRef<number>(0);
+  const lifelinesLeftRef = useRef(MAX_FREE_LIFELINES);
   const spendCoins = useSpendCoins();
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
+  useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
 
   // "Don't show again" per-course focus dialog acknowledgement
   const [focusAcknowledged, setFocusAcknowledged] = useState(() => {
@@ -1826,22 +1830,42 @@ export default function CourseDetailPage({
   const startLessonTimer = (lessonId: string, duration: number) => {
     clearInterval(timerIntervalRef.current);
     timerLessonRef.current = lessonId;
-    let remaining = duration;
-    setLessonTimers(prev => ({ ...prev, [lessonId]: remaining }));
-    timerIntervalRef.current = setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        clearInterval(timerIntervalRef.current);
-        timerLessonRef.current = null;
-        setLessonTimers(prev => ({ ...prev, [lessonId]: 0 }));
-        if (!completedIdsRef.current.has(lessonId)) {
-          setFocusLockedIds(prev => new Set([...prev, lessonId]));
-          toast.error("⏰ Time's up! Use a lifeline to unlock this lesson.", { duration: 4000 });
-        }
+    timerDurationRef.current = duration;
+    timerEndTimeRef.current = Date.now() + duration * 1000;
+    setLessonTimers(prev => ({ ...prev, [lessonId]: duration }));
+
+    function tick() {
+      const secsLeft = Math.max(0, Math.ceil((timerEndTimeRef.current - Date.now()) / 1000));
+      setLessonTimers(prev => ({ ...prev, [lessonId]: secsLeft }));
+      if (secsLeft > 0) return;
+
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+      if (completedIdsRef.current.has(lessonId)) return;
+
+      if (lifelinesLeftRef.current > 0) {
+        const remaining = lifelinesLeftRef.current - 1;
+        lifelinesLeftRef.current = remaining;
+        setLifelinesLeft(remaining);
+        toast.success(
+          `⚡ Time's up — lifeline auto-used! ${remaining} free lifeline${remaining !== 1 ? "s" : ""} remaining.`,
+          { duration: 3500 },
+        );
+        timerEndTimeRef.current = Date.now() + timerDurationRef.current * 1000;
+        timerLessonRef.current = lessonId;
+        setLessonTimers(prev => ({ ...prev, [lessonId]: timerDurationRef.current }));
+        timerIntervalRef.current = setInterval(tick, 500);
       } else {
-        setLessonTimers(prev => ({ ...prev, [lessonId]: remaining }));
+        setFocusLockedIds(prev => new Set([...prev, lessonId]));
+        const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
+        if (lessonData && selectedLessonRef.current?.id === lessonId) {
+          setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
+        }
+        toast.error("⏰ Time's up! No lifelines left — spend TBT coins to continue.", { duration: 4000 });
       }
-    }, 1000);
+    }
+
+    timerIntervalRef.current = setInterval(tick, 500);
   };
 
   const handleSelectLessonWithFocus = (lesson: any) => {
@@ -1950,6 +1974,8 @@ export default function CourseDetailPage({
   };
 
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
+  const activeTimerSecs = selectedLesson ? lessonTimers[selectedLesson.id] : undefined;
+  const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
@@ -2127,6 +2153,30 @@ export default function CourseDetailPage({
                   onSpeedChange={handleVideoSpeedChange}
                   onEnded={handleVideoEnded}
                 />
+              )}
+              {showTimerOverlay && (
+                <div className="absolute inset-x-0 top-4 flex justify-center z-[55] pointer-events-none">
+                  <div
+                    className={cn(
+                      "flex items-center gap-2 px-5 py-2.5 rounded-2xl backdrop-blur-sm",
+                      activeTimerSecs! < 30 ? "animate-pulse" : ""
+                    )}
+                    style={{
+                      background: activeTimerSecs! < 30
+                        ? "rgba(239,68,68,0.85)"
+                        : activeTimerSecs! < 60
+                        ? "rgba(245,158,11,0.85)"
+                        : "rgba(34,197,94,0.85)",
+                      border: "1px solid rgba(255,255,255,0.25)",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+                    }}
+                  >
+                    <Timer size={18} className="text-white" />
+                    <span className="text-white font-mono font-bold text-2xl tabular-nums tracking-wide">
+                      {fmtTime(activeTimerSecs!)}
+                    </span>
+                  </div>
+                </div>
               )}
             </VideoWatermark>
 

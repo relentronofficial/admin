@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ChevronLeft, User, Mail, Phone, Calendar, MapPin, Briefcase,
   Trophy, Target, Loader2, Plus, X, Trash2, CheckCircle2,
-  Monitor, Activity, Clock, Shield,
+  Monitor, Activity, Clock, Shield, Coins,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useGetMember } from "@/lib/hooks/useMembers";
@@ -14,6 +14,7 @@ import {
   useAssignBadge, useRemoveBadge,
   useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment,
   useListWorkshops, useMemberWatchAnalytics, useMemberActivityTimeline,
+  useAddMemberCoins,
 } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import { format, isValid } from "date-fns";
@@ -54,6 +55,9 @@ export default function MemberDetailPage() {
   const assignBadge = useAssignBadge(id);
   const removeBadge = useRemoveBadge(id);
   const [selectedBadgeId, setSelectedBadgeId] = useState("");
+  const [coinAmount, setCoinAmount] = useState("");
+  const [coinReason, setCoinReason] = useState("");
+  const addCoins = useAddMemberCoins(id);
 
   const { data: enrollmentsData, refetch: refetchEnrollments } = useMemberEnrollments(id);
   const enrollments = (enrollmentsData as any)?.data || [];
@@ -83,6 +87,17 @@ export default function MemberDetailPage() {
   const handleRemoveBadge = async (badgeId: string) => {
     try { await removeBadge.mutateAsync(badgeId); toast.success("Badge removed"); refetchBadges(); }
     catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleAddCoins = async () => {
+    const amount = parseInt(coinAmount, 10);
+    if (!amount || amount <= 0) { toast.error("Enter a valid amount"); return; }
+    try {
+      const res: any = await addCoins.mutateAsync({ amount, reason: coinReason.trim() || undefined });
+      toast.success(`Added ${amount} coins. New balance: ${res.data?.newBalance ?? "—"}`);
+      setCoinAmount("");
+      setCoinReason("");
+    } catch (e: any) { toast.error(e.message || "Failed to add coins"); }
   };
 
   const handleEnroll = async () => {
@@ -227,6 +242,41 @@ export default function MemberDetailPage() {
                       </button>
                     </div>
                   )}
+                </div>
+
+                {/* TBT Coins */}
+                <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-6 space-y-4">
+                  <p className="text-[11px] font-bold text-[#dc2626] uppercase tracking-[2px] font-rajdhani flex items-center gap-2">
+                    <Coins size={13} /> TBT Coins
+                  </p>
+                  <p className="text-[12px] text-[#888]">
+                    Grant coins to this member. Coins are used to purchase extra lifelines in course focus-mode.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100000}
+                      placeholder="Amount (e.g. 100)"
+                      value={coinAmount}
+                      onChange={e => setCoinAmount(e.target.value)}
+                      className="w-36 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-4 text-white text-sm outline-none focus:border-[#dc2626] transition-all"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Reason (optional)"
+                      value={coinReason}
+                      onChange={e => setCoinReason(e.target.value)}
+                      className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-4 text-white text-sm outline-none focus:border-[#dc2626] transition-all"
+                    />
+                    <button
+                      onClick={handleAddCoins}
+                      disabled={!coinAmount || addCoins.isPending}
+                      className="px-5 py-2 bg-[#d97706] hover:bg-amber-600 text-white rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all flex items-center gap-2 disabled:opacity-50 shrink-0"
+                    >
+                      {addCoins.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add Coins
+                    </button>
+                  </div>
                 </div>
               </>
             )}
