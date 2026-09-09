@@ -517,13 +517,26 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
 
   // Batch-check course access for this member
   const courseIds = (courses as any[]).map((c: any) => c.id);
-  const accessRecords = courseIds.length > 0
-    ? await (request.server.prisma as any).courseAccess.findMany({
-        where: { memberId: request.memberId, courseId: { in: courseIds } },
-        select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
-      }).catch(() => [] as any[])
-    : [];
+  const [accessRecords, moduleRows] = await Promise.all([
+    courseIds.length > 0
+      ? (request.server.prisma as any).courseAccess.findMany({
+          where: { memberId: request.memberId, courseId: { in: courseIds } },
+          select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
+        }).catch(() => [] as any[])
+      : Promise.resolve([] as any[]),
+    courseIds.length > 0
+      ? request.server.prisma.$queryRawUnsafe<{ course_id: string; title: string }[]>(
+          `SELECT course_id, title FROM course_modules WHERE course_id = ANY($1::uuid[]) ORDER BY sort_order`,
+          courseIds
+        ).catch(() => [] as { course_id: string; title: string }[])
+      : Promise.resolve([] as { course_id: string; title: string }[]),
+  ]);
   const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
+  const moduleMap = new Map<string, string[]>();
+  for (const r of moduleRows) {
+    if (!moduleMap.has(r.course_id)) moduleMap.set(r.course_id, []);
+    moduleMap.get(r.course_id)!.push(r.title);
+  }
 
   const data = (courses as any[]).map((c: any) => {
     const access = accessMap.get(c.id) ?? null;
@@ -558,6 +571,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       xpPerEpisode: c.xpPerEpisode ?? 10,
       instructor: c.creator ?? null,
       hasAccess: isAccessValid(access),
+      modules: moduleMap.get(c.id) ?? [],
       _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
     };
   });
