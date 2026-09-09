@@ -57,7 +57,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     return reply.send({ success: true, data: null, error: null });
   }
 
-  const [batch, days, progress, attendance, breaks, settings, mySubmissions] = await Promise.all([
+  const [batch, days, progress, attendance, breaks, settings, mySubmissions, lifelineSettings] = await Promise.all([
     req.server.prisma.batch.findUnique({
       where: { id: member.batchId },
       select: {
@@ -93,11 +93,17 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
        FROM task_submissions WHERE batch_id=$1::uuid AND member_id=$2::uuid`,
       member.batchId, memberId,
     ),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
+      member.batchId, memberId,
+    ),
   ]);
 
   const baseDays = (batch as any)?.snapshotDays ?? (batch as any)?.program?.durationDays ?? 90;
   const extendedDays = (settings[0] as any)?.extended_days ?? 0;
   const totalDays = baseDays + extendedDays;
+  const lifelinesTotal = (lifelineSettings[0] as any)?.lifelines_total ?? 3;
+  const lifelinesUsed  = (lifelineSettings[0] as any)?.lifelines_used  ?? 0;
 
   // Program-scoped tasks (shared across all batches of the program) AND
   // this batch's own inline tasks (created via the admin Batch Checklist
@@ -131,18 +137,61 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     },
   });
 
-  // timer_seconds is a raw SQL column not in Prisma schema — fetch separately
+  // timer_seconds, process_id, stage_position are raw SQL columns — fetch separately
   let programTasksWithTimer: any[] = programTasks;
   if (programTasks.length > 0) {
     const ids = programTasks.map((t: any) => t.id);
     const placeholders = ids.map((_: any, i: number) => `$${i + 1}::uuid`).join(',');
-    const timerRows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; timer_seconds: number | null }>>(
-      `SELECT id::text, timer_seconds FROM tasks WHERE id IN (${placeholders})`,
+    const timerRows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; timer_seconds: number | null; process_id: string | null; stage_position: number | null }>>(
+      `SELECT id::text, timer_seconds, process_id::text, stage_position FROM tasks WHERE id IN (${placeholders})`,
       ...ids
     );
-    const timerMap: Record<string, number | null> = {};
-    for (const r of timerRows) timerMap[r.id] = r.timer_seconds;
-    programTasksWithTimer = programTasks.map((t: any) => ({ ...t, timerSeconds: timerMap[t.id] ?? null }));
+    const timerMap: Record<string, { timerSeconds: number | null; processId: string | null; stagePosition: number | null }> = {};
+    for (const r of timerRows) timerMap[r.id] = { timerSeconds: r.timer_seconds, processId: r.process_id, stagePosition: r.stage_position };
+    programTasksWithTimer = programTasks.map((t: any) => ({ ...t, ...(timerMap[t.id] ?? { timerSeconds: null, processId: null, stagePosition: null }) }));
+  }
+
+  // MG-03: Fetch processes for this batch and compute stageLocked per task
+  let processes: any[] = [];
+  if (member.batchId) {
+    processes = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id::text, title, description, position, day_number as "dayNumber" FROM task_processes WHERE batch_id=$1::uuid ORDER BY position ASC`,
+      member.batchId
+    ).catch(() => []);
+  }
+
+  // Compute stageLocked for each stage task
+  const processTasks = programTasksWithTimer.filter((t: any) => t.processId);
+  if (processTasks.length > 0) {
+    // Build a map: processId → ordered stages
+    const processStageMap: Record<string, any[]> = {};
+    for (const t of processTasks) {
+      if (!processStageMap[t.processId]) processStageMap[t.processId] = [];
+      processStageMap[t.processId].push(t);
+    }
+    for (const stages of Object.values(processStageMap)) {
+      stages.sort((a: any, b: any) => (a.stagePosition ?? 999) - (b.stagePosition ?? 999));
+    }
+    // Check approval status for each stage
+    for (const t of processTasks) {
+      const stages = processStageMap[t.processId] ?? [];
+      const pos = t.stagePosition ?? 1;
+      if (pos <= 1) {
+        t.stageLocked = false;
+      } else {
+        // Find the task for previous stage
+        const prevStage = stages.find((s: any) => s.stagePosition === pos - 1);
+        if (!prevStage) { t.stageLocked = false; continue; }
+        const prevApproved = mySubmissions.some(
+          (s: any) => s.taskId === prevStage.id && s.status === 'approved'
+        );
+        t.stageLocked = !prevApproved;
+      }
+      // Attach process context
+      const proc = processes.find((p: any) => p.id === t.processId);
+      t.processTitle = proc?.title ?? null;
+      t.totalStagesInProcess = stages.length;
+    }
   }
 
   return reply.send({
@@ -156,7 +205,11 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       attendance,
       breaks,
       programTasks: programTasksWithTimer,
+      processes,
       mySubmissions,
+      lifelinesTotal,
+      lifelinesUsed,
+      lifelinesRemaining: Math.max(0, lifelinesTotal - lifelinesUsed),
     },
     error: null,
   });
@@ -374,6 +427,45 @@ export async function submitDayHandler(
     { batchId: member.batchId, dayNumber: String(dayNum) },
   );
 
+  // MG-04: Award early completion bonus XP for tasks completed within their timer
+  void (async () => {
+    try {
+      const earlyRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_id: string }>>(
+        `SELECT ts.task_id
+         FROM task_submissions ts
+         JOIN tasks t ON t.id = ts.task_id
+         WHERE ts.batch_id = $1::uuid
+           AND ts.member_id = $2::uuid
+           AND ts.day_number = $3
+           AND t.timer_seconds IS NOT NULL AND t.timer_seconds > 0
+           AND ts.timer_started_at IS NOT NULL
+           AND ts.submitted_after_expiry IS NOT TRUE
+           AND EXTRACT(EPOCH FROM (NOW() - ts.timer_started_at)) < t.timer_seconds`,
+        member.batchId, memberId, dayNum,
+      );
+      if (earlyRows.length === 0) return;
+
+      const cfgRows = await req.server.prisma.$queryRawUnsafe<Array<{ early_completion_bonus_xp: number }>>(
+        `SELECT early_completion_bonus_xp FROM site_configs LIMIT 1`,
+      ).catch(() => []);
+      const bonusXp = (cfgRows[0]?.early_completion_bonus_xp ?? 5) * earlyRows.length;
+      if (bonusXp <= 0) return;
+
+      await req.server.prisma.$executeRawUnsafe(
+        `INSERT INTO tbt_activity_log (member_id, points, source, activity_date)
+         VALUES ($1::uuid, $2::int, 'early_completion', NOW()::date)`,
+        memberId, bonusXp,
+      );
+
+      req.server.io.to(`user:${memberId}`).emit('batch:day_approved', {
+        dayNumber: dayNum,
+        batchId: member.batchId,
+        xpAwarded: bonusXp,
+        reason: `Early completion bonus for Day ${dayNum} (${earlyRows.length} task${earlyRows.length > 1 ? 's' : ''})`,
+      });
+    } catch { /* non-blocking */ }
+  })();
+
   return reply.send({ success: true, data: record, error: null });
 }
 
@@ -559,6 +651,34 @@ export async function approveDayHandler(
         'batch_completed',
         { batchId: req.params.id },
       ).catch(() => {});
+    }
+  })().catch(() => {});
+
+  // MG-03: Check if any approved stage tasks unlock next stages
+  void (async () => {
+    const justApprovedSubs = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT ts.task_id as "taskId", t.process_id::text as "processId", t.stage_position as "stagePosition",
+              t.title as "taskTitle", p.title as "processTitle"
+       FROM task_submissions ts
+       JOIN tasks t ON t.id = ts.task_id
+       LEFT JOIN task_processes p ON p.id = t.process_id
+       WHERE ts.day_progress_id = $1::uuid AND ts.status = 'approved' AND t.process_id IS NOT NULL`,
+      record.id,
+    ).catch(() => []);
+
+    for (const sub of justApprovedSubs) {
+      // Find the next stage task
+      const nextStage = await req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id::text, title FROM tasks WHERE process_id=$1::uuid AND stage_position=$2 LIMIT 1`,
+        sub.processId, (sub.stagePosition ?? 0) + 1,
+      ).catch(() => []);
+      if (nextStage.length > 0) {
+        req.server.io.to(`user:${req.params.memberId}`).emit('batch:stage_unlocked', {
+          processTitle: sub.processTitle,
+          nextStageTitle: nextStage[0].title,
+          stagePosition: (sub.stagePosition ?? 0) + 1,
+        });
+      }
     }
   })().catch(() => {});
 
@@ -983,3 +1103,55 @@ export async function getBatchCertificateHandler(req: FastifyRequest, reply: Fas
   reply.header('Content-Disposition', `attachment; filename="batch-certificate-${certId}.pdf"`);
   return reply.send(pdfBuffer);
 }
+
+// ── MG-02: POST /api/user-batch/lifeline/use ─────────────────────────────────
+
+const useLifelineSchema = z.object({
+  batchId:   z.string().uuid(),
+  taskId:    z.string().uuid().optional(),
+  episodeId: z.string().uuid().optional(),
+  context:   z.enum(['task', 'episode']).default('task'),
+});
+
+export async function useLifelineHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const parsed = useLifelineSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
+  }
+  const { batchId, taskId, episodeId, context } = parsed.data;
+
+  // Fetch current lifeline state (upsert row if not yet present)
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO member_batch_settings (member_id, batch_id) VALUES ($1::uuid, $2::uuid)
+     ON CONFLICT (member_id, batch_id) DO NOTHING`,
+    memberId, batchId,
+  );
+
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id=$1::uuid AND batch_id=$2::uuid LIMIT 1`,
+    memberId, batchId,
+  );
+
+  const total = (rows[0] as any)?.lifelines_total ?? 3;
+  const used  = (rows[0] as any)?.lifelines_used  ?? 0;
+
+  if (used >= total) {
+    return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: 50 });
+  }
+
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE member_batch_settings SET lifelines_used = lifelines_used + 1 WHERE member_id=$1::uuid AND batch_id=$2::uuid`,
+    memberId, batchId,
+  );
+
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lifeline_usages (member_id, batch_id, task_id, episode_id, context, coins_spent)
+     VALUES ($1::uuid, $2::uuid, $3, $4, $5, 0)`,
+    memberId, batchId, taskId ?? null, episodeId ?? null, context,
+  );
+
+  const remaining = Math.max(0, total - used - 1);
+  return reply.send({ success: true, data: { lifelinesRemaining: remaining, lifelinesTotal: total, lifelinesUsed: used + 1 }, error: null });
+}
+

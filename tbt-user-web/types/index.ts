@@ -213,6 +213,7 @@ export interface SiteConfig {
   loginBgImages?: string[] | null;
   taskTimerSeconds?: number;
   freeLifelinesPerSession?: number;
+  earlyCompletionBonusXp?: number;
 }
 
 export interface NavItem {

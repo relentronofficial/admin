@@ -58,8 +58,8 @@ export const useLessonProgress = (courseId: string) =>
 export const useMarkLessonComplete = (courseId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number }) =>
-      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration),
+    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number; timerStartedAt?: number; timerSeconds?: number }) =>
+      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds),
     onMutate: async ({ lessonId, isCompleted }) => {
       if (!isCompleted) return;
       await queryClient.cancelQueries({ queryKey: ["user", "progress", courseId] });

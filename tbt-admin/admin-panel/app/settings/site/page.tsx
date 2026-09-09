@@ -116,6 +116,7 @@ export default function SiteConfigPage() {
     bgSurface: "#111111",
     taskTimerMinutes: 5,
     freeLifelinesPerSession: 3,
+    earlyCompletionBonusXp: 5,
   });
   const [loginBgImages, setLoginBgImages] = useState<string[]>([]);
 
@@ -131,6 +132,7 @@ export default function SiteConfigPage() {
         ...config,
         taskTimerMinutes: Math.round((config.taskTimerSeconds ?? 300) / 60),
         freeLifelinesPerSession: config.freeLifelinesPerSession ?? 3,
+        earlyCompletionBonusXp: config.earlyCompletionBonusXp ?? 5,
       }));
       if (Array.isArray(config.loginBgImages)) setLoginBgImages(config.loginBgImages);
     }
@@ -154,12 +156,13 @@ export default function SiteConfigPage() {
 
   const handleSave = async () => {
     try {
-      const { taskTimerMinutes, freeLifelinesPerSession, ...rest } = form;
+      const { taskTimerMinutes, freeLifelinesPerSession, earlyCompletionBonusXp, ...rest } = form;
       await updateConfig.mutateAsync({
         ...rest,
         loginBgImages,
         taskTimerSeconds: Math.max(60, taskTimerMinutes * 60),
         freeLifelinesPerSession: Math.max(0, Math.min(20, Number(freeLifelinesPerSession ?? 3))),
+        earlyCompletionBonusXp: Math.max(0, Math.min(100, Number(earlyCompletionBonusXp ?? 5))),
       });
       toast.success("Site config saved");
     } catch (e: any) {
@@ -321,6 +324,19 @@ export default function SiteConfigPage() {
               max={20}
               value={form.freeLifelinesPerSession}
               onChange={e => set("freeLifelinesPerSession", Math.max(0, Math.min(20, Number(e.target.value))))}
+              className="w-full bg-[#141414] border border-[#333] rounded-lg h-10 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Early Completion Bonus XP</label>
+            <p className="text-[10px] text-[#666] mb-2">XP awarded when a member completes a course episode before the focus timer expires. Default: 5. Range: 0–100.</p>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={form.earlyCompletionBonusXp}
+              onChange={e => set("earlyCompletionBonusXp", Math.max(0, Math.min(100, Number(e.target.value))))}
               className="w-full bg-[#141414] border border-[#333] rounded-lg h-10 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
             />
           </div>

@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { userService } from "@/lib/api/services/user.service";
+import apiClient from "@/lib/api/client";
 
 export const useMe = () =>
   useQuery({
@@ -58,3 +59,77 @@ export const useUpdateNotificationPrefs = () => {
     },
   });
 };
+
+// ── MG-01: Support Quota ──────────────────────────────────────────────────────
+
+export type SupportQuota = {
+  plan: string;
+  techSupport:  { allocated: number; used: number; remaining: number };
+  adSupport:    { allocated: number; used: number; remaining: number };
+  groupCall:    { allocated: number; used: number; remaining: number };
+  callCredits:  { allocated: number; used: number; remaining: number };
+  oneToOne:     boolean;
+  lifelines:    { total: number; used: number; remaining: number };
+};
+
+export const useUserSupportQuota = () =>
+  useQuery({
+    queryKey: ["user", "support-quota"],
+    queryFn: async () => {
+      const res: any = await apiClient.get("/api/user/support-quota");
+      return res.data as SupportQuota;
+    },
+    staleTime: 60_000,
+  });
+
+// ── MG-05: Buy Extra Credits ──────────────────────────────────────────────────
+
+export type CreditPricingItem = {
+  credit_type: string;
+  price_inr: number;
+  label: string;
+  description: string;
+};
+
+export type CreditPurchase = {
+  id: string;
+  credit_type: string;
+  quantity: number;
+  amount_inr: number;
+  status: string;
+  payment_ref?: string;
+  admin_note?: string;
+  created_at: string;
+  reviewed_at?: string;
+};
+
+export const useCreditPricing = () =>
+  useQuery({
+    queryKey: ["user", "credit-pricing"],
+    queryFn: async () => {
+      const res: any = await apiClient.get("/api/user/credits/pricing");
+      return res.data as CreditPricingItem[];
+    },
+    staleTime: 300_000,
+  });
+
+export const usePurchaseCredit = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { creditType: string; quantity?: number; paymentRef?: string }) => {
+      const res: any = await apiClient.post("/api/user/credits/purchase", body);
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "my-credit-purchases"] }),
+  });
+};
+
+export const useMyCreditPurchases = () =>
+  useQuery({
+    queryKey: ["user", "my-credit-purchases"],
+    queryFn: async () => {
+      const res: any = await apiClient.get("/api/user/credits/purchases");
+      return res.data as CreditPurchase[];
+    },
+    staleTime: 30_000,
+  });

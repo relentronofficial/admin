@@ -30,6 +30,10 @@ import {
   ThumbsDown,
   Bell,
   ExternalLink,
+  Layers,
+  Lock,
+  Unlock,
+  GripVertical,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -48,6 +52,10 @@ import {
   useBulkApproveBatchDays,
   useUpsertMemberBatchSettings,
   useBatchDayAnalytics,
+  useListBatchProcesses,
+  useCreateBatchProcess,
+  useUpdateBatchProcess,
+  useDeleteBatchProcess,
 } from "@/lib/hooks/useTbt";
 import { useGetWeekAnalytics } from "@/lib/hooks/useTasks";
 import { toast } from "react-hot-toast";
@@ -65,7 +73,7 @@ const dayToDate = (batchStartsAt: string, dayNumber: number) => {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 };
 
-type Tab = "overview" | "program" | "progress" | "pending" | "breaks";
+type Tab = "overview" | "program" | "processes" | "progress" | "pending" | "breaks";
 
 // ─── Day Edit Modal ────────────────────────────────────────────────────────────
 
@@ -624,6 +632,348 @@ function MemberTimelineDrawer({
   );
 }
 
+// ─── Processes Tab ────────────────────────────────────────────────────────────
+
+type StageInput = { title: string; description: string; dayNumber: string; proofType: string; timerSeconds: string };
+
+const DEFAULT_STAGE: StageInput = { title: "", description: "", dayNumber: "", proofType: "text", timerSeconds: "" };
+
+function ProcessesTab({ batchId, totalDays }: { batchId: string; totalDays: number }) {
+  const { data: procRes, isLoading } = useListBatchProcesses(batchId);
+  const processes: any[] = (procRes as any[]) ?? [];
+
+  const createProcess = useCreateBatchProcess(batchId);
+  const updateProcess = useUpdateBatchProcess();
+  const deleteProcess = useDeleteBatchProcess();
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Create form state
+  const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newDayNumber, setNewDayNumber] = useState("");
+  const [newStages, setNewStages] = useState<StageInput[]>([{ ...DEFAULT_STAGE }]);
+
+  // Edit form state
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+
+  const resetCreate = () => {
+    setNewTitle(""); setNewDescription(""); setNewDayNumber("");
+    setNewStages([{ ...DEFAULT_STAGE }]);
+    setShowCreate(false);
+  };
+
+  const addStage = () => setNewStages(s => [...s, { ...DEFAULT_STAGE }]);
+  const removeStage = (i: number) => setNewStages(s => s.filter((_, j) => j !== i));
+  const updateStage = (i: number, key: keyof StageInput, val: string) =>
+    setNewStages(s => s.map((st, j) => j === i ? { ...st, [key]: val } : st));
+
+  const handleCreate = async () => {
+    if (!newTitle.trim()) { toast.error("Process title is required"); return; }
+    if (newStages.some(s => !s.title.trim())) { toast.error("All stage titles are required"); return; }
+    try {
+      await createProcess.mutateAsync({
+        title: newTitle.trim(),
+        description: newDescription.trim() || undefined,
+        dayNumber: newDayNumber ? Number(newDayNumber) : undefined,
+        stages: newStages.map((s, i) => ({
+          title: s.title.trim(),
+          description: s.description.trim() || undefined,
+          proofType: s.proofType || "text",
+          timerSeconds: s.timerSeconds ? Number(s.timerSeconds) : undefined,
+          stagePosition: i,
+        })),
+      });
+      toast.success("Process created");
+      resetCreate();
+    } catch {
+      toast.error("Failed to create process");
+    }
+  };
+
+  const handleUpdate = async (pid: string) => {
+    if (!editTitle.trim()) { toast.error("Title is required"); return; }
+    try {
+      await updateProcess.mutateAsync({ batchId, pid, title: editTitle.trim(), description: editDescription.trim() || undefined });
+      toast.success("Process updated");
+      setEditingId(null);
+    } catch {
+      toast.error("Failed to update");
+    }
+  };
+
+  const handleDelete = async (pid: string) => {
+    if (!window.confirm("Delete this process? Stages will be unlinked from the process but kept as standalone tasks.")) return;
+    try {
+      await deleteProcess.mutateAsync({ batchId, pid });
+      toast.success("Process deleted");
+    } catch {
+      toast.error("Failed to delete");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] text-[#606060]">
+          Multi-stage processes group sequential tasks where each stage unlocks after the previous is approved.
+        </p>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 bg-[#dc2626] hover:bg-red-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold transition-colors"
+        >
+          <Plus size={14} /> New Process
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showCreate && (
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-[13px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wide">Create Process</p>
+            <button onClick={resetCreate} className="text-[#606060] hover:text-white transition-colors"><X size={16} /></button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1.5">Process Title *</label>
+              <input
+                value={newTitle}
+                onChange={e => setNewTitle(e.target.value)}
+                placeholder="e.g. Lead Generation Mastery"
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-white outline-none focus:border-[#dc2626] text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1.5">Assign to Day</label>
+              <input
+                type="number"
+                min={1}
+                max={totalDays}
+                value={newDayNumber}
+                onChange={e => setNewDayNumber(e.target.value)}
+                placeholder="Optional day number"
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-white outline-none focus:border-[#dc2626] text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1.5">Description</label>
+            <textarea
+              value={newDescription}
+              onChange={e => setNewDescription(e.target.value)}
+              rows={2}
+              placeholder="What is this process about?"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-white outline-none focus:border-[#dc2626] text-sm resize-none"
+            />
+          </div>
+
+          {/* Stages */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Stages</label>
+              <button
+                onClick={addStage}
+                className="flex items-center gap-1 text-[11px] font-bold text-[#a78bfa] hover:text-purple-300 transition-colors"
+              >
+                <Plus size={12} /> Add Stage
+              </button>
+            </div>
+            <div className="space-y-3">
+              {newStages.map((stage, i) => (
+                <div key={i} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#a78bfa] uppercase tracking-widest font-rajdhani flex items-center gap-1">
+                      <Lock size={10} /> Stage {i + 1}
+                    </span>
+                    {newStages.length > 1 && (
+                      <button onClick={() => removeStage(i)} className="text-[#444] hover:text-red-400 transition-colors">
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    value={stage.title}
+                    onChange={e => updateStage(i, "title", e.target.value)}
+                    placeholder="Stage title *"
+                    className="w-full bg-[#141414] border border-[#333] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-[#555] block mb-1">Proof Type</label>
+                      <select
+                        value={stage.proofType}
+                        onChange={e => updateStage(i, "proofType", e.target.value)}
+                        className="w-full bg-[#141414] border border-[#333] rounded-lg h-8 px-2 text-white outline-none focus:border-[#dc2626] text-xs"
+                      >
+                        <option value="text">Text</option>
+                        <option value="url">URL</option>
+                        <option value="file">File</option>
+                        <option value="none">None</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-[#555] block mb-1">Timer (seconds)</label>
+                      <input
+                        type="number"
+                        min={60}
+                        value={stage.timerSeconds}
+                        onChange={e => updateStage(i, "timerSeconds", e.target.value)}
+                        placeholder="e.g. 300"
+                        className="w-full bg-[#141414] border border-[#333] rounded-lg h-8 px-2 text-white outline-none focus:border-[#dc2626] text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={resetCreate} className="px-4 py-2 text-sm text-[#606060] hover:text-white transition-colors">Cancel</button>
+            <button
+              onClick={handleCreate}
+              disabled={createProcess.isPending}
+              className="flex items-center gap-2 bg-[#dc2626] hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+            >
+              {createProcess.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Create Process
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Existing processes */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 size={28} className="animate-spin text-[#dc2626]" />
+        </div>
+      ) : processes.length === 0 ? (
+        <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-16 text-center">
+          <Layers size={36} className="text-[#444] mx-auto mb-3" />
+          <p className="text-[#606060] text-sm">No processes defined yet.</p>
+          <p className="text-[11px] text-[#444] mt-1">Create a process to group related tasks into sequential stages.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {processes.map((proc: any) => {
+            const isEditing = editingId === proc.id;
+            const stages: any[] = Array.isArray(proc.stages) ? proc.stages : [];
+            return (
+              <div key={proc.id} className="bg-[#141414] border border-[#1f1f1f] rounded-xl overflow-hidden">
+                {/* Process header */}
+                <div className="flex items-center gap-4 px-5 py-4 border-b border-[#1f1f1f]">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(167,139,250,0.2)" }}>
+                    <Layers size={15} style={{ color: "#a78bfa" }} />
+                  </div>
+                  {isEditing ? (
+                    <div className="flex-1 flex items-center gap-3">
+                      <input
+                        value={editTitle}
+                        onChange={e => setEditTitle(e.target.value)}
+                        className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm"
+                      />
+                      <input
+                        value={editDescription}
+                        onChange={e => setEditDescription(e.target.value)}
+                        placeholder="Description (optional)"
+                        className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-[#dc2626] text-sm"
+                      />
+                      <button
+                        onClick={() => handleUpdate(proc.id)}
+                        disabled={updateProcess.isPending}
+                        className="flex items-center gap-1.5 bg-[#dc2626] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+                      >
+                        {updateProcess.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="text-[#606060] hover:text-white transition-colors">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-bold text-[#f0f0f0]">{proc.title}</p>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          {proc.description && <p className="text-[12px] text-[#606060] truncate">{proc.description}</p>}
+                          {proc.dayNumber && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: "rgba(167,139,250,0.12)", color: "#a78bfa" }}>
+                              Day {proc.dayNumber}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-[#444] flex-shrink-0">{stages.length} stage{stages.length !== 1 ? "s" : ""}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => { setEditingId(proc.id); setEditTitle(proc.title); setEditDescription(proc.description ?? ""); }}
+                          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-[#1f1f1f] hover:bg-[#2a2a2a] text-[#a0a0a0] hover:text-[#f0f0f0] transition-all"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(proc.id)}
+                          disabled={deleteProcess.isPending}
+                          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-400 hover:bg-red-500/12 transition-all disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Stages list */}
+                {stages.length === 0 ? (
+                  <div className="px-5 py-4 text-[12px] text-[#444] italic">No stages in this process.</div>
+                ) : (
+                  <div className="divide-y divide-[#111]">
+                    {stages.sort((a: any, b: any) => (a.stagePosition ?? 0) - (b.stagePosition ?? 0)).map((stage: any, idx: number) => (
+                      <div key={stage.id} className="flex items-center gap-3 px-5 py-3">
+                        <GripVertical size={13} className="text-[#333] flex-shrink-0" />
+                        <div
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                          style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}
+                        >
+                          {idx + 1}
+                        </div>
+                        {idx === 0 ? (
+                          <Unlock size={12} className="text-green-400 flex-shrink-0" />
+                        ) : (
+                          <Lock size={12} className="text-[#444] flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] text-[#d0d0d0] truncate">{stage.title}</p>
+                          {stage.description && <p className="text-[11px] text-[#555] truncate">{stage.description}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {stage.proofType && stage.proofType !== "none" && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-[#888] bg-[#1f1f1f] uppercase font-rajdhani">
+                              {stage.proofType}
+                            </span>
+                          )}
+                          {stage.timerSeconds && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1" style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}>
+                              <Clock size={9} /> {Math.round(stage.timerSeconds / 60)}m
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function BatchDetailPage() {
@@ -824,6 +1174,7 @@ export default function BatchDetailPage() {
           {([
             { id: "overview", label: "Overview", icon: BarChart2 },
             { id: "program", label: `Program (${totalDays} Days)`, icon: BookOpen },
+            { id: "processes", label: "Processes", icon: Layers },
             { id: "progress", label: "Progress Grid", icon: Users },
             { id: "pending", label: "Pending", icon: Bell, badge: pendingRecords.length },
             { id: "breaks", label: "Breaks", icon: Clock, badge: breakRecords.filter((b: any) => b.status === 'pending').length },
@@ -1073,6 +1424,11 @@ export default function BatchDetailPage() {
               );
             })}
           </div>
+        )}
+
+        {/* ── Processes Tab ── */}
+        {activeTab === "processes" && (
+          <ProcessesTab batchId={id} totalDays={totalDays} />
         )}
 
         {/* ── Progress Tab ── */}

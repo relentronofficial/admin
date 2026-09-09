@@ -18,6 +18,16 @@ export const useMyBatchProgram = () =>
         breaks?: any[];
         totalDays?: number;
         programName?: string | null;
+        lifelinesTotal?: number;
+        lifelinesUsed?: number;
+        lifelinesRemaining?: number;
+        processes?: {
+          id: string;
+          title: string;
+          description?: string | null;
+          position: number;
+          dayNumber?: number | null;
+        }[];
         programTasks?: {
           id: string;
           dayNumber: number;
@@ -33,6 +43,11 @@ export const useMyBatchProgram = () =>
           isMilestone: boolean;
           milestoneLabel?: string | null;
           sortOrder: number;
+          processId?: string | null;
+          processTitle?: string | null;
+          stagePosition?: number | null;
+          stageLocked?: boolean;
+          totalStagesInProcess?: number;
         }[];
         mySubmissions?: {
           id: string;
@@ -128,6 +143,19 @@ export const useSpendCoins = () => {
       return res.data as { remainingCoins: number };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),
+  });
+};
+
+// ── MG-02: Program-Wide Lifeline Use ─────────────────────────────────────────
+
+export const useUseProgramLifeline = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { batchId: string; taskId?: string; episodeId?: string; context: 'task' | 'episode' }) => {
+      const res: any = await apiClient.post('/api/user-batch/lifeline/use', body);
+      return res.data as { lifelinesRemaining: number; lifelinesTotal: number; lifelinesUsed: number };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-batch'] }),
   });
 };
 

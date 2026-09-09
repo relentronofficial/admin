@@ -22,7 +22,7 @@ import {
   useEpisodeResources, useEpisodeTasks,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
-import { useSpendCoins } from "@/lib/hooks/useBatchProgram";
+import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -987,6 +987,7 @@ export default function CourseDetailPage({
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [quizResult, setQuizResult] = useState<any>(null);
   const [xpFlash, setXpFlash] = useState<number | null>(null);
+  const [bonusXpFlash, setBonusXpFlash] = useState<number | null>(null); // MG-04: early completion bonus
   const [downloadingCert, setDownloadingCert] = useState(false);
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
   const { data: certData } = useCertificateEligibility(courseId);
@@ -994,7 +995,7 @@ export default function CourseDetailPage({
   const { data: episodeTasks = [] } = useEpisodeTasks(selectedLesson?.id);
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
-  const MAX_FREE_LIFELINES = 3; // fallback until config loads
+  const MAX_FREE_LIFELINES = 3; // fallback until config/batch loads
   const LIFELINE_COIN_COST = 50;
   const [focusLockedIds, setFocusLockedIds] = useState<Set<string>>(new Set());
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
@@ -1005,23 +1006,45 @@ export default function CourseDetailPage({
   const timerLessonRef = useRef<string | null>(null);
   const timerEndTimeRef = useRef<number>(0);
   const timerDurationRef = useRef<number>(0);
+  // MG-04: track when focus timer was started (ms) and duration for early-completion bonus
+  const timerStartedAtRef = useRef<number | undefined>(undefined);
   const lifelinesLeftRef = useRef(MAX_FREE_LIFELINES);
   const lifelinesInitializedRef = useRef(false);
+  // program-wide lifeline tracking: true when member has an active batch
+  const useProgramLifeline = useUseProgramLifeline();
+  const { data: batchData } = useMyBatchProgram();
+  const batchId = (batchData as any)?.batch?.id as string | undefined;
+  const isProgramLifeline = !!batchId;
+  // Stable ref so the setInterval tick function can call the mutation without stale closure
+  const programLifelineMutateRef = useRef(useProgramLifeline.mutateAsync);
+  useEffect(() => { programLifelineMutateRef.current = useProgramLifeline.mutateAsync; }, [useProgramLifeline.mutateAsync]);
+  const batchIdRef = useRef(batchId);
+  useEffect(() => { batchIdRef.current = batchId; }, [batchId]);
+  const isProgramLifelineRef = useRef(isProgramLifeline);
+  useEffect(() => { isProgramLifelineRef.current = isProgramLifeline; }, [isProgramLifeline]);
   // Tracks the last lessonId for which the focus dialog was shown via URL auto-select,
   // preventing an infinite loop when selectedLesson stays null (user hasn't confirmed yet).
   const urlFocusDialogShownRef = useRef<string | null>(null);
   const spendCoins = useSpendCoins();
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
   useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
-  // Sync free lifeline count from admin-controlled site config once it loads
+  // Initialize lifeline count: program-wide DB value takes priority over session config
   useEffect(() => {
     if (lifelinesInitializedRef.current) return;
-    if (config?.freeLifelinesPerSession != null) {
+    if (batchData !== undefined) {
+      // batch data loaded — use program-wide count if in a batch
+      lifelinesInitializedRef.current = true;
+      const programRemaining = (batchData as any)?.lifelinesRemaining;
+      const count = programRemaining != null ? programRemaining : (config?.freeLifelinesPerSession ?? MAX_FREE_LIFELINES);
+      setLifelinesLeft(count);
+      lifelinesLeftRef.current = count;
+    } else if (batchData === null && config?.freeLifelinesPerSession != null) {
+      // not in a batch — fall back to session-based config value
       lifelinesInitializedRef.current = true;
       setLifelinesLeft(config.freeLifelinesPerSession);
       lifelinesLeftRef.current = config.freeLifelinesPerSession;
     }
-  }, [config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [batchData, config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
@@ -1482,6 +1505,15 @@ export default function CourseDetailPage({
       watchedSeconds: playhead,
       isCompleted: true,
       videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
+      timerStartedAt: timerStartedAtRef.current,
+      timerSeconds: timerLessonRef.current === selectedLesson.id ? timerDurationRef.current : undefined,
+    }, {
+      onSuccess: (data: any) => {
+        if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
+          setBonusXpFlash(data.bonusXpAwarded);
+          setTimeout(() => setBonusXpFlash(null), 3500);
+        }
+      },
     });
   };
 
@@ -1805,6 +1837,7 @@ export default function CourseDetailPage({
     timerLessonRef.current = lessonId;
     timerDurationRef.current = duration;
     timerEndTimeRef.current = Date.now() + duration * 1000;
+    timerStartedAtRef.current = Date.now(); // MG-04: record focus start time
     setLessonTimers(prev => ({ ...prev, [lessonId]: duration }));
 
     function tick() {
@@ -1820,8 +1853,17 @@ export default function CourseDetailPage({
         const remaining = lifelinesLeftRef.current - 1;
         lifelinesLeftRef.current = remaining;
         setLifelinesLeft(remaining);
+        // Persist to backend if in program context (fire-and-forget; local state already updated)
+        if (isProgramLifelineRef.current && batchIdRef.current) {
+          programLifelineMutateRef.current({ batchId: batchIdRef.current, episodeId: lessonId, context: 'episode' })
+            .then((res) => {
+              lifelinesLeftRef.current = res.lifelinesRemaining;
+              setLifelinesLeft(res.lifelinesRemaining);
+            })
+            .catch(() => {}); // network failure: local state already shows deduction
+        }
         toast.success(
-          `⚡ Time's up — lifeline auto-used! ${remaining} free lifeline${remaining !== 1 ? "s" : ""} remaining.`,
+          `⚡ Time's up — lifeline auto-used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`,
           { duration: 3500 },
         );
         timerEndTimeRef.current = Date.now() + timerDurationRef.current * 1000;
@@ -1870,14 +1912,32 @@ export default function CourseDetailPage({
     setFocusDialog({ lesson, duration });
   };
 
-  const handleUseLifeline = (lesson: any, duration: number) => {
+  const handleUseLifeline = async (lesson: any, duration: number) => {
     if (lifelinesLeft > 0) {
-      const remaining = lifelinesLeft - 1;
-      setLifelinesLeft(remaining);
+      // Program-wide: persist to DB first; session-only: update locally
+      if (isProgramLifeline && batchId) {
+        try {
+          const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
+          setLifelinesLeft(res.lifelinesRemaining);
+          lifelinesLeftRef.current = res.lifelinesRemaining;
+        } catch (err: any) {
+          if (err?.response?.data?.error === 'exhausted') {
+            setCoinDialog({ lesson, duration });
+            return;
+          }
+          toast.error("Failed to use lifeline — try again");
+          return;
+        }
+      } else {
+        const remaining = lifelinesLeft - 1;
+        setLifelinesLeft(remaining);
+        lifelinesLeftRef.current = remaining;
+      }
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
       handleSelectLesson(lesson);
-      toast.success(`Lifeline used! ${remaining} free lifeline${remaining !== 1 ? "s" : ""} remaining.`);
+      const remaining = lifelinesLeftRef.current;
+      toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`);
     } else {
       setCoinDialog({ lesson, duration });
     }
@@ -2947,6 +3007,15 @@ export default function CourseDetailPage({
           style={{ background: "var(--color-accent)" }}
         >
           <Zap size={16} /> +{xpFlash} XP earned!
+        </div>
+      )}
+      {/* MG-04: Early completion bonus flash */}
+      {bonusXpFlash !== null && (
+        <div
+          className="fixed bottom-20 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl font-bold text-white text-sm animate-bounce"
+          style={{ background: "#16a34a" }}
+        >
+          <Zap size={16} /> +{bonusXpFlash} Early Bird Bonus!
         </div>
       )}
 

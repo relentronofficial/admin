@@ -1119,11 +1119,13 @@ export async function getLessonProgressHandler(request: FastifyRequest, reply: F
 
 export async function markLessonCompleteHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId, lessonId: episodeId } = request.params as { courseId: string; lessonId: string };
-  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion, videoDuration } = request.body as {
+  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion, videoDuration, timerStartedAt, timerSeconds } = request.body as {
     watchedSeconds?: number;
     deltaSeconds?: number;
     isCompleted?: boolean;
     videoDuration?: number;
+    timerStartedAt?: number;
+    timerSeconds?: number;
   };
 
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
@@ -1371,12 +1373,46 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   void invalidateCache(request.server.redis ?? null, `cont-learn:v2:${request.memberId!}`);
 
+  // ── MG-04: Early Completion Bonus ────────────────────────────────────────
+  let bonusXpAwarded = 0;
+  let completedEarly = false;
+  if (finalIsCompleted && !existingProgress?.completed && timerStartedAt && timerSeconds && timerSeconds > 0) {
+    const elapsed = Math.floor((Date.now() - timerStartedAt) / 1000);
+    if (elapsed < timerSeconds) {
+      completedEarly = true;
+      // Fetch bonus XP from site config
+      const cfgRows = await request.server.prisma.$queryRawUnsafe<Array<{ early_completion_bonus_xp: number }>>(
+        `SELECT early_completion_bonus_xp FROM site_configs LIMIT 1`
+      ).catch(() => []);
+      bonusXpAwarded = cfgRows[0]?.early_completion_bonus_xp ?? 5;
+      // Award bonus XP
+      if (bonusXpAwarded > 0) {
+        await (request.server.prisma as any).memberXP.create({
+          data: {
+            memberId: request.memberId,
+            courseId,
+            episodeId,
+            points: bonusXpAwarded,
+            source: 'early_completion',
+          },
+        }).catch(() => {});
+        // Mark progress row
+        await request.server.prisma.$executeRawUnsafe(
+          `UPDATE member_episode_progress SET completed_early = true, timer_started_at = $1, timer_seconds = $2 WHERE member_id = $3::uuid AND episode_id = $4::uuid`,
+          new Date(timerStartedAt), timerSeconds, request.memberId, episodeId
+        ).catch(() => {});
+      }
+    }
+  }
+
   return ok(reply, {
     lessonId: episodeId,
     completed: progress.completed,
     watchedSeconds: progress.lastWatchedSecs,
     actualWatchedSecs: progress.actualWatchedSecs,
     completedAt: progress.completedAt?.toISOString() ?? null,
+    bonusXpAwarded,
+    completedEarly,
   });
 }
 
@@ -5531,4 +5567,52 @@ export async function getMyPostsHandler(request: FastifyRequest, reply: FastifyR
     commentCount: p.commentsCount,
   }));
   return ok(reply, items);
+}
+
+// ── MG-01: Support Quota ──────────────────────────────────────────────────────
+
+export async function getSupportQuotaHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { membershipPlan: true, batchId: true },
+  });
+
+  const plan = (member?.membershipPlan as string | null) ?? 'free';
+
+  const [entRows, usageRows, lifelineRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled
+       FROM plan_entitlements WHERE plan = $1`,
+      plan,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT type, COUNT(*)::int AS cnt FROM support_usage WHERE member_id = $1::uuid GROUP BY type`,
+      memberId,
+    ),
+    member?.batchId
+      ? request.server.prisma.$queryRawUnsafe<any[]>(
+          `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id = $1::uuid AND batch_id = $2::uuid LIMIT 1`,
+          memberId, member.batchId,
+        )
+      : Promise.resolve([]),
+  ]);
+
+  const ent = entRows[0] ?? { tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false };
+  const usageMap: Record<string, number> = {};
+  for (const row of usageRows) usageMap[row.type] = row.cnt;
+
+  const lifelinesTotal = (lifelineRows[0] as any)?.lifelines_total ?? 3;
+  const lifelinesUsed  = (lifelineRows[0] as any)?.lifelines_used  ?? 0;
+
+  return ok(reply, {
+    plan,
+    techSupport:  { allocated: ent.tech_support_days, used: usageMap['tech_support']  ?? 0, remaining: Math.max(0, ent.tech_support_days  - (usageMap['tech_support']  ?? 0)) },
+    adSupport:    { allocated: ent.ad_support_days,   used: usageMap['ad_support']    ?? 0, remaining: Math.max(0, ent.ad_support_days    - (usageMap['ad_support']    ?? 0)) },
+    groupCall:    { allocated: ent.group_call_count,  used: usageMap['group_call']    ?? 0, remaining: Math.max(0, ent.group_call_count    - (usageMap['group_call']    ?? 0)) },
+    callCredits:  { allocated: ent.call_credit_count, used: usageMap['one_to_one']    ?? 0, remaining: Math.max(0, ent.call_credit_count   - (usageMap['one_to_one']    ?? 0)) },
+    oneToOne:     !!ent.one_to_one_enabled,
+    lifelines:    { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
+  });
 }

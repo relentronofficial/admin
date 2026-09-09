@@ -24,6 +24,7 @@ import {
   Zap,
   Coins,
   X,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
@@ -185,15 +186,40 @@ export default function BatchDayPage() {
       .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }, [program, dayNumber]);
 
+  // MG-03: Split tasks into process stages and standalone tasks
+  const processesForDay = useMemo(() => {
+    const allProcesses: any[] = (program as any)?.processes ?? [];
+    return allProcesses.filter((p: any) => p.dayNumber == null || Number(p.dayNumber) === dayNumber);
+  }, [program, dayNumber]);
+
+  const processTaskMap = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    for (const t of programTasksForDay) {
+      if (t.processId) {
+        if (!map[t.processId]) map[t.processId] = [];
+        map[t.processId].push(t);
+      }
+    }
+    for (const stages of Object.values(map)) {
+      stages.sort((a: any, b: any) => (a.stagePosition ?? 999) - (b.stagePosition ?? 999));
+    }
+    return map;
+  }, [programTasksForDay]);
+
+  const standaloneTasksForDay = useMemo(
+    () => programTasksForDay.filter((t: any) => !t.processId),
+    [programTasksForDay],
+  );
+
   const tasks: {
     id: string; title: string; order: number;
     description?: string | null; deliverables?: string | null; contentUrl?: string | null;
     proofType?: string; basePoints?: number; estimatedMinutes?: number; isMilestone?: boolean;
     isRequired?: boolean;
   }[] =
-    programTasksForDay.length > 0
-      ? programTasksForDay.map((t: any) => ({ ...t, order: t.sortOrder ?? 0 }))
-      : Array.isArray(dayContent?.tasks)
+    standaloneTasksForDay.length > 0
+      ? standaloneTasksForDay.map((t: any) => ({ ...t, order: t.sortOrder ?? 0 }))
+      : programTasksForDay.length === 0 && Array.isArray(dayContent?.tasks)
         ? dayContent.tasks
         : [];
 
@@ -306,11 +332,17 @@ export default function BatchDayPage() {
       queryClient.invalidateQueries({ queryKey: ["my-batch"] });
       toast.error(`Day ${payload.dayNumber} needs revision`);
     };
+    const handleStageUnlocked = (payload: { processTitle: string; nextStageTitle: string; stagePosition: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["my-batch"] });
+      toast.success(`Stage ${payload.stagePosition} unlocked: ${payload.nextStageTitle}`, { duration: 4000 });
+    };
     socket.on("batch:day_approved", handleApproved);
     socket.on("batch:day_rejected", handleRejected);
+    socket.on("batch:stage_unlocked", handleStageUnlocked);
     return () => {
       socket.off("batch:day_approved", handleApproved);
       socket.off("batch:day_rejected", handleRejected);
+      socket.off("batch:stage_unlocked", handleStageUnlocked);
     };
   }, [socket]);
 
@@ -745,8 +777,89 @@ export default function BatchDayPage() {
         )}
       </div>
 
-      {/* Tasks checklist */}
-      {tasks.length > 0 && (
+      {/* Tasks & Processes */}
+      {(tasks.length > 0 || processesForDay.length > 0) && (
+        <>
+        {/* MG-03: Process Accordion (multi-stage tasks) */}
+        {processesForDay.length > 0 && (
+          <div className="space-y-3">
+            {processesForDay.map((proc: any) => {
+              const stages: any[] = processTaskMap[proc.id] ?? [];
+              return (
+                <div
+                  key={proc.id}
+                  className="rounded-2xl border p-4 space-y-3"
+                  style={{ borderColor: "rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.04)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <ClipboardList size={14} style={{ color: "#a78bfa", flexShrink: 0 }} />
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: "#a78bfa" }}>{proc.title}</p>
+                      {proc.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{proc.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {stages.map((stage: any, idx: number) => {
+                      const isLocked = stage.stageLocked;
+                      const done = completedTaskIds.includes(stage.id);
+                      const stageTimer = stage.timerSeconds ?? timerDuration;
+                      return (
+                        <div
+                          key={stage.id}
+                          className="flex items-start gap-3 p-3 rounded-xl border"
+                          style={{
+                            borderColor: isLocked ? "rgba(107,114,128,0.3)" : done ? "rgba(34,197,94,0.3)" : "rgba(167,139,250,0.2)",
+                            background: isLocked ? "rgba(107,114,128,0.05)" : done ? "rgba(34,197,94,0.06)" : "transparent",
+                          }}
+                        >
+                          <div className="mt-0.5 flex-shrink-0">
+                            {isLocked ? (
+                              <Lock size={14} style={{ color: "#6b7280" }} />
+                            ) : done ? (
+                              <CheckCircle2 size={14} style={{ color: "#22c55e" }} />
+                            ) : (
+                              <Circle size={14} style={{ color: "#a78bfa" }} />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium" style={{ color: isLocked ? "#6b7280" : "var(--color-text-normal)" }}>
+                              Stage {idx + 1}: {stage.title}
+                            </p>
+                            {isLocked ? (
+                              <p className="text-xs text-muted-foreground mt-0.5">Complete previous stage first</p>
+                            ) : (
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                  <Timer size={9} />
+                                  {Math.floor(stageTimer / 3600) > 0
+                                    ? `${Math.floor(stageTimer / 3600)}h timer`
+                                    : `${Math.floor(stageTimer / 60)}m timer`}
+                                </span>
+                                {!done && !isLocked && canEdit && (
+                                  <button
+                                    onClick={() => handleTaskClick(stage.id, stage.title, stageTimer)}
+                                    className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                                    style={{ background: "var(--color-accent)" }}
+                                  >
+                                    Start
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tasks.length > 0 && (
         <div
           className="rounded-2xl border p-5 space-y-3"
           style={{
@@ -1056,6 +1169,8 @@ export default function BatchDayPage() {
             })}
           </div>
         </div>
+        )}
+        </>
       )}
 
       {/* Journal */}
