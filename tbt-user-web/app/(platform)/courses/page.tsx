@@ -562,11 +562,6 @@ export default function CoursesPage() {
             <Play size={15} style={{ color: "var(--color-accent)" }} />
             Continue Learning
           </h2>
-          {continueCourseItems.length > 1 && (
-            <Link href="/learning" className="text-[12px] font-semibold transition-colors" style={{ color: "var(--color-accent)" }}>
-              View all →
-            </Link>
-          )}
         </div>
 
         {continueLoading ? (
@@ -606,11 +601,6 @@ export default function CoursesPage() {
               <BookOpen size={15} style={{ color: "var(--color-accent)" }} />
               Enrolled Courses
             </h2>
-            {myEnrollments.length > 6 && (
-              <Link href="/learning" className="text-[12px] font-semibold transition-colors" style={{ color: "var(--color-accent)" }}>
-                View all →
-              </Link>
-            )}
           </div>
           <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
             {enrollLoading
