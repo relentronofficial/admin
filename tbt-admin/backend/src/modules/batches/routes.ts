@@ -37,6 +37,11 @@ import {
   getReportHistoryHandler,
   previewBatchReportHandler,
   sendTestBatchReportHandler,
+  listBatchProcessesHandler,
+  createBatchProcessHandler,
+  updateBatchProcessHandler,
+  deleteBatchProcessHandler,
+  reorderBatchProcessStagesHandler,
 } from './controller.js';
 import {
   approveDayHandler,
@@ -112,4 +117,11 @@ export async function batchRoutes(fastify: FastifyInstance) {
   fastify.get('/reports/history', getReportHistoryHandler);
   fastify.post('/reports/preview', previewBatchReportHandler);
   fastify.post('/reports/send-test', sendTestBatchReportHandler);
+
+  // MG-03: Multi-Stage Process Tasks
+  fastify.get('/:id/processes', listBatchProcessesHandler);
+  fastify.post('/:id/processes', createBatchProcessHandler);
+  fastify.put('/processes/:pid', updateBatchProcessHandler);
+  fastify.delete('/processes/:pid', deleteBatchProcessHandler);
+  fastify.put('/processes/:pid/reorder', reorderBatchProcessStagesHandler);
 }

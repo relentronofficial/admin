@@ -179,6 +179,28 @@ export function Topbar() {
     };
   }, []);
 
+  // Listen for member credit purchase requests
+  useEffect(() => {
+    let mounted = true;
+    function onCreditPurchase(data: { creditType: string; quantity: number; amountInr: number }) {
+      if (!mounted) return;
+      const label = data.creditType.replace(/_/g, " ");
+      toast(`New credit request: ${data.quantity}× ${label} (₹${Number(data.amountInr).toLocaleString("en-IN")})`, {
+        icon: "🛒",
+        duration: 6000,
+        style: { background: "#1a1a1a", color: "#f0f0f0", border: "1px solid #2a2a2a" },
+      });
+    }
+    getAdminSocket().then(socket => {
+      if (!mounted) return;
+      socket.on("admin:credit_purchase", onCreditPurchase);
+    });
+    return () => {
+      mounted = false;
+      getAdminSocket().then(socket => socket.off("admin:credit_purchase", onCreditPurchase));
+    };
+  }, []);
+
   // Close dropdown on outside click
   useEffect(() => {
     if (!notifOpen) return;

@@ -13,8 +13,8 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       data: { siteName: 'TBT', footerText: '© Tamil Business Tribe' },
     });
   }
-  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown }>>(
-    'SELECT task_timer_seconds, free_lifelines_per_session, hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown; early_completion_bonus_xp: number }>>(
+    'SELECT task_timer_seconds, free_lifelines_per_session, hidden_menu_keys, early_completion_bonus_xp FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
   return reply.send({
     success: true,
@@ -23,13 +23,14 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
       freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
       hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
+      earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
     },
     error: null,
   });
 }
 
 export async function updateSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, ...prismaBody } = req.body as any;
+  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, earlyCompletionBonusXp, ...prismaBody } = req.body as any;
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
     config = await req.server.prisma.siteConfig.create({ data: prismaBody });
@@ -52,6 +53,12 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
     await req.server.prisma.$executeRawUnsafe(
       'UPDATE site_configs SET hidden_menu_keys = $1::jsonb WHERE id = $2::uuid',
       JSON.stringify(hiddenMenuKeys), config.id
+    );
+  }
+  if (earlyCompletionBonusXp !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE site_configs SET early_completion_bonus_xp = $1 WHERE id = $2::uuid',
+      Math.max(0, Math.min(100, Number(earlyCompletionBonusXp))), config.id
     );
   }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);

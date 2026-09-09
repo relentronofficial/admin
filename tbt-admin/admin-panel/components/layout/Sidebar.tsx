@@ -31,6 +31,8 @@ import {
   Megaphone,
   MessageSquareText,
   UserCheck,
+  Shield,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -78,10 +80,17 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Site Config", href: "/settings/site", icon: Settings },
       { name: "Navigation", href: "/settings/navigation", icon: Navigation },
       { name: "UI Strings", href: "/settings/ui-strings", icon: Type },
+      { name: "Plan Entitlements", href: "/settings/entitlements", icon: Shield },
       { name: "Tiers", href: "/tiers", icon: Trophy },
       { name: "Badges", href: "/display-badges", icon: Award },
       { name: "TBT Gamification", href: "/gamification", icon: Award },
       { name: "Morning Ritual", href: "/rituals", icon: Sun },
+    ],
+  },
+  {
+    label: "Billing",
+    items: [
+      { name: "Credits", href: "/credits", icon: ShoppingCart },
     ],
   },
   {

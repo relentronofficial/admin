@@ -1058,3 +1058,156 @@ export async function sendTestBatchReportHandler(req: FastifyRequest, reply: Fas
   const result = await deliverMemberReport(req.server.prisma, memberId, type, { force: !!force });
   return reply.send({ success: true, data: result, error: null });
 }
+
+// ── MG-03: Multi-Stage Process Task Handlers ─────────────────────────────────
+
+// GET /api/batches/:id/processes
+export async function listBatchProcessesHandler(
+  req: FastifyRequest<{ Params: { id: string }; Querystring: { dayNumber?: string } }>,
+  reply: FastifyReply,
+) {
+  const dayNum = req.query.dayNumber ? parseInt(req.query.dayNumber, 10) : undefined;
+  const processes = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT p.id, p.title, p.description, p.position, p.day_number as "dayNumber",
+            p.batch_id as "batchId", p.program_id as "programId",
+            p.created_at as "createdAt", p.updated_at as "updatedAt"
+     FROM task_processes p
+     WHERE p.batch_id = $1::uuid
+       ${dayNum !== undefined ? 'AND p.day_number = $2' : ''}
+     ORDER BY p.position ASC, p.created_at ASC`,
+    ...(dayNum !== undefined ? [req.params.id, dayNum] : [req.params.id])
+  );
+
+  // Fetch stages (tasks) for each process
+  if (processes.length > 0) {
+    const processIds = processes.map((p: any) => p.id);
+    const placeholders = processIds.map((_: any, i: number) => `$${i + 1}::uuid`).join(',');
+    const stages = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT t.id, t.title, t.description, t.proof_type as "proofType", t.stage_position as "stagePosition",
+              t.process_id as "processId", t.timer_seconds as "timerSeconds", t.is_required as "isRequired",
+              t.base_points as "basePoints", t.estimated_minutes as "estimatedMinutes"
+       FROM tasks t
+       WHERE t.process_id IN (${placeholders})
+       ORDER BY t.stage_position ASC NULLS LAST, t.sort_order ASC`,
+      ...processIds
+    );
+    const stagesByProcess: Record<string, any[]> = {};
+    for (const s of stages) {
+      if (!stagesByProcess[s.processId]) stagesByProcess[s.processId] = [];
+      stagesByProcess[s.processId].push(s);
+    }
+    return reply.send({ success: true, data: processes.map((p: any) => ({ ...p, stages: stagesByProcess[p.id] ?? [] })), error: null });
+  }
+  return reply.send({ success: true, data: [], error: null });
+}
+
+// POST /api/batches/:id/processes
+export async function createBatchProcessHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) {
+  const { title, description, dayNumber, stages = [] } = req.body as {
+    title: string;
+    description?: string;
+    dayNumber?: number;
+    stages: Array<{ title: string; description?: string; timerSeconds?: number; proofType?: string; position: number }>;
+  };
+  if (!title) return reply.status(400).send({ success: false, data: null, error: 'title is required' });
+
+  const adminId = (req as any).auth?.sub ?? null;
+
+  // Create the process row
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO task_processes (batch_id, day_number, title, description, position)
+     VALUES ($1::uuid, $2, $3, $4, COALESCE((SELECT MAX(position)+1 FROM task_processes WHERE batch_id=$1::uuid), 0))
+     RETURNING id, title, description, day_number as "dayNumber", position`,
+    req.params.id, dayNumber ?? null, title, description ?? null
+  );
+  const process = rows[0];
+
+  // Create stage tasks
+  const createdStages: any[] = [];
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    const task = await req.server.prisma.task.create({
+      data: {
+        batchId: req.params.id,
+        dayNumber: dayNumber ?? null,
+        title: s.title,
+        description: s.description ?? null,
+        proofType: s.proofType ?? 'text',
+        basePoints: 100,
+        bonusPoints: 0,
+        estimatedMinutes: Math.ceil((s.timerSeconds ?? 300) / 60),
+        isMilestone: false,
+        sortOrder: s.position ?? i,
+        isRequired: true,
+        isActive: true,
+        createdBy: adminId,
+      } as any,
+    });
+    // Set process_id, stage_position, timer_seconds via raw SQL (not in Prisma schema)
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE tasks SET process_id=$1::uuid, stage_position=$2, timer_seconds=$3 WHERE id=$4::uuid`,
+      process.id, s.position ?? i + 1, s.timerSeconds ?? null, task.id
+    );
+    createdStages.push({ ...task, processId: process.id, stagePosition: s.position ?? i + 1 });
+  }
+
+  return reply.status(201).send({ success: true, data: { ...process, stages: createdStages }, error: null });
+}
+
+// PUT /api/batches/processes/:pid
+export async function updateBatchProcessHandler(
+  req: FastifyRequest<{ Params: { pid: string } }>,
+  reply: FastifyReply,
+) {
+  const { title, description, position } = req.body as { title?: string; description?: string; position?: number };
+  const sets: string[] = [];
+  const vals: any[] = [req.params.pid];
+  if (title !== undefined)       { sets.push(`title = $${vals.length + 1}`);       vals.push(title); }
+  if (description !== undefined) { sets.push(`description = $${vals.length + 1}`); vals.push(description); }
+  if (position !== undefined)    { sets.push(`position = $${vals.length + 1}`);    vals.push(position); }
+  if (sets.length === 0) return reply.status(400).send({ success: false, data: null, error: 'Nothing to update' });
+  sets.push(`updated_at = NOW()`);
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE task_processes SET ${sets.join(', ')} WHERE id = $1::uuid`,
+    ...vals
+  );
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// DELETE /api/batches/processes/:pid
+export async function deleteBatchProcessHandler(
+  req: FastifyRequest<{ Params: { pid: string } }>,
+  reply: FastifyReply,
+) {
+  // Nullify process_id on stage tasks first so we can safely delete the process
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE tasks SET process_id=NULL, stage_position=NULL WHERE process_id=$1::uuid`,
+    req.params.pid
+  );
+  await req.server.prisma.$executeRawUnsafe(
+    `DELETE FROM task_processes WHERE id=$1::uuid`,
+    req.params.pid
+  );
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// PUT /api/batches/processes/:pid/reorder
+export async function reorderBatchProcessStagesHandler(
+  req: FastifyRequest<{ Params: { pid: string } }>,
+  reply: FastifyReply,
+) {
+  const { ids } = req.body as { ids: string[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return reply.status(400).send({ success: false, data: null, error: 'ids array required' });
+  }
+  for (let i = 0; i < ids.length; i++) {
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE tasks SET stage_position=$1 WHERE id=$2::uuid AND process_id=$3::uuid`,
+      i + 1, ids[i], req.params.pid
+    );
+  }
+  return reply.send({ success: true, data: null, error: null });
+}

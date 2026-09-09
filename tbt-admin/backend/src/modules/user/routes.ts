@@ -98,7 +98,9 @@ import {
   enrollInProgramHandler,
   getMyConnectionsHandler,
   getMyPostsHandler,
+  getSupportQuotaHandler,
 } from './controller.js';
+import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // All routes in this module require member authentication.
@@ -111,6 +113,12 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/me/avatar-presign', avatarPresignHandler);
   fastify.get('/me/connections', getMyConnectionsHandler);
   fastify.get('/me/posts', getMyPostsHandler);
+  fastify.get('/support-quota', getSupportQuotaHandler);
+
+  // ── Credits ───────────────────────────────────────────────────────────────
+  fastify.get('/credits/pricing', getUserCreditPricingHandler);
+  fastify.post('/credits/purchase', createCreditPurchaseHandler);
+  fastify.get('/credits/purchases', getMyCreditPurchasesHandler);
 
   // ── Courses ────────────────────────────────────────────────────────────────
   fastify.get('/courses/categories', listUserCourseCategories);

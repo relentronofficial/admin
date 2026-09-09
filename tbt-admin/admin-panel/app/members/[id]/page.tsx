@@ -15,6 +15,7 @@ import {
   useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment,
   useListWorkshops, useMemberWatchAnalytics, useMemberActivityTimeline,
   useAddMemberCoins,
+  useMemberSupportQuota, useListSupportUsage, useRecordSupportUsage, useDeleteSupportUsage,
 } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import { format, isValid } from "date-fns";
@@ -34,7 +35,7 @@ const statusCls = (s: string) => {
   return m[s] || "bg-[#222] text-[#888] border-[#333]";
 };
 
-const TABS = ["Info", "Enrollments", "Progress", "Analytics"] as const;
+const TABS = ["Info", "Enrollments", "Progress", "Analytics", "Support Usage"] as const;
 type Tab = typeof TABS[number];
 
 export default function MemberDetailPage() {
@@ -75,6 +76,17 @@ export default function MemberDetailPage() {
   const { data: timelineData } = useMemberActivityTimeline(id);
   const timeline = (timelineData as any)?.data || [];
 
+  // Support usage tab
+  const { data: quotaData, isLoading: quotaLoading, refetch: refetchQuota } = useMemberSupportQuota(id);
+  const quota = (quotaData as any);
+  const { data: usageData, isLoading: usageLoading, refetch: refetchUsage } = useListSupportUsage({ memberId: id, limit: 50 });
+  const usageRows = (usageData as any)?.data || [];
+  const recordUsage = useRecordSupportUsage();
+  const deleteUsage = useDeleteSupportUsage();
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [recordType, setRecordType] = useState<string>("tech_support");
+  const [recordNotes, setRecordNotes] = useState("");
+
   const enrolledWorkshopIds = new Set(enrollments.map((e: any) => e.workshopId));
   const unenrolled = allWorkshops.filter((w: any) => !enrolledWorkshopIds.has(w.id));
 
@@ -99,6 +111,26 @@ export default function MemberDetailPage() {
       setCoinReason("");
       refetchMember();
     } catch (e: any) { toast.error(e.message || "Failed to add coins"); }
+  };
+
+  const handleRecordUsage = async () => {
+    try {
+      await recordUsage.mutateAsync({ memberId: id, type: recordType as any, notes: recordNotes.trim() || undefined });
+      toast.success("Session recorded");
+      setShowRecordModal(false);
+      setRecordNotes("");
+      refetchQuota();
+      refetchUsage();
+    } catch (e: any) { toast.error(e.message || "Failed to record session"); }
+  };
+
+  const handleDeleteUsage = async (usageId: string) => {
+    try {
+      await deleteUsage.mutateAsync(usageId);
+      toast.success("Record deleted");
+      refetchQuota();
+      refetchUsage();
+    } catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
   const handleEnroll = async () => {
@@ -636,6 +668,139 @@ export default function MemberDetailPage() {
             ) : (
               <div className="text-center py-16 text-[#777] text-sm italic">No analytics data.</div>
             )}
+          </div>
+        )}
+
+        {/* ── SUPPORT USAGE TAB ── */}
+        {activeTab === "Support Usage" && (
+          <div className="space-y-6">
+            {/* Record session button */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowRecordModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#dc2626] hover:bg-red-700 text-white text-[12px] font-bold uppercase tracking-widest font-rajdhani transition-colors"
+              >
+                <Plus size={13} /> Record Session
+              </button>
+            </div>
+
+            {/* Quota cards */}
+            {quotaLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {[0,1,2,3,4,5].map(i => <div key={i} className="h-24 rounded-xl bg-[#181818] animate-pulse" />)}
+              </div>
+            ) : quota && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {[
+                  { label: "Tech Support", key: "techSupport", color: "#3b82f6" },
+                  { label: "Ad Support", key: "adSupport", color: "#8b5cf6" },
+                  { label: "Group Calls", key: "groupCall", color: "#22c55e" },
+                  { label: "Call Credits", key: "callCredits", color: "#f59e0b" },
+                  { label: "Lifelines", key: "lifelines", color: "#ec4899" },
+                ].map(({ label, key, color }) => {
+                  const q = quota[key];
+                  const total = key === "lifelines" ? q?.total : q?.allocated;
+                  const used = key === "lifelines" ? q?.used : q?.used;
+                  const remaining = key === "lifelines" ? q?.remaining : q?.remaining;
+                  const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+                  return (
+                    <div key={key} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-[#888] font-rajdhani mb-2">{label}</p>
+                      <p className="text-2xl font-bold font-rajdhani" style={{ color }}>{remaining ?? "—"} <span className="text-sm text-[#666]">/ {total ?? "—"}</span></p>
+                      <p className="text-[10px] text-[#777] mt-1">{used ?? 0} used · {pct}%</p>
+                    </div>
+                  );
+                })}
+                <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#888] font-rajdhani mb-2">Plan</p>
+                  <p className="text-lg font-bold font-rajdhani text-[#f0f0f0] capitalize">{quota.plan}</p>
+                  <p className="text-[10px] text-[#777] mt-1">One-to-one: {quota.oneToOne ? "Enabled" : "Disabled"}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Usage log */}
+            <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-[#2a2a2a]">
+                <h3 className="font-rajdhani text-[13px] font-bold uppercase tracking-[2px] text-[#a0a0a0]">Session Log</h3>
+              </div>
+              {usageLoading ? (
+                <div className="p-6 text-center text-[#777] text-sm">Loading...</div>
+              ) : usageRows.length === 0 ? (
+                <div className="p-8 text-center text-[#777] text-sm italic">No sessions recorded yet.</div>
+              ) : (
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
+                      <th className="px-5 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Type</th>
+                      <th className="px-4 py-3 text-left text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Notes</th>
+                      <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani">Date</th>
+                      <th className="px-4 py-3 text-right text-[9px] uppercase tracking-widest text-[#777] font-bold font-rajdhani"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#1f1f1f]">
+                    {usageRows.map((row: any) => (
+                      <tr key={row.id} className="hover:bg-white/[0.02]">
+                        <td className="px-5 py-3 text-[12px] text-[#a0a0a0] font-rajdhani uppercase tracking-wide">{row.type.replace(/_/g, " ")}</td>
+                        <td className="px-4 py-3 text-[11px] text-[#888] max-w-[200px] truncate">{row.notes || "—"}</td>
+                        <td className="px-4 py-3 text-right text-[10px] text-[#777]">{safeDate(row.used_at)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleDeleteUsage(row.id)} className="text-[#444] hover:text-red-500 transition-colors">
+                            <Trash2 size={12} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Record session modal */}
+        {showRecordModal && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+            <div className="w-full max-w-sm bg-[#141414] border border-[#2a2a2a] rounded-xl p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-rajdhani text-[15px] font-bold uppercase tracking-widest text-[#f0f0f0]">Record Session</h2>
+                <button onClick={() => setShowRecordModal(false)} className="text-[#777] hover:text-white"><X size={16} /></button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Type</label>
+                  <select
+                    value={recordType}
+                    onChange={e => setRecordType(e.target.value)}
+                    className="mt-1 w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-[#f0f0f0] text-sm outline-none focus:border-[#dc2626]"
+                  >
+                    <option value="tech_support">Tech Support</option>
+                    <option value="ad_support">Ad Support</option>
+                    <option value="group_call">Group Call</option>
+                    <option value="one_to_one">One-to-one</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#777] font-rajdhani">Notes (optional)</label>
+                  <textarea
+                    value={recordNotes}
+                    onChange={e => setRecordNotes(e.target.value)}
+                    placeholder="Session notes..."
+                    className="mt-1 w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-20 px-3 py-2 text-[#f0f0f0] text-sm outline-none focus:border-[#dc2626] resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setShowRecordModal(false)} className="flex-1 h-10 rounded-lg bg-[#1f1f1f] border border-[#2a2a2a] text-[#a0a0a0] text-[12px] font-bold uppercase tracking-widest font-rajdhani hover:bg-[#2a2a2a] transition-colors">Cancel</button>
+                <button
+                  onClick={handleRecordUsage}
+                  disabled={recordUsage.isPending}
+                  className="flex-1 h-10 rounded-lg bg-[#dc2626] hover:bg-red-700 text-white text-[12px] font-bold uppercase tracking-widest font-rajdhani disabled:opacity-50 transition-colors"
+                >
+                  {recordUsage.isPending ? "Saving..." : "Record"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

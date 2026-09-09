@@ -18,8 +18,8 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     });
   }
 
-  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number }>>(
-    'SELECT task_timer_seconds, free_lifelines_per_session FROM site_configs WHERE id = $1::uuid', config.id
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number }>>(
+    'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
 
   const data = {
@@ -41,6 +41,7 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
     taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
     freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
+    earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
   };
   await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });

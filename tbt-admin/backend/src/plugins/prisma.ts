@@ -1545,6 +1545,147 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         EXCEPTION WHEN duplicate_object THEN NULL; END;
       END $$;
     `).catch(() => {});
+
+    // ── MG-01: Plan Entitlements (2026-09-08) ───────────────────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS plan_entitlements (
+        id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        plan               VARCHAR(50) NOT NULL UNIQUE,
+        tech_support_days  INT NOT NULL DEFAULT 0,
+        ad_support_days    INT NOT NULL DEFAULT 0,
+        group_call_count   INT NOT NULL DEFAULT 0,
+        call_credit_count  INT NOT NULL DEFAULT 0,
+        one_to_one_enabled BOOLEAN NOT NULL DEFAULT false,
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS support_usage (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id   UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        batch_id    UUID REFERENCES batches(id) ON DELETE SET NULL,
+        type        VARCHAR(50) NOT NULL,
+        notes       TEXT,
+        recorded_by TEXT,
+        used_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_support_usage_member ON support_usage(member_id)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_support_usage_type ON support_usage(member_id, type)`
+    ).catch(() => {});
+    // Seed default entitlements — ON CONFLICT DO NOTHING so re-runs are safe
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO plan_entitlements (plan, tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled)
+      VALUES
+        ('free',       0,  0,  0, 0, false),
+        ('starter',    2,  2,  4, 0, false),
+        ('premium',    5,  5, 10, 1, true),
+        ('vip',       10, 10, 20, 3, true),
+        ('enterprise', 0,  0,  0, 0, false)
+      ON CONFLICT (plan) DO NOTHING
+    `).catch(() => {});
+
+    // ── MG-02: Program-Wide Lifelines (2026-09-08) ──────────────────────────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_batch_settings ADD COLUMN IF NOT EXISTS lifelines_total INT NOT NULL DEFAULT 3`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_batch_settings ADD COLUMN IF NOT EXISTS lifelines_used INT NOT NULL DEFAULT 0`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE lifeline_usages ADD COLUMN IF NOT EXISTS episode_id UUID REFERENCES course_episodes(id) ON DELETE SET NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE lifeline_usages ADD COLUMN IF NOT EXISTS context VARCHAR(50) DEFAULT 'task'`
+    ).catch(() => {});
+
+    // ── MG-03: Multi-Stage Process Tasks (2026-09-08) ───────────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS task_processes (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        batch_id    UUID REFERENCES batches(id) ON DELETE CASCADE,
+        program_id  UUID REFERENCES programs(id) ON DELETE CASCADE,
+        day_number  INT,
+        title       TEXT NOT NULL,
+        description TEXT,
+        position    INT NOT NULL DEFAULT 0,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_task_processes_batch ON task_processes(batch_id, day_number)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS process_id UUID REFERENCES task_processes(id) ON DELETE SET NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stage_position INT`
+    ).catch(() => {});
+
+    // ── MG-04: Early Completion Bonus (2026-09-08) ───────────────────────────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS timer_started_at TIMESTAMPTZ`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS timer_seconds INT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS completed_early BOOLEAN DEFAULT false`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS early_completion_bonus_xp INT NOT NULL DEFAULT 5`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TYPE "XpSource" ADD VALUE IF NOT EXISTS 'early_completion'`
+    ).catch(() => {});
+
+    // ── MG-05: Buy Extra Support / Call Credits (2026-09-08) ─────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS credit_purchases (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        credit_type  VARCHAR(50) NOT NULL,
+        quantity     INT NOT NULL DEFAULT 1,
+        amount_inr   DECIMAL(10,2) NOT NULL,
+        status       VARCHAR(50) NOT NULL DEFAULT 'pending',
+        payment_ref  TEXT,
+        admin_note   TEXT,
+        reviewed_by  TEXT,
+        reviewed_at  TIMESTAMPTZ,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_credit_purchases_member ON credit_purchases(member_id)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_credit_purchases_status ON credit_purchases(status)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS credit_pricing (
+        credit_type  VARCHAR(50) PRIMARY KEY,
+        price_inr    DECIMAL(10,2) NOT NULL,
+        label        TEXT NOT NULL,
+        description  TEXT,
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO credit_pricing (credit_type, price_inr, label, description) VALUES
+        ('tech_support',   999,  'Tech Support Session',   '45-minute tech support call'),
+        ('ad_support',     999,  'Ad Support Session',     '45-minute ad review session'),
+        ('group_call_45',  499,  '45-min Group Call',      'Extra group call slot'),
+        ('group_call_60',  699,  '60-min Group Call',      'Extra group call slot'),
+        ('one_to_one_45', 1999,  'One-to-One (45 min)',    'Personalised call with coach'),
+        ('one_to_one_60', 2999,  'One-to-One (60 min)',    'Personalised call with coach'),
+        ('lifeline',       199,  'Extra Lifeline',         'One focus-mode lifeline unlock')
+      ON CONFLICT (credit_type) DO NOTHING
+    `).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full
