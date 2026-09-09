@@ -167,6 +167,16 @@ export const useCourseCategories = () =>
     staleTime: 10 * 60 * 1000,
   });
 
+export const useCourseModuleTabs = () =>
+  useQuery({
+    queryKey: ["course-module-tabs"],
+    queryFn: async () => {
+      const res = await coursesService.getModuleTabs();
+      return res.data ?? [];
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
 export const useReflections = (courseId: string) =>
   useQuery({
     queryKey: ["course-reflections", courseId],

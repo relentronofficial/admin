@@ -9,6 +9,7 @@ export interface ListCoursesParams {
   enrolled?: boolean;
   sort?: "newest" | "popular";
   category?: string;
+  moduleTitle?: string;
 }
 
 export const coursesService = {
@@ -63,6 +64,9 @@ export const coursesService = {
 
   getCategories: () =>
     apiClient.get<never, ApiResponse<Array<{ id: string; name: string }>>>("/api/user/courses/categories"),
+
+  getModuleTabs: () =>
+    apiClient.get<never, ApiResponse<Array<{ title: string }>>>("/api/user/courses/module-tabs"),
 
   getEpisodeResources: (episodeId: string) =>
     apiClient.get<never, ApiResponse<EpisodeResource[]>>(`/api/user/episodes/${episodeId}/resources`),

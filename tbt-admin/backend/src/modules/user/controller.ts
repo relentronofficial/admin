@@ -436,14 +436,25 @@ export async function listUserCourseCategories(request: FastifyRequest, reply: F
   return ok(reply, categories);
 }
 
+export async function listCourseModuleTabsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const rows = await request.server.prisma.$queryRawUnsafe<{ title: string; sort_order: number }[]>(
+    `SELECT title, MIN(sort_order) AS sort_order
+     FROM course_modules
+     GROUP BY title
+     ORDER BY MIN(sort_order), title`
+  ).catch(() => [] as { title: string; sort_order: number }[]);
+  return ok(reply, rows.map(r => ({ title: r.title })));
+}
+
 export async function listUserCoursesHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 24, search, level, sort, category } = request.query as {
+  const { page = 1, limit = 24, search, level, sort, category, moduleTitle } = request.query as {
     page?: number;
     limit?: number;
     search?: string;
     level?: string;
-    sort?: string;   // 'newest' (default) | 'popular' | 'featured'
-    category?: string; // categoryId UUID
+    sort?: string;
+    category?: string;
+    moduleTitle?: string;
   };
 
   const where: Record<string, unknown> = { isPublished: true };
@@ -454,6 +465,17 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       { title: { contains: search.trim(), mode: 'insensitive' } },
       { description: { contains: search.trim(), mode: 'insensitive' } },
     ];
+  }
+  if (moduleTitle) {
+    const modRows = await request.server.prisma.$queryRawUnsafe<{ course_id: string }[]>(
+      `SELECT DISTINCT cm.course_id
+       FROM course_modules cm
+       JOIN course_episode_modules cem ON cem.module_id = cm.id
+       WHERE cm.title = $1`,
+      moduleTitle
+    ).catch(() => [] as { course_id: string }[]);
+    const ids = modRows.map(r => r.course_id);
+    where.id = ids.length > 0 ? { in: ids } : { in: [] };
   }
 
   const orderBy =

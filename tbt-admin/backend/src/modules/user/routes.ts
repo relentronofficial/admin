@@ -12,6 +12,7 @@ import {
   getNotificationPrefsHandler,
   updateNotificationPrefsHandler,
   listUserCourseCategories,
+  listCourseModuleTabsHandler,
   listUserCoursesHandler,
   getUserCourseHandler,
   enrollCourseHandler,
@@ -122,6 +123,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Courses ────────────────────────────────────────────────────────────────
   fastify.get('/courses/categories', listUserCourseCategories);
+  fastify.get('/courses/module-tabs', listCourseModuleTabsHandler);
   fastify.get('/courses', listUserCoursesHandler);
   fastify.get('/courses/:id', getUserCourseHandler);
   fastify.post('/courses/:id/enroll', enrollCourseHandler);
