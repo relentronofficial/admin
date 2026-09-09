@@ -12,6 +12,7 @@
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { notifyMembers } from '../../lib/notifications.js';
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -359,30 +360,16 @@ export async function adminReplyTicketHandler(req: FastifyRequest, reply: Fastif
       }),
     ]);
 
-    // Notify the member (if this ticket is linked to a member row)
-    // — mirrors the admin_notifications pattern but on the member side.
+    // Notify the member (if this ticket is linked to a member row) — deep-links
+    // straight to this ticket's detail/chat page, not the generic ticket list.
     if (before.memberId) {
-      req.server.io.to(`user:${before.memberId}`).emit('notification', {
-        type: 'helpdesk_reply',
+      void notifyMembers(req.server, {
+        memberIds: [before.memberId],
         title: 'Support replied to your ticket',
         body: before.subject,
-        metadata: { ticketId: id },
+        type: 'helpdesk_reply',
+        actionUrl: `/support/tickets/${id}`,
       });
-      try {
-        await req.server.prisma.notification.create({
-          data: {
-            memberId: before.memberId,
-            // NotificationType enum has no helpdesk-specific value; use
-            // `system` and carry the semantic subtype in `data`.
-            type: 'system',
-            title: 'Support replied to your ticket',
-            body: before.subject,
-            data: { kind: 'helpdesk_reply', ticketId: id } as any,
-          },
-        });
-      } catch (err) {
-        req.server.log.warn({ err, ticketId: id }, 'Failed to persist helpdesk_reply notification');
-      }
     }
     return ok(reply, updated);
   } catch (err: any) {

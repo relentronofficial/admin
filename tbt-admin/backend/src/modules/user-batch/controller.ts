@@ -22,7 +22,7 @@ async function sendBatchNotif(
       recipients: { create: [{ memberId }] },
     },
   });
-  server.io.to(`user:${memberId}`).emit('notification', { title, body: message, type });
+  server.io.to(`user:${memberId}`).emit('notification', { title, body: message, type, actionUrl });
   await sendPushToMember(server.prisma, memberId, title, message, pushData);
 }
 

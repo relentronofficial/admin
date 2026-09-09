@@ -52,14 +52,14 @@ export async function notifyCourseEnrolled(ctx: Ctx & { courseId: string; course
   if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });
 }
 
-export async function notifyEpisodeCompleted(ctx: Ctx & { courseId: string; episodeTitle: string }): Promise<void> {
-  const { prisma, io, memberId, courseId, episodeTitle } = ctx;
+export async function notifyEpisodeCompleted(ctx: Ctx & { courseId: string; episodeId: string; episodeTitle: string }): Promise<void> {
+  const { prisma, io, memberId, courseId, episodeId, episodeTitle } = ctx;
   const title = 'Episode Completed';
   const body = `"${episodeTitle}" done! Keep the streak going.`;
-  await createInApp(prisma, memberId, title, body, 'episode_complete', `/learning/${courseId}`);
+  await createInApp(prisma, memberId, title, body, 'episode_complete', `/learning/${courseId}?lesson=${episodeId}`);
   emit(io, memberId, title, body, 'episode_complete');
   const { pushToken } = await getMemberNotifDetails(prisma, memberId);
-  if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });
+  if (pushToken) await sendPushNotification(pushToken, title, body, { courseId, episodeId });
 }
 
 export async function notifyCourseCompleted(ctx: Ctx & { courseId: string; courseTitle: string }): Promise<void> {
@@ -73,21 +73,21 @@ export async function notifyCourseCompleted(ctx: Ctx & { courseId: string; cours
   if (phone) await sendWhatsappMessage(phone, `${title} ${body}`);
 }
 
-export async function notifyQuizPassed(ctx: Ctx & { courseId: string; episodeTitle: string; score: number; xp: number }): Promise<void> {
-  const { prisma, io, memberId, courseId, episodeTitle, score, xp } = ctx;
+export async function notifyQuizPassed(ctx: Ctx & { courseId: string; episodeId: string; episodeTitle: string; score: number; xp: number }): Promise<void> {
+  const { prisma, io, memberId, courseId, episodeId, episodeTitle, score, xp } = ctx;
   const title = 'Quiz Passed!';
   const body = `You scored ${score}% on the "${episodeTitle}" quiz! +${xp} XP`;
-  await createInApp(prisma, memberId, title, body, 'quiz_pass', `/learning/${courseId}`);
+  await createInApp(prisma, memberId, title, body, 'quiz_pass', `/learning/${courseId}?lesson=${episodeId}`);
   emit(io, memberId, title, body, 'quiz_pass');
   const { pushToken } = await getMemberNotifDetails(prisma, memberId);
-  if (pushToken) await sendPushNotification(pushToken, title, body, { courseId });
+  if (pushToken) await sendPushNotification(pushToken, title, body, { courseId, episodeId });
 }
 
 export async function notifyBadgeAwarded(ctx: Ctx & { badgeId: string; badgeLabel: string }): Promise<void> {
   const { prisma, io, memberId, badgeId, badgeLabel } = ctx;
   const title = 'Badge Earned!';
   const body = `You earned the "${badgeLabel}" badge!`;
-  await createInApp(prisma, memberId, title, body, 'badge_award');
+  await createInApp(prisma, memberId, title, body, 'badge_award', '/learning/badges');
   emit(io, memberId, title, body, 'badge_award');
   const { pushToken } = await getMemberNotifDetails(prisma, memberId);
   if (pushToken) await sendPushNotification(pushToken, title, body, { badgeId });

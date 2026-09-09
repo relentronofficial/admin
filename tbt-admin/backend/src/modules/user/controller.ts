@@ -1377,6 +1377,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       io: request.server.io,
       memberId: request.memberId!,
       courseId,
+      episodeId,
       episodeTitle: (episode as any).title ?? 'Episode',
     }).catch(() => {});
 
@@ -1559,6 +1560,7 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
       io: request.server.io,
       memberId: request.memberId!,
       courseId,
+      episodeId: epId,
       episodeTitle: (episode as any).title ?? 'Episode',
       score,
       xp,
@@ -2476,10 +2478,14 @@ export async function votePollHandler(request: FastifyRequest, reply: FastifyRep
 function notifIconType(type: string): string {
   const map: Record<string, string> = {
     video: 'video', course: 'video',
-    assignment: 'assignment',
-    live_call: 'live_call', webinar: 'live_call',
-    achievement: 'achievement', badge: 'achievement',
+    episode_complete: 'video', quiz_pass: 'video', course_complete: 'video',
+    course_access: 'video', course_enroll: 'video',
+    assignment: 'assignment', helpdesk_reply: 'assignment',
+    task_approved: 'assignment', task_rejected: 'assignment',
+    live_call: 'live_call', webinar: 'live_call', onboarding_meeting: 'live_call',
+    achievement: 'achievement', badge: 'achievement', badge_award: 'achievement',
     announcement: 'announcement',
+    message: 'message', group_message: 'message', group_mention: 'message',
     system: 'system',
   };
   return map[type] ?? 'system';

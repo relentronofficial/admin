@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, LifeBuoy, MessageSquare, Menu, X,
-  PlayCircle, ClipboardList, Video, Trophy, Megaphone, Settings2, Film,
+  Bell, LifeBuoy, MessageSquare, Menu, X, Film,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUIStore } from "@/lib/stores/useUIStore";
@@ -23,29 +22,8 @@ import toast from "react-hot-toast";
 import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
 import { ThemeToggle } from "./ThemeToggle";
+import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
 import type { Notification } from "@/types";
-
-function normalizeNotifUrl(url: string): string {
-  if (/^\/messages\/[^/]+$/.test(url)) return url.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
-  if (/^\/tbt\/(learning|programs)\//.test(url)) return url.replace(/^\/tbt\/(learning|programs)\//, '/learning/');
-  return url;
-}
-
-// ── Notification type icon config ─────────────────────────────────────────────
-
-const NOTIF_ICONS = {
-  video:        { Icon: PlayCircle,    color: "#dc2626", bg: "rgba(220,38,38,0.15)" },
-  assignment:   { Icon: ClipboardList, color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-  live_call:    { Icon: Video,         color: "#3b82f6", bg: "rgba(59,130,246,0.15)" },
-  achievement:  { Icon: Trophy,        color: "#eab308", bg: "rgba(234,179,8,0.15)" },
-  announcement: { Icon: Megaphone,     color: "#8b5cf6", bg: "rgba(139,92,246,0.15)" },
-  system:       { Icon: Settings2,     color: "#6b7280", bg: "rgba(107,114,128,0.12)" },
-} as const;
-
-function getNotifIcon(iconType?: string | null) {
-  return NOTIF_ICONS[iconType as keyof typeof NOTIF_ICONS]
-    ?? { Icon: Bell, color: "#6b7280", bg: "rgba(107,114,128,0.12)" };
-}
 
 // ── Notification dropdown ─────────────────────────────────────────────────────
 

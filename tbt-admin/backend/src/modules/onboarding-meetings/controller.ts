@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { notifyMembers } from '../../lib/notifications.js';
 import {
   canEditMeeting,
   canStartMeeting,
@@ -30,14 +31,17 @@ const MEETING_LIST_SELECT = {
   _count: { select: { participants: true } },
 } as const;
 
-async function notifyMemberIds(req: FastifyRequest, memberIds: string[], payload: { title: string; body: string; type?: string }) {
-  const notif = { type: payload.type ?? 'system', title: payload.title, body: payload.body, createdAt: new Date().toISOString() };
-  for (const memberId of memberIds) {
-    req.server.io.to(`user:${memberId}`).emit('notification', notif);
-    void req.server.prisma.notification.create({
-      data: { memberId, type: 'system', title: payload.title, body: payload.body, isRead: false },
-    }).catch(() => {});
-  }
+// Deep-links every meeting notification straight to that meeting's join
+// page — /onboarding/meeting/[id] shows status (scheduled/live/ended/
+// cancelled) so it's a safe destination regardless of which of these fires.
+async function notifyMemberIds(req: FastifyRequest, memberIds: string[], meetingId: string, payload: { title: string; body: string; type?: string }) {
+  await notifyMembers(req.server, {
+    memberIds,
+    title: payload.title,
+    body: payload.body,
+    type: payload.type ?? 'onboarding_meeting',
+    actionUrl: `/onboarding/meeting/${meetingId}`,
+  });
 }
 
 async function getParticipantMemberIds(req: FastifyRequest, meetingId: string): Promise<string[]> {
@@ -125,7 +129,7 @@ export async function adminCreateMeetingHandler(req: FastifyRequest, reply: Fast
   });
 
   const fullName = `${member.firstName} ${member.lastName ?? ''}`.trim();
-  await notifyMemberIds(req, [memberId, ...(participantMemberIds ?? [])], {
+  await notifyMemberIds(req, [memberId, ...(participantMemberIds ?? [])], meeting.id, {
     title: 'Onboarding Meeting Scheduled',
     body: `A verification call "${meeting.title}" has been scheduled for ${new Date(meeting.scheduledAt).toLocaleString()}.`,
   });
@@ -198,7 +202,7 @@ export async function adminStartMeetingHandler(req: FastifyRequest<{ Params: { i
   });
 
   const memberIds = await getParticipantMemberIds(req, meeting.id);
-  await notifyMemberIds(req, memberIds, { title: 'Onboarding Meeting Started', body: `"${meeting.title}" is now live — join now.`, type: 'live_call' });
+  await notifyMemberIds(req, memberIds, meeting.id, { title: 'Onboarding Meeting Started', body: `"${meeting.title}" is now live — join now.`, type: 'live_call' });
   req.server.io.to('admin').emit('admin:onboarding_meeting_started', { meetingId: meeting.id });
 
   return reply.send({ success: true, data: updated, error: null });
@@ -230,7 +234,7 @@ export async function adminEndMeetingHandler(req: FastifyRequest<{ Params: { id:
   });
 
   const memberIds = await getParticipantMemberIds(req, meeting.id);
-  await notifyMemberIds(req, memberIds, { title: 'Onboarding Meeting Ended', body: `"${meeting.title}" has ended.` });
+  await notifyMemberIds(req, memberIds, meeting.id, { title: 'Onboarding Meeting Ended', body: `"${meeting.title}" has ended.` });
   req.server.io.to('admin').emit('admin:onboarding_meeting_ended', { meetingId: meeting.id });
 
   return reply.send({ success: true, data: updated, error: null });
@@ -255,7 +259,7 @@ export async function adminCancelMeetingHandler(req: FastifyRequest<{ Params: { 
   });
 
   const memberIds = await getParticipantMemberIds(req, meeting.id);
-  await notifyMemberIds(req, memberIds, { title: 'Onboarding Meeting Cancelled', body: `"${meeting.title}" was cancelled: ${parsed.data.reason}` });
+  await notifyMemberIds(req, memberIds, meeting.id, { title: 'Onboarding Meeting Cancelled', body: `"${meeting.title}" was cancelled: ${parsed.data.reason}` });
   req.server.io.to('admin').emit('admin:onboarding_meeting_cancelled', { meetingId: meeting.id });
 
   return reply.send({ success: true, data: updated, error: null });
@@ -314,7 +318,7 @@ export async function adminGetHostTokenHandler(req: FastifyRequest<{ Params: { i
 
   if (isFirstJoin) {
     const memberIds = await getParticipantMemberIds(req, meeting.id);
-    await notifyMemberIds(req, memberIds, { title: 'Onboarding Meeting Started', body: `"${meeting.title}" is now live — join now.`, type: 'live_call' });
+    await notifyMemberIds(req, memberIds, meeting.id, { title: 'Onboarding Meeting Started', body: `"${meeting.title}" is now live — join now.`, type: 'live_call' });
     req.server.io.to('admin').emit('admin:onboarding_meeting_started', { meetingId: meeting.id });
   }
 

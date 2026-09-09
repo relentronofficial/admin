@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Plus, Pencil, Trash2, X, Loader2, CheckSquare, Star, Clock, Zap, Search,
   ChevronDown, ChevronRight, BookOpen, Calendar, ListChecks, Save, GripVertical,
-  ClipboardList, Check, Eye, Link, FileText, RefreshCw, Filter,
+  ClipboardList, Check, Eye, Link, FileText, RefreshCw, Filter, AlertTriangle,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -126,7 +126,7 @@ export default function TasksPage() {
   const { data: batchTasksData } = useListBatchTasks(selectedBatchId);
   const { data: checklistAllTasksData, isLoading: checklistAllLoading } = useGetAllBatchTasks(selectedBatchId);
 
-  const { data: submissionsData, isLoading: submissionsLoading } = useGetBatchSubmissions(
+  const { data: submissionsData, isLoading: submissionsLoading, isError: submissionsError, error: submissionsErrorObj, refetch: refetchSubmissions } = useGetBatchSubmissions(
     subBatchId,
     {
       dayNumber: subDayFilter ? Number(subDayFilter) : undefined,
@@ -956,6 +956,22 @@ export default function TasksPage() {
             ) : submissionsLoading ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex items-center justify-center py-20">
                 <Loader2 size={32} className="animate-spin text-[#dc2626]" />
+              </div>
+            ) : submissionsError ? (
+              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-16 gap-3">
+                <AlertTriangle size={36} className="text-red-500/60" />
+                <p className="text-red-400 font-rajdhani font-bold uppercase tracking-widest text-sm">Failed to load submissions</p>
+                <p className="text-[#666] text-xs max-w-sm text-center">
+                  {(submissionsErrorObj as any)?.response?.data?.error?.message
+                    ?? (submissionsErrorObj as any)?.message
+                    ?? "An unexpected error occurred."}
+                </p>
+                <button
+                  onClick={() => refetchSubmissions()}
+                  className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-white px-4 py-2 rounded-lg font-rajdhani font-bold text-[12px] tracking-[1px] uppercase transition-all"
+                >
+                  <RefreshCw size={13} /> Retry
+                </button>
               </div>
             ) : submissions.length === 0 ? (
               <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-16 gap-3">

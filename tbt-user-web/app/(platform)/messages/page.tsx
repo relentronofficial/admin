@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Archive,
@@ -117,6 +118,9 @@ export default function MessagesPage() {
   const { uiStrings } = useSiteConfig();
   const queryClient = useQueryClient();
   const { data: me } = useMe();
+  const searchParams = useSearchParams();
+  const deepLinkConvoId = searchParams.get('conversation');
+  const deepLinkMessageId = searchParams.get('message');
 
   const [activeId, setActiveId]       = useState<string | null>(null);
   const [input, setInput]             = useState('');
@@ -140,6 +144,11 @@ export default function MessagesPage() {
   const socketRef      = useRef<Socket | null>(null);
   const textareaRef    = useRef<HTMLTextAreaElement>(null);
   const fileInputRef   = useRef<HTMLInputElement>(null);
+  // Guards so a notification deep-link (?conversation=&message=) is consumed
+  // exactly once — otherwise re-selecting the same conversation manually
+  // later would keep re-jumping to the old message.
+  const deepLinkConvoAppliedRef = useRef(false);
+  const deepLinkMessageAppliedRef = useRef(false);
 
   const { data: convoData }  = useConversations();
   const { data: msgData }    = useConversationMessages(activeId);
@@ -181,12 +190,27 @@ export default function MessagesPage() {
     return merged;
   }, [conversations, groups]);
 
-  // Auto-select first DM on initial load
+  // Open the conversation a notification links to (?conversation=<id>), once
+  // the conversation list has loaded. Falls through to auto-selecting the
+  // first DM — same as before — once the deep-link has been consumed or if
+  // there wasn't one / it doesn't match a real conversation.
   useEffect(() => {
-    if (!activeId && conversations.length > 0) {
-      setActiveId(conversations[0].id);
+    if (activeId || conversations.length === 0) return;
+    if (deepLinkConvoId && !deepLinkConvoAppliedRef.current) {
+      deepLinkConvoAppliedRef.current = true;
+      const match = conversations.find((c: any) => c.id === deepLinkConvoId);
+      if (match) {
+        setActiveId(match.id);
+        setMobileView('chat');
+        // Strip the query so refreshing/back doesn't keep re-jumping.
+        window.history.replaceState(null, '', '/messages');
+        return;
+      }
+      // No such conversation (deleted/inaccessible) — fall through to the
+      // closest relevant parent page: the conversation list itself.
     }
-  }, [conversations, activeId]);
+    setActiveId(conversations[0].id);
+  }, [conversations, activeId, deepLinkConvoId]);
 
   // Scroll to bottom instantly on conversation switch, smoothly on new messages
   useEffect(() => {
@@ -197,6 +221,22 @@ export default function MessagesPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  // Jump to + briefly highlight the exact message a notification referenced
+  // (?message=<id>), once it's actually rendered in the active conversation.
+  // If the message was deleted (or never loaded, e.g. it's further back than
+  // the initial page), this silently no-ops and the member is left on the
+  // conversation itself — the closest relevant parent — instead of a dead end.
+  useEffect(() => {
+    if (!deepLinkMessageId || deepLinkMessageAppliedRef.current) return;
+    if (activeId !== deepLinkConvoId || messages.length === 0) return;
+    const el = document.getElementById(`msg-${deepLinkMessageId}`);
+    if (!el) return;
+    deepLinkMessageAppliedRef.current = true;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add('chat-msg-highlight');
+    setTimeout(() => el.classList.remove('chat-msg-highlight'), 1600);
+  }, [deepLinkMessageId, deepLinkConvoId, activeId, messages]);
 
   // Socket: join conversation room
   useEffect(() => {
@@ -795,7 +835,7 @@ function DmBubble({
   }
 
   return (
-    <div className={cn('flex gap-2.5 relative group', isMe && 'flex-row-reverse')}>
+    <div id={`msg-${message.id}`} className={cn('flex gap-2.5 relative group', isMe && 'flex-row-reverse')}>
       <Avatar
         avatarUrl={isMe ? (me as any)?.avatarUrl : message.senderAvatarUrl}
         name={isMe ? me?.firstName : message.senderName}

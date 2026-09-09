@@ -967,7 +967,6 @@ export default function CourseDetailPage({
   const [liveWatched, setLiveWatched] = useState<number>(0);
   const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
   const [hlsFailed, setHlsFailed] = useState(false);
-  const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
   const [upNextVisible, setUpNextVisible] = useState(false);
   const [videoKey, setVideoKey] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(() => {
@@ -1148,10 +1147,20 @@ export default function CourseDetailPage({
   // on top of it is incoherent (speckit §7.4).
   useSuppressAds("course-cue-quiz", !!cueQuizModal);
 
-  // Auto-select lesson from URL parameter once course data loads
+  // Auto-select lesson from URL parameter once course data loads.
+  // A direct/refreshed/new-tab link to a locked lesson never plays it — the
+  // server already omits videoUrl/hlsUrl for locked episodes (see
+  // user/controller.ts getCourseDetailHandler), so `target.videoUrl` here is
+  // whatever the server actually allowed. This effect just surfaces that as
+  // a toast instead of silently doing nothing.
   useEffect(() => {
     if (course?.lessons && targetLessonId && !selectedLesson && urlFocusDialogShownRef.current !== targetLessonId) {
       const target = course.lessons.find((l: any) => l.id === targetLessonId);
+      if (target && (target as any).locked) {
+        urlFocusDialogShownRef.current = targetLessonId;
+        toast.error("Complete the previous lesson to unlock this one.", { id: "lesson-locked" });
+        return;
+      }
       if (target && target.videoUrl && !(target as any).locked) {
         const alreadyDone = lessonAlreadyDone(
           target.id, completedIds, (target as any).isCompleted,
@@ -1274,21 +1283,11 @@ export default function CourseDetailPage({
   const doMarkCompleteRef = useRef<boolean>(false);
   const upNextTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
-  // Auto-advance preference — persisted to localStorage
-  const [autoAdvance, setAutoAdvance] = useState(() => {
-    if (typeof window === "undefined") return true;
-    const v = localStorage.getItem("tbt_autoadvance");
-    return v === null ? true : v === "1";
-  });
-  const autoAdvanceRef = useRef(autoAdvance);
-  autoAdvanceRef.current = autoAdvance;
-  const toggleAutoAdvance = () => {
-    const next = !autoAdvance;
-    setAutoAdvance(next);
-    localStorage.setItem("tbt_autoadvance", next ? "1" : "0");
-  };
-
-  // Stable up-next trigger via ref to avoid stale closures inside intervals
+  // Stable up-next trigger via ref to avoid stale closures inside intervals.
+  // Reveals the "up next" banner only — the next lesson never auto-plays or
+  // auto-navigates. The member must explicitly click it (see
+  // handleSelectLessonWithFocus), which then shows the start-confirmation
+  // dialog before any playback begins.
   const triggerUpNextRef = useRef<() => void>(() => {});
   triggerUpNextRef.current = useCallback(() => {
     clearInterval(upNextTimerRef.current);
@@ -1298,47 +1297,6 @@ export default function CourseDetailPage({
     const next = lessons[currentIdx + 1];
     if (!next?.videoUrl) return;
     setUpNextVisible(true);
-    if (!autoAdvanceRef.current) return; // banner shows but no countdown
-    let n = 5;
-    setUpNextCountdown(n);
-    upNextTimerRef.current = setInterval(() => {
-      n--;
-      if (n <= 0) {
-        clearInterval(upNextTimerRef.current);
-        setUpNextCountdown(null);
-        setUpNextVisible(false);
-        // Same reset as handleSelectLesson — prevents stale justCompleted state
-        // from triggering the reflection effect for the auto-advanced lesson.
-        justCompletedInSessionRef.current = false;
-        const nextDone = lessonAlreadyDone(
-          next.id, completedIdsRef.current, (next as any).isCompleted,
-          next.durationSeconds, (next as any).actualWatchedSecs, (next as any).resumeAtSeconds,
-        );
-        routerRef.current.replace(`/learning/${courseIdRef.current}?lesson=${next.id}`, { scroll: false });
-        topRef.current?.scrollIntoView({ behavior: "smooth" });
-        if (nextDone) {
-          // Already completed — auto-play is fine
-          setSelectedLesson({
-            id: next.id,
-            title: next.title,
-            description: (next as any).description ?? null,
-            videoUrl: next.videoUrl,
-            hlsUrl: (next as any).hlsUrl ?? null,
-            durationSeconds: next.durationSeconds ?? 0,
-            resumeAtSeconds: 0,
-            actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
-            isCompleted: true,
-            sectionId: (next as any).sectionId ?? null,
-          });
-        } else {
-          // Incomplete lesson — show focus dialog; video plays only after user confirms
-          urlFocusDialogShownRef.current = next.id;
-          setFocusDialog({ lesson: next, duration: (next as any).timerSeconds ?? 300 });
-        }
-      } else {
-        setUpNextCountdown(n);
-      }
-    }, 1000);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const completedIds = new Set(
@@ -1399,7 +1357,6 @@ export default function CourseDetailPage({
     setLiveWatched(0);
     setLiveRealDuration(0);
     setHlsFailed(false);
-    setUpNextCountdown(null);
     setUpNextVisible(false);
     firedCuesRef.current = new Set();
     cueQuizActiveRef.current = false;
@@ -1850,7 +1807,6 @@ export default function CourseDetailPage({
     justCompletedInSessionRef.current = false;
     setVideoKey(0);
     clearInterval(upNextTimerRef.current);
-    setUpNextCountdown(null);
     setUpNextVisible(false);
     const alreadyDone = lessonAlreadyDone(
       lesson.id, completedIds, lesson.isCompleted,
@@ -1931,7 +1887,10 @@ export default function CourseDetailPage({
     if (!lesson.videoUrl) return;
     // Sequential lock: block locked lessons unless the current one was just completed
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
-    if ((lesson as any).locked === true && !justCompletedInSessionRef.current) return;
+    if ((lesson as any).locked === true && !justCompletedInSessionRef.current) {
+      toast.error("Complete the previous lesson to unlock this one.", { id: "lesson-locked" });
+      return;
+    }
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
     if (isFocusLocked) {
       // Re-clicking a timed-out lesson costs a lifeline
@@ -1944,9 +1903,12 @@ export default function CourseDetailPage({
       handleSelectLesson(lesson);
       return;
     }
+    // Always confirm before starting a fresh lesson — video plays only after
+    // the member explicitly clicks "Start Video" in the dialog below, never
+    // automatically. `duration` is 0 when no focus timer applies anywhere
+    // (per-lesson, per-section, or site default); the dialog renders a plain
+    // confirmation in that case instead of the timer/lifeline copy.
     const duration = getLessonTimerDuration(lesson);
-    if (!duration) { handleSelectLesson(lesson); return; }
-    // Always show the Focus Mode dialog — no "don't show again" bypass
     setFocusDialog({ lesson, duration });
   };
 
@@ -1998,7 +1960,6 @@ export default function CourseDetailPage({
   const handleRewatch = () => {
     if (!selectedLesson) return;
     clearInterval(upNextTimerRef.current);
-    setUpNextCountdown(null);
     liveWatchedRef.current = 0;
     lastHeartbeatWatchedRef.current = 0;
     setLiveWatched(0);
@@ -2068,7 +2029,14 @@ export default function CourseDetailPage({
   return (
     <div className="space-y-6 pb-12">
 
-      {/* ── Focus-Mode Start Dialog ─────────────────────────────────────── */}
+      {/* ── Start-Video Confirmation Dialog ─────────────────────────────────
+          Shown before every fresh (not-yet-started, not-yet-completed) lesson
+          plays — reached from the sidebar list, Previous/Next, the up-next
+          banner, and the `?lesson=` deep link. The video begins only when
+          the member clicks "Start Video"; closing/cancelling never starts
+          playback. When a focus timer actually applies (duration > 0) this
+          also carries the existing lifeline/lock copy; otherwise it's a
+          plain start confirmation. */}
       {focusDialog && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
           <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
@@ -2077,7 +2045,7 @@ export default function CourseDetailPage({
                 <Zap size={22} style={{ color: "var(--color-accent)" }} />
               </div>
               <div>
-                <p className="font-bold text-base">Focus Mode</p>
+                <p className="font-bold text-base">Ready to start this lesson?</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{focusDialog.lesson.title}</p>
               </div>
               <button onClick={() => setFocusDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
@@ -2085,10 +2053,16 @@ export default function CourseDetailPage({
               </button>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-              This lesson will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
-              <strong>{fmtTime(focusDialog.duration)}</strong> if not completed.
-              You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
-              After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+              {focusDialog.duration > 0 ? (
+                <>
+                  This lesson will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
+                  <strong>{fmtTime(focusDialog.duration)}</strong> if not completed.
+                  You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
+                  After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+                </>
+              ) : (
+                "The video will start playing once you confirm."
+              )}
             </p>
             <div className="flex gap-3">
               <button
@@ -2099,12 +2073,16 @@ export default function CourseDetailPage({
                 Cancel
               </button>
               <button
-                onClick={() => { handleSelectLesson(focusDialog.lesson); startLessonTimer(focusDialog.lesson.id, focusDialog.duration); setFocusDialog(null); }}
+                onClick={() => {
+                  handleSelectLesson(focusDialog.lesson);
+                  if (focusDialog.duration > 0) startLessonTimer(focusDialog.lesson.id, focusDialog.duration);
+                  setFocusDialog(null);
+                }}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
                 style={{ background: "var(--color-accent)" }}
               >
                 <Zap size={14} />
-                Start Focus
+                Start Video
               </button>
             </div>
           </div>
@@ -2299,13 +2277,17 @@ export default function CourseDetailPage({
                   {currentLessonIdx + 1} / {lessons.length}
                 </span>
                 <button
+                  // Locked-next stays clickable (not disabled) so the click
+                  // reaches handleSelectLessonWithFocus and surfaces the
+                  // lock toast, instead of a disabled button silently
+                  // swallowing the click. Only a real dead end (no next
+                  // lesson, or it has no video) is disabled.
                   onClick={() => {
                     if (currentLessonIdx < lessons.length - 1) handleSelectLessonWithFocus(lessons[currentLessonIdx + 1] as any);
                   }}
                   disabled={
                     currentLessonIdx === lessons.length - 1
                     || !(lessons[currentLessonIdx + 1] as any)?.videoUrl
-                    || ((lessons[currentLessonIdx + 1] as any)?.locked === true && watchState !== "completed")
                   }
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
@@ -2356,7 +2338,10 @@ export default function CourseDetailPage({
               );
             })()}
 
-            {/* Up-next banner — shows on completion regardless of auto-advance setting */}
+            {/* Up-next banner — never auto-plays or auto-navigates. The member
+                must click "Play →", which routes through
+                handleSelectLessonWithFocus and always shows the start
+                confirmation dialog before the next lesson begins playing. */}
             {upNextVisible && nextLesson && (
               <div
                 className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl text-sm"
@@ -2372,33 +2357,19 @@ export default function CourseDetailPage({
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {upNextCountdown !== null ? (
-                    <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>
-                      {upNextCountdown}s
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => { setUpNextVisible(false); handleSelectLessonWithFocus(nextLesson as any); }}
-                      className="text-xs px-2.5 py-1 rounded-md font-semibold text-white transition-opacity hover:opacity-90"
-                      style={{ background: "var(--color-accent)" }}
-                    >
-                      Play →
-                    </button>
-                  )}
                   <button
-                    onClick={toggleAutoAdvance}
-                    title={autoAdvance ? "Turn off auto-advance" : "Turn on auto-advance"}
-                    className="text-[10px] px-2 py-1 rounded-md transition-opacity hover:opacity-70"
-                    style={{ border: "1px solid var(--color-border-subtle)", color: "var(--color-text-subtle)" }}
+                    onClick={() => { setUpNextVisible(false); handleSelectLessonWithFocus(nextLesson as any); }}
+                    className="text-xs px-2.5 py-1 rounded-md font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ background: "var(--color-accent)" }}
                   >
-                    Auto: {autoAdvance ? "On" : "Off"}
+                    Play →
                   </button>
                   <button
-                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextCountdown(null); setUpNextVisible(false); }}
+                    onClick={() => setUpNextVisible(false)}
                     className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
                     style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                   >
-                    Cancel
+                    Dismiss
                   </button>
                 </div>
               </div>
@@ -2716,8 +2687,14 @@ export default function CourseDetailPage({
                   {!isSectionCollapsed && (
                   <div className="border-b last:border-b-0" style={{ borderColor: "var(--color-border-subtle)" }}>
                   <button
-                    onClick={() => canPlay && handleSelectLessonWithFocus(lesson)}
-                    disabled={!canPlay}
+                    // Locked/focus-locked lessons stay clickable (only a missing
+                    // video is a genuine dead end) so the click reaches
+                    // handleSelectLessonWithFocus, which surfaces a toast /
+                    // lifeline prompt instead of doing nothing. A native
+                    // `disabled` button never fires onClick, which would
+                    // silently swallow that feedback.
+                    onClick={() => hasVideo && handleSelectLessonWithFocus(lesson)}
+                    disabled={!hasVideo}
                     title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
                     aria-disabled={!canPlay}
                     className={cn(
