@@ -986,7 +986,7 @@ export async function getBatchSubmissionsHandler(
      FROM task_submissions ts
      JOIN tasks t ON t.id = ts.task_id
      JOIN members m ON m.id = ts.member_id
-     WHERE ts.batch_id = $1
+     WHERE ts.batch_id = $1::uuid
        AND ($2::int IS NULL OR ts.day_number = $2)
        AND ($3::uuid IS NULL OR ts.member_id = $3)
        AND ($4::text IS NULL OR ts.status::text = $4)
