@@ -19,6 +19,8 @@ import {
   listEpisodeTaskSubmissionsHandler, reviewEpisodeTaskSubmissionHandler,
   listCourseSectionsHandler, createCourseSectionHandler,
   updateCourseSectionHandler, deleteCourseSectionHandler, reorderCourseSectionsHandler,
+  listCourseModulesHandler, createCourseModuleHandler,
+  updateCourseModuleHandler, deleteCourseModuleHandler, reorderCourseModulesHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
@@ -63,6 +65,13 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/:id/sections/reorder', reorderCourseSectionsHandler);
   fastify.put('/:id/sections/:sectionId', updateCourseSectionHandler);
   fastify.delete('/:id/sections/:sectionId', deleteCourseSectionHandler);
+
+  // Modules (static 'reorder' before /:moduleId to avoid param capture)
+  fastify.get('/:id/modules', listCourseModulesHandler);
+  fastify.post('/:id/modules', createCourseModuleHandler);
+  fastify.put('/:id/modules/reorder', reorderCourseModulesHandler);
+  fastify.put('/:id/modules/:moduleId', updateCourseModuleHandler);
+  fastify.delete('/:id/modules/:moduleId', deleteCourseModuleHandler);
 
   // Episodes
   fastify.get('/:id/episodes', listCourseEpisodesHandler);

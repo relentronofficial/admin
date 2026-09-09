@@ -16,6 +16,8 @@ import {
   useDeleteCourseEpisode, useReorderCourseEpisodes,
   useListCourseSections, useCreateCourseSection, useUpdateCourseSection,
   useDeleteCourseSection, useReorderCourseSections,
+  useListCourseModules, useCreateCourseModule, useUpdateCourseModule,
+  useDeleteCourseModule, useReorderCourseModules,
   useListTiers,
   useListCourseAccess, useGrantCourseAccess, useRevokeCourseAccess,
   useListCoursePayments, useApproveCoursePayment,
@@ -69,6 +71,7 @@ const EMPTY_EP = {
   quizData: null as any,
   timerSeconds: "" as string | number,
   sectionId: null as string | null,
+  moduleIds: [] as string[],
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -573,13 +576,14 @@ export default function CoursesPage() {
 }
 
 // ── Tabbed course detail panel ─────────────────────────────────────────
-type DetailTab = "episodes" | "access" | "analytics" | "badges" | "leaderboard";
+type DetailTab = "episodes" | "modules" | "access" | "analytics" | "badges" | "leaderboard";
 
 function CourseDetailPanel({ course, onClose }: { course: any; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<DetailTab>("episodes");
 
   const tabs: { key: DetailTab; label: string; icon: React.ReactNode }[] = [
     { key: "episodes", label: "Episodes", icon: <Film size={12} /> },
+    { key: "modules", label: "Modules", icon: <Layers size={12} /> },
     { key: "access", label: "Access", icon: <ShieldCheck size={12} /> },
     { key: "analytics", label: "Analytics", icon: <BarChart2 size={12} /> },
     { key: "leaderboard", label: "Top XP", icon: <Trophy size={12} /> },
@@ -605,6 +609,7 @@ function CourseDetailPanel({ course, onClose }: { course: any; onClose: () => vo
       </div>
       <div className="flex-1 overflow-y-auto">
         {activeTab === "episodes" && <EpisodesTab course={course} />}
+        {activeTab === "modules" && <ModulesTab course={course} />}
         {activeTab === "access" && <AccessTab course={course} />}
         {activeTab === "analytics" && <AnalyticsTab course={course} />}
         {activeTab === "leaderboard" && <LeaderboardTab course={course} />}
@@ -629,8 +634,12 @@ function EpisodesTab({ course }: { course: any }) {
   const deleteSection = useDeleteCourseSection(course.id);
   const reorderSections = useReorderCourseSections(course.id);
 
+  // Module hooks (for episode module assignment in the form)
+  const { data: modulesData } = useListCourseModules(course.id);
+
   const serverEps: any[] = (data as any)?.data || [];
   const serverSections: any[] = (sectionsData as any) ?? [];
+  const serverModules: any[] = (modulesData as any) ?? [];
   const [localEps, setLocalEps] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [localSections, setLocalSections] = useState<any[]>([]);
@@ -705,6 +714,7 @@ function EpisodesTab({ course }: { course: any }) {
       bunnyDrmToken: ep.bunnyDrmToken || "",
       timerSeconds: ep.timerSeconds != null ? Math.round(ep.timerSeconds / 60) : "",
       sectionId: ep.sectionId ?? null,
+      moduleIds: ep.moduleIds ?? [],
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
@@ -784,6 +794,7 @@ function EpisodesTab({ course }: { course: any }) {
       quizData,
       timerSeconds: epForm.timerSeconds !== "" ? Math.max(1, parseInt(String(epForm.timerSeconds)) || 1) * 60 : null,
       sectionId: epForm.sectionId || null,
+      moduleIds: epForm.moduleIds ?? [],
     };
     try {
       if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); toast.success("Episode updated"); }
@@ -1224,6 +1235,28 @@ function EpisodesTab({ course }: { course: any }) {
               </select>
             </div>
           )}
+          {/* Module assignment */}
+          {serverModules.length > 0 && (
+            <div>
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani flex items-center gap-1"><BookOpen size={9} /> Modules</label>
+              <div className="space-y-1">
+                {serverModules.map((m: any) => {
+                  const checked = (epForm.moduleIds ?? []).includes(m.id);
+                  return (
+                    <label key={m.id} className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-[#2a2a2a] transition-colors">
+                      <input type="checkbox" checked={checked}
+                        onChange={() => setEpField("moduleIds", checked
+                          ? (epForm.moduleIds ?? []).filter((id: string) => id !== m.id)
+                          : [...(epForm.moduleIds ?? []), m.id]
+                        )}
+                        className="accent-[#dc2626] w-3.5 h-3.5 rounded" />
+                      <span className="text-xs text-[#f0f0f0]">{m.title}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {/* Visible */}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setEpField("isVisible", !epForm.isVisible)}
@@ -1326,6 +1359,155 @@ function EpisodesTab({ course }: { course: any }) {
 
       {/* Episode feedback modal */}
       {feedbackEp && <EpisodeFeedbackModal episode={feedbackEp} onClose={() => setFeedbackEp(null)} />}
+    </div>
+  );
+}
+
+// ── Modules tab ────────────────────────────────────────────────────────
+function ModulesTab({ course }: { course: any }) {
+  const { data, isLoading } = useListCourseModules(course.id);
+  const createModule = useCreateCourseModule(course.id);
+  const updateModule = useUpdateCourseModule(course.id);
+  const deleteModule = useDeleteCourseModule(course.id);
+  const reorderModules = useReorderCourseModules(course.id);
+
+  const serverModules: any[] = (data as any) ?? [];
+  const [localModules, setLocalModules] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ title: "", description: "" });
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const dragIdx = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  useEffect(() => { setLocalModules(serverModules); setIsDirty(false); }, [data]);
+
+  const openCreate = () => { setForm({ title: "", description: "" }); setEditing(null); setShowForm(true); };
+  const openEdit = (m: any) => { setForm({ title: m.title, description: m.description ?? "" }); setEditing(m); setShowForm(true); };
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { toast.error("Title required"); return; }
+    try {
+      if (editing) {
+        await updateModule.mutateAsync({ moduleId: editing.id, title: form.title, description: form.description || undefined });
+        toast.success("Module updated");
+      } else {
+        await createModule.mutateAsync({ title: form.title, description: form.description || undefined });
+        toast.success("Module created");
+      }
+      setShowForm(false);
+    } catch { toast.error("Save failed"); }
+  };
+
+  const handleSaveOrder = async () => {
+    try {
+      await reorderModules.mutateAsync(localModules.map(m => m.id));
+      toast.success("Order saved"); setIsDirty(false);
+    } catch { toast.error("Reorder failed"); }
+  };
+
+  const onDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const next = [...localModules];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalModules(next); setIsDirty(true);
+    dragIdx.current = null; setDragOver(null);
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">
+          {serverModules.length} module{serverModules.length !== 1 ? "s" : ""}
+        </p>
+        <div className="flex gap-2">
+          {isDirty && (
+            <button onClick={handleSaveOrder} disabled={reorderModules.isPending}
+              className="flex items-center gap-1 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani">
+              <Save size={10} /> Save Order
+            </button>
+          )}
+          <button onClick={openCreate}
+            className="flex items-center gap-1 px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani">
+            <Plus size={10} /> Add Module
+          </button>
+        </div>
+      </div>
+
+      {/* Module form */}
+      {showForm && (
+        <div className="bg-[#141414] border border-[#333] rounded-lg p-4 space-y-3">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#dc2626] font-rajdhani">{editing ? "Edit Module" : "New Module"}</p>
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+            <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="E-commerce, Service, Coaching…"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white text-xs outline-none focus:border-[#dc2626]" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description (optional)</label>
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="Short description of this module"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white text-xs outline-none focus:border-[#dc2626]" />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setShowForm(false)} className="flex-1 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded">Cancel</button>
+            <button onClick={handleSave} disabled={createModule.isPending || updateModule.isPending}
+              className="flex-1 py-2 bg-[#dc2626] hover:bg-red-700 text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest rounded flex items-center justify-center gap-1 disabled:opacity-60">
+              {(createModule.isPending || updateModule.isPending) && <Loader2 size={11} className="animate-spin" />} Save
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      {deleting && (
+        <div className="bg-[#141414] border border-red-900 rounded-lg p-4 space-y-3">
+          <p className="text-sm text-[#f0f0f0]">Delete this module? Episodes will remain; only the module grouping is removed.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeleting(null)} className="flex-1 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded">Cancel</button>
+            <button onClick={async () => { try { await deleteModule.mutateAsync(deleting); toast.success("Module deleted"); setDeleting(null); } catch { toast.error("Delete failed"); } }}
+              disabled={deleteModule.isPending}
+              className="flex-1 py-2 bg-red-800 hover:bg-red-700 text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest rounded disabled:opacity-60">
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-[#dc2626]" /></div>
+      ) : localModules.length === 0 ? (
+        <div className="text-center py-10 text-[#606060] text-sm">No modules yet. Add one above.</div>
+      ) : (
+        <div className="space-y-2">
+          {localModules.map((m: any, idx: number) => (
+            <div key={m.id}
+              draggable
+              onDragStart={() => { dragIdx.current = idx; }}
+              onDragOver={e => { e.preventDefault(); setDragOver(idx); }}
+              onDragLeave={() => setDragOver(null)}
+              onDrop={e => onDrop(e, idx)}
+              className={`flex items-center gap-3 px-3 py-3 rounded-lg border transition-all ${dragOver === idx ? "border-[#dc2626] bg-[#dc2626]/5" : "border-[#2a2a2a] bg-[#141414]"}`}>
+              <GripVertical size={14} className="text-[#444] cursor-grab shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#f0f0f0] truncate">{m.title}</p>
+                {m.description && <p className="text-[11px] text-[#888] truncate mt-0.5">{m.description}</p>}
+                <p className="text-[10px] text-[#606060] mt-0.5">{(m.episodeIds ?? []).length} episode{(m.episodeIds ?? []).length !== 1 ? "s" : ""}</p>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button onClick={() => openEdit(m)} className="p-1.5 rounded text-[#888] hover:text-white hover:bg-[#2a2a2a] transition-colors"><Pencil size={12} /></button>
+                <button onClick={() => setDeleting(m.id)} className="p-1.5 rounded text-[#888] hover:text-red-400 hover:bg-red-900/20 transition-colors"><Trash2 size={12} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

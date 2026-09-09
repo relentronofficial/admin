@@ -2220,3 +2220,58 @@ export const useMemberSupportQuota = (memberId: string) =>
     },
     enabled: !!memberId,
   });
+
+// ── Course Modules ──────────────────────────────────────────────────────────
+
+export const useListCourseModules = (courseId: string) =>
+  useQuery({
+    queryKey: ['course-modules', courseId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/courses/${courseId}/modules`);
+      return (res?.data ?? []) as Array<{ id: string; courseId: string; title: string; description: string | null; sortOrder: number; episodeIds: string[]; createdAt: string }>;
+    },
+    enabled: !!courseId,
+    staleTime: 60_000,
+  });
+
+export const useCreateCourseModule = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { title: string; description?: string }) => {
+      const res: any = await apiClient.post(`/api/courses/${courseId}/modules`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
+  });
+};
+
+export const useUpdateCourseModule = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ moduleId, ...data }: { moduleId: string; title?: string; description?: string; episodeIds?: string[] }) => {
+      const res: any = await apiClient.put(`/api/courses/${courseId}/modules/${moduleId}`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
+  });
+};
+
+export const useDeleteCourseModule = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (moduleId: string) => {
+      await apiClient.delete(`/api/courses/${courseId}/modules/${moduleId}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
+  });
+};
+
+export const useReorderCourseModules = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      await apiClient.put(`/api/courses/${courseId}/modules/reorder`, { ids });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
+  });
+};

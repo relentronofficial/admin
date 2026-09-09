@@ -2057,6 +2057,12 @@ export default function CourseDetailPage({
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
+  // Modules — topic-area tabs that filter the lesson sidebar
+  const courseModules: any[] = (course as any)?.modules ?? [];
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const visibleLessons = selectedModule
+    ? lessons.filter((l: any) => ((l as any).moduleIds ?? []).includes(selectedModule))
+    : lessons;
   const globalLessonIdx = new Map(lessons.map((l: any, i: number) => [l.id, i]));
 
   return (
@@ -2621,23 +2627,46 @@ export default function CourseDetailPage({
           </div>
         </div>
 
+        {/* Module tabs — only shown when course has modules */}
+        {courseModules.length > 0 && (
+          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
+            <button
+              onClick={() => setSelectedModule(null)}
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selectedModule === null ? "text-white" : "opacity-60 hover:opacity-90"}`}
+              style={selectedModule === null ? { background: "var(--color-accent)" } : { background: "transparent" }}
+            >
+              All
+            </button>
+            {courseModules.map((m: any) => (
+              <button
+                key={m.id}
+                onClick={() => setSelectedModule(selectedModule === m.id ? null : m.id)}
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selectedModule === m.id ? "text-white" : "opacity-60 hover:opacity-90"}`}
+                style={selectedModule === m.id ? { background: "var(--color-accent)" } : { background: "transparent" }}
+              >
+                {m.title}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div>
-          {lessons.length === 0 ? (
+          {visibleLessons.length === 0 ? (
             <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
-              No lessons available yet.
+              No lessons in this module yet.
             </p>
           ) : (
-            lessons.map((lesson, idx) => {
+            visibleLessons.map((lesson, idx) => {
               // Section grouping — prepend a header before the first lesson of each section
               const lessonSectionId = courseSections.length > 0 ? ((lesson as any).sectionId ?? "__unsectioned__") : null;
-              const prevSectionId = courseSections.length > 0 && idx > 0 ? (((lessons[idx - 1]) as any).sectionId ?? "__unsectioned__") : null;
+              const prevSectionId = courseSections.length > 0 && idx > 0 ? (((visibleLessons[idx - 1]) as any).sectionId ?? "__unsectioned__") : null;
               const isFirstInSection = courseSections.length > 0 && (idx === 0 || lessonSectionId !== prevSectionId);
               const section = lessonSectionId && lessonSectionId !== "__unsectioned__"
                 ? courseSections.find((s: any) => s.id === lessonSectionId) : null;
               const isSectionCollapsed = lessonSectionId !== null && collapsedSections.has(lessonSectionId);
               const sectionLessons = section
-                ? lessons.filter((l: any) => ((l as any).sectionId ?? null) === section.id)
-                : lessons.filter((l: any) => !((l as any).sectionId));
+                ? visibleLessons.filter((l: any) => ((l as any).sectionId ?? null) === section.id)
+                : visibleLessons.filter((l: any) => !((l as any).sectionId));
               const completedCount = sectionLessons.filter((l: any) => completedIds.has(l.id)).length;
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
