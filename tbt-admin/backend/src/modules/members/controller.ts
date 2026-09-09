@@ -5,8 +5,8 @@ import { invalidateCache } from '../../lib/cache.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
 import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic.js';
-import { sendPushNotification } from '../../lib/firebase.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
+import { notifyMembers } from '../../lib/notifications.js';
 
 /**
  * Ensure a member-supplied city / state / businessType value is present
@@ -1628,35 +1628,15 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
     void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_approved', { memberId: id });
 
-    // Notify the member in real-time and persist an in-app notification
-    request.server.io.to(`user:${id}`).emit('notification', {
-      type: 'system',
-      title: 'Account Approved',
+    // Notify the member — in-app inbox row (with a real destination), live
+    // socket push, and FCM in one call. See lib/notifications.ts.
+    void notifyMembers(request.server, {
+      memberIds: [id],
+      title: 'Account Approved 🎉',
       body: 'Your TBT account has been approved. Welcome to the community!',
-      createdAt: new Date().toISOString(),
+      type: 'member_approved',
+      actionUrl: '/dashboard',
     });
-    request.server.prisma.notification.create({
-      data: {
-        memberId: id,
-        type: 'system',
-        title: 'Account Approved',
-        body: 'Your TBT account has been approved. Welcome to the community!',
-        isRead: false,
-      },
-    }).catch(() => {});
-
-    // FCM push for members with the app closed/backgrounded
-    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true } })
-      .then((m) => {
-        if ((m as any)?.pushToken) {
-          return sendPushNotification(
-            (m as any).pushToken,
-            'Account Approved 🎉',
-            'Your TBT membership is now active. Tap to get started.',
-            { type: 'member_approved' },
-          );
-        }
-      }).catch(() => {});
 
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
@@ -1696,27 +1676,15 @@ export async function rejectMemberHandler(request: FastifyRequest, reply: Fastif
 
     void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_rejected', { memberId: id });
-    request.server.io.to(`user:${id}`).emit('notification', {
-      type: 'system',
+    // Deep-links to /onboarding, which renders RejectedView with this exact
+    // reason (member.onboardingReviewNote) and a WhatsApp support CTA.
+    void notifyMembers(request.server, {
+      memberIds: [id],
       title: 'Onboarding Not Approved',
       body: reason.trim(),
-      createdAt: new Date().toISOString(),
+      type: 'member_rejected',
+      actionUrl: '/onboarding',
     });
-    request.server.prisma.notification.create({
-      data: { memberId: id, type: 'system', title: 'Onboarding Not Approved', body: reason.trim(), isRead: false },
-    }).catch(() => {});
-
-    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true } })
-      .then((m) => {
-        if ((m as any)?.pushToken) {
-          return sendPushNotification(
-            (m as any).pushToken,
-            'Application Not Approved',
-            reason.trim(),
-            { type: 'member_rejected' },
-          );
-        }
-      }).catch(() => {});
 
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
@@ -1756,26 +1724,18 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
 
     void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_changes_requested', { memberId: id });
-    request.server.io.to(`user:${id}`).emit('notification', {
-      type: 'system',
-      title: 'Changes Requested',
+    // Deep-links to /onboarding, which renders the wizard pre-filled with
+    // this note (member.onboardingReviewNote) for the member to act on.
+    void notifyMembers(request.server, {
+      memberIds: [id],
+      title: 'Action Required',
       body: note.trim(),
-      createdAt: new Date().toISOString(),
+      type: 'member_changes_requested',
+      actionUrl: '/onboarding',
     });
-    request.server.prisma.notification.create({
-      data: { memberId: id, type: 'system', title: 'Changes Requested', body: note.trim(), isRead: false },
-    }).catch(() => {});
 
-    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true, phone: true } as any })
+    void request.server.prisma.member.findUnique({ where: { id }, select: { phone: true } as any })
       .then((m: any) => {
-        if (m?.pushToken) {
-          void sendPushNotification(
-            m.pushToken,
-            'Action Required',
-            'Your onboarding application needs updates. Tap to review.',
-            { type: 'member_changes_requested' },
-          ).catch(() => {});
-        }
         if (m?.phone) {
           void sendWhatsappMessage(
             m.phone,

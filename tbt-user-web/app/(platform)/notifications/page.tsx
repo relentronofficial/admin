@@ -2,10 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Bell, Check, X,
-  PlayCircle, ClipboardList, Video, Trophy, Megaphone, Settings2,
-} from "lucide-react";
+import { Bell, Check, X } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import {
@@ -17,24 +14,9 @@ import {
 } from "@/lib/hooks/useDashboard";
 import { timeAgo } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
+import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { Notification } from "@/types";
-
-// ── Type icon config ──────────────────────────────────────────────────────────
-
-const NOTIF_ICONS = {
-  video:        { Icon: PlayCircle,    color: "#dc2626", bg: "rgba(220,38,38,0.12)" },
-  assignment:   { Icon: ClipboardList, color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
-  live_call:    { Icon: Video,         color: "#3b82f6", bg: "rgba(59,130,246,0.12)" },
-  achievement:  { Icon: Trophy,        color: "#eab308", bg: "rgba(234,179,8,0.12)" },
-  announcement: { Icon: Megaphone,     color: "#8b5cf6", bg: "rgba(139,92,246,0.12)" },
-  system:       { Icon: Settings2,     color: "#6b7280", bg: "rgba(107,114,128,0.10)" },
-} as const;
-
-function getNotifIcon(iconType?: string | null) {
-  return NOTIF_ICONS[iconType as keyof typeof NOTIF_ICONS]
-    ?? { Icon: Bell, color: "#6b7280", bg: "rgba(107,114,128,0.10)" };
-}
 
 // ── Date grouping ─────────────────────────────────────────────────────────────
 
@@ -53,16 +35,6 @@ function groupByDate(items: Notification[]): { group: DateGroup; items: Notifica
   const map = new Map<DateGroup, Notification[]>(DATE_ORDER.map((g) => [g, []]));
   for (const item of items) map.get(getDateGroup(item.createdAt))!.push(item);
   return DATE_ORDER.filter((g) => map.get(g)!.length > 0).map((g) => ({ group: g, items: map.get(g)! }));
-}
-
-// ── URL normalisation (fixes stale actionUrl values stored in DB) ─────────────
-
-function normalizeNotifUrl(url: string): string {
-  // /messages/{id} → /messages?conversation={id}  (no dedicated [id] route)
-  if (/^\/messages\/[^/]+$/.test(url)) return url.replace(/^\/messages\/([^/]+)$/, '/messages?conversation=$1');
-  // /tbt/learning/{id} and /tbt/programs/{id} → /learning/{id}  (wrong /tbt prefix)
-  if (/^\/tbt\/(learning|programs)\//.test(url)) return url.replace(/^\/tbt\/(learning|programs)\//, '/learning/');
-  return url;
 }
 
 // ── Filter types ──────────────────────────────────────────────────────────────

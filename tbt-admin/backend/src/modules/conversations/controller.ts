@@ -174,12 +174,15 @@ export async function sendAdminChatMessageHandler(request: FastifyRequest, reply
   // to AppNotification, socket, and Firebase in one call.
   const previewSource = body?.trim() || (mediaType ? `📎 ${mediaType}` : 'sent a message');
   const preview = previewSource.length > 120 ? previewSource.substring(0, 120) + '…' : previewSource;
+  // /messages (not /messages/{id} — there is no such dynamic route) reads
+  // `conversation` + `message` query params to open this exact conversation
+  // and scroll/highlight this exact message.
   void notifyMembers(request.server, {
     memberIds: [convo.memberId],
     title: 'New message from TBT Team',
     body: preview,
     type: 'message',
-    actionUrl: `/messages/${id}`,
+    actionUrl: `/messages?conversation=${id}&message=${message.id}`,
     data: { conversationId: id, messageId: message.id },
   });
 

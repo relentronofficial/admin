@@ -1048,9 +1048,10 @@ export async function sendRemindersHandler(req: FastifyRequest, reply: FastifyRe
   const { lcid } = req.params as any;
   const lc = await req.server.prisma.liveCall.findUnique({
     where: { id: lcid },
-    select: { id: true, title: true, scheduledAt: true, workshopId: true },
+    select: { id: true, title: true, scheduledAt: true, workshopId: true, workshop: { select: { slug: true } } },
   });
   if (!lc) return reply.status(404).send({ success: false, data: null, error: { code: 'ERROR', message: 'Not found' } });
+  const reminderActionUrl = `/workshop/${lc.workshop?.slug ?? lc.workshopId}`;
 
   const enrollments = await req.server.prisma.workshopEnrollment.findMany({
     where: { workshopId: lc.workshopId },
@@ -1078,6 +1079,7 @@ export async function sendRemindersHandler(req: FastifyRequest, reply: FastifyRe
         title: 'Live Session Reminder',
         body: `"${lc.title}" starts soon. Don't miss it!`,
         type: 'live_call',
+        actionUrl: reminderActionUrl,
       });
 
       if (resend && member.email) {

@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { taskInitiativeSchema, updateTaskSchema } from './schema.js';
+import { notifyMembers } from '../../lib/notifications.js';
 
 export async function listTasksHandler(request: FastifyRequest, reply: FastifyReply) {
   const { programId, stepId, page = 1, limit = 500 } = request.query as any;
@@ -206,16 +207,23 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
       }).catch(() => {});
     }
 
-    request.server.io.to(`user:${s.member_id}`).emit('notification', {
+    // Batch-inline tasks (batch_id set) deep-link to that exact day; program
+    // tasks (batch_id null) fall back to the batch program's own landing —
+    // still a specific, relevant page rather than the generic dashboard.
+    void notifyMembers(request.server, {
+      memberIds: [s.member_id],
       title: 'Task Approved ✓',
       body: 'Your task submission has been approved.',
       type: 'task_approved',
+      actionUrl: s.batch_id && s.day_number != null ? `/batch-program/${s.day_number}` : '/batch-program',
     });
   } else {
-    request.server.io.to(`user:${s.member_id}`).emit('notification', {
+    void notifyMembers(request.server, {
+      memberIds: [s.member_id],
       title: 'Task Needs Revision',
       body: feedback ?? 'Your task submission needs revision.',
       type: 'task_rejected',
+      actionUrl: s.batch_id && s.day_number != null ? `/batch-program/${s.day_number}` : '/batch-program',
     });
   }
 
