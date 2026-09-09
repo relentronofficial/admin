@@ -877,6 +877,18 @@ function EpisodesTab({ course }: { course: any }) {
           {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
           {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
           {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
+          {(() => {
+            const epModIds: string[] = ep.moduleIds ?? [];
+            if (serverModules.length === 0 || epModIds.length === 0) return null;
+            const allMods = serverModules.every((m: any) => epModIds.includes(m.id));
+            if (allMods) return (
+              <span className="text-[9px] bg-[#dc2626]/10 text-[#dc2626] border border-[#dc2626]/30 px-1.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0"><Layers size={8} /> All</span>
+            );
+            return epModIds.map(id => {
+              const mod = serverModules.find((m: any) => m.id === id);
+              return mod ? <span key={id} className="text-[9px] bg-white/5 text-[#888] border border-[#333] px-1.5 rounded font-bold truncate max-w-[60px]">{mod.title}</span> : null;
+            });
+          })()}
           {ep.timerSeconds != null ? (
             <span title="Episode timer (overrides section)" className="text-[9px] bg-[#dc2626]/15 text-[#dc2626] border border-[#dc2626]/30 px-1.5 rounded font-bold">⏱ {Math.round(ep.timerSeconds / 60)}m</span>
           ) : (() => {
@@ -1236,27 +1248,39 @@ function EpisodesTab({ course }: { course: any }) {
             </div>
           )}
           {/* Module assignment */}
-          {serverModules.length > 0 && (
-            <div>
-              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani flex items-center gap-1"><BookOpen size={9} /> Modules</label>
-              <div className="space-y-1">
-                {serverModules.map((m: any) => {
-                  const checked = (epForm.moduleIds ?? []).includes(m.id);
-                  return (
-                    <label key={m.id} className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-[#2a2a2a] transition-colors">
-                      <input type="checkbox" checked={checked}
-                        onChange={() => setEpField("moduleIds", checked
-                          ? (epForm.moduleIds ?? []).filter((id: string) => id !== m.id)
-                          : [...(epForm.moduleIds ?? []), m.id]
-                        )}
-                        className="accent-[#dc2626] w-3.5 h-3.5 rounded" />
-                      <span className="text-xs text-[#f0f0f0]">{m.title}</span>
-                    </label>
-                  );
-                })}
+          {serverModules.length > 0 && (() => {
+            const allSelected = serverModules.length > 0 && serverModules.every((m: any) => (epForm.moduleIds ?? []).includes(m.id));
+            return (
+              <div>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani flex items-center gap-1"><Layers size={9} /> Modules</label>
+                {/* All Modules toggle */}
+                <label className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded bg-[#1a1a1a] border border-[#333] mb-1 hover:border-[#dc2626]/50 transition-colors">
+                  <input type="checkbox" checked={allSelected}
+                    onChange={() => setEpField("moduleIds", allSelected ? [] : serverModules.map((m: any) => m.id))}
+                    className="accent-[#dc2626] w-3.5 h-3.5 rounded" />
+                  <span className="text-xs text-[#f0f0f0] font-bold">All Modules</span>
+                  <span className="text-[10px] text-[#666] ml-auto">show in every module</span>
+                </label>
+                {/* Individual module checkboxes */}
+                <div className={`space-y-0.5 pl-1 transition-opacity ${allSelected ? "opacity-40 pointer-events-none" : "opacity-100"}`}>
+                  {serverModules.map((m: any) => {
+                    const checked = (epForm.moduleIds ?? []).includes(m.id);
+                    return (
+                      <label key={m.id} className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-[#2a2a2a] transition-colors">
+                        <input type="checkbox" checked={checked}
+                          onChange={() => setEpField("moduleIds", checked
+                            ? (epForm.moduleIds ?? []).filter((id: string) => id !== m.id)
+                            : [...(epForm.moduleIds ?? []), m.id]
+                          )}
+                          className="accent-[#dc2626] w-3.5 h-3.5 rounded" />
+                        <span className="text-xs text-[#a0a0a0]">{m.title}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           {/* Visible */}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setEpField("isVisible", !epForm.isVisible)}
