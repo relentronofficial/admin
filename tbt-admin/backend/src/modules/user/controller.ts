@@ -625,8 +625,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     }).map((s) => [s.episodeId, s]),
   );
 
-  // Fetch sections and episode→section mapping (raw SQL columns not in Prisma schema)
-  const [sectionRows, episodeSectionRows] = await Promise.all([
+  // Fetch sections, modules, and episode→section/module mapping (raw SQL columns not in Prisma schema)
+  const [sectionRows, episodeSectionRows, moduleRows, episodeModuleRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT id, title, description, sort_order, timer_seconds FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
       id,
@@ -638,12 +638,26 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
        WHERE e.course_id = $1::uuid`,
       id,
     ),
-  ]).catch(() => [[], []] as [any[], any[]]);
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, title, description, sort_order FROM course_modules WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
+      id,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT cem.episode_id, cem.module_id FROM course_episode_modules cem
+       JOIN course_modules cm ON cm.id = cem.module_id WHERE cm.course_id = $1::uuid`,
+      id,
+    ),
+  ]).catch(() => [[], [], [], []] as [any[], any[], any[], any[]]);
 
   const sections = (sectionRows as any[]).map((s) => ({
     id: s.id, title: s.title, description: s.description ?? null,
     sortOrder: Number(s.sort_order),
     timerSeconds: s.timer_seconds != null ? Number(s.timer_seconds) : null,
+  }));
+
+  const modules = (moduleRows as any[]).map((m) => ({
+    id: m.id, title: m.title, description: m.description ?? null,
+    sortOrder: Number(m.sort_order),
   }));
 
   const episodeSectionMap = new Map(
@@ -655,6 +669,12 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       episodeTimerSeconds: r.episode_timer_seconds != null ? Number(r.episode_timer_seconds) : null,
     }]),
   );
+
+  const episodeModuleMap = new Map<string, string[]>();
+  for (const r of (episodeModuleRows as any[])) {
+    if (!episodeModuleMap.has(r.episode_id)) episodeModuleMap.set(r.episode_id, []);
+    episodeModuleMap.get(r.episode_id)!.push(r.module_id);
+  }
 
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
@@ -726,6 +746,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionTitle: episodeSectionMap.get(ep.id)?.sectionTitle ?? null,
       sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
       sectionTimerSeconds: episodeSectionMap.get(ep.id)?.sectionTimerSeconds ?? null,
+      moduleIds: episodeModuleMap.get(ep.id) ?? [],
     };
   });
 
@@ -753,6 +774,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     completionThresholdPercent: (course as any).completionThresholdPercent ?? 95,
     lessons,
     sections,
+    modules,
     _count: { lessons: lessons.length, enrollments: course._count?.enrollments ?? 0 },
     upsellCourses,
     crossSellCourses,

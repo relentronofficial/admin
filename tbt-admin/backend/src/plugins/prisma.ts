@@ -1686,6 +1686,58 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       ON CONFLICT (credit_type) DO NOTHING
     `).catch(() => {});
 
+    // ── Course Modules (2026-09-09) ──────────────────────────────────────────
+    // Named topic areas within a course (e.g. E-commerce, Service, Coaching).
+    // Episodes can belong to multiple modules via the junction table.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS course_modules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_course_modules_course ON course_modules(course_id)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS course_episode_modules (
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        module_id UUID NOT NULL REFERENCES course_modules(id) ON DELETE CASCADE,
+        PRIMARY KEY (episode_id, module_id)
+      )
+    `).catch(() => {});
+    // Seed E-commerce, Service, Coaching for every course that has no modules yet.
+    // All existing episodes are assigned to all 3 modules so nothing is hidden by default.
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      DECLARE
+        c RECORD;
+        m_ecom UUID;
+        m_svc UUID;
+        m_coach UUID;
+      BEGIN
+        FOR c IN SELECT id FROM courses LOOP
+          IF NOT EXISTS (SELECT 1 FROM course_modules WHERE course_id = c.id) THEN
+            INSERT INTO course_modules (course_id, title, sort_order)
+              VALUES (c.id, 'E-commerce', 0) RETURNING id INTO m_ecom;
+            INSERT INTO course_modules (course_id, title, sort_order)
+              VALUES (c.id, 'Service', 1) RETURNING id INTO m_svc;
+            INSERT INTO course_modules (course_id, title, sort_order)
+              VALUES (c.id, 'Coaching', 2) RETURNING id INTO m_coach;
+            INSERT INTO course_episode_modules (episode_id, module_id)
+              SELECT e.id, m.id
+              FROM course_episodes e
+              CROSS JOIN (VALUES (m_ecom), (m_svc), (m_coach)) AS m(id)
+              WHERE e.course_id = c.id
+              ON CONFLICT DO NOTHING;
+          END IF;
+        END LOOP;
+      END $$
+    `).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full
