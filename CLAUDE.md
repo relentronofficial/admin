@@ -20,11 +20,8 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 **Non-TBT directories at repo root (ignore for TBT work):**
 - `form/` — standalone Next.js 16 app (port 3007) for an Office Assistant job application form. Separate Prisma schema, separate Vercel Blob storage. Not part of the TBT monorepo.
-- `co-worker/` — separate Flutter mobile app. Not part of the TBT monorepo.
 
-**NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.**
-
-`tbt-admin-safe/` is a backup snapshot directory — not a workspace, not a source of truth. Ignore it entirely.
+**NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.** (The legacy name still appears in a few root doc filenames — e.g. `EiFlix_PRD.md`, `EiFlix_Admin_PRD.md` — those are historical filenames only, not something to propagate into code.)
 
 **Repo-root screenshots & audit scripts are throwaway artifacts.** The repo root contains hundreds of `.png`/`.jpeg` screenshots and one-off `.mjs` audit/test scripts (`admin-full-audit.mjs`, `test-*.mjs`, `*-audit.mjs`, etc.) from prior manual QA runs. Do not commit them, do not treat them as canonical tests, and do not delete them without asking — they're the user's local debugging trail.
 
@@ -32,7 +29,6 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 | Speckit | Location | Scope / Status |
 |---|---|---|
-| `SPECKIT.md` | `tbt-admin/` | Workflow-audit P0–P3 fix list for Members · Batches · Tasks |
 | `SELF_ONBOARDING_SPECKIT.md` | repo root | Self-onboarding KYC wizard — **in progress 2026-08-18**; covers `onboarding`/`onboarding-meetings` modules, `verificationStatus`, `onboardingCompleted` |
 | `WEEKLY_CHECKLIST_SPECKIT.md` | repo root | Weekly rollup layer on top of batch program (required/optional tasks, per-week analytics, FCM push registration) — **implemented and committed** |
 | `TBT_ADS_SPECKIT.md` | repo root | Ad campaign system spec for Flutter mobile client — check before adding mobile ad features |
@@ -40,7 +36,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `COURSE_SECTIONS_SPECKIT.md` | repo root | Course sections (chapters) feature — two-level course structure (Section → Episode), backward-compat with existing flat episodes, collapsible accordion in lesson sidebar — **complete 2026-08-29** |
 | `ONBOARDING_SPECKIT.md` | `tbt_app/` | 14 Flutter-side onboarding fixes (Sprint 1 in progress) |
 | `CHAT_GROUP_SPECKIT.md` | `tbt_app/` | Flutter chat group WhatsApp-parity roadmap F-01–F-22 — Sprints 1+2 committed, Sprint 3 in progress (F-05/06/11/12/15), Sprint 6 done uncommitted (F-17/18/19/21) |
-| `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port from co-worker app |
+| `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port |
 | `WINS_SPECKIT.md` | `tbt_app/` | Flutter WINS leaderboard / gamification screen |
 | `PODCAST_SPECKIT.md` | `tbt_app/` | Flutter podcast feature port |
 | `COMMUNITY_SPECKIT.md` | `tbt_app/` | Flutter community feed v1 |
@@ -75,8 +71,8 @@ npm run seed:gamified -w backend   # Seed XP/gamification data
 npm run seed:tasks -w backend      # Seed task/initiative sample data
 npm run seed:batches -w backend    # Seed batch sample data
 
-# Tests (Vitest — narrowly scoped to two pure modules; no DB/network)
-npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/batchReportLogic.test.ts
+# Tests (Vitest — narrowly scoped to pure, DB-free modules)
+npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/{batchReportLogic,onboardingLogic,onboardingMeetingLogic,weekChecklistLogic,chatMessageActionRules}.test.ts
 # DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
 
 # Run a single test file (from tbt-admin/)
@@ -133,15 +129,11 @@ flutter analyze               # Static analysis (analysis_options.yaml)
 
 Stack: Flutter SDK ^3.7.2, Riverpod state, go_router navigation, Dio HTTP client, Hive local storage, `flutter_secure_storage` for JWT tokens. Reuses the same Fastify `/api/user-auth/*` endpoints as `tbt-user-web` — cookie/token auth patterns mirror the web client.
 
-### Visual Regression (Percy + Playwright — from repo root)
+### Playwright E2E — Ads (from repo root)
 
-`playwright.config.ts` at the repo root is a **Percy visual-regression setup**, not an e2e suite. It runs snapshot specs in `percy/` (`debug-screenshots.spec.ts`, `player-visual.spec.ts`) against `PERCY_BASE_URL` (defaults to production `https://app.tamilbusinesstribe.com`). Single-worker chromium project only; not part of CI gating.
+`playwright.config.ts` at the repo root (`testDir: "./e2e"`) drives `e2e/ads.spec.ts` (also run via `npm run e2e:ads`) against a real running `tbt-user-web` instance — `TBT_E2E_BASE_URL` (defaults `http://localhost:3001`). These are environment-gated, not mocked (an ad overlay is a portal + media element + scroll lock + countdown interaction that a mock would falsely pass): they need a running backend, a signed-in member session (`TBT_E2E_PHONE`/`TBT_E2E_PASSWORD` or `TBT_E2E_STORAGE_STATE`), and an ACTIVE ad campaign the member will actually be selected for — otherwise the suite skips loudly rather than reporting a false red. See `TBT_ADS_SPECKIT.md` §15. Single-worker, desktop + mobile (Pixel 7) projects; not part of CI gating.
 
-```powershell
-# Run Percy snapshots (from repo root)
-.\run-percy.ps1                       # Wrapper script
-npx playwright test --config=playwright.config.ts    # Direct invocation
-```
+Root `package.json` also declares `percy:player`/`percy:all` scripts (`percy exec -- playwright test percy/...`) for Percy visual-regression snapshots, but the `percy/` spec directory they target is not present in this checkout — treat those scripts as dormant until that directory is restored.
 
 ## Architecture
 
@@ -168,7 +160,7 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 - **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins skip gracefully if env vars are missing.
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` + `schema.ts` pattern
 - **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
-- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:157–193` for the full ordered list. Non-obvious prefixes:
+- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:164–204` for the full ordered list. Non-obvious prefixes:
   - `hero` → `/api/hero-slides`
   - `security` → `/api/security-logs`
   - **`gamification` → `/api/tbt`** (not `/api/gamification`) — leaderboards, points, level/tier/badge reads
@@ -177,7 +169,7 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 - **`user` module** (`backend/src/modules/user/`) — monolithic handler for ALL user-facing authenticated API routes at `/api/user/*`. Covers courses (user-facing), events, webinars, workshops, notifications, messages, dashboard, products, resources, conversations, search, programs, and profile. When adding new user-web backend routes, handlers go in `user/controller.ts` and the route in `user/routes.ts`.
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
-- **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `onboarding`, `onboarding-meetings`, `podcasts`, `products`, `pub`, `rituals`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
+- **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `onboarding`, `onboarding-meetings`, `podcasts`, `products`, `pub`, `rituals`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `video-feedback`, `webinar`, `workshops`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
 - **Cron endpoints** — `/api/workshops/cron/generate-recurring`, `/api/cron/course-expiry-reminder`, `/api/cron/weekly-report`, and `/api/cron/monthly-report` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
 - **Public certificate verification** — `GET /api/pub/certificates/course/:certId` is unauthenticated; returns `{ memberName, courseTitle, completedAt }`. Served by the `pub` module and consumed by `app/verify/course/[certId]/page.tsx` (Server Component, `revalidate: 3600`).
@@ -537,6 +529,9 @@ Admin-managed ad campaigns served to members and guests. Admin page: `admin-pane
 ### AI Content (`/api/ai`)
 Admin-only AI content generation. Admin page: `admin-panel/app/ai-content/`. Backend uses `claudeService.ts` + `usageGuard.ts` (per-admin usage rate limiting). Uses `claude-haiku-4-5` via Anthropic API (requires `ANTHROPIC_API_KEY`).
 
+### Video Feedback (`/api/video-feedback`)
+Post-video rating/yes-no questions attached to a course episode (`episodeType` defaults to `"course"`; raw SQL tables `video_feedback_questions` / `video_feedback_responses`, no Prisma model). Admin CRUD + response aggregation lives at `/api/video-feedback/admin/*`, embedded in the episode editor in `admin-panel/app/courses/page.tsx` (hooks: `useVideoFeedbackQuestions`, `useCreateVideoFeedbackQuestion`, `useUpdateVideoFeedbackQuestion`, `useDeleteVideoFeedbackQuestion`, `useReorderVideoFeedbackQuestions`, `useVideoFeedbackResponses` in `useTbt.ts`). Member-facing routes are unauthenticated-by-episode reads gated by `fastify.authenticateUser`; `tbt-user-web/lib/hooks/useVideoFeedback.ts` backs `FeedbackModal` (`components/features/video/FeedbackModal.tsx`), shown from the course player in `learning/[courseId]/page.tsx`.
+
 ### Gamification (`/api/tbt` — NOT `/api/gamification`)
 Points ledger, tiers, levels, badges, leaderboards. All member points now unify around the `tbt_activity_log` ledger table (see commit `8d349739`). The DDL for `tbt_activity_log` in `prisma.ts` must be split into per-statement `$executeRawUnsafe` calls (see `91d46316` for why a single multi-statement call fails).
 
@@ -773,11 +768,11 @@ Two separate Cloud Run services, two separate branches:
 
 ## PRD Implementation Status
 
-### Admin PRD (`TBT_Admin_PRD.md`) — All 18 sections ✅ Complete + Security Logs + Course Platform
+### Admin PRD (`EiFlix_Admin_PRD.md`, repo root) — All 18 sections ✅ Complete + Security Logs + Course Platform
 See `tbt-admin/PROJECT_STATUS.md` for section-by-section detail.
 See `tbt-admin/ARCHITECTURE.md` for full directory/route/hook/DB map.
 
-### User Web PRD (`TBT_PRD.md` / `TBT_PRD_Dynamic.md`) — All sections ✅ Complete
+### User Web PRD (`EiFlix_PRD.md` / `EiFlix_PRD_Dynamic.md`, repo root) — All sections ✅ Complete
 Sections 1–12 implemented in `tbt-user-web/`. Includes: marketing landing, platform dashboard, TBT (content catalog), workshops (detail + flow + Q&A + assignments + live calls), products, resources, notifications, messages, profile, full-screen + embedded video player.
 
 ### Course Platform (`TBT_Course_Platform_Spec.md`) — ✅ Complete (2026-06-24)
