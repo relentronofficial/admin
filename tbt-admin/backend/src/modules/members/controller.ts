@@ -1751,6 +1751,71 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
   }
 }
 
+// POST /api/members/coins/grant — bulk or batch coin grant
+export async function grantCoinsHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { amount, reason, scope, batchId, skipExisting } =
+      request.body as { amount: number; reason?: string; scope: 'bulk' | 'batch'; batchId?: string; skipExisting?: boolean };
+
+    if (!amount || !Number.isInteger(amount) || amount <= 0 || amount > 100000) {
+      return reply.status(400).send({ success: false, data: null, error: 'amount must be a positive integer ≤ 100,000' });
+    }
+    if (scope === 'batch' && !batchId) {
+      return reply.status(400).send({ success: false, data: null, error: 'batchId is required for batch scope' });
+    }
+
+    // Resolve target member IDs
+    let memberIds: string[];
+    if (scope === 'batch') {
+      const rows = await request.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM members WHERE batch_id = $1::uuid AND status = 'active'`,
+        batchId,
+      );
+      memberIds = rows.map(r => r.id);
+    } else {
+      const rows = await request.server.prisma.member.findMany({
+        where: { status: 'active' },
+        select: { id: true },
+      });
+      memberIds = rows.map(r => r.id);
+    }
+
+    if (memberIds.length === 0) {
+      return reply.send({ success: true, data: { granted: 0, skipped: 0, memberIds: [] }, error: null });
+    }
+
+    // Optionally skip members who already have any coins
+    let targets = memberIds;
+    let skipped = 0;
+    if (skipExisting !== false) { // default: skip members who already have coins
+      const existing = await request.server.prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+        `SELECT DISTINCT member_id FROM tbt_activity_log WHERE member_id = ANY($1::uuid[])`,
+        memberIds,
+      );
+      const existingSet = new Set(existing.map(r => r.member_id));
+      targets = memberIds.filter(id => !existingSet.has(id));
+      skipped = memberIds.length - targets.length;
+    }
+
+    if (targets.length === 0) {
+      return reply.send({ success: true, data: { granted: 0, skipped, memberIds: [] }, error: null });
+    }
+
+    const note = reason?.trim() || 'admin_grant';
+    const values = targets.map((_, i) => `(gen_random_uuid(), $${i * 3 + 1}::uuid, $${i * 3 + 2}, $${i * 3 + 3}, NOW())`).join(', ');
+    const params = targets.flatMap(id => [id, note, amount]);
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (id, member_id, source, points, created_at) VALUES ${values}`,
+      ...params,
+    );
+
+    return reply.send({ success: true, data: { granted: targets.length, skipped, memberIds: targets }, error: null });
+  } catch (err: any) {
+    request.server.log.error({ err }, 'Failed to grant coins');
+    return reply.status(500).send({ success: false, data: null, error: err.message });
+  }
+}
+
 export async function addMemberCoinsHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string };

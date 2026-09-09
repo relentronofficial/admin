@@ -27,6 +27,7 @@ import {
   requestMemberChangesHandler,
   exportMembersHandler,
   addMemberCoinsHandler,
+  grantCoinsHandler,
 } from './controller.js';
 import { adminRevokeMemberSessions } from '../user-auth/controller.js';
 
@@ -68,4 +69,5 @@ export async function memberRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/watch-analytics', getMemberWatchAnalyticsHandler);
   fastify.get('/:id/activity-timeline', getMemberActivityTimelineHandler);
   fastify.post('/:id/coins', addMemberCoinsHandler);
+  fastify.post('/coins/grant', grantCoinsHandler);
 }
