@@ -33,6 +33,7 @@ import {
   UserCheck,
   Shield,
   ShoppingCart,
+  Coins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -91,6 +92,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     label: "Billing",
     items: [
       { name: "Credits", href: "/credits", icon: ShoppingCart },
+      { name: "Grant Coins", href: "/grant-coins", icon: Coins },
     ],
   },
   {

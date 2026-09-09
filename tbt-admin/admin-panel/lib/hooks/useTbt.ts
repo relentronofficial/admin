@@ -2068,6 +2068,14 @@ export const useReorderCourseSections = (courseId: string) => {
   });
 };
 
+export const useGrantCoins = () =>
+  useMutation({
+    mutationFn: async (body: { amount: number; reason?: string; scope: 'bulk' | 'batch'; batchId?: string; skipExisting?: boolean }) => {
+      const res: any = await apiClient.post('/api/members/coins/grant', body);
+      return res.data as { granted: number; skipped: number; memberIds: string[] };
+    },
+  });
+
 export const useAddMemberCoins = (memberId: string) => {
   const qc = useQueryClient();
   return useMutation({
