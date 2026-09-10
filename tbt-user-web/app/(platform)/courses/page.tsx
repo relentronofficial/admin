@@ -371,22 +371,19 @@ function CourseCard({ course, isEnrolled, progress }: { course: any; isEnrolled:
           )}
         </div>
 
-        {/* Module chips */}
-        {course.modules && course.modules.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {(course.modules as string[]).map((m) => (
-              <span
-                key={m}
-                className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                style={{
-                  background: "color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-overlay))",
-                  border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
-                  color: "var(--color-accent)",
-                }}
-              >
-                {m}
-              </span>
-            ))}
+        {/* Module chip */}
+        {course.module && (
+          <div>
+            <span
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={{
+                background: "color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-overlay))",
+                border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
+                color: "var(--color-accent)",
+              }}
+            >
+              {course.module}
+            </span>
           </div>
         )}
 
