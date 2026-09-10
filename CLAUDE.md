@@ -79,8 +79,8 @@ npm run seed:gamified -w backend   # Seed XP/gamification data
 npm run seed:tasks -w backend      # Seed task/initiative sample data
 npm run seed:batches -w backend    # Seed batch sample data
 
-# Tests (Vitest — narrowly scoped to pure, DB-free modules)
-npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/{batchReportLogic,onboardingLogic,onboardingMeetingLogic,weekChecklistLogic,chatMessageActionRules}.test.ts
+# Tests (Vitest — narrowly scoped to pure, DB-free modules; no DB/network)
+npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/{batchReportLogic,onboardingLogic,onboardingMeetingLogic,weekChecklistLogic,chatMessageActionRules,lessonProgression}.test.ts
 # DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
 
 # Run a single test file (from tbt-admin/)
@@ -168,7 +168,7 @@ Root `package.json` also declares `percy:player`/`percy:all` scripts (`percy exe
 - **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins skip gracefully if env vars are missing.
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` + `schema.ts` pattern
 - **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
-- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:164–204` for the full ordered list. Non-obvious prefixes:
+- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:166–208` for the full ordered list. Non-obvious prefixes:
   - `hero` → `/api/hero-slides`
   - `security` → `/api/security-logs`
   - **`gamification` → `/api/tbt`** (not `/api/gamification`) — leaderboards, points, level/tier/badge reads
@@ -822,3 +822,4 @@ Backend `onboarding` and `onboarding-meetings` modules merged. Frontend wizard (
 - **No auto-logout** — sessions persist until manual sign-out on web and mobile
 - **Batch reports** — weekly/monthly WhatsApp progress reports for batch members. Backend: pure logic in `backend/src/lib/batchReportLogic.ts` (28 unit tests); orchestration in `batchReports.ts`; BullMQ cron queue `tbt-batch-reports` (weekly Sun 21:30 IST = `0 16 * * 0` UTC; monthly fires daily at `30 15 * * *` UTC and no-ops on non-last days). Admin Clerk routes: `GET /api/batches/reports/history`, `GET /api/batches/reports/preview`, `POST /api/batches/reports/send-test`. Admin hooks in `useTbt.ts`: `useReportDeliveryHistory`, `usePreviewBatchReport`, `useSendTestBatchReport`. Admin page: `admin-panel/app/batch-reports/`. Optional env vars: `WABA_WEEKLY_REPORT_TEMPLATE_NAME`, `WABA_MONTHLY_REPORT_TEMPLATE_NAME` (both optional; falls back to plain-text WhatsApp message). `WhatsappMessage` Prisma model gained four startup-ALTER columns: `reportType`, `reportPeriod`, `providerMessageId`, `failureReason`.
 - **Mentorship gamification (MG-01–MG-05, in progress 2026-09-08)** — plan entitlement system (`/api/support-entitlements`, admin page `/settings/entitlements`), program-wide lifeline ledger (`member_batch_settings.lifelines_total/used`, `POST /api/user-batch/lifeline/use`), multi-stage process tasks (`task_processes` table, `/api/batches/:id/processes`), early completion bonus XP (`site_configs.early_completion_bonus_xp`), buy extra support credits (`/api/credits`, admin page `/credits`, user profile "Your Mentorship Benefits" section). See `MENTORSHIP_GAMIFICATION_SPECKIT.md`.
+- **Video feedback** — post-episode rating/yes-no questions module (`/api/video-feedback`). See Video Feedback section above.
