@@ -7,7 +7,7 @@ import {
   Search, BookOpen, Play, Zap, Clock, Lock,
   ChevronRight, Award, TrendingUp, CheckCircle2, Layers,
 } from "lucide-react";
-import { useCourses, useMyEnrollments, useCourseCategories, useCourseModuleTabs } from "@/lib/hooks/useCourses";
+import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { cn } from "@/lib/utils/cn";
 import type { ContinueLearningItem } from "@/types";
@@ -19,6 +19,10 @@ function formatSeconds(secs: number): string {
   const s = Math.floor(secs % 60);
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
+
+// ── Module tabs ───────────────────────────────────────────────────────────────
+
+const MODULE_TABS = ["Product", "Service", "Coach"] as const;
 
 // ── Level config ──────────────────────────────────────────────────────────────
 
@@ -442,7 +446,6 @@ export default function CoursesPage() {
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
   const { data: categories } = useCourseCategories();
-  const { data: moduleTabs } = useCourseModuleTabs();
 
   const { data: catalogData, isLoading: catalogLoading } = useCourses({
     search: search || undefined,
@@ -540,36 +543,34 @@ export default function CoursesPage() {
       </div>
 
       {/* ── Module tabs ─────────────────────────────────────────────── */}
-      {moduleTabs && moduleTabs.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setSelectedModule(null)}
+          className="h-9 px-4 rounded-xl text-[12px] font-semibold transition-all duration-150"
+          style={
+            selectedModule === null
+              ? { background: "var(--color-accent)", color: "white", border: "1px solid transparent" }
+              : { background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-subtle)" }
+          }
+        >
+          All
+        </button>
+        {MODULE_TABS.map((m) => (
           <button
-            onClick={() => setSelectedModule(null)}
-            className="h-9 px-4 rounded-xl text-[12px] font-semibold transition-all duration-150"
+            key={m}
+            onClick={() => setSelectedModule(m === selectedModule ? null : m)}
+            className="h-9 px-4 rounded-xl text-[12px] font-semibold transition-all duration-150 flex items-center gap-1.5"
             style={
-              selectedModule === null
+              selectedModule === m
                 ? { background: "var(--color-accent)", color: "white", border: "1px solid transparent" }
                 : { background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-subtle)" }
             }
           >
-            All
+            <Layers size={11} />
+            {m}
           </button>
-          {moduleTabs.map((m) => (
-            <button
-              key={m.title}
-              onClick={() => setSelectedModule(m.title === selectedModule ? null : m.title)}
-              className="h-9 px-4 rounded-xl text-[12px] font-semibold transition-all duration-150 flex items-center gap-1.5"
-              style={
-                selectedModule === m.title
-                  ? { background: "var(--color-accent)", color: "white", border: "1px solid transparent" }
-                  : { background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-subtle)" }
-              }
-            >
-              <Layers size={11} />
-              {m.title}
-            </button>
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* ── 1. Continue Learning ─────────────────────────────────────── */}
       <section className="space-y-4">
