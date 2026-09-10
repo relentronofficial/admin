@@ -28,7 +28,15 @@ export async function listCoursesHandler(req: FastifyRequest, reply: FastifyRepl
     }),
     req.server.prisma.course.count({ where }),
   ]);
-  return reply.send({ success: true, data: courses, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+  const ids = courses.map((c) => c.id);
+  const moduleRows = ids.length
+    ? await req.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
+        `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`, ids,
+      ).catch(() => [])
+    : [];
+  const moduleMap = new Map(moduleRows.map((r) => [r.id, r.module]));
+  const data = courses.map((c) => ({ ...c, module: moduleMap.get(c.id) ?? null }));
+  return reply.send({ success: true, data, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
 }
 
 export async function createCourseHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -55,18 +63,29 @@ export async function createCourseHandler(req: FastifyRequest, reply: FastifyRep
       completionThresholdPercent: body.completionThresholdPercent ?? 95,
     },
   });
+  const module = body.module ?? null;
+  if (module) {
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE courses SET module = $1 WHERE id = $2::uuid`, module, course.id,
+    );
+  }
   bustHome(req);
-  return reply.status(201).send({ success: true, data: course, error: null });
+  return reply.status(201).send({ success: true, data: { ...course, module }, error: null });
 }
 
 export async function getCourseHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
-  const course = await req.server.prisma.course.findUnique({
-    where: { id },
-    include: { courseEpisodes: { orderBy: { order: 'asc' } } },
-  });
+  const [course, moduleRows] = await Promise.all([
+    req.server.prisma.course.findUnique({
+      where: { id },
+      include: { courseEpisodes: { orderBy: { order: 'asc' } } },
+    }),
+    req.server.prisma.$queryRawUnsafe<{ module: string | null }[]>(
+      `SELECT module FROM courses WHERE id = $1::uuid`, id,
+    ).catch(() => []),
+  ]);
   if (!course) return reply.status(404).send({ success: false, data: null, error: 'Not found' });
-  return reply.send({ success: true, data: course, error: null });
+  return reply.send({ success: true, data: { ...course, module: moduleRows[0]?.module ?? null }, error: null });
 }
 
 export async function updateCourseHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -78,23 +97,27 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
     'price', 'level', 'accessDurationDays', 'maxEnrollments',
     'xpPerEpisode', 'passingScorePercent', 'upsellCourseIds', 'crossSellCourseIds',
     'paymentLinkUrl',
-    // Sequential-unlock feature (2026-07-16) — admin can toggle the
-    // gate off for a specific course (e.g. a free preview course
-    // where any lesson should be watchable) and tune the completion
-    // threshold (a shorter promo course might use 80%; a strict
-    // certification course might use 100%).
     'requireSequential', 'completionThresholdPercent',
   ].forEach(f => { if (body[f] !== undefined) data[f] = body[f]; });
-  // Clamp threshold to a sane range so an admin can't set it to 0
-  // (auto-completes on open) or > 100 (unreachable → nothing ever
-  // unlocks).
   if (typeof data.completionThresholdPercent === 'number') {
     data.completionThresholdPercent = Math.min(100, Math.max(50, Math.round(data.completionThresholdPercent)));
   }
   if (body.order !== undefined) data.sortOrder = body.order;
   const course = await req.server.prisma.course.update({ where: { id }, data });
+  let module: string | null = null;
+  if ('module' in body) {
+    module = body.module ?? null;
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE courses SET module = $1 WHERE id = $2::uuid`, module, id,
+    );
+  } else {
+    const rows = await req.server.prisma.$queryRawUnsafe<{ module: string | null }[]>(
+      `SELECT module FROM courses WHERE id = $1::uuid`, id,
+    ).catch(() => []);
+    module = rows[0]?.module ?? null;
+  }
   bustHome(req);
-  return reply.send({ success: true, data: course, error: null });
+  return reply.send({ success: true, data: { ...course, module }, error: null });
 }
 
 export async function deleteCourseHandler(req: FastifyRequest, reply: FastifyReply) {

@@ -77,6 +77,7 @@ export interface Course {
     profilePhotoUrl?: string | null;
     designation?: string | null;
   } | null;
+  module?: string | null;
   _count?: {
     lessons: number;
     enrollments: number;

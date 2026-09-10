@@ -45,12 +45,10 @@ const EMPTY_COURSE = {
   requiredTier: "1", isActive: true, isPublished: true,
   price: "", accessDurationDays: "", maxEnrollments: "",
   xpPerEpisode: "10", passingScorePercent: "70",
-  // Sequential-unlock defaults — ON at 95% per the enterprise-LMS
-  // requirement. Admins can flip either on a per-course basis in the
-  // form below.
   requireSequential: true,
   completionThresholdPercent: "95",
   paymentLinkUrl: "",
+  module: "" as string,
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
 };
@@ -189,6 +187,7 @@ export default function CoursesPage() {
       upsellCourseIds: c.upsellCourseIds ?? [],
       crossSellCourseIds: c.crossSellCourseIds ?? [],
       paymentLinkUrl: c.paymentLinkUrl || "",
+      module: c.module || "",
     });
     setEditingCourse(c); setShowCourseForm(true);
   };
@@ -208,6 +207,7 @@ export default function CoursesPage() {
     payload.accessDurationDays = courseForm.accessDurationDays !== "" ? Number(courseForm.accessDurationDays) : null;
     payload.maxEnrollments = courseForm.maxEnrollments !== "" ? Number(courseForm.maxEnrollments) : null;
     payload.paymentLinkUrl = courseForm.paymentLinkUrl.trim() || null;
+    payload.module = courseForm.module || null;
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     try {
@@ -334,6 +334,7 @@ export default function CoursesPage() {
                         {!c.isActive && <span className="text-[10px] text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Inactive</span>}
                         {c.isActive && !c.isPublished && <span className="text-[10px] text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Draft</span>}
                         {c.price > 0 && <span className="text-[10px] text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded font-bold shrink-0">₹{c.price}</span>}
+                        {c.module && <span className="text-[10px] text-[#dc2626] bg-[#dc2626]/10 border border-[#dc2626]/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">{c.module}</span>}
                       </div>
                       <p className="text-[11px] text-[#777] font-mono">/{c.slug}</p>
                       <p className="text-[11px] text-[#888]">{c._count?.courseEpisodes ?? 0} episodes · {c.xpPerEpisode ?? 10} XP/ep</p>
@@ -388,6 +389,16 @@ export default function CoursesPage() {
                 pathPrefix="courses/thumbnails" uploadKey="courseThumbnail"
                 uploading={courseUploading} setUploading={setCourseUploading}
                 onUploaded={url => setCourseField("thumbnailUrl", url)} />
+              <div>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Module</label>
+                <select value={courseForm.module} onChange={e => setCourseField("module", e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
+                  <option value="">— No module —</option>
+                  <option value="Product">Product</option>
+                  <option value="Service">Service</option>
+                  <option value="Coach">Coach</option>
+                </select>
+              </div>
               <div>
                 <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
                 <select value={courseForm.requiredTier} onChange={e => setCourseField("requiredTier", e.target.value)}
