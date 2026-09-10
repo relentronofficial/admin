@@ -2521,6 +2521,16 @@ export default function CourseDetailPage({
               ))}
             </div>
 
+            {/* Weekly progress report + feedback */}
+            <button
+              onClick={() => router.push(`/learning/${courseId}/weekly`)}
+              className="mt-3 w-full flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-semibold transition-colors"
+              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)", color: "var(--color-foreground)" }}
+            >
+              <ClipboardList size={14} style={{ color: "var(--color-accent)" }} />
+              Weekly Report &amp; Feedback
+            </button>
+
             {/* Start / Resume / Review button */}
             {lessons.length > 0 && (() => {
               const firstUnfinished = lessons.find((l: any) => !completedIds.has(l.id) && l.videoUrl);
