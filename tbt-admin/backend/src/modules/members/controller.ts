@@ -1566,7 +1566,8 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       ...rest
     } = body;
 
-    const adminId = (request as any).auth?.sub ?? null;
+    const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+    const adminId = admin?.id ?? null;
 
     // Filter out empty strings — enum fields (gender, preferredSessionMode, etc.) reject "" in Prisma
     const data: any = {
@@ -1663,7 +1664,8 @@ export async function rejectMemberHandler(request: FastifyRequest, reply: Fastif
       return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Application is not awaiting review' } });
     }
 
-    const adminId = (request as any).auth?.sub ?? null;
+    const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+    const adminId = admin?.id ?? null;
     const updated = await request.server.prisma.member.update({
       where: { id },
       data: {
@@ -1711,7 +1713,8 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
       return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Application is not awaiting review' } });
     }
 
-    const adminId = (request as any).auth?.sub ?? null;
+    const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+    const adminId = admin?.id ?? null;
     const updated = await request.server.prisma.member.update({
       where: { id },
       data: {

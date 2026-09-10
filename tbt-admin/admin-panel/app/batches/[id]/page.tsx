@@ -1809,7 +1809,7 @@ export default function BatchDetailPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}>
-                            Day {rec.dayNumber}
+                            Day {rec.dayNumber}{rec.dayTitle ? ` · ${rec.dayTitle}` : ""}
                           </span>
                           {rec.submittedAt && (
                             <span className="text-[11px] text-[#606060]">
