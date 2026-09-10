@@ -45,7 +45,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS xp_per_episode INTEGER NOT NULL DEFAULT 10,
           ADD COLUMN IF NOT EXISTS passing_score_percent INTEGER NOT NULL DEFAULT 70,
           ADD COLUMN IF NOT EXISTS require_sequential BOOLEAN NOT NULL DEFAULT true,
-          ADD COLUMN IF NOT EXISTS completion_threshold_percent INTEGER NOT NULL DEFAULT 95
+          ADD COLUMN IF NOT EXISTS completion_threshold_percent INTEGER NOT NULL DEFAULT 95,
+          ADD COLUMN IF NOT EXISTS module VARCHAR(100)
       `),
       // course_episodes
       prisma.$executeRawUnsafe(`

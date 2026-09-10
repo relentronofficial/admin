@@ -437,13 +437,13 @@ export async function listUserCourseCategories(request: FastifyRequest, reply: F
 }
 
 export async function listCourseModuleTabsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const rows = await request.server.prisma.$queryRawUnsafe<{ title: string; sort_order: number }[]>(
-    `SELECT title, MIN(sort_order) AS sort_order
-     FROM course_modules
-     GROUP BY title
-     ORDER BY MIN(sort_order), title`
-  ).catch(() => [] as { title: string; sort_order: number }[]);
-  return ok(reply, rows.map(r => ({ title: r.title })));
+  const rows = await request.server.prisma.$queryRawUnsafe<{ module: string }[]>(
+    `SELECT DISTINCT module
+     FROM courses
+     WHERE module IS NOT NULL AND is_published = true
+     ORDER BY module`
+  ).catch(() => [] as { module: string }[]);
+  return ok(reply, rows.map(r => ({ title: r.module })));
 }
 
 export async function listUserCoursesHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -467,14 +467,11 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     ];
   }
   if (moduleTitle) {
-    const modRows = await request.server.prisma.$queryRawUnsafe<{ course_id: string }[]>(
-      `SELECT DISTINCT cm.course_id
-       FROM course_modules cm
-       JOIN course_episode_modules cem ON cem.module_id = cm.id
-       WHERE cm.title = $1`,
+    const modRows = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM courses WHERE module = $1 AND is_published = true`,
       moduleTitle
-    ).catch(() => [] as { course_id: string }[]);
-    const ids = modRows.map(r => r.course_id);
+    ).catch(() => [] as { id: string }[]);
+    const ids = modRows.map(r => r.id);
     where.id = ids.length > 0 ? { in: ids } : { in: [] };
   }
 
@@ -525,18 +522,14 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         }).catch(() => [] as any[])
       : Promise.resolve([] as any[]),
     courseIds.length > 0
-      ? request.server.prisma.$queryRawUnsafe<{ course_id: string; title: string }[]>(
-          `SELECT course_id, title FROM course_modules WHERE course_id = ANY($1::uuid[]) ORDER BY sort_order`,
+      ? request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
+          `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`,
           courseIds
-        ).catch(() => [] as { course_id: string; title: string }[])
-      : Promise.resolve([] as { course_id: string; title: string }[]),
+        ).catch(() => [] as { id: string; module: string | null }[])
+      : Promise.resolve([] as { id: string; module: string | null }[]),
   ]);
   const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
-  const moduleMap = new Map<string, string[]>();
-  for (const r of moduleRows) {
-    if (!moduleMap.has(r.course_id)) moduleMap.set(r.course_id, []);
-    moduleMap.get(r.course_id)!.push(r.title);
-  }
+  const moduleMap = new Map<string, string | null>(moduleRows.map(r => [r.id, r.module]));
 
   const data = (courses as any[]).map((c: any) => {
     const access = accessMap.get(c.id) ?? null;
@@ -571,7 +564,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       xpPerEpisode: c.xpPerEpisode ?? 10,
       instructor: c.creator ?? null,
       hasAccess: isAccessValid(access),
-      modules: moduleMap.get(c.id) ?? [],
+      module: moduleMap.get(c.id) ?? null,
       _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
     };
   });
