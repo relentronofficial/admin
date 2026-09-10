@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async headers() {
     return [
       {
@@ -55,5 +56,5 @@ export default withSentryConfig(nextConfig, {
   widenClientFileUpload: true,
   sourcemaps: { deleteSourcemapsAfterUpload: true },
   disableLogger: true,
-  automaticVercelMonitors: true,
+  automaticVercelMonitors: false,
 });

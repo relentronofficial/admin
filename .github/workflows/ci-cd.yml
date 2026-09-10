@@ -12,7 +12,7 @@ env:
   GCP_REGION: asia-south1
 
 jobs:
-  # ── Build & typecheck (all branches) ──────────────────────────────────────
+  # ── Build & typecheck admin + backend (all branches) ──────────────────────
   build-and-test:
     runs-on: ubuntu-latest
     defaults:
@@ -51,6 +51,44 @@ jobs:
 
       - name: Build Admin Panel
         run: npm run build:admin
+
+  # ── Build & typecheck user-web (all branches) ────────────────────────────
+  build-user-web:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.filter.outputs.user_web }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ github.event.before }}
+          filters: |
+            user_web:
+              - 'tbt-user-web/**'
+
+      - name: Setup Node.js
+        if: steps.filter.outputs.user_web == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: tbt-user-web/package-lock.json
+
+      - name: Install dependencies
+        if: steps.filter.outputs.user_web == 'true'
+        working-directory: tbt-user-web
+        run: npm ci
+
+      - name: Typecheck
+        if: steps.filter.outputs.user_web == 'true'
+        working-directory: tbt-user-web
+        env:
+          NEXT_PUBLIC_API_URL: https://tbt-backend-464464507912.asia-south1.run.app
+          NEXT_PUBLIC_APP_URL: https://app.tamilbusinesstribe.com
+        run: npm run typecheck
 
   # ── Deploy staging backend (main branch only) ────────────────────────────
   deploy-backend-staging:
@@ -136,4 +174,64 @@ jobs:
             --set-secrets="DATABASE_URL=prod-DATABASE_URL:latest,DIRECT_URL=prod-DIRECT_URL:latest,SUPABASE_URL=prod-SUPABASE_URL:latest,SUPABASE_ANON_KEY=prod-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=prod-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=prod-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,BUNNY_STORAGE_ACCESS_KEY=prod-BUNNY_STORAGE_ACCESS_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest" \
             --set-env-vars="NODE_ENV=production,USER_WEB_URL=https://app.tamilbusinesstribe.com,ADMIN_WEB_URL=https://v0-tbt-ott-admin.vercel.app,CORS_EXTRA_ORIGINS=https://v0-tbt-ott-user-web.vercel.app,BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net,BUNNY_STORAGE_HOSTNAME=sg.storage.bunnycdn.com,BUNNY_STORAGE_ZONE=tamil-business-tribe" \
             --min-instances=1 \
+            --quiet
+
+  # ── Deploy staging user-web (main branch only) ───────────────────────────
+  deploy-user-web-staging:
+    needs: build-user-web
+    if: github.ref == 'refs/heads/main' && needs.build-user-web.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy user-web to Cloud Run (staging)
+        run: |
+          gcloud run deploy tbt-user-web-staging \
+            --source tbt-user-web \
+            --region $GCP_REGION \
+            --project $GCP_PROJECT \
+            --port=3000 \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --min-instances=0 \
+            --set-env-vars="NODE_ENV=production" \
+            --quiet
+
+  # ── Deploy production user-web (production branch only) ──────────────────
+  deploy-user-web-production:
+    needs: build-user-web
+    if: github.ref == 'refs/heads/production' && needs.build-user-web.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy user-web to Cloud Run (production)
+        run: |
+          gcloud run deploy tbt-user-web \
+            --source tbt-user-web \
+            --region $GCP_REGION \
+            --project $GCP_PROJECT \
+            --port=3000 \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --min-instances=1 \
+            --set-env-vars="NODE_ENV=production" \
             --quiet
