@@ -450,7 +450,6 @@ export default function CoursesPage() {
   const [level, setLevel] = useState("all");
   const [sort, setSort] = useState<"newest" | "popular">("newest");
   const [category, setCategory] = useState("all");
-  const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
   const { data: categories } = useCourseCategories();
 
@@ -459,7 +458,6 @@ export default function CoursesPage() {
     level: level !== "all" ? level : undefined,
     sort,
     category: category !== "all" ? category : undefined,
-    moduleTitle: selectedModule ?? undefined,
     limit: 24,
   });
   const { data: enrollments, isLoading: enrollLoading } = useMyEnrollments();
@@ -558,101 +556,54 @@ export default function CoursesPage() {
         <div className="grid grid-cols-3 gap-4">
           {MODULE_TABS.map((m) => {
             const cfg = MODULE_CONFIG[m];
-            const isActive = selectedModule === m;
             return (
-              <button
+              <Link
                 key={m}
-                onClick={() => setSelectedModule(isActive ? null : m)}
+                href={`/courses/${m.toLowerCase()}`}
                 className="group relative flex flex-col items-center gap-3 p-6 rounded-2xl text-center transition-all duration-200 hover:-translate-y-0.5"
-                style={
-                  isActive
-                    ? {
-                        background: "color-mix(in srgb, var(--color-accent) 15%, var(--color-bg-surface))",
-                        border: "2px solid var(--color-accent)",
-                        boxShadow: "0 4px 24px color-mix(in srgb, var(--color-accent) 20%, transparent)",
-                      }
-                    : {
-                        background: "var(--color-bg-surface)",
-                        border: "2px solid var(--color-border-subtle)",
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                      }
-                }
+                style={{
+                  background: "var(--color-bg-surface)",
+                  border: "2px solid var(--color-border-subtle)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.border = "2px solid var(--color-accent)";
+                  (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 24px color-mix(in srgb, var(--color-accent) 20%, transparent)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.border = "2px solid var(--color-border-subtle)";
+                  (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
+                }}
               >
                 <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200"
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200 group-hover:bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)]"
                   style={{
-                    background: isActive ? "color-mix(in srgb, var(--color-accent) 20%, transparent)" : "var(--color-surface-overlay-md)",
-                    color: isActive ? "var(--color-accent)" : "var(--color-text-secondary)",
+                    background: "var(--color-surface-overlay-md)",
+                    color: "var(--color-text-secondary)",
                   }}
                 >
                   {cfg.icon}
                 </div>
                 <div>
-                  <p className="text-[15px] font-bold tracking-wide transition-colors"
-                    style={{ color: isActive ? "var(--color-accent)" : "var(--color-text-normal)" }}>
+                  <p className="text-[15px] font-bold tracking-wide transition-colors group-hover:text-[var(--color-accent)]"
+                    style={{ color: "var(--color-text-normal)" }}>
                     {m}
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
                     {cfg.description}
                   </p>
                 </div>
-                {isActive && (
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-6 h-1 rounded-full"
-                    style={{ background: "var(--color-accent)" }} />
-                )}
-              </button>
+                <ChevronRight
+                  size={14}
+                  className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ color: "var(--color-accent)" }}
+                />
+              </Link>
             );
           })}
         </div>
       </div>
 
-      {/* ── Module courses (shown directly below cards when a module is selected) ── */}
-      {selectedModule && (
-        <section className="space-y-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-              {MODULE_CONFIG[selectedModule].icon}
-              {selectedModule} Courses
-            </h2>
-            <div className="flex items-center gap-3">
-              {!catalogLoading && catalogCourses.length > 0 && (
-                <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
-              )}
-              <button
-                onClick={() => setSelectedModule(null)}
-                className="text-[12px] font-semibold transition-colors"
-                style={{ color: "var(--color-accent)" }}
-              >
-                ← All Modules
-              </button>
-            </div>
-          </div>
-          {catalogLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {Array.from({ length: 3 }).map((_, i) => <CourseCardSkeleton key={i} />)}
-            </div>
-          ) : catalogCourses.length === 0 ? (
-            <div className="flex flex-col items-center py-16 rounded-2xl gap-3"
-              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
-              <BookOpen size={24} className="text-muted-foreground opacity-20" />
-              <p className="text-muted-foreground text-sm font-medium">No courses in {selectedModule} yet</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {catalogCourses.map((course: any) => {
-                const enrollment = enrolledMap.get(course.id);
-                return (
-                  <CourseCard key={course.id} course={course} isEnrolled={!!enrollment} progress={enrollment?.progressPercent} />
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ── Rest of page — only shown when no module selected ────────── */}
-      {!selectedModule && (
-        <>
           {/* Continue Learning */}
           <section className="space-y-4">
             <h2 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -671,7 +622,7 @@ export default function CoursesPage() {
                 <div>
                   <p className="text-[13px] font-semibold text-foreground">No course in progress</p>
                   <p className="text-[12px] text-muted-foreground mt-0.5">
-                    Pick a module above and start learning — your progress will appear here.
+                    Enroll in a course and start learning — your progress will appear here.
                   </p>
                 </div>
               </div>
@@ -835,8 +786,6 @@ export default function CoursesPage() {
           </div>
         )}
       </section>
-        </>
-      )}
     </div>
   );
 }
