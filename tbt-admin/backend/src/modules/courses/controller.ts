@@ -288,16 +288,16 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   const rawUpdates: Promise<any>[] = [];
   if (timerSecs !== null) rawUpdates.push(req.server.prisma.$executeRawUnsafe(
     'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid', timerSecs, episode.id
-  ));
+  ).catch(() => {}));
   if (sectionId) rawUpdates.push(req.server.prisma.$executeRawUnsafe(
     'UPDATE course_episodes SET section_id = $1::uuid WHERE id = $2::uuid', sectionId, episode.id
-  ));
+  ).catch(() => {}));
   if (moduleIds.length > 0) {
     const ph = moduleIds.map((_: any, i: number) => `($1::uuid, $${i + 2}::uuid)`).join(', ');
     rawUpdates.push(req.server.prisma.$executeRawUnsafe(
       `INSERT INTO course_episode_modules (episode_id, module_id) VALUES ${ph} ON CONFLICT DO NOTHING`,
       episode.id, ...moduleIds,
-    ));
+    ).catch(() => {}));
   }
   if (rawUpdates.length) await Promise.all(rawUpdates);
   bustHome(req);
@@ -323,12 +323,12 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   if (timerSecs !== undefined) {
     rawUpdates.push(req.server.prisma.$executeRawUnsafe(
       'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid', timerSecs, episode.id
-    ));
+    ).catch(() => {}));
   }
   if (sectionId !== undefined) {
     rawUpdates.push(req.server.prisma.$executeRawUnsafe(
       'UPDATE course_episodes SET section_id = $1::uuid WHERE id = $2::uuid', sectionId, episode.id
-    ));
+    ).catch(() => {}));
   }
   if (moduleIds !== undefined) {
     rawUpdates.push(
@@ -341,7 +341,7 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
           `INSERT INTO course_episode_modules (episode_id, module_id) VALUES ${ph} ON CONFLICT DO NOTHING`,
           eid, ...moduleIds,
         );
-      }),
+      }).catch(() => {}),
     );
   }
   if (rawUpdates.length) await Promise.all(rawUpdates);
