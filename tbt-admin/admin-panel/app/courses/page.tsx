@@ -675,6 +675,9 @@ function EpisodesTab({ course }: { course: any }) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const sectionDragIdx = useRef<number | null>(null);
   const [sectionDragOver, setSectionDragOver] = useState<number | null>(null);
+  const dragType = useRef<'section' | 'episode' | null>(null);
+  const [movingEpId, setMovingEpId] = useState<string | null>(null);
+  const [epDropSection, setEpDropSection] = useState<string | null | undefined>(undefined);
 
   useEffect(() => { setLocalEps(serverEps); setIsDirty(false); }, [data]);
   useEffect(() => { setLocalSections(serverSections); setIsSectionsDirty(false); }, [sectionsData]);
@@ -687,15 +690,31 @@ function EpisodesTab({ course }: { course: any }) {
     e.preventDefault();
     const from = dragIdx.current;
     if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const fromEp = localEps[from];
+    const toEp = localEps[dropIdx];
+    if (hasSections && fromEp && toEp && (fromEp.sectionId ?? null) !== (toEp.sectionId ?? null)) {
+      void handleCrossSectionMove(fromEp.id, toEp.sectionId ?? null);
+      dragIdx.current = null; setDragOver(null); setEpDropSection(undefined);
+      return;
+    }
     const next = [...localEps];
     const [moved] = next.splice(from, 1);
     next.splice(dropIdx, 0, moved);
     setLocalEps(next); setIsDirty(true); dragIdx.current = null; setDragOver(null);
   };
-  const onDragEnd = () => { dragIdx.current = null; setDragOver(null); };
+  const onDragEnd = () => { dragIdx.current = null; setDragOver(null); dragType.current = null; setEpDropSection(undefined); };
   const handleSaveOrder = async () => {
     try { await reorderEp.mutateAsync(localEps.map((ep: any) => ep.id)); setIsDirty(false); toast.success("Order saved"); }
     catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  const handleCrossSectionMove = async (epId: string, targetSectionId: string | null) => {
+    setMovingEpId(epId);
+    try {
+      await updateEp.mutateAsync({ id: epId, data: { sectionId: targetSectionId } });
+      toast.success("Episode moved");
+    } catch (e: any) { toast.error(e.message || "Failed to move episode"); }
+    finally { setMovingEpId(null); }
   };
 
   const detectDuration = (file: File): Promise<number> =>
@@ -828,19 +847,40 @@ function EpisodesTab({ course }: { course: any }) {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const thumbInputRef = useRef<HTMLInputElement>(null);
 
-  // Section drag handlers
-  const onSectionDragStart = (i: number) => { sectionDragIdx.current = i; };
-  const onSectionDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setSectionDragOver(i); };
+  // Section drag handlers (type-aware: handle both section-reorder and episode-cross-section drops)
+  const onSectionDragStart = (i: number) => { dragType.current = 'section'; sectionDragIdx.current = i; };
+  const onSectionDragOver = (e: React.DragEvent, i: number) => {
+    e.preventDefault();
+    if (dragType.current === 'episode') {
+      setEpDropSection(localSections[i]?.id ?? null);
+    } else {
+      setSectionDragOver(i);
+    }
+  };
   const onSectionDrop = (e: React.DragEvent, dropIdx: number) => {
     e.preventDefault();
+    if (dragType.current === 'episode') {
+      const from = dragIdx.current;
+      if (from !== null) {
+        const fromEp = localEps[from];
+        const targetSectionId = localSections[dropIdx]?.id ?? null;
+        if (fromEp && (fromEp.sectionId ?? null) !== targetSectionId) {
+          void handleCrossSectionMove(fromEp.id, targetSectionId);
+        }
+        dragIdx.current = null;
+      }
+      setEpDropSection(undefined); dragType.current = null;
+      return;
+    }
     const from = sectionDragIdx.current;
     if (from === null || from === dropIdx) { setSectionDragOver(null); return; }
     const next = [...localSections];
     const [moved] = next.splice(from, 1);
     next.splice(dropIdx, 0, moved);
     setLocalSections(next); setIsSectionsDirty(true); sectionDragIdx.current = null; setSectionDragOver(null);
+    dragType.current = null;
   };
-  const onSectionDragEnd = () => { sectionDragIdx.current = null; setSectionDragOver(null); };
+  const onSectionDragEnd = () => { sectionDragIdx.current = null; setSectionDragOver(null); dragType.current = null; setEpDropSection(undefined); };
 
   const handleSaveSectionOrder = async () => {
     try { await reorderSections.mutateAsync(localSections.map((s: any) => s.id)); setIsSectionsDirty(false); toast.success("Section order saved"); }
@@ -867,15 +907,26 @@ function EpisodesTab({ course }: { course: any }) {
     catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
-  const renderEpRow = (ep: any, i: number) => (
+  const renderEpRow = (ep: any, i: number, inSection?: string | null) => (
     <div key={ep.id} draggable
-      onDragStart={() => onDragStart(i)}
-      onDragOver={e => onDragOver(e, i)}
-      onDrop={e => onDrop(e, i)}
+      onDragStart={e => {
+        if (inSection !== undefined) { e.stopPropagation(); dragType.current = 'episode'; }
+        onDragStart(i);
+      }}
+      onDragOver={e => {
+        e.preventDefault();
+        if (inSection !== undefined) { e.stopPropagation(); setEpDropSection(inSection); }
+        setDragOver(i);
+      }}
+      onDrop={e => {
+        if (inSection !== undefined) e.stopPropagation();
+        setEpDropSection(undefined);
+        onDrop(e, i);
+      }}
       onDragEnd={onDragEnd}
       className={`flex items-center gap-3 px-4 py-2.5 select-none transition-all group
         ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
-        ${dragIdx.current === i ? "opacity-30" : ""}`}>
+        ${movingEpId === ep.id ? "opacity-40" : dragIdx.current === i ? "opacity-30" : ""}`}>
       <GripVertical size={13} className="text-[#666] cursor-grab shrink-0" />
       <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{ep.order + 1}</span>
       {ep.thumbnailUrl && (
@@ -980,13 +1031,14 @@ function EpisodesTab({ course }: { course: any }) {
             {localSections.map((sec: any, si: number) => {
               const eps = epsBySection.get(sec.id) ?? [];
               const collapsed = collapsedSections.has(sec.id);
+              const isEpTarget = epDropSection === sec.id;
               return (
                 <div key={sec.id} draggable
                   onDragStart={() => onSectionDragStart(si)}
                   onDragOver={e => onSectionDragOver(e, si)}
                   onDrop={e => onSectionDrop(e, si)}
                   onDragEnd={onSectionDragEnd}
-                  className={`${sectionDragOver === si ? "border-t-2 border-purple-500" : ""}`}>
+                  className={`${sectionDragOver === si ? "border-t-2 border-purple-500" : ""} ${isEpTarget ? "ring-1 ring-inset ring-[#dc2626]/40" : ""}`}>
                   {/* Section header */}
                   <div className="flex items-center gap-2 px-3 py-2 bg-[#181818] border-b border-[#222] group/sec">
                     <GripVertical size={13} className="text-[#555] cursor-grab shrink-0" />
@@ -1017,9 +1069,11 @@ function EpisodesTab({ course }: { course: any }) {
                   {!collapsed && (
                     <div className="divide-y divide-[#1e1e1e] bg-[#0f0f0f]/40">
                       {eps.length === 0 ? (
-                        <p className="text-[10px] text-[#555] px-10 py-2 font-rajdhani italic">No episodes in this section</p>
+                        <div className={`mx-3 my-2 h-8 rounded border-2 border-dashed flex items-center justify-center transition-colors ${isEpTarget ? "border-[#dc2626]/60 bg-[#dc2626]/5" : "border-[#2a2a2a]"}`}>
+                          <p className="text-[9px] font-rajdhani uppercase tracking-wider text-[#555]">{isEpTarget ? "Release to move here" : "No episodes — drag one here"}</p>
+                        </div>
                       ) : (
-                        eps.map((ep: any, i: number) => renderEpRow(ep, localEps.indexOf(ep)))
+                        eps.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep), sec.id))
                       )}
                     </div>
                   )}
@@ -1028,13 +1082,26 @@ function EpisodesTab({ course }: { course: any }) {
             })}
             {/* Unsectioned */}
             {(epsBySection.get(null)?.length ?? 0) > 0 && (
-              <div>
-                <div className="flex items-center gap-2 px-3 py-2 bg-[#181818] border-b border-[#222]">
+              <div
+                onDragOver={e => { e.preventDefault(); if (dragType.current === 'episode') setEpDropSection(null); }}
+                onDrop={e => {
+                  e.preventDefault();
+                  if (dragType.current === 'episode') {
+                    const from = dragIdx.current;
+                    if (from !== null) {
+                      const fromEp = localEps[from];
+                      if (fromEp && (fromEp.sectionId ?? null) !== null) void handleCrossSectionMove(fromEp.id, null);
+                      dragIdx.current = null;
+                    }
+                    setEpDropSection(undefined); dragType.current = null;
+                  }
+                }}>
+                <div className={`flex items-center gap-2 px-3 py-2 bg-[#181818] border-b border-[#222] ${epDropSection === null ? "ring-1 ring-inset ring-[#dc2626]/40" : ""}`}>
                   <span className="text-[10px] font-bold text-[#888] font-rajdhani uppercase tracking-wider">Unsectioned</span>
                   <span className="text-[10px] text-[#555]">({epsBySection.get(null)?.length})</span>
                 </div>
                 <div className="divide-y divide-[#1e1e1e] bg-[#0f0f0f]/20">
-                  {epsBySection.get(null)!.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep)))}
+                  {epsBySection.get(null)!.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep), null))}
                 </div>
               </div>
             )}
@@ -2407,10 +2474,19 @@ const PROOF_BADGE: Record<string, string> = {
   file: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   watch: "bg-green-500/20 text-green-400 border-green-500/30",
 };
+const COMPLETION_MODE_BADGE: Record<string, string> = {
+  SELF_ASSESSMENT: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  ADMIN_CHECK: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+};
+const COMPLETION_MODE_LABEL: Record<string, string> = {
+  SELF_ASSESSMENT: "Self Assessment",
+  ADMIN_CHECK: "Admin Check",
+};
 const EMPTY_TASK_FORM = {
   title: "", description: "", deliverables: "", contentUrl: "",
   basePoints: 100, bonusPoints: 0, proofType: "text", estimatedMinutes: 15,
   timerSeconds: "", isActive: true, isRequired: true, isMilestone: false, milestoneLabel: "",
+  completionMode: "ADMIN_CHECK",
 };
 
 function TaskSubmissionsPanel({ episodeId, taskId }: { episodeId: string; taskId: string }) {
@@ -2548,6 +2624,7 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
     timerSeconds: t.timerSeconds != null ? String(t.timerSeconds) : "",
     isActive: t.isActive ?? true, isRequired: t.isRequired ?? true,
     isMilestone: t.isMilestone ?? false, milestoneLabel: t.milestoneLabel || "",
+    completionMode: t.completionMode === "SELF_ASSESSMENT" ? "SELF_ASSESSMENT" : "ADMIN_CHECK",
   });
 
   const openCreate = () => { setForm(EMPTY_TASK_FORM); setEditing(null); setShowForm(true); };
@@ -2651,6 +2728,9 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
                               <span className="text-[9px] text-[#555] font-rajdhani">{t.estimatedMinutes} min</span>
                               {t.timerSeconds && <span className="flex items-center gap-0.5 text-[9px] text-orange-400 font-rajdhani"><Clock size={8} />{t.timerSeconds}s</span>}
                               <span className={`text-[9px] font-rajdhani ${(t.isRequired ?? true) ? "text-[#555]" : "text-blue-400"}`}>{(t.isRequired ?? true) ? "Required" : "Optional"}</span>
+                              <span className={`text-[9px] font-bold font-rajdhani uppercase px-1.5 py-0.5 rounded border ${COMPLETION_MODE_BADGE[t.completionMode] ?? COMPLETION_MODE_BADGE.ADMIN_CHECK}`}>
+                                {COMPLETION_MODE_LABEL[t.completionMode] ?? COMPLETION_MODE_LABEL.ADMIN_CHECK}
+                              </span>
                               {t.isMilestone && t.milestoneLabel && <span className="text-[9px] text-amber-400 font-rajdhani">🏆 {t.milestoneLabel}</span>}
                             </div>
                           </div>
@@ -2741,6 +2821,23 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
                       <input type="number" min={0} value={form.timerSeconds} onChange={e => setForm((f: any) => ({ ...f, timerSeconds: e.target.value }))} placeholder="e.g. 300"
                         className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Task Completion Mode</label>
+                    <div className="flex gap-3">
+                      {(["SELF_ASSESSMENT", "ADMIN_CHECK"] as const).map(mode => (
+                        <label key={mode} className="flex items-center gap-2 cursor-pointer flex-1 bg-[#141414] border border-[#333] rounded px-3 py-2 has-[:checked]:border-[#dc2626]">
+                          <input type="radio" name="completionMode" checked={form.completionMode === mode}
+                            onChange={() => setForm((f: any) => ({ ...f, completionMode: mode }))} className="accent-red-600" />
+                          <span className="text-[11px] text-[#a0a0a0] font-rajdhani">{COMPLETION_MODE_LABEL[mode]}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-[#555] mt-1 font-rajdhani">
+                      {form.completionMode === "SELF_ASSESSMENT"
+                        ? "Member's submission is instantly marked complete — no admin review needed."
+                        : "Member's submission is held as Pending until an admin approves it."}
+                    </p>
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <label className="flex items-center gap-2 cursor-pointer">

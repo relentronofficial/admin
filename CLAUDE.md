@@ -25,6 +25,11 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 **Repo-root screenshots & audit scripts are throwaway artifacts.** The repo root contains hundreds of `.png`/`.jpeg` screenshots and one-off `.mjs` audit/test scripts (`admin-full-audit.mjs`, `test-*.mjs`, `*-audit.mjs`, etc.) from prior manual QA runs. Do not commit them, do not treat them as canonical tests, and do not delete them without asking — they're the user's local debugging trail.
 
+**Tracked test suites at repo root (real, checked into git — not throwaway):**
+- `tests/` — k6 stress/spike/soak/scalability load tests, Node-based vulnerability/crash tests, and a disaster-recovery runbook. See `tests/README.md` for prerequisites and per-test env vars (`BASE_URL`, `ADMIN_TOKEN`, `USER_TOKEN`).
+- `load-test/` — additional k6 scenarios (`load-test/scenarios/`) plus PowerShell runners (`run.ps1`, `start-test.ps1`).
+- `e2e/ads.spec.ts` — Playwright e2e spec for the ad system, run via `npm run e2e:ads` from repo root.
+
 **Additional spec docs** — always read the relevant speckit before touching its module to avoid re-litigating decisions:
 
 | Speckit | Location | Scope / Status |
@@ -34,6 +39,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `TBT_ADS_SPECKIT.md` | repo root | Ad campaign system spec for Flutter mobile client — check before adding mobile ad features |
 | `COURSE_UX_SPECKIT.md` | repo root | Course UX & wiring fixes C-01–C-12 (heartbeat bug, URL sync, Practice Arena, catalog filters, reflections backend, etc.) — **complete 2026-08-25** |
 | `COURSE_SECTIONS_SPECKIT.md` | repo root | Course sections (chapters) feature — two-level course structure (Section → Episode), backward-compat with existing flat episodes, collapsible accordion in lesson sidebar — **complete 2026-08-29** |
+| `COURSE_MODULES_SPECKIT.md` | repo root | Course-level module categorisation (Product / Service / Coach) replacing the old episode-level module tagging; `/courses` catalog tabs filter by module — **complete 2026-09-10** |
 | `ONBOARDING_SPECKIT.md` | `tbt_app/` | 14 Flutter-side onboarding fixes (Sprint 1 in progress) |
 | `CHAT_GROUP_SPECKIT.md` | `tbt_app/` | Flutter chat group WhatsApp-parity roadmap F-01–F-22 — Sprints 1+2 committed, Sprint 3 in progress (F-05/06/11/12/15), Sprint 6 done uncommitted (F-17/18/19/21) |
 | `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port |
@@ -44,7 +50,9 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `EBOOK_SPECKIT.md` | `tbt_app/` | Ebook feature gap-fix plan (2026-08-01 audit findings) |
 | `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
 | `COURSE_BUG_FIXES_SPECKIT.md` | repo root | 15 confirmed bugs (C-F-1–C-F-15) across web + mobile course features — discovered 2026-09-01 static audit; **in progress** |
-| `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 missing mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **in progress 2026-09-08; all 5 features backend-complete, admin UI + user-web profile page implemented (uncommitted as of 2026-09-08)** |
+| `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **complete and committed** |
+| `SOCKET_EVENTS.md` | `tbt-admin/` | Full Socket.IO event reference (event name, room, emitter, receiver, trigger, payload) — check before adding or renaming a socket event |
+| `LIVE_CALL_FEATURES_SPEC.md` | `tbt-admin/` | Workshop live-call feature spec — additive-only implementation groups ordered by risk |
 
 **`WORKSHOP_BUG_REPORT.md` (repo root)** — 6 bugs found in a 2026-08-21 static audit of the workshop module (BUG-WS-001 through BUG-WS-006); all 6 resolved in commit `cccdf538`. Read before touching workshop-related code.
 
@@ -72,8 +80,8 @@ npm run seed:gamified -w backend   # Seed XP/gamification data
 npm run seed:tasks -w backend      # Seed task/initiative sample data
 npm run seed:batches -w backend    # Seed batch sample data
 
-# Tests (Vitest — narrowly scoped to pure, DB-free modules)
-npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/{batchReportLogic,onboardingLogic,onboardingMeetingLogic,weekChecklistLogic,chatMessageActionRules}.test.ts
+# Tests (Vitest — narrowly scoped to pure, DB-free modules; no DB/network)
+npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/{batchReportLogic,onboardingLogic,onboardingMeetingLogic,weekChecklistLogic,chatMessageActionRules,lessonProgression}.test.ts
 # DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
 
 # Run a single test file (from tbt-admin/)
@@ -161,7 +169,7 @@ Root `package.json` also declares `percy:player`/`percy:all` scripts (`percy exe
 - **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins skip gracefully if env vars are missing.
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` + `schema.ts` pattern
 - **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
-- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:164–204` for the full ordered list. Non-obvious prefixes:
+- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:166–208` for the full ordered list. Non-obvious prefixes:
   - `hero` → `/api/hero-slides`
   - `security` → `/api/security-logs`
   - **`gamification` → `/api/tbt`** (not `/api/gamification`) — leaderboards, points, level/tier/badge reads
@@ -559,6 +567,12 @@ Shared lookup data (categories, tags, dropdown options). Controller + routes onl
 - **`MemberXP`** — XP ledger. `source`: `"episode_complete" | "quiz_pass"`. Amount comes from `course.xpPerEpisode`.
 - **`CourseBadge`** — manually awardable badge per course. Admin awards via `POST /api/courses/:id/badges/:badgeId/award`.
 
+### Sequential Lesson Unlock (added 2026-07-16 — real Prisma columns, not a raw-SQL ALTER)
+`Course.requireSequential` (`Boolean @default(true)`) + `Course.completionThresholdPercent` (`Int @default(95)`) gate every course's lesson order. The single source of truth is the pure function `computeLessonLockStates` in `backend/src/lib/lessonProgression.ts` — every consumer (course-detail response, the progress-POST guard, admin analytics) routes through it so the "locked" verdict can't drift between call sites. Rules: order comes from `episode.order` ascending; a lesson is completed once watched-seconds crosses `completionThresholdPercent` of its duration (or the legacy `isCompleted` flag, for pre-migration data with no duration); lesson 1 is always unlocked; every other lesson is locked until every strictly-earlier lesson is completed. When `requireSequential=false`, everything is unlocked.
+- **Server-enforced, not just UI**: the user-facing course-detail response (`user/controller.ts` around the `courseEpisodes.map` in `getCourseDetailHandler`) strips `videoUrl`/`hlsUrl`/`quizData` to `null` for locked episodes — a modified client gets no playable URL to intercept. `markLessonCompleteHandler` independently re-checks `isEpisodeUnlocked` before writing progress and 403s a write to a locked episode.
+- **Admin toggle**: `admin-panel/app/courses/page.tsx` course form exposes both fields (checkbox + threshold input, disabled when unchecked).
+- **Frontend** (`tbt-user-web/app/(platform)/learning/[courseId]/page.tsx`): each lesson in `course.lessons[]` carries a server-computed `locked: boolean`. Clicking a locked lesson (list item, Next-button, or `?lesson=` deep link) shows a `toast.error(..., { id: "lesson-locked" })` — the fixed toast id de-dupes repeated clicks instead of stacking. Do NOT use the HTML `disabled` attribute to block a locked lesson's button — a disabled button never fires `onClick`, so the click can't reach the toast; only guard on `!lesson.videoUrl` (a genuine dead end). Completing a lesson only ever shows an "up next" banner (`upNextVisible`) with a manual "Play →" button — there is intentionally **no** auto-advance/auto-play countdown to the next lesson (removed; see `triggerUpNextRef`). Unit tests for the pure lock logic live in `backend/src/lib/lessonProgression.test.ts`.
+
 ### Extended Fields (via startup `ALTER TABLE`)
 ```
 courses:
@@ -763,15 +777,15 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## Deployment
 
-Two separate Cloud Run services, two separate branches:
+Two separate Cloud Run services per app (backend and user-web), two separate branches:
 
-| Branch | Backend service | Notes |
-|---|---|---|
-| `main` | `tbt-backend-staging` | Staging backend; auto-deploy when `tbt-admin/backend/**` changes |
-| `production` | `tbt-backend` | Production backend (`--min-instances=1`); auto-deploy when `tbt-admin/backend/**` changes |
+| Branch | Backend service | User-web service | Notes |
+|---|---|---|---|
+| `main` | `tbt-backend-staging` | `tbt-user-web-staging` | Staging; auto-deploy on push when the respective `tbt-admin/backend/**` / `tbt-user-web/**` paths change |
+| `production` | `tbt-backend` | `tbt-user-web` (`--min-instances=1`) | Production; auto-deploy on push to `production` |
 
-- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service.
-- **User Web → Vercel** — separate project; custom domain `https://app.tamilbusinesstribe.com`
+- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service. Still the only TBT frontend on Vercel.
+- **User Web → Google Cloud Run** (migrated off Vercel 2026-09-10) — custom domain `https://app.tamilbusinesstribe.com` now fronts the Cloud Run service. Built via `tbt-user-web/Dockerfile` (multi-stage Node 24 Alpine, Next.js `output: "standalone"`) deployed with `gcloud run deploy --source tbt-user-web`. CI jobs: `build-user-web` (typecheck + path-filter gate) → `deploy-user-web-staging` / `deploy-user-web-production` in `.github/workflows/ci-cd.yml`.
 - **To promote staging → production:** `git push origin main:production`
 - **`prisma db push`** runs against `PROD_DATABASE_URL` in **both** CI jobs (staging and production) — so the production DB schema always tracks `main` even before a production backend deploy.
 - CORS: `USER_WEB_URL` + `ADMIN_WEB_URL` + `CORS_EXTRA_ORIGINS` (comma-separated). Adding a new domain → add to `CORS_EXTRA_ORIGINS` in ci-cd.yml `--set-env-vars`.
@@ -808,5 +822,8 @@ Backend `onboarding` and `onboarding-meetings` modules merged. Frontend wizard (
 - **Helpdesk improvements** — priority field, preferred contact, member replies in ticket chat, multi-attachment support.
 - **No auto-logout** — sessions persist until manual sign-out on web and mobile
 - **Batch reports** — weekly/monthly WhatsApp progress reports for batch members. Backend: pure logic in `backend/src/lib/batchReportLogic.ts` (28 unit tests); orchestration in `batchReports.ts`; BullMQ cron queue `tbt-batch-reports` (weekly Sun 21:30 IST = `0 16 * * 0` UTC; monthly fires daily at `30 15 * * *` UTC and no-ops on non-last days). Admin Clerk routes: `GET /api/batches/reports/history`, `GET /api/batches/reports/preview`, `POST /api/batches/reports/send-test`. Admin hooks in `useTbt.ts`: `useReportDeliveryHistory`, `usePreviewBatchReport`, `useSendTestBatchReport`. Admin page: `admin-panel/app/batch-reports/`. Optional env vars: `WABA_WEEKLY_REPORT_TEMPLATE_NAME`, `WABA_MONTHLY_REPORT_TEMPLATE_NAME` (both optional; falls back to plain-text WhatsApp message). `WhatsappMessage` Prisma model gained four startup-ALTER columns: `reportType`, `reportPeriod`, `providerMessageId`, `failureReason`.
-- **Mentorship gamification (MG-01–MG-05, in progress 2026-09-08)** — plan entitlement system (`/api/support-entitlements`, admin page `/settings/entitlements`), program-wide lifeline ledger (`member_batch_settings.lifelines_total/used`, `POST /api/user-batch/lifeline/use`), multi-stage process tasks (`task_processes` table, `/api/batches/:id/processes`), early completion bonus XP (`site_configs.early_completion_bonus_xp`), buy extra support credits (`/api/credits`, admin page `/credits`, user profile "Your Mentorship Benefits" section). See `MENTORSHIP_GAMIFICATION_SPECKIT.md`.
+- **Mentorship gamification (MG-01–MG-05)** — plan entitlement system (`/api/support-entitlements`, admin page `/settings/entitlements`), program-wide lifeline ledger (`member_batch_settings.lifelines_total/used`, `POST /api/user-batch/lifeline/use`), multi-stage process tasks (`task_processes` table, `/api/batches/:id/processes`), early completion bonus XP (`site_configs.early_completion_bonus_xp`), buy extra support credits (`/api/credits`, admin page `/credits`, user profile "Your Mentorship Benefits" section). See `MENTORSHIP_GAMIFICATION_SPECKIT.md`.
+- **Course modules (Product / Service / Coach)** — course-level categorisation replacing the earlier episode-level module tagging; `/courses` catalog tabs filter by module, only showing tabs with ≥1 published course. See `COURSE_MODULES_SPECKIT.md`.
+- **User-web moved from Vercel to Google Cloud Run (2026-09-10)** — see Deployment section.
+- **Video feedback** — post-episode rating/yes-no questions module (`/api/video-feedback`). See Video Feedback section above.
 - **Weekly course reports** — sibling to Batch reports, but for the VOD Course Platform (`CourseEnrollment`/`CourseEpisode`, not the Batch day-task program) and two-directional: admin → member weekly progress report AND member → admin weekly feedback, both over WhatsApp, continuing every week until `CourseEnrollment.completedAt` is set. New Prisma models `CourseWeeklyReport` / `CourseWeeklyFeedback` (`@@unique([memberId, courseId, weekNumber])`, WhatsApp delivery status stored inline). Backend: pure logic in `backend/src/lib/courseReportLogic.ts` (unit-tested); orchestration in `courseReports.ts` (`generateMemberCourseReport`, `deliverMemberCourseReport` — same function used by both the cron and the admin manual-send endpoint, `runWeeklyCourseReports`, `deliverMemberFeedbackToAdmin`); BullMQ cron queue `tbt-course-reports` (weekly Sun 20:30 IST = `0 15 * * 0` UTC, offset from `tbt-batch-reports` to avoid contention); HTTP fallback `POST /api/cron/weekly-course-report`. Module `backend/src/modules/course-reports/` follows the Helpdesk two-subscope pattern: `/api/course-reports/admin/*` (Clerk) for admin list/filter/send/remarks/feedback-status, `/api/course-reports/*` (JWT cookie, `req.memberId`-scoped) for the member's own current report, report history, feedback submission (upsert by member+course+week), and feedback history. Admin page: `admin-panel/app/course-weekly-reports/` (Reports + Feedback tabs). Admin hooks in `useTbt.ts`: `useListCourseWeeklyReports`, `useCreateOrSendCourseReport`, `useUpdateCourseReportRemarks`, `useListCourseWeeklyFeedback`, `useUpdateCourseFeedbackStatus`. User-web: `tbt-user-web/lib/hooks/useCourseReports.ts` + `lib/api/services/courseReports.service.ts`, surfaced at `/learning/[courseId]/weekly` (linked from the course detail page). Optional env var: `ADMIN_WHATSAPP_NUMBER` (member → admin feedback WhatsApp destination; if unset, feedback still saves + raises an in-app `admin_notifications`/`admin:course_weekly_feedback` socket alert, just isn't WhatsApp'd). Socket event `admin:course_weekly_feedback` added to the `'admin'` room table below; `resolveNotificationRoute` routes it to `/course-weekly-reports?tab=feedback&open=<id>`.

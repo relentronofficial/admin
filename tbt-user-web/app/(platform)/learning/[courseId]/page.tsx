@@ -19,7 +19,7 @@ import {
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
   useSaveReflection, useReflections,
-  useEpisodeResources, useEpisodeTasks,
+  useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
@@ -923,6 +923,161 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   );
 }
 
+// ── Episode Task Item (submit + review-status) ──────────────────────────────
+function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: EpisodeTask; index: number }) {
+  const submitTask = useSubmitEpisodeTask(episodeId);
+  const uploadProof = useUploadEpisodeTaskProof(episodeId);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [textValue, setTextValue] = useState(task.submission?.responseValue ?? "");
+  const [urlValue, setUrlValue] = useState(task.submission?.proofUrl ?? "");
+  const [uploading, setUploading] = useState(false);
+
+  const proofType = task.proofType || "watch";
+  const status = task.submission?.status ?? null;
+  const isEditable = status === null || status === "rejected" || status === "resubmission_required";
+
+  const handleFileSelect = async (file: File) => {
+    setUploading(true);
+    try {
+      const publicUrl = await uploadProof(file, task.id);
+      await submitTask.mutateAsync({ taskId: task.id, proofUrl: publicUrl, proofType });
+      toast.success("Task submitted");
+    } catch {
+      toast.error("Upload failed — please try again");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (proofType === "text" && !textValue.trim()) { toast.error("Please describe what you did"); return; }
+    if ((proofType === "link" || proofType === "video") && !urlValue.trim()) { toast.error("Please paste a URL"); return; }
+    try {
+      await submitTask.mutateAsync({
+        taskId: task.id,
+        responseValue: proofType === "text" ? textValue.trim() : undefined,
+        proofUrl: (proofType === "link" || proofType === "video") ? urlValue.trim() : undefined,
+        proofType,
+      });
+      toast.success(task.completionMode === "SELF_ASSESSMENT" ? "Task completed" : "Submitted for review");
+    } catch {
+      toast.error("Couldn't submit — please try again");
+    }
+  };
+
+  return (
+    <div className="px-4 py-3">
+      <input
+        type="file"
+        accept={proofType === "image" ? "image/*" : "image/*,application/pdf,.zip,.doc,.docx"}
+        className="hidden"
+        ref={fileInputRef}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ""; }}
+      />
+      <div className="flex items-start gap-3">
+        <span
+          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white mt-0.5"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {index + 1}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>{task.title}</p>
+            {status === "approved" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-success) 20%, transparent)", color: "var(--color-success)" }}>
+                <Check size={10} /> Completed
+              </span>
+            )}
+            {status === "pending" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
+                <Clock size={10} /> Pending Admin Review
+              </span>
+            )}
+            {(status === "rejected" || status === "resubmission_required") && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-alert) 20%, transparent)", color: "var(--color-alert)" }}>
+                <AlertTriangle size={10} /> Changes requested
+              </span>
+            )}
+          </div>
+          {task.description && (
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>{task.description}</p>
+          )}
+          {task.deliverables && (
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
+              Deliverable: {task.deliverables}
+            </p>
+          )}
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            {task.estimatedMinutes && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
+                <Clock size={10} /> ~{task.estimatedMinutes} min
+              </span>
+            )}
+            {!!task.basePoints && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
+                <Zap size={10} /> {task.basePoints} pts
+              </span>
+            )}
+          </div>
+
+          {(status === "rejected" || status === "resubmission_required") && task.submission?.feedback && (
+            <p className="text-xs mt-2 italic" style={{ color: "var(--color-alert)" }}>"{task.submission.feedback}"</p>
+          )}
+
+          {isEditable && (
+            <div className="mt-2.5 space-y-2">
+              {proofType === "text" && (
+                <textarea
+                  value={textValue}
+                  onChange={(e) => setTextValue(e.target.value)}
+                  rows={2}
+                  placeholder="Describe what you did…"
+                  className="w-full rounded-lg px-3 py-2 text-xs outline-none resize-none"
+                  style={{ background: "var(--color-surface-xs)", color: "var(--color-text-normal)", border: "1px solid var(--color-border-card)" }}
+                />
+              )}
+              {(proofType === "link" || proofType === "video") && (
+                <input
+                  type="url"
+                  value={urlValue}
+                  onChange={(e) => setUrlValue(e.target.value)}
+                  placeholder={proofType === "video" ? "Paste your video URL…" : "Paste your link URL…"}
+                  className="w-full rounded-lg px-3 py-2 text-xs outline-none"
+                  style={{ background: "var(--color-surface-xs)", color: "var(--color-text-normal)", border: "1px solid var(--color-border-card)" }}
+                />
+              )}
+              <div className="flex items-center gap-2">
+                {(proofType === "image" || proofType === "file") ? (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    {uploading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} className="rotate-180" />}
+                    {uploading ? "Uploading…" : status ? "Re-upload & Resubmit" : "Upload & Submit"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitTask.isPending}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    {submitTask.isPending ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    {status ? "Resubmit" : "Submit Task"}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function CourseDetailPage({
   params,
@@ -931,10 +1086,6 @@ export default function CourseDetailPage({
 }) {
   const { courseId } = use(params);
   const router = useRouter();
-  const routerRef = useRef(router);
-  routerRef.current = router;
-  const courseIdRef = useRef(courseId);
-  courseIdRef.current = courseId;
   const searchParams = useSearchParams();
   const targetLessonId = searchParams.get("lesson");
   const { uiStrings, config } = useSiteConfig();
@@ -1186,6 +1337,12 @@ export default function CourseDetailPage({
           const dur = (target as any).timerSeconds ?? config?.taskTimerSeconds ?? 300;
           setFocusDialog({ lesson: target, duration: dur });
         }
+      } else if (target && target.videoUrl && (target as any).locked) {
+        // Direct/deep-linked navigation to a locked lesson (e.g. a stale bookmark,
+        // shared link, or browser history entry) — tell the member why nothing opened
+        // instead of silently doing nothing.
+        urlFocusDialogShownRef.current = targetLessonId;
+        toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
       }
     }
   }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1888,7 +2045,8 @@ export default function CourseDetailPage({
     // Sequential lock: block locked lessons unless the current one was just completed
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
     if ((lesson as any).locked === true && !justCompletedInSessionRef.current) {
-      toast.error("Complete the previous lesson to unlock this one.", { id: "lesson-locked" });
+      // Fixed toast id de-dupes repeated clicks on the same locked lesson instead of stacking.
+      toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
       return;
     }
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
@@ -2289,6 +2447,11 @@ export default function CourseDetailPage({
                     currentLessonIdx === lessons.length - 1
                     || !(lessons[currentLessonIdx + 1] as any)?.videoUrl
                   }
+                  title={
+                    (lessons[currentLessonIdx + 1] as any)?.locked === true && watchState !== "completed"
+                      ? "Complete the previous lesson to unlock."
+                      : undefined
+                  }
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                 >
@@ -2365,7 +2528,7 @@ export default function CourseDetailPage({
                     Play →
                   </button>
                   <button
-                    onClick={() => setUpNextVisible(false)}
+                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextVisible(false); }}
                     className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
                     style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                   >
@@ -2439,32 +2602,7 @@ export default function CourseDetailPage({
                 </div>
                 <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
                   {episodeTasks.map((t: EpisodeTask, i: number) => (
-                    <div key={t.id} className="px-4 py-3">
-                      <div className="flex items-start gap-3">
-                        <span
-                          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white mt-0.5"
-                          style={{ background: "var(--color-accent)" }}
-                        >
-                          {i + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>{t.title}</p>
-                          {t.description && (
-                            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>{t.description}</p>
-                          )}
-                          {t.deliverables && (
-                            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
-                              Deliverable: {t.deliverables}
-                            </p>
-                          )}
-                          {t.estimatedMinutes && (
-                            <span className="inline-flex items-center gap-1 mt-1.5 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
-                              <Clock size={10} /> ~{t.estimatedMinutes} min
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                    <EpisodeTaskItem key={t.id} episodeId={selectedLesson!.id} task={t} index={i} />
                   ))}
                 </div>
               </div>

@@ -134,7 +134,8 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
     feedback?: string;
     bonusPoints?: number;
   };
-  const adminId = (request as any).auth?.sub ?? null;
+  const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
 
   if (action !== 'approve' && action !== 'reject') {
     return reply.status(400).send({ success: false, data: null, error: 'action must be approve or reject' });

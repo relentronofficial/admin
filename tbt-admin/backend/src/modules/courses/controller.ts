@@ -4,6 +4,7 @@ import {
   notifyBadgeAwarded,
 } from '../../lib/courseNotifications.js';
 import { invalidateCache } from '../../lib/cache.js';
+import { notifyMembers } from '../../lib/notifications.js';
 
 // Any course/episode edit can change what the home sections render
 // (thumbnail, title, episode count, visibility). Busting home:* is
@@ -894,10 +895,16 @@ export async function reorderEpisodeResourcesHandler(req: FastifyRequest, reply:
 
 // ── Episode Tasks ─────────────────────────────────────────────────────────────
 
+const COMPLETION_MODES = ['SELF_ASSESSMENT', 'ADMIN_CHECK'] as const;
+type CompletionMode = (typeof COMPLETION_MODES)[number];
+function normalizeCompletionMode(v: unknown): CompletionMode | undefined {
+  return typeof v === 'string' && (COMPLETION_MODES as readonly string[]).includes(v) ? (v as CompletionMode) : undefined;
+}
+
 export async function listEpisodeTasksHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
-  const rawRows = await req.server.prisma.$queryRawUnsafe<{ id: string; timer_seconds: number | null }[]>(
-    `SELECT id, timer_seconds FROM tasks WHERE course_episode_id = $1::uuid ORDER BY sort_order ASC`,
+  const rawRows = await req.server.prisma.$queryRawUnsafe<{ id: string; timer_seconds: number | null; completion_mode: string }[]>(
+    `SELECT id, timer_seconds, completion_mode FROM tasks WHERE course_episode_id = $1::uuid ORDER BY sort_order ASC`,
     eid
   ).catch(() => []);
   if (!rawRows.length) return reply.send({ success: true, data: [], error: null });
@@ -905,10 +912,14 @@ export async function listEpisodeTasksHandler(req: FastifyRequest, reply: Fastif
     where: { id: { in: rawRows.map((r) => r.id) } },
     orderBy: { sortOrder: 'asc' },
   });
-  const timerMap = Object.fromEntries(rawRows.map((r) => [r.id, r.timer_seconds]));
+  const rawMap = new Map(rawRows.map((r) => [r.id, r]));
   return reply.send({
     success: true,
-    data: tasks.map((t) => ({ ...t, timerSeconds: timerMap[t.id] ?? null })),
+    data: tasks.map((t) => ({
+      ...t,
+      timerSeconds: rawMap.get(t.id)?.timer_seconds ?? null,
+      completionMode: rawMap.get(t.id)?.completion_mode ?? 'ADMIN_CHECK',
+    })),
     error: null,
   });
 }
@@ -946,7 +957,11 @@ export async function createEpisodeTaskHandler(req: FastifyRequest, reply: Fasti
       `UPDATE tasks SET timer_seconds = $1 WHERE id = $2::uuid`, timerSecs, task.id
     );
   }
-  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs, courseEpisodeId: eid }, error: null });
+  const completionMode = normalizeCompletionMode(body.completionMode) ?? 'ADMIN_CHECK';
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE tasks SET completion_mode = $1 WHERE id = $2::uuid`, completionMode, task.id
+  );
+  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs, completionMode, courseEpisodeId: eid }, error: null });
 }
 
 export async function updateEpisodeTaskHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -964,7 +979,13 @@ export async function updateEpisodeTaskHandler(req: FastifyRequest, reply: Fasti
       `UPDATE tasks SET timer_seconds = $1 WHERE id = $2::uuid`, timerSecs, tid
     );
   }
-  return reply.send({ success: true, data: { ...task, timerSeconds: timerSecs ?? null }, error: null });
+  const completionMode = normalizeCompletionMode(body.completionMode);
+  if (completionMode !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE tasks SET completion_mode = $1 WHERE id = $2::uuid`, completionMode, tid
+    );
+  }
+  return reply.send({ success: true, data: { ...task, timerSeconds: timerSecs ?? null, completionMode: completionMode ?? undefined }, error: null });
 }
 
 export async function deleteEpisodeTaskHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -996,17 +1017,70 @@ export async function listEpisodeTaskSubmissionsHandler(req: FastifyRequest, rep
 
 export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, reply: FastifyReply) {
   const { sid } = req.params as any;
-  const body = req.body as any;
+  const body = req.body as { status: 'approved' | 'rejected'; feedback?: string };
+  if (body.status !== 'approved' && body.status !== 'rejected') {
+    return reply.status(400).send({ success: false, data: null, error: 'status must be approved or rejected' });
+  }
   const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user } });
+
+  const existing = await req.server.prisma.taskSubmission.findUnique({
+    where: { id: sid },
+    include: { task: { select: { basePoints: true, bonusPoints: true, isMilestone: true, milestoneLabel: true } } },
+  });
+  if (!existing) return reply.status(404).send({ success: false, data: null, error: 'Submission not found' });
+  const alreadyApproved = existing.status === 'approved';
+
   const updated = await req.server.prisma.taskSubmission.update({
     where: { id: sid },
     data: {
-      status: body.status as any,
+      status: body.status,
       feedback: body.feedback ?? null,
       reviewedBy: admin?.id ?? null,
       reviewedAt: new Date(),
     },
   });
+
+  if (body.status === 'approved' && !alreadyApproved) {
+    const task = (existing as any).task;
+    if (task?.basePoints > 0) {
+      await req.server.prisma.pointsLedger.create({
+        data: {
+          memberId: existing.memberId,
+          points: task.basePoints,
+          reason: 'Task approved',
+          referenceType: 'task_submission',
+          referenceId: sid,
+        },
+      }).catch(() => {});
+    }
+    if (task?.isMilestone && task.bonusPoints > 0) {
+      await req.server.prisma.pointsLedger.create({
+        data: {
+          memberId: existing.memberId,
+          points: task.bonusPoints,
+          reason: task.milestoneLabel ? `Milestone: ${task.milestoneLabel}` : 'Milestone bonus',
+          referenceType: 'milestone',
+          referenceId: existing.taskId,
+        },
+      }).catch(() => {});
+    }
+    void notifyMembers(req.server, {
+      memberIds: [existing.memberId],
+      title: 'Task Approved ✓',
+      body: 'Your task submission has been approved.',
+      type: 'task_approved',
+      actionUrl: '/learning',
+    });
+  } else if (body.status === 'rejected') {
+    void notifyMembers(req.server, {
+      memberIds: [existing.memberId],
+      title: 'Task Needs Revision',
+      body: body.feedback ?? 'Your task submission needs revision.',
+      type: 'task_rejected',
+      actionUrl: '/learning',
+    });
+  }
+
   return reply.send({ success: true, data: updated, error: null });
 }
 

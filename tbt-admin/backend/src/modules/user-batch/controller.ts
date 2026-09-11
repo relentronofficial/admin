@@ -474,10 +474,11 @@ export async function approveDayHandler(
   req: FastifyRequest<{ Params: { id: string; memberId: string; dayNumber: string } }>,
   reply: FastifyReply,
 ) {
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const dayNum = parseInt(req.params.dayNumber, 10);
 
-  const record = await req.server.prisma.memberDayProgress.upsert({
+  const existing = await req.server.prisma.memberDayProgress.findUnique({
     where: {
       batchId_memberId_dayNumber: {
         batchId: req.params.id,
@@ -485,17 +486,24 @@ export async function approveDayHandler(
         dayNumber: dayNum,
       },
     },
-    create: {
-      batchId: req.params.id,
-      memberId: req.params.memberId,
-      dayNumber: dayNum,
-      status: 'approved',
-      isCompleted: true,
-      completedAt: new Date(),
-      reviewedAt: new Date(),
-      reviewedBy: adminId,
+  });
+  if (!existing) {
+    return reply.status(404).send({ success: false, data: null, error: 'No submission found for this member/day — nothing to approve yet.' });
+  }
+  if (existing.status === 'approved') {
+    // Idempotent no-op: prevents double-clicking Approve (or a retried request) from re-awarding XP.
+    return reply.send({ success: true, data: existing, error: null });
+  }
+
+  const record = await req.server.prisma.memberDayProgress.update({
+    where: {
+      batchId_memberId_dayNumber: {
+        batchId: req.params.id,
+        memberId: req.params.memberId,
+        dayNumber: dayNum,
+      },
     },
-    update: {
+    data: {
       status: 'approved',
       isCompleted: true,
       completedAt: new Date(),
@@ -693,10 +701,11 @@ export async function rejectDayHandler(
   const parsed = rejectSchema.safeParse(req.body);
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const dayNum = parseInt(req.params.dayNumber, 10);
 
-  const record = await req.server.prisma.memberDayProgress.upsert({
+  const existing = await req.server.prisma.memberDayProgress.findUnique({
     where: {
       batchId_memberId_dayNumber: {
         batchId: req.params.id,
@@ -704,16 +713,20 @@ export async function rejectDayHandler(
         dayNumber: dayNum,
       },
     },
-    create: {
-      batchId: req.params.id,
-      memberId: req.params.memberId,
-      dayNumber: dayNum,
-      status: 'rejected',
-      reviewNote: parsed.data.reviewNote,
-      reviewedAt: new Date(),
-      reviewedBy: adminId,
+  });
+  if (!existing) {
+    return reply.status(404).send({ success: false, data: null, error: 'No submission found for this member/day — nothing to reject.' });
+  }
+
+  const record = await req.server.prisma.memberDayProgress.update({
+    where: {
+      batchId_memberId_dayNumber: {
+        batchId: req.params.id,
+        memberId: req.params.memberId,
+        dayNumber: dayNum,
+      },
     },
-    update: {
+    data: {
       status: 'rejected',
       isCompleted: false,
       completedAt: null,
@@ -748,7 +761,8 @@ export async function bulkApproveDaysHandler(
   req: FastifyRequest<{ Params: { id: string }; Body: { items: Array<{ memberId: string; dayNumber: number }> } }>,
   reply: FastifyReply,
 ) {
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const batchId = req.params.id;
   const { items } = req.body as any;
 
@@ -761,10 +775,19 @@ export async function bulkApproveDaysHandler(
 
   const results: any[] = [];
   for (const { memberId, dayNumber } of items) {
-    const record = await req.server.prisma.memberDayProgress.upsert({
+    const existing = await req.server.prisma.memberDayProgress.findUnique({
       where: { batchId_memberId_dayNumber: { batchId, memberId, dayNumber } },
-      create: { batchId, memberId, dayNumber, status: 'approved', isCompleted: true, completedAt: new Date(), reviewedAt: new Date(), reviewedBy: adminId },
-      update: { status: 'approved', isCompleted: true, completedAt: new Date(), reviewedAt: new Date(), reviewedBy: adminId, reviewNote: null },
+    });
+    // Skip items with no submission at all, or that are already approved — keeps bulk-approve
+    // idempotent so a retried/duplicate request can't re-award XP.
+    if (!existing || existing.status === 'approved') {
+      if (existing) results.push(existing);
+      continue;
+    }
+
+    const record = await req.server.prisma.memberDayProgress.update({
+      where: { batchId_memberId_dayNumber: { batchId, memberId, dayNumber } },
+      data: { status: 'approved', isCompleted: true, completedAt: new Date(), reviewedAt: new Date(), reviewedBy: adminId, reviewNote: null },
     });
 
     req.server.prisma.pointsLedger.create({
@@ -907,6 +930,14 @@ export async function getPendingApprovalsHandler(
     orderBy: [{ submittedAt: 'asc' }, { dayNumber: 'asc' }],
   });
 
+  // Day titles (e.g. "Define Your Vision") so the admin can identify which checklist
+  // item a pending row belongs to — the record itself only carries a dayNumber.
+  const batchDays = await req.server.prisma.batchDay.findMany({
+    where: { batchId: req.params.id },
+    select: { dayNumber: true, title: true },
+  });
+  const dayTitleByNumber = new Map(batchDays.map((d: { dayNumber: number; title: string | null }) => [d.dayNumber, d.title]));
+
   // Attach task submissions for each pending record
   const enriched = await Promise.all(records.map(async (rec) => {
     const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
@@ -922,7 +953,7 @@ export async function getPendingApprovalsHandler(
        ORDER BY t.sort_order ASC, t.day_number ASC`,
       rec.id,
     );
-    return { ...rec, taskSubmissions: submissions };
+    return { ...rec, dayTitle: dayTitleByNumber.get(rec.dayNumber) ?? null, taskSubmissions: submissions };
   }));
 
   return reply.send({ success: true, data: enriched, error: null });
