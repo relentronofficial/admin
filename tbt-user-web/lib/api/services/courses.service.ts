@@ -73,6 +73,17 @@ export const coursesService = {
 
   getEpisodeTasks: (episodeId: string) =>
     apiClient.get<never, ApiResponse<EpisodeTask[]>>(`/api/user/episodes/${episodeId}/tasks`),
+
+  submitEpisodeTask: (episodeId: string, taskId: string, body: { responseValue?: string; proofUrl?: string; proofType?: string }) =>
+    apiClient.post<never, ApiResponse<EpisodeTaskSubmissionResult>>(`/api/user/episodes/${episodeId}/tasks/${taskId}/submit`, body),
+
+  presignEpisodeTaskProof: (filename: string, contentType: string, episodeId: string, taskId: string) =>
+    apiClient.post<never, ApiResponse<{ uploadUrl: string; publicUrl: string }>>("/api/upload/presigned-url", {
+      filename,
+      contentType,
+      bucket: "episode-task-proofs",
+      pathPrefix: `${episodeId}/${taskId}`,
+    }),
 };
 
 export interface EpisodeResource {
@@ -85,10 +96,34 @@ export interface EpisodeResource {
   downloadLabel?: string | null;
 }
 
+export type TaskCompletionMode = "SELF_ASSESSMENT" | "ADMIN_CHECK";
+export type TaskSubmissionStatus = "pending" | "approved" | "rejected" | "resubmission_required";
+
+export interface EpisodeTaskSubmission {
+  id: string;
+  status: TaskSubmissionStatus;
+  feedback?: string | null;
+  responseValue?: string | null;
+  proofUrl?: string | null;
+  proofType?: string | null;
+  createdAt?: string;
+}
+
+export interface EpisodeTaskSubmissionResult {
+  id: string;
+  status: TaskSubmissionStatus;
+  feedback?: string | null;
+  completionMode?: TaskCompletionMode;
+}
+
 export interface EpisodeTask {
   id: string;
   title: string;
   description?: string | null;
   deliverables?: string | null;
   estimatedMinutes?: number | null;
+  basePoints?: number | null;
+  proofType?: string | null;
+  completionMode: TaskCompletionMode;
+  submission: EpisodeTaskSubmission | null;
 }

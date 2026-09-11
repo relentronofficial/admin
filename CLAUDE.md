@@ -39,6 +39,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `TBT_ADS_SPECKIT.md` | repo root | Ad campaign system spec for Flutter mobile client — check before adding mobile ad features |
 | `COURSE_UX_SPECKIT.md` | repo root | Course UX & wiring fixes C-01–C-12 (heartbeat bug, URL sync, Practice Arena, catalog filters, reflections backend, etc.) — **complete 2026-08-25** |
 | `COURSE_SECTIONS_SPECKIT.md` | repo root | Course sections (chapters) feature — two-level course structure (Section → Episode), backward-compat with existing flat episodes, collapsible accordion in lesson sidebar — **complete 2026-08-29** |
+| `COURSE_MODULES_SPECKIT.md` | repo root | Course-level module categorisation (Product / Service / Coach) replacing the old episode-level module tagging; `/courses` catalog tabs filter by module — **complete 2026-09-10** |
 | `ONBOARDING_SPECKIT.md` | `tbt_app/` | 14 Flutter-side onboarding fixes (Sprint 1 in progress) |
 | `CHAT_GROUP_SPECKIT.md` | `tbt_app/` | Flutter chat group WhatsApp-parity roadmap F-01–F-22 — Sprints 1+2 committed, Sprint 3 in progress (F-05/06/11/12/15), Sprint 6 done uncommitted (F-17/18/19/21) |
 | `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port |
@@ -49,7 +50,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `EBOOK_SPECKIT.md` | `tbt_app/` | Ebook feature gap-fix plan (2026-08-01 audit findings) |
 | `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
 | `COURSE_BUG_FIXES_SPECKIT.md` | repo root | 15 confirmed bugs (C-F-1–C-F-15) across web + mobile course features — discovered 2026-09-01 static audit; **in progress** |
-| `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 missing mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **in progress 2026-09-08; all 5 features backend-complete, admin UI + user-web profile page implemented (uncommitted as of 2026-09-08)** |
+| `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **complete and committed** |
 | `SOCKET_EVENTS.md` | `tbt-admin/` | Full Socket.IO event reference (event name, room, emitter, receiver, trigger, payload) — check before adding or renaming a socket event |
 | `LIVE_CALL_FEATURES_SPEC.md` | `tbt-admin/` | Workshop live-call feature spec — additive-only implementation groups ordered by risk |
 
@@ -776,15 +777,15 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## Deployment
 
-Two separate Cloud Run services, two separate branches:
+Two separate Cloud Run services per app (backend and user-web), two separate branches:
 
-| Branch | Backend service | Notes |
-|---|---|---|
-| `main` | `tbt-backend-staging` | Staging backend; auto-deploy when `tbt-admin/backend/**` changes |
-| `production` | `tbt-backend` | Production backend (`--min-instances=1`); auto-deploy when `tbt-admin/backend/**` changes |
+| Branch | Backend service | User-web service | Notes |
+|---|---|---|---|
+| `main` | `tbt-backend-staging` | `tbt-user-web-staging` | Staging; auto-deploy on push when the respective `tbt-admin/backend/**` / `tbt-user-web/**` paths change |
+| `production` | `tbt-backend` | `tbt-user-web` (`--min-instances=1`) | Production; auto-deploy on push to `production` |
 
-- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service.
-- **User Web → Vercel** — separate project; custom domain `https://app.tamilbusinesstribe.com`
+- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service. Still the only TBT frontend on Vercel.
+- **User Web → Google Cloud Run** (migrated off Vercel 2026-09-10) — custom domain `https://app.tamilbusinesstribe.com` now fronts the Cloud Run service. Built via `tbt-user-web/Dockerfile` (multi-stage Node 24 Alpine, Next.js `output: "standalone"`) deployed with `gcloud run deploy --source tbt-user-web`. CI jobs: `build-user-web` (typecheck + path-filter gate) → `deploy-user-web-staging` / `deploy-user-web-production` in `.github/workflows/ci-cd.yml`.
 - **To promote staging → production:** `git push origin main:production`
 - **`prisma db push`** runs against `PROD_DATABASE_URL` in **both** CI jobs (staging and production) — so the production DB schema always tracks `main` even before a production backend deploy.
 - CORS: `USER_WEB_URL` + `ADMIN_WEB_URL` + `CORS_EXTRA_ORIGINS` (comma-separated). Adding a new domain → add to `CORS_EXTRA_ORIGINS` in ci-cd.yml `--set-env-vars`.
@@ -821,5 +822,7 @@ Backend `onboarding` and `onboarding-meetings` modules merged. Frontend wizard (
 - **Helpdesk improvements** — priority field, preferred contact, member replies in ticket chat, multi-attachment support.
 - **No auto-logout** — sessions persist until manual sign-out on web and mobile
 - **Batch reports** — weekly/monthly WhatsApp progress reports for batch members. Backend: pure logic in `backend/src/lib/batchReportLogic.ts` (28 unit tests); orchestration in `batchReports.ts`; BullMQ cron queue `tbt-batch-reports` (weekly Sun 21:30 IST = `0 16 * * 0` UTC; monthly fires daily at `30 15 * * *` UTC and no-ops on non-last days). Admin Clerk routes: `GET /api/batches/reports/history`, `GET /api/batches/reports/preview`, `POST /api/batches/reports/send-test`. Admin hooks in `useTbt.ts`: `useReportDeliveryHistory`, `usePreviewBatchReport`, `useSendTestBatchReport`. Admin page: `admin-panel/app/batch-reports/`. Optional env vars: `WABA_WEEKLY_REPORT_TEMPLATE_NAME`, `WABA_MONTHLY_REPORT_TEMPLATE_NAME` (both optional; falls back to plain-text WhatsApp message). `WhatsappMessage` Prisma model gained four startup-ALTER columns: `reportType`, `reportPeriod`, `providerMessageId`, `failureReason`.
-- **Mentorship gamification (MG-01–MG-05, in progress 2026-09-08)** — plan entitlement system (`/api/support-entitlements`, admin page `/settings/entitlements`), program-wide lifeline ledger (`member_batch_settings.lifelines_total/used`, `POST /api/user-batch/lifeline/use`), multi-stage process tasks (`task_processes` table, `/api/batches/:id/processes`), early completion bonus XP (`site_configs.early_completion_bonus_xp`), buy extra support credits (`/api/credits`, admin page `/credits`, user profile "Your Mentorship Benefits" section). See `MENTORSHIP_GAMIFICATION_SPECKIT.md`.
+- **Mentorship gamification (MG-01–MG-05)** — plan entitlement system (`/api/support-entitlements`, admin page `/settings/entitlements`), program-wide lifeline ledger (`member_batch_settings.lifelines_total/used`, `POST /api/user-batch/lifeline/use`), multi-stage process tasks (`task_processes` table, `/api/batches/:id/processes`), early completion bonus XP (`site_configs.early_completion_bonus_xp`), buy extra support credits (`/api/credits`, admin page `/credits`, user profile "Your Mentorship Benefits" section). See `MENTORSHIP_GAMIFICATION_SPECKIT.md`.
+- **Course modules (Product / Service / Coach)** — course-level categorisation replacing the earlier episode-level module tagging; `/courses` catalog tabs filter by module, only showing tabs with ≥1 published course. See `COURSE_MODULES_SPECKIT.md`.
+- **User-web moved from Vercel to Google Cloud Run (2026-09-10)** — see Deployment section.
 - **Video feedback** — post-episode rating/yes-no questions module (`/api/video-feedback`). See Video Feedback section above.

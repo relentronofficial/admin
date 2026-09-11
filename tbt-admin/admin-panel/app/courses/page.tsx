@@ -2407,10 +2407,19 @@ const PROOF_BADGE: Record<string, string> = {
   file: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   watch: "bg-green-500/20 text-green-400 border-green-500/30",
 };
+const COMPLETION_MODE_BADGE: Record<string, string> = {
+  SELF_ASSESSMENT: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  ADMIN_CHECK: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+};
+const COMPLETION_MODE_LABEL: Record<string, string> = {
+  SELF_ASSESSMENT: "Self Assessment",
+  ADMIN_CHECK: "Admin Check",
+};
 const EMPTY_TASK_FORM = {
   title: "", description: "", deliverables: "", contentUrl: "",
   basePoints: 100, bonusPoints: 0, proofType: "text", estimatedMinutes: 15,
   timerSeconds: "", isActive: true, isRequired: true, isMilestone: false, milestoneLabel: "",
+  completionMode: "ADMIN_CHECK",
 };
 
 function TaskSubmissionsPanel({ episodeId, taskId }: { episodeId: string; taskId: string }) {
@@ -2548,6 +2557,7 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
     timerSeconds: t.timerSeconds != null ? String(t.timerSeconds) : "",
     isActive: t.isActive ?? true, isRequired: t.isRequired ?? true,
     isMilestone: t.isMilestone ?? false, milestoneLabel: t.milestoneLabel || "",
+    completionMode: t.completionMode === "SELF_ASSESSMENT" ? "SELF_ASSESSMENT" : "ADMIN_CHECK",
   });
 
   const openCreate = () => { setForm(EMPTY_TASK_FORM); setEditing(null); setShowForm(true); };
@@ -2651,6 +2661,9 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
                               <span className="text-[9px] text-[#555] font-rajdhani">{t.estimatedMinutes} min</span>
                               {t.timerSeconds && <span className="flex items-center gap-0.5 text-[9px] text-orange-400 font-rajdhani"><Clock size={8} />{t.timerSeconds}s</span>}
                               <span className={`text-[9px] font-rajdhani ${(t.isRequired ?? true) ? "text-[#555]" : "text-blue-400"}`}>{(t.isRequired ?? true) ? "Required" : "Optional"}</span>
+                              <span className={`text-[9px] font-bold font-rajdhani uppercase px-1.5 py-0.5 rounded border ${COMPLETION_MODE_BADGE[t.completionMode] ?? COMPLETION_MODE_BADGE.ADMIN_CHECK}`}>
+                                {COMPLETION_MODE_LABEL[t.completionMode] ?? COMPLETION_MODE_LABEL.ADMIN_CHECK}
+                              </span>
                               {t.isMilestone && t.milestoneLabel && <span className="text-[9px] text-amber-400 font-rajdhani">🏆 {t.milestoneLabel}</span>}
                             </div>
                           </div>
@@ -2741,6 +2754,23 @@ function EpisodeTasksModal({ episode, onClose }: { episode: any; onClose: () => 
                       <input type="number" min={0} value={form.timerSeconds} onChange={e => setForm((f: any) => ({ ...f, timerSeconds: e.target.value }))} placeholder="e.g. 300"
                         className="w-full bg-[#141414] border border-[#333] rounded px-2 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Task Completion Mode</label>
+                    <div className="flex gap-3">
+                      {(["SELF_ASSESSMENT", "ADMIN_CHECK"] as const).map(mode => (
+                        <label key={mode} className="flex items-center gap-2 cursor-pointer flex-1 bg-[#141414] border border-[#333] rounded px-3 py-2 has-[:checked]:border-[#dc2626]">
+                          <input type="radio" name="completionMode" checked={form.completionMode === mode}
+                            onChange={() => setForm((f: any) => ({ ...f, completionMode: mode }))} className="accent-red-600" />
+                          <span className="text-[11px] text-[#a0a0a0] font-rajdhani">{COMPLETION_MODE_LABEL[mode]}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-[#555] mt-1 font-rajdhani">
+                      {form.completionMode === "SELF_ASSESSMENT"
+                        ? "Member's submission is instantly marked complete — no admin review needed."
+                        : "Member's submission is held as Pending until an admin approves it."}
+                    </p>
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <label className="flex items-center gap-2 cursor-pointer">

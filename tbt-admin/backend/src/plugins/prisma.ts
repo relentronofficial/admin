@@ -1440,6 +1440,17 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
     `).catch(() => {});
+    // Per-task completion mode (2026-09): admin decides, per task, whether a
+    // member submission is instantly self-approved (SELF_ASSESSMENT) or held
+    // for admin review before it counts as complete (ADMIN_CHECK). Default is
+    // ADMIN_CHECK — the conservative choice, since it matches the review UI
+    // that already existed for episode tasks before any member-facing submit
+    // flow existed, and it never changes behavior for the pre-existing
+    // batch/program task review flow (which already always gates on admin
+    // approval regardless of this column).
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_mode VARCHAR(20) NOT NULL DEFAULT 'ADMIN_CHECK'
+    `).catch(() => {});
 
     // Backfill: publish any active courses that were created before the admin
     // Publish toggle existed (the create handler now defaults isPublished=true,
