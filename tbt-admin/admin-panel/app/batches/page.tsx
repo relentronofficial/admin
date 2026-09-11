@@ -604,17 +604,17 @@ export default function BatchesPage() {
       {/* ── Create Batch Modal ── */}
       {createOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-[#1f1f1f]">
+          <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[#1f1f1f] flex-shrink-0">
               <h2 className="text-[16px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">Create Batch</h2>
               <button onClick={() => setCreateOpen(false)} className="text-[#606060] hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto flex-1">
               {batchFormBodyJsx}
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f1f]">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f1f] flex-shrink-0">
               <button onClick={() => setCreateOpen(false)} className="px-5 py-2.5 text-[#888] hover:text-white text-sm font-semibold transition-colors">
                 Cancel
               </button>
@@ -634,17 +634,17 @@ export default function BatchesPage() {
       {/* ── Edit Batch Modal ── */}
       {editingBatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-[#1f1f1f]">
+          <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[#1f1f1f] flex-shrink-0">
               <h2 className="text-[16px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">Edit Batch</h2>
               <button onClick={() => setEditingBatch(null)} className="text-[#606060] hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto flex-1">
               {batchFormBodyJsx}
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f1f]">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f1f] flex-shrink-0">
               <button onClick={() => setEditingBatch(null)} className="px-5 py-2.5 text-[#888] hover:text-white text-sm font-semibold transition-colors">
                 Cancel
               </button>
