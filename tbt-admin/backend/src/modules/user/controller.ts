@@ -4107,13 +4107,156 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
   const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
   if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, title, description, deliverables, estimated_minutes AS "estimatedMinutes"
-     FROM tasks
-     WHERE course_episode_id = $1::uuid
-     ORDER BY sort_order ASC`,
-    episodeId,
+    `SELECT t.id, t.title, t.description, t.deliverables,
+            t.estimated_minutes AS "estimatedMinutes",
+            t.base_points AS "basePoints",
+            t.proof_type AS "proofType",
+            t.completion_mode AS "completionMode",
+            ts.id AS "submissionId",
+            ts.status AS "submissionStatus",
+            ts.feedback AS "submissionFeedback",
+            ts.response_value AS "submissionResponseValue",
+            ts.proof_url AS "submissionProofUrl",
+            ts.proof_type AS "submissionProofType",
+            ts.created_at AS "submissionCreatedAt"
+     FROM tasks t
+     LEFT JOIN task_submissions ts
+       ON ts.task_id = t.id AND ts.member_id = $2::uuid AND ts.batch_id IS NULL AND ts.day_number IS NULL
+     WHERE t.course_episode_id = $1::uuid
+     ORDER BY t.sort_order ASC`,
+    episodeId, request.memberId,
   ).catch(() => [] as any[]);
-  return reply.send({ success: true, data: tasks, error: null });
+  const data = tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    deliverables: t.deliverables,
+    estimatedMinutes: t.estimatedMinutes,
+    basePoints: t.basePoints,
+    proofType: t.proofType,
+    completionMode: t.completionMode ?? 'ADMIN_CHECK',
+    submission: t.submissionId ? {
+      id: t.submissionId,
+      status: t.submissionStatus,
+      feedback: t.submissionFeedback,
+      responseValue: t.submissionResponseValue,
+      proofUrl: t.submissionProofUrl,
+      proofType: t.submissionProofType,
+      createdAt: t.submissionCreatedAt,
+    } : null,
+  }));
+  return reply.send({ success: true, data, error: null });
+}
+
+// POST /api/user/episodes/:id/tasks/:taskId/submit — member submits (or resubmits) an
+// episode task. SELF_ASSESSMENT tasks are approved immediately and award points on the
+// spot; ADMIN_CHECK tasks land as 'pending' and only award points once an admin approves
+// via reviewEpisodeTaskSubmissionHandler (courses/controller.ts).
+export async function submitUserEpisodeTaskHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId, taskId } = request.params as { id: string; taskId: string };
+  const { responseValue, proofUrl, proofType } = request.body as {
+    responseValue?: string; proofUrl?: string; proofType?: string;
+  };
+  const memberId = request.memberId!;
+
+  const ep = await (request.server.prisma as any).courseEpisode.findUnique({
+    where: { id: episodeId },
+    select: { courseId: true },
+  });
+  if (!ep) return fail(reply, 404, 'Episode not found');
+  const access = await getCourseAccessRecord(request.server.prisma as any, memberId, ep.courseId);
+  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
+
+  // Task must actually belong to this episode — prevents a client from
+  // submitting against an arbitrary task ID that lives on a different episode.
+  const taskRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, base_points AS "basePoints", bonus_points AS "bonusPoints",
+            is_milestone AS "isMilestone", milestone_label AS "milestoneLabel",
+            proof_type AS "proofType", completion_mode AS "completionMode", is_active AS "isActive"
+     FROM tasks WHERE id = $1::uuid AND course_episode_id = $2::uuid`,
+    taskId, episodeId,
+  );
+  const task = taskRows[0];
+  if (!task || task.isActive === false) return fail(reply, 404, 'Task not found');
+
+  const completionMode: 'SELF_ASSESSMENT' | 'ADMIN_CHECK' = task.completionMode === 'SELF_ASSESSMENT' ? 'SELF_ASSESSMENT' : 'ADMIN_CHECK';
+  const resolvedProofType = proofType || task.proofType || 'text';
+
+  const existing = await request.server.prisma.taskSubmission.findFirst({
+    where: { memberId, taskId, batchId: null, dayNumber: null },
+  });
+
+  // Already approved — idempotent no-op so a resubmit can never re-award points
+  // or flip a completed task back to pending.
+  if (existing && existing.status === 'approved') {
+    return reply.send({ success: true, data: { id: existing.id, status: existing.status, feedback: existing.feedback }, error: null });
+  }
+
+  const nextStatus = completionMode === 'SELF_ASSESSMENT' ? 'approved' : 'pending';
+  const now = new Date();
+  const submission = existing
+    ? await request.server.prisma.taskSubmission.update({
+        where: { id: existing.id },
+        data: {
+          responseValue: responseValue ?? null,
+          proofUrl: proofUrl ?? null,
+          proofType: resolvedProofType,
+          status: nextStatus as any,
+          feedback: null,
+          reviewedBy: completionMode === 'SELF_ASSESSMENT' ? null : existing.reviewedBy,
+          reviewedAt: completionMode === 'SELF_ASSESSMENT' ? now : null,
+        },
+      })
+    : await request.server.prisma.taskSubmission.create({
+        data: {
+          memberId,
+          taskId,
+          responseValue: responseValue ?? null,
+          proofUrl: proofUrl ?? null,
+          proofType: resolvedProofType,
+          status: nextStatus as any,
+          reviewedAt: completionMode === 'SELF_ASSESSMENT' ? now : null,
+        },
+      });
+
+  if (completionMode === 'SELF_ASSESSMENT') {
+    // Dedup guard — this referenceId is unique per submission row, so even if
+    // the client double-fires the request the ledger insert only lands once
+    // (the submission row itself is find-or-create'd above, so a retry
+    // reuses the same id and this check short-circuits).
+    const alreadyAwarded = await request.server.prisma.pointsLedger.findFirst({
+      where: { referenceType: 'task_submission', referenceId: submission.id },
+      select: { id: true },
+    });
+    if (!alreadyAwarded) {
+      if (task.basePoints > 0) {
+        await request.server.prisma.pointsLedger.create({
+          data: { memberId, points: task.basePoints, reason: 'Task approved', referenceType: 'task_submission', referenceId: submission.id },
+        }).catch(() => {});
+      }
+      if (task.isMilestone && task.bonusPoints > 0) {
+        await request.server.prisma.pointsLedger.create({
+          data: { memberId, points: task.bonusPoints, reason: task.milestoneLabel ? `Milestone: ${task.milestoneLabel}` : 'Milestone bonus', referenceType: 'milestone', referenceId: taskId },
+        }).catch(() => {});
+      }
+    }
+  } else {
+    void createAdminNotification(request.server.prisma, {
+      title: 'Task Submitted for Review',
+      body: 'A member submitted a course task that needs your review.',
+      type: 'episode_task_submitted',
+      metadata: { courseId: ep.courseId, episodeId, taskId, submissionId: submission.id },
+    });
+    request.server.io.to('admin').emit('admin:episode_task_submitted', {
+      courseId: ep.courseId, episodeId, taskId, submissionId: submission.id,
+    });
+  }
+
+  return reply.status(existing ? 200 : 201).send({
+    success: true,
+    data: { id: submission.id, status: submission.status, completionMode },
+    error: null,
+  });
 }
 
 export async function getUserResourcesHandler(request: FastifyRequest, reply: FastifyReply) {

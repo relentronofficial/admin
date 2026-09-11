@@ -506,7 +506,8 @@ export async function approveBreakHandler(
   req: FastifyRequest<{ Params: { id: string; reqId: string } }>,
   reply: FastifyReply,
 ) {
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `UPDATE batch_break_requests SET status='approved', reviewed_by=$1, reviewed_at=NOW(), updated_at=NOW()
      WHERE id=$2::uuid AND batch_id=$3::uuid RETURNING *`,
@@ -544,7 +545,8 @@ export async function rejectBreakHandler(
   req: FastifyRequest<{ Params: { id: string; reqId: string } }>,
   reply: FastifyReply,
 ) {
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const { adminNote } = (req.body as any) ?? {};
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `UPDATE batch_break_requests SET status='rejected', admin_note=$1, reviewed_by=$2, reviewed_at=NOW(), updated_at=NOW()
@@ -559,7 +561,8 @@ export async function upsertMemberSettingsHandler(
   req: FastifyRequest<{ Params: { id: string; memberId: string } }>,
   reply: FastifyReply,
 ) {
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const { extendedDays = 0, notes } = (req.body as any) ?? {};
   const [record] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO member_batch_settings (member_id, batch_id, extended_days, notes, updated_by, updated_at)
@@ -771,7 +774,8 @@ export async function createBatchTaskHandler(
   if (!dayNumber || !title) {
     return reply.status(400).send({ success: false, data: null, error: 'dayNumber and title are required' });
   }
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const task = await req.server.prisma.task.create({
     data: {
       batchId: req.params.id,
