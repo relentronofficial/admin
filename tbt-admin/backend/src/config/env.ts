@@ -59,6 +59,11 @@ const envSchema = z.object({
   WABA_TEMPLATE_NAME: z.string().optional().or(z.literal('')),
   WABA_WEEKLY_REPORT_TEMPLATE_NAME: z.string().optional().or(z.literal('')),
   WABA_MONTHLY_REPORT_TEMPLATE_NAME: z.string().optional().or(z.literal('')),
+  // Weekly course-report feature: member → admin feedback is WhatsApp'd to
+  // this number (E.164 or bare 10-digit — normalized the same as member
+  // phones in whatsapp.ts). Optional — if unset, feedback is still saved and
+  // surfaced via admin_notifications + the 'admin' socket room, just not WhatsApp'd.
+  ADMIN_WHATSAPP_NUMBER: z.string().optional().or(z.literal('')),
   WABA_TEMPLATE_LANGUAGE: z.string().default('en'),
   WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
