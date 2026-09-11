@@ -6,6 +6,7 @@ import Image from "next/image";
 import {
   Search, BookOpen, Play, Zap, Clock, Lock,
   ChevronRight, Award, TrendingUp, CheckCircle2, Layers,
+  ShoppingBag, Briefcase, Users,
 } from "lucide-react";
 import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
@@ -20,9 +21,15 @@ function formatSeconds(secs: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-// ── Module tabs ───────────────────────────────────────────────────────────────
+// ── Module config ─────────────────────────────────────────────────────────────
 
 const MODULE_TABS = ["Product", "Service", "Coach"] as const;
+
+const MODULE_CONFIG: Record<string, { icon: React.ReactNode; description: string }> = {
+  Product: { icon: <ShoppingBag size={28} />, description: "Build & sell products" },
+  Service: { icon: <Briefcase size={28} />, description: "Offer your services" },
+  Coach:   { icon: <Users    size={28} />, description: "Coach & mentor others" },
+};
 
 // ── Level config ──────────────────────────────────────────────────────────────
 
@@ -542,103 +549,168 @@ export default function CoursesPage() {
         )}
       </div>
 
-      {/* ── Module tabs ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setSelectedModule(null)}
-          className="h-9 px-4 rounded-xl text-[12px] font-semibold transition-all duration-150"
-          style={
-            selectedModule === null
-              ? { background: "var(--color-accent)", color: "white", border: "1px solid transparent" }
-              : { background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-subtle)" }
-          }
-        >
-          All
-        </button>
-        {MODULE_TABS.map((m) => (
-          <button
-            key={m}
-            onClick={() => setSelectedModule(m === selectedModule ? null : m)}
-            className="h-9 px-4 rounded-xl text-[12px] font-semibold transition-all duration-150 flex items-center gap-1.5"
-            style={
-              selectedModule === m
-                ? { background: "var(--color-accent)", color: "white", border: "1px solid transparent" }
-                : { background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-subtle)" }
-            }
-          >
-            <Layers size={11} />
-            {m}
-          </button>
-        ))}
+      {/* ── Module cards ────────────────────────────────────────────── */}
+      <div className="space-y-3">
+        <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+          <Layers size={15} style={{ color: "var(--color-accent)" }} />
+          Browse by Module
+        </h2>
+        <div className="grid grid-cols-3 gap-4">
+          {MODULE_TABS.map((m) => {
+            const cfg = MODULE_CONFIG[m];
+            const isActive = selectedModule === m;
+            return (
+              <button
+                key={m}
+                onClick={() => setSelectedModule(isActive ? null : m)}
+                className="group relative flex flex-col items-center gap-3 p-6 rounded-2xl text-center transition-all duration-200 hover:-translate-y-0.5"
+                style={
+                  isActive
+                    ? {
+                        background: "color-mix(in srgb, var(--color-accent) 15%, var(--color-bg-surface))",
+                        border: "2px solid var(--color-accent)",
+                        boxShadow: "0 4px 24px color-mix(in srgb, var(--color-accent) 20%, transparent)",
+                      }
+                    : {
+                        background: "var(--color-bg-surface)",
+                        border: "2px solid var(--color-border-subtle)",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                      }
+                }
+              >
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200"
+                  style={{
+                    background: isActive ? "color-mix(in srgb, var(--color-accent) 20%, transparent)" : "var(--color-surface-overlay-md)",
+                    color: isActive ? "var(--color-accent)" : "var(--color-text-secondary)",
+                  }}
+                >
+                  {cfg.icon}
+                </div>
+                <div>
+                  <p className="text-[15px] font-bold tracking-wide transition-colors"
+                    style={{ color: isActive ? "var(--color-accent)" : "var(--color-text-normal)" }}>
+                    {m}
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+                    {cfg.description}
+                  </p>
+                </div>
+                {isActive && (
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-6 h-1 rounded-full"
+                    style={{ background: "var(--color-accent)" }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ── 1. Continue Learning ─────────────────────────────────────── */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-            <Play size={15} style={{ color: "var(--color-accent)" }} />
-            Continue Learning
-          </h2>
-        </div>
-
-        {continueLoading ? (
-          <ContinueLearningCardSkeleton />
-        ) : continueCourseItems.length === 0 ? (
-          <div
-            className="flex items-center gap-4 px-5 py-4 rounded-2xl"
-            style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
-          >
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "var(--color-surface-overlay)" }}
-            >
-              <Play size={16} className="text-muted-foreground opacity-40" />
-            </div>
-            <div>
-              <p className="text-[13px] font-semibold text-foreground">No course in progress</p>
-              <p className="text-[12px] text-muted-foreground mt-0.5">
-                Enroll in a course below and start learning — your progress will appear here.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {continueCourseItems.slice(0, 3).map((item) => (
-              <ContinueLearningCourseCard key={item.id} item={item} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ── 2. Enrolled Courses ──────────────────────────────────────── */}
-      {(enrollLoading || myEnrollments.length > 0) && (
-        <section className="space-y-4">
+      {/* ── Module courses (shown directly below cards when a module is selected) ── */}
+      {selectedModule && (
+        <section className="space-y-5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-              <BookOpen size={15} style={{ color: "var(--color-accent)" }} />
-              Enrolled Courses
+              {MODULE_CONFIG[selectedModule].icon}
+              {selectedModule} Courses
             </h2>
+            <div className="flex items-center gap-3">
+              {!catalogLoading && catalogCourses.length > 0 && (
+                <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
+              )}
+              <button
+                onClick={() => setSelectedModule(null)}
+                className="text-[12px] font-semibold transition-colors"
+                style={{ color: "var(--color-accent)" }}
+              >
+                ← All Modules
+              </button>
+            </div>
           </div>
-          <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-            {enrollLoading
-              ? Array.from({ length: 3 }).map((_, i) => <EnrolledCardSkeleton key={i} />)
-              : myEnrollments.slice(0, 8).map((e) => <EnrolledCourseCard key={e.id} enrollment={e} />)
-            }
-          </div>
+          {catalogLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {Array.from({ length: 3 }).map((_, i) => <CourseCardSkeleton key={i} />)}
+            </div>
+          ) : catalogCourses.length === 0 ? (
+            <div className="flex flex-col items-center py-16 rounded-2xl gap-3"
+              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+              <BookOpen size={24} className="text-muted-foreground opacity-20" />
+              <p className="text-muted-foreground text-sm font-medium">No courses in {selectedModule} yet</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {catalogCourses.map((course: any) => {
+                const enrollment = enrolledMap.get(course.id);
+                return (
+                  <CourseCard key={course.id} course={course} isEnrolled={!!enrollment} progress={enrollment?.progressPercent} />
+                );
+              })}
+            </div>
+          )}
         </section>
       )}
 
-      {/* ── 3. Browse All courses ────────────────────────────────────── */}
-      <section className="space-y-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-            <Layers size={15} style={{ color: "var(--color-accent)" }} />
-            Browse All
-          </h2>
-          {!catalogLoading && catalogCourses.length > 0 && (
-            <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
+      {/* ── Rest of page — only shown when no module selected ────────── */}
+      {!selectedModule && (
+        <>
+          {/* Continue Learning */}
+          <section className="space-y-4">
+            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+              <Play size={15} style={{ color: "var(--color-accent)" }} />
+              Continue Learning
+            </h2>
+            {continueLoading ? (
+              <ContinueLearningCardSkeleton />
+            ) : continueCourseItems.length === 0 ? (
+              <div className="flex items-center gap-4 px-5 py-4 rounded-2xl"
+                style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "var(--color-surface-overlay)" }}>
+                  <Play size={16} className="text-muted-foreground opacity-40" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-foreground">No course in progress</p>
+                  <p className="text-[12px] text-muted-foreground mt-0.5">
+                    Pick a module above and start learning — your progress will appear here.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {continueCourseItems.slice(0, 3).map((item) => (
+                  <ContinueLearningCourseCard key={item.id} item={item} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Enrolled Courses */}
+          {(enrollLoading || myEnrollments.length > 0) && (
+            <section className="space-y-4">
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <BookOpen size={15} style={{ color: "var(--color-accent)" }} />
+                Enrolled Courses
+              </h2>
+              <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
+                {enrollLoading
+                  ? Array.from({ length: 3 }).map((_, i) => <EnrolledCardSkeleton key={i} />)
+                  : myEnrollments.slice(0, 8).map((e) => <EnrolledCourseCard key={e.id} enrollment={e} />)
+                }
+              </div>
+            </section>
           )}
-        </div>
+
+          {/* Browse All */}
+          <section className="space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <Layers size={15} style={{ color: "var(--color-accent)" }} />
+                Browse All
+              </h2>
+              {!catalogLoading && catalogCourses.length > 0 && (
+                <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
+              )}
+            </div>
 
         {/* Search + filters */}
         <div className="flex flex-col sm:flex-row gap-3">
@@ -763,6 +835,8 @@ export default function CoursesPage() {
           </div>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }
