@@ -73,6 +73,15 @@ export const coursesService = {
 
   getEpisodeTasks: (episodeId: string) =>
     apiClient.get<never, ApiResponse<EpisodeTask[]>>(`/api/user/episodes/${episodeId}/tasks`),
+
+  submitEpisodeTask: (episodeId: string, taskId: string, responseValue?: string) =>
+    apiClient.post<never, ApiResponse<{ status: string }>>(
+      `/api/user/episodes/${episodeId}/tasks/${taskId}/submit`,
+      { responseValue },
+    ),
+
+  getStreakPoints: () =>
+    apiClient.get<never, ApiResponse<StreakPointsSummary>>("/api/user/streak-points"),
 };
 
 export interface EpisodeResource {
@@ -91,4 +100,21 @@ export interface EpisodeTask {
   description?: string | null;
   deliverables?: string | null;
   estimatedMinutes?: number | null;
+  streakPoints?: number | null;
+  submissionStatus?: "pending" | "approved" | "rejected" | "resubmission_required" | null;
+  submissionResponse?: string | null;
+}
+
+export interface StreakPointsHistoryEntry {
+  type: "video" | "task";
+  title: string;
+  points: number;
+  createdAt: string;
+}
+
+export interface StreakPointsSummary {
+  total: number;
+  videoTotal: number;
+  taskTotal: number;
+  history: StreakPointsHistoryEntry[];
 }

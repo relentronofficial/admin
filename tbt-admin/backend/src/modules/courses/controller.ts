@@ -279,6 +279,7 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
       ...(body.quizUnlockPercent !== undefined && { quizUnlockPercent: Number(body.quizUnlockPercent) }),
       ...(body.drmEnabled !== undefined && { drmEnabled: Boolean(body.drmEnabled) }),
       ...(body.bunnyDrmToken !== undefined && { bunnyDrmToken: body.bunnyDrmToken || null }),
+      ...(body.streakPoints !== undefined && { streakPoints: Math.max(0, Number(body.streakPoints) || 0) }),
     },
   });
   const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
@@ -314,6 +315,7 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   if (body.order !== undefined) data.order = body.order;
   if (body.quizUnlockPercent !== undefined) data.quizUnlockPercent = Number(body.quizUnlockPercent);
   if (body.drmEnabled !== undefined) data.drmEnabled = Boolean(body.drmEnabled);
+  if (body.streakPoints !== undefined) data.streakPoints = Math.max(0, Number(body.streakPoints) || 0);
   const timerSecs = 'timerSeconds' in body ? (body.timerSeconds != null ? Number(body.timerSeconds) : null) : undefined;
   const sectionId = 'sectionId' in body ? (body.sectionId || null) : undefined;
   const moduleIds: string[] | undefined = 'moduleIds' in body && Array.isArray(body.moduleIds) ? body.moduleIds : undefined;
@@ -998,6 +1000,15 @@ export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, re
   const { sid } = req.params as any;
   const body = req.body as any;
   const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user } });
+
+  // Read status BEFORE the update — the streak-points award must fire only on
+  // the transition INTO 'approved', never on a re-save of an already-approved
+  // row (e.g. admin edits feedback text after approving).
+  const before = await req.server.prisma.taskSubmission.findUnique({
+    where: { id: sid },
+    select: { status: true, memberId: true, taskId: true },
+  });
+
   const updated = await req.server.prisma.taskSubmission.update({
     where: { id: sid },
     data: {
@@ -1007,7 +1018,34 @@ export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, re
       reviewedAt: new Date(),
     },
   });
+
+  if (before && before.status !== 'approved' && body.status === 'approved') {
+    void awardTaskStreakPoints(req.server.prisma as any, before.memberId, before.taskId);
+  }
+
   return reply.send({ success: true, data: updated, error: null });
+}
+
+// Streak Points for course-episode tasks — writes into the shared
+// tbt_activity_log ledger (source='task_streak', reference_id=taskId) so a
+// member can only ever be paid once per task regardless of how many times
+// they resubmit-and-get-approved (resubmission upserts the same submission
+// row; this insert's partial unique index (member_id, source, reference_id)
+// is the final backstop even if the above status-transition check is ever
+// bypassed by a race). Reads Task.basePoints as the configured point value —
+// that field already has a working admin edit UI and was previously unpaid
+// for episode tasks.
+async function awardTaskStreakPoints(prisma: any, memberId: string, taskId: string) {
+  try {
+    const task = await prisma.task.findUnique({ where: { id: taskId }, select: { basePoints: true } });
+    if (!task || task.basePoints <= 0) return;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (id, member_id, source, points, reference_id, created_at)
+       VALUES (gen_random_uuid(), $1::uuid, 'task_streak', $2, $3::uuid, NOW())
+       ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+      memberId, task.basePoints, taskId,
+    );
+  } catch { /* fire-and-forget */ }
 }
 
 // ── COURSE MODULES ────────────────────────────────────────────────────

@@ -54,6 +54,7 @@ import {
   postEpisodeProgressHandler,
   getUserEpisodeResourcesHandler,
   getUserEpisodeTasksHandler,
+  submitEpisodeTaskHandler,
   getUserProductsHandler,
   submitProductInquiryHandler,
   getUserResourcesHandler,
@@ -87,6 +88,7 @@ import {
   getResourceDownloadHandler,
   submitCourseQuizHandler,
   getCourseXpHandler,
+  getMyStreakPointsHandler,
   getUserCourseLeaderboardHandler,
   getUserBadgesHandler,
   requestCourseAccessHandler,
@@ -141,6 +143,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Course gamification ────────────────────────────────────────────────────
   fastify.post('/courses/:id/episodes/:epId/quiz', submitCourseQuizHandler);
   fastify.get('/courses/:id/xp', getCourseXpHandler);
+  fastify.get('/streak-points', getMyStreakPointsHandler);
   fastify.get('/courses/:id/leaderboard', getUserCourseLeaderboardHandler);
   fastify.get('/badges', getUserBadgesHandler);
 
@@ -223,6 +226,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/episodes/:id/progress', postEpisodeProgressHandler);
   fastify.get('/episodes/:id/resources', getUserEpisodeResourcesHandler);
   fastify.get('/episodes/:id/tasks', getUserEpisodeTasksHandler);
+  fastify.post('/episodes/:episodeId/tasks/:taskId/submit', submitEpisodeTaskHandler);
 
   // ── Products & Resources ──────────────────────────────────────────────────
   fastify.get('/products', getUserProductsHandler);

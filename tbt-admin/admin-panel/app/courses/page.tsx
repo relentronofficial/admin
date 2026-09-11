@@ -66,6 +66,7 @@ const EMPTY_EP = {
   title: "", videoUrl: "", bunnyVideoId: "", thumbnailUrl: "",
   durationSeconds: "", isVisible: true,
   quizUnlockPercent: "80", drmEnabled: false, bunnyDrmToken: "",
+  streakPoints: "0",
   quizData: null as any,
   timerSeconds: "" as string | number,
   sectionId: null as string | null,
@@ -723,6 +724,7 @@ function EpisodesTab({ course }: { course: any }) {
       quizUnlockPercent: String(ep.quizUnlockPercent ?? 80),
       drmEnabled: ep.drmEnabled ?? false,
       bunnyDrmToken: ep.bunnyDrmToken || "",
+      streakPoints: String(ep.streakPoints ?? 0),
       timerSeconds: ep.timerSeconds != null ? Math.round(ep.timerSeconds / 60) : "",
       sectionId: ep.sectionId ?? null,
       moduleIds: ep.moduleIds ?? [],
@@ -802,6 +804,7 @@ function EpisodesTab({ course }: { course: any }) {
       quizUnlockPercent: Number(epForm.quizUnlockPercent) || 80,
       drmEnabled: epForm.drmEnabled,
       bunnyDrmToken: epForm.bunnyDrmToken || undefined,
+      streakPoints: Math.max(0, parseInt(String(epForm.streakPoints)) || 0),
       quizData,
       timerSeconds: epForm.timerSeconds !== "" ? Math.max(1, parseInt(String(epForm.timerSeconds)) || 1) * 60 : null,
       sectionId: epForm.sectionId || null,
@@ -885,6 +888,7 @@ function EpisodesTab({ course }: { course: any }) {
         <p className="text-[13px] font-medium text-[#f0f0f0] truncate">{ep.title}</p>
         <div className="flex items-center gap-2 mt-0.5">
           <p className="text-[10px] text-[#888]">{fmtDuration(ep.durationSeconds)}</p>
+          {ep.streakPoints > 0 && <span className="text-[9px] bg-[#dc2626]/15 text-[#dc2626] border border-[#dc2626]/30 px-1.5 rounded font-bold">🔥 {ep.streakPoints} pts</span>}
           {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
           {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
           {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
@@ -1092,6 +1096,14 @@ function EpisodesTab({ course }: { course: any }) {
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Duration (seconds)</label>
             <input type="number" min="0" value={epForm.durationSeconds} onChange={e => setEpField("durationSeconds", e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+          </div>
+          {/* Streak Points — awarded once when a member completes this video, separate from XP/Episode */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">
+              Streak Points <span className="normal-case tracking-normal font-normal text-[#555]">— awarded once on completion</span>
+            </label>
+            <input type="number" min="0" value={epForm.streakPoints} onChange={e => setEpField("streakPoints", e.target.value)}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
           </div>
           {/* Episode focus timer */}

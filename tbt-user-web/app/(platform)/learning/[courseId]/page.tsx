@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, CheckCircle2, Play, Loader2, X, Zap, Award,
   Lock, Trophy, ChevronDown, ChevronUp, Share2, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
-  Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
+  Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText, Send, Flame,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
@@ -19,7 +19,7 @@ import {
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
   useSaveReflection, useReflections,
-  useEpisodeResources, useEpisodeTasks,
+  useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
@@ -570,6 +570,110 @@ function ExpiryWarning({ expiresAt }: { expiresAt: string }) {
         Your access expires in{" "}
         <strong>{daysLeft <= 0 ? "less than a day" : `${daysLeft} day${daysLeft === 1 ? "" : "s"}`}</strong>. Complete it before it expires!
       </p>
+    </div>
+  );
+}
+
+// ── Episode Task Row (submit → admin approves → Streak Points) ───────────────
+const TASK_STATUS_LABEL: Record<string, string> = {
+  pending: "Submitted — pending review",
+  approved: "Approved",
+  rejected: "Rejected — you can resubmit",
+  resubmission_required: "Changes requested — please resubmit",
+};
+
+function EpisodeTaskRow({ task, index, episodeId }: { task: EpisodeTask; index: number; episodeId: string | null | undefined }) {
+  const [responseValue, setResponseValue] = useState(task.submissionResponse ?? "");
+  const [editing, setEditing] = useState(false);
+  const submitTask = useSubmitEpisodeTask(episodeId);
+
+  const status = task.submissionStatus ?? null;
+  const canSubmit = !status || status === "rejected" || status === "resubmission_required" || editing;
+
+  const handleSubmit = async () => {
+    try {
+      await submitTask.mutateAsync({ taskId: task.id, responseValue: responseValue.trim() || undefined });
+      toast.success("Task submitted for review");
+      setEditing(false);
+    } catch {
+      toast.error("Couldn't submit — try again");
+    }
+  };
+
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-start gap-3">
+        <span
+          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white mt-0.5"
+          style={{ background: status === "approved" ? "var(--color-success)" : "var(--color-accent)" }}
+        >
+          {status === "approved" ? <Check size={13} /> : index + 1}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>{task.title}</p>
+            {!!task.streakPoints && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
+                <Flame size={10} /> +{task.streakPoints}
+              </span>
+            )}
+          </div>
+          {task.description && (
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>{task.description}</p>
+          )}
+          {task.deliverables && (
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
+              Deliverable: {task.deliverables}
+            </p>
+          )}
+          {task.estimatedMinutes && (
+            <span className="inline-flex items-center gap-1 mt-1.5 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
+              <Clock size={10} /> ~{task.estimatedMinutes} min
+            </span>
+          )}
+
+          {status && !editing && (
+            <div className="mt-2.5 flex items-center gap-2">
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{
+                  background: status === "approved" ? "color-mix(in srgb, var(--color-success) 12%, transparent)" : "var(--color-surface-xs)",
+                  color: status === "approved" ? "var(--color-success)" : "var(--color-text-subtle)",
+                }}
+              >
+                {TASK_STATUS_LABEL[status] ?? status}
+              </span>
+              {(status === "rejected" || status === "resubmission_required") && (
+                <button onClick={() => setEditing(true)} className="text-xs underline" style={{ color: "var(--color-accent)" }}>
+                  Edit &amp; resubmit
+                </button>
+              )}
+            </div>
+          )}
+
+          {canSubmit && (
+            <div className="mt-2.5 space-y-2">
+              <textarea
+                value={responseValue}
+                onChange={(e) => setResponseValue(e.target.value)}
+                placeholder="Describe how you completed this task (optional)"
+                rows={2}
+                className="w-full text-sm rounded-lg px-3 py-2 outline-none resize-none text-foreground placeholder-muted-foreground"
+                style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={submitTask.isPending}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40 transition-colors"
+                style={{ background: "var(--color-accent)" }}
+              >
+                <Send size={12} />
+                {submitTask.isPending ? "Submitting…" : status ? "Resubmit" : "Submit Task"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2439,32 +2543,7 @@ export default function CourseDetailPage({
                 </div>
                 <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
                   {episodeTasks.map((t: EpisodeTask, i: number) => (
-                    <div key={t.id} className="px-4 py-3">
-                      <div className="flex items-start gap-3">
-                        <span
-                          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white mt-0.5"
-                          style={{ background: "var(--color-accent)" }}
-                        >
-                          {i + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>{t.title}</p>
-                          {t.description && (
-                            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>{t.description}</p>
-                          )}
-                          {t.deliverables && (
-                            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
-                              Deliverable: {t.deliverables}
-                            </p>
-                          )}
-                          {t.estimatedMinutes && (
-                            <span className="inline-flex items-center gap-1 mt-1.5 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
-                              <Clock size={10} /> ~{t.estimatedMinutes} min
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                    <EpisodeTaskRow key={t.id} task={t} index={i} episodeId={selectedLesson?.id} />
                   ))}
                 </div>
               </div>

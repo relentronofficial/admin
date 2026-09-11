@@ -2490,6 +2490,7 @@ model CourseEpisode {
   quizUnlockPercent Int      @default(80) @map("quiz_unlock_percent")
   drmEnabled        Boolean  @default(false) @map("drm_enabled")
   bunnyDrmToken     String?  @map("bunny_drm_token")
+  streakPoints      Int      @default(0) @map("streak_points")
   course            Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   progress        CourseEpisodeProgress[]
   quizAttempts    CourseQuizAttempt[]

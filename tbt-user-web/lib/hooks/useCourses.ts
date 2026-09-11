@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
-export type { EpisodeResource, EpisodeTask } from "@/lib/api/services/courses.service";
+export type { EpisodeResource, EpisodeTask, StreakPointsSummary, StreakPointsHistoryEntry } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -219,4 +219,25 @@ export const useEpisodeTasks = (episodeId: string | null | undefined) =>
     },
     enabled: !!episodeId,
     staleTime: 5 * 60 * 1000,
+  });
+
+export const useSubmitEpisodeTask = (episodeId: string | null | undefined) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { taskId: string; responseValue?: string }) =>
+      coursesService.submitEpisodeTask(episodeId!, vars.taskId, vars.responseValue),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["episode-tasks", episodeId] });
+    },
+  });
+};
+
+export const useMyStreakPoints = () =>
+  useQuery({
+    queryKey: ["user", "streak-points"],
+    queryFn: async () => {
+      const res = await coursesService.getStreakPoints();
+      return res.data;
+    },
+    staleTime: 30 * 1000,
   });

@@ -11,6 +11,7 @@ import {
   Headphones, Megaphone, Phone, Users, Star, Zap, ShoppingCart, ChevronRight, Clock,
 } from "lucide-react";
 import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, type CreditPricingItem } from "@/lib/hooks/useUser";
+import { useMyStreakPoints } from "@/lib/hooks/useCourses";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { cn } from "@/lib/utils/cn";
 import toast from "react-hot-toast";
@@ -140,6 +141,53 @@ function StatsStrip({ profile }: { profile: MemberProfile }) {
           <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Streak Points (video + task) ────────────────────────────────────────────
+
+function formatStreakDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function StreakPointsSection() {
+  const { data, isLoading } = useMyStreakPoints();
+  if (isLoading) return null;
+  if (!data || data.history.length === 0) return null;
+
+  return (
+    <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+          <Flame size={14} style={{ color: "#f97316" }} /> Streak Points
+        </h3>
+        <span className="text-sm font-bold" style={{ color: "#f97316" }}>{data.total.toLocaleString()}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl p-3 bg-muted/40 text-center">
+          <p className="text-xs text-muted-foreground">🎥 Videos</p>
+          <p className="text-base font-bold text-foreground">{data.videoTotal.toLocaleString()}</p>
+        </div>
+        <div className="rounded-xl p-3 bg-muted/40 text-center">
+          <p className="text-xs text-muted-foreground">📝 Tasks</p>
+          <p className="text-base font-bold text-foreground">{data.taskTotal.toLocaleString()}</p>
+        </div>
+      </div>
+      <div className="space-y-1.5 max-h-64 overflow-y-auto">
+        {data.history.slice(0, 20).map((h, i) => (
+          <div key={i} className="flex items-center justify-between text-sm py-1.5 border-b border-border last:border-0">
+            <span className="flex items-center gap-2 min-w-0 text-foreground">
+              <span className="shrink-0">{h.type === "video" ? "🎥" : "📝"}</span>
+              <span className="truncate">{h.title}</span>
+            </span>
+            <span className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-muted-foreground">{formatStreakDate(h.createdAt)}</span>
+              <span className="font-bold" style={{ color: "#f97316" }}>+{h.points}</span>
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -850,6 +898,9 @@ export default function ProfilePage() {
 
       {/* Stats strip — only rendered when new fields are present (guards old cached backend response) */}
       {profile.totalPoints != null && <StatsStrip profile={profile} />}
+
+      {/* Streak Points (video + task breakdown) — self-hides when there's no history yet */}
+      <StreakPointsSection />
 
       {/* Mentorship Benefits */}
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">

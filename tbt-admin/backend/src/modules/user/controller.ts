@@ -1184,7 +1184,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   const episode = await request.server.prisma.courseEpisode.findFirst({
     where: { id: episodeId, courseId },
-    select: { id: true, title: true, durationSeconds: true },
+    select: { id: true, title: true, durationSeconds: true, streakPoints: true },
   });
   if (!episode) return fail(reply, 404, 'Episode not found in this course');
 
@@ -1399,6 +1399,12 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       episodeId,
       (courseForXp as any)?.xpPerEpisode ?? 10,
     );
+    void awardVideoStreakPoints(
+      request.server.prisma as any,
+      request.memberId,
+      episodeId,
+      (episode as any)?.streakPoints ?? 0,
+    );
 
     // 7.1 — episode complete notification
     void notifyEpisodeCompleted({
@@ -1541,6 +1547,25 @@ async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, e
   } catch { /* fire-and-forget */ }
 }
 
+// Streak Points — separate from XP (member_xp) above. Writes into the shared
+// tbt_activity_log ledger (the table "all member points now unify around")
+// with source='video_streak' so it folds into the member's existing
+// total-points/streak calculation (tbtStats.ts) while staying identifiable.
+// The partial unique index (member_id, source, reference_id) — reference_id
+// here is the episode id — gives free duplicate protection: a re-watch of an
+// already-completed episode simply no-ops on conflict.
+async function awardVideoStreakPoints(prisma: any, memberId: string, episodeId: string, points: number) {
+  if (points <= 0) return;
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (id, member_id, source, points, reference_id, created_at)
+       VALUES (gen_random_uuid(), $1::uuid, 'video_streak', $2, $3::uuid, NOW())
+       ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+      memberId, points, episodeId,
+    );
+  } catch { /* fire-and-forget, mirrors awardEpisodeXp */ }
+}
+
 // ─── Course quiz submission ───────────────────────────────────────────────────
 
 export async function submitCourseQuizHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -1659,6 +1684,53 @@ export async function getCourseXpHandler(request: FastifyRequest, reply: Fastify
     return ok(reply, { totalXp: total, currentStreak: streak?.currentStreak ?? 0, longestStreak: streak?.longestStreak ?? 0, history: rows });
   } catch {
     return ok(reply, { totalXp: 0, currentStreak: 0, longestStreak: 0, history: [] });
+  }
+}
+
+/** Streak Points — the member's own history of video/task streak-point
+ * awards, drawn from the shared tbt_activity_log ledger filtered to just
+ * the two 'video_streak'/'task_streak' sources (the ledger also carries
+ * other unrelated point types — 90-day tasks, admin grants, etc. — which
+ * this endpoint deliberately excludes so the two requested streams stay
+ * identifiable, per the "do not merge activity types" requirement). */
+export async function getMyStreakPointsHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const rows = await request.server.prisma.$queryRawUnsafe<
+      { source: string; points: number; reference_id: string; created_at: Date }[]
+    >(
+      `SELECT source, points, reference_id, created_at FROM tbt_activity_log
+       WHERE member_id = $1::uuid AND source IN ('video_streak', 'task_streak')
+       ORDER BY created_at DESC`,
+      request.memberId,
+    );
+
+    const episodeIds = rows.filter(r => r.source === 'video_streak').map(r => r.reference_id);
+    const taskIds = rows.filter(r => r.source === 'task_streak').map(r => r.reference_id);
+
+    const [episodes, tasks] = await Promise.all([
+      episodeIds.length
+        ? request.server.prisma.courseEpisode.findMany({ where: { id: { in: episodeIds } }, select: { id: true, title: true } })
+        : Promise.resolve([]),
+      taskIds.length
+        ? request.server.prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, title: true } })
+        : Promise.resolve([]),
+    ]);
+    const episodeTitles = Object.fromEntries(episodes.map(e => [e.id, e.title]));
+    const taskTitles = Object.fromEntries(tasks.map(t => [t.id, t.title]));
+
+    const history = rows.map(r => ({
+      type: r.source === 'video_streak' ? 'video' as const : 'task' as const,
+      title: r.source === 'video_streak' ? (episodeTitles[r.reference_id] ?? 'Video') : (taskTitles[r.reference_id] ?? 'Task'),
+      points: r.points,
+      createdAt: r.created_at,
+    }));
+
+    const videoTotal = history.filter(h => h.type === 'video').reduce((s, h) => s + h.points, 0);
+    const taskTotal = history.filter(h => h.type === 'task').reduce((s, h) => s + h.points, 0);
+
+    return ok(reply, { total: videoTotal + taskTotal, videoTotal, taskTotal, history });
+  } catch {
+    return ok(reply, { total: 0, videoTotal: 0, taskTotal: 0, history: [] });
   }
 }
 
@@ -4107,13 +4179,51 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
   const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
   if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, title, description, deliverables, estimated_minutes AS "estimatedMinutes"
-     FROM tasks
-     WHERE course_episode_id = $1::uuid
-     ORDER BY sort_order ASC`,
-    episodeId,
+    `SELECT t.id, t.title, t.description, t.deliverables, t.estimated_minutes AS "estimatedMinutes",
+            t.base_points AS "streakPoints", ts.status AS "submissionStatus", ts.response_value AS "submissionResponse"
+     FROM tasks t
+     LEFT JOIN task_submissions ts
+       ON ts.task_id = t.id AND ts.member_id = $2::uuid AND ts.batch_id IS NULL AND ts.day_number IS NULL
+     WHERE t.course_episode_id = $1::uuid
+     ORDER BY t.sort_order ASC`,
+    episodeId, request.memberId,
   ).catch(() => [] as any[]);
   return reply.send({ success: true, data: tasks, error: null });
+}
+
+/** Member submits (or resubmits, if previously rejected) an episode task.
+ * Upserts on the existing partial unique index (member_id, task_id) WHERE
+ * batch_id IS NULL AND day_number IS NULL — episode-task submissions always
+ * have both null, so a resubmission updates the same row rather than
+ * creating a new one. This is what makes "approved at most once per task"
+ * hold structurally: there is only ever one submission row to approve. */
+export async function submitEpisodeTaskHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { episodeId, taskId } = request.params as { episodeId: string; taskId: string };
+  const { responseValue } = (request.body ?? {}) as { responseValue?: string };
+
+  const task = await request.server.prisma.$queryRawUnsafe<{ course_episode_id: string | null }[]>(
+    `SELECT course_episode_id FROM tasks WHERE id = $1::uuid`, taskId,
+  ).catch(() => []);
+  if (!task[0] || task[0].course_episode_id !== episodeId) return fail(reply, 404, 'Task not found');
+
+  const ep = await (request.server.prisma as any).courseEpisode.findUnique({
+    where: { id: episodeId },
+    select: { courseId: true },
+  });
+  if (!ep) return fail(reply, 404, 'Episode not found');
+  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
+  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
+
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO task_submissions (id, member_id, task_id, response_value, status, created_at, updated_at)
+     VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3, 'pending', NOW(), NOW())
+     ON CONFLICT (member_id, task_id) WHERE batch_id IS NULL AND day_number IS NULL
+     DO UPDATE SET response_value = EXCLUDED.response_value, status = 'pending',
+                   reviewed_at = NULL, reviewed_by = NULL, feedback = NULL, updated_at = NOW()`,
+    request.memberId, taskId, responseValue ?? null,
+  );
+
+  return reply.status(201).send({ success: true, data: { status: 'pending' }, error: null });
 }
 
 export async function getUserResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
