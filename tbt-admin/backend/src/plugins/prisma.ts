@@ -48,6 +48,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS completion_threshold_percent INTEGER NOT NULL DEFAULT 95,
           ADD COLUMN IF NOT EXISTS module VARCHAR(100)
       `),
+      // Seed course module assignments (idempotent — only sets when null)
+      prisma.$executeRawUnsafe(`UPDATE courses SET module = 'Product' WHERE id IN ('010b7a95-151a-4f50-9b24-e89aa061c44d','975c4829-0071-4fdd-ab15-4852390e05e5','a09beb11-32e1-4843-97d7-486cfcd3961b') AND module IS NULL`),
+      prisma.$executeRawUnsafe(`UPDATE courses SET module = 'Service' WHERE id = '507a0171-7669-4428-a27c-7ee1abbc869f' AND module IS NULL`),
+      prisma.$executeRawUnsafe(`UPDATE courses SET module = 'Coach'   WHERE id = '4544919c-7c4f-477f-9841-3b7497d43bde' AND module IS NULL`),
       // course_episodes
       prisma.$executeRawUnsafe(`
         ALTER TABLE course_episodes

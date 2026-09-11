@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { notFound } from "next/navigation";
+import { notFound, useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -266,8 +266,9 @@ function CourseCard({ course, isEnrolled, progress }: { course: any; isEnrolled:
 
 // ── Module page ───────────────────────────────────────────────────────────────
 
-export default function ModuleCoursesPage({ params }: { params: { module: string } }) {
-  const slug = params.module.toLowerCase();
+export default function ModuleCoursesPage() {
+  const params = useParams();
+  const slug = (params.module as string).toLowerCase();
   const cfg = MODULE_CONFIG[slug];
 
   if (!VALID_MODULES.includes(slug)) notFound();
