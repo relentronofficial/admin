@@ -100,6 +100,20 @@ export async function syncLegacyPointsToLedger(
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
     memberId,
   );
+
+  // Individual task base points within approved batch days.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     SELECT $1::uuid, t.base_points, 'task_submission', ts.id,
+            COALESCE(mdp.submitted_at, ts.updated_at, NOW())::date
+     FROM task_submissions ts
+     JOIN tasks t ON t.id = ts.task_id
+     LEFT JOIN member_day_progress mdp ON mdp.id = ts.day_progress_id
+     WHERE ts.member_id = $1::uuid AND ts.status = 'approved'
+       AND ts.batch_id IS NOT NULL AND t.base_points > 0
+     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+    memberId,
+  );
 }
 
 export type MemberStats = {

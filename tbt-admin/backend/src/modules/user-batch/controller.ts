@@ -569,6 +569,14 @@ export async function approveDayHandler(
             referenceId: sub.id,
           },
         }).catch(() => {});
+        // Also credit the gamification coin ledger
+        await req.server.prisma.$executeRawUnsafe(
+          `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+           VALUES ($1::uuid, $2::int, 'task_submission', $3::uuid, $4::date)
+           ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+          req.params.memberId, sub.basePoints, sub.id,
+          (existing.submittedAt ?? new Date()),
+        ).catch(() => {});
       }
       // Handle milestone
       if (sub.isMilestone) {
