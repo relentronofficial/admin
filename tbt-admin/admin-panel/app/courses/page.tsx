@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Plus, Trash2, Pencil, X, Loader2, BookOpen, Search, Film,
@@ -350,10 +351,12 @@ export default function CoursesPage() {
           </div>
 
           {selectedCourse && (
-            <CourseDetailPanel
-              course={selectedCourse}
-              onClose={() => setSelectedCourse(null)}
-            />
+            <PanelErrorBoundary key={selectedCourse.id} onClose={() => setSelectedCourse(null)}>
+              <CourseDetailPanel
+                course={selectedCourse}
+                onClose={() => setSelectedCourse(null)}
+              />
+            </PanelErrorBoundary>
           )}
         </div>
         </>}
@@ -584,6 +587,43 @@ export default function CoursesPage() {
       )}
     </DashboardLayout>
   );
+}
+
+// ── Panel-scoped error boundary (catches render errors without killing the whole page) ──
+class PanelErrorBoundary extends Component<
+  { onClose: () => void; children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { onClose: () => void; children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error("[CourseDetailPanel]", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center gap-4 p-8" style={{ maxHeight: "82vh" }}>
+          <AlertCircle size={28} className="text-red-500" />
+          <div className="text-center space-y-1">
+            <p className="text-[#f0f0f0] font-rajdhani font-bold text-sm uppercase tracking-widest">Error loading panel</p>
+            <p className="text-[#888] text-xs max-w-xs">{this.state.error.message}</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => this.setState({ error: null })}
+              className="px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white font-rajdhani font-bold text-[10px] uppercase tracking-widest rounded"
+            >Retry</button>
+            <button
+              onClick={this.props.onClose}
+              className="px-3 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white font-rajdhani font-bold text-[10px] uppercase tracking-widest rounded"
+            >Close</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ── Tabbed course detail panel ─────────────────────────────────────────
