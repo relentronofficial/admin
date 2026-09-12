@@ -527,6 +527,19 @@ export async function approveDayHandler(
     },
   }).catch(() => {});
 
+  // Write to the gamification ledger so the streak counts this day.
+  // Use the member's submission date (not today) so late admin approvals
+  // don't inflate today's streak date.
+  req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, $4::date)
+     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+    req.params.memberId,
+    xpPerDay,
+    record.id,
+    (existing.submittedAt ?? new Date()),
+  ).catch(() => {});
+
   // Award per-task basePoints + handle milestones (non-blocking)
   void (async () => {
     const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
@@ -793,6 +806,16 @@ export async function bulkApproveDaysHandler(
     req.server.prisma.pointsLedger.create({
       data: { memberId, points: xpPerDayBulk, reason: `Batch day ${dayNumber} approved`, referenceType: 'batch_day', referenceId: record.id },
     }).catch(() => {});
+
+    req.server.prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+       VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, $4::date)
+       ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+      memberId,
+      xpPerDayBulk,
+      record.id,
+      (existing.submittedAt ?? new Date()),
+    ).catch(() => {});
 
     req.server.io.to(`user:${memberId}`).emit('batch:day_approved', {
       dayNumber,

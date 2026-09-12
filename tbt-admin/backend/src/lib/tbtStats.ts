@@ -86,6 +86,20 @@ export async function syncLegacyPointsToLedger(
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
     memberId,
   );
+
+  // Approved batch program days — backfill historical data.
+  // Uses the member's submission date so late admin approvals are attributed
+  // to the day the work was actually done.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     SELECT $1::uuid, COALESCE(b.xp_per_day, 50), 'batch_day', mdp.id,
+            COALESCE(mdp.submitted_at, mdp.completed_at, NOW())::date
+     FROM member_day_progress mdp
+     JOIN batches b ON b.id = mdp.batch_id
+     WHERE mdp.member_id = $1::uuid AND mdp.status = 'approved'
+     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+    memberId,
+  );
 }
 
 export type MemberStats = {
