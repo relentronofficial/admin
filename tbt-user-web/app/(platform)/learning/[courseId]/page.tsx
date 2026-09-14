@@ -1234,6 +1234,8 @@ export default function CourseDetailPage({
 
   // Section accordion state — start all sections expanded; collapse all except the active lesson's section
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  // Modules — topic-area tabs that filter the lesson sidebar (must be before early returns — Rules of Hooks)
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
   // Mid-video cue quizzes
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
@@ -2178,7 +2180,6 @@ export default function CourseDetailPage({
   const courseSections: any[] = (course as any)?.sections ?? [];
   // Modules — topic-area tabs that filter the lesson sidebar
   const courseModules: any[] = (course as any)?.modules ?? [];
-  const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const visibleLessons = selectedModule
     ? lessons.filter((l: any) => ((l as any).moduleIds ?? []).includes(selectedModule))
     : lessons;
