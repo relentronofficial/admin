@@ -84,7 +84,24 @@ export const coursesService = {
       bucket: "episode-task-proofs",
       pathPrefix: `${episodeId}/${taskId}`,
     }),
+
+  getStreakPoints: () =>
+    apiClient.get<never, ApiResponse<StreakPointsSummary>>("/api/user/streak-points"),
 };
+
+export interface StreakPointsHistoryEntry {
+  type: "video" | "task";
+  title: string;
+  points: number;
+  createdAt: string;
+}
+
+export interface StreakPointsSummary {
+  total: number;
+  videoTotal: number;
+  taskTotal: number;
+  history: StreakPointsHistoryEntry[];
+}
 
 export interface EpisodeResource {
   id: string;
