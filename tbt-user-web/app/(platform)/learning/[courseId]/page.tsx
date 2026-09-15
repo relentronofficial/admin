@@ -2919,6 +2919,14 @@ export default function CourseDetailPage({
                             <Zap size={9} />+{(course as any).xpPerEpisode} XP
                           </span>
                         )}
+                        {((lesson as any).streakPoints ?? 0) > 0 && (
+                          <span
+                            className="text-[10px] flex items-center gap-0.5 font-semibold"
+                            style={{ color: "#f59e0b" }}
+                          >
+                            <Coins size={9} />+{(lesson as any).streakPoints} pts
+                          </span>
+                        )}
                         {reviewDueIds.includes(lesson.id) && (
                           <span
                             className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"

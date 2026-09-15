@@ -664,6 +664,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     ),
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT e.id AS episode_id, e.section_id, e.timer_seconds AS episode_timer_seconds,
+              e.streak_points AS streak_points,
               s.title AS section_title, s.sort_order AS section_sort_order, s.timer_seconds AS section_timer_seconds
        FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
        WHERE e.course_id = $1::uuid`,
@@ -698,6 +699,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionOrder: r.section_sort_order != null ? Number(r.section_sort_order) : null,
       sectionTimerSeconds: r.section_timer_seconds != null ? Number(r.section_timer_seconds) : null,
       episodeTimerSeconds: r.episode_timer_seconds != null ? Number(r.episode_timer_seconds) : null,
+      streakPoints: r.streak_points != null ? Number(r.streak_points) : 0,
     }]),
   );
 
@@ -773,6 +775,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       completedByThreshold: lockState?.completed ?? false,
       watchPercent: lockState?.watchPercent ?? null,
       timerSeconds: episodeSectionMap.get(ep.id)?.episodeTimerSeconds ?? null,
+      streakPoints: episodeSectionMap.get(ep.id)?.streakPoints ?? 0,
       sectionId: episodeSectionMap.get(ep.id)?.sectionId ?? null,
       sectionTitle: episodeSectionMap.get(ep.id)?.sectionTitle ?? null,
       sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
