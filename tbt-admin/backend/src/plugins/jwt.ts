@@ -67,8 +67,22 @@ export function generateRefreshToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-function hashRefreshToken(token: string): string {
+export function hashRefreshToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/// Hard-revoke a token by its pre-computed SHA-256 hash (used by session management
+/// where the hash is stored in DB but the raw token is no longer available).
+export async function revokeRefreshTokenByHash(redis: any, hash: string): Promise<void> {
+  if (redis) {
+    try {
+      await redis.del(`refresh:${hash}`, `refresh_grace:${hash}`);
+      return;
+    } catch (err) {
+      _log('redis.del (by hash) failed:', err);
+    }
+  }
+  _refreshStore.delete(hash);
 }
 
 const REFRESH_TTL = 365 * 24 * 3600; // 1 year — sliding window, extended on every use

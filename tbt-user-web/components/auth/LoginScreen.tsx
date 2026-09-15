@@ -3,14 +3,41 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone } from "lucide-react";
+import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone, Monitor, Smartphone, Tablet, LogOut, AlertTriangle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import apiClient from "@/lib/api/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
-type Step = "credentials" | "otp" | "reset_password" | "set_password";
+type Step = "credentials" | "otp" | "reset_password" | "set_password" | "session_conflict";
 type FocusedField = "phone" | "password" | "otp" | "newPassword" | null;
+
+interface ActiveSession {
+  id: string;
+  browser: string;
+  os: string;
+  deviceType: "desktop" | "mobile" | "tablet";
+  ipAddress: string | null;
+  lastActiveAt: string;
+  startedAt: string;
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return days === 1 ? "Yesterday" : `${days}d ago`;
+}
+
+function SessionDeviceIcon({ deviceType }: { deviceType: ActiveSession["deviceType"] }) {
+  if (deviceType === "mobile") return <Smartphone className="w-4 h-4" />;
+  if (deviceType === "tablet") return <Tablet className="w-4 h-4" />;
+  return <Monitor className="w-4 h-4" />;
+}
 
 export function LoginScreen() {
   const { config } = useSiteConfig();
@@ -42,6 +69,8 @@ export function LoginScreen() {
   const [error, setError] = useState("");
   const [focused, setFocused] = useState<FocusedField>(null);
   const [resolvedPhone, setResolvedPhone] = useState("");
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const [pendingToken, setPendingToken] = useState("");
 
   // Check if already logged in — uses a public endpoint that always returns 200
   // (avoids a 401 console error when the user has no active session)
@@ -91,17 +120,50 @@ export function LoginScreen() {
     setError("");
 
     try {
-      await apiClient.post("/api/user-auth/verify-otp", {
+      const res: any = await apiClient.post("/api/user-auth/verify-otp", {
         phone: resolvedPhone,
         otp: otp.trim(),
       });
       setSubmitting(false);
-      router.replace(redirectUrl);
+      if (res.data?.step === "session_conflict") {
+        setActiveSessions(res.data.sessions ?? []);
+        setPendingToken(res.data.pendingToken ?? "");
+        setStep("session_conflict");
+      } else {
+        router.replace(redirectUrl);
+      }
     } catch (err: any) {
       setError(err.message || "OTP verification failed. Please try again.");
       setSubmitting(false);
     }
   }, [otp, resolvedPhone, redirectUrl, router, submitting]);
+
+  const handleRevokeSession = useCallback(async (sessionId: string) => {
+    try {
+      const res: any = await apiClient.post("/api/user-auth/session-revoke", {
+        pendingToken,
+        sessionId,
+      });
+      setActiveSessions(res.data?.sessions ?? []);
+      setPendingToken(res.data?.pendingToken ?? pendingToken);
+    } catch (err: any) {
+      setError(err.message || "Failed to sign out device. Please try again.");
+    }
+  }, [pendingToken]);
+
+  const handleCompleteLogin = useCallback(async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await apiClient.post("/api/user-auth/complete-login", { pendingToken });
+      setSubmitting(false);
+      router.replace(redirectUrl);
+    } catch (err: any) {
+      setError(err.message || "Login failed. Please try again.");
+      setSubmitting(false);
+    }
+  }, [pendingToken, redirectUrl, router, submitting]);
 
   const handleSetPassword = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -248,6 +310,7 @@ export function LoginScreen() {
                   {step === "credentials" ? "Welcome Back"
                     : step === "reset_password" ? "Reset Password"
                     : step === "set_password" ? "Set New Password"
+                    : step === "session_conflict" ? "Active Sessions"
                     : "Verify Identity"}
                 </h1>
                 <p className="text-white/65 text-[13px] mt-1 tracking-wide">
@@ -257,6 +320,8 @@ export function LoginScreen() {
                     ? `OTP sent to ${resolvedPhone}`
                     : step === "set_password"
                     ? "Choose a strong password"
+                    : step === "session_conflict"
+                    ? "You're already signed in on another device"
                     : `Enter the OTP sent to ${resolvedPhone}`}
                 </p>
               </motion.div>
@@ -412,6 +477,60 @@ export function LoginScreen() {
                 </form>
               )}
 
+              {/* ── Step: session_conflict ── */}
+              {step === "session_conflict" && (
+                <div className="space-y-3">
+                  <div
+                    className="flex items-start gap-3 p-3 rounded-xl text-sm"
+                    style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)" }}
+                  >
+                    <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-white/70 text-[12px] leading-relaxed">
+                      Sign out from another device to continue here, or sign in on this device anyway to remove all other sessions.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {activeSessions.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center gap-3 p-3 rounded-xl"
+                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}
+                      >
+                        <div className="p-1.5 rounded-lg flex-shrink-0" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.5)" }}>
+                          <SessionDeviceIcon deviceType={s.deviceType} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-[13px] font-semibold leading-tight">{s.os} · {s.browser}</p>
+                          <p className="text-white/45 text-[11px] mt-0.5">{s.ipAddress ?? "IP hidden"} · {relativeTime(s.lastActiveAt)}</p>
+                        </div>
+                        <button
+                          onClick={() => handleRevokeSession(s.id)}
+                          className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors flex-shrink-0"
+                          style={{ borderColor: "rgba(220,38,38,0.4)", color: "#f87171" }}
+                        >
+                          <LogOut className="w-3 h-3" /> Sign out
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {activeSessions.length === 0 && (
+                    <p className="text-white/50 text-[13px] text-center py-2">All other devices signed out. You can sign in now.</p>
+                  )}
+
+                  <SubmitButton submitting={submitting} label="Sign in here (remove all)" loadingLabel="Signing in…" onClick={handleCompleteLogin} />
+
+                  <button
+                    type="button"
+                    onClick={() => { setStep("otp"); setError(""); }}
+                    className="w-full text-[12px] text-white/65 hover:text-white/60 transition-colors pt-1"
+                  >
+                    ← Back
+                  </button>
+                </div>
+              )}
+
               {/* ── Step: set_password (new password only) ── */}
               {step === "set_password" && (
                 <form onSubmit={handleSetPassword} className="space-y-3.5">
@@ -500,10 +619,11 @@ function InputField({ type, inputMode, value, onChange, placeholder, icon, focus
   );
 }
 
-function SubmitButton({ submitting, label, loadingLabel }: { submitting: boolean; label: string; loadingLabel: string }) {
+function SubmitButton({ submitting, label, loadingLabel, onClick }: { submitting: boolean; label: string; loadingLabel: string; onClick?: () => void }) {
   return (
     <motion.button
-      type="submit"
+      type={onClick ? "button" : "submit"}
+      onClick={onClick}
       disabled={submitting}
       whileHover={!submitting ? { scale: 1.015, y: -1 } : undefined}
       whileTap={!submitting ? { scale: 0.975 } : undefined}
