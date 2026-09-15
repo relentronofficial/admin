@@ -33,6 +33,9 @@ function Avatar({
   isUploading: boolean;
 }) {
   const ring = avatarGradient ?? "var(--color-accent)";
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => { setImgError(false); }, [avatarUrl]);
+  const showImage = !!avatarUrl && !imgError;
   return (
     <button
       onClick={onUploadClick}
@@ -41,10 +44,15 @@ function Avatar({
       title="Change photo"
     >
       <div className="rounded-full p-[3px]" style={{ background: ring }}>
-        {avatarUrl ? (
+        {showImage ? (
           <div className="relative w-20 h-20 rounded-full overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={avatarUrl} alt={firstName} className="w-full h-full object-cover" />
+            <img
+              src={avatarUrl as string}
+              alt={firstName}
+              className="w-full h-full object-cover"
+              onError={() => setImgError(true)}
+            />
           </div>
         ) : (
           <div

@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { generateBunnyToken } from '../../lib/bunnyToken.js';
+import { bunnyCdnOrigin } from '../../lib/bunny.js';
 import {
   computeLessonLockStates,
   isEpisodeUnlocked,
@@ -4668,6 +4669,9 @@ export async function updateAvatarHandler(request: FastifyRequest, reply: Fastif
     where: { id: request.memberId },
     data: { profilePhotoUrl: avatarUrl },
   });
+  // Without this, the cached /me payload (see getMeHandler's 60s cacheSet)
+  // keeps serving the pre-upload avatarUrl until the TTL expires.
+  void invalidateCache(request.server.redis ?? null, `me:${request.memberId}`);
   return ok(reply, { avatarUrl });
 }
 
@@ -4725,7 +4729,14 @@ export async function avatarPresignHandler(request: FastifyRequest, reply: Fasti
   });
   const command = new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, ContentType: contentType });
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-  const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+  // BUNNY_CDN_URL is optional — R2 can be configured without a Bunny CDN in
+  // front of it. Falling back to the raw R2 endpoint (same convention as
+  // uploadBufferToR2 in lib/r2.ts) avoids emitting a publicUrl with an empty
+  // host (`https:///members/photos/...`) when it's unset.
+  const cdnOrigin = bunnyCdnOrigin();
+  const publicUrl = cdnOrigin
+    ? `${cdnOrigin}/${key}`
+    : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
   return ok(reply, { uploadUrl, publicUrl });
 }
 
