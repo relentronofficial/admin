@@ -23,6 +23,7 @@ import {
   BarChart2,
   Target,
   ClipboardCheck,
+  ClipboardList,
   GraduationCap,
   CheckSquare,
   Bot,
@@ -107,6 +108,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Analytics", href: "/analytics", icon: BarChart2 },
       { name: "Challenges", href: "/analytics/challenges", icon: Target },
       { name: "Assignments", href: "/assignments", icon: ClipboardCheck },
+      { name: "Weekly Course Reports", href: "/course-weekly-reports", icon: ClipboardList },
     ],
   },
   {

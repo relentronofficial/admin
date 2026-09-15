@@ -324,6 +324,8 @@ model Member {
   batch          Batch? @relation(fields: [batchId], references: [id])
 
   courseEnrollments     CourseEnrollment[]
+  courseWeeklyReports   CourseWeeklyReport[]
+  courseWeeklyFeedback  CourseWeeklyFeedback[]
   quizAttempts          QuizAttempt[]
   lessonProgress        LessonProgress[]
   programEnrollments    ProgramEnrollment[]
@@ -452,6 +454,8 @@ model Course {
   creator        Admin?             @relation("CourseCreator", fields: [createdBy], references: [id])
   modules        Module[]
   enrollments    CourseEnrollment[]
+  weeklyReports  CourseWeeklyReport[]
+  weeklyFeedback CourseWeeklyFeedback[]
   contentItems   ContentItem[]
   courseEpisodes CourseEpisode[]
   accesses       CourseAccess[]
@@ -584,6 +588,62 @@ model CourseEnrollment {
 
   @@unique([memberId, courseId])
   @@map("course_enrollments")
+}
+
+// Admin → member weekly progress report for a course, delivered over
+// WhatsApp. One row per (member, course, week). The weekly BullMQ cron
+// (backend/src/jobs/courseReports.ts) and the admin manual-send endpoint
+// both funnel through the same deliverMemberCourseReport() in
+// backend/src/lib/courseReports.ts, so this row is always the single
+// source of truth for "has this week's report been sent yet."
+model CourseWeeklyReport {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId              String    @map("member_id") @db.Uuid
+  courseId              String    @map("course_id") @db.Uuid
+  weekNumber            Int       @map("week_number")
+  progressPercentage    Int       @map("progress_percentage")
+  completedLessons      Int       @map("completed_lessons")
+  totalLessons          Int       @map("total_lessons")
+  completedTitles       Json?     @map("completed_titles")
+  pendingTitles         Json?     @map("pending_titles")
+  remarks               String?
+  status                String    @default("draft") @map("status")
+  whatsappStatus        String?   @map("whatsapp_status")
+  whatsappSentAt        DateTime? @map("whatsapp_sent_at") @db.Timestamptz(6)
+  whatsappFailureReason String?   @map("whatsapp_failure_reason")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, courseId, weekNumber])
+  @@map("course_weekly_reports")
+}
+
+// Member → admin weekly feedback for a course, delivered over WhatsApp to
+// ADMIN_WHATSAPP_NUMBER (optional). One row per (member, course, week);
+// members may edit their own submission for the same week (upsert), which
+// is the "resubmission" the unique constraint is designed to allow.
+model CourseWeeklyFeedback {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId              String    @map("member_id") @db.Uuid
+  courseId              String    @map("course_id") @db.Uuid
+  weekNumber            Int       @map("week_number")
+  feedback              String
+  remarks               String?
+  status                String    @default("new") @map("status")
+  whatsappStatus        String?   @map("whatsapp_status")
+  whatsappSentAt        DateTime? @map("whatsapp_sent_at") @db.Timestamptz(6)
+  whatsappFailureReason String?   @map("whatsapp_failure_reason")
+  submittedAt           DateTime  @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, courseId, weekNumber])
+  @@map("course_weekly_feedback")
 }
 
 model Program {

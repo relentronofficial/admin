@@ -1815,6 +1815,61 @@ export const useSendTestBatchReport = () => {
   });
 };
 
+// ── Weekly Course Reports & Feedback ────────────────────────────────────
+
+export const useListCourseWeeklyReports = (params: { page?: number; limit?: number; memberId?: string; courseId?: string; week?: number; status?: string } = {}) =>
+  useQuery({
+    queryKey: ['course-weekly-reports', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/course-reports/admin/reports', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useCreateOrSendCourseReport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { memberId: string; courseId: string; remarks?: string | null; force?: boolean }) => {
+      const res: any = await apiClient.post('/api/course-reports/admin/reports/send', data);
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-weekly-reports'] }); },
+  });
+};
+
+export const useUpdateCourseReportRemarks = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, remarks }: { id: string; remarks: string | null }) => {
+      const res: any = await apiClient.patch(`/api/course-reports/admin/reports/${id}/remarks`, { remarks });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-weekly-reports'] }); },
+  });
+};
+
+export const useListCourseWeeklyFeedback = (params: { page?: number; limit?: number; memberId?: string; courseId?: string; week?: number; status?: string } = {}) =>
+  useQuery({
+    queryKey: ['course-weekly-feedback', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/course-reports/admin/feedback', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useUpdateCourseFeedbackStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'new' | 'reviewed' }) => {
+      const res: any = await apiClient.patch(`/api/course-reports/admin/feedback/${id}/status`, { status });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-weekly-feedback'] }); },
+  });
+};
+
 // ── Episode Resources & Tasks ──────────────────────────────────────────
 
 export const useListEpisodeResources = (episodeId: string) =>
