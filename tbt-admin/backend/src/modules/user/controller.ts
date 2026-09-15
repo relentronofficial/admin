@@ -4122,7 +4122,7 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
      FROM tasks t
      LEFT JOIN task_submissions ts
        ON ts.task_id = t.id AND ts.member_id = $2::uuid AND ts.batch_id IS NULL AND ts.day_number IS NULL
-     WHERE t.course_episode_id = $1::uuid
+     WHERE t.course_episode_id = $1::uuid AND t.is_active = true
      ORDER BY t.sort_order ASC`,
     episodeId, request.memberId,
   ).catch(() => [] as any[]);

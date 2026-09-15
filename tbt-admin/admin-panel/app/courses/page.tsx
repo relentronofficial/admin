@@ -71,6 +71,21 @@ const EMPTY_EP = {
   timerSeconds: "" as string | number,
   sectionId: null as string | null,
   moduleIds: [] as string[],
+  // Assessment type (2026-09) — a simplified single-task view over the same
+  // `tasks` row(s) the full "Tasks" modal manages via course_episode_id +
+  // completion_mode. "none" = no active task linked to this episode — only
+  // reachable by editing an episode that predates this feature; new episodes
+  // must pick "self" or "admin" ("" = not yet chosen, blocks save).
+  assessmentType: "none" as "" | "none" | "self" | "admin",
+  assessmentTaskId: null as string | null,
+  assessmentTaskTitle: "",
+  assessmentTaskDescription: "",
+};
+
+const ASSESSMENT_TYPE_LABEL: Record<"none" | "self" | "admin", string> = {
+  none: "No Assessment",
+  self: "Self Assessment",
+  admin: "Admin Assessment",
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -688,6 +703,13 @@ function EpisodesTab({ course }: { course: any }) {
   // Module hooks (for episode module assignment in the form)
   const { data: modulesData } = useListCourseModules(course.id);
 
+  // Assessment type (2026-09) — reuses the episode-tasks endpoints the
+  // "Tasks" modal already uses. Only fetches while a specific episode is
+  // being edited (query is disabled via empty-string id otherwise).
+  const qc = useQueryClient();
+  const [editingEpId, setEditingEpId] = useState<string>("");
+  const { data: epTasksData, isLoading: epTasksLoading } = useListEpisodeTasks(editingEpId);
+
   const serverEps: any[] = (data as any)?.data || [];
   const serverSections: any[] = (sectionsData as any) ?? [];
   const serverModules: any[] = (modulesData as any) ?? [];
@@ -700,7 +722,7 @@ function EpisodesTab({ course }: { course: any }) {
   const [epForm, setEpForm] = useState<any>(EMPTY_EP);
   const [deletingEp, setDeletingEp] = useState<string | null>(null);
   const [epUploading, setEpUploading] = useState<string | null>(null);
-  const [epErrors, setEpErrors] = useState<{ title?: string; video?: string }>({});
+  const [epErrors, setEpErrors] = useState<{ title?: string; video?: string; assessmentTitle?: string; assessmentRequired?: string }>({});
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [resourcesEp, setResourcesEp] = useState<any | null>(null);
@@ -768,8 +790,11 @@ function EpisodesTab({ course }: { course: any }) {
     });
 
   const openCreate = (sectionId?: string | null) => {
-    setEpForm({ ...EMPTY_EP, sectionId: sectionId ?? null });
-    setEditingEp(null); setEpErrors({}); setShowForm(true);
+    // "" (not "none") — a brand-new episode must have Self or Admin Assessment
+    // explicitly chosen; "none" is only ever reached via openEdit on an
+    // episode that predates this requirement.
+    setEpForm({ ...EMPTY_EP, sectionId: sectionId ?? null, assessmentType: "" });
+    setEditingEp(null); setEditingEpId(""); setEpErrors({}); setShowForm(true);
   };
   const openEdit = (ep: any) => {
     // Normalise stored cues: add atTime display field
@@ -788,9 +813,35 @@ function EpisodesTab({ course }: { course: any }) {
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
+      // Reset to "none" until the episode-tasks fetch below resolves and
+      // fills in the actual saved assessment type — avoids showing a stale
+      // value left over from whichever episode was edited previously.
+      assessmentType: "none", assessmentTaskId: null,
+      assessmentTaskTitle: "", assessmentTaskDescription: "",
     });
-    setEditingEp(ep); setEpErrors({}); setShowForm(true);
+    setEditingEp(ep); setEditingEpId(ep.id); setEpErrors({}); setShowForm(true);
   };
+
+  // Populate the Assessment Type control from whichever task is currently
+  // linked to the episode being edited. Mirrors the same tasks list the
+  // "Tasks" modal uses — an active task's completionMode maps 1:1 to
+  // Self/Admin Assessment; no active task means "No Assessment". If an
+  // inactive (previously "No Assessment") task exists, its id is kept so
+  // re-enabling reuses the same row instead of creating a duplicate.
+  useEffect(() => {
+    if (!editingEp || editingEp.id !== editingEpId) return;
+    const tasks: any[] = (epTasksData as any)?.data ?? [];
+    if (!tasks.length) return;
+    const active = tasks.find((t: any) => t.isActive !== false);
+    const target = active ?? tasks[0];
+    setEpForm((f: any) => ({
+      ...f,
+      assessmentType: !active ? "none" : target.completionMode === "SELF_ASSESSMENT" ? "self" : "admin",
+      assessmentTaskId: target.id,
+      assessmentTaskTitle: target.title ?? "",
+      assessmentTaskDescription: target.description ?? "",
+    }));
+  }, [epTasksData, editingEp, editingEpId]);
 
   const uploadImage = useUploadImage();
   const createBunnyVideo = useCreateBunnyVideo();
@@ -831,12 +882,25 @@ function EpisodesTab({ course }: { course: any }) {
   };
 
   const handleSaveEp = async () => {
-    const errs: { title?: string; video?: string } = {};
+    const errs: { title?: string; video?: string; assessmentTitle?: string; assessmentRequired?: string } = {};
     if (!epForm.title.trim()) errs.title = "Title is required";
     if (!epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
-    if (errs.title || errs.video) {
+    const assessmentChosen = epForm.assessmentType === "self" || epForm.assessmentType === "admin";
+    // Mandatory only for brand-new episodes — an existing episode with no
+    // linked task (assessmentType "none") is grandfathered and stays savable.
+    if (!editingEp && !assessmentChosen) {
+      errs.assessmentRequired = "Select Self Assessment or Admin Assessment";
+    }
+    if (assessmentChosen && !epForm.assessmentTaskTitle.trim()) {
+      errs.assessmentTitle = "Assessment title is required";
+    }
+    if (errs.title || errs.video || errs.assessmentTitle || errs.assessmentRequired) {
       setEpErrors(errs);
-      toast.error("Title and video are required");
+      toast.error(
+        errs.assessmentRequired ? errs.assessmentRequired
+        : errs.assessmentTitle && !errs.title && !errs.video ? "Assessment title is required"
+        : "Title and video are required"
+      );
       return;
     }
     setEpErrors({});
@@ -867,10 +931,40 @@ function EpisodesTab({ course }: { course: any }) {
       moduleIds: epForm.moduleIds ?? [],
     };
     try {
-      if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); toast.success("Episode updated"); }
-      else { await createEp.mutateAsync(payload); toast.success("Episode created"); }
+      let episodeId: string;
+      if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); episodeId = editingEp.id; toast.success("Episode updated"); }
+      else { const created: any = await createEp.mutateAsync(payload); episodeId = created.id; toast.success("Episode created"); }
+      await syncEpisodeAssessment(episodeId);
       setShowForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }
+  };
+
+  // Persists the Assessment Type selection against the episode's linked task
+  // row, reusing the existing episode-task endpoints (same ones the "Tasks"
+  // modal uses) rather than introducing a parallel assessment system.
+  // "No Assessment" deactivates (isActive: false) instead of deleting, so
+  // switching types never drops prior member submissions.
+  const syncEpisodeAssessment = async (episodeId: string) => {
+    const { assessmentType, assessmentTaskId, assessmentTaskTitle, assessmentTaskDescription } = epForm;
+    try {
+      if (assessmentType === "none") {
+        if (assessmentTaskId) {
+          await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${assessmentTaskId}`, { isActive: false });
+        }
+        return;
+      }
+      const completionMode = assessmentType === "self" ? "SELF_ASSESSMENT" : "ADMIN_CHECK";
+      const body = { title: assessmentTaskTitle.trim(), description: assessmentTaskDescription.trim() || null, completionMode, isActive: true };
+      if (assessmentTaskId) {
+        await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${assessmentTaskId}`, body);
+      } else {
+        await apiClient.post(`/api/courses/episodes/${episodeId}/tasks`, body);
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Episode saved, but the assessment setting failed to save");
+    } finally {
+      qc.invalidateQueries({ queryKey: ["episode-tasks", episodeId] });
+    }
   };
 
   const handleDeleteEp = async (id: string) => {
@@ -1180,6 +1274,57 @@ function EpisodesTab({ course }: { course: any }) {
             {epErrors.video && <p className="text-[10px] text-red-500 mt-1">{epErrors.video}</p>}
             <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/mov" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
+          </div>
+          {/* Assessment Check By — reuses the same episode-task infrastructure as the
+              per-episode "Tasks" panel; this is a simplified single-task view of it.
+              Mandatory (Self/Admin only, no "None") when creating a brand-new
+              episode — enforced here and re-validated server-side in
+              createCourseEpisodeHandler. "No Assessment" stays available only
+              when editing an existing episode (backward compatibility for
+              episodes that predate this rule), never on create. */}
+          <div className="border-t border-[#2a2a2a] pt-3">
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
+              Assessment Check By {!editingEp && <span className="text-red-500">*</span>}
+              {editingEp && epTasksLoading && <span className="text-[#555] normal-case font-normal">(loading…)</span>}
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              {(editingEp ? (["none", "self", "admin"] as const) : (["self", "admin"] as const)).map(type => (
+                <label key={type} className={`flex items-center gap-2 cursor-pointer flex-1 bg-[#1a1a1a] border rounded px-3 py-2 has-[:checked]:border-[#dc2626] ${epErrors.assessmentRequired ? "border-red-500" : "border-[#2a2a2a]"}`}>
+                  <input type="radio" name="assessmentType" checked={epForm.assessmentType === type}
+                    onChange={() => { setEpField("assessmentType", type); if (epErrors.assessmentRequired) setEpErrors(prev => ({ ...prev, assessmentRequired: undefined })); }}
+                    className="accent-red-600" />
+                  <span className="text-[11px] text-[#a0a0a0] font-rajdhani">{ASSESSMENT_TYPE_LABEL[type]}</span>
+                </label>
+              ))}
+            </div>
+            {epErrors.assessmentRequired && <p className="text-[10px] text-red-500 mt-1">{epErrors.assessmentRequired}</p>}
+            <p className="text-[9px] text-[#555] mt-1 font-rajdhani">
+              {epForm.assessmentType === "none" && "This video has no associated task — normal completion/unlock rules apply. (Legacy state — new videos must choose Self or Admin Assessment.)"}
+              {epForm.assessmentType === "self" && "Member submits the task and it's marked complete instantly — no admin review needed."}
+              {epForm.assessmentType === "admin" && "Member's submission is held as Pending until an admin approves it (Tasks → Submissions)."}
+              {epForm.assessmentType === "" && "Choose who checks this video's task before it can be saved."}
+            </p>
+            {(epForm.assessmentType === "self" || epForm.assessmentType === "admin") && (
+              <div className="mt-2 space-y-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Assessment Title *</label>
+                  <input value={epForm.assessmentTaskTitle}
+                    onChange={e => { setEpField("assessmentTaskTitle", e.target.value); if (epErrors.assessmentTitle) setEpErrors(prev => ({ ...prev, assessmentTitle: undefined })); }}
+                    placeholder="e.g. Submit your reflection notes"
+                    className={`w-full bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${epErrors.assessmentTitle ? "border-red-500" : "border-[#2a2a2a]"}`} />
+                  {epErrors.assessmentTitle && <p className="text-[10px] text-red-500 mt-1">{epErrors.assessmentTitle}</p>}
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Assessment Description <span className="text-[#777] normal-case tracking-normal">(optional)</span></label>
+                  <textarea value={epForm.assessmentTaskDescription} onChange={e => setEpField("assessmentTaskDescription", e.target.value)} rows={2}
+                    placeholder="What should the member do?"
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-white outline-none focus:border-[#dc2626] text-xs resize-none" />
+                </div>
+                <p className="text-[9px] text-[#555] font-rajdhani">
+                  For deliverables, proof type, points, or milestones, use the <span className="text-[#888]">Tasks</span> panel on this episode after saving.
+                </p>
+              </div>
+            )}
           </div>
           {/* Thumbnail */}
           <div>

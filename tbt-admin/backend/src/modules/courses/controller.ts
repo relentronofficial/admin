@@ -264,6 +264,24 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
 export async function createCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   const body = req.body as any;
+  // Assessment Check By is mandatory for every NEW episode (2026-09) — Self or
+  // Admin Assessment only, no "none" option, so a course video can never be
+  // created without an assessment owner. Existing episodes created before this
+  // rule (no linked task at all) are explicitly grandfathered and untouched —
+  // this check only runs on creation, never on updateCourseEpisodeHandler, so
+  // old "No Assessment" episodes keep working and never get a task forced onto
+  // them by an edit. Trusts nothing from the client beyond these two values.
+  const assessmentType = body.assessmentType;
+  if (assessmentType !== 'self' && assessmentType !== 'admin') {
+    return reply.status(400).send({
+      success: false, data: null,
+      error: 'Assessment Check By is required: choose Self Assessment or Admin Assessment.',
+    });
+  }
+  const assessmentTaskTitle = typeof body.assessmentTaskTitle === 'string' ? body.assessmentTaskTitle.trim() : '';
+  if (!assessmentTaskTitle) {
+    return reply.status(400).send({ success: false, data: null, error: 'Assessment title is required.' });
+  }
   const count = await req.server.prisma.courseEpisode.count({ where: { courseId: id } });
   const episode = await req.server.prisma.courseEpisode.create({
     data: {
