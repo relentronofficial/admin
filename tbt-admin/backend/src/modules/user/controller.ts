@@ -4803,10 +4803,15 @@ export async function assignmentFilePresignHandler(request: FastifyRequest, repl
 export async function revokeDeviceHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
   const currentDeviceId = request.headers['x-device-id'] as string | undefined;
-  const session = await request.server.prisma.memberSession.findFirst({ where: { id, memberId: request.memberId } });
+  const session = await (request.server.prisma.memberSession as any).findFirst({ where: { id, memberId: request.memberId } });
   if (!session) return fail(reply, 404, 'Device session not found');
   if (currentDeviceId && session.deviceId === currentDeviceId) return fail(reply, 400, 'Cannot revoke current device');
-  await request.server.prisma.memberSession.delete({ where: { id } });
+  // Also revoke the Redis refresh token so the device is kicked immediately
+  if (session.tokenHash) {
+    const { revokeRefreshTokenByHash } = await import('../../plugins/jwt.js');
+    await revokeRefreshTokenByHash(request.server.redis ?? null, session.tokenHash).catch(() => {});
+  }
+  await (request.server.prisma.memberSession as any).delete({ where: { id } });
   return ok(reply, { revoked: true });
 }
 

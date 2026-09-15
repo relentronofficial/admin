@@ -62,6 +62,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS timer_seconds INT,
           ADD COLUMN IF NOT EXISTS description TEXT
       `),
+      // member_sessions — token_hash links the DB record to the Redis refresh token
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE member_sessions
+          ADD COLUMN IF NOT EXISTS token_hash TEXT
+      `),
       // products
       prisma.$executeRawUnsafe(`
         ALTER TABLE products
