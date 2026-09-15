@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
-export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus } from "@/lib/api/services/courses.service";
+export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -231,6 +231,16 @@ export const useSubmitEpisodeTask = (episodeId: string | null | undefined) => {
     },
   });
 };
+
+export const useMyStreakPoints = () =>
+  useQuery({
+    queryKey: ["user", "streak-points"],
+    queryFn: async () => {
+      const res = await coursesService.getStreakPoints();
+      return res.data;
+    },
+    staleTime: 30 * 1000,
+  });
 
 export const useUploadEpisodeTaskProof = (episodeId: string | null | undefined) => {
   return async (file: File, taskId: string): Promise<string> => {

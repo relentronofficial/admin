@@ -101,6 +101,7 @@ import {
   getMyConnectionsHandler,
   getMyPostsHandler,
   getSupportQuotaHandler,
+  getMyStreakPointsHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
@@ -144,6 +145,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/courses/:id/xp', getCourseXpHandler);
   fastify.get('/courses/:id/leaderboard', getUserCourseLeaderboardHandler);
   fastify.get('/badges', getUserBadgesHandler);
+  fastify.get('/streak-points', getMyStreakPointsHandler);
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   fastify.get('/dashboard/stats', getDashboardStatsHandler);

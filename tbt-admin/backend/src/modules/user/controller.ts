@@ -20,6 +20,7 @@ import {
 } from '../../lib/courseNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { computeMemberStats } from '../../lib/tbtStats.js';
+import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -1399,6 +1400,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       episodeId,
       (courseForXp as any)?.xpPerEpisode ?? 10,
     );
+    void awardVideoStreakPoints(request.server.prisma as any, request.memberId!, episodeId);
 
     // 7.1 — episode complete notification
     void notifyEpisodeCompleted({
@@ -1539,6 +1541,29 @@ async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, e
       });
     }
   } catch { /* fire-and-forget */ }
+}
+
+// Streak Points — video side. Pays the episode's admin-configured streak_points
+// into the existing points_ledger, once per member per episode. App-level
+// pre-check is the fast path; the DB partial unique index
+// points_ledger_episode_completion_dedup (prisma.ts) is the real backstop against
+// a duplicate award if this ever races.
+async function awardVideoStreakPoints(prisma: any, memberId: string, episodeId: string) {
+  try {
+    const rows = (await prisma.$queryRawUnsafe(
+      `SELECT streak_points FROM course_episodes WHERE id = $1::uuid`, episodeId,
+    )) as { streak_points: number }[];
+    const points = Number(rows[0]?.streak_points ?? 0);
+    if (points <= 0) return;
+    const already = await prisma.pointsLedger.findFirst({
+      where: { memberId, referenceType: 'episode_completion', referenceId: episodeId },
+      select: { id: true },
+    });
+    if (already) return;
+    await prisma.pointsLedger.create({
+      data: { memberId, points, reason: 'Video completed', referenceType: 'episode_completion', referenceId: episodeId },
+    });
+  } catch { /* fire-and-forget, matches awardEpisodeXp style */ }
 }
 
 // ─── Course quiz submission ───────────────────────────────────────────────────
@@ -1711,6 +1736,38 @@ export async function getUserBadgesHandler(request: FastifyRequest, reply: Fasti
     earnedAt: b.earnedAt,
     badge: b.badge,
   })));
+}
+
+// Streak Points history — reads the existing points_ledger for the two award
+// paths that feed it (video: reference_type='episode_completion', written by
+// awardVideoStreakPoints above; task: reference_type in ('task_submission',
+// 'milestone') written by the pre-existing completionMode flow, scoped here to
+// course-episode tasks via course_episode_id IS NOT NULL). points_ledger has no
+// other reader anywhere in the backend today — this is the first.
+export async function getMyStreakPointsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const rows = await request.server.prisma.$queryRawUnsafe<StreakPointsRow[]>(
+    `SELECT pl.points, pl.reference_type, pl.created_at,
+       CASE
+         WHEN pl.reference_type = 'episode_completion' THEN ce.title
+         WHEN pl.reference_type = 'task_submission' THEN t1.title
+         WHEN pl.reference_type = 'milestone' THEN t2.title
+       END AS title
+     FROM points_ledger pl
+     LEFT JOIN course_episodes ce ON pl.reference_type = 'episode_completion' AND ce.id = pl.reference_id
+     LEFT JOIN task_submissions ts ON pl.reference_type = 'task_submission' AND ts.id = pl.reference_id
+     LEFT JOIN tasks t1 ON t1.id = ts.task_id AND t1.course_episode_id IS NOT NULL
+     LEFT JOIN tasks t2 ON pl.reference_type = 'milestone' AND t2.id = pl.reference_id AND t2.course_episode_id IS NOT NULL
+     WHERE pl.member_id = $1::uuid
+       AND (
+         pl.reference_type = 'episode_completion'
+         OR (pl.reference_type = 'task_submission' AND t1.id IS NOT NULL)
+         OR (pl.reference_type = 'milestone' AND t2.id IS NOT NULL)
+       )
+     ORDER BY pl.created_at DESC`,
+    request.memberId,
+  ).catch(() => [] as StreakPointsRow[]);
+
+  return ok(reply, computeStreakPointsSummary(rows));
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

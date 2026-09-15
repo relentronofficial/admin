@@ -1456,6 +1456,22 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_mode VARCHAR(20) NOT NULL DEFAULT 'ADMIN_CHECK'
     `).catch(() => {});
 
+    // Streak Points — video side (2026-09). Per-episode point value, admin-set,
+    // paid into the existing points_ledger on first-ever completion of that
+    // episode. Task-side streak points needed no new column: Task.base_points +
+    // the completion_mode flow above already pay into points_ledger exactly once
+    // per task per member.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS streak_points INT NOT NULL DEFAULT 0
+    `).catch(() => {});
+    // Belt-and-suspenders DB-level dedup for video streak-point awards. Scoped by
+    // reference_type so it can never collide with (or constrain) the pre-existing
+    // task_submission/milestone/batch_day points_ledger rows written elsewhere.
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS points_ledger_episode_completion_dedup
+      ON points_ledger (member_id, reference_id) WHERE reference_type = 'episode_completion'
+    `).catch(() => {});
+
     // Backfill: publish any active courses that were created before the admin
     // Publish toggle existed (the create handler now defaults isPublished=true,
     // but earlier rows are stuck at is_published=false and never appear on the
