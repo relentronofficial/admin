@@ -207,6 +207,10 @@ export async function verifyOtp(fastify: FastifyInstance, request: any, reply: a
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
 
+  // Single-session enforcement: revoke all existing refresh tokens for this
+  // member before issuing the new one so only one device is active at a time.
+  await revokeAllForMember(getRedis(fastify), (member as any).id).catch(() => {});
+
   await issueTokens(fastify, reply, (member as any).id);
   return reply.send({ success: true, data: member });
 }
@@ -245,6 +249,9 @@ export async function setPassword(fastify: FastifyInstance, request: any, reply:
     where: { id: (member as any).id },
     select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any,
   });
+
+  // Single-session enforcement.
+  await revokeAllForMember(getRedis(fastify), (member as any).id).catch(() => {});
 
   await issueTokens(fastify, reply, (member as any).id);
   return reply.send({ success: true, data: updated });

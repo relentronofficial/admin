@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
-export type { EpisodeResource, EpisodeTask } from "@/lib/api/services/courses.service";
+export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -220,3 +220,23 @@ export const useEpisodeTasks = (episodeId: string | null | undefined) =>
     enabled: !!episodeId,
     staleTime: 5 * 60 * 1000,
   });
+
+export const useSubmitEpisodeTask = (episodeId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { taskId: string; responseValue?: string; proofUrl?: string; proofType?: string }) =>
+      coursesService.submitEpisodeTask(episodeId!, body.taskId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["episode-tasks", episodeId] });
+    },
+  });
+};
+
+export const useUploadEpisodeTaskProof = (episodeId: string | null | undefined) => {
+  return async (file: File, taskId: string): Promise<string> => {
+    const presign = await coursesService.presignEpisodeTaskProof(file.name, file.type, episodeId!, taskId);
+    const { uploadUrl, publicUrl } = presign.data!;
+    await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+    return publicUrl;
+  };
+};

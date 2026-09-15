@@ -176,10 +176,10 @@ export async function revokeRefreshToken(redis: any, refreshToken: string): Prom
   _refreshStore.delete(hash);
 }
 
-/// Hard-revoke every refresh token belonging to a member. Used by the
-/// admin session-kill endpoint. Requires Redis SCAN — in a Redis
-/// outage this is a no-op (fails safe: the outage will resolve and the
-/// admin can retry).
+/// Hard-revoke every refresh token belonging to a member. Used when a
+/// new login is issued (single-session enforcement), by the admin
+/// session-kill endpoint, and by the member "sign out all devices" route.
+/// Requires Redis SCAN — in a Redis outage this is a no-op (fails safe).
 export async function revokeAllForMember(redis: any, memberId: string): Promise<number> {
   if (!redis) return 0;
   let cursor = '0';
@@ -189,11 +189,13 @@ export async function revokeAllForMember(redis: any, memberId: string): Promise<
       const [next, batch] = await redis.scan(cursor, 'MATCH', 'refresh:*', 'COUNT', 200);
       cursor = next;
       if (!batch.length) continue;
-      // Fetch member ids in bulk and delete matching entries.
       const values = await redis.mget(...batch);
       const toDelete = batch.filter((_: string, i: number) => values[i] === memberId);
       if (toDelete.length) {
-        deleted += await redis.del(...toDelete);
+        // Also kill any grace-window copies so they can't be used after
+        // a new login issues a fresh token for the same member.
+        const graceToDelete = toDelete.map((k: string) => k.replace('refresh:', 'refresh_grace:'));
+        deleted += await redis.del(...toDelete, ...graceToDelete);
       }
     } while (cursor !== '0');
   } catch (err) {
