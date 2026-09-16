@@ -989,7 +989,12 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                 <Check size={10} /> Completed
               </span>
             )}
-            {status === "pending" && (
+            {status === "pending" && task.completionMode === "ADMIN_CHECK" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #f59e0b 20%, transparent)", color: "#f59e0b" }}>
+                <Clock size={10} /> Pending Review
+              </span>
+            )}
+            {status === "pending" && task.completionMode === "SELF_ASSESSMENT" && (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-success) 20%, transparent)", color: "var(--color-success)" }}>
                 <Check size={10} /> Uploaded
               </span>
