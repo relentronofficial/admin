@@ -1098,6 +1098,160 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
   );
 }
 
+// ── Learning Challenge Timer Card ─────────────────────────────────────────────
+// Appears below the video while the focus timer is active. Purely presentational
+// — no hooks, no extra timers. Re-renders are driven by the parent's lessonTimers
+// state (updated every ~500 ms), which is already happening.
+function LearningChallengeCard({
+  timerSecs, totalSeconds, lifelinesLeft, maxLifelines,
+  coinBalance, lifelineCoinCost, onBuyWithCoins, isPurchasing,
+}: {
+  timerSecs: number;
+  totalSeconds: number;
+  lifelinesLeft: number;
+  maxLifelines: number;
+  coinBalance?: number;
+  lifelineCoinCost: number;
+  onBuyWithCoins: () => void;
+  isPurchasing?: boolean;
+}) {
+  const fraction = totalSeconds > 0 ? Math.max(0, Math.min(1, timerSecs / totalSeconds)) : 1;
+  const pct = Math.round(fraction * 100);
+  const isExpired = timerSecs === 0;
+  const isCritical = !isExpired && timerSecs <= 60;
+  const isWarning = !isExpired && !isCritical && pct <= 20;
+
+  const accentColor = isExpired ? "#6b7280"
+    : isCritical ? "#ef4444"
+    : isWarning ? "#f59e0b"
+    : "var(--color-accent)";
+
+  const cardBg = isExpired
+    ? "color-mix(in srgb, #6b7280 8%, var(--color-bg-surface))"
+    : isCritical ? "color-mix(in srgb, #ef4444 7%, var(--color-bg-surface))"
+    : isWarning ? "color-mix(in srgb, #f59e0b 6%, var(--color-bg-surface))"
+    : "color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-surface))";
+
+  const cardBorder = isExpired
+    ? "1px solid color-mix(in srgb, #6b7280 25%, transparent)"
+    : isCritical ? "1px solid color-mix(in srgb, #ef4444 35%, transparent)"
+    : isWarning ? "1px solid color-mix(in srgb, #f59e0b 30%, transparent)"
+    : "1px solid color-mix(in srgb, var(--color-accent) 22%, transparent)";
+
+  const headingText = isExpired ? "Time's Up!"
+    : isCritical ? "Complete Now!"
+    : isWarning ? "Time Running Low"
+    : "Learning Challenge";
+
+  const subText = isExpired
+    ? "Your learning time has ended"
+    : isCritical
+    ? "Under 1 minute — finish the lesson!"
+    : isWarning
+    ? "Less than 20% time left — keep going!"
+    : "Complete the lesson before time runs out";
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: cardBg, border: cardBorder }}
+      role="timer"
+    >
+      <div className="p-4 space-y-3">
+        {/* Header row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm select-none" aria-hidden="true">
+              {isExpired ? "⏰" : isCritical ? "🔥" : isWarning ? "⚠️" : "🎯"}
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: accentColor }}>
+              {headingText}
+            </span>
+          </div>
+          {/* Lifeline hearts */}
+          <div
+            className="flex items-center gap-0.5 px-2 py-1 rounded-full"
+            style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+            title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
+          >
+            {Array.from({ length: maxLifelines }).map((_, i) => (
+              <Heart key={i} size={12}
+                fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                stroke={i < lifelinesLeft ? "#ef4444" : "rgba(128,128,128,0.35)"}
+                style={{ transition: "fill 0.3s, stroke 0.3s" }}
+              />
+            ))}
+            <span
+              className="text-[10px] font-bold ml-1 tabular-nums"
+              style={{ color: lifelinesLeft > 0 ? "#ef4444" : "var(--color-text-disabled)" }}
+            >
+              {lifelinesLeft}
+            </span>
+          </div>
+        </div>
+
+        {/* Large timer + sub-text */}
+        <div className="flex items-end gap-3">
+          <span
+            className={cn(
+              "font-mono font-bold tabular-nums leading-none",
+              isCritical && "animate-pulse motion-reduce:animate-none",
+            )}
+            style={{ fontSize: "2.5rem", color: accentColor, transition: "color 0.4s ease" }}
+            aria-live="polite"
+            aria-label={`${Math.floor(timerSecs / 60)} minutes ${timerSecs % 60} seconds remaining`}
+          >
+            {fmtTime(timerSecs)}
+          </span>
+          <span className="text-xs leading-snug pb-1" style={{ color: "var(--color-text-subtle)" }}>
+            {subText}
+          </span>
+        </div>
+
+        {/* Progress bar */}
+        <div>
+          <div
+            className="h-2 rounded-full overflow-hidden"
+            style={{ background: "var(--color-progress-track)" }}
+            role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${pct}%`,
+                background: accentColor,
+                transition: "width 0.5s linear, background 0.4s ease",
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-1.5 text-[10px]" style={{ color: "var(--color-text-disabled)" }}>
+            <span>{pct}% remaining</span>
+            <span>{fmtTime(totalSeconds)} total</span>
+          </div>
+        </div>
+
+        {/* Expired + no lifelines: coin purchase CTA (coinDialog is also open, this is a secondary CTA) */}
+        {isExpired && lifelinesLeft === 0 && (
+          <div className="pt-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }}>
+            <button
+              onClick={onBuyWithCoins}
+              disabled={isPurchasing || (coinBalance ?? 0) < lifelineCoinCost}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: "#d97706" }}
+            >
+              {isPurchasing ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+              Spend {lifelineCoinCost} Coins
+              {coinBalance != null && (
+                <span className="text-xs font-normal opacity-70 ml-1">({coinBalance} available)</span>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function CourseDetailPage({
   params,
@@ -2521,6 +2675,25 @@ export default function CourseDetailPage({
                 );
               })()}
             </VideoWatermark>
+
+            {/* ── Learning Challenge Timer Card ──────────────────────────────
+                Appears only while the focus timer is running (timerSecs set).
+                Wired to existing state — no second timer or extra API calls. */}
+            {activeTimerSecs !== undefined && (
+              <LearningChallengeCard
+                timerSecs={activeTimerSecs}
+                totalSeconds={timerDurationRef.current}
+                lifelinesLeft={lifelinesLeft}
+                maxLifelines={maxLifelines}
+                coinBalance={me?.totalPoints ?? undefined}
+                lifelineCoinCost={LIFELINE_COIN_COST}
+                onBuyWithCoins={() => {
+                  const lesson = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
+                  if (lesson) setCoinDialog({ lesson, duration: timerDurationRef.current });
+                }}
+                isPurchasing={spendCoins.isPending}
+              />
+            )}
 
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
