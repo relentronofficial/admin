@@ -1159,6 +1159,7 @@ export default function CourseDetailPage({
   const [quizResult, setQuizResult] = useState<any>(null);
   const [xpFlash, setXpFlash] = useState<number | null>(null);
   const [bonusXpFlash, setBonusXpFlash] = useState<number | null>(null); // MG-04: early completion bonus
+  const [missionComplete, setMissionComplete] = useState<{ title: string; xp: number } | null>(null);
   const [downloadingCert, setDownloadingCert] = useState(false);
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
   const { data: certData } = useCertificateEligibility(courseId);
@@ -1295,6 +1296,7 @@ export default function CourseDetailPage({
   const justCompletedInSessionRef = useRef(false);
   // Prevents double XP flash when both lesson completion and quiz pass fire for the same lesson.
   const xpFlashedRef = useRef<string | null>(null);
+  const missionFlashedRef = useRef<string | null>(null);
 
   // Section accordion state — start all sections expanded; collapse all except the active lesson's section
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -1586,6 +1588,7 @@ export default function CourseDetailPage({
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
+    missionFlashedRef.current = null;
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
@@ -1613,6 +1616,19 @@ export default function CourseDetailPage({
     xpFlashedRef.current = lessonId;
     setXpFlash(xp);
     const t = setTimeout(() => setXpFlash(null), 3000);
+    return () => clearTimeout(t);
+  }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mission Complete cinematic overlay on fresh lesson completion.
+  useEffect(() => {
+    if (watchState !== "completed" || !justCompletedInSessionRef.current) return;
+    const lessonId = selectedLessonRef.current?.id;
+    if (!lessonId || missionFlashedRef.current === lessonId) return;
+    missionFlashedRef.current = lessonId;
+    const title = selectedLessonRef.current?.title ?? "";
+    const xp = (courseRef.current as any)?.xpPerEpisode ?? 0;
+    setMissionComplete({ title, xp });
+    const t = setTimeout(() => setMissionComplete(null), 2800);
     return () => clearTimeout(t);
   }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3302,6 +3318,64 @@ export default function CourseDetailPage({
           lessons={course?.lessons ?? []}
           onClose={() => setReflectionsOpen(false)}
         />
+      )}
+
+      {/* Mission Complete cinematic overlay */}
+      {missionComplete && (
+        <>
+          <style>{`
+            @keyframes mc-overlay{0%{opacity:0}8%{opacity:1}78%{opacity:1}100%{opacity:0}}
+            @keyframes mc-pop{0%{transform:scale(0) rotate(-15deg);opacity:0}55%{transform:scale(1.2) rotate(4deg);opacity:1}75%{transform:scale(0.93)}100%{transform:scale(1);opacity:1}}
+            @keyframes mc-rise{0%{transform:translateY(18px);opacity:0}100%{transform:translateY(0);opacity:1}}
+            @keyframes mc-particle{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--ptx),var(--pty)) scale(0);opacity:0}}
+          `}</style>
+          <div
+            className="fixed inset-0 z-[65] pointer-events-none flex items-center justify-center"
+            style={{ animation: "mc-overlay 2.8s ease-in-out forwards", background: "radial-gradient(ellipse at center, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.88) 100%)" }}
+          >
+            {/* Radial burst particles */}
+            {([
+              [0,-90,"#f59e0b"],[64,-64,"#ef4444"],[90,0,"#22c55e"],[64,64,"#3b82f6"],
+              [0,90,"#a855f7"],[-64,64,"#ec4899"],[-90,0,"#14b8a6"],[-64,-64,"#f97316"],
+            ] as [number,number,string][]).map(([tx, ty, color], i) => (
+              <div key={i} className="absolute rounded-full"
+                style={{
+                  width: 10, height: 10, top: "50%", left: "50%",
+                  marginTop: -5, marginLeft: -5, background: color,
+                  ["--ptx" as string]: `${tx}px`, ["--pty" as string]: `${ty}px`,
+                  animation: `mc-particle 0.9s cubic-bezier(0.25,0.46,0.45,0.94) ${0.25 + i * 0.04}s forwards`,
+                }}
+              />
+            ))}
+            {/* Content */}
+            <div className="flex flex-col items-center gap-4 text-center px-8 select-none">
+              <div style={{ animation: "mc-pop 0.65s cubic-bezier(0.34,1.56,0.64,1) 0.15s both" }}>
+                <Trophy size={80} style={{ color: "#f59e0b", filter: "drop-shadow(0 0 24px rgba(245,158,11,0.7))" }} />
+              </div>
+              <div style={{ animation: "mc-rise 0.5s ease-out 0.55s both" }}>
+                <p className="text-4xl font-black tracking-widest text-white uppercase"
+                  style={{ textShadow: "0 0 30px rgba(245,158,11,0.5), 0 2px 8px rgba(0,0,0,0.8)" }}>
+                  Mission Complete
+                </p>
+              </div>
+              <div style={{ animation: "mc-rise 0.5s ease-out 0.7s both" }}>
+                <p className="text-sm font-medium max-w-xs leading-snug" style={{ color: "rgba(255,255,255,0.7)" }}>
+                  {missionComplete.title}
+                </p>
+              </div>
+              {missionComplete.xp > 0 && (
+                <div style={{ animation: "mc-rise 0.5s ease-out 0.85s both" }}>
+                  <span
+                    className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-bold text-white"
+                    style={{ background: "color-mix(in srgb, var(--color-accent) 80%, transparent)", boxShadow: "0 0 20px rgba(239,68,68,0.45)" }}
+                  >
+                    <Zap size={14} /> +{missionComplete.xp} XP earned
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* XP flash */}
