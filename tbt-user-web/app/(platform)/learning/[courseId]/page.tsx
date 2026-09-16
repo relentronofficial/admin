@@ -3069,8 +3069,8 @@ export default function CourseDetailPage({
                             <RefreshCw size={8} /> Review
                           </span>
                         )}
-                        {/* Focus timer badge */}
-                        {!isCompleted && timerStarted && (
+                        {/* Focus timer badge — static duration when not started, live countdown when running */}
+                        {!isCompleted && focusTimerDuration > 0 && (
                           <span
                             className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
                             style={{
@@ -3078,12 +3078,24 @@ export default function CourseDetailPage({
                                 ? "rgba(34,197,94,0.12)"
                                 : timerWarn
                                   ? "rgba(239,68,68,0.1)"
-                                  : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                              color: timerDone ? "#22c55e" : timerWarn ? "#ef4444" : "var(--color-accent)",
+                                  : timerStarted
+                                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                                    : "rgba(255,255,255,0.06)",
+                              color: timerDone
+                                ? "#22c55e"
+                                : timerWarn
+                                  ? "#ef4444"
+                                  : timerStarted
+                                    ? "var(--color-accent)"
+                                    : "var(--color-text-subtle)",
                             }}
                           >
                             <Timer size={9} />
-                            {timerDone ? "Time's up!" : fmtTime(timerSecs!)}
+                            {timerDone
+                              ? "Time's up!"
+                              : timerStarted
+                                ? fmtTime(timerSecs!)
+                                : fmtTime(focusTimerDuration)}
                           </span>
                         )}
                       </div>
