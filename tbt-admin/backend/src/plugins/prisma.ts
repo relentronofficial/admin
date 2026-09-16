@@ -1775,6 +1775,54 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       END $$
     `).catch(() => {});
 
+    // ── Episode Timer Sessions (2026-09-16) ─────────────────────────────────
+    // Server-side timer tracking so focus timers survive page refresh.
+    // One row per (member, episode) — UPSERT resets/restarts the timer.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS lesson_timer_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+        duration_seconds INT NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
+        last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, episode_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_lesson_timer_sessions_member ON lesson_timer_sessions(member_id)`
+    ).catch(() => {});
+
+    // ── Per-Episode Lifeline State (2026-09-16) ──────────────────────────────
+    // Persists free/purchased lifeline usage per member per episode across refreshes.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS episode_lifeline_state (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        free_used INT NOT NULL DEFAULT 0,
+        purchased_used INT NOT NULL DEFAULT 0,
+        total_used INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, episode_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_episode_lifeline_state_member ON episode_lifeline_state(member_id)`
+    ).catch(() => {});
+
+    // Per-episode lifeline config (admin-configurable overrides)
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes
+        ADD COLUMN IF NOT EXISTS lifeline_enabled BOOLEAN NOT NULL DEFAULT true,
+        ADD COLUMN IF NOT EXISTS lifeline_count INT NOT NULL DEFAULT 3,
+        ADD COLUMN IF NOT EXISTS lifeline_coin_cost INT NOT NULL DEFAULT 50,
+        ADD COLUMN IF NOT EXISTS max_purchased_lifelines INT NOT NULL DEFAULT 5
+    `).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

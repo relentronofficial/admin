@@ -4314,6 +4314,184 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
   });
 }
 
+// ── Episode Timer Session ──────────────────────────────────────────────────────
+// POST /api/user/episodes/:id/timer/start  — start or reset a server-side timer session
+export async function startEpisodeTimerHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { durationSeconds } = request.body as { durationSeconds: number };
+  const memberId = request.memberId!;
+  if (!durationSeconds || durationSeconds <= 0) return fail(reply, 400, 'durationSeconds required');
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + durationSeconds * 1000);
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lesson_timer_sessions (member_id, episode_id, status, duration_seconds, started_at, expires_at, last_heartbeat_at)
+     VALUES ($1::uuid, $2::uuid, 'ACTIVE', $3, $4, $5, $4)
+     ON CONFLICT (member_id, episode_id) DO UPDATE SET
+       status = 'ACTIVE', duration_seconds = $3, started_at = $4,
+       expires_at = $5, completed_at = NULL, last_heartbeat_at = $4`,
+    memberId, episodeId, durationSeconds, now, expiresAt,
+  );
+  return reply.send({ success: true, data: { expiresAt, remainingSeconds: durationSeconds, status: 'ACTIVE' }, error: null });
+}
+
+// GET /api/user/episodes/:id/timer/session — fetch current timer state (survives refresh)
+export async function getEpisodeTimerSessionHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status, duration_seconds AS "durationSeconds", started_at AS "startedAt",
+            expires_at AS "expiresAt", completed_at AS "completedAt"
+     FROM lesson_timer_sessions WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+    memberId, episodeId,
+  );
+  const session = rows[0] ?? null;
+  if (session && session.status === 'ACTIVE' && new Date(session.expiresAt) < new Date()) {
+    // Auto-expire stale session
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'EXPIRED' WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ).catch(() => {});
+    session.status = 'EXPIRED';
+  }
+  const remainingSeconds = session?.status === 'ACTIVE'
+    ? Math.max(0, Math.ceil((new Date(session.expiresAt).getTime() - Date.now()) / 1000))
+    : 0;
+  return reply.send({ success: true, data: session ? { ...session, remainingSeconds } : null, error: null });
+}
+
+// POST /api/user/episodes/:id/timer/heartbeat — keep session alive; also marks COMPLETED
+export async function heartbeatEpisodeTimerHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { completed } = request.body as { completed?: boolean };
+  const memberId = request.memberId!;
+  const now = new Date();
+  if (completed) {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'COMPLETED', completed_at = $3, last_heartbeat_at = $3
+       WHERE member_id = $1::uuid AND episode_id = $2::uuid AND status = 'ACTIVE'`,
+      memberId, episodeId, now,
+    ).catch(() => {});
+    return reply.send({ success: true, data: { status: 'COMPLETED', remainingSeconds: 0 }, error: null });
+  }
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE lesson_timer_sessions SET last_heartbeat_at = $3
+     WHERE member_id = $1::uuid AND episode_id = $2::uuid AND status = 'ACTIVE'
+     RETURNING expires_at AS "expiresAt", status`,
+    memberId, episodeId, now,
+  );
+  const row = rows[0];
+  if (!row) return reply.send({ success: true, data: null, error: null });
+  const isExpired = new Date(row.expiresAt) < now;
+  if (isExpired) {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'EXPIRED' WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ).catch(() => {});
+  }
+  const remainingSeconds = isExpired ? 0 : Math.max(0, Math.ceil((new Date(row.expiresAt).getTime() - Date.now()) / 1000));
+  return reply.send({ success: true, data: { status: isExpired ? 'EXPIRED' : 'ACTIVE', remainingSeconds }, error: null });
+}
+
+// ── Episode Lifelines ──────────────────────────────────────────────────────────
+// GET /api/user/episodes/:id/lifelines — per-episode lifeline state + config
+export async function getEpisodeLifelinesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const [configRows, stateRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifeline_enabled AS "lifelineEnabled", lifeline_count AS "lifelineCount",
+              lifeline_coin_cost AS "lifelineCoinCost", max_purchased_lifelines AS "maxPurchasedLifelines"
+       FROM course_episodes WHERE id = $1::uuid`,
+      episodeId,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT free_used AS "freeUsed", purchased_used AS "purchasedUsed", total_used AS "totalUsed"
+       FROM episode_lifeline_state WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ),
+  ]);
+  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
+  const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
+  return reply.send({
+    success: true,
+    data: { ...cfg, ...state, freeRemaining },
+    error: null,
+  });
+}
+
+// POST /api/user/episodes/:id/lifelines/use — spend a lifeline on this episode
+export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { type } = request.body as { type: 'free' | 'coin' };
+  const memberId = request.memberId!;
+
+  const [configRows, stateRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifeline_enabled AS "lifelineEnabled", lifeline_count AS "lifelineCount",
+              lifeline_coin_cost AS "lifelineCoinCost", max_purchased_lifelines AS "maxPurchasedLifelines"
+       FROM course_episodes WHERE id = $1::uuid`,
+      episodeId,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT free_used AS "freeUsed", purchased_used AS "purchasedUsed", total_used AS "totalUsed"
+       FROM episode_lifeline_state WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ),
+  ]);
+  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
+  if (!cfg.lifelineEnabled) return fail(reply, 403, 'Lifelines disabled for this episode');
+
+  if (type === 'free') {
+    const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
+    if (freeRemaining <= 0) return fail(reply, 400, 'No free lifelines remaining');
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO episode_lifeline_state (member_id, episode_id, free_used, total_used, updated_at)
+       VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
+       ON CONFLICT (member_id, episode_id) DO UPDATE SET
+         free_used = episode_lifeline_state.free_used + 1,
+         total_used = episode_lifeline_state.total_used + 1,
+         updated_at = NOW()`,
+      memberId, episodeId,
+    );
+    return reply.send({
+      success: true,
+      data: { freeRemaining: freeRemaining - 1, totalUsed: state.totalUsed + 1 },
+      error: null,
+    });
+  }
+
+  // type === 'coin' — deduct coins from tbt_activity_log
+  const coinCost = cfg.lifelineCoinCost ?? 50;
+  const balanceRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT COALESCE(SUM(points), 0) AS balance FROM tbt_activity_log WHERE member_id = $1::uuid`,
+    memberId,
+  );
+  const balance = Number(balanceRows[0]?.balance ?? 0);
+  if (balance < coinCost) return fail(reply, 400, 'Insufficient TBT coins');
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, activity_date) VALUES ($1::uuid, $2, 'lifeline_spend', NOW()::DATE)`,
+    memberId, -coinCost,
+  );
+  const purchasedSoFar = state.purchasedUsed ?? 0;
+  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO episode_lifeline_state (member_id, episode_id, purchased_used, total_used, updated_at)
+     VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
+     ON CONFLICT (member_id, episode_id) DO UPDATE SET
+       purchased_used = episode_lifeline_state.purchased_used + 1,
+       total_used = episode_lifeline_state.total_used + 1,
+       updated_at = NOW()`,
+    memberId, episodeId,
+  );
+  return reply.send({
+    success: true,
+    data: { freeRemaining: Math.max(0, cfg.lifelineCount - state.freeUsed), totalUsed: state.totalUsed + 1, coinsDeducted: coinCost, remainingCoins: balance - coinCost },
+    error: null,
+  });
+}
+
 export async function getUserResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
   const { search, view = 'list', page = 1, limit = 20 } = request.query as {
     search?: string;

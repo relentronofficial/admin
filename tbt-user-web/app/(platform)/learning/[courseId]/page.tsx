@@ -20,6 +20,8 @@ import {
   useCourseLeaderboard, useRequestCourseAccess,
   useSaveReflection, useReflections,
   useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
+  useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
+  useEpisodeLifelines, useUseEpisodeLifeline,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
@@ -1195,6 +1197,21 @@ export default function CourseDetailPage({
   // preventing an infinite loop when selectedLesson stays null (user hasn't confirmed yet).
   const urlFocusDialogShownRef = useRef<string | null>(null);
   const spendCoins = useSpendCoins();
+  // Server-side timer session + per-episode lifeline persistence
+  const startEpisodeTimerMutation = useStartEpisodeTimer();
+  const heartbeatEpisodeTimerMutation = useHeartbeatEpisodeTimer();
+  const useEpisodeLifelineMutation = useUseEpisodeLifeline(selectedLesson?.id);
+  const { data: episodeLifelineData } = useEpisodeLifelines(selectedLesson?.id);
+  const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id);
+  // Stable refs for mutation functions (safe inside setInterval callbacks)
+  const startEpisodeTimerRef = useRef(startEpisodeTimerMutation.mutate);
+  useEffect(() => { startEpisodeTimerRef.current = startEpisodeTimerMutation.mutate; }, [startEpisodeTimerMutation.mutate]);
+  const episodeLifelineMutateRef = useRef(useEpisodeLifelineMutation.mutateAsync);
+  useEffect(() => { episodeLifelineMutateRef.current = useEpisodeLifelineMutation.mutateAsync; }, [useEpisodeLifelineMutation.mutateAsync]);
+  const heartbeatMutateRef = useRef(heartbeatEpisodeTimerMutation.mutate);
+  useEffect(() => { heartbeatMutateRef.current = heartbeatEpisodeTimerMutation.mutate; }, [heartbeatEpisodeTimerMutation.mutate]);
+  // Timer restoration tracking
+  const timerRestoredForRef = useRef<string | null>(null);
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
   useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
   // Initialize lifeline count: program-wide DB value takes priority over session config
@@ -1214,6 +1231,35 @@ export default function CourseDetailPage({
       lifelinesLeftRef.current = config.freeLifelinesPerSession;
     }
   }, [batchData, config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Per-episode lifeline override for non-batch members: persists across page refreshes
+  useEffect(() => {
+    if (isProgramLifeline || !episodeLifelineData || !selectedLesson) return;
+    setLifelinesLeft(episodeLifelineData.freeRemaining);
+    lifelinesLeftRef.current = episodeLifelineData.freeRemaining;
+  }, [episodeLifelineData, isProgramLifeline, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Restore active timer session from server on lesson load (survives page refresh)
+  useEffect(() => {
+    if (!selectedLesson || !existingTimerSession) return;
+    if (existingTimerSession.status !== 'ACTIVE') return;
+    if (timerRestoredForRef.current === selectedLesson.id) return;
+    if (timerLessonRef.current === selectedLesson.id) return; // already running
+    const remaining = existingTimerSession.remainingSeconds;
+    if (remaining <= 0) return;
+    timerRestoredForRef.current = selectedLesson.id;
+    const fullDuration = (existingTimerSession as any).durationSeconds ?? remaining;
+    // Start client-side timer from remaining seconds (no server call — session already active)
+    startLessonTimer(selectedLesson.id, remaining, true);
+    timerDurationRef.current = fullDuration; // restore full duration for lifeline resets
+  }, [selectedLesson?.id, existingTimerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 30s heartbeat to keep server timer session alive while lesson is open
+  useEffect(() => {
+    const id = setInterval(() => {
+      const lessonId = timerLessonRef.current;
+      if (!lessonId) return;
+      heartbeatMutateRef.current({ episodeId: lessonId });
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
@@ -1656,6 +1702,12 @@ export default function CourseDetailPage({
     if (!markCalledRef.current) {
       markCalledRef.current = true;
       doMarkCompleteRef.current = false;
+      // Mark server timer session as completed
+      if (timerLessonRef.current === lesson.id) {
+        heartbeatMutateRef.current({ episodeId: lesson.id, completed: true });
+        clearInterval(timerIntervalRef.current);
+        timerLessonRef.current = null;
+      }
       markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true, videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
     }
   };
@@ -1677,13 +1729,22 @@ export default function CourseDetailPage({
     const playhead = lastPlayheadRef.current > 0
       ? Math.floor(lastPlayheadRef.current)
       : (selectedLesson.resumeAtSeconds ?? 0);
+    // Capture timer data before clearing (for MG-04 early completion bonus)
+    const wasTimerLesson = timerLessonRef.current === selectedLesson.id;
+    const capturedTimerDuration = wasTimerLesson ? timerDurationRef.current : undefined;
+    // Mark server timer session as completed (if timer was running for this lesson)
+    if (wasTimerLesson) {
+      heartbeatMutateRef.current({ episodeId: selectedLesson.id, completed: true });
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+    }
     markComplete.mutate({
       lessonId: selectedLesson.id,
       watchedSeconds: playhead,
       isCompleted: true,
       videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
       timerStartedAt: timerStartedAtRef.current,
-      timerSeconds: timerLessonRef.current === selectedLesson.id ? timerDurationRef.current : undefined,
+      timerSeconds: capturedTimerDuration,
     }, {
       onSuccess: (data: any) => {
         if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
@@ -2009,13 +2070,17 @@ export default function CourseDetailPage({
   const getLessonTimerDuration = (lesson: any): number =>
     lesson?.timerSeconds ?? (lesson?.sectionTimerSeconds ?? null) ?? config?.taskTimerSeconds ?? 300;
 
-  const startLessonTimer = (lessonId: string, duration: number) => {
+  const startLessonTimer = (lessonId: string, duration: number, skipServerStart?: boolean) => {
     clearInterval(timerIntervalRef.current);
     timerLessonRef.current = lessonId;
     timerDurationRef.current = duration;
     timerEndTimeRef.current = Date.now() + duration * 1000;
     timerStartedAtRef.current = Date.now(); // MG-04: record focus start time
     setLessonTimers(prev => ({ ...prev, [lessonId]: duration }));
+    // Persist session to server so timer survives page refresh
+    if (!skipServerStart) {
+      startEpisodeTimerRef.current({ episodeId: lessonId, durationSeconds: duration });
+    }
 
     function tick() {
       const secsLeft = Math.max(0, Math.ceil((timerEndTimeRef.current - Date.now()) / 1000));
@@ -2030,7 +2095,7 @@ export default function CourseDetailPage({
         const remaining = lifelinesLeftRef.current - 1;
         lifelinesLeftRef.current = remaining;
         setLifelinesLeft(remaining);
-        // Persist to backend if in program context (fire-and-forget; local state already updated)
+        // Persist to backend (fire-and-forget; local state already updated)
         if (isProgramLifelineRef.current && batchIdRef.current) {
           programLifelineMutateRef.current({ batchId: batchIdRef.current, episodeId: lessonId, context: 'episode' })
             .then((res) => {
@@ -2038,6 +2103,9 @@ export default function CourseDetailPage({
               setLifelinesLeft(res.lifelinesRemaining);
             })
             .catch(() => {}); // network failure: local state already shows deduction
+        } else {
+          // Non-batch: persist per-episode lifeline usage
+          episodeLifelineMutateRef.current('free').catch(() => {});
         }
         toast.success(
           `⚡ Time's up — lifeline auto-used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`,
@@ -2046,6 +2114,8 @@ export default function CourseDetailPage({
         timerEndTimeRef.current = Date.now() + timerDurationRef.current * 1000;
         timerLessonRef.current = lessonId;
         setLessonTimers(prev => ({ ...prev, [lessonId]: timerDurationRef.current }));
+        // Also extend the server-side session for the new duration
+        startEpisodeTimerRef.current({ episodeId: lessonId, durationSeconds: timerDurationRef.current });
         timerIntervalRef.current = setInterval(tick, 500);
       } else {
         setFocusLockedIds(prev => new Set([...prev, lessonId]));
@@ -2110,6 +2180,8 @@ export default function CourseDetailPage({
         const remaining = lifelinesLeft - 1;
         setLifelinesLeft(remaining);
         lifelinesLeftRef.current = remaining;
+        // Non-batch: persist per-episode lifeline use to DB (fire-and-forget)
+        episodeLifelineMutateRef.current('free').catch(() => {});
       }
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
@@ -2123,12 +2195,13 @@ export default function CourseDetailPage({
 
   const handleSpendCoinsForLesson = async (lesson: any, duration: number) => {
     try {
-      const res = await spendCoins.mutateAsync({ amount: LIFELINE_COIN_COST });
+      // Use per-episode lifeline endpoint for all members — handles coin deduction + audit trail
+      const res = await useEpisodeLifelineMutation.mutateAsync('coin');
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
       handleSelectLesson(lesson);
       setCoinDialog(null);
-      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.remainingCoins} coins.`);
+      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.data?.remainingCoins ?? '?'} coins.`);
     } catch (err: any) {
       setCoinDialog(null);
       toast.error(err?.response?.data?.error ?? "Not enough TBT coins");

@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
-export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry } from "@/lib/api/services/courses.service";
+export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -254,4 +254,56 @@ export const useUploadEpisodeTaskProof = (episodeId: string | null | undefined) 
     if (!publicUrl) throw new Error('Upload failed: no public URL returned');
     return publicUrl;
   };
+};
+
+export const useEpisodeTimerSession = (episodeId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["episode-timer-session", episodeId],
+    queryFn: async () => {
+      const res = await coursesService.getEpisodeTimerSession(episodeId!);
+      return res.data ?? null;
+    },
+    enabled: !!episodeId,
+    staleTime: 0,
+    gcTime: 0,
+  });
+
+export const useStartEpisodeTimer = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ episodeId, durationSeconds }: { episodeId: string; durationSeconds: number }) =>
+      coursesService.startEpisodeTimer(episodeId, durationSeconds),
+    onSuccess: (_, { episodeId }) => {
+      queryClient.invalidateQueries({ queryKey: ["episode-timer-session", episodeId] });
+    },
+  });
+};
+
+export const useHeartbeatEpisodeTimer = () =>
+  useMutation({
+    mutationFn: ({ episodeId, completed }: { episodeId: string; completed?: boolean }) =>
+      coursesService.heartbeatEpisodeTimer(episodeId, completed),
+  });
+
+export const useEpisodeLifelines = (episodeId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["episode-lifelines", episodeId],
+    queryFn: async () => {
+      const res = await coursesService.getEpisodeLifelines(episodeId!);
+      return res.data ?? null;
+    },
+    enabled: !!episodeId,
+    staleTime: 30 * 1000,
+  });
+
+export const useUseEpisodeLifeline = (episodeId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (type: 'free' | 'coin') =>
+      coursesService.useEpisodeLifeline(episodeId!, type),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["episode-lifelines", episodeId] });
+      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+    },
+  });
 };
