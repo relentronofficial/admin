@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/courses_service.dart';
 import '../providers/courses_provider.dart';
 import 'widgets/feedback_modal.dart';
+import 'widgets/mission_complete_overlay.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
 class LessonPlayerScreen extends ConsumerStatefulWidget {
@@ -73,6 +74,11 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   // Feedback questions loaded after completion
   List<VideoFeedbackQuestion> _feedbackQuestions = [];
   bool _feedbackShown = false;
+
+  // Mission Complete overlay
+  bool _missionVisible = false;
+  String _missionTitle = '';
+  int _missionXp = 0;
 
   // Ad interruption (TBT_ADS_SPECKIT.md §7)
   VoidCallback? _deregisterFromAds;
@@ -387,6 +393,20 @@ window.addEventListener('message', function(e) {
     });
   }
 
+  void _showMissionComplete() {
+    if (_wasAlreadyCompleted || !mounted) return;
+    final xp = ref
+            .read(courseDetailProvider(widget.courseId))
+            .valueOrNull
+            ?.xpPerEpisode ??
+        0;
+    setState(() {
+      _missionTitle = _playback?.title ?? '';
+      _missionXp = xp;
+      _missionVisible = true;
+    });
+  }
+
   void _onVideoEnded() {
     if (_completionFired) return;
     _completionFired = true;
@@ -409,6 +429,7 @@ window.addEventListener('message', function(e) {
           ref.invalidate(learningCoursesProvider);
         })
         .catchError((_) {});
+    _showMissionComplete();
     _maybeShowReflection();
     _maybeShowFeedback();
   }
@@ -588,7 +609,8 @@ window.addEventListener('message', function(e) {
     // Only show if lesson has no end-of-video quiz AND wasn't already done
     if (p.hasQuiz || _wasAlreadyCompleted) return;
 
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    // Delay past the 2800ms Mission Complete overlay so they don't overlap.
+    Future.delayed(const Duration(milliseconds: 3200), () {
       if (!mounted) return;
       final strings = ref.read(uiStringsNotifierProvider).valueOrNull;
       if (strings == null || !mounted) return;
@@ -655,19 +677,33 @@ window.addEventListener('message', function(e) {
     // of theme, which is the industry standard (YouTube / Netflix).
     return Scaffold(
       backgroundColor: context.tokens.bgPage,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            _buildPlayerArea(),
-            if (!_loading && _playback != null)
-              _buildControlsRow(),
-            if (!_loading && _playback != null) ...[
-              Divider(height: 1, thickness: 1, color: context.tokens.borderCard),
-              Expanded(child: _buildMetadata()),
-            ],
-          ],
-        ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(context),
+                _buildPlayerArea(),
+                if (!_loading && _playback != null)
+                  _buildControlsRow(),
+                if (!_loading && _playback != null) ...[
+                  Divider(height: 1, thickness: 1, color: context.tokens.borderCard),
+                  Expanded(child: _buildMetadata()),
+                ],
+              ],
+            ),
+          ),
+          if (_missionVisible)
+            Positioned.fill(
+              child: MissionCompleteOverlay(
+                title: _missionTitle,
+                xp: _missionXp,
+                onDismiss: () {
+                  if (mounted) setState(() => _missionVisible = false);
+                },
+              ),
+            ),
+        ],
       ),
     );
   }
