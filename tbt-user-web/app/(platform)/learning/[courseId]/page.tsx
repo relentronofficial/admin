@@ -1019,6 +1019,15 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                 <Zap size={10} /> {task.basePoints} pts
               </span>
             )}
+            {task.completionMode === "SELF_ASSESSMENT" ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #6366f1 15%, transparent)", color: "#818cf8" }}>
+                <ClipboardList size={9} /> Self Assessment
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #f59e0b 15%, transparent)", color: "#f59e0b" }}>
+                <FileText size={9} /> Admin Review
+              </span>
+            )}
           </div>
 
           {(status === "rejected" || status === "resubmission_required") && task.submission?.feedback && (
@@ -1056,7 +1065,9 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                     style={{ background: "var(--color-accent)" }}
                   >
                     {uploading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} className="rotate-180" />}
-                    {uploading ? "Uploading…" : status ? "Re-upload & Resubmit" : "Upload & Submit"}
+                    {uploading ? "Uploading…" : status
+                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Re-upload" : "Re-upload & Resubmit")
+                      : (task.completionMode === "SELF_ASSESSMENT" ? "Upload & Complete" : "Upload & Submit")}
                   </button>
                 ) : (
                   <button
@@ -1066,7 +1077,9 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                     style={{ background: "var(--color-accent)" }}
                   >
                     {submitTask.isPending ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                    {status ? "Resubmit" : "Submit Task"}
+                    {status
+                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Update" : "Resubmit")
+                      : (task.completionMode === "SELF_ASSESSMENT" ? "Mark Complete" : "Submit for Review")}
                   </button>
                 )}
               </div>
