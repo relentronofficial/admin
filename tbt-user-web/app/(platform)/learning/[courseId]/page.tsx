@@ -934,7 +934,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
 
   const proofType = task.proofType || "watch";
   const status = task.submission?.status ?? null;
-  const isEditable = status === null || status === "rejected" || status === "resubmission_required";
+  const isEditable = status === null || status === "pending" || status === "rejected" || status === "resubmission_required";
 
   const handleFileSelect = async (file: File) => {
     setUploading(true);
@@ -990,8 +990,8 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
               </span>
             )}
             {status === "pending" && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
-                <Clock size={10} /> Pending Admin Review
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-success) 20%, transparent)", color: "var(--color-success)" }}>
+                <Check size={10} /> Uploaded
               </span>
             )}
             {(status === "rejected" || status === "resubmission_required") && (
