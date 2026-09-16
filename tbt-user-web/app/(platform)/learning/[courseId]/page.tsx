@@ -1104,7 +1104,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
 // state (updated every ~500 ms), which is already happening.
 function LearningChallengeCard({
   timerSecs, totalSeconds, lifelinesLeft, maxLifelines,
-  coinBalance, lifelineCoinCost, onBuyWithCoins, isPurchasing,
+  coinBalance, lifelineCoinCost, onBuyWithCoins, isPurchasing, isDone,
 }: {
   timerSecs: number;
   totalSeconds: number;
@@ -1114,36 +1114,46 @@ function LearningChallengeCard({
   lifelineCoinCost: number;
   onBuyWithCoins: () => void;
   isPurchasing?: boolean;
+  /** true when lesson is already completed — shows a static "Challenge Complete" badge */
+  isDone?: boolean;
 }) {
   const fraction = totalSeconds > 0 ? Math.max(0, Math.min(1, timerSecs / totalSeconds)) : 1;
-  const pct = Math.round(fraction * 100);
-  const isExpired = timerSecs === 0;
-  const isCritical = !isExpired && timerSecs <= 60;
-  const isWarning = !isExpired && !isCritical && pct <= 20;
+  const pct = isDone ? 100 : Math.round(fraction * 100);
+  const isExpired = !isDone && timerSecs === 0;
+  const isCritical = !isDone && !isExpired && timerSecs <= 60;
+  const isWarning = !isDone && !isExpired && !isCritical && pct <= 20;
 
-  const accentColor = isExpired ? "#6b7280"
+  const accentColor = isDone ? "#22c55e"
+    : isExpired ? "#6b7280"
     : isCritical ? "#ef4444"
     : isWarning ? "#f59e0b"
     : "var(--color-accent)";
 
-  const cardBg = isExpired
+  const cardBg = isDone
+    ? "color-mix(in srgb, #22c55e 8%, var(--color-bg-surface))"
+    : isExpired
     ? "color-mix(in srgb, #6b7280 8%, var(--color-bg-surface))"
     : isCritical ? "color-mix(in srgb, #ef4444 7%, var(--color-bg-surface))"
     : isWarning ? "color-mix(in srgb, #f59e0b 6%, var(--color-bg-surface))"
     : "color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-surface))";
 
-  const cardBorder = isExpired
+  const cardBorder = isDone
+    ? "1px solid color-mix(in srgb, #22c55e 30%, transparent)"
+    : isExpired
     ? "1px solid color-mix(in srgb, #6b7280 25%, transparent)"
     : isCritical ? "1px solid color-mix(in srgb, #ef4444 35%, transparent)"
     : isWarning ? "1px solid color-mix(in srgb, #f59e0b 30%, transparent)"
     : "1px solid color-mix(in srgb, var(--color-accent) 22%, transparent)";
 
-  const headingText = isExpired ? "Time's Up!"
+  const headingText = isDone ? "Challenge Complete!"
+    : isExpired ? "Time's Up!"
     : isCritical ? "Complete Now!"
     : isWarning ? "Time Running Low"
     : "Learning Challenge";
 
-  const subText = isExpired
+  const subText = isDone
+    ? "You completed this lesson's challenge"
+    : isExpired
     ? "Your learning time has ended"
     : isCritical
     ? "Under 1 minute — finish the lesson!"
@@ -1162,7 +1172,7 @@ function LearningChallengeCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm select-none" aria-hidden="true">
-              {isExpired ? "⏰" : isCritical ? "🔥" : isWarning ? "⚠️" : "🎯"}
+              {isDone ? "✅" : isExpired ? "⏰" : isCritical ? "🔥" : isWarning ? "⚠️" : "🎯"}
             </span>
             <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: accentColor }}>
               {headingText}
@@ -1198,10 +1208,10 @@ function LearningChallengeCard({
               isCritical && "animate-pulse motion-reduce:animate-none",
             )}
             style={{ fontSize: "2.5rem", color: accentColor, transition: "color 0.4s ease" }}
-            aria-live="polite"
-            aria-label={`${Math.floor(timerSecs / 60)} minutes ${timerSecs % 60} seconds remaining`}
+            aria-live={isDone ? undefined : "polite"}
+            aria-label={isDone ? "Challenge completed" : `${Math.floor(timerSecs / 60)} minutes ${timerSecs % 60} seconds remaining`}
           >
-            {fmtTime(timerSecs)}
+            {isDone ? "Done ✓" : fmtTime(timerSecs)}
           </span>
           <span className="text-xs leading-snug pb-1" style={{ color: "var(--color-text-subtle)" }}>
             {subText}
@@ -2677,12 +2687,12 @@ export default function CourseDetailPage({
             </VideoWatermark>
 
             {/* ── Learning Challenge Timer Card ──────────────────────────────
-                Appears only while the focus timer is running (timerSecs set).
-                Wired to existing state — no second timer or extra API calls. */}
-            {activeTimerSecs !== undefined && (
+                Shows while timer is active OR when the lesson is already done
+                (completed-challenge badge). Wired to existing state only. */}
+            {(activeTimerSecs !== undefined || (selectedLesson && completedIds.has(selectedLesson.id) && getLessonTimerDuration(selectedLesson) > 0)) && (
               <LearningChallengeCard
-                timerSecs={activeTimerSecs}
-                totalSeconds={timerDurationRef.current}
+                timerSecs={activeTimerSecs ?? 0}
+                totalSeconds={timerDurationRef.current || getLessonTimerDuration(selectedLesson)}
                 lifelinesLeft={lifelinesLeft}
                 maxLifelines={maxLifelines}
                 coinBalance={me?.totalPoints ?? undefined}
@@ -2692,6 +2702,7 @@ export default function CourseDetailPage({
                   if (lesson) setCoinDialog({ lesson, duration: timerDurationRef.current });
                 }}
                 isPurchasing={spendCoins.isPending}
+                isDone={activeTimerSecs === undefined && completedIds.has(selectedLesson.id)}
               />
             )}
 
@@ -3253,14 +3264,14 @@ export default function CourseDetailPage({
                                   ? "rgba(239,68,68,0.1)"
                                   : timerStarted
                                     ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-                                    : "rgba(255,255,255,0.06)",
+                                    : "color-mix(in srgb, var(--color-text-subtle) 12%, transparent)",
                               color: timerDone
                                 ? "#22c55e"
                                 : timerWarn
                                   ? "#ef4444"
                                   : timerStarted
                                     ? "var(--color-accent)"
-                                    : "var(--color-text-subtle)",
+                                    : "var(--color-text-secondary)",
                             }}
                           >
                             <Timer size={9} />
