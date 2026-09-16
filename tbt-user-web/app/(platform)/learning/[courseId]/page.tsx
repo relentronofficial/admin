@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, CheckCircle2, Play, Loader2, X, Zap, Award,
   Lock, Trophy, ChevronDown, ChevronUp, Share2, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
-  Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
+  Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText, Heart,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
@@ -2266,6 +2266,7 @@ export default function CourseDetailPage({
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
   const activeTimerSecs = selectedLesson ? lessonTimers[selectedLesson.id] : undefined;
   const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
+  const maxLifelines = episodeLifelineData?.lifelineCount ?? MAX_FREE_LIFELINES;
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
@@ -2455,30 +2456,54 @@ export default function CourseDetailPage({
                   onEnded={handleVideoEnded}
                 />
               )}
-              {showTimerOverlay && (
-                <div className="absolute inset-x-0 top-4 flex justify-center z-[55] pointer-events-none">
-                  <div
-                    className={cn(
-                      "flex items-center gap-2 px-5 py-2.5 rounded-2xl backdrop-blur-sm",
-                      activeTimerSecs! < 30 ? "animate-pulse" : ""
-                    )}
-                    style={{
-                      background: activeTimerSecs! < 30
-                        ? "rgba(239,68,68,0.85)"
-                        : activeTimerSecs! < 60
-                        ? "rgba(245,158,11,0.85)"
-                        : "rgba(34,197,94,0.85)",
-                      border: "1px solid rgba(255,255,255,0.25)",
-                      boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-                    }}
-                  >
-                    <Timer size={18} className="text-white" />
-                    <span className="text-white font-mono font-bold text-2xl tabular-nums tracking-wide">
-                      {fmtTime(activeTimerSecs!)}
-                    </span>
+              {showTimerOverlay && (() => {
+                const totalDuration = getLessonTimerDuration(selectedLesson);
+                const fraction = totalDuration > 0
+                  ? Math.max(0, Math.min(1, (activeTimerSecs ?? 0) / totalDuration))
+                  : 1;
+                const R = 38;
+                const C = 2 * Math.PI * R;
+                const ringColor = (activeTimerSecs ?? 0) < 30 ? "#ef4444"
+                  : (activeTimerSecs ?? 0) < 60 ? "#f59e0b"
+                  : "#22c55e";
+                return (
+                  <div className={cn(
+                    "absolute top-3 right-3 z-[55] pointer-events-none flex flex-col items-center gap-1.5",
+                    (activeTimerSecs ?? 0) < 30 ? "animate-pulse" : ""
+                  )}>
+                    <div className="relative w-[88px] h-[88px] drop-shadow-lg">
+                      <svg width="88" height="88" viewBox="0 0 88 88">
+                        <circle cx="44" cy="44" r={R} fill="rgba(0,0,0,0.65)" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
+                        <circle
+                          cx="44" cy="44" r={R}
+                          fill="none" stroke={ringColor} strokeWidth="5" strokeLinecap="round"
+                          strokeDasharray={`${C}`}
+                          strokeDashoffset={C * (1 - fraction)}
+                          transform="rotate(-90, 44, 44)"
+                          style={{ transition: "stroke-dashoffset 0.5s linear, stroke 0.3s ease" }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+                        <span className="text-white font-mono font-bold text-sm tabular-nums leading-none"
+                          style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                          {fmtTime(activeTimerSecs!)}
+                        </span>
+                        <Timer size={10} className="text-white/60" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-1 rounded-full"
+                      style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                      {Array.from({ length: maxLifelines }).map((_, i) => (
+                        <Heart key={i} size={12}
+                          fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                          stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.3)"}
+                          style={{ transition: "fill 0.3s, stroke 0.3s" }}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </VideoWatermark>
 
             <div className="flex items-start justify-between gap-4">
@@ -2808,15 +2833,17 @@ export default function CourseDetailPage({
               </span>
             )}
             <span
-              className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-              style={{
-                background: lifelinesLeft > 0 ? "rgba(34,197,94,0.12)" : "rgba(251,191,36,0.12)",
-                color: lifelinesLeft > 0 ? "#22c55e" : "#fbbf24",
-              }}
-              title="Free lifelines remaining this session"
+              className="flex items-center gap-0.5 px-2 py-1 rounded-full"
+              style={{ background: lifelinesLeft > 0 ? "rgba(239,68,68,0.1)" : "rgba(251,191,36,0.1)" }}
+              title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
             >
-              <Zap size={9} />
-              {lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}
+              {Array.from({ length: maxLifelines }).map((_, i) => (
+                <Heart key={i} size={10}
+                  fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                  stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.2)"}
+                  style={{ transition: "fill 0.3s, stroke 0.3s" }}
+                />
+              ))}
             </span>
             {me?.totalPoints != null && (
               <span
