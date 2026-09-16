@@ -4145,8 +4145,6 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const resources = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id, title, description, file_url AS "fileUrl", file_type AS "fileType",
             file_type_icon_url AS "fileTypeIconUrl", download_label AS "downloadLabel"
@@ -4165,8 +4163,6 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT t.id, t.title, t.description, t.deliverables,
             t.estimated_minutes AS "estimatedMinutes",
@@ -4225,8 +4221,6 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, memberId, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
 
   // Task must actually belong to this episode — prevents a client from
   // submitting against an arbitrary task ID that lives on a different episode.
