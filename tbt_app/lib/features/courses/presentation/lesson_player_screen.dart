@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:better_player_plus/better_player_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -1003,20 +1005,191 @@ window.addEventListener('message', function(e) {
             ),
           ),
           Divider(height: 1, color: context.tokens.borderCard),
-          ..._tasks.asMap().entries.map((e) => _buildTaskRow(e.key, e.value)),
+          ..._tasks.asMap().entries.map((e) => _EpisodeTaskItem(
+                key: ValueKey(e.value.id),
+                episodeId: widget.lessonId,
+                task: e.value,
+                index: e.key,
+                isLast: e.key == _tasks.length - 1,
+                onSubmitted: () async {
+                  final svc = ref.read(coursesServiceProvider);
+                  final updated = await svc.getEpisodeTasks(widget.lessonId);
+                  if (mounted) setState(() => _tasks = updated);
+                },
+              )),
         ],
       ),
     );
   }
 
-  Widget _buildTaskRow(int index, EpisodeTask t) {
+}
+
+// ── Episode Task Item ─────────────────────────────────────────────────────────
+
+class _EpisodeTaskItem extends ConsumerStatefulWidget {
+  const _EpisodeTaskItem({
+    super.key,
+    required this.episodeId,
+    required this.task,
+    required this.index,
+    required this.isLast,
+    required this.onSubmitted,
+  });
+
+  final String episodeId;
+  final EpisodeTask task;
+  final int index;
+  final bool isLast;
+  final VoidCallback onSubmitted;
+
+  @override
+  ConsumerState<_EpisodeTaskItem> createState() => _EpisodeTaskItemState();
+}
+
+class _EpisodeTaskItemState extends ConsumerState<_EpisodeTaskItem> {
+  final _textController = TextEditingController();
+  final _urlController = TextEditingController();
+  bool _uploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController.text = widget.task.submission?.responseValue ?? '';
+    _urlController.text = widget.task.submission?.proofUrl ?? '';
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  String get _proofType => widget.task.proofType ?? 'watch';
+  String? get _status => widget.task.submission?.status;
+  bool get _isEditable =>
+      _status == null ||
+      _status == 'pending' ||
+      _status == 'rejected' ||
+      _status == 'resubmission_required';
+
+  Future<void> _pickAndUpload() async {
+    final svc = ref.read(coursesServiceProvider);
+    final task = widget.task;
+
+    String filename;
+    String contentType;
+    List<int> bytes;
+
+    if (_proofType == 'image') {
+      final picked =
+          await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (picked == null) return;
+      filename = picked.name;
+      contentType = 'image/jpeg';
+      bytes = await picked.readAsBytes();
+    } else {
+      final result = await FilePicker.platform.pickFiles(allowMultiple: false);
+      if (result == null || result.files.isEmpty) return;
+      final f = result.files.single;
+      filename = f.name;
+      contentType = _guessContentType(filename);
+      bytes = f.bytes?.toList() ?? await f.xFile.readAsBytes();
+    }
+
+    setState(() => _uploading = true);
+    try {
+      final publicUrl = await svc.uploadEpisodeTaskProof(
+        widget.episodeId, task.id, filename, contentType, bytes,
+      );
+      await svc.submitEpisodeTask(
+        widget.episodeId, task.id,
+        proofUrl: publicUrl,
+        proofType: _proofType,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Task submitted'), backgroundColor: Colors.green),
+        );
+        widget.onSubmitted();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Upload failed — please try again'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _submitText() async {
+    final svc = ref.read(coursesServiceProvider);
+    final isText = _proofType == 'text';
+    final value = isText ? _textController.text.trim() : _urlController.text.trim();
+    if (value.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(isText ? 'Please describe what you did' : 'Please paste a URL'),
+      ));
+      return;
+    }
+    setState(() => _uploading = true);
+    try {
+      await svc.submitEpisodeTask(
+        widget.episodeId, widget.task.id,
+        responseValue: isText ? value : null,
+        proofUrl: isText ? null : value,
+        proofType: _proofType,
+      );
+      if (mounted) {
+        final msg = widget.task.completionMode == 'SELF_ASSESSMENT'
+            ? 'Task completed'
+            : 'Submitted for review';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.green),
+        );
+        widget.onSubmitted();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't submit — please try again"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  static String _guessContentType(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'zip' => 'application/zip',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final task = widget.task;
+    final isSelf = task.completionMode == 'SELF_ASSESSMENT';
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Index circle
               Container(
                 width: 24,
                 height: 24,
@@ -1026,7 +1199,7 @@ window.addEventListener('message', function(e) {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  '${index + 1}',
+                  '${widget.index + 1}',
                   style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
                 ),
               ),
@@ -1035,35 +1208,141 @@ window.addEventListener('message', function(e) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      t.title,
-                      style: TextStyle(color: context.tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3),
+                    // Title + status badge
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          task.title,
+                          style: TextStyle(color: tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3),
+                        ),
+                        if (_status == 'approved')
+                          _StatusChip(label: 'Completed', color: const Color(0xFF22c55e)),
+                        if (_status == 'pending' && !isSelf)
+                          _StatusChip(label: 'Pending Review', color: const Color(0xFFf59e0b)),
+                        if (_status == 'pending' && isSelf)
+                          _StatusChip(label: 'Uploaded', color: const Color(0xFF22c55e)),
+                        if (_status == 'rejected' || _status == 'resubmission_required')
+                          _StatusChip(label: 'Changes requested', color: const Color(0xFFef4444)),
+                      ],
                     ),
-                    if (t.description != null && t.description!.isNotEmpty) ...[
+                    // Description
+                    if (task.description != null && task.description!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        t.description!,
-                        style: TextStyle(color: context.tokens.textSecondary, fontSize: 12, height: 1.5),
-                      ),
+                      Text(task.description!, style: TextStyle(color: tokens.textSecondary, fontSize: 12, height: 1.5)),
                     ],
-                    if (t.deliverables != null && t.deliverables!.isNotEmpty) ...[
+                    // Deliverables
+                    if (task.deliverables != null && task.deliverables!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        'Deliverable: ${t.deliverables}',
-                        style: TextStyle(color: context.tokens.textSubtle, fontSize: 11, height: 1.4),
-                      ),
+                      Text('Deliverable: ${task.deliverables}', style: TextStyle(color: tokens.textSubtle, fontSize: 11, height: 1.4)),
                     ],
-                    if (t.estimatedMinutes != null) ...[
+                    // Feedback on rejection
+                    if ((_status == 'rejected' || _status == 'resubmission_required') &&
+                        task.submission?.feedback != null) ...[
                       const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(Icons.access_time_rounded, size: 11, color: context.tokens.textSubtle),
-                          const SizedBox(width: 3),
-                          Text(
-                            '~${t.estimatedMinutes} min',
-                            style: TextStyle(color: context.tokens.textSubtle, fontSize: 11),
+                      Text(
+                        '"${task.submission!.feedback}"',
+                        style: const TextStyle(color: Color(0xFFef4444), fontSize: 11, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                    // Chips row
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (task.estimatedMinutes != null)
+                          _MetaChip(
+                            icon: Icons.access_time_rounded,
+                            label: '~${task.estimatedMinutes} min',
+                            color: tokens.textSubtle,
                           ),
-                        ],
+                        if ((task.basePoints ?? 0) > 0)
+                          _MetaChip(
+                            icon: Icons.bolt_rounded,
+                            label: '${task.basePoints} pts',
+                            color: tokens.textSubtle,
+                          ),
+                        // Completion mode badge
+                        _ModeChip(isSelf: isSelf),
+                      ],
+                    ),
+                    // Submission UI
+                    if (_isEditable) ...[
+                      const SizedBox(height: 10),
+                      if (_proofType == 'text')
+                        TextField(
+                          controller: _textController,
+                          maxLines: 2,
+                          style: TextStyle(color: tokens.textPrimary, fontSize: 12),
+                          decoration: InputDecoration(
+                            hintText: 'Describe what you did…',
+                            hintStyle: TextStyle(color: tokens.textSubtle, fontSize: 12),
+                            filled: true,
+                            fillColor: tokens.bgPage,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                        ),
+                      if (_proofType == 'link' || _proofType == 'video')
+                        TextField(
+                          controller: _urlController,
+                          style: TextStyle(color: tokens.textPrimary, fontSize: 12),
+                          decoration: InputDecoration(
+                            hintText: _proofType == 'video' ? 'Paste your video URL…' : 'Paste your link URL…',
+                            hintStyle: TextStyle(color: tokens.textSubtle, fontSize: 12),
+                            filled: true,
+                            fillColor: tokens.bgPage,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 34,
+                        child: ElevatedButton.icon(
+                          onPressed: _uploading
+                              ? null
+                              : (_proofType == 'image' || _proofType == 'file'
+                                  ? _pickAndUpload
+                                  : _submitText),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: _uploading
+                              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white))
+                              : Icon(
+                                  (_proofType == 'image' || _proofType == 'file')
+                                      ? Icons.upload_rounded
+                                      : Icons.check_rounded,
+                                  size: 14,
+                                ),
+                          label: Text(
+                            _uploading
+                                ? 'Uploading…'
+                                : _getButtonLabel(),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -1072,9 +1351,91 @@ window.addEventListener('message', function(e) {
             ],
           ),
         ),
-        if (t != _tasks.last)
-          Divider(height: 1, indent: 14, endIndent: 14, color: context.tokens.borderCard),
+        if (!widget.isLast)
+          Divider(height: 1, indent: 14, endIndent: 14, color: tokens.borderCard),
       ],
+    );
+  }
+
+  String _getButtonLabel() {
+    final isSelf = widget.task.completionMode == 'SELF_ASSESSMENT';
+    final hasSubmission = _status != null;
+    if (_proofType == 'image' || _proofType == 'file') {
+      if (hasSubmission) return isSelf ? 'Re-upload' : 'Re-upload & Resubmit';
+      return isSelf ? 'Upload & Complete' : 'Upload & Submit';
+    }
+    if (hasSubmission) return isSelf ? 'Update' : 'Resubmit';
+    return isSelf ? 'Mark Complete' : 'Submit for Review';
+  }
+}
+
+// ── Small reusable chips ──────────────────────────────────────────────────────
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.label, required this.color});
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: context.tokens.bgPage,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(color: color, fontSize: 10)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({required this.isSelf});
+  final bool isSelf;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isSelf ? const Color(0xFF818cf8) : const Color(0xFFf59e0b);
+    final bg = color.withValues(alpha: 0.15);
+    final label = isSelf ? 'Self Assessment' : 'Admin Review';
+    final icon = isSelf ? Icons.assignment_turned_in_outlined : Icons.rate_review_outlined;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+        ],
+      ),
     );
   }
 }
