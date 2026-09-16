@@ -77,12 +77,9 @@ export const coursesService = {
   submitEpisodeTask: (episodeId: string, taskId: string, body: { responseValue?: string; proofUrl?: string; proofType?: string }) =>
     apiClient.post<never, ApiResponse<EpisodeTaskSubmissionResult>>(`/api/user/episodes/${episodeId}/tasks/${taskId}/submit`, body),
 
-  presignEpisodeTaskProof: (filename: string, contentType: string, episodeId: string, taskId: string) =>
-    apiClient.post<never, ApiResponse<{ uploadUrl: string; publicUrl: string }>>("/api/upload/presigned-url", {
-      filename,
-      contentType,
-      bucket: "episode-task-proofs",
-      pathPrefix: `${episodeId}/${taskId}`,
+  uploadTaskProofFile: (queryParams: string, file: File) =>
+    apiClient.post<never, ApiResponse<{ publicUrl: string }>>(`/api/upload/image?${queryParams}`, file, {
+      headers: { "Content-Type": file.type },
     }),
 
   getStreakPoints: () =>

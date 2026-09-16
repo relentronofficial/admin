@@ -244,9 +244,14 @@ export const useMyStreakPoints = () =>
 
 export const useUploadEpisodeTaskProof = (episodeId: string | null | undefined) => {
   return async (file: File, taskId: string): Promise<string> => {
-    const presign = await coursesService.presignEpisodeTaskProof(file.name, file.type, episodeId!, taskId);
-    const { uploadUrl, publicUrl } = presign.data!;
-    await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+    // Route through the backend upload endpoint to avoid CORS issues with direct R2 PUT.
+    const params = new URLSearchParams({
+      pathPrefix: `task-proofs/${episodeId}/${taskId}`,
+      filename: file.name,
+    }).toString();
+    const res = await coursesService.uploadTaskProofFile(params, file);
+    const publicUrl = (res as any)?.data?.publicUrl ?? (res as any)?.publicUrl;
+    if (!publicUrl) throw new Error('Upload failed: no public URL returned');
     return publicUrl;
   };
 };
