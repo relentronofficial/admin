@@ -22,6 +22,16 @@ export const useOnboardingContent = () =>
     staleTime: 5 * 60 * 1000,
   });
 
+export const useOnboardingButtons = () =>
+  useQuery({
+    queryKey: ["onboarding", "buttons"],
+    queryFn: async () => {
+      const res = await onboardingService.getButtons();
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
 export const useSaveOnboardingProgress = () => {
   const queryClient = useQueryClient();
   return useMutation({

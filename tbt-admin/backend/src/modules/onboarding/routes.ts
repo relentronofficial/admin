@@ -3,6 +3,7 @@ import {
   getOnboardingHandler,
   updateOnboardingHandler,
   getOnboardingContentHandler,
+  getOnboardingButtonsHandler,
   presignProfilePhotoHandler,
   presignOnboardingDocumentHandler,
   uploadOnboardingDocumentHandler,
@@ -14,6 +15,10 @@ import {
   adminUpdateOnboardingContentHandler,
   adminDeleteOnboardingContentHandler,
   adminReorderOnboardingContentHandler,
+  adminListOnboardingButtonsHandler,
+  adminCreateOnboardingButtonHandler,
+  adminUpdateOnboardingButtonHandler,
+  adminDeleteOnboardingButtonHandler,
 } from './controller.js';
 
 const DOC_BODY_LIMIT = 50 * 1024 * 1024; // 50 MB
@@ -37,6 +42,7 @@ export async function onboardingRoutes(fastify: FastifyInstance) {
     userScope.get('/', getOnboardingHandler);
     userScope.patch('/', updateOnboardingHandler);
     userScope.get('/content', getOnboardingContentHandler);
+    userScope.get('/buttons', getOnboardingButtonsHandler);
     userScope.post('/photo/presign', presignProfilePhotoHandler);
     userScope.post('/documents/presign', presignOnboardingDocumentHandler);
     userScope.post('/documents/upload', { bodyLimit: DOC_BODY_LIMIT }, uploadOnboardingDocumentHandler);
@@ -54,6 +60,10 @@ export async function onboardingRoutes(fastify: FastifyInstance) {
       adminScope.put('/content/reorder', adminReorderOnboardingContentHandler);
       adminScope.put('/content/:id', adminUpdateOnboardingContentHandler);
       adminScope.delete('/content/:id', adminDeleteOnboardingContentHandler);
+      adminScope.get('/buttons', adminListOnboardingButtonsHandler);
+      adminScope.post('/buttons', adminCreateOnboardingButtonHandler);
+      adminScope.put('/buttons/:id', adminUpdateOnboardingButtonHandler);
+      adminScope.delete('/buttons/:id', adminDeleteOnboardingButtonHandler);
     },
     { prefix: '/admin' },
   );

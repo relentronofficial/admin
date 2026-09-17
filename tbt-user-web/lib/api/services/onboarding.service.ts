@@ -28,6 +28,12 @@ export interface OnboardingContentStep {
   sortOrder: number;
 }
 
+export interface OnboardingButton {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
 export const onboardingService = {
   getState: () => apiClient.get<never, ApiResponse<OnboardingState>>("/api/onboarding"),
 
@@ -35,6 +41,8 @@ export const onboardingService = {
     apiClient.patch<never, ApiResponse<Record<string, unknown>>>("/api/onboarding", data),
 
   getContent: () => apiClient.get<never, ApiResponse<OnboardingContentStep[]>>("/api/onboarding/content"),
+
+  getButtons: () => apiClient.get<never, ApiResponse<OnboardingButton[]>>("/api/onboarding/buttons"),
 
   presignDocument: (data: { filename: string; contentType: string; documentType?: string }) =>
     apiClient.post<never, ApiResponse<{ uploadUrl: string; publicUrl: string }>>("/api/onboarding/documents/presign", data),

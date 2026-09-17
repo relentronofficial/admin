@@ -41,6 +41,7 @@ const PRIORITY_OPTIONS: Array<{ value: SupportTicketPriority; label: string }> =
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
 ];
 
 const REPLY_VIA_OPTIONS: Array<{ value: SupportPreferredContact; label: string }> = [
