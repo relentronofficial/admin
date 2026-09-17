@@ -78,3 +78,8 @@ export const onboardingContentSchema = z.object({
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
 });
+
+export const onboardingButtonSchema = z.object({
+  name: z.string().trim().min(1, 'Button name is required'),
+  isActive: z.boolean().optional(),
+});

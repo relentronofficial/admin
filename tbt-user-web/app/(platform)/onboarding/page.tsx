@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils/cn";
 import {
   useOnboardingState,
   useOnboardingContent,
+  useOnboardingButtons,
   useSaveOnboardingProgress,
   useUploadOnboardingDocument,
   useDeleteOnboardingDocument,
@@ -377,6 +378,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   changesNote: string | null;
 }) {
   const { data: contentSteps, isLoading: contentLoading } = useOnboardingContent();
+  const { data: ctaButtons } = useOnboardingButtons();
   const saveProgress = useSaveOnboardingProgress();
   const uploadDoc = useUploadOnboardingDocument();
   const deleteDoc = useDeleteOnboardingDocument();
@@ -613,6 +615,24 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 </div>
               ))}
             </div>
+
+            {ctaButtons && ctaButtons.length > 0 && (
+              <div className="flex flex-wrap gap-3 mt-6">
+                {ctaButtons.map((btn) => (
+                  <button
+                    key={btn.id}
+                    onClick={() => setStep(stepOrder[1] ?? "profile")}
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                    style={{
+                      background: "var(--color-accent)",
+                      boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
+                    }}
+                  >
+                    {btn.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </StepShell>
         )}
 

@@ -307,6 +307,17 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS lottie_url TEXT,
           ADD COLUMN IF NOT EXISTS quiz_data JSONB
       `),
+      // Onboarding CTA buttons — admin-managed, simple name + active/inactive
+      // toggle shown in the onboarding wizard's welcome step.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS onboarding_buttons (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
       // Virtual Self Onboarding — LiveKit verification meetings
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS onboarding_meetings (
