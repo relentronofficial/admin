@@ -18,8 +18,34 @@ import {
   storeRefreshToken,
   consumeRefreshToken,
   revokeRefreshToken,
+  revokeRefreshTokenByHash,
   revokeAllForMember,
+  hashRefreshToken,
 } from '../../plugins/jwt.js';
+import crypto from 'crypto';
+
+function parseUserAgent(ua: string | undefined | null): {
+  browser: string; os: string; deviceType: 'desktop' | 'mobile' | 'tablet';
+} {
+  if (!ua) return { browser: 'Unknown', os: 'Unknown', deviceType: 'desktop' };
+  let deviceType: 'desktop' | 'mobile' | 'tablet' = 'desktop';
+  if (/ipad|tablet|android(?!.*mobile)/i.test(ua)) deviceType = 'tablet';
+  else if (/mobile|iphone|ipod|android|blackberry|windows phone/i.test(ua)) deviceType = 'mobile';
+  let os = 'Unknown';
+  if (/windows/i.test(ua)) os = 'Windows';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS';
+  else if (/android/i.test(ua)) os = 'Android';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+  let browser = 'Unknown';
+  if (/edg\//i.test(ua)) browser = 'Edge';
+  else if (/opr\/|opera/i.test(ua)) browser = 'Opera';
+  else if (/samsungbrowser/i.test(ua)) browser = 'Samsung';
+  else if (/firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/chrome\//i.test(ua)) browser = 'Chrome';
+  else if (/safari\//i.test(ua)) browser = 'Safari';
+  return { browser, os, deviceType };
+}
 
 function getRedis(fastify: FastifyInstance): any {
   return (fastify as any).redis ?? null;
@@ -36,11 +62,24 @@ function parseCookies(header?: string): Record<string, string> {
   );
 }
 
-async function issueTokens(fastify: FastifyInstance, reply: any, memberId: string) {
+interface SessionMeta { deviceId?: string; userAgent?: string; ip?: string; }
+
+async function issueTokens(fastify: FastifyInstance, reply: any, memberId: string, meta?: SessionMeta) {
   const accessToken: string = await (fastify as any).jwt.sign({ memberId }, { expiresIn: 900 });
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(getRedis(fastify), refreshToken, memberId);
   setAuthCookies(reply, accessToken, refreshToken);
+  // Record session in DB — best effort, never block login on failure
+  const tokenHash = hashRefreshToken(refreshToken);
+  fastify.prisma.memberSession.create({
+    data: {
+      memberId,
+      tokenHash,
+      deviceId: meta?.deviceId ?? null,
+      ipAddress: meta?.ip ?? null,
+      userAgent: meta?.userAgent ?? null,
+    } as any,
+  }).catch((err: any) => fastify.log.warn({ err: err?.message }, 'member_sessions insert failed'));
 }
 
 /// Decides what to put in the `otp` field of an OTP-issuing endpoint's
@@ -207,7 +246,117 @@ export async function verifyOtp(fastify: FastifyInstance, request: any, reply: a
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
 
-  await issueTokens(fastify, reply, (member as any).id);
+  const meta: SessionMeta = {
+    deviceId: request.headers['x-device-id'] as string | undefined,
+    userAgent: request.headers['user-agent'] as string | undefined,
+    ip: request.ip,
+  };
+
+  // Check for existing active sessions — let the member choose which to revoke
+  const activeSessions = await fastify.prisma.memberSession.findMany({
+    where: { memberId: (member as any).id },
+    select: { id: true, deviceId: true, userAgent: true, ipAddress: true, startedAt: true, lastActiveAt: true },
+    orderBy: { lastActiveAt: 'desc' },
+  } as any);
+
+  if (activeSessions.length > 0) {
+    // Store a short-lived login-pending token so the client can complete the login
+    // after the user decides which device to remove.
+    const pendingId = crypto.randomUUID();
+    const redis = getRedis(fastify);
+    if (redis) {
+      await redis.set(
+        `login_pending:${pendingId}`,
+        JSON.stringify({ memberId: (member as any).id, meta }),
+        'EX', 300, // 5 minutes
+      ).catch(() => {});
+    }
+    const sessions = (activeSessions as any[]).map((s: any) => {
+      const { browser, os, deviceType } = parseUserAgent(s.userAgent);
+      return {
+        id: s.id,
+        browser,
+        os,
+        deviceType,
+        ipAddress: s.ipAddress ?? null,
+        lastActiveAt: s.lastActiveAt.toISOString(),
+        startedAt: s.startedAt.toISOString(),
+      };
+    });
+    return reply.send({ success: true, data: { step: 'session_conflict', sessions, pendingToken: pendingId } });
+  }
+
+  // No active sessions — issue tokens directly
+  await issueTokens(fastify, reply, (member as any).id, meta);
+  return reply.send({ success: true, data: { ...(member as any), step: 'done' } });
+}
+
+// POST /api/user-auth/session-revoke  (unauthenticated — validated by pendingToken)
+// Revokes a specific active session during the login-conflict flow.
+export async function sessionRevokeDuringLogin(fastify: FastifyInstance, request: any, reply: any) {
+  const { pendingToken, sessionId } = request.body as { pendingToken: string; sessionId: string };
+  if (!pendingToken || !sessionId) {
+    return reply.status(400).send({ success: false, data: null, error: 'pendingToken and sessionId are required' });
+  }
+
+  const redis = getRedis(fastify);
+  const raw = redis ? await redis.get(`login_pending:${pendingToken}`).catch(() => null) : null;
+  if (!raw) return reply.status(400).send({ success: false, data: null, error: 'Login session expired. Please try logging in again.' });
+  const { memberId } = JSON.parse(raw);
+
+  const session = await (fastify.prisma.memberSession as any).findFirst({ where: { id: sessionId, memberId } });
+  if (!session) return reply.status(404).send({ success: false, data: null, error: 'Session not found' });
+
+  if (session.tokenHash) {
+    await revokeRefreshTokenByHash(redis, session.tokenHash).catch(() => {});
+  }
+  await (fastify.prisma.memberSession as any).delete({ where: { id: sessionId } });
+
+  const remaining = await (fastify.prisma.memberSession as any).findMany({
+    where: { memberId },
+    select: { id: true, deviceId: true, userAgent: true, ipAddress: true, startedAt: true, lastActiveAt: true },
+    orderBy: { lastActiveAt: 'desc' },
+  });
+  const sessions = remaining.map((s: any) => {
+    const { browser, os, deviceType } = parseUserAgent(s.userAgent);
+    return { id: s.id, browser, os, deviceType, ipAddress: s.ipAddress ?? null, lastActiveAt: s.lastActiveAt.toISOString(), startedAt: s.startedAt.toISOString() };
+  });
+  return reply.send({ success: true, data: { sessions, pendingToken } });
+}
+
+// POST /api/user-auth/complete-login  (unauthenticated — validated by pendingToken)
+// Revokes all remaining sessions and issues a new access+refresh token pair.
+export async function completeLogin(fastify: FastifyInstance, request: any, reply: any) {
+  const { pendingToken } = request.body as { pendingToken: string };
+  if (!pendingToken) {
+    return reply.status(400).send({ success: false, data: null, error: 'pendingToken is required' });
+  }
+
+  const redis = getRedis(fastify);
+  const raw = redis ? await redis.get(`login_pending:${pendingToken}`).catch(() => null) : null;
+  if (!raw) return reply.status(400).send({ success: false, data: null, error: 'Login session expired. Please try logging in again.' });
+
+  await redis.del(`login_pending:${pendingToken}`).catch(() => {});
+  const { memberId, meta } = JSON.parse(raw);
+
+  // Revoke all remaining Redis tokens for this member
+  await revokeAllForMember(redis, memberId).catch(() => {});
+  // Clean up all DB session records
+  await (fastify.prisma.memberSession as any).deleteMany({ where: { memberId } }).catch(() => {});
+
+  const member = await fastify.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any,
+  });
+  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
+
+  // Merge any device metadata from the current request (may differ from login time)
+  const finalMeta: SessionMeta = {
+    deviceId: (request.headers['x-device-id'] as string) || meta?.deviceId,
+    userAgent: (request.headers['user-agent'] as string) || meta?.userAgent,
+    ip: request.ip || meta?.ip,
+  };
+  await issueTokens(fastify, reply, memberId, finalMeta);
   return reply.send({ success: true, data: member });
 }
 
@@ -245,6 +394,9 @@ export async function setPassword(fastify: FastifyInstance, request: any, reply:
     where: { id: (member as any).id },
     select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any,
   });
+
+  // Single-session enforcement.
+  await revokeAllForMember(getRedis(fastify), (member as any).id).catch(() => {});
 
   await issueTokens(fastify, reply, (member as any).id);
   return reply.send({ success: true, data: updated });
@@ -381,6 +533,9 @@ export async function logout(fastify: FastifyInstance, request: any, reply: any)
 
   if (refreshToken) {
     await revokeRefreshToken(getRedis(fastify), refreshToken).catch(() => {});
+    // Clean up the corresponding DB session record
+    const hash = hashRefreshToken(refreshToken);
+    await (fastify.prisma.memberSession as any).deleteMany({ where: { tokenHash: hash } }).catch(() => {});
   }
 
   clearAuthCookies(reply);
@@ -403,6 +558,7 @@ export async function revokeAllSessions(
       .send({ success: false, data: null, error: 'Unauthorized' });
   }
   const deleted = await revokeAllForMember(getRedis(fastify), memberId);
+  await (fastify.prisma.memberSession as any).deleteMany({ where: { memberId } }).catch(() => {});
   // Also clear THIS request's cookies so the caller gets a clean state.
   clearAuthCookies(reply);
   return reply.send({

@@ -44,7 +44,7 @@ final unreadMessageCountNotifierProvider =
 
 typedef _$UnreadMessageCountNotifier = Notifier<int>;
 String _$conversationMessagesHash() =>
-    r'2dac71d942df79ea452a0832432bad4ef75400db';
+    r'0e47c4d5455a52ea8a61c4a831eabdfe21d26b47';
 
 /// Copied from Dart SDK
 class _SystemHash {

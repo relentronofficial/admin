@@ -74,15 +74,24 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
     let startSet = false;
 
     async function init(el: HTMLVideoElement) {
-      // Plyr uses export= style — normalise to a constructor regardless of bundler
-      const [PlyrModule, { default: Hls }] = await Promise.all([
+      // Plyr uses export= style — normalise to a constructor regardless of bundler.
+      // CORS pre-check runs in parallel with the library imports: if the CDN pull
+      // zone lacks Access-Control-Allow-Origin headers, hls.js XHR requests are
+      // blocked and produce console errors on every lesson load. Detecting this
+      // upfront lets us skip hls.js silently and fall through to the iframe embed.
+      const [PlyrModule, HlsModule, corsOk] = await Promise.all([
         import("plyr"),
         import("hls.js"),
+        fetch(hlsUrl, { method: "HEAD", mode: "cors", credentials: "omit" })
+          .then(() => true as const)
+          .catch(() => false as const),
       ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const Plyr: any = (PlyrModule as any).default ?? PlyrModule;
+      const Hls = HlsModule.default;
 
       if (destroyed) return;
+      if (!corsOk) { cbError.current?.(); return; }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let hls: InstanceType<typeof Hls> | null = null;

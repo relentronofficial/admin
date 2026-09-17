@@ -45,8 +45,13 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS xp_per_episode INTEGER NOT NULL DEFAULT 10,
           ADD COLUMN IF NOT EXISTS passing_score_percent INTEGER NOT NULL DEFAULT 70,
           ADD COLUMN IF NOT EXISTS require_sequential BOOLEAN NOT NULL DEFAULT true,
-          ADD COLUMN IF NOT EXISTS completion_threshold_percent INTEGER NOT NULL DEFAULT 95
+          ADD COLUMN IF NOT EXISTS completion_threshold_percent INTEGER NOT NULL DEFAULT 95,
+          ADD COLUMN IF NOT EXISTS module VARCHAR(100)
       `),
+      // Seed course module assignments (idempotent — only sets when null)
+      prisma.$executeRawUnsafe(`UPDATE courses SET module = 'Product' WHERE id IN ('010b7a95-151a-4f50-9b24-e89aa061c44d','975c4829-0071-4fdd-ab15-4852390e05e5','a09beb11-32e1-4843-97d7-486cfcd3961b') AND module IS NULL`),
+      prisma.$executeRawUnsafe(`UPDATE courses SET module = 'Service' WHERE id = '507a0171-7669-4428-a27c-7ee1abbc869f' AND module IS NULL`),
+      prisma.$executeRawUnsafe(`UPDATE courses SET module = 'Coach'   WHERE id = '4544919c-7c4f-477f-9841-3b7497d43bde' AND module IS NULL`),
       // course_episodes
       prisma.$executeRawUnsafe(`
         ALTER TABLE course_episodes
@@ -56,6 +61,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS bunny_drm_token TEXT,
           ADD COLUMN IF NOT EXISTS timer_seconds INT,
           ADD COLUMN IF NOT EXISTS description TEXT
+      `),
+      // member_sessions — token_hash links the DB record to the Redis refresh token
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE member_sessions
+          ADD COLUMN IF NOT EXISTS token_hash TEXT
       `),
       // products
       prisma.$executeRawUnsafe(`
@@ -146,10 +156,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       // miscellaneous single-column additions (different tables, fully parallel)
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS login_bg_images JSONB`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS task_timer_seconds INT NOT NULL DEFAULT 300`).catch(() => {}),
+      prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS free_lifelines_per_session INT NOT NULL DEFAULT 3`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS hidden_menu_keys JSONB DEFAULT '[]'::jsonb`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS timer_seconds INT`).catch(() => {}),
-      prisma.$executeRawUnsafe(`ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE`).catch(() => {}),
-      prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE`).catch(() => {}),
+      prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS member_id UUID REFERENCES members(id) ON DELETE SET NULL`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS watched_segments TEXT`),
       prisma.$executeRawUnsafe(`ALTER TABLE member_xp ADD COLUMN IF NOT EXISTS episode_id UUID`),
       prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS member_xp_episode_dedup ON member_xp (member_id, episode_id) WHERE episode_id IS NOT NULL`),
@@ -387,7 +397,30 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ON task_submissions(member_id, task_id)
         WHERE batch_id IS NULL AND day_number IS NULL
       `),
+      // Server-side timer enforcement — tracks when a member first opens a task
+      // and flags submissions that arrive after the task's timer_seconds elapsed.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE task_submissions
+          ADD COLUMN IF NOT EXISTS timer_started_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS submitted_after_expiry BOOLEAN NOT NULL DEFAULT FALSE
+      `),
       // CREATE TABLE statements (idempotent)
+      // Lifeline audit trail — each row records one lifeline spend with task context.
+      // Separate from tbt_activity_log (coin balance) so admins can query:
+      //   "how many lifelines did this member use on Day 5?"
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS lifeline_usages (
+          id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          batch_id     UUID REFERENCES batches(id) ON DELETE SET NULL,
+          task_id      UUID REFERENCES tasks(id) ON DELETE SET NULL,
+          day_number   INT,
+          coins_spent  INT NOT NULL DEFAULT 50,
+          used_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_lifeline_usages_member ON lifeline_usages(member_id)`),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_lifeline_usages_batch_day ON lifeline_usages(batch_id, day_number)`),
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS product_inquiries (
           id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1446,34 +1479,73 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           UNIQUE(member_id, question_id)
         )
       `),
-      // ── Course Sections (2026-08-28) ───────────────────────────────
-      // Groups episodes within a course into named chapters/sections.
-      // section_id on course_episodes is nullable: NULL = unsectioned.
-      prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS course_sections (
-          id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          course_id  UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-          title      TEXT NOT NULL,
-          description TEXT,
-          sort_order INT NOT NULL DEFAULT 0,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `),
-      prisma.$executeRawUnsafe(`
-        CREATE INDEX IF NOT EXISTS idx_course_sections_course
-          ON course_sections(course_id)
-      `),
-      prisma.$executeRawUnsafe(`
-        ALTER TABLE course_episodes
-          ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES course_sections(id) ON DELETE SET NULL
-      `),
-      prisma.$executeRawUnsafe(`
-        ALTER TABLE course_sections
-          ADD COLUMN IF NOT EXISTS timer_seconds INT
-      `),
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
+
+    // ── Course Sections — must run SEQUENTIALLY after the parallel block ──
+    // CREATE TABLE must complete before the FK on course_episodes can reference
+    // it; running these in the parallel Promise.all above causes a race
+    // condition that silently drops the section_id column and the table itself.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS course_sections (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        course_id  UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        title      TEXT NOT NULL,
+        description TEXT,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_course_sections_course ON course_sections(course_id)
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES course_sections(id) ON DELETE SET NULL
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_sections ADD COLUMN IF NOT EXISTS timer_seconds INT
+    `).catch(() => {});
+    // timer_seconds on episodes was added to the parallel block but may have been
+    // skipped if the parallel block failed; ensure it exists here too.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS timer_seconds INT
+    `).catch(() => {});
+    // course_episode_id FK columns — must run AFTER course_episodes is no longer
+    // being altered (same lock-contention reason as course_sections above).
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
+    `).catch(() => {});
+    // Per-task completion mode (2026-09): admin decides, per task, whether a
+    // member submission is instantly self-approved (SELF_ASSESSMENT) or held
+    // for admin review before it counts as complete (ADMIN_CHECK). Default is
+    // ADMIN_CHECK — the conservative choice, since it matches the review UI
+    // that already existed for episode tasks before any member-facing submit
+    // flow existed, and it never changes behavior for the pre-existing
+    // batch/program task review flow (which already always gates on admin
+    // approval regardless of this column).
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_mode VARCHAR(20) NOT NULL DEFAULT 'ADMIN_CHECK'
+    `).catch(() => {});
+
+    // Streak Points — video side (2026-09). Per-episode point value, admin-set,
+    // paid into the existing points_ledger on first-ever completion of that
+    // episode. Task-side streak points needed no new column: Task.base_points +
+    // the completion_mode flow above already pay into points_ledger exactly once
+    // per task per member.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS streak_points INT NOT NULL DEFAULT 0
+    `).catch(() => {});
+    // Belt-and-suspenders DB-level dedup for video streak-point awards. Scoped by
+    // reference_type so it can never collide with (or constrain) the pre-existing
+    // task_submission/milestone/batch_day points_ledger rows written elsewhere.
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS points_ledger_episode_completion_dedup
+      ON points_ledger (member_id, reference_id) WHERE reference_type = 'episode_completion'
+    `).catch(() => {});
 
     // Backfill: publish any active courses that were created before the admin
     // Publish toggle existed (the create handler now defaults isPublished=true,
@@ -1580,6 +1652,247 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         EXCEPTION WHEN duplicate_object THEN NULL; END;
       END $$;
     `).catch(() => {});
+
+    // ── MG-01: Plan Entitlements (2026-09-08) ───────────────────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS plan_entitlements (
+        id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        plan               VARCHAR(50) NOT NULL UNIQUE,
+        tech_support_days  INT NOT NULL DEFAULT 0,
+        ad_support_days    INT NOT NULL DEFAULT 0,
+        group_call_count   INT NOT NULL DEFAULT 0,
+        call_credit_count  INT NOT NULL DEFAULT 0,
+        one_to_one_enabled BOOLEAN NOT NULL DEFAULT false,
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS support_usage (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id   UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        batch_id    UUID REFERENCES batches(id) ON DELETE SET NULL,
+        type        VARCHAR(50) NOT NULL,
+        notes       TEXT,
+        recorded_by TEXT,
+        used_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_support_usage_member ON support_usage(member_id)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_support_usage_type ON support_usage(member_id, type)`
+    ).catch(() => {});
+    // Seed default entitlements — ON CONFLICT DO NOTHING so re-runs are safe
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO plan_entitlements (plan, tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled)
+      VALUES
+        ('free',       0,  0,  0, 0, false),
+        ('starter',    2,  2,  4, 0, false),
+        ('premium',    5,  5, 10, 1, true),
+        ('vip',       10, 10, 20, 3, true),
+        ('enterprise', 0,  0,  0, 0, false)
+      ON CONFLICT (plan) DO NOTHING
+    `).catch(() => {});
+
+    // ── MG-02: Program-Wide Lifelines (2026-09-08) ──────────────────────────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_batch_settings ADD COLUMN IF NOT EXISTS lifelines_total INT NOT NULL DEFAULT 3`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_batch_settings ADD COLUMN IF NOT EXISTS lifelines_used INT NOT NULL DEFAULT 0`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE lifeline_usages ADD COLUMN IF NOT EXISTS episode_id UUID REFERENCES course_episodes(id) ON DELETE SET NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE lifeline_usages ADD COLUMN IF NOT EXISTS context VARCHAR(50) DEFAULT 'task'`
+    ).catch(() => {});
+
+    // ── MG-03: Multi-Stage Process Tasks (2026-09-08) ───────────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS task_processes (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        batch_id    UUID REFERENCES batches(id) ON DELETE CASCADE,
+        program_id  UUID REFERENCES programs(id) ON DELETE CASCADE,
+        day_number  INT,
+        title       TEXT NOT NULL,
+        description TEXT,
+        position    INT NOT NULL DEFAULT 0,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_task_processes_batch ON task_processes(batch_id, day_number)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS process_id UUID REFERENCES task_processes(id) ON DELETE SET NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stage_position INT`
+    ).catch(() => {});
+
+    // ── MG-04: Early Completion Bonus (2026-09-08) ───────────────────────────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS timer_started_at TIMESTAMPTZ`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS timer_seconds INT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS completed_early BOOLEAN DEFAULT false`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS early_completion_bonus_xp INT NOT NULL DEFAULT 5`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TYPE "XpSource" ADD VALUE IF NOT EXISTS 'early_completion'`
+    ).catch(() => {});
+
+    // ── MG-05: Buy Extra Support / Call Credits (2026-09-08) ─────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS credit_purchases (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        credit_type  VARCHAR(50) NOT NULL,
+        quantity     INT NOT NULL DEFAULT 1,
+        amount_inr   DECIMAL(10,2) NOT NULL,
+        status       VARCHAR(50) NOT NULL DEFAULT 'pending',
+        payment_ref  TEXT,
+        admin_note   TEXT,
+        reviewed_by  TEXT,
+        reviewed_at  TIMESTAMPTZ,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_credit_purchases_member ON credit_purchases(member_id)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_credit_purchases_status ON credit_purchases(status)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS credit_pricing (
+        credit_type  VARCHAR(50) PRIMARY KEY,
+        price_inr    DECIMAL(10,2) NOT NULL,
+        label        TEXT NOT NULL,
+        description  TEXT,
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO credit_pricing (credit_type, price_inr, label, description) VALUES
+        ('tech_support',   999,  'Tech Support Session',   '45-minute tech support call'),
+        ('ad_support',     999,  'Ad Support Session',     '45-minute ad review session'),
+        ('group_call_45',  499,  '45-min Group Call',      'Extra group call slot'),
+        ('group_call_60',  699,  '60-min Group Call',      'Extra group call slot'),
+        ('one_to_one_45', 1999,  'One-to-One (45 min)',    'Personalised call with coach'),
+        ('one_to_one_60', 2999,  'One-to-One (60 min)',    'Personalised call with coach'),
+        ('lifeline',       199,  'Extra Lifeline',         'One focus-mode lifeline unlock')
+      ON CONFLICT (credit_type) DO NOTHING
+    `).catch(() => {});
+
+    // ── Course Modules (2026-09-09) ──────────────────────────────────────────
+    // Named topic areas within a course (e.g. E-commerce, Service, Coaching).
+    // Episodes can belong to multiple modules via the junction table.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS course_modules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_course_modules_course ON course_modules(course_id)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS course_episode_modules (
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        module_id UUID NOT NULL REFERENCES course_modules(id) ON DELETE CASCADE,
+        PRIMARY KEY (episode_id, module_id)
+      )
+    `).catch(() => {});
+    // Seed E-commerce, Service, Coaching for every course that has no modules yet.
+    // All existing episodes are assigned to all 3 modules so nothing is hidden by default.
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      DECLARE
+        c RECORD;
+        m_ecom UUID;
+        m_svc UUID;
+        m_coach UUID;
+      BEGIN
+        FOR c IN SELECT id FROM courses LOOP
+          IF NOT EXISTS (SELECT 1 FROM course_modules WHERE course_id = c.id) THEN
+            INSERT INTO course_modules (course_id, title, sort_order)
+              VALUES (c.id, 'E-commerce', 0) RETURNING id INTO m_ecom;
+            INSERT INTO course_modules (course_id, title, sort_order)
+              VALUES (c.id, 'Service', 1) RETURNING id INTO m_svc;
+            INSERT INTO course_modules (course_id, title, sort_order)
+              VALUES (c.id, 'Coaching', 2) RETURNING id INTO m_coach;
+            INSERT INTO course_episode_modules (episode_id, module_id)
+              SELECT e.id, m.id
+              FROM course_episodes e
+              CROSS JOIN (VALUES (m_ecom), (m_svc), (m_coach)) AS m(id)
+              WHERE e.course_id = c.id
+              ON CONFLICT DO NOTHING;
+          END IF;
+        END LOOP;
+      END $$
+    `).catch(() => {});
+
+    // ── Episode Timer Sessions (2026-09-16) ─────────────────────────────────
+    // Server-side timer tracking so focus timers survive page refresh.
+    // One row per (member, episode) — UPSERT resets/restarts the timer.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS lesson_timer_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+        duration_seconds INT NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
+        last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, episode_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_lesson_timer_sessions_member ON lesson_timer_sessions(member_id)`
+    ).catch(() => {});
+
+    // ── Per-Episode Lifeline State (2026-09-16) ──────────────────────────────
+    // Persists free/purchased lifeline usage per member per episode across refreshes.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS episode_lifeline_state (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        free_used INT NOT NULL DEFAULT 0,
+        purchased_used INT NOT NULL DEFAULT 0,
+        total_used INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, episode_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_episode_lifeline_state_member ON episode_lifeline_state(member_id)`
+    ).catch(() => {});
+
+    // Per-episode lifeline config (admin-configurable overrides)
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes
+        ADD COLUMN IF NOT EXISTS lifeline_enabled BOOLEAN NOT NULL DEFAULT true,
+        ADD COLUMN IF NOT EXISTS lifeline_count INT NOT NULL DEFAULT 3,
+        ADD COLUMN IF NOT EXISTS lifeline_coin_cost INT NOT NULL DEFAULT 50,
+        ADD COLUMN IF NOT EXISTS max_purchased_lifelines INT NOT NULL DEFAULT 5
+    `).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

@@ -97,7 +97,7 @@ export const useListMembers = (params: {
   status?: string;
   showArchived?: boolean;
   facets?: MemberFilters;
-} = {}) => {
+} = {}, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: ['members', params],
     queryFn: async () => {
@@ -110,6 +110,7 @@ export const useListMembers = (params: {
       const res: any = await apiClient.get(url);
       return res;
     },
+    enabled: options?.enabled !== false,
   });
 };
 

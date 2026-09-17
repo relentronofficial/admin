@@ -91,16 +91,15 @@ export function computeLessonLockStates(
     const durationSecs = ep.durationSeconds ?? 0;
     const watchedSecs = p?.actualWatchedSecs ?? 0;
 
-    // Watch fraction: null when we don't know the duration (metadata
-    // missing). Never trust the client's isCompleted flag alone —
-    // require BOTH the flag to be set AND the watched fraction to
-    // exceed the threshold. Legacy rows without a duration fall
-    // through to the stored flag so pre-migration completions survive.
+    // Watch fraction: null when we don't know the duration.
+    // Completion = watched enough OR the DB flag is true. The stored
+    // isCompleted flag is trusted so that lessons completed before
+    // durationSeconds tracking was added are not silently re-locked.
     let watchFraction: number | null = null;
     let completed: boolean;
     if (durationSecs > 0) {
       watchFraction = Math.min(1, Math.max(0, watchedSecs / durationSecs));
-      completed = watchFraction >= threshold;
+      completed = (watchFraction >= threshold) || (p?.isCompleted ?? false);
     } else {
       completed = p?.isCompleted ?? false;
     }

@@ -166,7 +166,18 @@ export function ComposerModal({
       onSubmitted?.();
       onClose();
     } catch (err) {
-      setBanner(err instanceof Error ? err.message : "Could not post. Please try again.");
+      const raw = err instanceof Error ? err.message : "Could not post. Please try again.";
+      // Backend may return a Zod JSON array string — extract the first human-readable message
+      try {
+        const issues = JSON.parse(raw);
+        if (Array.isArray(issues) && issues[0]?.message) {
+          setBanner(issues[0].message);
+          return;
+        }
+      } catch {
+        // Not JSON — use as-is
+      }
+      setBanner(raw);
     } finally {
       setBusy(false);
     }

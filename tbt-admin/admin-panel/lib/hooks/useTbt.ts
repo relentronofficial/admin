@@ -1815,6 +1815,61 @@ export const useSendTestBatchReport = () => {
   });
 };
 
+// ── Weekly Course Reports & Feedback ────────────────────────────────────
+
+export const useListCourseWeeklyReports = (params: { page?: number; limit?: number; memberId?: string; courseId?: string; week?: number; status?: string } = {}) =>
+  useQuery({
+    queryKey: ['course-weekly-reports', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/course-reports/admin/reports', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useCreateOrSendCourseReport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { memberId: string; courseId: string; remarks?: string | null; force?: boolean }) => {
+      const res: any = await apiClient.post('/api/course-reports/admin/reports/send', data);
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-weekly-reports'] }); },
+  });
+};
+
+export const useUpdateCourseReportRemarks = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, remarks }: { id: string; remarks: string | null }) => {
+      const res: any = await apiClient.patch(`/api/course-reports/admin/reports/${id}/remarks`, { remarks });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-weekly-reports'] }); },
+  });
+};
+
+export const useListCourseWeeklyFeedback = (params: { page?: number; limit?: number; memberId?: string; courseId?: string; week?: number; status?: string } = {}) =>
+  useQuery({
+    queryKey: ['course-weekly-feedback', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/course-reports/admin/feedback', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useUpdateCourseFeedbackStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'new' | 'reviewed' }) => {
+      const res: any = await apiClient.patch(`/api/course-reports/admin/feedback/${id}/status`, { status });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-weekly-feedback'] }); },
+  });
+};
+
 // ── Episode Resources & Tasks ──────────────────────────────────────────
 
 export const useListEpisodeResources = (episodeId: string) =>
@@ -1892,6 +1947,73 @@ export const useReorderEpisodeTasks = (episodeId: string) => {
   return useMutation({
     mutationFn: async (ids: string[]) => { const res: any = await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/reorder`, { ids }); return res.data; },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-tasks', episodeId] }); },
+  });
+};
+
+// ── EPISODE TASK SUBMISSIONS (admin) ──────────────────────────────────
+
+export const useListEpisodeTaskSubmissions = (episodeId: string, taskId: string | null) =>
+  useQuery({
+    queryKey: ['episode-task-submissions', episodeId, taskId],
+    queryFn: async () => { const res: any = await apiClient.get(`/api/courses/episodes/${episodeId}/tasks/${taskId}/submissions`); return res; },
+    enabled: !!episodeId && !!taskId,
+    staleTime: 30 * 1000,
+  });
+
+export const useReviewEpisodeTaskSubmission = (episodeId: string, taskId: string | null) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, feedback }: { id: string; status: string; feedback?: string }) => {
+      const res: any = await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${taskId}/submissions/${id}/review`, { status, feedback });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['episode-task-submissions', episodeId, taskId] }); },
+  });
+};
+
+// ── MG-01: SUPPORT ENTITLEMENTS (admin) ──────────────────────────────
+
+export const useGetPlanEntitlements = () =>
+  useQuery({
+    queryKey: ['plan-entitlements'],
+    queryFn: async () => { const res: any = await apiClient.get('/api/support-entitlements'); return res; },
+    staleTime: 60_000,
+  });
+
+export const useUpdatePlanEntitlement = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ plan, data }: { plan: string; data: { techSupportDays: number; adSupportDays: number; groupCallCount: number; callCreditCount: number; oneToOneEnabled: boolean } }) => {
+      const res: any = await apiClient.put(`/api/support-entitlements/${plan}`, data);
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['plan-entitlements'] }),
+  });
+};
+
+export const useListSupportUsage = (params: { memberId?: string; type?: string; page?: number; limit?: number } = {}) =>
+  useQuery({
+    queryKey: ['support-usage', params],
+    queryFn: async () => { const res: any = await apiClient.get('/api/support-entitlements/usage', { params }); return res; },
+    staleTime: 30_000,
+  });
+
+export const useRecordSupportUsage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { memberId: string; type: string; batchId?: string; notes?: string }) => {
+      const res: any = await apiClient.post('/api/support-entitlements/usage', data);
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-usage'] }),
+  });
+};
+
+export const useDeleteSupportUsage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { const res: any = await apiClient.delete(`/api/support-entitlements/usage/${id}`); return res.data; },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-usage'] }),
   });
 };
 
@@ -1998,5 +2120,213 @@ export const useReorderCourseSections = (courseId: string) => {
       const res: any = await apiClient.put(`/api/courses/${courseId}/sections/reorder`, { ids }); return res.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['course-sections', courseId] }),
+  });
+};
+
+export const useGrantCoins = () =>
+  useMutation({
+    mutationFn: async (body: { amount: number; reason?: string; scope: 'bulk' | 'batch'; batchId?: string; skipExisting?: boolean }) => {
+      const res: any = await apiClient.post('/api/members/coins/grant', body);
+      return res.data as { granted: number; skipped: number; memberIds: string[] };
+    },
+  });
+
+export const useAddMemberCoins = (memberId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ amount, reason }: { amount: number; reason?: string }) => {
+      const res: any = await apiClient.post(`/api/members/${memberId}/coins`, { amount, reason });
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['member', memberId] }),
+  });
+};
+
+// ── MG-03: Multi-Stage Process Tasks ────────────────────────────────────────
+
+export const useListBatchProcesses = (batchId: string, dayNumber?: number) =>
+  useQuery({
+    queryKey: ['batch-processes', batchId, dayNumber],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/batches/${batchId}/processes`, { params: dayNumber !== undefined ? { dayNumber } : undefined });
+      return (res?.data ?? []) as any[];
+    },
+    enabled: !!batchId,
+  });
+
+export const useCreateBatchProcess = (batchId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { title: string; description?: string; dayNumber?: number; stages: any[] }) => {
+      const res: any = await apiClient.post(`/api/batches/${batchId}/processes`, body);
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batch-processes', batchId] }),
+  });
+};
+
+export const useUpdateBatchProcess = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, pid, ...body }: { batchId: string; pid: string; title?: string; description?: string; position?: number }) => {
+      await apiClient.put(`/api/batches/processes/${pid}`, body);
+    },
+    onSuccess: (_data, { batchId }) => qc.invalidateQueries({ queryKey: ['batch-processes', batchId] }),
+  });
+};
+
+export const useDeleteBatchProcess = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, pid }: { batchId: string; pid: string }) => {
+      await apiClient.delete(`/api/batches/processes/${pid}`);
+    },
+    onSuccess: (_data, { batchId }) => qc.invalidateQueries({ queryKey: ['batch-processes', batchId] }),
+  });
+};
+
+export const useReorderBatchProcessStages = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ batchId, pid, ids }: { batchId: string; pid: string; ids: string[] }) => {
+      await apiClient.put(`/api/batches/processes/${pid}/reorder`, { ids });
+    },
+    onSuccess: (_data, { batchId }) => qc.invalidateQueries({ queryKey: ['batch-processes', batchId] }),
+  });
+};
+
+// ── MG-05: Buy Extra Credits ──────────────────────────────────────────────────
+
+export const useListCreditPurchases = (params?: { status?: string; memberId?: string }) =>
+  useQuery({
+    queryKey: ['credit-purchases', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/credits/all', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useListPendingCreditPurchases = () =>
+  useQuery({
+    queryKey: ['credit-purchases', 'pending'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/credits/pending');
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useApproveCreditPurchase = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res: any = await apiClient.post(`/api/credits/${id}/approve`);
+      return res;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['credit-purchases'] });
+    },
+  });
+};
+
+export const useRejectCreditPurchase = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, adminNote }: { id: string; adminNote?: string }) => {
+      const res: any = await apiClient.post(`/api/credits/${id}/reject`, { adminNote });
+      return res;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['credit-purchases'] });
+    },
+  });
+};
+
+export const useGetCreditPricing = () =>
+  useQuery({
+    queryKey: ['credit-pricing'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/credits/pricing');
+      return (res?.data ?? []) as Array<{ credit_type: string; price_inr: number; label: string; description: string }>;
+    },
+    staleTime: 300_000,
+  });
+
+export const useUpdateCreditPricing = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ creditType, priceInr, label, description }: { creditType: string; priceInr: number; label: string; description?: string }) => {
+      const res: any = await apiClient.put(`/api/credits/pricing/${creditType}`, { priceInr, label, description });
+      return res;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['credit-pricing'] }),
+  });
+};
+
+// ── MG-01: Member support quota (admin view) ──────────────────────────────────
+
+export const useMemberSupportQuota = (memberId: string) =>
+  useQuery({
+    queryKey: ['member-support-quota', memberId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/support-entitlements/member/${memberId}`);
+      return res?.data ?? null;
+    },
+    enabled: !!memberId,
+  });
+
+// ── Course Modules ──────────────────────────────────────────────────────────
+
+export const useListCourseModules = (courseId: string) =>
+  useQuery({
+    queryKey: ['course-modules', courseId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/courses/${courseId}/modules`);
+      return (res?.data ?? []) as Array<{ id: string; courseId: string; title: string; description: string | null; sortOrder: number; episodeIds: string[]; createdAt: string }>;
+    },
+    enabled: !!courseId,
+    staleTime: 60_000,
+  });
+
+export const useCreateCourseModule = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { title: string; description?: string }) => {
+      const res: any = await apiClient.post(`/api/courses/${courseId}/modules`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
+  });
+};
+
+export const useUpdateCourseModule = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ moduleId, ...data }: { moduleId: string; title?: string; description?: string; episodeIds?: string[] }) => {
+      const res: any = await apiClient.put(`/api/courses/${courseId}/modules/${moduleId}`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
+  });
+};
+
+export const useDeleteCourseModule = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (moduleId: string) => {
+      await apiClient.delete(`/api/courses/${courseId}/modules/${moduleId}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
+  });
+};
+
+export const useReorderCourseModules = (courseId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      await apiClient.put(`/api/courses/${courseId}/modules/reorder`, { ids });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
   });
 };

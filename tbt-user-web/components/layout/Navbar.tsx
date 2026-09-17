@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, LifeBuoy, MessageSquare, Menu, X,
-  PlayCircle, ClipboardList, Video, Trophy, Megaphone, Settings2, Film,
+  Bell, LifeBuoy, MessageSquare, Menu, X, Film,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUIStore } from "@/lib/stores/useUIStore";
@@ -23,23 +22,8 @@ import toast from "react-hot-toast";
 import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
 import { ThemeToggle } from "./ThemeToggle";
+import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
 import type { Notification } from "@/types";
-
-// ── Notification type icon config ─────────────────────────────────────────────
-
-const NOTIF_ICONS = {
-  video:        { Icon: PlayCircle,    color: "#dc2626", bg: "rgba(220,38,38,0.15)" },
-  assignment:   { Icon: ClipboardList, color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-  live_call:    { Icon: Video,         color: "#3b82f6", bg: "rgba(59,130,246,0.15)" },
-  achievement:  { Icon: Trophy,        color: "#eab308", bg: "rgba(234,179,8,0.15)" },
-  announcement: { Icon: Megaphone,     color: "#8b5cf6", bg: "rgba(139,92,246,0.15)" },
-  system:       { Icon: Settings2,     color: "#6b7280", bg: "rgba(107,114,128,0.12)" },
-} as const;
-
-function getNotifIcon(iconType?: string | null) {
-  return NOTIF_ICONS[iconType as keyof typeof NOTIF_ICONS]
-    ?? { Icon: Bell, color: "#6b7280", bg: "rgba(107,114,128,0.12)" };
-}
 
 // ── Notification dropdown ─────────────────────────────────────────────────────
 
@@ -55,8 +39,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
   function handleClick(n: Notification) {
     onClose();
     if (!n.isRead) markRead.mutate(n.id);
-    if (n.actionUrl) router.push(n.actionUrl);
-    else router.push("/notifications");
+    router.push(n.actionUrl ? normalizeNotifUrl(n.actionUrl) : "/notifications");
   }
 
   return (
@@ -206,6 +189,9 @@ function ProfileButton() {
   const queryClient = useQueryClient();
   const { hiddenMenuKeys } = useSiteConfig();
   const [open, setOpen] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  const avatarUrl = (me as any)?.avatarUrl ?? null;
+  useEffect(() => { setAvatarError(false); }, [avatarUrl]);
 
   const handleLogout = async () => {
     await apiClient.post("/api/user-auth/logout").catch(() => {});
@@ -229,9 +215,16 @@ function ProfileButton() {
         style={{ background: (me as any)?.avatarGradient || "var(--color-accent, #dc2626)" }}
         aria-label="Account menu"
       >
-        {(me as any)?.profilePhotoUrl ? (
+        {avatarUrl && !avatarError ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={(me as any).profilePhotoUrl} alt="" width={28} height={28} className="w-full h-full object-cover" />
+          <img
+            src={avatarUrl}
+            alt=""
+            width={28}
+            height={28}
+            className="w-full h-full object-cover"
+            onError={() => setAvatarError(true)}
+          />
         ) : initials}
       </button>
 
@@ -348,8 +341,7 @@ export function Navbar() {
                 }}
                 onClick={() => {
                   toast.dismiss(t.id);
-                  if (payload.actionUrl) routerRef.current.push(payload.actionUrl);
-                  else routerRef.current.push("/notifications");
+                  routerRef.current.push(payload.actionUrl ? normalizeNotifUrl(payload.actionUrl) : "/notifications");
                 }}
               >
                 <div

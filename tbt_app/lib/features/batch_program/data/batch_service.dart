@@ -295,11 +295,14 @@ class BatchService {
 
   // ── POST /api/user-batch/spend-coins ─────────────────────────────────────────
 
-  Future<int> spendCoins(int amount) async {
+  Future<int> spendCoins(int amount, {String? taskId, int? dayNumber}) async {
     try {
+      final body = <String, dynamic>{'amount': amount};
+      if (taskId != null) body['taskId'] = taskId;
+      if (dayNumber != null) body['dayNumber'] = dayNumber;
       final res = await _dio.post<Map<String, dynamic>>(
         '$kUserBatch/spend-coins',
-        data: {'amount': amount},
+        data: body,
       );
       return (res.data?['data']?['remainingCoins'] as num?)?.toInt() ?? 0;
     } on DioException catch (e) {

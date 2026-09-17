@@ -3,10 +3,10 @@
 import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronLeft, CheckCircle2, Play, Loader2, X, Zap, Award,
-  Lock, Trophy, ChevronDown, ChevronUp, Copy, Check,
+  ChevronLeft, ChevronRight, CheckCircle2, Play, Loader2, X, Zap, Award,
+  Lock, Trophy, ChevronDown, ChevronUp, Share2, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
-  Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
+  Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText, Heart,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
@@ -19,10 +19,12 @@ import {
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
   useSaveReflection, useReflections,
-  useEpisodeResources, useEpisodeTasks,
+  useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
+  useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
+  useEpisodeLifelines, useUseEpisodeLifeline,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
-import { useSpendCoins } from "@/lib/hooks/useBatchProgram";
+import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -88,6 +90,7 @@ interface SelectedLesson {
   resumeAtSeconds?: number;
   actualWatchedSecs?: number;
   isCompleted?: boolean;
+  sectionId?: string | null;
 }
 
 // ── Practice Arena Modal (Retrieval Practice + Interleaving) ─────────────────
@@ -679,7 +682,7 @@ function LeaderboardWidget({ courseId }: { courseId: string }) {
                   </span>
                   <span className="flex-1 truncate" style={{ color: isMe ? "var(--color-accent)" : "var(--color-text-normal)" }}>
                     {name}
-                    {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}>(you)</span>}
+                    {isMe && <span className="ml-1 text-[10px]" style={{ color: "var(--color-accent)" }}> (you)</span>}
                   </span>
                   <span className="text-xs font-bold flex items-center gap-1" style={{ color: "var(--color-accent)" }}>
                     <Zap size={11} />{entry.totalXp ?? 0}
@@ -743,15 +746,9 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   const lessons = course.lessons ?? [];
 
   const handleGetAccess = async () => {
-    if (course.paymentLinkUrl) {
-      window.open(course.paymentLinkUrl, "_blank");
-      return;
-    }
     try {
-      const res = await requestAccess.mutateAsync(courseId);
-      const { paymentUrl } = (res as any).data ?? res;
-      if (paymentUrl) window.open(paymentUrl, "_blank");
-      else toast.success("Access request sent! We'll notify you shortly.");
+      await requestAccess.mutateAsync(courseId);
+      toast.success("Access request sent! We'll notify you shortly.");
     } catch (e: any) {
       toast.error(e.message || "Failed to request access.");
     }
@@ -857,9 +854,9 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
             style={{ background: "var(--color-accent)" }}
           >
             {requestAccess.isPending ? (
-              <><Loader2 size={14} className="animate-spin" /> Processing...</>
+              <><Loader2 size={14} className="animate-spin" /> Sending request...</>
             ) : (
-              <>{course.paymentLinkUrl ? <ExternalLink size={14} /> : <Lock size={14} />} Get Access</>
+              <><Lock size={14} /> Get Access</>
             )}
           </button>
         )}
@@ -877,7 +874,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
           <div>
             {(() => {
               const previewSections: any[] = course.sections ?? [];
-              let lastSectionId: string | null = undefined as any;
+              let lastSectionId: string | null = null;
               return lessons.map((lesson: any, idx: number) => {
                 const sid = previewSections.length > 0 ? ((lesson as any).sectionId ?? null) : null;
                 const showHeader = previewSections.length > 0 && sid !== lastSectionId;
@@ -928,6 +925,343 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   );
 }
 
+// ── Episode Task Item (submit + review-status) ──────────────────────────────
+function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: EpisodeTask; index: number }) {
+  const submitTask = useSubmitEpisodeTask(episodeId);
+  const uploadProof = useUploadEpisodeTaskProof(episodeId);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [textValue, setTextValue] = useState(task.submission?.responseValue ?? "");
+  const [urlValue, setUrlValue] = useState(task.submission?.proofUrl ?? "");
+  const [uploading, setUploading] = useState(false);
+
+  const proofType = task.proofType || "watch";
+  const status = task.submission?.status ?? null;
+  const isEditable = status === null || status === "pending" || status === "rejected" || status === "resubmission_required";
+
+  const handleFileSelect = async (file: File) => {
+    setUploading(true);
+    try {
+      const publicUrl = await uploadProof(file, task.id);
+      await submitTask.mutateAsync({ taskId: task.id, proofUrl: publicUrl, proofType });
+      toast.success("Task submitted");
+    } catch {
+      toast.error("Upload failed — please try again");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (proofType === "text" && !textValue.trim()) { toast.error("Please describe what you did"); return; }
+    if ((proofType === "link" || proofType === "video") && !urlValue.trim()) { toast.error("Please paste a URL"); return; }
+    try {
+      await submitTask.mutateAsync({
+        taskId: task.id,
+        responseValue: proofType === "text" ? textValue.trim() : undefined,
+        proofUrl: (proofType === "link" || proofType === "video") ? urlValue.trim() : undefined,
+        proofType,
+      });
+      toast.success(task.completionMode === "SELF_ASSESSMENT" ? "Task completed" : "Submitted for review");
+    } catch {
+      toast.error("Couldn't submit — please try again");
+    }
+  };
+
+  return (
+    <div className="px-4 py-3">
+      <input
+        type="file"
+        accept={proofType === "image" ? "image/*" : "image/*,application/pdf,.zip,.doc,.docx"}
+        className="hidden"
+        ref={fileInputRef}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ""; }}
+      />
+      <div className="flex items-start gap-3">
+        <span
+          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white mt-0.5"
+          style={{ background: "var(--color-accent)" }}
+        >
+          {index + 1}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>{task.title}</p>
+            {status === "approved" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-success) 20%, transparent)", color: "var(--color-success)" }}>
+                <Check size={10} /> Completed
+              </span>
+            )}
+            {status === "pending" && task.completionMode === "ADMIN_CHECK" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #f59e0b 20%, transparent)", color: "#f59e0b" }}>
+                <Clock size={10} /> Pending Review
+              </span>
+            )}
+            {status === "pending" && task.completionMode === "SELF_ASSESSMENT" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-success) 20%, transparent)", color: "var(--color-success)" }}>
+                <Check size={10} /> Uploaded
+              </span>
+            )}
+            {(status === "rejected" || status === "resubmission_required") && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-alert) 20%, transparent)", color: "var(--color-alert)" }}>
+                <AlertTriangle size={10} /> Changes requested
+              </span>
+            )}
+          </div>
+          {task.description && (
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>{task.description}</p>
+          )}
+          {task.deliverables && (
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
+              Deliverable: {task.deliverables}
+            </p>
+          )}
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            {task.estimatedMinutes && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
+                <Clock size={10} /> ~{task.estimatedMinutes} min
+              </span>
+            )}
+            {!!task.basePoints && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
+                <Zap size={10} /> {task.basePoints} pts
+              </span>
+            )}
+            {task.completionMode === "SELF_ASSESSMENT" ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #6366f1 15%, transparent)", color: "#818cf8" }}>
+                <ClipboardList size={9} /> Self Assessment
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #f59e0b 15%, transparent)", color: "#f59e0b" }}>
+                <FileText size={9} /> Admin Review
+              </span>
+            )}
+          </div>
+
+          {(status === "rejected" || status === "resubmission_required") && task.submission?.feedback && (
+            <p className="text-xs mt-2 italic" style={{ color: "var(--color-alert)" }}>"{task.submission.feedback}"</p>
+          )}
+
+          {isEditable && (
+            <div className="mt-2.5 space-y-2">
+              {proofType === "text" && (
+                <textarea
+                  value={textValue}
+                  onChange={(e) => setTextValue(e.target.value)}
+                  rows={2}
+                  placeholder="Describe what you did…"
+                  className="w-full rounded-lg px-3 py-2 text-xs outline-none resize-none"
+                  style={{ background: "var(--color-surface-xs)", color: "var(--color-text-normal)", border: "1px solid var(--color-border-card)" }}
+                />
+              )}
+              {(proofType === "link" || proofType === "video") && (
+                <input
+                  type="url"
+                  value={urlValue}
+                  onChange={(e) => setUrlValue(e.target.value)}
+                  placeholder={proofType === "video" ? "Paste your video URL…" : "Paste your link URL…"}
+                  className="w-full rounded-lg px-3 py-2 text-xs outline-none"
+                  style={{ background: "var(--color-surface-xs)", color: "var(--color-text-normal)", border: "1px solid var(--color-border-card)" }}
+                />
+              )}
+              <div className="flex items-center gap-2">
+                {(proofType === "image" || proofType === "file") ? (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    {uploading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} className="rotate-180" />}
+                    {uploading ? "Uploading…" : status
+                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Re-upload" : "Re-upload & Resubmit")
+                      : (task.completionMode === "SELF_ASSESSMENT" ? "Upload & Complete" : "Upload & Submit")}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitTask.isPending}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    {submitTask.isPending ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    {status
+                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Update" : "Resubmit")
+                      : (task.completionMode === "SELF_ASSESSMENT" ? "Mark Complete" : "Submit for Review")}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Learning Challenge Timer Card ─────────────────────────────────────────────
+// Appears below the video while the focus timer is active. Purely presentational
+// — no hooks, no extra timers. Re-renders are driven by the parent's lessonTimers
+// state (updated every ~500 ms), which is already happening.
+function LearningChallengeCard({
+  timerSecs, totalSeconds, lifelinesLeft, maxLifelines,
+  coinBalance, lifelineCoinCost, onBuyWithCoins, isPurchasing, isDone,
+}: {
+  timerSecs: number;
+  totalSeconds: number;
+  lifelinesLeft: number;
+  maxLifelines: number;
+  coinBalance?: number;
+  lifelineCoinCost: number;
+  onBuyWithCoins: () => void;
+  isPurchasing?: boolean;
+  /** true when lesson is already completed — shows a static "Challenge Complete" badge */
+  isDone?: boolean;
+}) {
+  const fraction = totalSeconds > 0 ? Math.max(0, Math.min(1, timerSecs / totalSeconds)) : 1;
+  const pct = isDone ? 100 : Math.round(fraction * 100);
+  const isExpired = !isDone && timerSecs === 0;
+  const isCritical = !isDone && !isExpired && timerSecs <= 60;
+  const isWarning = !isDone && !isExpired && !isCritical && pct <= 20;
+
+  const accentColor = isDone ? "#22c55e"
+    : isExpired ? "#6b7280"
+    : isCritical ? "#ef4444"
+    : isWarning ? "#f59e0b"
+    : "var(--color-accent)";
+
+  const cardBg = isDone
+    ? "color-mix(in srgb, #22c55e 8%, var(--color-bg-surface))"
+    : isExpired
+    ? "color-mix(in srgb, #6b7280 8%, var(--color-bg-surface))"
+    : isCritical ? "color-mix(in srgb, #ef4444 7%, var(--color-bg-surface))"
+    : isWarning ? "color-mix(in srgb, #f59e0b 6%, var(--color-bg-surface))"
+    : "color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-surface))";
+
+  const cardBorder = isDone
+    ? "1px solid color-mix(in srgb, #22c55e 30%, transparent)"
+    : isExpired
+    ? "1px solid color-mix(in srgb, #6b7280 25%, transparent)"
+    : isCritical ? "1px solid color-mix(in srgb, #ef4444 35%, transparent)"
+    : isWarning ? "1px solid color-mix(in srgb, #f59e0b 30%, transparent)"
+    : "1px solid color-mix(in srgb, var(--color-accent) 22%, transparent)";
+
+  const headingText = isDone ? "Challenge Complete!"
+    : isExpired ? "Time's Up!"
+    : isCritical ? "Complete Now!"
+    : isWarning ? "Time Running Low"
+    : "Learning Challenge";
+
+  const subText = isDone
+    ? "You completed this lesson's challenge"
+    : isExpired
+    ? "Your learning time has ended"
+    : isCritical
+    ? "Under 1 minute — finish the lesson!"
+    : isWarning
+    ? "Less than 20% time left — keep going!"
+    : "Complete the lesson before time runs out";
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: cardBg, border: cardBorder }}
+      role="timer"
+    >
+      <div className="p-4 space-y-3">
+        {/* Header row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm select-none" aria-hidden="true">
+              {isDone ? "✅" : isExpired ? "⏰" : isCritical ? "🔥" : isWarning ? "⚠️" : "🎯"}
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: accentColor }}>
+              {headingText}
+            </span>
+          </div>
+          {/* Lifeline hearts */}
+          <div
+            className="flex items-center gap-0.5 px-2 py-1 rounded-full"
+            style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+            title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
+          >
+            {Array.from({ length: maxLifelines }).map((_, i) => (
+              <Heart key={i} size={12}
+                fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                stroke={i < lifelinesLeft ? "#ef4444" : "rgba(128,128,128,0.35)"}
+                style={{ transition: "fill 0.3s, stroke 0.3s" }}
+              />
+            ))}
+            <span
+              className="text-[10px] font-bold ml-1 tabular-nums"
+              style={{ color: lifelinesLeft > 0 ? "#ef4444" : "var(--color-text-disabled)" }}
+            >
+              {lifelinesLeft}
+            </span>
+          </div>
+        </div>
+
+        {/* Large timer + sub-text */}
+        <div className="flex items-end gap-3">
+          <span
+            className={cn(
+              "font-mono font-bold tabular-nums leading-none",
+              isCritical && "animate-pulse motion-reduce:animate-none",
+            )}
+            style={{ fontSize: "2.5rem", color: accentColor, transition: "color 0.4s ease" }}
+            aria-live={isDone ? undefined : "polite"}
+            aria-label={isDone ? "Challenge completed" : `${Math.floor(timerSecs / 60)} minutes ${timerSecs % 60} seconds remaining`}
+          >
+            {isDone ? "Done ✓" : fmtTime(timerSecs)}
+          </span>
+          <span className="text-xs leading-snug pb-1" style={{ color: "var(--color-text-subtle)" }}>
+            {subText}
+          </span>
+        </div>
+
+        {/* Progress bar */}
+        <div>
+          <div
+            className="h-2 rounded-full overflow-hidden"
+            style={{ background: "var(--color-progress-track)" }}
+            role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${pct}%`,
+                background: accentColor,
+                transition: "width 0.5s linear, background 0.4s ease",
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-1.5 text-[10px]" style={{ color: "var(--color-text-disabled)" }}>
+            <span>{pct}% remaining</span>
+            <span>{fmtTime(totalSeconds)} total</span>
+          </div>
+        </div>
+
+        {/* Expired + no lifelines: coin purchase CTA (coinDialog is also open, this is a secondary CTA) */}
+        {isExpired && lifelinesLeft === 0 && (
+          <div className="pt-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }}>
+            <button
+              onClick={onBuyWithCoins}
+              disabled={isPurchasing || (coinBalance ?? 0) < lifelineCoinCost}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: "#d97706" }}
+            >
+              {isPurchasing ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+              Spend {lifelineCoinCost} Coins
+              {coinBalance != null && (
+                <span className="text-xs font-normal opacity-70 ml-1">({coinBalance} available)</span>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function CourseDetailPage({
   params,
@@ -968,7 +1302,6 @@ export default function CourseDetailPage({
   const [liveWatched, setLiveWatched] = useState<number>(0);
   const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
   const [hlsFailed, setHlsFailed] = useState(false);
-  const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
   const [upNextVisible, setUpNextVisible] = useState(false);
   const [videoKey, setVideoKey] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(() => {
@@ -982,12 +1315,15 @@ export default function CourseDetailPage({
   const topRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<PlyrPlayerHandle | null>(null);
   const [certCopied, setCertCopied] = useState(false);
+  const [certSharing, setCertSharing] = useState(false);
 
   // Quiz modal state
-  const [quizModal, setQuizModal] = useState<{ episodeId: string; quizData: any } | null>(null);
+  const [quizModal, setQuizModal] = useState<{ episodeId: string; questions: any[] } | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [quizResult, setQuizResult] = useState<any>(null);
   const [xpFlash, setXpFlash] = useState<number | null>(null);
+  const [bonusXpFlash, setBonusXpFlash] = useState<number | null>(null); // MG-04: early completion bonus
+  const [missionComplete, setMissionComplete] = useState<{ title: string; xp: number } | null>(null);
   const [downloadingCert, setDownloadingCert] = useState(false);
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
   const { data: certData } = useCertificateEligibility(courseId);
@@ -995,7 +1331,7 @@ export default function CourseDetailPage({
   const { data: episodeTasks = [] } = useEpisodeTasks(selectedLesson?.id);
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
-  const MAX_FREE_LIFELINES = 3;
+  const MAX_FREE_LIFELINES = 3; // fallback until config/batch loads
   const LIFELINE_COIN_COST = 50;
   const [focusLockedIds, setFocusLockedIds] = useState<Set<string>>(new Set());
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
@@ -1004,22 +1340,112 @@ export default function CourseDetailPage({
   const [lessonTimers, setLessonTimers] = useState<Record<string, number>>({});
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const timerLessonRef = useRef<string | null>(null);
+  const timerEndTimeRef = useRef<number>(0);
+  const timerDurationRef = useRef<number>(0);
+  // MG-04: track when focus timer was started (ms) and duration for early-completion bonus
+  const timerStartedAtRef = useRef<number | undefined>(undefined);
+  const lifelinesLeftRef = useRef(MAX_FREE_LIFELINES);
+  const lifelinesInitializedRef = useRef(false);
+  // program-wide lifeline tracking: true when member has an active batch
+  const useProgramLifeline = useUseProgramLifeline();
+  const { data: batchData } = useMyBatchProgram();
+  const batchId = (batchData as any)?.batch?.id as string | undefined;
+  const isProgramLifeline = !!batchId;
+  // Stable ref so the setInterval tick function can call the mutation without stale closure
+  const programLifelineMutateRef = useRef(useProgramLifeline.mutateAsync);
+  useEffect(() => { programLifelineMutateRef.current = useProgramLifeline.mutateAsync; }, [useProgramLifeline.mutateAsync]);
+  const batchIdRef = useRef(batchId);
+  useEffect(() => { batchIdRef.current = batchId; }, [batchId]);
+  const isProgramLifelineRef = useRef(isProgramLifeline);
+  useEffect(() => { isProgramLifelineRef.current = isProgramLifeline; }, [isProgramLifeline]);
+  // Tracks the last lessonId for which the focus dialog was shown via URL auto-select,
+  // preventing an infinite loop when selectedLesson stays null (user hasn't confirmed yet).
+  const urlFocusDialogShownRef = useRef<string | null>(null);
   const spendCoins = useSpendCoins();
+  // Server-side timer session + per-episode lifeline persistence
+  const startEpisodeTimerMutation = useStartEpisodeTimer();
+  const heartbeatEpisodeTimerMutation = useHeartbeatEpisodeTimer();
+  const useEpisodeLifelineMutation = useUseEpisodeLifeline(selectedLesson?.id);
+  const { data: episodeLifelineData } = useEpisodeLifelines(selectedLesson?.id);
+  const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id);
+  // Stable refs for mutation functions (safe inside setInterval callbacks)
+  const startEpisodeTimerRef = useRef(startEpisodeTimerMutation.mutate);
+  useEffect(() => { startEpisodeTimerRef.current = startEpisodeTimerMutation.mutate; }, [startEpisodeTimerMutation.mutate]);
+  const episodeLifelineMutateRef = useRef(useEpisodeLifelineMutation.mutateAsync);
+  useEffect(() => { episodeLifelineMutateRef.current = useEpisodeLifelineMutation.mutateAsync; }, [useEpisodeLifelineMutation.mutateAsync]);
+  const heartbeatMutateRef = useRef(heartbeatEpisodeTimerMutation.mutate);
+  useEffect(() => { heartbeatMutateRef.current = heartbeatEpisodeTimerMutation.mutate; }, [heartbeatEpisodeTimerMutation.mutate]);
+  // Timer restoration tracking
+  const timerRestoredForRef = useRef<string | null>(null);
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
-
-  // "Don't show again" per-course focus dialog acknowledgement
-  const [focusAcknowledged, setFocusAcknowledged] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !!localStorage.getItem(`tbt_focus_ack_${courseId}`);
-  });
-  const toggleFocusAck = (checked: boolean) => {
-    setFocusAcknowledged(checked);
-    if (checked) localStorage.setItem(`tbt_focus_ack_${courseId}`, "1");
-    else localStorage.removeItem(`tbt_focus_ack_${courseId}`);
-  };
+  useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
+  // Initialize lifeline count: program-wide DB value takes priority over session config
+  useEffect(() => {
+    if (lifelinesInitializedRef.current) return;
+    if (batchData !== undefined) {
+      // batch data loaded — use program-wide count if in a batch
+      lifelinesInitializedRef.current = true;
+      const programRemaining = (batchData as any)?.lifelinesRemaining;
+      const count = programRemaining != null ? programRemaining : (config?.freeLifelinesPerSession ?? MAX_FREE_LIFELINES);
+      setLifelinesLeft(count);
+      lifelinesLeftRef.current = count;
+    } else if (batchData === null && config?.freeLifelinesPerSession != null) {
+      // not in a batch — fall back to session-based config value
+      lifelinesInitializedRef.current = true;
+      setLifelinesLeft(config.freeLifelinesPerSession);
+      lifelinesLeftRef.current = config.freeLifelinesPerSession;
+    }
+  }, [batchData, config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Per-episode lifeline override for non-batch members: persists across page refreshes
+  useEffect(() => {
+    if (isProgramLifeline || !episodeLifelineData || !selectedLesson) return;
+    setLifelinesLeft(episodeLifelineData.freeRemaining);
+    lifelinesLeftRef.current = episodeLifelineData.freeRemaining;
+  }, [episodeLifelineData, isProgramLifeline, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Restore active timer session from server on lesson load (survives page refresh)
+  useEffect(() => {
+    if (!selectedLesson || !existingTimerSession) return;
+    if (existingTimerSession.status !== 'ACTIVE') return;
+    if (timerRestoredForRef.current === selectedLesson.id) return;
+    if (timerLessonRef.current === selectedLesson.id) return; // already running
+    const remaining = existingTimerSession.remainingSeconds;
+    if (remaining <= 0) return;
+    timerRestoredForRef.current = selectedLesson.id;
+    const fullDuration = (existingTimerSession as any).durationSeconds ?? remaining;
+    // Start client-side timer from remaining seconds (no server call — session already active)
+    startLessonTimer(selectedLesson.id, remaining, true);
+    timerDurationRef.current = fullDuration; // restore full duration for lifeline resets
+  }, [selectedLesson?.id, existingTimerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 30s heartbeat to keep server timer session alive while lesson is open
+  useEffect(() => {
+    const id = setInterval(() => {
+      const lessonId = timerLessonRef.current;
+      if (!lessonId) return;
+      heartbeatMutateRef.current({ episodeId: lessonId });
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
+  const localReflections = useMemo(() => {
+    if (savedReflections && savedReflections.length > 0) return [];
+    try {
+      const all = JSON.parse(localStorage.getItem("tbt_reflections") || "{}");
+      return Object.entries(all)
+        .filter(([k]) => k.startsWith(`${courseId}:`))
+        .map(([k, v]: [string, any]) => ({
+          lessonId: k.split(":")[1],
+          text: v.text as string,
+          savedAt: typeof v.savedAt === "number"
+            ? new Date(v.savedAt).toISOString()
+            : (v.savedAt as string),
+        }));
+    } catch { return []; }
+  }, [courseId, savedReflections]);
+  const visibleReflections = (savedReflections && savedReflections.length > 0)
+    ? savedReflections
+    : localReflections;
   const [reflectionsOpen, setReflectionsOpen] = useState(false);
   const [practiceOpen, setPracticeOpen] = useState(false);
   const [pendingReflection, setPendingReflection] = useState<{ lessonId: string; title: string } | null>(null);
@@ -1034,9 +1460,12 @@ export default function CourseDetailPage({
   const justCompletedInSessionRef = useRef(false);
   // Prevents double XP flash when both lesson completion and quiz pass fire for the same lesson.
   const xpFlashedRef = useRef<string | null>(null);
+  const missionFlashedRef = useRef<string | null>(null);
 
   // Section accordion state — start all sections expanded; collapse all except the active lesson's section
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  // Modules — topic-area tabs that filter the lesson sidebar (must be before early returns — Rules of Hooks)
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
   // Mid-video cue quizzes
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
@@ -1070,6 +1499,17 @@ export default function CourseDetailPage({
     }
   };
 
+  // Update browser tab title to course / lesson name (UX-02)
+  useEffect(() => {
+    const courseTitle = (course as any)?.title;
+    if (!courseTitle) return;
+    const siteTitle = config?.siteName ?? "TBT";
+    document.title = selectedLesson?.title
+      ? `${selectedLesson.title} | ${courseTitle} | ${siteTitle}`
+      : `${courseTitle} | ${siteTitle}`;
+    return () => { document.title = siteTitle; };
+  }, [(course as any)?.title, selectedLesson?.title, config?.siteName]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Let the ad system interrupt and restore this lesson (TBT_ADS_SPECKIT.md §7).
   // Reuses the pause/resume refs already built above for cue quizzes — those
   // handle the HLS-vs-iframe split, so the ad path gets it for free.
@@ -1090,46 +1530,81 @@ export default function CourseDetailPage({
   // on top of it is incoherent (speckit §7.4).
   useSuppressAds("course-cue-quiz", !!cueQuizModal);
 
-  // Auto-select lesson from URL parameter once course data loads
+  // Auto-select lesson from URL parameter once course data loads.
+  // A direct/refreshed/new-tab link to a locked lesson never plays it — the
+  // server already omits videoUrl/hlsUrl for locked episodes (see
+  // user/controller.ts getCourseDetailHandler), so `target.videoUrl` here is
+  // whatever the server actually allowed. This effect just surfaces that as
+  // a toast instead of silently doing nothing.
   useEffect(() => {
-    if (course?.lessons && targetLessonId && !selectedLesson) {
+    if (course?.lessons && targetLessonId && !selectedLesson && urlFocusDialogShownRef.current !== targetLessonId) {
       const target = course.lessons.find((l: any) => l.id === targetLessonId);
-      if (target && target.videoUrl) {
+      if (target && (target as any).locked) {
+        urlFocusDialogShownRef.current = targetLessonId;
+        toast.error("Complete the previous lesson to unlock this one.", { id: "lesson-locked" });
+        return;
+      }
+      if (target && target.videoUrl && !(target as any).locked) {
         const alreadyDone = lessonAlreadyDone(
           target.id, completedIds, (target as any).isCompleted,
           target.durationSeconds, (target as any).actualWatchedSecs, (target as any).resumeAtSeconds,
         );
-        setSelectedLesson({
-          id: target.id,
-          title: target.title,
-          description: (target as any).description ?? null,
-          videoUrl: target.videoUrl,
-          hlsUrl: (target as any).hlsUrl ?? null,
-          durationSeconds: target.durationSeconds ?? 0,
-          resumeAtSeconds: alreadyDone ? 0 : ((target as any).resumeAtSeconds ?? 0),
-          actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
-          isCompleted: alreadyDone,
-        });
+        if (alreadyDone) {
+          // Completed lesson — auto-select and play immediately (no focus needed)
+          setSelectedLesson({
+            id: target.id,
+            title: target.title,
+            description: (target as any).description ?? null,
+            videoUrl: target.videoUrl,
+            hlsUrl: (target as any).hlsUrl ?? null,
+            durationSeconds: target.durationSeconds ?? 0,
+            resumeAtSeconds: 0,
+            actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
+            isCompleted: true,
+            sectionId: (target as any).sectionId ?? null,
+          });
+        } else {
+          // Incomplete lesson — show focus dialog instead of auto-playing
+          urlFocusDialogShownRef.current = targetLessonId;
+          const dur = (target as any).timerSeconds ?? config?.taskTimerSeconds ?? 300;
+          setFocusDialog({ lesson: target, duration: dur });
+        }
+      } else if (target && target.videoUrl && (target as any).locked) {
+        // Direct/deep-linked navigation to a locked lesson (e.g. a stale bookmark,
+        // shared link, or browser history entry) — tell the member why nothing opened
+        // instead of silently doing nothing.
+        urlFocusDialogShownRef.current = targetLessonId;
+        toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
       }
     }
-  }, [course, targetLessonId, selectedLesson]);
+  }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show quiz modal on first episode completion
   const quizTriggeredForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (watchState === "completed" && selectedLesson && !quizTriggeredForRef.current) {
-      const lesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id);
-      if (lesson?.hasQuiz) {
-        quizTriggeredForRef.current = selectedLesson.id;
-        setQuizModal({ episodeId: selectedLesson.id, quizData: lesson });
-        setQuizAnswers({});
-        setQuizResult(null);
-      }
-    }
-    if (!selectedLesson || watchState !== "completed") {
-      quizTriggeredForRef.current = null;
-    }
-  }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selectedLesson || watchState !== "completed") return;
+    // Wait for any open cue quiz to be dismissed before stacking the end-of-lesson quiz.
+    // Without this guard, the iframe `ended` event (which arrives before the pause postMessage
+    // is processed) can fire doMarkComplete() while the cue quiz is still showing, causing
+    // both modals to render simultaneously (z-50 stack). When this effect re-runs after
+    // cueQuizModal becomes null the end-of-lesson quiz opens correctly.
+    if (cueQuizModal) return;
+    if (quizTriggeredForRef.current === selectedLesson.id) return;
+    const lesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id);
+    if (!lesson?.hasQuiz) return;
+    quizTriggeredForRef.current = selectedLesson.id;
+    // Ensure the video is paused before showing the quiz. The video has usually already ended
+    // naturally (safe), but in the 85%-threshold-completion edge case it may still be playing.
+    pausePlayerRef.current();
+    setQuizModal({ episodeId: selectedLesson.id, questions: (lesson as any).quizData?.questions ?? [] });
+    setQuizAnswers({});
+    setQuizResult(null);
+  }, [watchState, selectedLesson?.id, cueQuizModal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset quiz trigger guard only when the lesson changes, not on every watchState transition.
+  useEffect(() => {
+    quizTriggeredForRef.current = null;
+  }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load completion timestamps from localStorage on mount
   useEffect(() => {
@@ -1197,21 +1672,11 @@ export default function CourseDetailPage({
   const doMarkCompleteRef = useRef<boolean>(false);
   const upNextTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
-  // Auto-advance preference — persisted to localStorage
-  const [autoAdvance, setAutoAdvance] = useState(() => {
-    if (typeof window === "undefined") return true;
-    const v = localStorage.getItem("tbt_autoadvance");
-    return v === null ? true : v === "1";
-  });
-  const autoAdvanceRef = useRef(autoAdvance);
-  autoAdvanceRef.current = autoAdvance;
-  const toggleAutoAdvance = () => {
-    const next = !autoAdvance;
-    setAutoAdvance(next);
-    localStorage.setItem("tbt_autoadvance", next ? "1" : "0");
-  };
-
-  // Stable up-next trigger via ref to avoid stale closures inside intervals
+  // Stable up-next trigger via ref to avoid stale closures inside intervals.
+  // Reveals the "up next" banner only — the next lesson never auto-plays or
+  // auto-navigates. The member must explicitly click it (see
+  // handleSelectLessonWithFocus), which then shows the start-confirmation
+  // dialog before any playback begins.
   const triggerUpNextRef = useRef<() => void>(() => {});
   triggerUpNextRef.current = useCallback(() => {
     clearInterval(upNextTimerRef.current);
@@ -1221,35 +1686,6 @@ export default function CourseDetailPage({
     const next = lessons[currentIdx + 1];
     if (!next?.videoUrl) return;
     setUpNextVisible(true);
-    if (!autoAdvanceRef.current) return; // banner shows but no countdown
-    let n = 5;
-    setUpNextCountdown(n);
-    upNextTimerRef.current = setInterval(() => {
-      n--;
-      if (n <= 0) {
-        clearInterval(upNextTimerRef.current);
-        setUpNextCountdown(null);
-        setUpNextVisible(false);
-        const nextDone = lessonAlreadyDone(
-          next.id, completedIdsRef.current, (next as any).isCompleted,
-          next.durationSeconds, (next as any).actualWatchedSecs, (next as any).resumeAtSeconds,
-        );
-        setSelectedLesson({
-          id: next.id,
-          title: next.title,
-          description: (next as any).description ?? null,
-          videoUrl: next.videoUrl,
-          hlsUrl: (next as any).hlsUrl ?? null,
-          durationSeconds: next.durationSeconds ?? 0,
-          resumeAtSeconds: nextDone ? 0 : ((next as any).resumeAtSeconds ?? 0),
-          actualWatchedSecs: (next as any).actualWatchedSecs ?? 0,
-          isCompleted: nextDone,
-        });
-        topRef.current?.scrollIntoView({ behavior: "smooth" });
-      } else {
-        setUpNextCountdown(n);
-      }
-    }, 1000);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const completedIds = new Set(
@@ -1310,13 +1746,13 @@ export default function CourseDetailPage({
     setLiveWatched(0);
     setLiveRealDuration(0);
     setHlsFailed(false);
-    setUpNextCountdown(null);
     setUpNextVisible(false);
     firedCuesRef.current = new Set();
     cueQuizActiveRef.current = false;
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
+    missionFlashedRef.current = null;
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
@@ -1344,6 +1780,19 @@ export default function CourseDetailPage({
     xpFlashedRef.current = lessonId;
     setXpFlash(xp);
     const t = setTimeout(() => setXpFlash(null), 3000);
+    return () => clearTimeout(t);
+  }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mission Complete cinematic overlay on fresh lesson completion.
+  useEffect(() => {
+    if (watchState !== "completed" || !justCompletedInSessionRef.current) return;
+    const lessonId = selectedLessonRef.current?.id;
+    if (!lessonId || missionFlashedRef.current === lessonId) return;
+    missionFlashedRef.current = lessonId;
+    const title = selectedLessonRef.current?.title ?? "";
+    const xp = (courseRef.current as any)?.xpPerEpisode ?? 0;
+    setMissionComplete({ title, xp });
+    const t = setTimeout(() => setMissionComplete(null), 2800);
     return () => clearTimeout(t);
   }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1433,6 +1882,12 @@ export default function CourseDetailPage({
     if (!markCalledRef.current) {
       markCalledRef.current = true;
       doMarkCompleteRef.current = false;
+      // Mark server timer session as completed
+      if (timerLessonRef.current === lesson.id) {
+        heartbeatMutateRef.current({ episodeId: lesson.id, completed: true });
+        clearInterval(timerIntervalRef.current);
+        timerLessonRef.current = null;
+      }
       markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true, videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
     }
   };
@@ -1445,18 +1900,38 @@ export default function CourseDetailPage({
     // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
     const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
     if (!lessonData?.hasQuiz) triggerUpNextRef.current();
-    const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
     const allLessons = courseRef.current?.lessons ?? [];
     const willBeAllDone = allLessons.length > 0 &&
       allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
     if (willBeAllDone) {
       setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
     }
+    const playhead = lastPlayheadRef.current > 0
+      ? Math.floor(lastPlayheadRef.current)
+      : (selectedLesson.resumeAtSeconds ?? 0);
+    // Capture timer data before clearing (for MG-04 early completion bonus)
+    const wasTimerLesson = timerLessonRef.current === selectedLesson.id;
+    const capturedTimerDuration = wasTimerLesson ? timerDurationRef.current : undefined;
+    // Mark server timer session as completed (if timer was running for this lesson)
+    if (wasTimerLesson) {
+      heartbeatMutateRef.current({ episodeId: selectedLesson.id, completed: true });
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+    }
     markComplete.mutate({
       lessonId: selectedLesson.id,
-      watchedSeconds: Math.floor(lastPlayheadRef.current > 0 ? lastPlayheadRef.current : (selectedLesson.resumeAtSeconds ?? 0) + elapsed),
+      watchedSeconds: playhead,
       isCompleted: true,
       videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
+      timerStartedAt: timerStartedAtRef.current,
+      timerSeconds: capturedTimerDuration,
+    }, {
+      onSuccess: (data: any) => {
+        if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
+          setBonusXpFlash(data.bonusXpAwarded);
+          setTimeout(() => setBonusXpFlash(null), 3500);
+        }
+      },
     });
   };
 
@@ -1474,7 +1949,11 @@ export default function CourseDetailPage({
       doMarkCompleteRef.current = false;
       justCompletedInSessionRef.current = true;
       setWatchState("completed");
-      triggerUpNextRef.current();
+      // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz.
+      // Same guard as handleVideoEnded (HLS path). Without this, the 5-second up-next countdown
+      // starts while the quiz modal is simultaneously opening, navigating away before the user answers.
+      const lessonDataForComplete = courseRef.current?.lessons?.find((l: any) => l.id === lesson.id);
+      if (!lessonDataForComplete?.hasQuiz) triggerUpNextRef.current();
       if (!markCalledRef.current) {
         markCalledRef.current = true;
         markComplete.mutate({ lessonId: lesson.id, isCompleted: true, watchedSeconds: Math.floor(lastPlayheadRef.current), videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
@@ -1677,7 +2156,15 @@ export default function CourseDetailPage({
   const handleCloseCueQuiz = useCallback(() => {
     setCueQuizModal(null);
     cueQuizActiveRef.current = false;
-    resumePlayerRef.current();
+    // Skip resume if the video already ended while the cue quiz was showing (iframe race:
+    // the `ended` postMessage can arrive before the pause postMessage is processed).
+    // markCalledRef is set by handleVideoEnded / doMarkComplete on natural completion.
+    // Calling resumePlayerRef on a completed video would replay from the beginning.
+    // The quiz trigger effect re-fires when cueQuizModal becomes null and will open
+    // the end-of-lesson quiz if watchState is still "completed".
+    if (!markCalledRef.current) {
+      resumePlayerRef.current();
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Must be declared before any early returns — useCallback is a hook and must run
@@ -1695,6 +2182,19 @@ export default function CourseDetailPage({
       }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Collapse all sections except the one containing the active lesson.
+  // Must be before early returns — hooks must be called unconditionally.
+  useEffect(() => {
+    const sections: any[] = (course as any)?.sections ?? [];
+    if (sections.length === 0) return;
+    const activeSectionId = selectedLesson?.sectionId ?? "__unsectioned__";
+    setCollapsedSections(new Set<string>(
+      sections
+        .map((s: any) => s.id)
+        .filter((id: string) => id !== activeSectionId)
+    ));
+  }, [(course as any)?.sections?.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) return <PageLoader />;
   if (!course) {
@@ -1720,9 +2220,11 @@ export default function CourseDetailPage({
 
   const handleSelectLesson = (lesson: any) => {
     if (!lesson.videoUrl) return;
+    // Reset in-session completion flag synchronously so the completion effects
+    // for the OLD lesson don't bleed into the newly selected lesson's render cycle.
+    justCompletedInSessionRef.current = false;
     setVideoKey(0);
     clearInterval(upNextTimerRef.current);
-    setUpNextCountdown(null);
     setUpNextVisible(false);
     const alreadyDone = lessonAlreadyDone(
       lesson.id, completedIds, lesson.isCompleted,
@@ -1738,6 +2240,7 @@ export default function CourseDetailPage({
       resumeAtSeconds: alreadyDone ? 0 : (lesson.resumeAtSeconds ?? 0),
       actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
       isCompleted: alreadyDone,
+      sectionId: (lesson as any).sectionId ?? null,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
     router.replace(`/learning/${courseId}?lesson=${lesson.id}`, { scroll: false });
@@ -1747,54 +2250,124 @@ export default function CourseDetailPage({
   const getLessonTimerDuration = (lesson: any): number =>
     lesson?.timerSeconds ?? (lesson?.sectionTimerSeconds ?? null) ?? config?.taskTimerSeconds ?? 300;
 
-  const startLessonTimer = (lessonId: string, duration: number) => {
+  const startLessonTimer = (lessonId: string, duration: number, skipServerStart?: boolean) => {
     clearInterval(timerIntervalRef.current);
     timerLessonRef.current = lessonId;
-    let remaining = duration;
-    setLessonTimers(prev => ({ ...prev, [lessonId]: remaining }));
-    timerIntervalRef.current = setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        clearInterval(timerIntervalRef.current);
-        timerLessonRef.current = null;
-        setLessonTimers(prev => ({ ...prev, [lessonId]: 0 }));
-        if (!completedIdsRef.current.has(lessonId)) {
-          setFocusLockedIds(prev => new Set([...prev, lessonId]));
-          toast.error("⏰ Time's up! Use a lifeline to unlock this lesson.", { duration: 4000 });
+    timerDurationRef.current = duration;
+    timerEndTimeRef.current = Date.now() + duration * 1000;
+    timerStartedAtRef.current = Date.now(); // MG-04: record focus start time
+    setLessonTimers(prev => ({ ...prev, [lessonId]: duration }));
+    // Persist session to server so timer survives page refresh
+    if (!skipServerStart) {
+      startEpisodeTimerRef.current({ episodeId: lessonId, durationSeconds: duration });
+    }
+
+    function tick() {
+      const secsLeft = Math.max(0, Math.ceil((timerEndTimeRef.current - Date.now()) / 1000));
+      setLessonTimers(prev => ({ ...prev, [lessonId]: secsLeft }));
+      if (secsLeft > 0) return;
+
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+      if (completedIdsRef.current.has(lessonId)) return;
+
+      if (lifelinesLeftRef.current > 0) {
+        const remaining = lifelinesLeftRef.current - 1;
+        lifelinesLeftRef.current = remaining;
+        setLifelinesLeft(remaining);
+        // Persist to backend (fire-and-forget; local state already updated)
+        if (isProgramLifelineRef.current && batchIdRef.current) {
+          programLifelineMutateRef.current({ batchId: batchIdRef.current, episodeId: lessonId, context: 'episode' })
+            .then((res) => {
+              lifelinesLeftRef.current = res.lifelinesRemaining;
+              setLifelinesLeft(res.lifelinesRemaining);
+            })
+            .catch(() => {}); // network failure: local state already shows deduction
+        } else {
+          // Non-batch: persist per-episode lifeline usage
+          episodeLifelineMutateRef.current('free').catch(() => {});
         }
+        toast.success(
+          `⚡ Time's up — lifeline auto-used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`,
+          { duration: 3500 },
+        );
+        timerEndTimeRef.current = Date.now() + timerDurationRef.current * 1000;
+        timerLessonRef.current = lessonId;
+        setLessonTimers(prev => ({ ...prev, [lessonId]: timerDurationRef.current }));
+        // Also extend the server-side session for the new duration
+        startEpisodeTimerRef.current({ episodeId: lessonId, durationSeconds: timerDurationRef.current });
+        timerIntervalRef.current = setInterval(tick, 500);
       } else {
-        setLessonTimers(prev => ({ ...prev, [lessonId]: remaining }));
+        setFocusLockedIds(prev => new Set([...prev, lessonId]));
+        const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
+        if (lessonData && selectedLessonRef.current?.id === lessonId) {
+          setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
+        }
+        toast.error("⏰ Time's up! No lifelines left — spend TBT coins to continue.", { duration: 4000 });
       }
-    }, 1000);
+    }
+
+    timerIntervalRef.current = setInterval(tick, 500);
   };
 
   const handleSelectLessonWithFocus = (lesson: any) => {
     if (!lesson.videoUrl) return;
+    // Sequential lock: block locked lessons unless the current one was just completed
+    // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
+    if ((lesson as any).locked === true && !justCompletedInSessionRef.current) {
+      // Fixed toast id de-dupes repeated clicks on the same locked lesson instead of stacking.
+      toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
+      return;
+    }
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
-    if (isFocusLocked) return;
+    if (isFocusLocked) {
+      // Re-clicking a timed-out lesson costs a lifeline
+      const duration = getLessonTimerDuration(lesson);
+      if (duration) handleUseLifeline(lesson, duration);
+      return;
+    }
     const timerStarted = lessonTimers[lesson.id] !== undefined;
     if (timerStarted || completedIds.has(lesson.id) || lesson.isCompleted) {
       handleSelectLesson(lesson);
       return;
     }
+    // Always confirm before starting a fresh lesson — video plays only after
+    // the member explicitly clicks "Start Video" in the dialog below, never
+    // automatically. `duration` is 0 when no focus timer applies anywhere
+    // (per-lesson, per-section, or site default); the dialog renders a plain
+    // confirmation in that case instead of the timer/lifeline copy.
     const duration = getLessonTimerDuration(lesson);
-    if (!duration) { handleSelectLesson(lesson); return; }
-    if (focusAcknowledged) {
-      handleSelectLesson(lesson);
-      startLessonTimer(lesson.id, duration);
-      return;
-    }
     setFocusDialog({ lesson, duration });
   };
 
-  const handleUseLifeline = (lesson: any, duration: number) => {
+  const handleUseLifeline = async (lesson: any, duration: number) => {
     if (lifelinesLeft > 0) {
-      const remaining = lifelinesLeft - 1;
-      setLifelinesLeft(remaining);
+      // Program-wide: persist to DB first; session-only: update locally
+      if (isProgramLifeline && batchId) {
+        try {
+          const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
+          setLifelinesLeft(res.lifelinesRemaining);
+          lifelinesLeftRef.current = res.lifelinesRemaining;
+        } catch (err: any) {
+          if (err?.response?.data?.error === 'exhausted') {
+            setCoinDialog({ lesson, duration });
+            return;
+          }
+          toast.error("Failed to use lifeline — try again");
+          return;
+        }
+      } else {
+        const remaining = lifelinesLeft - 1;
+        setLifelinesLeft(remaining);
+        lifelinesLeftRef.current = remaining;
+        // Non-batch: persist per-episode lifeline use to DB (fire-and-forget)
+        episodeLifelineMutateRef.current('free').catch(() => {});
+      }
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
       handleSelectLesson(lesson);
-      toast.success(`Lifeline used! ${remaining} free lifeline${remaining !== 1 ? "s" : ""} remaining.`);
+      const remaining = lifelinesLeftRef.current;
+      toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`);
     } else {
       setCoinDialog({ lesson, duration });
     }
@@ -1802,12 +2375,13 @@ export default function CourseDetailPage({
 
   const handleSpendCoinsForLesson = async (lesson: any, duration: number) => {
     try {
-      const res = await spendCoins.mutateAsync(LIFELINE_COIN_COST);
+      // Use per-episode lifeline endpoint for all members — handles coin deduction + audit trail
+      const res = await useEpisodeLifelineMutation.mutateAsync('coin');
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
       handleSelectLesson(lesson);
       setCoinDialog(null);
-      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.remainingCoins} coins.`);
+      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.data?.remainingCoins ?? '?'} coins.`);
     } catch (err: any) {
       setCoinDialog(null);
       toast.error(err?.response?.data?.error ?? "Not enough TBT coins");
@@ -1817,7 +2391,6 @@ export default function CourseDetailPage({
   const handleRewatch = () => {
     if (!selectedLesson) return;
     clearInterval(upNextTimerRef.current);
-    setUpNextCountdown(null);
     liveWatchedRef.current = 0;
     lastHeartbeatWatchedRef.current = 0;
     setLiveWatched(0);
@@ -1827,12 +2400,43 @@ export default function CourseDetailPage({
   };
 
   const handleShareCert = async () => {
-    if (!me?.id) return;
+    if (!me?.id || certSharing) return;
     const certId = btoa(`${me.id}:${courseId}`).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-    const url = `${window.location.origin}/verify/course/${certId}`;
+    const certUrl = `${window.location.origin}/verify/course/${certId}`;
+    const courseName = (course as any)?.title ?? "this course";
+    const shareText = `I have successfully completed the ${courseName} course on TBT Coaches Programs. View my certificate here: ${certUrl}`;
+
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      setCertSharing(true);
+      try {
+        await navigator.share({
+          title: `${courseName} — Certificate of Completion`,
+          text: shareText,
+          url: certUrl,
+        });
+      } catch (err: unknown) {
+        // AbortError = user dismissed the share sheet — no toast needed
+        if ((err as any)?.name !== "AbortError") {
+          try {
+            await navigator.clipboard.writeText(certUrl);
+            setCertCopied(true);
+            toast.success("Certificate link copied");
+            setTimeout(() => setCertCopied(false), 2000);
+          } catch {
+            toast.error("Failed to share certificate");
+          }
+        }
+      } finally {
+        setCertSharing(false);
+      }
+      return;
+    }
+
+    // Fallback: copy URL for browsers without Web Share API support
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(certUrl);
       setCertCopied(true);
+      toast.success("Certificate link copied");
       setTimeout(() => setCertCopied(false), 2000);
     } catch {
       toast.error("Failed to copy link");
@@ -1840,15 +2444,30 @@ export default function CourseDetailPage({
   };
 
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
+  const activeTimerSecs = selectedLesson ? lessonTimers[selectedLesson.id] : undefined;
+  const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
+  const maxLifelines = episodeLifelineData?.lifelineCount ?? MAX_FREE_LIFELINES;
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
+  // Modules — topic-area tabs that filter the lesson sidebar
+  const courseModules: any[] = (course as any)?.modules ?? [];
+  const visibleLessons = selectedModule
+    ? lessons.filter((l: any) => ((l as any).moduleIds ?? []).includes(selectedModule))
+    : lessons;
   const globalLessonIdx = new Map(lessons.map((l: any, i: number) => [l.id, i]));
 
   return (
     <div className="space-y-6 pb-12">
 
-      {/* ── Focus-Mode Start Dialog ─────────────────────────────────────── */}
+      {/* ── Start-Video Confirmation Dialog ─────────────────────────────────
+          Shown before every fresh (not-yet-started, not-yet-completed) lesson
+          plays — reached from the sidebar list, Previous/Next, the up-next
+          banner, and the `?lesson=` deep link. The video begins only when
+          the member clicks "Start Video"; closing/cancelling never starts
+          playback. When a focus timer actually applies (duration > 0) this
+          also carries the existing lifeline/lock copy; otherwise it's a
+          plain start confirmation. */}
       {focusDialog && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
           <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
@@ -1857,7 +2476,7 @@ export default function CourseDetailPage({
                 <Zap size={22} style={{ color: "var(--color-accent)" }} />
               </div>
               <div>
-                <p className="font-bold text-base">Focus Mode</p>
+                <p className="font-bold text-base">Ready to start this lesson?</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{focusDialog.lesson.title}</p>
               </div>
               <button onClick={() => setFocusDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
@@ -1865,22 +2484,17 @@ export default function CourseDetailPage({
               </button>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-              This lesson will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
-              <strong>{fmtTime(focusDialog.duration)}</strong> if not completed.
-              You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
-              After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+              {focusDialog.duration > 0 ? (
+                <>
+                  This lesson will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
+                  <strong>{fmtTime(focusDialog.duration)}</strong> if not completed.
+                  You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
+                  After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+                </>
+              ) : (
+                "The video will start playing once you confirm."
+              )}
             </p>
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={focusAcknowledged}
-                onChange={(e) => toggleFocusAck(e.target.checked)}
-                className="w-4 h-4 rounded accent-[var(--color-accent)]"
-              />
-              <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                Don&apos;t show this again for this course
-              </span>
-            </label>
             <div className="flex gap-3">
               <button
                 onClick={() => setFocusDialog(null)}
@@ -1890,12 +2504,16 @@ export default function CourseDetailPage({
                 Cancel
               </button>
               <button
-                onClick={() => { handleSelectLesson(focusDialog.lesson); startLessonTimer(focusDialog.lesson.id, focusDialog.duration); setFocusDialog(null); }}
+                onClick={() => {
+                  handleSelectLesson(focusDialog.lesson);
+                  if (focusDialog.duration > 0) startLessonTimer(focusDialog.lesson.id, focusDialog.duration);
+                  setFocusDialog(null);
+                }}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
                 style={{ background: "var(--color-accent)" }}
               >
                 <Zap size={14} />
-                Start Focus
+                Start Video
               </button>
             </div>
           </div>
@@ -2018,7 +2636,75 @@ export default function CourseDetailPage({
                   onEnded={handleVideoEnded}
                 />
               )}
+              {showTimerOverlay && (() => {
+                const totalDuration = getLessonTimerDuration(selectedLesson);
+                const fraction = totalDuration > 0
+                  ? Math.max(0, Math.min(1, (activeTimerSecs ?? 0) / totalDuration))
+                  : 1;
+                const R = 38;
+                const C = 2 * Math.PI * R;
+                const ringColor = (activeTimerSecs ?? 0) < 30 ? "#ef4444"
+                  : (activeTimerSecs ?? 0) < 60 ? "#f59e0b"
+                  : "#22c55e";
+                return (
+                  <div className={cn(
+                    "absolute top-3 right-3 z-[55] pointer-events-none flex flex-col items-center gap-1.5",
+                    (activeTimerSecs ?? 0) < 30 ? "animate-pulse" : ""
+                  )}>
+                    <div className="relative w-[88px] h-[88px] drop-shadow-lg">
+                      <svg width="88" height="88" viewBox="0 0 88 88">
+                        <circle cx="44" cy="44" r={R} fill="rgba(0,0,0,0.65)" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
+                        <circle
+                          cx="44" cy="44" r={R}
+                          fill="none" stroke={ringColor} strokeWidth="5" strokeLinecap="round"
+                          strokeDasharray={`${C}`}
+                          strokeDashoffset={C * (1 - fraction)}
+                          transform="rotate(-90, 44, 44)"
+                          style={{ transition: "stroke-dashoffset 0.5s linear, stroke 0.3s ease" }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+                        <span className="text-white font-mono font-bold text-sm tabular-nums leading-none"
+                          style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                          {fmtTime(activeTimerSecs!)}
+                        </span>
+                        <Timer size={10} className="text-white/60" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-1 rounded-full"
+                      style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                      {Array.from({ length: maxLifelines }).map((_, i) => (
+                        <Heart key={i} size={12}
+                          fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                          stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.3)"}
+                          style={{ transition: "fill 0.3s, stroke 0.3s" }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </VideoWatermark>
+
+            {/* ── Learning Challenge Timer Card ──────────────────────────────
+                Shows while timer is active OR when the lesson is already done
+                (completed-challenge badge). Wired to existing state only. */}
+            {(activeTimerSecs !== undefined || (selectedLesson && completedIds.has(selectedLesson.id) && getLessonTimerDuration(selectedLesson) > 0)) && (
+              <LearningChallengeCard
+                timerSecs={activeTimerSecs ?? 0}
+                totalSeconds={timerDurationRef.current || getLessonTimerDuration(selectedLesson)}
+                lifelinesLeft={lifelinesLeft}
+                maxLifelines={maxLifelines}
+                coinBalance={me?.totalPoints ?? undefined}
+                lifelineCoinCost={LIFELINE_COIN_COST}
+                onBuyWithCoins={() => {
+                  const lesson = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
+                  if (lesson) setCoinDialog({ lesson, duration: timerDurationRef.current });
+                }}
+                isPurchasing={spendCoins.isPending}
+                isDone={activeTimerSecs === undefined && completedIds.has(selectedLesson.id)}
+              />
+            )}
 
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
@@ -2049,10 +2735,52 @@ export default function CourseDetailPage({
               )}
             </div>
 
+            {/* Lesson navigation — Previous / counter / Next */}
+            {currentLessonIdx >= 0 && (
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  onClick={() => {
+                    if (currentLessonIdx > 0) handleSelectLessonWithFocus(lessons[currentLessonIdx - 1] as any);
+                  }}
+                  disabled={currentLessonIdx === 0 || !(lessons[currentLessonIdx - 1] as any)?.videoUrl}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
+                >
+                  <ChevronLeft size={12} /> Previous
+                </button>
+                <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
+                  {currentLessonIdx + 1} / {lessons.length}
+                </span>
+                <button
+                  // Locked-next stays clickable (not disabled) so the click
+                  // reaches handleSelectLessonWithFocus and surfaces the
+                  // lock toast, instead of a disabled button silently
+                  // swallowing the click. Only a real dead end (no next
+                  // lesson, or it has no video) is disabled.
+                  onClick={() => {
+                    if (currentLessonIdx < lessons.length - 1) handleSelectLessonWithFocus(lessons[currentLessonIdx + 1] as any);
+                  }}
+                  disabled={
+                    currentLessonIdx === lessons.length - 1
+                    || !(lessons[currentLessonIdx + 1] as any)?.videoUrl
+                  }
+                  title={
+                    (lessons[currentLessonIdx + 1] as any)?.locked === true && watchState !== "completed"
+                      ? "Complete the previous lesson to unlock."
+                      : undefined
+                  }
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
+                >
+                  Next <ChevronRight size={12} />
+                </button>
+              </div>
+            )}
+
             {/* 85% completion progress indicator */}
             {watchState !== "completed" && !selectedLesson.isCompleted && activeDuration > 0 && liveWatched > 0 && (() => {
               const pct = Math.min(100, Math.round((liveWatched / activeDuration) * 100));
-              const toComplete = Math.max(0, Math.ceil(activeDuration * 0.85 - liveWatched));
+              const toComplete = Math.max(0, Math.ceil(activeDuration * 0.95 - liveWatched));
               const currentLesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any;
               const hasQuiz = !!currentLesson?.hasQuiz;
               const quizUnlockPct: number = currentLesson?.quizUnlockPercent ?? 80;
@@ -2062,7 +2790,7 @@ export default function CourseDetailPage({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs" style={{ color: "var(--color-text-subtle)" }}>
                     <span>{pct}% watched</span>
-                    {pct < 85 ? (
+                    {pct < 95 ? (
                       <span>
                         {toComplete > 60
                           ? `${Math.ceil(toComplete / 60)}m to complete`
@@ -2076,8 +2804,8 @@ export default function CourseDetailPage({
                     <div
                       className="h-full rounded-full transition-all duration-1000"
                       style={{
-                        width: `${Math.min(100, Math.round((pct / 85) * 100))}%`,
-                        background: pct >= 85 ? "var(--color-success)" : "var(--color-accent)",
+                        width: `${Math.min(100, Math.round((pct / 95) * 100))}%`,
+                        background: pct >= 95 ? "var(--color-success)" : "var(--color-accent)",
                       }}
                     />
                   </div>
@@ -2090,7 +2818,10 @@ export default function CourseDetailPage({
               );
             })()}
 
-            {/* Up-next banner — shows on completion regardless of auto-advance setting */}
+            {/* Up-next banner — never auto-plays or auto-navigates. The member
+                must click "Play →", which routes through
+                handleSelectLessonWithFocus and always shows the start
+                confirmation dialog before the next lesson begins playing. */}
             {upNextVisible && nextLesson && (
               <div
                 className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl text-sm"
@@ -2106,33 +2837,19 @@ export default function CourseDetailPage({
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {upNextCountdown !== null ? (
-                    <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>
-                      {upNextCountdown}s
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => { setUpNextVisible(false); handleSelectLessonWithFocus(nextLesson as any); }}
-                      className="text-xs px-2.5 py-1 rounded-md font-semibold text-white transition-opacity hover:opacity-90"
-                      style={{ background: "var(--color-accent)" }}
-                    >
-                      Play →
-                    </button>
-                  )}
                   <button
-                    onClick={toggleAutoAdvance}
-                    title={autoAdvance ? "Turn off auto-advance" : "Turn on auto-advance"}
-                    className="text-[10px] px-2 py-1 rounded-md transition-opacity hover:opacity-70"
-                    style={{ border: "1px solid var(--color-border-subtle)", color: "var(--color-text-subtle)" }}
+                    onClick={() => { setUpNextVisible(false); handleSelectLessonWithFocus(nextLesson as any); }}
+                    className="text-xs px-2.5 py-1 rounded-md font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ background: "var(--color-accent)" }}
                   >
-                    Auto: {autoAdvance ? "On" : "Off"}
+                    Play →
                   </button>
                   <button
-                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextCountdown(null); setUpNextVisible(false); }}
+                    onClick={() => { clearInterval(upNextTimerRef.current); setUpNextVisible(false); }}
                     className="text-xs px-2 py-1 rounded-md transition-opacity hover:opacity-70"
                     style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                   >
-                    Cancel
+                    Dismiss
                   </button>
                 </div>
               </div>
@@ -2202,32 +2919,7 @@ export default function CourseDetailPage({
                 </div>
                 <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
                   {episodeTasks.map((t: EpisodeTask, i: number) => (
-                    <div key={t.id} className="px-4 py-3">
-                      <div className="flex items-start gap-3">
-                        <span
-                          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white mt-0.5"
-                          style={{ background: "var(--color-accent)" }}
-                        >
-                          {i + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>{t.title}</p>
-                          {t.description && (
-                            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>{t.description}</p>
-                          )}
-                          {t.deliverables && (
-                            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
-                              Deliverable: {t.deliverables}
-                            </p>
-                          )}
-                          {t.estimatedMinutes && (
-                            <span className="inline-flex items-center gap-1 mt-1.5 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
-                              <Clock size={10} /> ~{t.estimatedMinutes} min
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                    <EpisodeTaskItem key={t.id} episodeId={selectedLesson!.id} task={t} index={i} />
                   ))}
                 </div>
               </div>
@@ -2283,6 +2975,36 @@ export default function CourseDetailPage({
                 </div>
               ))}
             </div>
+
+            {/* Weekly progress report + feedback */}
+            <button
+              onClick={() => router.push(`/learning/${courseId}/weekly`)}
+              className="mt-3 w-full flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-semibold transition-colors"
+              style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)", color: "var(--color-foreground)" }}
+            >
+              <ClipboardList size={14} style={{ color: "var(--color-accent)" }} />
+              Weekly Report &amp; Feedback
+            </button>
+
+            {/* Start / Resume / Review button */}
+            {lessons.length > 0 && (() => {
+              const firstUnfinished = lessons.find((l: any) => !completedIds.has(l.id) && l.videoUrl);
+              const targetLesson = firstUnfinished ?? (lessons.find((l: any) => l.videoUrl) as any ?? null);
+              if (!targetLesson) return null;
+              const label =
+                completedIds.size === 0 ? "Start Learning"
+                : completedIds.size >= lessons.length ? "Review Course"
+                : "Resume Course";
+              return (
+                <button
+                  onClick={() => handleSelectLessonWithFocus(targetLesson as any)}
+                  className="w-full mt-2 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  style={{ background: "var(--color-accent)" }}
+                >
+                  <Play size={15} fill="white" /> {label}
+                </button>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -2311,16 +3033,28 @@ export default function CourseDetailPage({
               </span>
             )}
             <span
-              className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-              style={{
-                background: lifelinesLeft > 0 ? "rgba(34,197,94,0.12)" : "rgba(251,191,36,0.12)",
-                color: lifelinesLeft > 0 ? "#22c55e" : "#fbbf24",
-              }}
-              title="Free lifelines remaining this session"
+              className="flex items-center gap-0.5 px-2 py-1 rounded-full"
+              style={{ background: lifelinesLeft > 0 ? "rgba(239,68,68,0.1)" : "rgba(251,191,36,0.1)" }}
+              title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
             >
-              <Zap size={9} />
-              {lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}
+              {Array.from({ length: maxLifelines }).map((_, i) => (
+                <Heart key={i} size={10}
+                  fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                  stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.2)"}
+                  style={{ transition: "fill 0.3s, stroke 0.3s" }}
+                />
+              ))}
             </span>
+            {me?.totalPoints != null && (
+              <span
+                className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}
+                title="Your TBT coin balance"
+              >
+                <Coins size={9} />
+                {me.totalPoints} coins
+              </span>
+            )}
             <button
               onClick={() => setPracticeOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
@@ -2331,23 +3065,46 @@ export default function CourseDetailPage({
           </div>
         </div>
 
+        {/* Module tabs — only shown when course has modules */}
+        {courseModules.length > 0 && (
+          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
+            <button
+              onClick={() => setSelectedModule(null)}
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selectedModule === null ? "text-white" : "opacity-60 hover:opacity-90"}`}
+              style={selectedModule === null ? { background: "var(--color-accent)" } : { background: "transparent" }}
+            >
+              All
+            </button>
+            {courseModules.map((m: any) => (
+              <button
+                key={m.id}
+                onClick={() => setSelectedModule(selectedModule === m.id ? null : m.id)}
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selectedModule === m.id ? "text-white" : "opacity-60 hover:opacity-90"}`}
+                style={selectedModule === m.id ? { background: "var(--color-accent)" } : { background: "transparent" }}
+              >
+                {m.title}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div>
-          {lessons.length === 0 ? (
+          {visibleLessons.length === 0 ? (
             <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
-              No lessons available yet.
+              No lessons in this module yet.
             </p>
           ) : (
-            lessons.map((lesson, idx) => {
+            visibleLessons.map((lesson, idx) => {
               // Section grouping — prepend a header before the first lesson of each section
               const lessonSectionId = courseSections.length > 0 ? ((lesson as any).sectionId ?? "__unsectioned__") : null;
-              const prevSectionId = courseSections.length > 0 && idx > 0 ? (((lessons[idx - 1]) as any).sectionId ?? "__unsectioned__") : null;
+              const prevSectionId = courseSections.length > 0 && idx > 0 ? (((visibleLessons[idx - 1]) as any).sectionId ?? "__unsectioned__") : null;
               const isFirstInSection = courseSections.length > 0 && (idx === 0 || lessonSectionId !== prevSectionId);
               const section = lessonSectionId && lessonSectionId !== "__unsectioned__"
                 ? courseSections.find((s: any) => s.id === lessonSectionId) : null;
               const isSectionCollapsed = lessonSectionId !== null && collapsedSections.has(lessonSectionId);
               const sectionLessons = section
-                ? lessons.filter((l: any) => ((l as any).sectionId ?? null) === section.id)
-                : lessons.filter((l: any) => !((l as any).sectionId));
+                ? visibleLessons.filter((l: any) => ((l as any).sectionId ?? null) === section.id)
+                : visibleLessons.filter((l: any) => !((l as any).sectionId));
               const completedCount = sectionLessons.filter((l: any) => completedIds.has(l.id)).length;
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
@@ -2397,8 +3154,14 @@ export default function CourseDetailPage({
                   {!isSectionCollapsed && (
                   <div className="border-b last:border-b-0" style={{ borderColor: "var(--color-border-subtle)" }}>
                   <button
-                    onClick={() => canPlay && handleSelectLessonWithFocus(lesson)}
-                    disabled={!canPlay}
+                    // Locked/focus-locked lessons stay clickable (only a missing
+                    // video is a genuine dead end) so the click reaches
+                    // handleSelectLessonWithFocus, which surfaces a toast /
+                    // lifeline prompt instead of doing nothing. A native
+                    // `disabled` button never fires onClick, which would
+                    // silently swallow that feedback.
+                    onClick={() => hasVideo && handleSelectLessonWithFocus(lesson)}
+                    disabled={!hasVideo}
                     title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
                     aria-disabled={!canPlay}
                     className={cn(
@@ -2474,6 +3237,14 @@ export default function CourseDetailPage({
                             <Zap size={9} />+{(course as any).xpPerEpisode} XP
                           </span>
                         )}
+                        {((lesson as any).streakPoints ?? 0) > 0 && (
+                          <span
+                            className="text-[10px] flex items-center gap-0.5 font-semibold"
+                            style={{ color: "#f59e0b" }}
+                          >
+                            <Coins size={9} />+{(lesson as any).streakPoints} pts
+                          </span>
+                        )}
                         {reviewDueIds.includes(lesson.id) && (
                           <span
                             className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
@@ -2482,8 +3253,8 @@ export default function CourseDetailPage({
                             <RefreshCw size={8} /> Review
                           </span>
                         )}
-                        {/* Focus timer badge */}
-                        {!isCompleted && timerStarted && (
+                        {/* Focus timer badge — static duration when not started, live countdown when running */}
+                        {!isCompleted && focusTimerDuration > 0 && (
                           <span
                             className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
                             style={{
@@ -2491,12 +3262,24 @@ export default function CourseDetailPage({
                                 ? "rgba(34,197,94,0.12)"
                                 : timerWarn
                                   ? "rgba(239,68,68,0.1)"
-                                  : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                              color: timerDone ? "#22c55e" : timerWarn ? "#ef4444" : "var(--color-accent)",
+                                  : timerStarted
+                                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                                    : "color-mix(in srgb, var(--color-text-subtle) 12%, transparent)",
+                              color: timerDone
+                                ? "#22c55e"
+                                : timerWarn
+                                  ? "#ef4444"
+                                  : timerStarted
+                                    ? "var(--color-accent)"
+                                    : "var(--color-text-secondary)",
                             }}
                           >
                             <Timer size={9} />
-                            {timerDone ? "Time's up!" : fmtTime(timerSecs!)}
+                            {timerDone
+                              ? "Time's up!"
+                              : timerStarted
+                                ? fmtTime(timerSecs!)
+                                : fmtTime(focusTimerDuration)}
                           </span>
                         )}
                       </div>
@@ -2636,15 +3419,20 @@ export default function CourseDetailPage({
             {me?.id && (
               <button
                 onClick={handleShareCert}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                disabled={certSharing}
+                aria-label={certSharing ? "Sharing certificate..." : certCopied ? "Certificate link copied" : "Share certificate"}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
                 style={{
                   border: "1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)",
                   color: "var(--color-accent)",
                 }}
-                title="Copy shareable link"
               >
-                {certCopied ? <Check size={13} /> : <Copy size={13} />}
-                {certCopied ? "Copied!" : "Share"}
+                {certSharing
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : certCopied
+                  ? <Check size={13} />
+                  : <Share2 size={13} />}
+                {certSharing ? "Sharing..." : certCopied ? "Copied!" : "Share"}
               </button>
             )}
             <button
@@ -2720,12 +3508,70 @@ export default function CourseDetailPage({
       )}
 
       {/* Reflections viewer — opened from the panel */}
-      {reflectionsOpen && savedReflections && savedReflections.length > 0 && (
+      {reflectionsOpen && reflectionCount > 0 && visibleReflections.length > 0 && (
         <ReflectionsViewerModal
-          reflections={savedReflections}
+          reflections={visibleReflections}
           lessons={course?.lessons ?? []}
           onClose={() => setReflectionsOpen(false)}
         />
+      )}
+
+      {/* Mission Complete cinematic overlay */}
+      {missionComplete && (
+        <>
+          <style>{`
+            @keyframes mc-overlay{0%{opacity:0}8%{opacity:1}78%{opacity:1}100%{opacity:0}}
+            @keyframes mc-pop{0%{transform:scale(0) rotate(-15deg);opacity:0}55%{transform:scale(1.2) rotate(4deg);opacity:1}75%{transform:scale(0.93)}100%{transform:scale(1);opacity:1}}
+            @keyframes mc-rise{0%{transform:translateY(18px);opacity:0}100%{transform:translateY(0);opacity:1}}
+            @keyframes mc-particle{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--ptx),var(--pty)) scale(0);opacity:0}}
+          `}</style>
+          <div
+            className="fixed inset-0 z-[65] pointer-events-none flex items-center justify-center"
+            style={{ animation: "mc-overlay 2.8s ease-in-out forwards", background: "radial-gradient(ellipse at center, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.88) 100%)" }}
+          >
+            {/* Radial burst particles */}
+            {([
+              [0,-90,"#f59e0b"],[64,-64,"#ef4444"],[90,0,"#22c55e"],[64,64,"#3b82f6"],
+              [0,90,"#a855f7"],[-64,64,"#ec4899"],[-90,0,"#14b8a6"],[-64,-64,"#f97316"],
+            ] as [number,number,string][]).map(([tx, ty, color], i) => (
+              <div key={i} className="absolute rounded-full"
+                style={{
+                  width: 10, height: 10, top: "50%", left: "50%",
+                  marginTop: -5, marginLeft: -5, background: color,
+                  ["--ptx" as string]: `${tx}px`, ["--pty" as string]: `${ty}px`,
+                  animation: `mc-particle 0.9s cubic-bezier(0.25,0.46,0.45,0.94) ${0.25 + i * 0.04}s forwards`,
+                }}
+              />
+            ))}
+            {/* Content */}
+            <div className="flex flex-col items-center gap-4 text-center px-8 select-none">
+              <div style={{ animation: "mc-pop 0.65s cubic-bezier(0.34,1.56,0.64,1) 0.15s both" }}>
+                <Trophy size={80} style={{ color: "#f59e0b", filter: "drop-shadow(0 0 24px rgba(245,158,11,0.7))" }} />
+              </div>
+              <div style={{ animation: "mc-rise 0.5s ease-out 0.55s both" }}>
+                <p className="text-4xl font-black tracking-widest text-white uppercase"
+                  style={{ textShadow: "0 0 30px rgba(245,158,11,0.5), 0 2px 8px rgba(0,0,0,0.8)" }}>
+                  Mission Complete
+                </p>
+              </div>
+              <div style={{ animation: "mc-rise 0.5s ease-out 0.7s both" }}>
+                <p className="text-sm font-medium max-w-xs leading-snug" style={{ color: "rgba(255,255,255,0.7)" }}>
+                  {missionComplete.title}
+                </p>
+              </div>
+              {missionComplete.xp > 0 && (
+                <div style={{ animation: "mc-rise 0.5s ease-out 0.85s both" }}>
+                  <span
+                    className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-bold text-white"
+                    style={{ background: "color-mix(in srgb, var(--color-accent) 80%, transparent)", boxShadow: "0 0 20px rgba(239,68,68,0.45)" }}
+                  >
+                    <Zap size={14} /> +{missionComplete.xp} XP earned
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* XP flash */}
@@ -2735,6 +3581,15 @@ export default function CourseDetailPage({
           style={{ background: "var(--color-accent)" }}
         >
           <Zap size={16} /> +{xpFlash} XP earned!
+        </div>
+      )}
+      {/* MG-04: Early completion bonus flash */}
+      {bonusXpFlash !== null && (
+        <div
+          className="fixed bottom-20 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl font-bold text-white text-sm animate-bounce"
+          style={{ background: "#16a34a" }}
+        >
+          <Zap size={16} /> +{bonusXpFlash} Early Bird Bonus!
         </div>
       )}
 
@@ -2748,7 +3603,9 @@ export default function CourseDetailPage({
             <div className="px-6 py-5 border-b flex items-center justify-between" style={{ borderColor: "var(--color-border-subtle)" }}>
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>Episode Quiz</p>
-                <p className="text-sm font-semibold text-foreground mt-0.5">{quizModal.quizData?.title ?? "Quiz"}</p>
+                <p className="text-sm font-semibold text-foreground mt-0.5">
+                  {(course as any)?.lessons?.find((l: any) => l.id === quizModal.episodeId)?.title ?? "Quiz"}
+                </p>
               </div>
               {!quizResult && (
                 <button onClick={() => handleCloseQuiz(false)} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -2792,7 +3649,7 @@ export default function CourseDetailPage({
               </div>
             ) : (
               <QuizQuestions
-                quizData={quizModal.quizData}
+                questions={quizModal.questions}
                 courseId={courseId}
                 episodeId={quizModal.episodeId}
                 answers={quizAnswers}
@@ -2823,16 +3680,12 @@ export default function CourseDetailPage({
 
 // ── Quiz questions component ──────────────────────────────────────────────────
 function QuizQuestions({
-  quizData, courseId, episodeId, answers, setAnswers, onSubmit, isSubmitting,
+  questions, courseId, episodeId, answers, setAnswers, onSubmit, isSubmitting,
 }: {
-  quizData: any; courseId: string; episodeId: string;
+  questions: any[]; courseId: string; episodeId: string;
   answers: Record<string, string>; setAnswers: (a: Record<string, string>) => void;
   onSubmit: (a: Record<string, string>) => void; isSubmitting: boolean;
 }) {
-  const questions: any[] =
-    quizData?.quizData?.questions ??
-    quizData?.lessons?.find?.((l: any) => l.id === episodeId)?.quizData?.questions ??
-    [];
 
   if (!questions.length) {
     return (

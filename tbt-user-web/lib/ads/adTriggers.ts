@@ -89,9 +89,18 @@ export function useAdTriggers(fire: AdTriggerFn): void {
   // §12 is explicit that realtime is an optimisation, not a correctness
   // requirement — this is the part that makes that true. Without it, a tab left
   // open overnight waits up to the full interval before noticing anything.
+  //
+  // everHidden guards against the initial hidden→visible transition that headless
+  // browsers (and occasionally Chrome) fire at page load. We only want to fire
+  // after a real user-initiated tab-switch, not the synthetic first-paint event.
   useEffect(() => {
+    let everHidden = false;
     const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible") {
+        everHidden = true;
+        return;
+      }
+      if (!everHidden) return; // skip initial page-load hidden→visible
       fire("timed_interval");
     };
     document.addEventListener("visibilitychange", onVisible);

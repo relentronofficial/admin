@@ -472,7 +472,18 @@ class _RecentPostTile extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: url != null
-            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover)
+            ? LayoutBuilder(
+                builder: (ctx, constraints) {
+                  final dpr = MediaQuery.devicePixelRatioOf(ctx);
+                  final px = (constraints.maxWidth * dpr).round().clamp(1, 2000);
+                  return CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.cover,
+                    memCacheWidth: px,
+                    memCacheHeight: px,
+                  );
+                },
+              )
             : Center(
                 child: Padding(
                   padding: const EdgeInsets.all(6),

@@ -8,8 +8,8 @@ export function ThemeToggle() {
   const { theme, toggleTheme } = useUIStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
-  // Default to dark before mount so SSR and initial client render match
-  const isDark = !mounted || theme === "dark";
+  // Default to light before mount so SSR and initial client render match the light default
+  const isDark = mounted && theme === "dark";
 
   return (
     <button

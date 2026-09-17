@@ -18,10 +18,13 @@ import { authRoutes } from './modules/auth/routes.js';
 import { adminRoutes } from './modules/admins/routes.js';
 import { memberRoutes } from './modules/members/routes.js';
 import { courseRoutes } from './modules/courses/routes.js';
+import { courseReportRoutes } from './modules/course-reports/routes.js';
 import { taskRoutes } from './modules/tasks/routes.js';
 import { chatGroupsRoutes } from './modules/chat-groups/routes.js';
 import { adsRoutes } from './modules/ads/routes.js';
 import { videoFeedbackRoutes } from './modules/video-feedback/routes.js';
+import { supportEntitlementsRoutes } from './modules/support-entitlements/routes.js';
+import { creditsRoutes } from './modules/credits/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
 import { webinarRoutes } from './modules/webinar/routes.js';
 import { dashboardRoutes } from './modules/dashboard/routes.js';
@@ -59,9 +62,11 @@ import { batchReminderCronHandler } from './modules/user-batch/controller.js';
 import { fetchBunnyDuration, generateRecurringHandler } from './modules/workshops/controller.js';
 import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/courseExpiryReminder.js';
 import { startBatchReportJobs } from './jobs/batchReports.js';
+import { startCourseReportJobs } from './jobs/courseReports.js';
 import { startDisappearingMessagesJob } from './jobs/disappearingMessages.js';
 import { startHelpdeskEscalationJob } from './jobs/helpdeskEscalation.js';
 import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
+import { runWeeklyCourseReports } from './lib/courseReports.js';
 import { registerLowBalanceHandler } from './lib/whatsapp.js';
 import { createAdminNotification } from './lib/adminNotifications.js';
 
@@ -166,6 +171,7 @@ async function bootstrap() {
     await fastify.register(adminRoutes, { prefix: '/api/admins' });
     await fastify.register(memberRoutes, { prefix: '/api/members' });
     await fastify.register(courseRoutes, { prefix: '/api/courses' });
+    await fastify.register(courseReportRoutes, { prefix: '/api/course-reports' });
     await fastify.register(taskRoutes, { prefix: '/api/tasks' });
     await fastify.register(communityRoutes, { prefix: '/api/community' });
     await fastify.register(webinarRoutes, { prefix: '/api/webinars' });
@@ -203,6 +209,8 @@ async function bootstrap() {
     await fastify.register(chatGroupsRoutes, { prefix: '/api/chat-groups' });
     await fastify.register(adsRoutes, { prefix: '/api/ads' });
     await fastify.register(videoFeedbackRoutes, { prefix: '/api/video-feedback' });
+    await fastify.register(supportEntitlementsRoutes, { prefix: '/api/support-entitlements' });
+    await fastify.register(creditsRoutes, { prefix: '/api/credits' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
@@ -243,6 +251,19 @@ async function bootstrap() {
         return reply.send({ success: true, data: result });
       } catch (err: any) {
         fastify.log.error({ err }, '[cron] monthly-report failed');
+        return reply.status(500).send({ error: err.message });
+      }
+    });
+    fastify.post('/api/cron/weekly-course-report', async (req, reply) => {
+      const secret = req.headers['x-cron-secret'];
+      if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+      }
+      try {
+        const result = await runWeeklyCourseReports(fastify.prisma);
+        return reply.send({ success: true, data: result });
+      } catch (err: any) {
+        fastify.log.error({ err }, '[cron] weekly-course-report failed');
         return reply.status(500).send({ error: err.message });
       }
     });
@@ -389,6 +410,14 @@ async function bootstrap() {
       // Start BullMQ weekly/monthly batch-report jobs (own queue, independent
       // of the course-expiry job above). Same probe-then-schedule pattern.
       startBatchReportJobs(fastify.prisma, {
+        info: (msg) => fastify.log.info(msg),
+        warn: (msg) => fastify.log.warn(msg),
+        error: (obj, msg) => fastify.log.error(obj, msg),
+      }).catch(() => { /* logged internally */ });
+
+      // Start BullMQ weekly course-report job (own queue, independent of the
+      // batch-reports job above — separate feature, separate data model).
+      startCourseReportJobs(fastify.prisma, {
         info: (msg) => fastify.log.info(msg),
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),

@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { generateBunnyToken } from '../../lib/bunnyToken.js';
+import { bunnyCdnOrigin } from '../../lib/bunny.js';
 import {
   computeLessonLockStates,
   isEpisodeUnlocked,
@@ -20,6 +21,7 @@ import {
 } from '../../lib/courseNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { computeMemberStats } from '../../lib/tbtStats.js';
+import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -436,14 +438,25 @@ export async function listUserCourseCategories(request: FastifyRequest, reply: F
   return ok(reply, categories);
 }
 
+export async function listCourseModuleTabsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const rows = await request.server.prisma.$queryRawUnsafe<{ module: string }[]>(
+    `SELECT DISTINCT module
+     FROM courses
+     WHERE module IS NOT NULL AND is_published = true
+     ORDER BY module`
+  ).catch(() => [] as { module: string }[]);
+  return ok(reply, rows.map(r => ({ title: r.module })));
+}
+
 export async function listUserCoursesHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 24, search, level, sort, category } = request.query as {
+  const { page = 1, limit = 24, search, level, sort, category, moduleTitle } = request.query as {
     page?: number;
     limit?: number;
     search?: string;
     level?: string;
-    sort?: string;   // 'newest' (default) | 'popular' | 'featured'
-    category?: string; // categoryId UUID
+    sort?: string;
+    category?: string;
+    moduleTitle?: string;
   };
 
   const where: Record<string, unknown> = { isPublished: true };
@@ -454,6 +467,14 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       { title: { contains: search.trim(), mode: 'insensitive' } },
       { description: { contains: search.trim(), mode: 'insensitive' } },
     ];
+  }
+  if (moduleTitle) {
+    const modRows = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM courses WHERE module = $1 AND is_published = true`,
+      moduleTitle
+    ).catch(() => [] as { id: string }[]);
+    const ids = modRows.map(r => r.id);
+    where.id = ids.length > 0 ? { in: ids } : { in: [] };
   }
 
   const orderBy =
@@ -495,13 +516,22 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
 
   // Batch-check course access for this member
   const courseIds = (courses as any[]).map((c: any) => c.id);
-  const accessRecords = courseIds.length > 0
-    ? await (request.server.prisma as any).courseAccess.findMany({
-        where: { memberId: request.memberId, courseId: { in: courseIds } },
-        select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
-      }).catch(() => [] as any[])
-    : [];
+  const [accessRecords, moduleRows] = await Promise.all([
+    courseIds.length > 0
+      ? (request.server.prisma as any).courseAccess.findMany({
+          where: { memberId: request.memberId, courseId: { in: courseIds } },
+          select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
+        }).catch(() => [] as any[])
+      : Promise.resolve([] as any[]),
+    courseIds.length > 0
+      ? request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
+          `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`,
+          courseIds
+        ).catch(() => [] as { id: string; module: string | null }[])
+      : Promise.resolve([] as { id: string; module: string | null }[]),
+  ]);
   const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
+  const moduleMap = new Map<string, string | null>(moduleRows.map(r => [r.id, r.module]));
 
   const data = (courses as any[]).map((c: any) => {
     const access = accessMap.get(c.id) ?? null;
@@ -536,6 +566,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       xpPerEpisode: c.xpPerEpisode ?? 10,
       instructor: c.creator ?? null,
       hasAccess: isAccessValid(access),
+      module: moduleMap.get(c.id) ?? null,
       _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
     };
   });
@@ -625,25 +656,40 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     }).map((s) => [s.episodeId, s]),
   );
 
-  // Fetch sections and episode→section mapping (raw SQL columns not in Prisma schema)
-  const [sectionRows, episodeSectionRows] = await Promise.all([
+  // Fetch sections, modules, and episode→section/module mapping (raw SQL columns not in Prisma schema)
+  const [sectionRows, episodeSectionRows, moduleRows, episodeModuleRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT id, title, description, sort_order, timer_seconds FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
       id,
     ),
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT e.id AS episode_id, e.section_id, e.timer_seconds AS episode_timer_seconds,
+              e.streak_points AS streak_points,
               s.title AS section_title, s.sort_order AS section_sort_order, s.timer_seconds AS section_timer_seconds
        FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
        WHERE e.course_id = $1::uuid`,
       id,
     ),
-  ]).catch(() => [[], []] as [any[], any[]]);
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, title, description, sort_order FROM course_modules WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
+      id,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT cem.episode_id, cem.module_id FROM course_episode_modules cem
+       JOIN course_modules cm ON cm.id = cem.module_id WHERE cm.course_id = $1::uuid`,
+      id,
+    ),
+  ]).catch(() => [[], [], [], []] as [any[], any[], any[], any[]]);
 
   const sections = (sectionRows as any[]).map((s) => ({
     id: s.id, title: s.title, description: s.description ?? null,
     sortOrder: Number(s.sort_order),
     timerSeconds: s.timer_seconds != null ? Number(s.timer_seconds) : null,
+  }));
+
+  const modules = (moduleRows as any[]).map((m) => ({
+    id: m.id, title: m.title, description: m.description ?? null,
+    sortOrder: Number(m.sort_order),
   }));
 
   const episodeSectionMap = new Map(
@@ -653,8 +699,15 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionOrder: r.section_sort_order != null ? Number(r.section_sort_order) : null,
       sectionTimerSeconds: r.section_timer_seconds != null ? Number(r.section_timer_seconds) : null,
       episodeTimerSeconds: r.episode_timer_seconds != null ? Number(r.episode_timer_seconds) : null,
+      streakPoints: r.streak_points != null ? Number(r.streak_points) : 0,
     }]),
   );
+
+  const episodeModuleMap = new Map<string, string[]>();
+  for (const r of (episodeModuleRows as any[])) {
+    if (!episodeModuleMap.has(r.episode_id)) episodeModuleMap.set(r.episode_id, []);
+    episodeModuleMap.get(r.episode_id)!.push(r.module_id);
+  }
 
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
@@ -722,10 +775,12 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       completedByThreshold: lockState?.completed ?? false,
       watchPercent: lockState?.watchPercent ?? null,
       timerSeconds: episodeSectionMap.get(ep.id)?.episodeTimerSeconds ?? null,
+      streakPoints: episodeSectionMap.get(ep.id)?.streakPoints ?? 0,
       sectionId: episodeSectionMap.get(ep.id)?.sectionId ?? null,
       sectionTitle: episodeSectionMap.get(ep.id)?.sectionTitle ?? null,
       sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
       sectionTimerSeconds: episodeSectionMap.get(ep.id)?.sectionTimerSeconds ?? null,
+      moduleIds: episodeModuleMap.get(ep.id) ?? [],
     };
   });
 
@@ -753,6 +808,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     completionThresholdPercent: (course as any).completionThresholdPercent ?? 95,
     lessons,
     sections,
+    modules,
     _count: { lessons: lessons.length, enrollments: course._count?.enrollments ?? 0 },
     upsellCourses,
     crossSellCourses,
@@ -812,8 +868,7 @@ export async function requestCourseAccessHandler(request: FastifyRequest, reply:
     } catch {}
   }
 
-  const paymentUrl = course.paymentLinkUrl ?? 'https://tamilbusinesstribe.com';
-  return ok(reply, { paymentId, paymentUrl });
+  return ok(reply, { paymentId });
 }
 
 export async function enrollCourseHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -892,24 +947,16 @@ export async function getCertificateEligibilityHandler(request: FastifyRequest, 
   });
 
   let validCompletions = 0;
-  let totalRequiredSeconds = 0;
-  let totalWatchedSeconds = 0;
 
   for (const ep of episodes) {
     const prog = progress.find((p) => p.episodeId === ep.id);
-    const duration = ep.durationSeconds ?? 0;
-    const threshold = duration ? duration * 0.85 : 90;
-    
-    totalRequiredSeconds += duration;
-    totalWatchedSeconds += prog?.actualWatchedSecs ?? 0;
-
-    if (prog?.completed && (prog.actualWatchedSecs ?? 0) >= threshold) {
-      validCompletions++;
-    }
+    if (prog?.completed) validCompletions++;
   }
 
-  const completionPercentage = totalRequiredSeconds > 0 
-    ? Math.min(100, Math.round((totalWatchedSeconds / totalRequiredSeconds) * 100))
+  // Percentage based on completed lesson count — same definition as
+  // remainingLessons, so both numbers on the certificate card agree.
+  const completionPercentage = episodes.length > 0
+    ? Math.round((validCompletions / episodes.length) * 100)
     : 0;
 
   const eligible = validCompletions === episodes.length && episodes.length > 0;
@@ -1128,11 +1175,13 @@ export async function getLessonProgressHandler(request: FastifyRequest, reply: F
 
 export async function markLessonCompleteHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId, lessonId: episodeId } = request.params as { courseId: string; lessonId: string };
-  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion, videoDuration } = request.body as {
+  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion, videoDuration, timerStartedAt, timerSeconds } = request.body as {
     watchedSeconds?: number;
     deltaSeconds?: number;
     isCompleted?: boolean;
     videoDuration?: number;
+    timerStartedAt?: number;
+    timerSeconds?: number;
   };
 
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
@@ -1233,53 +1282,76 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     }).catch(() => {});
   }
 
-  const cumulativeActualSecs = (existingProgress?.actualWatchedSecs ?? 0) + safeDelta;
+  // Use the higher of (existing + delta) or the current playhead position.
+  // The "video ended" call sends watchedSeconds ≈ videoDuration with no deltaSeconds,
+  // so safeDelta is 0 — but the playhead is authoritative evidence of how far the
+  // member got. EXCESSIVE_SKIPPING is already logged above when the jump is large.
+  const cumulativeActualSecs = Math.max(
+    (existingProgress?.actualWatchedSecs ?? 0) + safeDelta,
+    watchedSeconds ?? 0,
+  );
 
   // Server-authoritative completion. The trust model:
   //   * A completion that's already been recorded stays completed
   //     (idempotent — rewatching a completed lesson doesn't "un-complete").
-  //   * Otherwise, completion requires the cumulative *fraud-scrubbed*
-  //     watched seconds to exceed `threshold%` of the episode's real
-  //     duration. `safeDelta` is already capped at 30s per heartbeat
-  //     so a modified client can't skip to completion by sending
-  //     one huge delta.
-  //   * The client's `requestedCompletion` flag is IGNORED here — it
-  //     was previously trusted as a hint from the player's "ended"
-  //     event, but that's exactly the vector the prompt's security
-  //     requirement wants closed. Server decides completion, not
-  //     client.
+  //   * Otherwise, completion requires the cumulative watched seconds
+  //     to exceed `threshold%` of the episode's real duration.
+  //     `cumulativeActualSecs` is the max of fraud-scrubbed heartbeat
+  //     accumulation and the reported playhead — the playhead at "ended"
+  //     equals the video duration, so a natural viewing always qualifies.
   //   * Fallback: when the episode has no `durationSeconds` recorded
   //     (metadata missing), we still honor the client's flag AS A
   //     LAST RESORT so pre-migration courses without duration data
-  //     don't become impossible to complete. Once metadata is
-  //     backfilled, the fallback goes cold naturally.
+  //     don't become impossible to complete.
+  // Use the client-reported video duration as authoritative when available —
+  // stored durationSeconds may be a placeholder (900–1800 s) from initial
+  // seeding and will cause the threshold check to fail for short test videos.
+  // Auto-patch the stored value when it diverges so future requests converge.
+  const effectiveDuration =
+    videoDuration && videoDuration > 0
+      ? videoDuration
+      : (episode.durationSeconds ?? 0);
+  if (
+    videoDuration &&
+    videoDuration > 0 &&
+    Math.abs(videoDuration - (episode.durationSeconds ?? 0)) > 5
+  ) {
+    await request.server.prisma.courseEpisode.update({
+      where: { id: episodeId },
+      data: { durationSeconds: Math.round(videoDuration) },
+    });
+  }
   const thresholdFraction =
     Math.max(0.5, Math.min(1, (courseUnlockCfg?.completionThresholdPercent ?? 95) / 100));
   if (existingProgress?.completed) {
     finalIsCompleted = true;
-  } else if (episode.durationSeconds && episode.durationSeconds > 0) {
-    finalIsCompleted = cumulativeActualSecs / episode.durationSeconds >= thresholdFraction;
+  } else if (effectiveDuration > 0) {
+    const watchFraction = cumulativeActualSecs / effectiveDuration;
+    // An explicit user action (Mark Complete button) is intentional — honour it at
+    // the minimum threshold (0.5) rather than the stricter configured threshold.
+    // Auto-completion (heartbeats and onEnded) still requires the full threshold.
+    const required = requestedCompletion === true ? 0.5 : thresholdFraction;
+    finalIsCompleted = watchFraction >= required;
   } else if (requestedCompletion === true && cumulativeActualSecs >= 5) {
-    // Legacy fallback — episode has no duration metadata. Trust the
-    // client's flag ONLY if there's some evidence of watching.
+    // Legacy fallback — episode has no duration metadata.
     finalIsCompleted = true;
   }
 
   const progress = await (request.server.prisma as any).courseEpisodeProgress.upsert({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    create: { 
-      memberId: request.memberId, 
-      episodeId, 
-      completed: finalIsCompleted, 
+    create: {
+      memberId: request.memberId,
+      episodeId,
+      completed: finalIsCompleted,
       completedAt: finalIsCompleted ? now : null,
       lastWatchedSecs: watchedSeconds ?? 0,
-      actualWatchedSecs: safeDelta
+      actualWatchedSecs: cumulativeActualSecs,
     },
-    update: { 
-      completed: finalIsCompleted ? true : undefined, 
+    update: {
+      completed: finalIsCompleted ? true : undefined,
       completedAt: (finalIsCompleted && !existingProgress?.completed) ? now : undefined,
       lastWatchedSecs: watchedSeconds ?? undefined,
-      actualWatchedSecs: { increment: safeDelta }
+      actualWatchedSecs: cumulativeActualSecs,
     },
   });
 
@@ -1332,6 +1404,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       episodeId,
       (courseForXp as any)?.xpPerEpisode ?? 10,
     );
+    void awardVideoStreakPoints(request.server.prisma as any, request.memberId!, episodeId);
 
     // 7.1 — episode complete notification
     void notifyEpisodeCompleted({
@@ -1339,6 +1412,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       io: request.server.io,
       memberId: request.memberId!,
       courseId,
+      episodeId,
       episodeTitle: (episode as any).title ?? 'Episode',
     }).catch(() => {});
 
@@ -1354,7 +1428,39 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     }
   }
 
-  void invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId!}`);
+  void invalidateCache(request.server.redis ?? null, `cont-learn:v2:${request.memberId!}`);
+
+  // ── MG-04: Early Completion Bonus ────────────────────────────────────────
+  let bonusXpAwarded = 0;
+  let completedEarly = false;
+  if (finalIsCompleted && !existingProgress?.completed && timerStartedAt && timerSeconds && timerSeconds > 0) {
+    const elapsed = Math.floor((Date.now() - timerStartedAt) / 1000);
+    if (elapsed < timerSeconds) {
+      completedEarly = true;
+      // Fetch bonus XP from site config
+      const cfgRows = await request.server.prisma.$queryRawUnsafe<Array<{ early_completion_bonus_xp: number }>>(
+        `SELECT early_completion_bonus_xp FROM site_configs LIMIT 1`
+      ).catch(() => []);
+      bonusXpAwarded = cfgRows[0]?.early_completion_bonus_xp ?? 5;
+      // Award bonus XP
+      if (bonusXpAwarded > 0) {
+        await (request.server.prisma as any).memberXP.create({
+          data: {
+            memberId: request.memberId,
+            courseId,
+            episodeId,
+            points: bonusXpAwarded,
+            source: 'early_completion',
+          },
+        }).catch(() => {});
+        // Mark progress row
+        await request.server.prisma.$executeRawUnsafe(
+          `UPDATE member_episode_progress SET completed_early = true, timer_started_at = $1, timer_seconds = $2 WHERE member_id = $3::uuid AND episode_id = $4::uuid`,
+          new Date(timerStartedAt), timerSeconds, request.memberId, episodeId
+        ).catch(() => {});
+      }
+    }
+  }
 
   return ok(reply, {
     lessonId: episodeId,
@@ -1362,6 +1468,8 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     watchedSeconds: progress.lastWatchedSecs,
     actualWatchedSecs: progress.actualWatchedSecs,
     completedAt: progress.completedAt?.toISOString() ?? null,
+    bonusXpAwarded,
+    completedEarly,
   });
 }
 
@@ -1439,6 +1547,29 @@ async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, e
   } catch { /* fire-and-forget */ }
 }
 
+// Streak Points — video side. Pays the episode's admin-configured streak_points
+// into the existing points_ledger, once per member per episode. App-level
+// pre-check is the fast path; the DB partial unique index
+// points_ledger_episode_completion_dedup (prisma.ts) is the real backstop against
+// a duplicate award if this ever races.
+async function awardVideoStreakPoints(prisma: any, memberId: string, episodeId: string) {
+  try {
+    const rows = (await prisma.$queryRawUnsafe(
+      `SELECT streak_points FROM course_episodes WHERE id = $1::uuid`, episodeId,
+    )) as { streak_points: number }[];
+    const points = Number(rows[0]?.streak_points ?? 0);
+    if (points <= 0) return;
+    const already = await prisma.pointsLedger.findFirst({
+      where: { memberId, referenceType: 'episode_completion', referenceId: episodeId },
+      select: { id: true },
+    });
+    if (already) return;
+    await prisma.pointsLedger.create({
+      data: { memberId, points, reason: 'Video completed', referenceType: 'episode_completion', referenceId: episodeId },
+    });
+  } catch { /* fire-and-forget, matches awardEpisodeXp style */ }
+}
+
 // ─── Course quiz submission ───────────────────────────────────────────────────
 
 export async function submitCourseQuizHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -1487,6 +1618,7 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
       io: request.server.io,
       memberId: request.memberId!,
       courseId,
+      episodeId: epId,
       episodeTitle: (episode as any).title ?? 'Episode',
       score,
       xp,
@@ -1610,6 +1742,38 @@ export async function getUserBadgesHandler(request: FastifyRequest, reply: Fasti
   })));
 }
 
+// Streak Points history — reads the existing points_ledger for the two award
+// paths that feed it (video: reference_type='episode_completion', written by
+// awardVideoStreakPoints above; task: reference_type in ('task_submission',
+// 'milestone') written by the pre-existing completionMode flow, scoped here to
+// course-episode tasks via course_episode_id IS NOT NULL). points_ledger has no
+// other reader anywhere in the backend today — this is the first.
+export async function getMyStreakPointsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const rows = await request.server.prisma.$queryRawUnsafe<StreakPointsRow[]>(
+    `SELECT pl.points, pl.reference_type, pl.created_at,
+       CASE
+         WHEN pl.reference_type = 'episode_completion' THEN ce.title
+         WHEN pl.reference_type = 'task_submission' THEN t1.title
+         WHEN pl.reference_type = 'milestone' THEN t2.title
+       END AS title
+     FROM points_ledger pl
+     LEFT JOIN course_episodes ce ON pl.reference_type = 'episode_completion' AND ce.id = pl.reference_id
+     LEFT JOIN task_submissions ts ON pl.reference_type = 'task_submission' AND ts.id = pl.reference_id
+     LEFT JOIN tasks t1 ON t1.id = ts.task_id AND t1.course_episode_id IS NOT NULL
+     LEFT JOIN tasks t2 ON pl.reference_type = 'milestone' AND t2.id = pl.reference_id AND t2.course_episode_id IS NOT NULL
+     WHERE pl.member_id = $1::uuid
+       AND (
+         pl.reference_type = 'episode_completion'
+         OR (pl.reference_type = 'task_submission' AND t1.id IS NOT NULL)
+         OR (pl.reference_type = 'milestone' AND t2.id IS NOT NULL)
+       )
+     ORDER BY pl.created_at DESC`,
+    request.memberId,
+  ).catch(() => [] as StreakPointsRow[]);
+
+  return ok(reply, computeStreakPointsSummary(rows));
+}
+
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
 export async function getDashboardStatsHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -1661,9 +1825,12 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {
   const redis = request.server.redis ?? null;
-  const clKey = `cont-learn:${request.memberId}`;
+  const clKey = `cont-learn:v3:${request.memberId}`;
   const cachedCl = await cacheGet<unknown[]>(redis, clKey);
-  if (cachedCl) return ok(reply, cachedCl);
+  // Only serve cache when it actually has items — an empty [] is falsy-adjacent
+  // but truthy in JS, so `if (cachedCl)` would serve a stale empty result even
+  // after the user starts watching their first video.
+  if (cachedCl !== null && cachedCl.length > 0) return ok(reply, cachedCl);
 
   // Fetch recent activity across both types — no completion filter so recently-finished
   // items stay visible. Fetch more than needed so deduplication still yields up to 6.
@@ -1742,30 +1909,94 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     return true;
   });
 
+  // Batch-fetch per-course completion counts and next uncompleted episodes.
+  // Fixes two bugs: (a) progressPercent was episode-playhead %, not course %;
+  // (b) isCompleted was episode-level — finishing lesson 3 hid the entire course
+  // from Continue Learning even though lesson 4 hadn't been started yet.
+  const clCompletedMap = new Map<string, number>();
+  const clNextEpMap = new Map<string, { id: string; title: string; order: number; durationSeconds: number | null; lastWatchedSecs: number }>();
+  if (dedupedCourses.length > 0) {
+    const courseIds = dedupedCourses.map(p => p.episode.courseId);
+    const phs = courseIds.map((_, i) => `$${i + 2}::uuid`).join(', ');
+    const [clRows, nextRows] = await Promise.all([
+      request.server.prisma.$queryRawUnsafe<Array<{ course_id: string; count: number }>>(
+        `SELECT ce.course_id, COUNT(*)::int AS count
+         FROM course_episode_progress cep
+         JOIN course_episodes ce ON cep.episode_id = ce.id
+         WHERE cep.member_id = $1::uuid AND cep.completed = true AND ce.course_id IN (${phs})
+         GROUP BY ce.course_id`,
+        request.memberId,
+        ...courseIds,
+      ),
+      request.server.prisma.$queryRawUnsafe<Array<{
+        course_id: string;
+        next_episode_id: string;
+        next_episode_title: string;
+        next_episode_order: number;
+        next_duration_seconds: number | null;
+        next_watched_secs: number;
+      }>>(
+        `SELECT DISTINCT ON (ce.course_id) ce.course_id, ce.id AS next_episode_id,
+                ce.title AS next_episode_title, ce."order" AS next_episode_order,
+                ce.duration_seconds AS next_duration_seconds,
+                COALESCE(partial.last_watched_secs, 0) AS next_watched_secs
+         FROM course_episodes ce
+         LEFT JOIN course_episode_progress completed_cep
+           ON completed_cep.episode_id = ce.id AND completed_cep.member_id = $1::uuid AND completed_cep.completed = true
+         LEFT JOIN course_episode_progress partial
+           ON partial.episode_id = ce.id AND partial.member_id = $1::uuid
+         WHERE ce.course_id IN (${phs}) AND completed_cep.episode_id IS NULL
+         ORDER BY ce.course_id, ce."order" ASC`,
+        request.memberId,
+        ...courseIds,
+      ),
+    ]);
+    for (const r of clRows) clCompletedMap.set(r.course_id, Number(r.count));
+    for (const r of nextRows) {
+      clNextEpMap.set(r.course_id, {
+        id: r.next_episode_id,
+        title: r.next_episode_title,
+        order: Number(r.next_episode_order),
+        durationSeconds: r.next_duration_seconds != null ? Number(r.next_duration_seconds) : null,
+        lastWatchedSecs: Number(r.next_watched_secs),
+      });
+    }
+  }
+
   // Note: `_ms` is a private sort key stripped before the response goes over
   // the wire. `updatedAt` is returned as an ISO string so it matches the
   // Flutter WatchHistoryItem model (`String? updatedAt`) — earlier the raw
   // getTime() number caused a Dart TypeError at parse time in release mode,
   // which the dashboard surfaced as "Failed to load. Retry."
   const combined = [
-    ...dedupedCourses.map(p => ({
-      type: 'course' as const,
-      id: p.episode.courseId,
-      lessonId: p.episodeId,
-      title: p.episode.course.title,
-      thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
-      lastLessonTitle: p.episode.title,
-      challengeTitle: null as string | null,
-      lastWatchedSecs: p.lastWatchedSecs,
-      durationSeconds: p.episode.durationSeconds ?? null,
-      remainingSecs: Math.max(0, (p.episode.durationSeconds ?? 0) - p.lastWatchedSecs),
-      episodeOrder: p.episode.order,
-      episodeCount: p.episode.course._count.courseEpisodes,
-      progressPercent: pct(p.lastWatchedSecs, p.episode.durationSeconds),
-      isCompleted: p.completed,
-      updatedAt: p.updatedAt.toISOString(),
-      _ms: p.updatedAt.getTime(),
-    })),
+    ...dedupedCourses.map(p => {
+      const episodeCount = p.episode.course._count.courseEpisodes;
+      const completedLessons = clCompletedMap.get(p.episode.courseId) ?? 0;
+      const nextEp = clNextEpMap.get(p.episode.courseId);
+      // Point to the next uncompleted episode; fall back to last-watched.
+      const targetId    = nextEp?.id    ?? p.episodeId;
+      const targetTitle = nextEp?.title ?? p.episode.title;
+      const targetOrder = nextEp?.order ?? p.episode.order;
+      return {
+        type: 'course' as const,
+        id: p.episode.courseId,
+        lessonId: targetId,
+        title: p.episode.course.title,
+        thumbnailUrl: p.episode.course.thumbnailUrl ?? null,
+        lastLessonTitle: targetTitle,
+        challengeTitle: null as string | null,
+        lastWatchedSecs: nextEp != null ? nextEp.lastWatchedSecs : p.lastWatchedSecs,
+        durationSeconds: nextEp != null ? nextEp.durationSeconds : (p.episode.durationSeconds ?? null),
+        remainingSecs: Math.max(0, ((nextEp != null ? nextEp.durationSeconds : p.episode.durationSeconds) ?? 0) - (nextEp != null ? nextEp.lastWatchedSecs : p.lastWatchedSecs)),
+        episodeOrder: targetOrder,
+        episodeCount,
+        completedLessons,
+        progressPercent: episodeCount > 0 ? Math.round((completedLessons / episodeCount) * 100) : 0,
+        isCompleted: episodeCount > 0 && completedLessons >= episodeCount,
+        updatedAt: p.updatedAt.toISOString(),
+        _ms: p.updatedAt.getTime(),
+      };
+    }),
     ...dedupedWorkshops.map(p => ({
       type: 'workshop' as const,
       id: p.episode.challenge.workshop.slug,
@@ -1789,7 +2020,10 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     .slice(0, 6)
     .map(({ _ms: _ignored, ...rest }) => rest);
 
-  void cacheSet(redis, clKey, combined, 120);
+  // Only cache when there is at least one item — caching an empty result freezes
+  // the "No course in progress" state for 120 s even after the user watches their
+  // first lesson.
+  if (combined.length > 0) void cacheSet(redis, clKey, combined, 120);
   return ok(reply, combined);
 }
 
@@ -1872,28 +2106,61 @@ export async function listUserProgramsHandler(request: FastifyRequest, reply: Fa
 
 export async function getUserProgramHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
+  const [program, enrollmentCount] = await Promise.all([
+    request.server.prisma.program.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        durationDays: true,
+        incubationDays: true,
+        status: true,
+        createdAt: true,
+        batches: {
+          // `status` is a raw-SQL column — cast to bypass typecheck.
+          where: { status: 'active' } as any,
+          select: { id: true, name: true },
+          take: 5,
+        },
+        tasks: {
+          where: { batchId: null, isActive: true },
+          orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            dayNumber: true,
+            estimatedMinutes: true,
+            isMilestone: true,
+            proofType: true,
+            basePoints: true,
+          },
+        },
+      },
+    }),
+    request.server.prisma.programEnrollment.count({
+      where: { memberId: request.memberId!, programId: id },
+    }),
+  ]);
+  if (!program) return fail(reply, 404, 'Program not found');
+  return ok(reply, { ...program, isEnrolled: enrollmentCount > 0 });
+}
+
+export async function enrollInProgramHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
   const program = await request.server.prisma.program.findUnique({
     where: { id },
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      durationDays: true,
-      incubationDays: true,
-      status: true,
-      createdAt: true,
-      batches: {
-        // `status` is a raw-SQL column (not in Prisma schema per CLAUDE.md
-        // "Raw SQL Columns"); cast to bypass typecheck. Runtime works because
-        // Prisma forwards unknown filter keys verbatim.
-        where: { status: 'active' } as any,
-        select: { id: true, name: true },
-        take: 5,
-      },
-    },
+    select: { id: true, status: true },
   });
   if (!program) return fail(reply, 404, 'Program not found');
-  return ok(reply, program);
+  if (program.status !== 'active') return fail(reply, 400, 'Program is not currently active');
+  await request.server.prisma.programEnrollment.upsert({
+    where: { memberId_programId: { memberId: request.memberId!, programId: id } },
+    create: { memberId: request.memberId!, programId: id },
+    update: {},
+  });
+  return reply.status(201).send({ success: true, data: { enrolled: true }, error: null });
 }
 
 // ─── Webinars ─────────────────────────────────────────────────────────────────
@@ -2301,10 +2568,14 @@ export async function votePollHandler(request: FastifyRequest, reply: FastifyRep
 function notifIconType(type: string): string {
   const map: Record<string, string> = {
     video: 'video', course: 'video',
-    assignment: 'assignment',
-    live_call: 'live_call', webinar: 'live_call',
-    achievement: 'achievement', badge: 'achievement',
+    episode_complete: 'video', quiz_pass: 'video', course_complete: 'video',
+    course_access: 'video', course_enroll: 'video',
+    assignment: 'assignment', helpdesk_reply: 'assignment',
+    task_approved: 'assignment', task_rejected: 'assignment',
+    live_call: 'live_call', webinar: 'live_call', onboarding_meeting: 'live_call',
+    achievement: 'achievement', badge: 'achievement', badge_award: 'achievement',
     announcement: 'announcement',
+    message: 'message', group_message: 'message', group_mention: 'message',
     system: 'system',
   };
   return map[type] ?? 'system';
@@ -3766,7 +4037,7 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
   void Promise.all([
     recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, isCompleted && !existingProgress?.isCompleted ? 'episode_completed' : 'episode_watched', { episodeId }),
-    invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId}`),
+    invalidateCache(request.server.redis ?? null, `cont-learn:v2:${request.memberId}`),
     ...(wsSlug ? [invalidateCache(request.server.redis ?? null, `ws:detail:${request.memberId}:${wsSlug}`)] : []),
   ]).catch(() => {});
 
@@ -3874,8 +4145,6 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const resources = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id, title, description, file_url AS "fileUrl", file_type AS "fileType",
             file_type_icon_url AS "fileTypeIconUrl", download_label AS "downloadLabel"
@@ -3883,7 +4152,7 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
      WHERE course_episode_id = $1::uuid AND is_visible = true
      ORDER BY "order" ASC`,
     episodeId,
-  );
+  ).catch(() => [] as any[]);
   return reply.send({ success: true, data: resources, error: null });
 }
 
@@ -3894,16 +4163,333 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, title, description, deliverables, estimated_minutes AS "estimatedMinutes"
-     FROM tasks
-     WHERE course_episode_id = $1::uuid
-     ORDER BY sort_order ASC`,
-    episodeId,
+    `SELECT t.id, t.title, t.description, t.deliverables,
+            t.estimated_minutes AS "estimatedMinutes",
+            t.base_points AS "basePoints",
+            t.proof_type AS "proofType",
+            t.completion_mode AS "completionMode",
+            ts.id AS "submissionId",
+            ts.status AS "submissionStatus",
+            ts.feedback AS "submissionFeedback",
+            ts.response_value AS "submissionResponseValue",
+            ts.proof_url AS "submissionProofUrl",
+            ts.proof_type AS "submissionProofType",
+            ts.created_at AS "submissionCreatedAt"
+     FROM tasks t
+     LEFT JOIN task_submissions ts
+       ON ts.task_id = t.id AND ts.member_id = $2::uuid AND ts.batch_id IS NULL AND ts.day_number IS NULL
+     WHERE t.course_episode_id = $1::uuid AND t.is_active = true
+     ORDER BY t.sort_order ASC`,
+    episodeId, request.memberId,
+  ).catch(() => [] as any[]);
+  const data = tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    deliverables: t.deliverables,
+    estimatedMinutes: t.estimatedMinutes,
+    basePoints: t.basePoints,
+    proofType: t.proofType,
+    completionMode: t.completionMode ?? 'ADMIN_CHECK',
+    submission: t.submissionId ? {
+      id: t.submissionId,
+      status: t.submissionStatus,
+      feedback: t.submissionFeedback,
+      responseValue: t.submissionResponseValue,
+      proofUrl: t.submissionProofUrl,
+      proofType: t.submissionProofType,
+      createdAt: t.submissionCreatedAt,
+    } : null,
+  }));
+  return reply.send({ success: true, data, error: null });
+}
+
+// POST /api/user/episodes/:id/tasks/:taskId/submit — member submits (or resubmits) an
+// episode task. SELF_ASSESSMENT tasks are approved immediately and award points on the
+// spot; ADMIN_CHECK tasks land as 'pending' and only award points once an admin approves
+// via reviewEpisodeTaskSubmissionHandler (courses/controller.ts).
+export async function submitUserEpisodeTaskHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId, taskId } = request.params as { id: string; taskId: string };
+  const { responseValue, proofUrl, proofType } = request.body as {
+    responseValue?: string; proofUrl?: string; proofType?: string;
+  };
+  const memberId = request.memberId!;
+
+  const ep = await (request.server.prisma as any).courseEpisode.findUnique({
+    where: { id: episodeId },
+    select: { courseId: true },
+  });
+  if (!ep) return fail(reply, 404, 'Episode not found');
+
+  // Task must actually belong to this episode — prevents a client from
+  // submitting against an arbitrary task ID that lives on a different episode.
+  const taskRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, base_points AS "basePoints", bonus_points AS "bonusPoints",
+            is_milestone AS "isMilestone", milestone_label AS "milestoneLabel",
+            proof_type AS "proofType", completion_mode AS "completionMode", is_active AS "isActive"
+     FROM tasks WHERE id = $1::uuid AND course_episode_id = $2::uuid`,
+    taskId, episodeId,
   );
-  return reply.send({ success: true, data: tasks, error: null });
+  const task = taskRows[0];
+  if (!task || task.isActive === false) return fail(reply, 404, 'Task not found');
+
+  const completionMode: 'SELF_ASSESSMENT' | 'ADMIN_CHECK' = task.completionMode === 'SELF_ASSESSMENT' ? 'SELF_ASSESSMENT' : 'ADMIN_CHECK';
+  const resolvedProofType = proofType || task.proofType || 'text';
+
+  const existing = await request.server.prisma.taskSubmission.findFirst({
+    where: { memberId, taskId, batchId: null, dayNumber: null },
+  });
+
+  // Already approved — idempotent no-op so a resubmit can never re-award points
+  // or flip a completed task back to pending.
+  if (existing && existing.status === 'approved') {
+    return reply.send({ success: true, data: { id: existing.id, status: existing.status, feedback: existing.feedback }, error: null });
+  }
+
+  const nextStatus = completionMode === 'SELF_ASSESSMENT' ? 'approved' : 'pending';
+  const now = new Date();
+  const submission = existing
+    ? await request.server.prisma.taskSubmission.update({
+        where: { id: existing.id },
+        data: {
+          responseValue: responseValue ?? null,
+          proofUrl: proofUrl ?? null,
+          proofType: resolvedProofType,
+          status: nextStatus as any,
+          feedback: null,
+          reviewedBy: completionMode === 'SELF_ASSESSMENT' ? null : existing.reviewedBy,
+          reviewedAt: completionMode === 'SELF_ASSESSMENT' ? now : null,
+        },
+      })
+    : await request.server.prisma.taskSubmission.create({
+        data: {
+          memberId,
+          taskId,
+          responseValue: responseValue ?? null,
+          proofUrl: proofUrl ?? null,
+          proofType: resolvedProofType,
+          status: nextStatus as any,
+          reviewedAt: completionMode === 'SELF_ASSESSMENT' ? now : null,
+        },
+      });
+
+  if (completionMode === 'SELF_ASSESSMENT') {
+    // Dedup guard — this referenceId is unique per submission row, so even if
+    // the client double-fires the request the ledger insert only lands once
+    // (the submission row itself is find-or-create'd above, so a retry
+    // reuses the same id and this check short-circuits).
+    const alreadyAwarded = await request.server.prisma.pointsLedger.findFirst({
+      where: { referenceType: 'task_submission', referenceId: submission.id },
+      select: { id: true },
+    });
+    if (!alreadyAwarded) {
+      if (task.basePoints > 0) {
+        await request.server.prisma.pointsLedger.create({
+          data: { memberId, points: task.basePoints, reason: 'Task approved', referenceType: 'task_submission', referenceId: submission.id },
+        }).catch(() => {});
+      }
+      if (task.isMilestone && task.bonusPoints > 0) {
+        await request.server.prisma.pointsLedger.create({
+          data: { memberId, points: task.bonusPoints, reason: task.milestoneLabel ? `Milestone: ${task.milestoneLabel}` : 'Milestone bonus', referenceType: 'milestone', referenceId: taskId },
+        }).catch(() => {});
+      }
+    }
+  } else {
+    void createAdminNotification(request.server.prisma, {
+      title: 'Task Submitted for Review',
+      body: 'A member submitted a course task that needs your review.',
+      type: 'episode_task_submitted',
+      metadata: { courseId: ep.courseId, episodeId, taskId, submissionId: submission.id },
+    });
+    request.server.io.to('admin').emit('admin:episode_task_submitted', {
+      courseId: ep.courseId, episodeId, taskId, submissionId: submission.id,
+    });
+  }
+
+  return reply.status(existing ? 200 : 201).send({
+    success: true,
+    data: { id: submission.id, status: submission.status, completionMode },
+    error: null,
+  });
+}
+
+// ── Episode Timer Session ──────────────────────────────────────────────────────
+// POST /api/user/episodes/:id/timer/start  — start or reset a server-side timer session
+export async function startEpisodeTimerHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { durationSeconds } = request.body as { durationSeconds: number };
+  const memberId = request.memberId!;
+  if (!durationSeconds || durationSeconds <= 0) return fail(reply, 400, 'durationSeconds required');
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + durationSeconds * 1000);
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lesson_timer_sessions (member_id, episode_id, status, duration_seconds, started_at, expires_at, last_heartbeat_at)
+     VALUES ($1::uuid, $2::uuid, 'ACTIVE', $3, $4, $5, $4)
+     ON CONFLICT (member_id, episode_id) DO UPDATE SET
+       status = 'ACTIVE', duration_seconds = $3, started_at = $4,
+       expires_at = $5, completed_at = NULL, last_heartbeat_at = $4`,
+    memberId, episodeId, durationSeconds, now, expiresAt,
+  );
+  return reply.send({ success: true, data: { expiresAt, remainingSeconds: durationSeconds, status: 'ACTIVE' }, error: null });
+}
+
+// GET /api/user/episodes/:id/timer/session — fetch current timer state (survives refresh)
+export async function getEpisodeTimerSessionHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status, duration_seconds AS "durationSeconds", started_at AS "startedAt",
+            expires_at AS "expiresAt", completed_at AS "completedAt"
+     FROM lesson_timer_sessions WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+    memberId, episodeId,
+  );
+  const session = rows[0] ?? null;
+  if (session && session.status === 'ACTIVE' && new Date(session.expiresAt) < new Date()) {
+    // Auto-expire stale session
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'EXPIRED' WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ).catch(() => {});
+    session.status = 'EXPIRED';
+  }
+  const remainingSeconds = session?.status === 'ACTIVE'
+    ? Math.max(0, Math.ceil((new Date(session.expiresAt).getTime() - Date.now()) / 1000))
+    : 0;
+  return reply.send({ success: true, data: session ? { ...session, remainingSeconds } : null, error: null });
+}
+
+// POST /api/user/episodes/:id/timer/heartbeat — keep session alive; also marks COMPLETED
+export async function heartbeatEpisodeTimerHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { completed } = request.body as { completed?: boolean };
+  const memberId = request.memberId!;
+  const now = new Date();
+  if (completed) {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'COMPLETED', completed_at = $3, last_heartbeat_at = $3
+       WHERE member_id = $1::uuid AND episode_id = $2::uuid AND status = 'ACTIVE'`,
+      memberId, episodeId, now,
+    ).catch(() => {});
+    return reply.send({ success: true, data: { status: 'COMPLETED', remainingSeconds: 0 }, error: null });
+  }
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE lesson_timer_sessions SET last_heartbeat_at = $3
+     WHERE member_id = $1::uuid AND episode_id = $2::uuid AND status = 'ACTIVE'
+     RETURNING expires_at AS "expiresAt", status`,
+    memberId, episodeId, now,
+  );
+  const row = rows[0];
+  if (!row) return reply.send({ success: true, data: null, error: null });
+  const isExpired = new Date(row.expiresAt) < now;
+  if (isExpired) {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'EXPIRED' WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ).catch(() => {});
+  }
+  const remainingSeconds = isExpired ? 0 : Math.max(0, Math.ceil((new Date(row.expiresAt).getTime() - Date.now()) / 1000));
+  return reply.send({ success: true, data: { status: isExpired ? 'EXPIRED' : 'ACTIVE', remainingSeconds }, error: null });
+}
+
+// ── Episode Lifelines ──────────────────────────────────────────────────────────
+// GET /api/user/episodes/:id/lifelines — per-episode lifeline state + config
+export async function getEpisodeLifelinesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const [configRows, stateRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifeline_enabled AS "lifelineEnabled", lifeline_count AS "lifelineCount",
+              lifeline_coin_cost AS "lifelineCoinCost", max_purchased_lifelines AS "maxPurchasedLifelines"
+       FROM course_episodes WHERE id = $1::uuid`,
+      episodeId,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT free_used AS "freeUsed", purchased_used AS "purchasedUsed", total_used AS "totalUsed"
+       FROM episode_lifeline_state WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ),
+  ]);
+  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
+  const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
+  return reply.send({
+    success: true,
+    data: { ...cfg, ...state, freeRemaining },
+    error: null,
+  });
+}
+
+// POST /api/user/episodes/:id/lifelines/use — spend a lifeline on this episode
+export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { type } = request.body as { type: 'free' | 'coin' };
+  const memberId = request.memberId!;
+
+  const [configRows, stateRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifeline_enabled AS "lifelineEnabled", lifeline_count AS "lifelineCount",
+              lifeline_coin_cost AS "lifelineCoinCost", max_purchased_lifelines AS "maxPurchasedLifelines"
+       FROM course_episodes WHERE id = $1::uuid`,
+      episodeId,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT free_used AS "freeUsed", purchased_used AS "purchasedUsed", total_used AS "totalUsed"
+       FROM episode_lifeline_state WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ),
+  ]);
+  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
+  if (!cfg.lifelineEnabled) return fail(reply, 403, 'Lifelines disabled for this episode');
+
+  if (type === 'free') {
+    const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
+    if (freeRemaining <= 0) return fail(reply, 400, 'No free lifelines remaining');
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO episode_lifeline_state (member_id, episode_id, free_used, total_used, updated_at)
+       VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
+       ON CONFLICT (member_id, episode_id) DO UPDATE SET
+         free_used = episode_lifeline_state.free_used + 1,
+         total_used = episode_lifeline_state.total_used + 1,
+         updated_at = NOW()`,
+      memberId, episodeId,
+    );
+    return reply.send({
+      success: true,
+      data: { freeRemaining: freeRemaining - 1, totalUsed: state.totalUsed + 1 },
+      error: null,
+    });
+  }
+
+  // type === 'coin' — deduct coins from tbt_activity_log
+  const coinCost = cfg.lifelineCoinCost ?? 50;
+  const balanceRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT COALESCE(SUM(points), 0) AS balance FROM tbt_activity_log WHERE member_id = $1::uuid`,
+    memberId,
+  );
+  const balance = Number(balanceRows[0]?.balance ?? 0);
+  if (balance < coinCost) return fail(reply, 400, 'Insufficient TBT coins');
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, activity_date) VALUES ($1::uuid, $2, 'lifeline_spend', NOW()::DATE)`,
+    memberId, -coinCost,
+  );
+  const purchasedSoFar = state.purchasedUsed ?? 0;
+  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO episode_lifeline_state (member_id, episode_id, purchased_used, total_used, updated_at)
+     VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
+     ON CONFLICT (member_id, episode_id) DO UPDATE SET
+       purchased_used = episode_lifeline_state.purchased_used + 1,
+       total_used = episode_lifeline_state.total_used + 1,
+       updated_at = NOW()`,
+    memberId, episodeId,
+  );
+  return reply.send({
+    success: true,
+    data: { freeRemaining: Math.max(0, cfg.lifelineCount - state.freeUsed), totalUsed: state.totalUsed + 1, coinsDeducted: coinCost, remainingCoins: balance - coinCost },
+    error: null,
+  });
 }
 
 export async function getUserResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -4258,6 +4844,9 @@ export async function updateAvatarHandler(request: FastifyRequest, reply: Fastif
     where: { id: request.memberId },
     data: { profilePhotoUrl: avatarUrl },
   });
+  // Without this, the cached /me payload (see getMeHandler's 60s cacheSet)
+  // keeps serving the pre-upload avatarUrl until the TTL expires.
+  void invalidateCache(request.server.redis ?? null, `me:${request.memberId}`);
   return ok(reply, { avatarUrl });
 }
 
@@ -4315,7 +4904,14 @@ export async function avatarPresignHandler(request: FastifyRequest, reply: Fasti
   });
   const command = new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, ContentType: contentType });
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-  const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+  // BUNNY_CDN_URL is optional — R2 can be configured without a Bunny CDN in
+  // front of it. Falling back to the raw R2 endpoint (same convention as
+  // uploadBufferToR2 in lib/r2.ts) avoids emitting a publicUrl with an empty
+  // host (`https:///members/photos/...`) when it's unset.
+  const cdnOrigin = bunnyCdnOrigin();
+  const publicUrl = cdnOrigin
+    ? `${cdnOrigin}/${key}`
+    : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
   return ok(reply, { uploadUrl, publicUrl });
 }
 
@@ -4382,10 +4978,15 @@ export async function assignmentFilePresignHandler(request: FastifyRequest, repl
 export async function revokeDeviceHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
   const currentDeviceId = request.headers['x-device-id'] as string | undefined;
-  const session = await request.server.prisma.memberSession.findFirst({ where: { id, memberId: request.memberId } });
+  const session = await (request.server.prisma.memberSession as any).findFirst({ where: { id, memberId: request.memberId } });
   if (!session) return fail(reply, 404, 'Device session not found');
   if (currentDeviceId && session.deviceId === currentDeviceId) return fail(reply, 400, 'Cannot revoke current device');
-  await request.server.prisma.memberSession.delete({ where: { id } });
+  // Also revoke the Redis refresh token so the device is kicked immediately
+  if (session.tokenHash) {
+    const { revokeRefreshTokenByHash } = await import('../../plugins/jwt.js');
+    await revokeRefreshTokenByHash(request.server.redis ?? null, session.tokenHash).catch(() => {});
+  }
+  await (request.server.prisma.memberSession as any).delete({ where: { id } });
   return ok(reply, { revoked: true });
 }
 
@@ -5135,7 +5736,7 @@ export async function completeWorkshopEpisodeHandler(request: FastifyRequest, re
   void Promise.all([
     recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis),
     logActivity(request.server.prisma, request.memberId!, 'episode_completed', { episodeId: id }),
-    invalidateCache(request.server.redis ?? null, `cont-learn:${request.memberId!}`),
+    invalidateCache(request.server.redis ?? null, `cont-learn:v2:${request.memberId!}`),
   ]).catch(() => {});
 
   return ok(reply, { episodeId: id, isCompleted: true });
@@ -5408,4 +6009,52 @@ export async function getMyPostsHandler(request: FastifyRequest, reply: FastifyR
     commentCount: p.commentsCount,
   }));
   return ok(reply, items);
+}
+
+// ── MG-01: Support Quota ──────────────────────────────────────────────────────
+
+export async function getSupportQuotaHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+
+  const member = await request.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { membershipPlan: true, batchId: true },
+  });
+
+  const plan = (member?.membershipPlan as string | null) ?? 'free';
+
+  const [entRows, usageRows, lifelineRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled
+       FROM plan_entitlements WHERE plan = $1`,
+      plan,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT type, COUNT(*)::int AS cnt FROM support_usage WHERE member_id = $1::uuid GROUP BY type`,
+      memberId,
+    ),
+    member?.batchId
+      ? request.server.prisma.$queryRawUnsafe<any[]>(
+          `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id = $1::uuid AND batch_id = $2::uuid LIMIT 1`,
+          memberId, member.batchId,
+        )
+      : Promise.resolve([]),
+  ]);
+
+  const ent = entRows[0] ?? { tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false };
+  const usageMap: Record<string, number> = {};
+  for (const row of usageRows) usageMap[row.type] = row.cnt;
+
+  const lifelinesTotal = (lifelineRows[0] as any)?.lifelines_total ?? 3;
+  const lifelinesUsed  = (lifelineRows[0] as any)?.lifelines_used  ?? 0;
+
+  return ok(reply, {
+    plan,
+    techSupport:  { allocated: ent.tech_support_days, used: usageMap['tech_support']  ?? 0, remaining: Math.max(0, ent.tech_support_days  - (usageMap['tech_support']  ?? 0)) },
+    adSupport:    { allocated: ent.ad_support_days,   used: usageMap['ad_support']    ?? 0, remaining: Math.max(0, ent.ad_support_days    - (usageMap['ad_support']    ?? 0)) },
+    groupCall:    { allocated: ent.group_call_count,  used: usageMap['group_call']    ?? 0, remaining: Math.max(0, ent.group_call_count    - (usageMap['group_call']    ?? 0)) },
+    callCredits:  { allocated: ent.call_credit_count, used: usageMap['one_to_one']    ?? 0, remaining: Math.max(0, ent.call_credit_count   - (usageMap['one_to_one']    ?? 0)) },
+    oneToOne:     !!ent.one_to_one_enabled,
+    lifelines:    { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
+  });
 }

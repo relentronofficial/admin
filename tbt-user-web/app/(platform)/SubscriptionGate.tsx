@@ -215,6 +215,14 @@ function FreeInterceptor() {
   );
 }
 
+function PageLoader() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "var(--color-bg-primary, #0f0f0f)" }}>
+      <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-accent, #dc2626)", borderTopColor: "transparent" }} />
+    </div>
+  );
+}
+
 export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   const { data: me, isLoading, isError, isFetching } = useMe();
   const router = useRouter();
@@ -224,7 +232,13 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   const isPendingExempt = PENDING_EXEMPT_PATHS.some((p) => pathname.startsWith(p));
 
   useEffect(() => {
-    if (isLoading || isFetching || isError || isExempt || !me) return;
+    if (isLoading || isFetching) return;
+    // /api/user/me returned 401 — user is unauthenticated; send to login.
+    if (isError) {
+      router.replace("/login");
+      return;
+    }
+    if (isExempt || !me) return;
     if ((me as any).status === "pending") {
       // pending + awaiting_kyc → must reach the self-onboarding wizard.
       // All other pending states (under_review, changes_requested, etc.) stay
@@ -242,6 +256,11 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
       router.replace("/Products");
     }
   }, [me, isLoading, isFetching, isError, isExempt, isPendingExempt, router]);
+
+  // Block render until auth state is known — prevents platform page flash for
+  // unauthenticated users (cookies are cross-domain so middleware can't check them;
+  // the 401 redirect in the useEffect above handles unauthenticated cases).
+  if (isLoading) return <PageLoader />;
 
   // Pending users: page content visible, but every click opens the pending popup —
   // except awaiting_kyc (redirected above) and the onboarding wizard itself.

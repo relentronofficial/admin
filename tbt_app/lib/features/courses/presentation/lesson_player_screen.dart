@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:better_player_plus/better_player_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -21,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/courses_service.dart';
 import '../providers/courses_provider.dart';
 import 'widgets/feedback_modal.dart';
+import 'widgets/mission_complete_overlay.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
 class LessonPlayerScreen extends ConsumerStatefulWidget {
@@ -71,6 +74,11 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   // Feedback questions loaded after completion
   List<VideoFeedbackQuestion> _feedbackQuestions = [];
   bool _feedbackShown = false;
+
+  // Mission Complete overlay
+  bool _missionVisible = false;
+  String _missionTitle = '';
+  int _missionXp = 0;
 
   // Ad interruption (TBT_ADS_SPECKIT.md §7)
   VoidCallback? _deregisterFromAds;
@@ -372,6 +380,7 @@ window.addEventListener('message', function(e) {
     _progressTimer?.cancel();
     _progressTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_currentTime <= 0) return;
+      if (!_isMediaPlaying()) return;
       ref
           .read(coursesServiceProvider)
           .markLessonComplete(
@@ -381,6 +390,20 @@ window.addEventListener('message', function(e) {
             isCompleted: false,
           )
           .catchError((_) {});
+    });
+  }
+
+  void _showMissionComplete() {
+    if (_wasAlreadyCompleted || !mounted) return;
+    final xp = ref
+            .read(courseDetailProvider(widget.courseId))
+            .valueOrNull
+            ?.xpPerEpisode ??
+        0;
+    setState(() {
+      _missionTitle = _playback?.title ?? '';
+      _missionXp = xp;
+      _missionVisible = true;
     });
   }
 
@@ -406,6 +429,7 @@ window.addEventListener('message', function(e) {
           ref.invalidate(learningCoursesProvider);
         })
         .catchError((_) {});
+    _showMissionComplete();
     _maybeShowReflection();
     _maybeShowFeedback();
   }
@@ -464,7 +488,7 @@ window.addEventListener('message', function(e) {
       final cueId = cue['id'] as String? ?? '';
       final atSecs = (cue['atSeconds'] as num?)?.toDouble() ?? 0;
       if (_firedCueIds.contains(cueId)) continue;
-      if (secs >= atSecs && secs < atSecs + 2) {
+      if (secs >= atSecs) {
         _firedCueIds.add(cueId);
         _cueQuizActive = true;
         // An open cue quiz is already a modal interruption; stacking a
@@ -585,7 +609,8 @@ window.addEventListener('message', function(e) {
     // Only show if lesson has no end-of-video quiz AND wasn't already done
     if (p.hasQuiz || _wasAlreadyCompleted) return;
 
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    // Delay past the 2800ms Mission Complete overlay so they don't overlap.
+    Future.delayed(const Duration(milliseconds: 3200), () {
       if (!mounted) return;
       final strings = ref.read(uiStringsNotifierProvider).valueOrNull;
       if (strings == null || !mounted) return;
@@ -608,6 +633,7 @@ window.addEventListener('message', function(e) {
   }
 
   Future<void> _saveReflection(String text) async {
+    // Persist locally first so the save feels instant and works offline.
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(kPrefReflections) ?? '{}';
     final Map<String, dynamic> map;
@@ -623,6 +649,13 @@ window.addEventListener('message', function(e) {
       'lessonTitle': _playback?.title ?? '',
     };
     await prefs.setString(kPrefReflections, json.encode(map));
+
+    // Persist to backend fire-and-forget — local copy already saved above so
+    // a network failure does not affect the user-visible outcome.
+    ref
+        .read(coursesServiceProvider)
+        .saveReflection(widget.courseId, widget.lessonId, text)
+        .catchError((_) {});
   }
 
   // ── Speed persistence ─────────────────────────────────────────────────────────
@@ -644,19 +677,33 @@ window.addEventListener('message', function(e) {
     // of theme, which is the industry standard (YouTube / Netflix).
     return Scaffold(
       backgroundColor: context.tokens.bgPage,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            _buildPlayerArea(),
-            if (!_loading && _playback != null)
-              _buildControlsRow(),
-            if (!_loading && _playback != null) ...[
-              Divider(height: 1, thickness: 1, color: context.tokens.borderCard),
-              Expanded(child: _buildMetadata()),
-            ],
-          ],
-        ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(context),
+                _buildPlayerArea(),
+                if (!_loading && _playback != null)
+                  _buildControlsRow(),
+                if (!_loading && _playback != null) ...[
+                  Divider(height: 1, thickness: 1, color: context.tokens.borderCard),
+                  Expanded(child: _buildMetadata()),
+                ],
+              ],
+            ),
+          ),
+          if (_missionVisible)
+            Positioned.fill(
+              child: MissionCompleteOverlay(
+                title: _missionTitle,
+                xp: _missionXp,
+                onDismiss: () {
+                  if (mounted) setState(() => _missionVisible = false);
+                },
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -994,20 +1041,191 @@ window.addEventListener('message', function(e) {
             ),
           ),
           Divider(height: 1, color: context.tokens.borderCard),
-          ..._tasks.asMap().entries.map((e) => _buildTaskRow(e.key, e.value)),
+          ..._tasks.asMap().entries.map((e) => _EpisodeTaskItem(
+                key: ValueKey(e.value.id),
+                episodeId: widget.lessonId,
+                task: e.value,
+                index: e.key,
+                isLast: e.key == _tasks.length - 1,
+                onSubmitted: () async {
+                  final svc = ref.read(coursesServiceProvider);
+                  final updated = await svc.getEpisodeTasks(widget.lessonId);
+                  if (mounted) setState(() => _tasks = updated);
+                },
+              )),
         ],
       ),
     );
   }
 
-  Widget _buildTaskRow(int index, EpisodeTask t) {
+}
+
+// ── Episode Task Item ─────────────────────────────────────────────────────────
+
+class _EpisodeTaskItem extends ConsumerStatefulWidget {
+  const _EpisodeTaskItem({
+    super.key,
+    required this.episodeId,
+    required this.task,
+    required this.index,
+    required this.isLast,
+    required this.onSubmitted,
+  });
+
+  final String episodeId;
+  final EpisodeTask task;
+  final int index;
+  final bool isLast;
+  final VoidCallback onSubmitted;
+
+  @override
+  ConsumerState<_EpisodeTaskItem> createState() => _EpisodeTaskItemState();
+}
+
+class _EpisodeTaskItemState extends ConsumerState<_EpisodeTaskItem> {
+  final _textController = TextEditingController();
+  final _urlController = TextEditingController();
+  bool _uploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController.text = widget.task.submission?.responseValue ?? '';
+    _urlController.text = widget.task.submission?.proofUrl ?? '';
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  String get _proofType => widget.task.proofType ?? 'watch';
+  String? get _status => widget.task.submission?.status;
+  bool get _isEditable =>
+      _status == null ||
+      _status == 'pending' ||
+      _status == 'rejected' ||
+      _status == 'resubmission_required';
+
+  Future<void> _pickAndUpload() async {
+    final svc = ref.read(coursesServiceProvider);
+    final task = widget.task;
+
+    String filename;
+    String contentType;
+    List<int> bytes;
+
+    if (_proofType == 'image') {
+      final picked =
+          await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (picked == null) return;
+      filename = picked.name;
+      contentType = 'image/jpeg';
+      bytes = await picked.readAsBytes();
+    } else {
+      final result = await FilePicker.platform.pickFiles(allowMultiple: false);
+      if (result == null || result.files.isEmpty) return;
+      final f = result.files.single;
+      filename = f.name;
+      contentType = _guessContentType(filename);
+      bytes = f.bytes?.toList() ?? await f.xFile.readAsBytes();
+    }
+
+    setState(() => _uploading = true);
+    try {
+      final publicUrl = await svc.uploadEpisodeTaskProof(
+        widget.episodeId, task.id, filename, contentType, bytes,
+      );
+      await svc.submitEpisodeTask(
+        widget.episodeId, task.id,
+        proofUrl: publicUrl,
+        proofType: _proofType,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Task submitted'), backgroundColor: Colors.green),
+        );
+        widget.onSubmitted();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Upload failed — please try again'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _submitText() async {
+    final svc = ref.read(coursesServiceProvider);
+    final isText = _proofType == 'text';
+    final value = isText ? _textController.text.trim() : _urlController.text.trim();
+    if (value.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(isText ? 'Please describe what you did' : 'Please paste a URL'),
+      ));
+      return;
+    }
+    setState(() => _uploading = true);
+    try {
+      await svc.submitEpisodeTask(
+        widget.episodeId, widget.task.id,
+        responseValue: isText ? value : null,
+        proofUrl: isText ? null : value,
+        proofType: _proofType,
+      );
+      if (mounted) {
+        final msg = widget.task.completionMode == 'SELF_ASSESSMENT'
+            ? 'Task completed'
+            : 'Submitted for review';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.green),
+        );
+        widget.onSubmitted();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't submit — please try again"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  static String _guessContentType(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'zip' => 'application/zip',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final task = widget.task;
+    final isSelf = task.completionMode == 'SELF_ASSESSMENT';
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Index circle
               Container(
                 width: 24,
                 height: 24,
@@ -1017,7 +1235,7 @@ window.addEventListener('message', function(e) {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  '${index + 1}',
+                  '${widget.index + 1}',
                   style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
                 ),
               ),
@@ -1026,35 +1244,141 @@ window.addEventListener('message', function(e) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      t.title,
-                      style: TextStyle(color: context.tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3),
+                    // Title + status badge
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          task.title,
+                          style: TextStyle(color: tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, height: 1.3),
+                        ),
+                        if (_status == 'approved')
+                          _StatusChip(label: 'Completed', color: const Color(0xFF22c55e)),
+                        if (_status == 'pending' && !isSelf)
+                          _StatusChip(label: 'Pending Review', color: const Color(0xFFf59e0b)),
+                        if (_status == 'pending' && isSelf)
+                          _StatusChip(label: 'Uploaded', color: const Color(0xFF22c55e)),
+                        if (_status == 'rejected' || _status == 'resubmission_required')
+                          _StatusChip(label: 'Changes requested', color: const Color(0xFFef4444)),
+                      ],
                     ),
-                    if (t.description != null && t.description!.isNotEmpty) ...[
+                    // Description
+                    if (task.description != null && task.description!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        t.description!,
-                        style: TextStyle(color: context.tokens.textSecondary, fontSize: 12, height: 1.5),
-                      ),
+                      Text(task.description!, style: TextStyle(color: tokens.textSecondary, fontSize: 12, height: 1.5)),
                     ],
-                    if (t.deliverables != null && t.deliverables!.isNotEmpty) ...[
+                    // Deliverables
+                    if (task.deliverables != null && task.deliverables!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        'Deliverable: ${t.deliverables}',
-                        style: TextStyle(color: context.tokens.textSubtle, fontSize: 11, height: 1.4),
-                      ),
+                      Text('Deliverable: ${task.deliverables}', style: TextStyle(color: tokens.textSubtle, fontSize: 11, height: 1.4)),
                     ],
-                    if (t.estimatedMinutes != null) ...[
+                    // Feedback on rejection
+                    if ((_status == 'rejected' || _status == 'resubmission_required') &&
+                        task.submission?.feedback != null) ...[
                       const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(Icons.access_time_rounded, size: 11, color: context.tokens.textSubtle),
-                          const SizedBox(width: 3),
-                          Text(
-                            '~${t.estimatedMinutes} min',
-                            style: TextStyle(color: context.tokens.textSubtle, fontSize: 11),
+                      Text(
+                        '"${task.submission!.feedback}"',
+                        style: const TextStyle(color: Color(0xFFef4444), fontSize: 11, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                    // Chips row
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (task.estimatedMinutes != null)
+                          _MetaChip(
+                            icon: Icons.access_time_rounded,
+                            label: '~${task.estimatedMinutes} min',
+                            color: tokens.textSubtle,
                           ),
-                        ],
+                        if ((task.basePoints ?? 0) > 0)
+                          _MetaChip(
+                            icon: Icons.bolt_rounded,
+                            label: '${task.basePoints} pts',
+                            color: tokens.textSubtle,
+                          ),
+                        // Completion mode badge
+                        _ModeChip(isSelf: isSelf),
+                      ],
+                    ),
+                    // Submission UI
+                    if (_isEditable) ...[
+                      const SizedBox(height: 10),
+                      if (_proofType == 'text')
+                        TextField(
+                          controller: _textController,
+                          maxLines: 2,
+                          style: TextStyle(color: tokens.textPrimary, fontSize: 12),
+                          decoration: InputDecoration(
+                            hintText: 'Describe what you did…',
+                            hintStyle: TextStyle(color: tokens.textSubtle, fontSize: 12),
+                            filled: true,
+                            fillColor: tokens.bgPage,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                        ),
+                      if (_proofType == 'link' || _proofType == 'video')
+                        TextField(
+                          controller: _urlController,
+                          style: TextStyle(color: tokens.textPrimary, fontSize: 12),
+                          decoration: InputDecoration(
+                            hintText: _proofType == 'video' ? 'Paste your video URL…' : 'Paste your link URL…',
+                            hintStyle: TextStyle(color: tokens.textSubtle, fontSize: 12),
+                            filled: true,
+                            fillColor: tokens.bgPage,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: tokens.borderCard),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 34,
+                        child: ElevatedButton.icon(
+                          onPressed: _uploading
+                              ? null
+                              : (_proofType == 'image' || _proofType == 'file'
+                                  ? _pickAndUpload
+                                  : _submitText),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: _uploading
+                              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white))
+                              : Icon(
+                                  (_proofType == 'image' || _proofType == 'file')
+                                      ? Icons.upload_rounded
+                                      : Icons.check_rounded,
+                                  size: 14,
+                                ),
+                          label: Text(
+                            _uploading
+                                ? 'Uploading…'
+                                : _getButtonLabel(),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -1063,9 +1387,91 @@ window.addEventListener('message', function(e) {
             ],
           ),
         ),
-        if (t != _tasks.last)
-          Divider(height: 1, indent: 14, endIndent: 14, color: context.tokens.borderCard),
+        if (!widget.isLast)
+          Divider(height: 1, indent: 14, endIndent: 14, color: tokens.borderCard),
       ],
+    );
+  }
+
+  String _getButtonLabel() {
+    final isSelf = widget.task.completionMode == 'SELF_ASSESSMENT';
+    final hasSubmission = _status != null;
+    if (_proofType == 'image' || _proofType == 'file') {
+      if (hasSubmission) return isSelf ? 'Re-upload' : 'Re-upload & Resubmit';
+      return isSelf ? 'Upload & Complete' : 'Upload & Submit';
+    }
+    if (hasSubmission) return isSelf ? 'Update' : 'Resubmit';
+    return isSelf ? 'Mark Complete' : 'Submit for Review';
+  }
+}
+
+// ── Small reusable chips ──────────────────────────────────────────────────────
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.label, required this.color});
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: context.tokens.bgPage,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(color: color, fontSize: 10)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({required this.isSelf});
+  final bool isSelf;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isSelf ? const Color(0xFF818cf8) : const Color(0xFFf59e0b);
+    final bg = color.withValues(alpha: 0.15);
+    final label = isSelf ? 'Self Assessment' : 'Admin Review';
+    final icon = isSelf ? Icons.assignment_turned_in_outlined : Icons.rate_review_outlined;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+        ],
+      ),
     );
   }
 }

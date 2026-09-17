@@ -20,33 +20,40 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 **Non-TBT directories at repo root (ignore for TBT work):**
 - `form/` — standalone Next.js 16 app (port 3007) for an Office Assistant job application form. Separate Prisma schema, separate Vercel Blob storage. Not part of the TBT monorepo.
-- `co-worker/` — separate Flutter mobile app. Not part of the TBT monorepo.
+- `co-worker/` — separate Flutter app with its own Supabase backend (community/AI content). Completely unrelated to TBT; has its own `CLAUDE.md`, `pubspec.yaml`, and `FULL_MIGRATION.sql`.
 
-**NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.**
-
-`tbt-admin-safe/` is a backup snapshot directory — not a workspace, not a source of truth. Ignore it entirely.
+**NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.** (The legacy name still appears in a few root doc filenames — e.g. `EiFlix_PRD.md`, `EiFlix_Admin_PRD.md` — those are historical filenames only, not something to propagate into code.)
 
 **Repo-root screenshots & audit scripts are throwaway artifacts.** The repo root contains hundreds of `.png`/`.jpeg` screenshots and one-off `.mjs` audit/test scripts (`admin-full-audit.mjs`, `test-*.mjs`, `*-audit.mjs`, etc.) from prior manual QA runs. Do not commit them, do not treat them as canonical tests, and do not delete them without asking — they're the user's local debugging trail.
+
+**Tracked test suites at repo root (real, checked into git — not throwaway):**
+- `tests/` — k6 stress/spike/soak/scalability load tests, Node-based vulnerability/crash tests, and a disaster-recovery runbook. See `tests/README.md` for prerequisites and per-test env vars (`BASE_URL`, `ADMIN_TOKEN`, `USER_TOKEN`).
+- `load-test/` — additional k6 scenarios (`load-test/scenarios/`) plus PowerShell runners (`run.ps1`, `start-test.ps1`).
+- `e2e/ads.spec.ts` — Playwright e2e spec for the ad system, run via `npm run e2e:ads` from repo root.
 
 **Additional spec docs** — always read the relevant speckit before touching its module to avoid re-litigating decisions:
 
 | Speckit | Location | Scope / Status |
 |---|---|---|
-| `SPECKIT.md` | `tbt-admin/` | Workflow-audit P0–P3 fix list for Members · Batches · Tasks |
 | `SELF_ONBOARDING_SPECKIT.md` | repo root | Self-onboarding KYC wizard — **in progress 2026-08-18**; covers `onboarding`/`onboarding-meetings` modules, `verificationStatus`, `onboardingCompleted` |
 | `WEEKLY_CHECKLIST_SPECKIT.md` | repo root | Weekly rollup layer on top of batch program (required/optional tasks, per-week analytics, FCM push registration) — **implemented and committed** |
 | `TBT_ADS_SPECKIT.md` | repo root | Ad campaign system spec for Flutter mobile client — check before adding mobile ad features |
 | `COURSE_UX_SPECKIT.md` | repo root | Course UX & wiring fixes C-01–C-12 (heartbeat bug, URL sync, Practice Arena, catalog filters, reflections backend, etc.) — **complete 2026-08-25** |
 | `COURSE_SECTIONS_SPECKIT.md` | repo root | Course sections (chapters) feature — two-level course structure (Section → Episode), backward-compat with existing flat episodes, collapsible accordion in lesson sidebar — **complete 2026-08-29** |
+| `COURSE_MODULES_SPECKIT.md` | repo root | Course-level module categorisation (Product / Service / Coach) replacing the old episode-level module tagging; `/courses` catalog tabs filter by module — **complete 2026-09-10** |
 | `ONBOARDING_SPECKIT.md` | `tbt_app/` | 14 Flutter-side onboarding fixes (Sprint 1 in progress) |
 | `CHAT_GROUP_SPECKIT.md` | `tbt_app/` | Flutter chat group WhatsApp-parity roadmap F-01–F-22 — Sprints 1+2 committed, Sprint 3 in progress (F-05/06/11/12/15), Sprint 6 done uncommitted (F-17/18/19/21) |
-| `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port from co-worker app |
+| `HOME_PAGE_SPECKIT.md` | `tbt_app/` | Flutter home page port |
 | `WINS_SPECKIT.md` | `tbt_app/` | Flutter WINS leaderboard / gamification screen |
 | `PODCAST_SPECKIT.md` | `tbt_app/` | Flutter podcast feature port |
 | `COMMUNITY_SPECKIT.md` | `tbt_app/` | Flutter community feed v1 |
 | `COMMUNITY_FEED_V2_SPECKIT.md` | `tbt_app/` | Social-media-grade community overhaul (30 items, ~5–7 dev days) |
 | `EBOOK_SPECKIT.md` | `tbt_app/` | Ebook feature gap-fix plan (2026-08-01 audit findings) |
 | `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
+| `COURSE_BUG_FIXES_SPECKIT.md` | repo root | 15 confirmed bugs (C-F-1–C-F-15) across web + mobile course features — discovered 2026-09-01 static audit; **in progress** |
+| `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **complete and committed** |
+| `SOCKET_EVENTS.md` | `tbt-admin/` | Full Socket.IO event reference (event name, room, emitter, receiver, trigger, payload) — check before adding or renaming a socket event |
+| `LIVE_CALL_FEATURES_SPEC.md` | `tbt-admin/` | Workshop live-call feature spec — additive-only implementation groups ordered by risk |
 
 **`WORKSHOP_BUG_REPORT.md` (repo root)** — 6 bugs found in a 2026-08-21 static audit of the workshop module (BUG-WS-001 through BUG-WS-006); all 6 resolved in commit `cccdf538`. Read before touching workshop-related code.
 
@@ -74,8 +81,8 @@ npm run seed:gamified -w backend   # Seed XP/gamification data
 npm run seed:tasks -w backend      # Seed task/initiative sample data
 npm run seed:batches -w backend    # Seed batch sample data
 
-# Tests (Vitest — narrowly scoped to two pure modules; no DB/network)
-npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/batchReportLogic.test.ts
+# Tests (Vitest — narrowly scoped to pure, DB-free modules; no DB/network)
+npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/{batchReportLogic,onboardingLogic,onboardingMeetingLogic,weekChecklistLogic,chatMessageActionRules,lessonProgression}.test.ts
 # DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
 
 # Run a single test file (from tbt-admin/)
@@ -132,15 +139,11 @@ flutter analyze               # Static analysis (analysis_options.yaml)
 
 Stack: Flutter SDK ^3.7.2, Riverpod state, go_router navigation, Dio HTTP client, Hive local storage, `flutter_secure_storage` for JWT tokens. Reuses the same Fastify `/api/user-auth/*` endpoints as `tbt-user-web` — cookie/token auth patterns mirror the web client.
 
-### Visual Regression (Percy + Playwright — from repo root)
+### Playwright E2E — Ads (from repo root)
 
-`playwright.config.ts` at the repo root is a **Percy visual-regression setup**, not an e2e suite. It runs snapshot specs in `percy/` (`debug-screenshots.spec.ts`, `player-visual.spec.ts`) against `PERCY_BASE_URL` (defaults to production `https://app.tamilbusinesstribe.com`). Single-worker chromium project only; not part of CI gating.
+`playwright.config.ts` at the repo root (`testDir: "./e2e"`) drives `e2e/ads.spec.ts` (also run via `npm run e2e:ads`) against a real running `tbt-user-web` instance — `TBT_E2E_BASE_URL` (defaults `http://localhost:3001`). These are environment-gated, not mocked (an ad overlay is a portal + media element + scroll lock + countdown interaction that a mock would falsely pass): they need a running backend, a signed-in member session (`TBT_E2E_PHONE`/`TBT_E2E_PASSWORD` or `TBT_E2E_STORAGE_STATE`), and an ACTIVE ad campaign the member will actually be selected for — otherwise the suite skips loudly rather than reporting a false red. See `TBT_ADS_SPECKIT.md` §15. Single-worker, desktop + mobile (Pixel 7) projects; not part of CI gating.
 
-```powershell
-# Run Percy snapshots (from repo root)
-.\run-percy.ps1                       # Wrapper script
-npx playwright test --config=playwright.config.ts    # Direct invocation
-```
+Root `package.json` also declares `percy:player`/`percy:all` scripts (`percy exec -- playwright test percy/...`) for Percy visual-regression snapshots, but the `percy/` spec directory they target is not present in this checkout — treat those scripts as dormant until that directory is restored.
 
 ## Architecture
 
@@ -154,6 +157,7 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 **User web auth (custom JWT cookies):**
 - `@clerk/nextjs` IS installed in user-web, but only for: the `app/(auth)/` Clerk-hosted route group and middleware auth-state detection. The main `/login` page and all backend API calls use custom JWT cookies — never Clerk JWTs or bearer tokens.
 - `POST /api/user-auth/login` → phone + password → bcrypt check → OTP sent via WhatsApp (WABA) or SMS (MSG91) → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
+- **Single active session per member** — `verifyOtp` and `setPassword` both call `revokeAllForMember(redis, memberId)` before `issueTokens`. This wipes every existing `refresh:*` and `refresh_grace:*` key for that member from Redis, so logging in on a second device terminates the first device's session on its next refresh (≤15-min JWT window). `revokeAllForMember` is also called by `DELETE /api/user-auth/sessions` and the admin session-kill endpoint. Fails silently on Redis outage (safe to fail open).
 - Full user-auth route list: `POST /signup`, `POST /login`, `POST /forgot-password`, `POST /verify-otp`, `POST /set-password`, `POST /resend-otp`, `POST /refresh`, `POST /logout`, `DELETE /sessions` (revoke all sessions, requires `authenticateUser`), `GET /me` (requires `authenticateUser`), `GET /whatsapp-diagnostic` (CRON_SECRET header — support engineers only, no Clerk/member auth). Dev-only: `GET /dev-otp/:phone`.
 - **OTP rate limits** — 60-second cooldown between sends to the same phone; 5 OTPs/hour cap per phone (both enforced in `backend/src/lib/otp.ts`). **Fails open on Redis errors** — a wedged Upstash must not lock users out. OTPs are also mirrored to an in-process `Map` as a resilience fallback (Upstash has intermittent ETIMEDOUT spikes in Cloud Run). The same Cloud Run instance that stored the OTP is likely to serve verify-otp (30-60 s later); if a cold-start routes the request to a new instance, the user taps Resend.
 - Axios client has `withCredentials: true`; cookies are sent automatically on every request
@@ -167,23 +171,25 @@ npx playwright test --config=playwright.config.ts    # Direct invocation
 - **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins skip gracefully if env vars are missing.
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` + `schema.ts` pattern
 - **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
-- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:157–193` for the full ordered list. Non-obvious prefixes:
+- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:166–208` for the full ordered list. Non-obvious prefixes:
   - `hero` → `/api/hero-slides`
   - `security` → `/api/security-logs`
   - **`gamification` → `/api/tbt`** (not `/api/gamification`) — leaderboards, points, level/tier/badge reads
   - `webinar` → `/api/webinars`
   - `messages` (DM) is separate from `chat-groups` (group chat)
+  - `support-entitlements` → `/api/support-entitlements` (Clerk-protected; plan entitlement definitions + usage log)
+  - `credits` → `/api/credits` (Clerk-protected admin routes; user routes live under `/api/user/credits/*` and `/api/user/support-quota` in the `user` module)
 - **`user` module** (`backend/src/modules/user/`) — monolithic handler for ALL user-facing authenticated API routes at `/api/user/*`. Covers courses (user-facing), events, webinars, workshops, notifications, messages, dashboard, products, resources, conversations, search, programs, and profile. When adding new user-web backend routes, handlers go in `user/controller.ts` and the route in `user/routes.ts`.
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
-- **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `onboarding`, `onboarding-meetings`, `podcasts`, `products`, `pub`, `rituals`, `security`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `webinar`, `workshops`
+- **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `credits`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `onboarding`, `onboarding-meetings`, `podcasts`, `products`, `pub`, `rituals`, `security`, `support-entitlements`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `video-feedback`, `webinar`, `workshops`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
 - **Cron endpoints** — `/api/workshops/cron/generate-recurring`, `/api/cron/course-expiry-reminder`, `/api/cron/weekly-report`, and `/api/cron/monthly-report` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
 - **Public certificate verification** — `GET /api/pub/certificates/course/:certId` is unauthenticated; returns `{ memberName, courseTitle, completedAt }`. Served by the `pub` module and consumed by `app/verify/course/[certId]/page.tsx` (Server Component, `revalidate: 3600`).
 
 ### Frontend Structure (Admin Panel)
 - **API client:** `admin-panel/lib/api/apiClient.ts` — Axios pointing to `NEXT_PUBLIC_API_URL`. Response interceptor unwraps `response.data`, so hooks receive `{ success, data, meta, error }` directly. Access lists as `data?.data || []`, total as `data?.meta?.total`.
-- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (202+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`, `useBatchDayAnalytics`. Ads admin hooks: `useListAdCampaigns`, `useGetAdCampaign`, `useCreateAdCampaign`, `useUpdateAdCampaign`, `useUpdateAdCampaignStatus`, `useDuplicateAdCampaign`, `useDeleteAdCampaign`, `useAdCampaignAnalytics`, `useAdAnalyticsOverview`.
+- **TBT hooks:** `admin-panel/lib/hooks/useTbt.ts` — all TanStack Query hooks (202+ exports). Add new hooks to the bottom. Includes analytics hooks: `useAnalyticsOverview`, `useAtRiskMembers`, `useMemberWatchAnalytics` (used by `/analytics` page), live-call hooks (`useLiveCallAnalytics`, `useGetBreakoutRooms`, etc.), community/batch/tier/badge/notification/product/resource hooks, and 21 course-platform hooks (see Course Platform section below). Batch admin hooks: `useGetBatch`, `useListBatchDays`, `useUpsertBatchDay`, `useGetBatchProgress`, `useGetMemberProgress`, `useUpsertMemberProgress`, `useApproveBatchDay`, `useRejectBatchDay`, `useBulkApproveBatchDays`, `useGetBatchPending`, `useGetBatchBreaks`, `useApproveBreak`, `useRejectBreak`, `useGetBatchMemberAttendance`, `useUpsertBatchAttendance`, `useUpsertMemberBatchSettings`, `useBatchDayAnalytics`. Ads admin hooks: `useListAdCampaigns`, `useGetAdCampaign`, `useCreateAdCampaign`, `useUpdateAdCampaign`, `useUpdateAdCampaignStatus`, `useDuplicateAdCampaign`, `useDeleteAdCampaign`, `useAdCampaignAnalytics`, `useAdAnalyticsOverview`. Plan entitlement hooks (MG-01): `useGetPlanEntitlements`, `useUpdatePlanEntitlement`, `useListSupportUsage`, `useRecordSupportUsage`, `useDeleteSupportUsage`. Process task hooks (MG-03): `useListBatchProcesses`, `useCreateBatchProcess`, `useUpdateBatchProcess`, `useDeleteBatchProcess`, `useReorderBatchProcessStages`. Credit purchase hooks (MG-05): `useListCreditPurchases`, `useListPendingCreditPurchases`, `useApproveCreditPurchase`, `useRejectCreditPurchase`, `useGetCreditPricing`, `useUpdateCreditPricing`.
 - **Admin hooks:** `admin-panel/lib/hooks/useAdmin.ts` — admins, `useGetPresignedUrl` (R2 presigned uploads), `useUploadImage` (direct buffer upload ≤100 MB), `useCreateBunnyVideo` (`POST /api/upload/bunny-video-create`), `useDeleteBunnyVideo` (`DELETE /api/upload/bunny-video/:videoId`)
 - **Members hooks:** `admin-panel/lib/hooks/useMembers.ts` — `useGetMember`, `useListMembers` (accepts `status` filter), `useCreateMember`, `useApproveMember` (`POST /api/members/:id/approve`)
 - **Tasks hooks:** `admin-panel/lib/hooks/useTasks.ts` — `useCreateTaskInitiative`, `useListTasks`, `useUpdateTask`, `useDeleteTask`, `useListBatchTasks`, `useCreateBatchTask`, `useUpdateBatchTask`, `useDeleteBatchTask`, `useReorderBatchTasks`, `useMigrateJsonTasks`, `useGetBatchSubmissions`, `useReviewTaskSubmission`, `useGetAllBatchTasks` (`GET /api/batches/:id/all-tasks` — program tasks + batch-inline tasks combined)
@@ -284,8 +290,8 @@ Additional semantic tokens from `globals.css` (not API-injected — safe to use 
 ### Hook Files
 - `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
-- `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`
-- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`), `useRequestBreak` (POST `/api/user-batch/break`), `useSpendCoins` (POST `/api/user-batch/spend-coins` — lifeline purchases; invalidates `["user","me"]` query key), `useDownloadBatchCertificate` (GET `/api/user-batch/certificate` — returns PDF blob, triggers browser download)
+- `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`, `useUserSupportQuota` (GET `/api/user/support-quota` — MG-01; returns `{ techSupport, adSupport, groupCall, callCredits, oneToOne }` with `allocated/used/remaining` per type), `useCreditPricing` (GET `/api/user/credits/pricing`), `usePurchaseCredit` (POST `/api/user/credits/purchase` — MG-05), `useMyCreditPurchases` (GET `/api/user/credits/purchases`)
+- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks + `lifelinesTotal/Used/Remaining`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`), `useRequestBreak` (POST `/api/user-batch/break`), `useSpendCoins` (POST `/api/user-batch/spend-coins` — coin-based lifeline purchases; invalidates `["user","me"]` query key), `useUseProgramLifeline` (POST `/api/user-batch/lifeline/use` — MG-02 program-wide lifeline deduction; returns `{ lifelinesRemaining, lifelinesTotal, lifelinesUsed }`), `useDownloadBatchCertificate` (GET `/api/user-batch/certificate` — returns PDF blob, triggers browser download)
 - `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`, `useCourseCategories` (GET `/api/user/courses/categories`), `useReflections(courseId)` (GET reflections from backend), `useSaveReflection(courseId)` (POST reflection to backend — backs the `ReflectionModal`); backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
 - `lib/hooks/useAds.ts` — ad display logic: `useAdEngine` (fetches eligible ad, tracks impression/click/skip/close/complete). Backed by `lib/api/services/ads.service.ts`. Ad triggers live in `lib/ads/adTriggers.ts`; media pre-loading in `lib/ads/mediaRegistry.ts`; per-session frequency cap in `lib/ads/session.ts`; event batching in `lib/ads/trackingQueue.ts`.
@@ -536,6 +542,9 @@ Admin-managed ad campaigns served to members and guests. Admin page: `admin-pane
 ### AI Content (`/api/ai`)
 Admin-only AI content generation. Admin page: `admin-panel/app/ai-content/`. Backend uses `claudeService.ts` + `usageGuard.ts` (per-admin usage rate limiting). Uses `claude-haiku-4-5` via Anthropic API (requires `ANTHROPIC_API_KEY`).
 
+### Video Feedback (`/api/video-feedback`)
+Post-video rating/yes-no questions attached to a course episode (`episodeType` defaults to `"course"`; raw SQL tables `video_feedback_questions` / `video_feedback_responses`, no Prisma model). Admin CRUD + response aggregation lives at `/api/video-feedback/admin/*`, embedded in the episode editor in `admin-panel/app/courses/page.tsx` (hooks: `useVideoFeedbackQuestions`, `useCreateVideoFeedbackQuestion`, `useUpdateVideoFeedbackQuestion`, `useDeleteVideoFeedbackQuestion`, `useReorderVideoFeedbackQuestions`, `useVideoFeedbackResponses` in `useTbt.ts`). Member-facing routes are unauthenticated-by-episode reads gated by `fastify.authenticateUser`; `tbt-user-web/lib/hooks/useVideoFeedback.ts` backs `FeedbackModal` (`components/features/video/FeedbackModal.tsx`), shown from the course player in `learning/[courseId]/page.tsx`.
+
 ### Gamification (`/api/tbt` — NOT `/api/gamification`)
 Points ledger, tiers, levels, badges, leaderboards. All member points now unify around the `tbt_activity_log` ledger table (see commit `8d349739`). The DDL for `tbt_activity_log` in `prisma.ts` must be split into per-statement `$executeRawUnsafe` calls (see `91d46316` for why a single multi-statement call fails).
 
@@ -558,7 +567,14 @@ Shared lookup data (categories, tags, dropdown options). Controller + routes onl
   - Unique constraint: `(memberId, courseId)`
 - **`CoursePayment`** — payment ledger record. `method`: `"manual" | "razorpay" | "bank_transfer" | "upi" | "free" | "external"`. Approved by admin via `POST /api/courses/:id/payments/:paymentId/approve`.
 - **`MemberXP`** — XP ledger. `source`: `"episode_complete" | "quiz_pass"`. Amount comes from `course.xpPerEpisode`.
+- **`tbt_activity_log` sources** — valid `source` values: `"episode_complete"`, `"quiz_pass"`, `"batch_day"` (one row per approved batch day, `reference_id = batchDayId`, `activity_date` = submission date not approval date), `"task_submission"` (one row per approved task submission, `reference_id = submissionId`). Ledger rows are idempotent via a conflict index on `(member_id, reference_id, source)` — safe to insert twice. New sources must be added to `syncLegacyPointsToLedger` in `tbtStats.ts` or historical data will not backfill.
 - **`CourseBadge`** — manually awardable badge per course. Admin awards via `POST /api/courses/:id/badges/:badgeId/award`.
+
+### Sequential Lesson Unlock (added 2026-07-16 — real Prisma columns, not a raw-SQL ALTER)
+`Course.requireSequential` (`Boolean @default(true)`) + `Course.completionThresholdPercent` (`Int @default(95)`) gate every course's lesson order. The single source of truth is the pure function `computeLessonLockStates` in `backend/src/lib/lessonProgression.ts` — every consumer (course-detail response, the progress-POST guard, admin analytics) routes through it so the "locked" verdict can't drift between call sites. Rules: order comes from `episode.order` ascending; a lesson is completed once watched-seconds crosses `completionThresholdPercent` of its duration (or the legacy `isCompleted` flag, for pre-migration data with no duration); lesson 1 is always unlocked; every other lesson is locked until every strictly-earlier lesson is completed. When `requireSequential=false`, everything is unlocked.
+- **Server-enforced, not just UI**: the user-facing course-detail response (`user/controller.ts` around the `courseEpisodes.map` in `getCourseDetailHandler`) strips `videoUrl`/`hlsUrl`/`quizData` to `null` for locked episodes — a modified client gets no playable URL to intercept. `markLessonCompleteHandler` independently re-checks `isEpisodeUnlocked` before writing progress and 403s a write to a locked episode.
+- **Admin toggle**: `admin-panel/app/courses/page.tsx` course form exposes both fields (checkbox + threshold input, disabled when unchecked).
+- **Frontend** (`tbt-user-web/app/(platform)/learning/[courseId]/page.tsx`): each lesson in `course.lessons[]` carries a server-computed `locked: boolean`. Clicking a locked lesson (list item, Next-button, or `?lesson=` deep link) shows a `toast.error(..., { id: "lesson-locked" })` — the fixed toast id de-dupes repeated clicks instead of stacking. Do NOT use the HTML `disabled` attribute to block a locked lesson's button — a disabled button never fires `onClick`, so the click can't reach the toast; only guard on `!lesson.videoUrl` (a genuine dead end). Completing a lesson only ever shows an "up next" banner (`upNextVisible`) with a manual "Play →" button — there is intentionally **no** auto-advance/auto-play countdown to the next lesson (removed; see `triggerUpNextRef`). Unit tests for the pure lock logic live in `backend/src/lib/lessonProgression.test.ts`.
 
 ### Extended Fields (via startup `ALTER TABLE`)
 ```
@@ -593,9 +609,13 @@ app_resources:
 site_configs:
   login_bg_images JSONB        -- array of background image URLs for login page
   hidden_menu_keys JSONB       -- array of menu key strings to hide (managed via /settings/navigation)
+  early_completion_bonus_xp INT DEFAULT 5  -- MG-04: XP bonus for finishing before focus timer expires
 
 member_episode_progress:
   watched_segments TEXT        -- serialized segment ranges for DRM tracking
+  timer_started_at TIMESTAMPTZ -- MG-04: when the focus timer started for this episode
+  timer_seconds INT            -- MG-04: duration that was active
+  completed_early BOOLEAN      -- MG-04: true if completed before timer expired
 
 tasks:
   timer_seconds INT            -- per-task focus timer (null = use global taskTimerSeconds from site config)
@@ -701,6 +721,11 @@ PUT /api/courses/episodes/:eid/tasks/reorder
 35. **`(req as any).admin` does not exist in admin controllers** — `fastify.authenticate` (Clerk) sets `request.user` (Clerk subject string), never `request.admin`. Writing `(req as any).admin?.id` will always be `undefined`. To get the admin's DB record: `const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user } })`.
 36. **`live:*` socket rooms are webinar-only** — Members join `live:{id}` only by emitting `join:live` in the webinar player. Workshop live-call events must be emitted to individual `user:{memberId}` rooms (not `live:{liveCallId}`). Emitting to `live:*` from a workshop context drops silently because no workshop participant ever joins that room.
 37. **`useSpendCoins` query key must be `["user", "me"]`** — the mutation invalidates `["user","me"]` so the coin balance in `useMe()` refreshes after a lifeline purchase. Using `['me']` (the old key) causes the balance to stay stale in the UI until the next full page load.
+38. **MG feature raw SQL tables (no Prisma models)** — `plan_entitlements`, `support_usage`, `credit_purchases`, `credit_pricing`, `task_processes` are created entirely via `$executeRawUnsafe` in `prisma.ts`. All reads/writes must use `$queryRawUnsafe`/`$executeRawUnsafe`. Never attempt Prisma model accessors on these tables.
+39. **MG-02 program-wide lifelines** — `member_batch_settings.lifelines_total` (default 3) and `lifelines_used` are raw SQL columns. `useMyBatchProgram` response now includes `lifelinesTotal`, `lifelinesUsed`, `lifelinesRemaining`. Use `useUseProgramLifeline()` to deduct a program-wide lifeline (batch/episode context). `useSpendCoins` handles the separate coin-payment path for additional lifelines.
+40. **MG-03 `task_processes` and stage locking** — tasks with `process_id` set are process stages. `stage_position = 1` is always unlocked; stage N requires an approved `task_submissions` row for stage N-1. Batch day response includes a `processes` array with `stageLocked` per task. Admin routes: `GET/POST /api/batches/:id/processes`, `PUT/DELETE /api/batches/processes/:pid`, `PUT /api/batches/processes/:pid/reorder`.
+41. **MG-04 early completion bonus** — `useMarkLessonComplete` now accepts optional `timerStartedAt: number` (epoch ms) and `timerSeconds: number`. When the elapsed time is less than `timerSeconds`, the backend awards `site_configs.early_completion_bonus_xp` (default 5) bonus XP and returns `{ bonusXpAwarded, completedEarly }`. New raw SQL columns on `member_episode_progress`: `timer_started_at`, `timer_seconds`, `completed_early`.
+42. **MG-05 credit purchase flow** — member requests `POST /api/user/credits/purchase` (`creditType`, optional `paymentRef`). Admin reviews at `/credits` page (Pending tab). On approve: `lifeline` type increments `member_batch_settings.lifelines_total`; support types insert into `support_usage`. Socket events: `admin:credit_purchase` → `'admin'` room on new request; `credit_approved`/`credit_rejected` → `user:{memberId}` on decision. `credit_pricing` table is editable in admin Pricing tab.
 
 ## Socket Events
 
@@ -711,8 +736,8 @@ Socket.IO rooms and the events each room receives:
 
 | Room | Events emitted |
 |---|---|
-| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`), `admin:helpdesk_ticket` (new ticket/reply — alarm starts), `admin:helpdesk_ticket_acknowledged` (`{ ticketId, acknowledgedBy, acknowledgedAt }` — alarm stops for that ticket only), `admin:helpdesk_ticket_escalated` (unacknowledged past `escalationMinutes`), `admin:helpdesk_ticket_updated` (assign/status/priority — list refresh only) |
-| `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`), `course:access_granted` (`{ courseId }`) |
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`), `admin:helpdesk_ticket` (new ticket/reply — alarm starts), `admin:helpdesk_ticket_acknowledged` (`{ ticketId, acknowledgedBy, acknowledgedAt }` — alarm stops for that ticket only), `admin:helpdesk_ticket_escalated` (unacknowledged past `escalationMinutes`), `admin:helpdesk_ticket_updated` (assign/status/priority — list refresh only), `admin:credit_purchase` (`{ memberId, creditType, quantity, amountInr, purchaseId }` — MG-05), `admin:course_weekly_feedback` (`{ feedbackId, memberName, courseId }`) |
+| `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`), `batch:stage_unlocked` (`{ processTitle, nextStageTitle }` — MG-03), `course:access_granted` (`{ courseId }`), `credit_approved` (`{ creditType, quantity }` — MG-05), `credit_rejected` (MG-05) |
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
 | `conversation:{id}` | `chat:message`, `chat:typing`, `chat:conversation_closed`, `chat:conversation_reopened` |
@@ -755,15 +780,15 @@ Optional vars (plugins skip gracefully if absent): `UPSTASH_REDIS_*`, `BUNNY_STR
 
 ## Deployment
 
-Two separate Cloud Run services, two separate branches:
+Two separate Cloud Run services per app (backend and user-web), two separate branches:
 
-| Branch | Backend service | Notes |
-|---|---|---|
-| `main` | `tbt-backend-staging` | Staging backend; auto-deploy when `tbt-admin/backend/**` changes |
-| `production` | `tbt-backend` | Production backend (`--min-instances=1`); auto-deploy when `tbt-admin/backend/**` changes |
+| Branch | Backend service | User-web service | Notes |
+|---|---|---|---|
+| `main` | `tbt-backend-staging` | `tbt-user-web-staging` | Staging; auto-deploy on push when the respective `tbt-admin/backend/**` / `tbt-user-web/**` paths change |
+| `production` | `tbt-backend` | `tbt-user-web` (`--min-instances=1`) | Production; auto-deploy on push to `production` |
 
-- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service.
-- **User Web → Vercel** — separate project; custom domain `https://app.tamilbusinesstribe.com`
+- **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service. Still the only TBT frontend on Vercel.
+- **User Web → Google Cloud Run** (migrated off Vercel 2026-09-10) — custom domain `https://app.tamilbusinesstribe.com` now fronts the Cloud Run service. Built via `tbt-user-web/Dockerfile` (multi-stage Node 24 Alpine, Next.js `output: "standalone"`) deployed with `gcloud run deploy --source tbt-user-web`. CI jobs: `build-user-web` (typecheck + path-filter gate) → `deploy-user-web-staging` / `deploy-user-web-production` in `.github/workflows/ci-cd.yml`.
 - **To promote staging → production:** `git push origin main:production`
 - **`prisma db push`** runs against `PROD_DATABASE_URL` in **both** CI jobs (staging and production) — so the production DB schema always tracks `main` even before a production backend deploy.
 - CORS: `USER_WEB_URL` + `ADMIN_WEB_URL` + `CORS_EXTRA_ORIGINS` (comma-separated). Adding a new domain → add to `CORS_EXTRA_ORIGINS` in ci-cd.yml `--set-env-vars`.
@@ -772,11 +797,11 @@ Two separate Cloud Run services, two separate branches:
 
 ## PRD Implementation Status
 
-### Admin PRD (`TBT_Admin_PRD.md`) — All 18 sections ✅ Complete + Security Logs + Course Platform
+### Admin PRD (`EiFlix_Admin_PRD.md`, repo root) — All 18 sections ✅ Complete + Security Logs + Course Platform
 See `tbt-admin/PROJECT_STATUS.md` for section-by-section detail.
 See `tbt-admin/ARCHITECTURE.md` for full directory/route/hook/DB map.
 
-### User Web PRD (`TBT_PRD.md` / `TBT_PRD_Dynamic.md`) — All sections ✅ Complete
+### User Web PRD (`EiFlix_PRD.md` / `EiFlix_PRD_Dynamic.md`, repo root) — All sections ✅ Complete
 Sections 1–12 implemented in `tbt-user-web/`. Includes: marketing landing, platform dashboard, TBT (content catalog), workshops (detail + flow + Q&A + assignments + live calls), products, resources, notifications, messages, profile, full-screen + embedded video player.
 
 ### Course Platform (`TBT_Course_Platform_Spec.md`) — ✅ Complete (2026-06-24)
@@ -800,3 +825,8 @@ Backend `onboarding` and `onboarding-meetings` modules merged. Frontend wizard (
 - **Helpdesk improvements** — priority field, preferred contact, member replies in ticket chat, multi-attachment support.
 - **No auto-logout** — sessions persist until manual sign-out on web and mobile
 - **Batch reports** — weekly/monthly WhatsApp progress reports for batch members. Backend: pure logic in `backend/src/lib/batchReportLogic.ts` (28 unit tests); orchestration in `batchReports.ts`; BullMQ cron queue `tbt-batch-reports` (weekly Sun 21:30 IST = `0 16 * * 0` UTC; monthly fires daily at `30 15 * * *` UTC and no-ops on non-last days). Admin Clerk routes: `GET /api/batches/reports/history`, `GET /api/batches/reports/preview`, `POST /api/batches/reports/send-test`. Admin hooks in `useTbt.ts`: `useReportDeliveryHistory`, `usePreviewBatchReport`, `useSendTestBatchReport`. Admin page: `admin-panel/app/batch-reports/`. Optional env vars: `WABA_WEEKLY_REPORT_TEMPLATE_NAME`, `WABA_MONTHLY_REPORT_TEMPLATE_NAME` (both optional; falls back to plain-text WhatsApp message). `WhatsappMessage` Prisma model gained four startup-ALTER columns: `reportType`, `reportPeriod`, `providerMessageId`, `failureReason`.
+- **Mentorship gamification (MG-01–MG-05)** — plan entitlement system (`/api/support-entitlements`, admin page `/settings/entitlements`), program-wide lifeline ledger (`member_batch_settings.lifelines_total/used`, `POST /api/user-batch/lifeline/use`), multi-stage process tasks (`task_processes` table, `/api/batches/:id/processes`), early completion bonus XP (`site_configs.early_completion_bonus_xp`), buy extra support credits (`/api/credits`, admin page `/credits`, user profile "Your Mentorship Benefits" section). See `MENTORSHIP_GAMIFICATION_SPECKIT.md`.
+- **Course modules (Product / Service / Coach)** — course-level categorisation replacing the earlier episode-level module tagging; `/courses` catalog tabs filter by module, only showing tabs with ≥1 published course. See `COURSE_MODULES_SPECKIT.md`.
+- **User-web moved from Vercel to Google Cloud Run (2026-09-10)** — see Deployment section.
+- **Video feedback** — post-episode rating/yes-no questions module (`/api/video-feedback`). See Video Feedback section above.
+- **Weekly course reports** — sibling to Batch reports, but for the VOD Course Platform (`CourseEnrollment`/`CourseEpisode`, not the Batch day-task program) and two-directional: admin → member weekly progress report AND member → admin weekly feedback, both over WhatsApp, continuing every week until `CourseEnrollment.completedAt` is set. New Prisma models `CourseWeeklyReport` / `CourseWeeklyFeedback` (`@@unique([memberId, courseId, weekNumber])`, WhatsApp delivery status stored inline). Backend: pure logic in `backend/src/lib/courseReportLogic.ts` (unit-tested); orchestration in `courseReports.ts` (`generateMemberCourseReport`, `deliverMemberCourseReport` — same function used by both the cron and the admin manual-send endpoint, `runWeeklyCourseReports`, `deliverMemberFeedbackToAdmin`); BullMQ cron queue `tbt-course-reports` (weekly Sun 20:30 IST = `0 15 * * 0` UTC, offset from `tbt-batch-reports` to avoid contention); HTTP fallback `POST /api/cron/weekly-course-report`. Module `backend/src/modules/course-reports/` follows the Helpdesk two-subscope pattern: `/api/course-reports/admin/*` (Clerk) for admin list/filter/send/remarks/feedback-status, `/api/course-reports/*` (JWT cookie, `req.memberId`-scoped) for the member's own current report, report history, feedback submission (upsert by member+course+week), and feedback history. Admin page: `admin-panel/app/course-weekly-reports/` (Reports + Feedback tabs). Admin hooks in `useTbt.ts`: `useListCourseWeeklyReports`, `useCreateOrSendCourseReport`, `useUpdateCourseReportRemarks`, `useListCourseWeeklyFeedback`, `useUpdateCourseFeedbackStatus`. User-web: `tbt-user-web/lib/hooks/useCourseReports.ts` + `lib/api/services/courseReports.service.ts`, surfaced at `/learning/[courseId]/weekly` (linked from the course detail page). Optional env var: `ADMIN_WHATSAPP_NUMBER` (member → admin feedback WhatsApp destination; if unset, feedback still saves + raises an in-app `admin_notifications`/`admin:course_weekly_feedback` socket alert, just isn't WhatsApp'd). Socket event `admin:course_weekly_feedback` added to the `'admin'` room table below; `resolveNotificationRoute` routes it to `/course-weekly-reports?tab=feedback&open=<id>`.

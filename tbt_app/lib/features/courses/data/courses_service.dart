@@ -33,6 +33,33 @@ class EpisodeResource {
       );
 }
 
+class EpisodeTaskSubmission {
+  const EpisodeTaskSubmission({
+    required this.id,
+    required this.status,
+    this.feedback,
+    this.responseValue,
+    this.proofUrl,
+    this.proofType,
+  });
+  final String id;
+  final String status; // pending | approved | rejected | resubmission_required
+  final String? feedback;
+  final String? responseValue;
+  final String? proofUrl;
+  final String? proofType;
+
+  factory EpisodeTaskSubmission.fromJson(Map<String, dynamic> j) =>
+      EpisodeTaskSubmission(
+        id: j['id'] as String,
+        status: j['status'] as String? ?? 'pending',
+        feedback: j['feedback'] as String?,
+        responseValue: j['responseValue'] as String?,
+        proofUrl: j['proofUrl'] as String?,
+        proofType: j['proofType'] as String?,
+      );
+}
+
 class EpisodeTask {
   const EpisodeTask({
     required this.id,
@@ -40,12 +67,20 @@ class EpisodeTask {
     this.description,
     this.deliverables,
     this.estimatedMinutes,
+    this.basePoints,
+    this.proofType,
+    this.completionMode = 'ADMIN_CHECK',
+    this.submission,
   });
   final String id;
   final String title;
   final String? description;
   final String? deliverables;
   final int? estimatedMinutes;
+  final int? basePoints;
+  final String? proofType; // watch | text | link | video | image | file
+  final String completionMode; // SELF_ASSESSMENT | ADMIN_CHECK
+  final EpisodeTaskSubmission? submission;
 
   factory EpisodeTask.fromJson(Map<String, dynamic> j) => EpisodeTask(
         id: j['id'] as String,
@@ -53,6 +88,13 @@ class EpisodeTask {
         description: j['description'] as String?,
         deliverables: j['deliverables'] as String?,
         estimatedMinutes: (j['estimatedMinutes'] as num?)?.toInt(),
+        basePoints: (j['basePoints'] as num?)?.toInt(),
+        proofType: j['proofType'] as String?,
+        completionMode: j['completionMode'] as String? ?? 'ADMIN_CHECK',
+        submission: j['submission'] != null
+            ? EpisodeTaskSubmission.fromJson(
+                j['submission'] as Map<String, dynamic>)
+            : null,
       );
 }
 
@@ -89,8 +131,13 @@ class CourseXp {
 }
 
 class CoursesService {
-  const CoursesService(this._dio);
+  CoursesService(this._dio);
   final Dio _dio;
+
+  // Raw response cache keyed by courseId. Populated by getCourseDetail() so
+  // companion providers (sections, pendingPayment) can extract their fields
+  // without issuing a second network request.
+  final Map<String, Map<String, dynamic>> _detailCache = {};
 
   Future<List<Course>> listCourses({
     int page = 1,
@@ -119,10 +166,20 @@ class CoursesService {
         '$kUserCourses/$courseId',
       );
       final data = res.data?['data'] as Map<String, dynamic>? ?? {};
+      _detailCache[courseId] = data;
       return CourseDetail.fromJson(data);
     } on DioException catch (e) {
       throw mapDioError(e);
     }
+  }
+
+  // Extracts sections from the cached detail response — no extra network call.
+  // Always call after courseDetailProvider has resolved (cache is guaranteed populated).
+  List<Map<String, dynamic>> getCourseSectionsFromDetail(String courseId) {
+    final data = _detailCache[courseId];
+    if (data == null) return [];
+    final raw = data['sections'] as List<dynamic>? ?? [];
+    return raw.cast<Map<String, dynamic>>();
   }
 
   // Companion fetch for sections — same build_runner workaround as pending payment.
@@ -385,6 +442,18 @@ class CoursesService {
     }
   }
 
+  Future<void> saveReflection(
+      String courseId, String lessonId, String text) async {
+    try {
+      await _dio.put<void>(
+        '$kUserCourses/$courseId/reflections/$lessonId',
+        data: {'text': text},
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   Future<List<EpisodeResource>> getEpisodeResources(String episodeId) async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(
@@ -404,6 +473,53 @@ class CoursesService {
       );
       final list = (res.data?['data'] as List<dynamic>?) ?? [];
       return list.cast<Map<String, dynamic>>().map(EpisodeTask.fromJson).toList();
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> submitEpisodeTask(
+    String episodeId,
+    String taskId, {
+    String? responseValue,
+    String? proofUrl,
+    String? proofType,
+  }) async {
+    try {
+      await _dio.post<Map<String, dynamic>>(
+        '$kUserEpisodes/$episodeId/tasks/$taskId/submit',
+        data: {
+          if (responseValue != null) 'responseValue': responseValue,
+          if (proofUrl != null) 'proofUrl': proofUrl,
+          if (proofType != null) 'proofType': proofType,
+        },
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Uploads a file via the backend server-side upload endpoint (no CORS/R2
+  /// presign needed). Returns the public URL of the uploaded file.
+  Future<String> uploadEpisodeTaskProof(
+    String episodeId,
+    String taskId,
+    String filename,
+    String contentType,
+    List<int> bytes,
+  ) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/upload/image?pathPrefix=task-proofs%2F$episodeId%2F$taskId&filename=${Uri.encodeComponent(filename)}',
+        data: bytes,
+        options: Options(headers: {'Content-Type': contentType}),
+      );
+      final data = res.data ?? {};
+      final url = (data['data'] as Map<String, dynamic>?)?['publicUrl'] as String?
+          ?? data['publicUrl'] as String?
+          ?? '';
+      if (url.isEmpty) throw Exception('Upload failed: no public URL returned');
+      return url;
     } on DioException catch (e) {
       throw mapDioError(e);
     }

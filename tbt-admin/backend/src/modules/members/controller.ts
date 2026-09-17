@@ -5,8 +5,8 @@ import { invalidateCache } from '../../lib/cache.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
 import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic.js';
-import { sendPushNotification } from '../../lib/firebase.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
+import { notifyMembers } from '../../lib/notifications.js';
 
 /**
  * Ensure a member-supplied city / state / businessType value is present
@@ -364,7 +364,13 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
     // Check email uniqueness
     const existingEmail = await request.server.prisma.member.findUnique({ where: { email: body.email } });
     if (existingEmail) {
-      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'Email already exists' } });
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This email address is already registered.' } });
+    }
+
+    // Check phone uniqueness before touching Clerk so no rollback is needed on collision
+    const existingPhone = await request.server.prisma.member.findUnique({ where: { phone: body.phone } });
+    if (existingPhone) {
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This phone number is already registered.' } });
     }
 
     const {
@@ -446,9 +452,20 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
     try {
       member = await request.server.prisma.member.create({ data });
     } catch (prismaErr: any) {
-      // Roll back the Clerk user if DB insert fails
+      // Roll back the Clerk user on any DB failure
       if (clerkId) {
         await request.server.clerk.users.deleteUser(clerkId).catch(() => {});
+      }
+      // Handle unique constraint violations with a user-friendly message
+      if (prismaErr?.code === 'P2002') {
+        const target: string[] = prismaErr.meta?.target ?? [];
+        if (target.includes('phone')) {
+          return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This phone number is already registered.' } });
+        }
+        if (target.includes('email')) {
+          return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This email address is already registered.' } });
+        }
+        return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'A member with these details already exists.' } });
       }
       throw prismaErr;
     }
@@ -494,6 +511,17 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
         error: { code: 'VALIDATION_ERROR', message: 'Validation failed', fields: err.flatten().fieldErrors }
       });
     }
+    // Safety net: P2002 that escaped the inner catch (e.g. memberId collision)
+    if (err?.code === 'P2002') {
+      const target: string[] = err.meta?.target ?? [];
+      if (target.includes('phone')) {
+        return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This phone number is already registered.' } });
+      }
+      if (target.includes('email')) {
+        return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'This email address is already registered.' } });
+      }
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'A member with these details already exists.' } });
+    }
     request.server.log.error({ err }, 'Failed to create member');
     return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message || 'Something went wrong' } });
   }
@@ -501,7 +529,7 @@ export async function createMemberHandler(request: FastifyRequest, reply: Fastif
 
 export async function getMemberHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  const [member, skillRows] = await Promise.all([
+  const [member, skillRows, coinRows] = await Promise.all([
     request.server.prisma.member.findUnique({
       where: { id },
       include: {
@@ -516,9 +544,14 @@ export async function getMemberHandler(request: FastifyRequest, reply: FastifyRe
       `SELECT has_website AS "hasWebsite", weekly_website_orders AS "weeklyWebsiteOrders", skill_business_foundation AS "skillBusinessFoundation", skill_content AS "skillContent", skill_funnels AS "skillFunnels", skill_ads AS "skillAds", skill_sales AS "skillSales", skill_overall_marketing AS "skillOverallMarketing", weekly_learning_hours AS "weeklyLearningHours", team_size AS "teamSize", business_started_from AS "businessStartedFrom", instagram_stats AS "instagramStats", facebook_stats AS "facebookStats", website_url AS "websiteUrl", revenue_goal_after_tbt AS "revenueGoalAfterTbt" FROM members WHERE id = $1::uuid`,
       id,
     ),
+    request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
+      `SELECT COALESCE(SUM(points), 0) AS total FROM tbt_activity_log WHERE member_id = $1::uuid`,
+      id,
+    ),
   ]);
   if (!member || (member as any).deletedAt) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
-  return reply.send({ success: true, data: { ...member, ...(skillRows[0] ?? {}) }, error: null });
+  const coinBalance = Number(coinRows[0]?.total ?? 0);
+  return reply.send({ success: true, data: { ...member, ...(skillRows[0] ?? {}), coinBalance }, error: null });
 }
 
 export async function updateMemberHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -1533,7 +1566,8 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       ...rest
     } = body;
 
-    const adminId = (request as any).auth?.sub ?? null;
+    const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+    const adminId = admin?.id ?? null;
 
     // Filter out empty strings — enum fields (gender, preferredSessionMode, etc.) reject "" in Prisma
     const data: any = {
@@ -1595,35 +1629,15 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
     void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_approved', { memberId: id });
 
-    // Notify the member in real-time and persist an in-app notification
-    request.server.io.to(`user:${id}`).emit('notification', {
-      type: 'system',
-      title: 'Account Approved',
+    // Notify the member — in-app inbox row (with a real destination), live
+    // socket push, and FCM in one call. See lib/notifications.ts.
+    void notifyMembers(request.server, {
+      memberIds: [id],
+      title: 'Account Approved 🎉',
       body: 'Your TBT account has been approved. Welcome to the community!',
-      createdAt: new Date().toISOString(),
+      type: 'member_approved',
+      actionUrl: '/dashboard',
     });
-    request.server.prisma.notification.create({
-      data: {
-        memberId: id,
-        type: 'system',
-        title: 'Account Approved',
-        body: 'Your TBT account has been approved. Welcome to the community!',
-        isRead: false,
-      },
-    }).catch(() => {});
-
-    // FCM push for members with the app closed/backgrounded
-    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true } })
-      .then((m) => {
-        if ((m as any)?.pushToken) {
-          return sendPushNotification(
-            (m as any).pushToken,
-            'Account Approved 🎉',
-            'Your TBT membership is now active. Tap to get started.',
-            { type: 'member_approved' },
-          );
-        }
-      }).catch(() => {});
 
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
@@ -1650,7 +1664,8 @@ export async function rejectMemberHandler(request: FastifyRequest, reply: Fastif
       return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Application is not awaiting review' } });
     }
 
-    const adminId = (request as any).auth?.sub ?? null;
+    const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+    const adminId = admin?.id ?? null;
     const updated = await request.server.prisma.member.update({
       where: { id },
       data: {
@@ -1663,27 +1678,15 @@ export async function rejectMemberHandler(request: FastifyRequest, reply: Fastif
 
     void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_rejected', { memberId: id });
-    request.server.io.to(`user:${id}`).emit('notification', {
-      type: 'system',
+    // Deep-links to /onboarding, which renders RejectedView with this exact
+    // reason (member.onboardingReviewNote) and a WhatsApp support CTA.
+    void notifyMembers(request.server, {
+      memberIds: [id],
       title: 'Onboarding Not Approved',
       body: reason.trim(),
-      createdAt: new Date().toISOString(),
+      type: 'member_rejected',
+      actionUrl: '/onboarding',
     });
-    request.server.prisma.notification.create({
-      data: { memberId: id, type: 'system', title: 'Onboarding Not Approved', body: reason.trim(), isRead: false },
-    }).catch(() => {});
-
-    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true } })
-      .then((m) => {
-        if ((m as any)?.pushToken) {
-          return sendPushNotification(
-            (m as any).pushToken,
-            'Application Not Approved',
-            reason.trim(),
-            { type: 'member_rejected' },
-          );
-        }
-      }).catch(() => {});
 
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
@@ -1710,7 +1713,8 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
       return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Application is not awaiting review' } });
     }
 
-    const adminId = (request as any).auth?.sub ?? null;
+    const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+    const adminId = admin?.id ?? null;
     const updated = await request.server.prisma.member.update({
       where: { id },
       data: {
@@ -1723,26 +1727,18 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
 
     void invalidateCache(request.server.redis ?? null, `me:${id}`);
     request.server.io.to('admin').emit('admin:member_changes_requested', { memberId: id });
-    request.server.io.to(`user:${id}`).emit('notification', {
-      type: 'system',
-      title: 'Changes Requested',
+    // Deep-links to /onboarding, which renders the wizard pre-filled with
+    // this note (member.onboardingReviewNote) for the member to act on.
+    void notifyMembers(request.server, {
+      memberIds: [id],
+      title: 'Action Required',
       body: note.trim(),
-      createdAt: new Date().toISOString(),
+      type: 'member_changes_requested',
+      actionUrl: '/onboarding',
     });
-    request.server.prisma.notification.create({
-      data: { memberId: id, type: 'system', title: 'Changes Requested', body: note.trim(), isRead: false },
-    }).catch(() => {});
 
-    void request.server.prisma.member.findUnique({ where: { id }, select: { pushToken: true, phone: true } as any })
+    void request.server.prisma.member.findUnique({ where: { id }, select: { phone: true } as any })
       .then((m: any) => {
-        if (m?.pushToken) {
-          void sendPushNotification(
-            m.pushToken,
-            'Action Required',
-            'Your onboarding application needs updates. Tap to review.',
-            { type: 'member_changes_requested' },
-          ).catch(() => {});
-        }
         if (m?.phone) {
           void sendWhatsappMessage(
             m.phone,
@@ -1754,6 +1750,103 @@ export async function requestMemberChangesHandler(request: FastifyRequest, reply
     return reply.send({ success: true, data: updated, error: null });
   } catch (err: any) {
     request.server.log.error({ err }, 'Failed to request onboarding changes');
+    return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+  }
+}
+
+// POST /api/members/coins/grant — bulk or batch coin grant
+export async function grantCoinsHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { amount, reason, scope, batchId, skipExisting } =
+      request.body as { amount: number; reason?: string; scope: 'bulk' | 'batch'; batchId?: string; skipExisting?: boolean };
+
+    if (!amount || !Number.isInteger(amount) || amount <= 0 || amount > 100000) {
+      return reply.status(400).send({ success: false, data: null, error: 'amount must be a positive integer ≤ 100,000' });
+    }
+    if (scope === 'batch' && !batchId) {
+      return reply.status(400).send({ success: false, data: null, error: 'batchId is required for batch scope' });
+    }
+
+    // Resolve target member IDs
+    let memberIds: string[];
+    if (scope === 'batch') {
+      const rows = await request.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM members WHERE batch_id = $1::uuid AND status = 'active'`,
+        batchId,
+      );
+      memberIds = rows.map(r => r.id);
+    } else {
+      const rows = await request.server.prisma.member.findMany({
+        where: { status: 'active' },
+        select: { id: true },
+      });
+      memberIds = rows.map(r => r.id);
+    }
+
+    if (memberIds.length === 0) {
+      return reply.send({ success: true, data: { granted: 0, skipped: 0, memberIds: [] }, error: null });
+    }
+
+    // Optionally skip members who already have any coins
+    let targets = memberIds;
+    let skipped = 0;
+    if (skipExisting !== false) { // default: skip members who already have coins
+      const existing = await request.server.prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+        `SELECT DISTINCT member_id FROM tbt_activity_log WHERE member_id = ANY($1::uuid[])`,
+        memberIds,
+      );
+      const existingSet = new Set(existing.map(r => r.member_id));
+      targets = memberIds.filter(id => !existingSet.has(id));
+      skipped = memberIds.length - targets.length;
+    }
+
+    if (targets.length === 0) {
+      return reply.send({ success: true, data: { granted: 0, skipped, memberIds: [] }, error: null });
+    }
+
+    const note = reason?.trim() || 'admin_grant';
+    const values = targets.map((_, i) => `(gen_random_uuid(), $${i * 3 + 1}::uuid, $${i * 3 + 2}, $${i * 3 + 3}, NOW())`).join(', ');
+    const params = targets.flatMap(id => [id, note, amount]);
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (id, member_id, source, points, created_at) VALUES ${values}`,
+      ...params,
+    );
+
+    return reply.send({ success: true, data: { granted: targets.length, skipped, memberIds: targets }, error: null });
+  } catch (err: any) {
+    request.server.log.error({ err }, 'Failed to grant coins');
+    return reply.status(500).send({ success: false, data: null, error: err.message });
+  }
+}
+
+export async function addMemberCoinsHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string };
+    const { amount, reason } = request.body as { amount: number; reason?: string };
+
+    if (!amount || !Number.isInteger(amount) || amount <= 0 || amount > 100000) {
+      return reply.status(400).send({ success: false, error: { code: 'INVALID_AMOUNT', message: 'amount must be a positive integer ≤ 100,000' } });
+    }
+
+    const member = await request.server.prisma.member.findUnique({ where: { id }, select: { id: true } });
+    if (!member) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+
+    const note = reason?.trim() || 'admin_grant';
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (id, member_id, source, points, created_at) VALUES (gen_random_uuid(), $1::uuid, $2, $3, NOW())`,
+      id, note, amount,
+    );
+
+    const rows = await request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
+      `SELECT COALESCE(SUM(points), 0) AS total FROM tbt_activity_log WHERE member_id = $1::uuid`,
+      id,
+    );
+    const newBalance = Number(rows[0]?.total ?? 0);
+
+    void invalidateCache(request.server.redis ?? null, `me:${id}`);
+    return reply.send({ success: true, data: { added: amount, newBalance }, error: null });
+  } catch (err: any) {
+    request.server.log.error({ err }, 'Failed to add coins to member');
     return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
   }
 }

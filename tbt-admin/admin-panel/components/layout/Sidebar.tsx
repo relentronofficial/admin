@@ -23,6 +23,7 @@ import {
   BarChart2,
   Target,
   ClipboardCheck,
+  ClipboardList,
   GraduationCap,
   CheckSquare,
   Bot,
@@ -31,6 +32,9 @@ import {
   Megaphone,
   MessageSquareText,
   UserCheck,
+  Shield,
+  ShoppingCart,
+  Coins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -78,10 +82,18 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Site Config", href: "/settings/site", icon: Settings },
       { name: "Navigation", href: "/settings/navigation", icon: Navigation },
       { name: "UI Strings", href: "/settings/ui-strings", icon: Type },
+      { name: "Plan Entitlements", href: "/settings/entitlements", icon: Shield },
       { name: "Tiers", href: "/tiers", icon: Trophy },
       { name: "Badges", href: "/display-badges", icon: Award },
       { name: "TBT Gamification", href: "/gamification", icon: Award },
       { name: "Morning Ritual", href: "/rituals", icon: Sun },
+    ],
+  },
+  {
+    label: "Billing",
+    items: [
+      { name: "Credits", href: "/credits", icon: ShoppingCart },
+      { name: "Grant Coins", href: "/grant-coins", icon: Coins },
     ],
   },
   {
@@ -96,6 +108,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Analytics", href: "/analytics", icon: BarChart2 },
       { name: "Challenges", href: "/analytics/challenges", icon: Target },
       { name: "Assignments", href: "/assignments", icon: ClipboardCheck },
+      { name: "Weekly Course Reports", href: "/course-weekly-reports", icon: ClipboardList },
     ],
   },
   {

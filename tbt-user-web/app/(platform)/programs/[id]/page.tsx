@@ -39,13 +39,10 @@ export default function ProgramDetailPage({ params }: { params: Promise<{ id: st
 
   const handleBuyNow = async () => {
     try {
-      const res = await requestAccess.mutateAsync(id);
-      const paymentUrl = (res as any)?.data?.paymentUrl ?? (res as any)?.paymentUrl;
-      if (paymentUrl) {
-        window.open(paymentUrl, "_blank", "noopener,noreferrer");
-      }
+      await requestAccess.mutateAsync(id);
+      toast.success("Access request sent! We'll notify you shortly.");
     } catch (err: any) {
-      toast.error(err.message || "Failed to initiate payment");
+      toast.error(err.message || "Failed to request access.");
     }
   };
 
@@ -294,9 +291,9 @@ export default function ProgramDetailPage({ params }: { params: Promise<{ id: st
                   style={{ background: "var(--color-accent)" }}
                 >
                   <ShoppingCart size={14} />
-                  {requestAccess.isPending ? "Redirecting..." : price ? `Buy Now — ₹${price.toLocaleString()}` : "Buy Now"}
+                  {requestAccess.isPending ? "Sending request..." : price ? `Get Access — ₹${price.toLocaleString()}` : "Get Access"}
                 </button>
-                <p className="text-xs text-center text-muted-foreground">You'll be redirected to our payment page.</p>
+                <p className="text-xs text-center text-muted-foreground">Our team will review and grant access shortly.</p>
               </div>
             )}
           </div>

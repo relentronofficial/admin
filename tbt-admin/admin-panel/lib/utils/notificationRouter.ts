@@ -27,6 +27,11 @@ export function resolveNotificationRoute(notification: {
     case "product_inquiry":
       return "/products?tab=inquiries";
 
+    // Navigates to /courses; the actual review UI lives inside that episode's
+    // Tasks modal (Submissions tab) — auto-open the course, same as course_access_request.
+    case "episode_task_submitted":
+      return m.courseId ? `/courses?open=${m.courseId}` : "/courses";
+
     case "day_submitted":
       return m.batchId ? `/batches/${m.batchId}` : "/batches";
 
@@ -37,6 +42,11 @@ export function resolveNotificationRoute(notification: {
       return m.feedbackId
         ? `/support?tab=feedback&id=${m.feedbackId}`
         : "/support?tab=feedback";
+
+    case "course_weekly_feedback":
+      return m.feedbackId
+        ? `/course-weekly-reports?tab=feedback&open=${m.feedbackId}`
+        : "/course-weekly-reports?tab=feedback";
 
     case "announcement":
       return "/app-notifications";

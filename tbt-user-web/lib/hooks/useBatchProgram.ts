@@ -18,6 +18,16 @@ export const useMyBatchProgram = () =>
         breaks?: any[];
         totalDays?: number;
         programName?: string | null;
+        lifelinesTotal?: number;
+        lifelinesUsed?: number;
+        lifelinesRemaining?: number;
+        processes?: {
+          id: string;
+          title: string;
+          description?: string | null;
+          position: number;
+          dayNumber?: number | null;
+        }[];
         programTasks?: {
           id: string;
           dayNumber: number;
@@ -33,6 +43,11 @@ export const useMyBatchProgram = () =>
           isMilestone: boolean;
           milestoneLabel?: string | null;
           sortOrder: number;
+          processId?: string | null;
+          processTitle?: string | null;
+          stagePosition?: number | null;
+          stageLocked?: boolean;
+          totalStagesInProcess?: number;
         }[];
         mySubmissions?: {
           id: string;
@@ -123,25 +138,50 @@ export const useRequestBreak = () => {
 export const useSpendCoins = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (amount: number) => {
-      const res: any = await apiClient.post('/api/user-batch/spend-coins', { amount });
+    mutationFn: async ({ amount, taskId, dayNumber }: { amount: number; taskId?: string; dayNumber?: number }) => {
+      const res: any = await apiClient.post('/api/user-batch/spend-coins', { amount, taskId, dayNumber });
       return res.data as { remainingCoins: number };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),
   });
 };
 
+// ── MG-02: Program-Wide Lifeline Use ─────────────────────────────────────────
+
+export const useUseProgramLifeline = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { batchId: string; taskId?: string; episodeId?: string; context: 'task' | 'episode' }) => {
+      const res: any = await apiClient.post('/api/user-batch/lifeline/use', body);
+      return res.data as { lifelinesRemaining: number; lifelinesTotal: number; lifelinesUsed: number };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-batch'] }),
+  });
+};
+
 export const useDownloadBatchCertificate = () => {
   return useMutation({
     mutationFn: async () => {
-      const res = await apiClient.get('/api/user-batch/certificate', { responseType: 'blob' } as any);
-      const blob = new Blob([(res as any).data ?? res as any], { type: 'application/pdf' });
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('tbt_device_id') ?? '') : '';
+      const response = await fetch(`${baseUrl}/api/user-batch/certificate`, {
+        credentials: 'include',
+        headers: { 'x-device-id': deviceId },
+      });
+      if (!response.ok) {
+        let msg = 'Failed to download certificate';
+        try { const j = await response.json(); msg = j.error ?? j.message ?? msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = 'batch-certificate.pdf';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   });
 };

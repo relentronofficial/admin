@@ -67,8 +67,22 @@ export function generateRefreshToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-function hashRefreshToken(token: string): string {
+export function hashRefreshToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/// Hard-revoke a token by its pre-computed SHA-256 hash (used by session management
+/// where the hash is stored in DB but the raw token is no longer available).
+export async function revokeRefreshTokenByHash(redis: any, hash: string): Promise<void> {
+  if (redis) {
+    try {
+      await redis.del(`refresh:${hash}`, `refresh_grace:${hash}`);
+      return;
+    } catch (err) {
+      _log('redis.del (by hash) failed:', err);
+    }
+  }
+  _refreshStore.delete(hash);
 }
 
 const REFRESH_TTL = 365 * 24 * 3600; // 1 year — sliding window, extended on every use
@@ -176,10 +190,10 @@ export async function revokeRefreshToken(redis: any, refreshToken: string): Prom
   _refreshStore.delete(hash);
 }
 
-/// Hard-revoke every refresh token belonging to a member. Used by the
-/// admin session-kill endpoint. Requires Redis SCAN — in a Redis
-/// outage this is a no-op (fails safe: the outage will resolve and the
-/// admin can retry).
+/// Hard-revoke every refresh token belonging to a member. Used when a
+/// new login is issued (single-session enforcement), by the admin
+/// session-kill endpoint, and by the member "sign out all devices" route.
+/// Requires Redis SCAN — in a Redis outage this is a no-op (fails safe).
 export async function revokeAllForMember(redis: any, memberId: string): Promise<number> {
   if (!redis) return 0;
   let cursor = '0';
@@ -189,11 +203,13 @@ export async function revokeAllForMember(redis: any, memberId: string): Promise<
       const [next, batch] = await redis.scan(cursor, 'MATCH', 'refresh:*', 'COUNT', 200);
       cursor = next;
       if (!batch.length) continue;
-      // Fetch member ids in bulk and delete matching entries.
       const values = await redis.mget(...batch);
       const toDelete = batch.filter((_: string, i: number) => values[i] === memberId);
       if (toDelete.length) {
-        deleted += await redis.del(...toDelete);
+        // Also kill any grace-window copies so they can't be used after
+        // a new login issues a fresh token for the same member.
+        const graceToDelete = toDelete.map((k: string) => k.replace('refresh:', 'refresh_grace:'));
+        deleted += await redis.del(...toDelete, ...graceToDelete);
       }
     } while (cursor !== '0');
   } catch (err) {

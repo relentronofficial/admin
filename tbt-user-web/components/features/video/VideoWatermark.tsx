@@ -24,8 +24,6 @@ const ZONES = [
 const VISIBLE_MS = 8_000;   // how long watermark stays in one spot
 const FADE_MS    = 1_400;   // framer-motion fade duration
 const PAUSE_MS   = 4_000;   // hidden gap before next position
-const TILE_ROWS  = 4;
-const TILE_COLS  = 4;
 
 // Shuffle zone index avoiding repetition
 let _lastZone = -1;
@@ -40,6 +38,21 @@ function pickZone(): number {
 function b64(s: string): string {
   if (typeof btoa !== "undefined") return btoa(unescape(encodeURIComponent(s)));
   return s; // SSR fallback (unused since component is client-only)
+}
+
+// Build a repeating SVG tile for the diagonal watermark grid.
+// Using a CSS background-image keeps the DOM clean — no selectable text nodes.
+function makeTileBg(text: string): string {
+  const escaped = text.replace(/[<>&"']/g, (c: string) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c] ?? c),
+  );
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="280" height="90">' +
+    '<text x="10" y="55" font-family="monospace" font-size="9" font-weight="600"' +
+    ' fill="white" fill-opacity="1" transform="rotate(-22,10,55)" letter-spacing="0.5">' +
+    escaped +
+    "</text></svg>";
+  return `url("data:image/svg+xml;base64,${b64(svg)}")`;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -189,32 +202,18 @@ export function VideoWatermark({
           </div>
 
           {/* ── Layer 2: Faint diagonal tile grid (survives screenshots) ───── */}
-          {/* opacity: 0.028 — invisible during casual viewing, recoverable from screenshots */}
+          {/* Rendered as a CSS background-image so there are no selectable     */}
+          {/* text nodes in the DOM. opacity: 0.028 — invisible casually,       */}
+          {/* recoverable from screenshots via contrast enhancement.             */}
           <div
             className="absolute inset-0 pointer-events-none select-none z-40 overflow-hidden"
-            style={{ opacity: 0.028 }}
-          >
-            {Array.from({ length: TILE_ROWS * TILE_COLS }).map((_, i) => (
-              <span
-                key={i}
-                style={{
-                  position: "absolute",
-                  left: `${(i % TILE_COLS) * 26}%`,
-                  top: `${Math.floor(i / TILE_COLS) * 26}%`,
-                  color: "#ffffff",
-                  fontSize: "9px",
-                  fontWeight: 600,
-                  fontFamily: "monospace",
-                  whiteSpace: "nowrap",
-                  transform: "rotate(-22deg)",
-                  transformOrigin: "left center",
-                  mixBlendMode: "difference",
-                }}
-              >
-                {user.id.slice(0, 18)} · {user.email}
-              </span>
-            ))}
-          </div>
+            style={{
+              opacity: 0.028,
+              backgroundImage: makeTileBg(`${user.id.slice(0, 18)} · ${user.email}`),
+              backgroundRepeat: "repeat",
+              backgroundSize: "280px 90px",
+            }}
+          />
 
           {/* ── Layer 3: Invisible forensic data embedded in DOM ───────────── */}
           {/* Opacity 0 + 1px × 1px: not visible to viewers but present in:      */}

@@ -14,39 +14,47 @@ export async function listAdminNotificationsHandler(req: FastifyRequest, reply: 
   const { page = 1, limit = 30 } = req.query as { page?: number; limit?: number };
   const offset = (Number(page) - 1) * Number(limit);
 
-  const [rows, countRows] = await Promise.all([
-    req.server.prisma.$queryRawUnsafe<AdminNotifRow[]>(
-      `SELECT id, title, body, type, metadata, is_read, created_at
-       FROM admin_notifications
-       ORDER BY created_at DESC
-       LIMIT $1 OFFSET $2`,
-      Number(limit),
-      offset,
-    ),
-    req.server.prisma.$queryRawUnsafe<[{ count: bigint }]>(
-      `SELECT COUNT(*) as count FROM admin_notifications`,
-    ),
-  ]);
+  try {
+    const [rows, countRows] = await Promise.all([
+      req.server.prisma.$queryRawUnsafe<AdminNotifRow[]>(
+        `SELECT id, title, body, type, metadata, is_read, created_at
+         FROM admin_notifications
+         ORDER BY created_at DESC
+         LIMIT $1 OFFSET $2`,
+        Number(limit),
+        offset,
+      ),
+      req.server.prisma.$queryRawUnsafe<[{ count: bigint }]>(
+        `SELECT COUNT(*) as count FROM admin_notifications`,
+      ),
+    ]);
 
-  const total = Number(countRows[0]?.count ?? 0);
-  const notifications = rows.map(r => ({
-    id: r.id,
-    title: r.title,
-    body: r.body,
-    type: r.type,
-    metadata: r.metadata,
-    isRead: r.is_read,
-    createdAt: r.created_at,
-  }));
+    const total = Number(countRows[0]?.count ?? 0);
+    const notifications = rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      body: r.body,
+      type: r.type,
+      metadata: r.metadata,
+      isRead: r.is_read,
+      createdAt: r.created_at,
+    }));
 
-  return reply.send({ success: true, data: notifications, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+    return reply.send({ success: true, data: notifications, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+  } catch {
+    return reply.send({ success: true, data: [], meta: { total: 0, page: Number(page), limit: Number(limit) }, error: null });
+  }
 }
 
 export async function getAdminUnreadCountHandler(req: FastifyRequest, reply: FastifyReply) {
-  const rows = await req.server.prisma.$queryRawUnsafe<[{ count: bigint }]>(
-    `SELECT COUNT(*) as count FROM admin_notifications WHERE is_read = false`,
-  );
-  return reply.send({ success: true, data: { count: Number(rows[0]?.count ?? 0) }, error: null });
+  try {
+    const rows = await req.server.prisma.$queryRawUnsafe<[{ count: bigint }]>(
+      `SELECT COUNT(*) as count FROM admin_notifications WHERE is_read = false`,
+    );
+    return reply.send({ success: true, data: { count: Number(rows[0]?.count ?? 0) }, error: null });
+  } catch {
+    return reply.send({ success: true, data: { count: 0 }, error: null });
+  }
 }
 
 export async function markAdminNotificationReadHandler(req: FastifyRequest, reply: FastifyReply) {

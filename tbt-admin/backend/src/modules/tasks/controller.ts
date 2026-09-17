@@ -1,5 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ZodError } from 'zod';
 import { taskInitiativeSchema, updateTaskSchema } from './schema.js';
+import { notifyMembers } from '../../lib/notifications.js';
 
 export async function listTasksHandler(request: FastifyRequest, reply: FastifyReply) {
   const { programId, stepId, page = 1, limit = 500 } = request.query as any;
@@ -17,11 +19,39 @@ export async function listTasksHandler(request: FastifyRequest, reply: FastifyRe
     }),
     request.server.prisma.task.count({ where }),
   ]);
-  return reply.send({ success: true, data: tasks, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+
+  // Hydrate raw SQL columns (timer_seconds, member_id) not in Prisma schema
+  const taskIds = tasks.map((t) => t.id);
+  let rawRows: Array<{ id: string; timer_seconds: number | null; member_id: string | null; member_name: string | null }> = [];
+  if (taskIds.length > 0) {
+    rawRows = await request.server.prisma.$queryRawUnsafe<any[]>(`
+      SELECT t.id, t.timer_seconds, t.member_id,
+             CONCAT(m.first_name, ' ', m.last_name) AS member_name
+      FROM tasks t
+      LEFT JOIN members m ON m.id = t.member_id
+      WHERE t.id = ANY($1::uuid[])
+    `, taskIds);
+  }
+  const rawMap = new Map(rawRows.map((r) => [r.id, r]));
+  const enriched = tasks.map((t) => {
+    const raw = rawMap.get(t.id);
+    return { ...t, timerSeconds: raw?.timer_seconds ?? null, memberId: raw?.member_id ?? null, memberName: raw?.member_name ?? null };
+  });
+
+  return reply.send({ success: true, data: enriched, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
 }
 
 export async function createTaskInitiativeHandler(request: FastifyRequest, reply: FastifyReply) {
-  const body = taskInitiativeSchema.parse(request.body);
+  let body: ReturnType<typeof taskInitiativeSchema.parse>;
+  try {
+    body = taskInitiativeSchema.parse(request.body);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      const msg = err.errors[0]?.message ?? 'Invalid input';
+      return reply.status(400).send({ success: false, data: null, error: msg });
+    }
+    throw err;
+  }
 
   const program = await request.server.prisma.program.findUnique({ where: { id: body.programId } });
   if (!program) {
@@ -48,13 +78,29 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
     include: { program: { select: { id: true, name: true } } },
   });
   const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
-  if (timerSecs !== null) {
+  const memberId = body.memberId ?? null;
+  if (timerSecs !== null || memberId !== null) {
+    const setClauses: string[] = [];
+    const vals: unknown[] = [];
+    let pi = 1;
+    if (timerSecs !== null) { setClauses.push(`timer_seconds = $${pi++}`); vals.push(timerSecs); }
+    if (memberId !== null)  { setClauses.push(`member_id = $${pi++}::uuid`); vals.push(memberId); }
+    vals.push(task.id);
     await request.server.prisma.$executeRawUnsafe(
-      'UPDATE tasks SET timer_seconds = $1 WHERE id = $2::uuid',
-      timerSecs, task.id
+      `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = $${pi}::uuid`,
+      ...vals
     );
   }
-  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs }, error: null });
+  // Fetch member name for the response
+  let memberName: string | null = null;
+  if (memberId) {
+    const member = await request.server.prisma.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true },
+    }).catch(() => null);
+    if (member) memberName = `${member.firstName ?? ''} ${member.lastName ?? ''}`.trim();
+  }
+  return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs, memberId, memberName }, error: null });
 }
 
 export async function getTaskHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -88,7 +134,8 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
     feedback?: string;
     bonusPoints?: number;
   };
-  const adminId = (request as any).auth?.sub ?? null;
+  const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
 
   if (action !== 'approve' && action !== 'reject') {
     return reply.status(400).send({ success: false, data: null, error: 'action must be approve or reject' });
@@ -161,16 +208,23 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
       }).catch(() => {});
     }
 
-    request.server.io.to(`user:${s.member_id}`).emit('notification', {
+    // Batch-inline tasks (batch_id set) deep-link to that exact day; program
+    // tasks (batch_id null) fall back to the batch program's own landing —
+    // still a specific, relevant page rather than the generic dashboard.
+    void notifyMembers(request.server, {
+      memberIds: [s.member_id],
       title: 'Task Approved ✓',
       body: 'Your task submission has been approved.',
       type: 'task_approved',
+      actionUrl: s.batch_id && s.day_number != null ? `/batch-program/${s.day_number}` : '/batch-program',
     });
   } else {
-    request.server.io.to(`user:${s.member_id}`).emit('notification', {
+    void notifyMembers(request.server, {
+      memberIds: [s.member_id],
       title: 'Task Needs Revision',
       body: feedback ?? 'Your task submission needs revision.',
       type: 'task_rejected',
+      actionUrl: s.batch_id && s.day_number != null ? `/batch-program/${s.day_number}` : '/batch-program',
     });
   }
 

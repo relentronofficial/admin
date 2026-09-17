@@ -738,13 +738,16 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
   const unmutedMentioned = await filterUnmutedMembers(req.server, id, mentionedIds);
   const unmutedOthers = await filterUnmutedMembers(req.server, id, nonMentionedIds);
 
+  // /messages/group/[id] reads the `message` query param and jumps straight
+  // to (and highlights) this exact message via the existing jumpToMessage().
+  const groupActionUrl = `/messages/group/${id}?message=${messageJsonPayload.id}`;
   if (unmutedMentioned.length > 0) {
     void notifyMembers(req.server, {
       memberIds: unmutedMentioned,
       title: `${senderName} mentioned you in ${groupName}`,
       body: preview,
       type: 'group_mention',
-      actionUrl: `/messages/group/${id}`,
+      actionUrl: groupActionUrl,
       data: { groupId: id, messageId: messageJsonPayload.id },
     });
   }
@@ -754,7 +757,7 @@ export async function memberSendMessageHandler(req: FastifyRequest<{ Params: { i
       title: `${senderName} in ${groupName}`,
       body: preview,
       type: 'group_message',
-      actionUrl: `/messages/group/${id}`,
+      actionUrl: groupActionUrl,
       data: { groupId: id, messageId: messageJsonPayload.id },
     });
   }

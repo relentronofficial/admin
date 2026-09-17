@@ -12,6 +12,7 @@ import {
   getNotificationPrefsHandler,
   updateNotificationPrefsHandler,
   listUserCourseCategories,
+  listCourseModuleTabsHandler,
   listUserCoursesHandler,
   getUserCourseHandler,
   enrollCourseHandler,
@@ -53,6 +54,7 @@ import {
   postEpisodeProgressHandler,
   getUserEpisodeResourcesHandler,
   getUserEpisodeTasksHandler,
+  submitUserEpisodeTaskHandler,
   getUserProductsHandler,
   submitProductInquiryHandler,
   getUserResourcesHandler,
@@ -95,9 +97,18 @@ import {
   getMyInquiredProductsHandler,
   listUserProgramsHandler,
   getUserProgramHandler,
+  enrollInProgramHandler,
   getMyConnectionsHandler,
   getMyPostsHandler,
+  getSupportQuotaHandler,
+  getMyStreakPointsHandler,
+  startEpisodeTimerHandler,
+  getEpisodeTimerSessionHandler,
+  heartbeatEpisodeTimerHandler,
+  getEpisodeLifelinesHandler,
+  useEpisodeLifelineHandler,
 } from './controller.js';
+import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // All routes in this module require member authentication.
@@ -110,9 +121,16 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/me/avatar-presign', avatarPresignHandler);
   fastify.get('/me/connections', getMyConnectionsHandler);
   fastify.get('/me/posts', getMyPostsHandler);
+  fastify.get('/support-quota', getSupportQuotaHandler);
+
+  // ── Credits ───────────────────────────────────────────────────────────────
+  fastify.get('/credits/pricing', getUserCreditPricingHandler);
+  fastify.post('/credits/purchase', createCreditPurchaseHandler);
+  fastify.get('/credits/purchases', getMyCreditPurchasesHandler);
 
   // ── Courses ────────────────────────────────────────────────────────────────
   fastify.get('/courses/categories', listUserCourseCategories);
+  fastify.get('/courses/module-tabs', listCourseModuleTabsHandler);
   fastify.get('/courses', listUserCoursesHandler);
   fastify.get('/courses/:id', getUserCourseHandler);
   fastify.post('/courses/:id/enroll', enrollCourseHandler);
@@ -132,6 +150,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/courses/:id/xp', getCourseXpHandler);
   fastify.get('/courses/:id/leaderboard', getUserCourseLeaderboardHandler);
   fastify.get('/badges', getUserBadgesHandler);
+  fastify.get('/streak-points', getMyStreakPointsHandler);
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   fastify.get('/dashboard/stats', getDashboardStatsHandler);
@@ -212,6 +231,12 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/episodes/:id/progress', postEpisodeProgressHandler);
   fastify.get('/episodes/:id/resources', getUserEpisodeResourcesHandler);
   fastify.get('/episodes/:id/tasks', getUserEpisodeTasksHandler);
+  fastify.post('/episodes/:id/tasks/:taskId/submit', submitUserEpisodeTaskHandler);
+  fastify.post('/episodes/:id/timer/start', startEpisodeTimerHandler);
+  fastify.get('/episodes/:id/timer/session', getEpisodeTimerSessionHandler);
+  fastify.post('/episodes/:id/timer/heartbeat', heartbeatEpisodeTimerHandler);
+  fastify.get('/episodes/:id/lifelines', getEpisodeLifelinesHandler);
+  fastify.post('/episodes/:id/lifelines/use', useEpisodeLifelineHandler);
 
   // ── Products & Resources ──────────────────────────────────────────────────
   fastify.get('/products', getUserProductsHandler);
@@ -235,6 +260,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Programs ──────────────────────────────────────────────────────────────
   fastify.get('/programs', listUserProgramsHandler);
   fastify.get('/programs/:id', getUserProgramHandler);
+  fastify.post('/programs/:id/enroll', enrollInProgramHandler);
 
   // ── Global search ─────────────────────────────────────────────────────────
   fastify.get('/search', searchHandler);

@@ -325,9 +325,6 @@ class _$SiteConfigImpl implements _SiteConfig {
   final String? loginBgMobileUrl;
   final List<String>? _loginBgImages;
   @override
-  @JsonKey()
-  final int taskTimerSeconds;
-  @override
   List<String>? get loginBgImages {
     final value = _loginBgImages;
     if (value == null) return null;
@@ -335,6 +332,10 @@ class _$SiteConfigImpl implements _SiteConfig {
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableListView(value);
   }
+
+  @override
+  @JsonKey()
+  final int taskTimerSeconds;
 
   @override
   String toString() {

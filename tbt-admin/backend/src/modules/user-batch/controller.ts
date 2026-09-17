@@ -22,7 +22,7 @@ async function sendBatchNotif(
       recipients: { create: [{ memberId }] },
     },
   });
-  server.io.to(`user:${memberId}`).emit('notification', { title, body: message, type });
+  server.io.to(`user:${memberId}`).emit('notification', { title, body: message, type, actionUrl });
   await sendPushToMember(server.prisma, memberId, title, message, pushData);
 }
 
@@ -57,7 +57,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     return reply.send({ success: true, data: null, error: null });
   }
 
-  const [batch, days, progress, attendance, breaks, settings, mySubmissions] = await Promise.all([
+  const [batch, days, progress, attendance, breaks, settings, mySubmissions, lifelineSettings] = await Promise.all([
     req.server.prisma.batch.findUnique({
       where: { id: member.batchId },
       select: {
@@ -93,11 +93,17 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
        FROM task_submissions WHERE batch_id=$1::uuid AND member_id=$2::uuid`,
       member.batchId, memberId,
     ),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
+      member.batchId, memberId,
+    ),
   ]);
 
   const baseDays = (batch as any)?.snapshotDays ?? (batch as any)?.program?.durationDays ?? 90;
   const extendedDays = (settings[0] as any)?.extended_days ?? 0;
   const totalDays = baseDays + extendedDays;
+  const lifelinesTotal = (lifelineSettings[0] as any)?.lifelines_total ?? 3;
+  const lifelinesUsed  = (lifelineSettings[0] as any)?.lifelines_used  ?? 0;
 
   // Program-scoped tasks (shared across all batches of the program) AND
   // this batch's own inline tasks (created via the admin Batch Checklist
@@ -131,18 +137,61 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     },
   });
 
-  // timer_seconds is a raw SQL column not in Prisma schema — fetch separately
+  // timer_seconds, process_id, stage_position are raw SQL columns — fetch separately
   let programTasksWithTimer: any[] = programTasks;
   if (programTasks.length > 0) {
     const ids = programTasks.map((t: any) => t.id);
     const placeholders = ids.map((_: any, i: number) => `$${i + 1}::uuid`).join(',');
-    const timerRows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; timer_seconds: number | null }>>(
-      `SELECT id::text, timer_seconds FROM tasks WHERE id IN (${placeholders})`,
+    const timerRows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; timer_seconds: number | null; process_id: string | null; stage_position: number | null }>>(
+      `SELECT id::text, timer_seconds, process_id::text, stage_position FROM tasks WHERE id IN (${placeholders})`,
       ...ids
     );
-    const timerMap: Record<string, number | null> = {};
-    for (const r of timerRows) timerMap[r.id] = r.timer_seconds;
-    programTasksWithTimer = programTasks.map((t: any) => ({ ...t, timerSeconds: timerMap[t.id] ?? null }));
+    const timerMap: Record<string, { timerSeconds: number | null; processId: string | null; stagePosition: number | null }> = {};
+    for (const r of timerRows) timerMap[r.id] = { timerSeconds: r.timer_seconds, processId: r.process_id, stagePosition: r.stage_position };
+    programTasksWithTimer = programTasks.map((t: any) => ({ ...t, ...(timerMap[t.id] ?? { timerSeconds: null, processId: null, stagePosition: null }) }));
+  }
+
+  // MG-03: Fetch processes for this batch and compute stageLocked per task
+  let processes: any[] = [];
+  if (member.batchId) {
+    processes = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id::text, title, description, position, day_number as "dayNumber" FROM task_processes WHERE batch_id=$1::uuid ORDER BY position ASC`,
+      member.batchId
+    ).catch(() => []);
+  }
+
+  // Compute stageLocked for each stage task
+  const processTasks = programTasksWithTimer.filter((t: any) => t.processId);
+  if (processTasks.length > 0) {
+    // Build a map: processId → ordered stages
+    const processStageMap: Record<string, any[]> = {};
+    for (const t of processTasks) {
+      if (!processStageMap[t.processId]) processStageMap[t.processId] = [];
+      processStageMap[t.processId].push(t);
+    }
+    for (const stages of Object.values(processStageMap)) {
+      stages.sort((a: any, b: any) => (a.stagePosition ?? 999) - (b.stagePosition ?? 999));
+    }
+    // Check approval status for each stage
+    for (const t of processTasks) {
+      const stages = processStageMap[t.processId] ?? [];
+      const pos = t.stagePosition ?? 1;
+      if (pos <= 1) {
+        t.stageLocked = false;
+      } else {
+        // Find the task for previous stage
+        const prevStage = stages.find((s: any) => s.stagePosition === pos - 1);
+        if (!prevStage) { t.stageLocked = false; continue; }
+        const prevApproved = mySubmissions.some(
+          (s: any) => s.taskId === prevStage.id && s.status === 'approved'
+        );
+        t.stageLocked = !prevApproved;
+      }
+      // Attach process context
+      const proc = processes.find((p: any) => p.id === t.processId);
+      t.processTitle = proc?.title ?? null;
+      t.totalStagesInProcess = stages.length;
+    }
   }
 
   return reply.send({
@@ -156,7 +205,11 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
       attendance,
       breaks,
       programTasks: programTasksWithTimer,
+      processes,
       mySubmissions,
+      lifelinesTotal,
+      lifelinesUsed,
+      lifelinesRemaining: Math.max(0, lifelinesTotal - lifelinesUsed),
     },
     error: null,
   });
@@ -225,14 +278,16 @@ export async function saveDraftHandler(
     });
   }
 
-  // Unified task submissions — upsert one row per task
+  // Unified task submissions — upsert one row per task.
+  // timer_started_at is set on INSERT only and never overwritten on UPDATE —
+  // this preserves the original first-open timestamp for server-side timer validation.
   if (taskSubmissionsInput && Object.keys(taskSubmissionsInput).length > 0) {
     for (const [taskId, proof] of Object.entries(taskSubmissionsInput)) {
       await req.server.prisma.$executeRawUnsafe(
         `INSERT INTO task_submissions
            (id, member_id, task_id, batch_id, day_progress_id, day_number,
-            response_value, proof_url, proof_type, status, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, 'pending', NOW(), NOW())
+            response_value, proof_url, proof_type, status, timer_started_at, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, 'pending', NOW(), NOW(), NOW())
          ON CONFLICT (member_id, task_id, batch_id, day_number)
          WHERE batch_id IS NOT NULL AND day_number IS NOT NULL
          DO UPDATE SET
@@ -311,6 +366,26 @@ export async function submitDayHandler(
     },
   });
 
+  // Server-side timer enforcement — flag any task submission where the member
+  // took longer than the task's timer_seconds to submit.  We do not block the
+  // submission; instead we set submitted_after_expiry=TRUE so admins can see
+  // the flag in the pending review panel and apply their own judgement.
+  // Grace period: 30 extra seconds to absorb network latency.
+  const TIMER_GRACE_SECONDS = 30;
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE task_submissions ts
+     SET submitted_after_expiry = TRUE
+     FROM tasks t
+     WHERE ts.task_id = t.id
+       AND ts.batch_id = $1::uuid
+       AND ts.member_id = $2::uuid
+       AND ts.day_number = $3
+       AND t.timer_seconds IS NOT NULL
+       AND ts.timer_started_at IS NOT NULL
+       AND EXTRACT(EPOCH FROM (NOW() - ts.timer_started_at)) > (t.timer_seconds + $4)`,
+    member.batchId, memberId, dayNum, TIMER_GRACE_SECONDS,
+  );
+
   // Auto-mark attendance as present on submit (if not already recorded)
   const onBreak = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id FROM batch_break_requests WHERE batch_id=$1::uuid AND member_id=$2::uuid AND status='approved' AND start_day<=$3 AND end_day>=$3 LIMIT 1`,
@@ -352,6 +427,45 @@ export async function submitDayHandler(
     { batchId: member.batchId, dayNumber: String(dayNum) },
   );
 
+  // MG-04: Award early completion bonus XP for tasks completed within their timer
+  void (async () => {
+    try {
+      const earlyRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_id: string }>>(
+        `SELECT ts.task_id
+         FROM task_submissions ts
+         JOIN tasks t ON t.id = ts.task_id
+         WHERE ts.batch_id = $1::uuid
+           AND ts.member_id = $2::uuid
+           AND ts.day_number = $3
+           AND t.timer_seconds IS NOT NULL AND t.timer_seconds > 0
+           AND ts.timer_started_at IS NOT NULL
+           AND ts.submitted_after_expiry IS NOT TRUE
+           AND EXTRACT(EPOCH FROM (NOW() - ts.timer_started_at)) < t.timer_seconds`,
+        member.batchId, memberId, dayNum,
+      );
+      if (earlyRows.length === 0) return;
+
+      const cfgRows = await req.server.prisma.$queryRawUnsafe<Array<{ early_completion_bonus_xp: number }>>(
+        `SELECT early_completion_bonus_xp FROM site_configs LIMIT 1`,
+      ).catch(() => []);
+      const bonusXp = (cfgRows[0]?.early_completion_bonus_xp ?? 5) * earlyRows.length;
+      if (bonusXp <= 0) return;
+
+      await req.server.prisma.$executeRawUnsafe(
+        `INSERT INTO tbt_activity_log (member_id, points, source, activity_date)
+         VALUES ($1::uuid, $2::int, 'early_completion', NOW()::date)`,
+        memberId, bonusXp,
+      );
+
+      req.server.io.to(`user:${memberId}`).emit('batch:day_approved', {
+        dayNumber: dayNum,
+        batchId: member.batchId,
+        xpAwarded: bonusXp,
+        reason: `Early completion bonus for Day ${dayNum} (${earlyRows.length} task${earlyRows.length > 1 ? 's' : ''})`,
+      });
+    } catch { /* non-blocking */ }
+  })();
+
   return reply.send({ success: true, data: record, error: null });
 }
 
@@ -360,10 +474,11 @@ export async function approveDayHandler(
   req: FastifyRequest<{ Params: { id: string; memberId: string; dayNumber: string } }>,
   reply: FastifyReply,
 ) {
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const dayNum = parseInt(req.params.dayNumber, 10);
 
-  const record = await req.server.prisma.memberDayProgress.upsert({
+  const existing = await req.server.prisma.memberDayProgress.findUnique({
     where: {
       batchId_memberId_dayNumber: {
         batchId: req.params.id,
@@ -371,17 +486,24 @@ export async function approveDayHandler(
         dayNumber: dayNum,
       },
     },
-    create: {
-      batchId: req.params.id,
-      memberId: req.params.memberId,
-      dayNumber: dayNum,
-      status: 'approved',
-      isCompleted: true,
-      completedAt: new Date(),
-      reviewedAt: new Date(),
-      reviewedBy: adminId,
+  });
+  if (!existing) {
+    return reply.status(404).send({ success: false, data: null, error: 'No submission found for this member/day — nothing to approve yet.' });
+  }
+  if (existing.status === 'approved') {
+    // Idempotent no-op: prevents double-clicking Approve (or a retried request) from re-awarding XP.
+    return reply.send({ success: true, data: existing, error: null });
+  }
+
+  const record = await req.server.prisma.memberDayProgress.update({
+    where: {
+      batchId_memberId_dayNumber: {
+        batchId: req.params.id,
+        memberId: req.params.memberId,
+        dayNumber: dayNum,
+      },
     },
-    update: {
+    data: {
       status: 'approved',
       isCompleted: true,
       completedAt: new Date(),
@@ -404,6 +526,19 @@ export async function approveDayHandler(
       referenceId: record.id,
     },
   }).catch(() => {});
+
+  // Write to the gamification ledger so the streak counts this day.
+  // Use the member's submission date (not today) so late admin approvals
+  // don't inflate today's streak date.
+  req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, $4::date)
+     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+    req.params.memberId,
+    xpPerDay,
+    record.id,
+    (existing.submittedAt ?? new Date()),
+  ).catch(() => {});
 
   // Award per-task basePoints + handle milestones (non-blocking)
   void (async () => {
@@ -434,6 +569,14 @@ export async function approveDayHandler(
             referenceId: sub.id,
           },
         }).catch(() => {});
+        // Also credit the gamification coin ledger
+        await req.server.prisma.$executeRawUnsafe(
+          `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+           VALUES ($1::uuid, $2::int, 'task_submission', $3::uuid, $4::date)
+           ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+          req.params.memberId, sub.basePoints, sub.id,
+          (existing.submittedAt ?? new Date()),
+        ).catch(() => {});
       }
       // Handle milestone
       if (sub.isMilestone) {
@@ -540,6 +683,34 @@ export async function approveDayHandler(
     }
   })().catch(() => {});
 
+  // MG-03: Check if any approved stage tasks unlock next stages
+  void (async () => {
+    const justApprovedSubs = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT ts.task_id as "taskId", t.process_id::text as "processId", t.stage_position as "stagePosition",
+              t.title as "taskTitle", p.title as "processTitle"
+       FROM task_submissions ts
+       JOIN tasks t ON t.id = ts.task_id
+       LEFT JOIN task_processes p ON p.id = t.process_id
+       WHERE ts.day_progress_id = $1::uuid AND ts.status = 'approved' AND t.process_id IS NOT NULL`,
+      record.id,
+    ).catch(() => []);
+
+    for (const sub of justApprovedSubs) {
+      // Find the next stage task
+      const nextStage = await req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id::text, title FROM tasks WHERE process_id=$1::uuid AND stage_position=$2 LIMIT 1`,
+        sub.processId, (sub.stagePosition ?? 0) + 1,
+      ).catch(() => []);
+      if (nextStage.length > 0) {
+        req.server.io.to(`user:${req.params.memberId}`).emit('batch:stage_unlocked', {
+          processTitle: sub.processTitle,
+          nextStageTitle: nextStage[0].title,
+          stagePosition: (sub.stagePosition ?? 0) + 1,
+        });
+      }
+    }
+  })().catch(() => {});
+
   return reply.send({ success: true, data: record, error: null });
 }
 
@@ -551,10 +722,11 @@ export async function rejectDayHandler(
   const parsed = rejectSchema.safeParse(req.body);
   if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
 
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const dayNum = parseInt(req.params.dayNumber, 10);
 
-  const record = await req.server.prisma.memberDayProgress.upsert({
+  const existing = await req.server.prisma.memberDayProgress.findUnique({
     where: {
       batchId_memberId_dayNumber: {
         batchId: req.params.id,
@@ -562,16 +734,20 @@ export async function rejectDayHandler(
         dayNumber: dayNum,
       },
     },
-    create: {
-      batchId: req.params.id,
-      memberId: req.params.memberId,
-      dayNumber: dayNum,
-      status: 'rejected',
-      reviewNote: parsed.data.reviewNote,
-      reviewedAt: new Date(),
-      reviewedBy: adminId,
+  });
+  if (!existing) {
+    return reply.status(404).send({ success: false, data: null, error: 'No submission found for this member/day — nothing to reject.' });
+  }
+
+  const record = await req.server.prisma.memberDayProgress.update({
+    where: {
+      batchId_memberId_dayNumber: {
+        batchId: req.params.id,
+        memberId: req.params.memberId,
+        dayNumber: dayNum,
+      },
     },
-    update: {
+    data: {
       status: 'rejected',
       isCompleted: false,
       completedAt: null,
@@ -606,7 +782,8 @@ export async function bulkApproveDaysHandler(
   req: FastifyRequest<{ Params: { id: string }; Body: { items: Array<{ memberId: string; dayNumber: number }> } }>,
   reply: FastifyReply,
 ) {
-  const adminId = (req as any).auth?.sub ?? null;
+  const admin = await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } });
+  const adminId = admin?.id ?? null;
   const batchId = req.params.id;
   const { items } = req.body as any;
 
@@ -619,15 +796,34 @@ export async function bulkApproveDaysHandler(
 
   const results: any[] = [];
   for (const { memberId, dayNumber } of items) {
-    const record = await req.server.prisma.memberDayProgress.upsert({
+    const existing = await req.server.prisma.memberDayProgress.findUnique({
       where: { batchId_memberId_dayNumber: { batchId, memberId, dayNumber } },
-      create: { batchId, memberId, dayNumber, status: 'approved', isCompleted: true, completedAt: new Date(), reviewedAt: new Date(), reviewedBy: adminId },
-      update: { status: 'approved', isCompleted: true, completedAt: new Date(), reviewedAt: new Date(), reviewedBy: adminId, reviewNote: null },
+    });
+    // Skip items with no submission at all, or that are already approved — keeps bulk-approve
+    // idempotent so a retried/duplicate request can't re-award XP.
+    if (!existing || existing.status === 'approved') {
+      if (existing) results.push(existing);
+      continue;
+    }
+
+    const record = await req.server.prisma.memberDayProgress.update({
+      where: { batchId_memberId_dayNumber: { batchId, memberId, dayNumber } },
+      data: { status: 'approved', isCompleted: true, completedAt: new Date(), reviewedAt: new Date(), reviewedBy: adminId, reviewNote: null },
     });
 
     req.server.prisma.pointsLedger.create({
       data: { memberId, points: xpPerDayBulk, reason: `Batch day ${dayNumber} approved`, referenceType: 'batch_day', referenceId: record.id },
     }).catch(() => {});
+
+    req.server.prisma.$executeRawUnsafe(
+      `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+       VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, $4::date)
+       ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+      memberId,
+      xpPerDayBulk,
+      record.id,
+      (existing.submittedAt ?? new Date()),
+    ).catch(() => {});
 
     req.server.io.to(`user:${memberId}`).emit('batch:day_approved', {
       dayNumber,
@@ -707,8 +903,13 @@ export async function requestBreakHandler(req: FastifyRequest, reply: FastifyRep
 // POST /api/user-batch/spend-coins — deduct TBT coins for an extra lifeline
 export async function spendCoinsHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
-  const { amount } = (req.body as any) ?? {};
+  const { amount, taskId, dayNumber } = (req.body as any) ?? {};
   const cost = typeof amount === 'number' && amount > 0 ? amount : 50;
+
+  const member = await req.server.prisma.member.findUnique({
+    where: { id: memberId },
+    select: { batchId: true },
+  });
 
   const [sumRow] = await req.server.prisma.$queryRawUnsafe<Array<{ sum: bigint }>>(
     'SELECT COALESCE(SUM(points), 0)::bigint AS sum FROM tbt_activity_log WHERE member_id = $1::uuid',
@@ -731,6 +932,17 @@ export async function spendCoinsHandler(req: FastifyRequest, reply: FastifyReply
     -cost,
   );
 
+  // Audit trail — log which task/day this lifeline was used for
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lifeline_usages (member_id, batch_id, task_id, day_number, coins_spent)
+     VALUES ($1::uuid, $2, $3, $4, $5)`,
+    memberId,
+    member?.batchId ?? null,
+    taskId ?? null,
+    typeof dayNumber === 'number' ? dayNumber : null,
+    cost,
+  );
+
   return reply.send({ success: true, data: { remainingCoins: currentCoins - cost }, error: null });
 }
 
@@ -749,20 +961,30 @@ export async function getPendingApprovalsHandler(
     orderBy: [{ submittedAt: 'asc' }, { dayNumber: 'asc' }],
   });
 
+  // Day titles (e.g. "Define Your Vision") so the admin can identify which checklist
+  // item a pending row belongs to — the record itself only carries a dayNumber.
+  const batchDays = await req.server.prisma.batchDay.findMany({
+    where: { batchId: req.params.id },
+    select: { dayNumber: true, title: true },
+  });
+  const dayTitleByNumber = new Map(batchDays.map((d: { dayNumber: number; title: string | null }) => [d.dayNumber, d.title]));
+
   // Attach task submissions for each pending record
   const enriched = await Promise.all(records.map(async (rec) => {
     const submissions = await req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT ts.id, ts.task_id as "taskId", ts.response_value as "responseValue",
               ts.proof_url as "proofUrl", ts.proof_type as "proofType", ts.status,
+              ts.submitted_after_expiry as "submittedAfterExpiry",
+              ts.timer_started_at as "timerStartedAt",
               t.title, t.base_points as "basePoints", t.proof_type as "taskProofType",
-              t.deliverables, t.is_milestone as "isMilestone"
+              t.deliverables, t.is_milestone as "isMilestone", t.timer_seconds as "timerSeconds"
        FROM task_submissions ts
        JOIN tasks t ON t.id = ts.task_id
        WHERE ts.day_progress_id = $1::uuid
        ORDER BY t.sort_order ASC, t.day_number ASC`,
       rec.id,
     );
-    return { ...rec, taskSubmissions: submissions };
+    return { ...rec, dayTitle: dayTitleByNumber.get(rec.dayNumber) ?? null, taskSubmissions: submissions };
   }));
 
   return reply.send({ success: true, data: enriched, error: null });
@@ -943,3 +1165,55 @@ export async function getBatchCertificateHandler(req: FastifyRequest, reply: Fas
   reply.header('Content-Disposition', `attachment; filename="batch-certificate-${certId}.pdf"`);
   return reply.send(pdfBuffer);
 }
+
+// ── MG-02: POST /api/user-batch/lifeline/use ─────────────────────────────────
+
+const useLifelineSchema = z.object({
+  batchId:   z.string().uuid(),
+  taskId:    z.string().uuid().optional(),
+  episodeId: z.string().uuid().optional(),
+  context:   z.enum(['task', 'episode']).default('task'),
+});
+
+export async function useLifelineHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const parsed = useLifelineSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
+  }
+  const { batchId, taskId, episodeId, context } = parsed.data;
+
+  // Fetch current lifeline state (upsert row if not yet present)
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO member_batch_settings (member_id, batch_id) VALUES ($1::uuid, $2::uuid)
+     ON CONFLICT (member_id, batch_id) DO NOTHING`,
+    memberId, batchId,
+  );
+
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id=$1::uuid AND batch_id=$2::uuid LIMIT 1`,
+    memberId, batchId,
+  );
+
+  const total = (rows[0] as any)?.lifelines_total ?? 3;
+  const used  = (rows[0] as any)?.lifelines_used  ?? 0;
+
+  if (used >= total) {
+    return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: 50 });
+  }
+
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE member_batch_settings SET lifelines_used = lifelines_used + 1 WHERE member_id=$1::uuid AND batch_id=$2::uuid`,
+    memberId, batchId,
+  );
+
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lifeline_usages (member_id, batch_id, task_id, episode_id, context, coins_spent)
+     VALUES ($1::uuid, $2::uuid, $3, $4, $5, 0)`,
+    memberId, batchId, taskId ?? null, episodeId ?? null, context,
+  );
+
+  const remaining = Math.max(0, total - used - 1);
+  return reply.send({ success: true, data: { lifelinesRemaining: remaining, lifelinesTotal: total, lifelinesUsed: used + 1 }, error: null });
+}
+

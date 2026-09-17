@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -90,6 +90,9 @@ function renderMentionText(text: string): React.ReactNode {
 export default function GroupChatPage() {
   const params = useParams<{ id: string }>();
   const groupId = params?.id ?? "";
+  const searchParams = useSearchParams();
+  const deepLinkMessageId = searchParams.get("message");
+  const deepLinkMessageAppliedRef = useRef(false);
   const { data: me } = useMe();
   const qc = useQueryClient();
 
@@ -431,6 +434,21 @@ export default function GroupChatPage() {
       setTimeout(() => el.classList.remove("chat-msg-highlight"), 1600);
     }
   }, []);
+
+  // Jump to the exact message a notification referenced (?message=<id>) once
+  // it's actually rendered. If it was deleted or hasn't loaded yet (older
+  // than the first page), this silently no-ops — the member is left on the
+  // group chat itself rather than a dead end.
+  useEffect(() => {
+    if (!deepLinkMessageId || deepLinkMessageAppliedRef.current) return;
+    if (messages.length === 0) return;
+    const el = document.getElementById(`msg-${deepLinkMessageId}`);
+    if (!el) return;
+    deepLinkMessageAppliedRef.current = true;
+    jumpToMessage(deepLinkMessageId);
+    // Strip the query so refreshing/back doesn't keep re-jumping.
+    window.history.replaceState(null, "", `/messages/group/${groupId}`);
+  }, [deepLinkMessageId, messages, jumpToMessage, groupId]);
 
   async function handleSend() {
     const body = draft.trim();

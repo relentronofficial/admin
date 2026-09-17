@@ -4,11 +4,32 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
-  Search, BookOpen, Play, Trophy, Zap, Clock, Lock,
+  Search, BookOpen, Play, Zap, Clock, Lock,
   ChevronRight, Award, TrendingUp, CheckCircle2, Layers,
+  ShoppingBag, Briefcase, Users,
 } from "lucide-react";
 import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
+import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { cn } from "@/lib/utils/cn";
+import type { ContinueLearningItem } from "@/types";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function formatSeconds(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+// ── Module config ─────────────────────────────────────────────────────────────
+
+const MODULE_TABS = ["Product", "Service", "Coach"] as const;
+
+const MODULE_CONFIG: Record<string, { icon: React.ReactNode; description: string }> = {
+  Product: { icon: <ShoppingBag size={28} />, description: "Build & sell products" },
+  Service: { icon: <Briefcase size={28} />, description: "Offer your services" },
+  Coach:   { icon: <Users    size={28} />, description: "Coach & mentor others" },
+};
 
 // ── Level config ──────────────────────────────────────────────────────────────
 
@@ -38,6 +59,23 @@ function CourseCardSkeleton() {
   );
 }
 
+function ContinueLearningCardSkeleton() {
+  return (
+    <div
+      className="rounded-2xl overflow-hidden animate-pulse flex gap-5 p-5"
+      style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
+    >
+      <div className="w-36 h-24 rounded-xl shrink-0" style={{ background: "var(--color-surface-overlay-md)" }} />
+      <div className="flex-1 space-y-3 pt-1">
+        <div className="h-3 rounded-full w-24" style={{ background: "var(--color-surface-overlay)" }} />
+        <div className="h-5 rounded-full w-3/4" style={{ background: "var(--color-surface-overlay-md)" }} />
+        <div className="h-3 rounded-full w-1/2" style={{ background: "var(--color-surface-overlay)" }} />
+        <div className="h-2 rounded-full w-full mt-4" style={{ background: "var(--color-surface-overlay)" }} />
+      </div>
+    </div>
+  );
+}
+
 function EnrolledCardSkeleton() {
   return (
     <div
@@ -51,6 +89,121 @@ function EnrolledCardSkeleton() {
         <div className="h-2 rounded-full w-full mt-3" style={{ background: "var(--color-surface-overlay)" }} />
       </div>
     </div>
+  );
+}
+
+// ── Continue Learning card (course-level progress) ────────────────────────────
+
+function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
+  const pct = item.progressPercent ?? 0;
+  const completedLessons = item.completedLessons ?? 0;
+  const videoWatchedPct =
+    item.durationSeconds && item.durationSeconds > 0 && item.lastWatchedSecs > 0
+      ? Math.min(100, Math.round((item.lastWatchedSecs / item.durationSeconds) * 100))
+      : 0;
+  const resumeLink = `/learning/${item.id}?lesson=${item.lessonId}`;
+
+  return (
+    <Link
+      href={resumeLink}
+      className="group flex gap-5 p-5 rounded-2xl transition-all duration-200"
+      style={{
+        background: "var(--color-bg-surface)",
+        border: "1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle))",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.border =
+          "1px solid color-mix(in srgb, var(--color-accent) 45%, transparent)";
+        (e.currentTarget as HTMLElement).style.boxShadow =
+          "0 4px 24px rgba(0,0,0,0.3)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.border =
+          "1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle))";
+        (e.currentTarget as HTMLElement).style.boxShadow = "none";
+      }}
+    >
+      {/* Thumbnail */}
+      <div className="relative w-36 h-24 rounded-xl overflow-hidden shrink-0 bg-black">
+        {item.thumbnailUrl ? (
+          <Image src={item.thumbnailUrl} alt={item.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <BookOpen size={22} className="text-muted-foreground opacity-20" />
+          </div>
+        )}
+        {/* Play overlay */}
+        <div
+          className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          style={{ background: "rgba(0,0,0,0.55)" }}
+        >
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center"
+            style={{ background: "var(--color-accent)" }}
+          >
+            <Play size={14} fill="white" className="text-white ml-0.5" />
+          </div>
+        </div>
+        {/* Course completion bar on thumbnail */}
+        <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="h-full" style={{ width: `${pct}%`, background: "var(--color-accent)" }} />
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0 flex flex-col justify-between">
+        <div>
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest"
+            style={{ color: "var(--color-accent)" }}
+          >
+            Continue Learning
+          </span>
+          <h3 className="text-[15px] font-semibold text-foreground mt-1 line-clamp-1 group-hover:text-[var(--color-accent)] transition-colors">
+            {item.title}
+          </h3>
+          {item.lastLessonTitle && (
+            <p className="text-[12px] text-muted-foreground mt-1 line-clamp-1 flex items-center gap-1.5">
+              <Play size={10} />
+              {item.lastLessonTitle}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2 mt-3">
+          {/* Videos completed row */}
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Layers size={10} />
+              {completedLessons} / {item.episodeCount} videos completed · {pct}% done
+            </span>
+            {videoWatchedPct > 0 && (
+              <span className="flex items-center gap-1 shrink-0 ml-2">
+                <Clock size={9} />
+                {videoWatchedPct}% of current video
+              </span>
+            )}
+          </div>
+          {/* Course-level progress bar */}
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track, rgba(255,255,255,0.08))" }}>
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${pct}%`, background: "var(--color-accent)" }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Arrow */}
+      <div className="self-center shrink-0 hidden sm:flex items-center justify-center w-8 h-8 rounded-xl transition-all duration-200 group-hover:translate-x-0.5"
+        style={{
+          background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
+        }}
+      >
+        <ChevronRight size={14} style={{ color: "var(--color-accent)" }} />
+      </div>
+    </Link>
   );
 }
 
@@ -229,6 +382,22 @@ function CourseCard({ course, isEnrolled, progress }: { course: any; isEnrolled:
           )}
         </div>
 
+        {/* Module chip */}
+        {course.module && (
+          <div>
+            <span
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={{
+                background: "color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-overlay))",
+                border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
+                color: "var(--color-accent)",
+              }}
+            >
+              {course.module}
+            </span>
+          </div>
+        )}
+
         {/* Stats row */}
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground border-t pt-3" style={{ borderColor: "var(--color-border-subtle)" }}>
           {course._count?.lessons != null && (
@@ -292,9 +461,16 @@ export default function CoursesPage() {
     limit: 24,
   });
   const { data: enrollments, isLoading: enrollLoading } = useMyEnrollments();
+  const { data: continueItems, isLoading: continueLoading } = useContinueLearning();
 
   const catalogCourses: any[] = catalogData?.data ?? [];
   const myEnrollments: any[] = enrollments ?? [];
+
+  // Filter continue-learning to course type only
+  const continueCourseItems: ContinueLearningItem[] = useMemo(
+    () => (continueItems ?? []).filter((i: ContinueLearningItem) => i.type === "course" && !i.isCompleted),
+    [continueItems]
+  );
 
   const enrolledMap = useMemo(() => {
     const m = new Map<string, any>();
@@ -371,53 +547,121 @@ export default function CoursesPage() {
         )}
       </div>
 
-      {/* ── My Courses (enrolled with progress) ─────────────────────── */}
-      {(enrollLoading || activeEnrollments.length > 0) && (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
+      {/* ── Module cards ────────────────────────────────────────────── */}
+      <div className="space-y-3">
+        <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+          <Layers size={15} style={{ color: "var(--color-accent)" }} />
+          Browse by Module
+        </h2>
+        <div className="grid grid-cols-3 gap-4">
+          {MODULE_TABS.map((m) => {
+            const cfg = MODULE_CONFIG[m];
+            return (
+              <Link
+                key={m}
+                href={`/courses/${m.toLowerCase()}`}
+                className="group relative flex flex-col items-center gap-3 p-6 rounded-2xl text-center transition-all duration-200 hover:-translate-y-0.5"
+                style={{
+                  background: "var(--color-bg-surface)",
+                  border: "2px solid var(--color-border-subtle)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.border = "2px solid var(--color-accent)";
+                  (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 24px color-mix(in srgb, var(--color-accent) 20%, transparent)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.border = "2px solid var(--color-border-subtle)";
+                  (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
+                }}
+              >
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200 group-hover:bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)]"
+                  style={{
+                    background: "var(--color-surface-overlay-md)",
+                    color: "var(--color-text-secondary)",
+                  }}
+                >
+                  {cfg.icon}
+                </div>
+                <div>
+                  <p className="text-[15px] font-bold tracking-wide transition-colors group-hover:text-[var(--color-accent)]"
+                    style={{ color: "var(--color-text-normal)" }}>
+                    {m}
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+                    {cfg.description}
+                  </p>
+                </div>
+                <ChevronRight
+                  size={14}
+                  className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ color: "var(--color-accent)" }}
+                />
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+          {/* Continue Learning */}
+          <section className="space-y-4">
             <h2 className="text-base font-bold text-foreground flex items-center gap-2">
               <Play size={15} style={{ color: "var(--color-accent)" }} />
               Continue Learning
             </h2>
-            {activeEnrollments.length > 4 && (
-              <Link href="/learning" className="text-[12px] font-semibold transition-colors" style={{ color: "var(--color-accent)" }}>
-                View all →
-              </Link>
+            {continueLoading ? (
+              <ContinueLearningCardSkeleton />
+            ) : continueCourseItems.length === 0 ? (
+              <div className="flex items-center gap-4 px-5 py-4 rounded-2xl"
+                style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "var(--color-surface-overlay)" }}>
+                  <Play size={16} className="text-muted-foreground opacity-40" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-foreground">No course in progress</p>
+                  <p className="text-[12px] text-muted-foreground mt-0.5">
+                    Enroll in a course and start learning — your progress will appear here.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {continueCourseItems.slice(0, 3).map((item) => (
+                  <ContinueLearningCourseCard key={item.id} item={item} />
+                ))}
+              </div>
             )}
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-            {enrollLoading
-              ? Array.from({ length: 3 }).map((_, i) => <EnrolledCardSkeleton key={i} />)
-              : activeEnrollments.slice(0, 8).map((e) => <EnrolledCourseCard key={e.id} enrollment={e} />)
-            }
-          </div>
-        </section>
-      )}
+          </section>
 
-      {/* ── Completed courses ────────────────────────────────────────── */}
-      {completedEnrollments.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-            <CheckCircle2 size={15} style={{ color: "var(--color-success, #22c55e)" }} />
-            Completed
-          </h2>
-          <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-            {completedEnrollments.map((e) => <EnrolledCourseCard key={e.id} enrollment={e} />)}
-          </div>
-        </section>
-      )}
-
-      {/* ── Browse all courses ───────────────────────────────────────── */}
-      <section className="space-y-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-            <Layers size={15} style={{ color: "var(--color-accent)" }} />
-            Browse All
-          </h2>
-          {!catalogLoading && catalogCourses.length > 0 && (
-            <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
+          {/* Enrolled Courses */}
+          {(enrollLoading || myEnrollments.length > 0) && (
+            <section className="space-y-4">
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <BookOpen size={15} style={{ color: "var(--color-accent)" }} />
+                Enrolled Courses
+              </h2>
+              <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
+                {enrollLoading
+                  ? Array.from({ length: 3 }).map((_, i) => <EnrolledCardSkeleton key={i} />)
+                  : myEnrollments.slice(0, 8).map((e) => <EnrolledCourseCard key={e.id} enrollment={e} />)
+                }
+              </div>
+            </section>
           )}
-        </div>
+
+          {/* Browse All */}
+          <section className="space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <Layers size={15} style={{ color: "var(--color-accent)" }} />
+                Browse All
+              </h2>
+              {!catalogLoading && catalogCourses.length > 0 && (
+                <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
+              )}
+            </div>
 
         {/* Search + filters */}
         <div className="flex flex-col sm:flex-row gap-3">

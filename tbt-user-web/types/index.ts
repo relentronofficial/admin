@@ -77,6 +77,7 @@ export interface Course {
     profilePhotoUrl?: string | null;
     designation?: string | null;
   } | null;
+  module?: string | null;
   _count?: {
     lessons: number;
     enrollments: number;
@@ -212,6 +213,8 @@ export interface SiteConfig {
   loginBgMobileUrl?: string | null;
   loginBgImages?: string[] | null;
   taskTimerSeconds?: number;
+  freeLifelinesPerSession?: number;
+  earlyCompletionBonusXp?: number;
 }
 
 export interface NavItem {
@@ -805,6 +808,9 @@ export interface ContinueLearningItem {
   remainingSecs: number;
   episodeOrder: number;
   episodeCount: number;
+  /** Courses only: number of episodes the member has fully completed. */
+  completedLessons?: number;
+  /** Courses: completed/total %. Workshops: playhead-based %. */
   progressPercent: number;
   isCompleted?: boolean;
   updatedAt: number;
