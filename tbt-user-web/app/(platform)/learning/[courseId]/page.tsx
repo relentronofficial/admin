@@ -24,6 +24,7 @@ import {
   useEpisodeLifelines, useUseEpisodeLifeline,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
+import { coursesService } from "@/lib/api/services/courses.service";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
 import { getSocket } from "@/lib/socket/client";
@@ -1415,6 +1416,11 @@ export default function CourseDetailPage({
     // Start client-side timer from remaining seconds (no server call — session already active)
     startLessonTimer(selectedLesson.id, remaining, true);
     timerDurationRef.current = fullDuration; // restore full duration for lifeline resets
+    // Restore original start time so MG-04 early-completion bonus uses real elapsed time,
+    // not the refresh time. Without this, a refresh near the end would look like an early finish.
+    if (existingTimerSession.startedAt) {
+      timerStartedAtRef.current = new Date(existingTimerSession.startedAt).getTime();
+    }
   }, [selectedLesson?.id, existingTimerSession]); // eslint-disable-line react-hooks/exhaustive-deps
   // 30s heartbeat to keep server timer session alive while lesson is open
   useEffect(() => {
@@ -1566,7 +1572,7 @@ export default function CourseDetailPage({
         } else {
           // Incomplete lesson — show focus dialog instead of auto-playing
           urlFocusDialogShownRef.current = targetLessonId;
-          const dur = (target as any).timerSeconds ?? config?.taskTimerSeconds ?? 300;
+          const dur = (target as any).timerSeconds ?? (target as any).sectionTimerSeconds ?? config?.taskTimerSeconds ?? 300;
           setFocusDialog({ lesson: target, duration: dur });
         }
       } else if (target && target.videoUrl && (target as any).locked) {
@@ -2360,8 +2366,10 @@ export default function CourseDetailPage({
         const remaining = lifelinesLeft - 1;
         setLifelinesLeft(remaining);
         lifelinesLeftRef.current = remaining;
-        // Non-batch: persist per-episode lifeline use to DB (fire-and-forget)
-        episodeLifelineMutateRef.current('free').catch(() => {});
+        // Non-batch: call directly with the target lesson's id so that clicking a
+        // focus-locked lesson from the sidebar (when a different lesson is selected)
+        // doesn't decrement the wrong episode's lifeline count.
+        coursesService.useEpisodeLifeline(lesson.id, 'free').catch(() => {});
       }
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
@@ -2375,13 +2383,14 @@ export default function CourseDetailPage({
 
   const handleSpendCoinsForLesson = async (lesson: any, duration: number) => {
     try {
-      // Use per-episode lifeline endpoint for all members — handles coin deduction + audit trail
-      const res = await useEpisodeLifelineMutation.mutateAsync('coin');
+      // Call the service directly so the coin deduction always targets lesson.id regardless
+      // of which lesson is currently selected (avoids stale hook binding for cross-episode clicks)
+      const res = await coursesService.useEpisodeLifeline(lesson.id, 'coin');
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
       handleSelectLesson(lesson);
       setCoinDialog(null);
-      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.data?.remainingCoins ?? '?'} coins.`);
+      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${(res as any).data?.remainingCoins ?? '?'} coins.`);
     } catch (err: any) {
       setCoinDialog(null);
       toast.error(err?.response?.data?.error ?? "Not enough TBT coins");
@@ -2446,7 +2455,9 @@ export default function CourseDetailPage({
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
   const activeTimerSecs = selectedLesson ? lessonTimers[selectedLesson.id] : undefined;
   const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
-  const maxLifelines = episodeLifelineData?.lifelineCount ?? MAX_FREE_LIFELINES;
+  const maxLifelines = isProgramLifeline
+    ? ((batchData as any)?.lifelinesTotal ?? MAX_FREE_LIFELINES)
+    : (episodeLifelineData?.lifelineCount ?? MAX_FREE_LIFELINES);
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];

@@ -4328,7 +4328,8 @@ export async function startEpisodeTimerHandler(request: FastifyRequest, reply: F
      VALUES ($1::uuid, $2::uuid, 'ACTIVE', $3, $4, $5, $4)
      ON CONFLICT (member_id, episode_id) DO UPDATE SET
        status = 'ACTIVE', duration_seconds = $3, started_at = $4,
-       expires_at = $5, completed_at = NULL, last_heartbeat_at = $4`,
+       expires_at = $5, completed_at = NULL, last_heartbeat_at = $4
+     WHERE lesson_timer_sessions.status != 'COMPLETED'`,
     memberId, episodeId, durationSeconds, now, expiresAt,
   );
   return reply.send({ success: true, data: { expiresAt, remainingSeconds: durationSeconds, status: 'ACTIVE' }, error: null });
@@ -4464,6 +4465,8 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
 
   // type === 'coin' — deduct coins from tbt_activity_log
   const coinCost = cfg.lifelineCoinCost ?? 50;
+  const purchasedSoFar = state.purchasedUsed ?? 0;
+  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
   const balanceRows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT COALESCE(SUM(points), 0) AS balance FROM tbt_activity_log WHERE member_id = $1::uuid`,
     memberId,
@@ -4474,8 +4477,6 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
     `INSERT INTO tbt_activity_log (member_id, points, source, activity_date) VALUES ($1::uuid, $2, 'lifeline_spend', NOW()::DATE)`,
     memberId, -coinCost,
   );
-  const purchasedSoFar = state.purchasedUsed ?? 0;
-  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
   await request.server.prisma.$executeRawUnsafe(
     `INSERT INTO episode_lifeline_state (member_id, episode_id, purchased_used, total_used, updated_at)
      VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
