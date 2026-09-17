@@ -1338,6 +1338,7 @@ export default function CourseDetailPage({
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
   const [focusDialog, setFocusDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [coinDialog, setCoinDialog] = useState<{ lesson: any; duration: number } | null>(null);
+  const [lifelineDialog, setLifelineDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [lessonTimers, setLessonTimers] = useState<Record<string, number>>({});
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const timerLessonRef = useRef<string | null>(null);
@@ -2277,39 +2278,15 @@ export default function CourseDetailPage({
       timerLessonRef.current = null;
       if (completedIdsRef.current.has(lessonId)) return;
 
+      // Pause the video and lock the lesson — user must manually choose to use a lifeline
+      pausePlayerRef.current();
+      setFocusLockedIds(prev => new Set([...prev, lessonId]));
+      const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
+      if (!lessonData || selectedLessonRef.current?.id !== lessonId) return;
       if (lifelinesLeftRef.current > 0) {
-        const remaining = lifelinesLeftRef.current - 1;
-        lifelinesLeftRef.current = remaining;
-        setLifelinesLeft(remaining);
-        // Persist to backend (fire-and-forget; local state already updated)
-        if (isProgramLifelineRef.current && batchIdRef.current) {
-          programLifelineMutateRef.current({ batchId: batchIdRef.current, episodeId: lessonId, context: 'episode' })
-            .then((res) => {
-              lifelinesLeftRef.current = res.lifelinesRemaining;
-              setLifelinesLeft(res.lifelinesRemaining);
-            })
-            .catch(() => {}); // network failure: local state already shows deduction
-        } else {
-          // Non-batch: persist per-episode lifeline usage
-          episodeLifelineMutateRef.current('free').catch(() => {});
-        }
-        toast.success(
-          `⚡ Time's up — lifeline auto-used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`,
-          { duration: 3500 },
-        );
-        timerEndTimeRef.current = Date.now() + timerDurationRef.current * 1000;
-        timerLessonRef.current = lessonId;
-        setLessonTimers(prev => ({ ...prev, [lessonId]: timerDurationRef.current }));
-        // Also extend the server-side session for the new duration
-        startEpisodeTimerRef.current({ episodeId: lessonId, durationSeconds: timerDurationRef.current });
-        timerIntervalRef.current = setInterval(tick, 500);
+        setLifelineDialog({ lesson: lessonData, duration: timerDurationRef.current });
       } else {
-        setFocusLockedIds(prev => new Set([...prev, lessonId]));
-        const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
-        if (lessonData && selectedLessonRef.current?.id === lessonId) {
-          setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
-        }
-        toast.error("⏰ Time's up! No lifelines left — spend TBT coins to continue.", { duration: 4000 });
+        setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
       }
     }
 
@@ -2395,6 +2372,34 @@ export default function CourseDetailPage({
       setCoinDialog(null);
       toast.error(err?.response?.data?.error ?? "Not enough TBT coins");
     }
+  };
+
+  const handleManualUseLifeline = async (lesson: any, duration: number) => {
+    setLifelineDialog(null);
+    if (isProgramLifeline && batchId) {
+      try {
+        const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
+        setLifelinesLeft(res.lifelinesRemaining);
+        lifelinesLeftRef.current = res.lifelinesRemaining;
+      } catch (err: any) {
+        if (err?.response?.data?.error === 'exhausted') {
+          setCoinDialog({ lesson, duration });
+          return;
+        }
+        toast.error("Failed to use lifeline — try again");
+        return;
+      }
+    } else {
+      const remaining = lifelinesLeft - 1;
+      setLifelinesLeft(remaining);
+      lifelinesLeftRef.current = remaining;
+      coursesService.useEpisodeLifeline(lesson.id, 'free').catch(() => {});
+    }
+    setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
+    startLessonTimer(lesson.id, duration);
+    resumePlayerRef.current();
+    const remaining = lifelinesLeftRef.current;
+    toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`);
   };
 
   const handleRewatch = () => {
@@ -2576,6 +2581,48 @@ export default function CourseDetailPage({
               >
                 {spendCoins.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
                 Spend {LIFELINE_COIN_COST} Coins
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Time's Up — Manual Lifeline Dialog ────────────────────────────── */}
+      {lifelineDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.82)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(239,68,68,0.15)" }}>
+                <span className="text-xl">⏰</span>
+              </div>
+              <div>
+                <p className="font-bold text-base">Time's up!</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>{lifelineDialog.lesson.title}</p>
+              </div>
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+              The focus timer has ended and the video has been paused.
+              Use a lifeline to reset the timer and continue watching.
+              You have <strong style={{ color: "var(--color-text-normal)" }}>{lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setLifelineDialog(null);
+                  setCoinDialog({ lesson: lifelineDialog.lesson, duration: lifelineDialog.duration });
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all"
+                style={{ borderColor: "var(--color-border-medium)", background: "transparent" }}
+              >
+                Use Coins
+              </button>
+              <button
+                onClick={() => handleManualUseLifeline(lifelineDialog.lesson, lifelineDialog.duration)}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                style={{ background: "var(--color-accent)" }}
+              >
+                <Heart size={14} />
+                Use Lifeline
               </button>
             </div>
           </div>
