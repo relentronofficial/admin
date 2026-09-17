@@ -1648,10 +1648,11 @@ export default function CourseDetailPage({
   }, [selectedLesson?.id, courseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 30-second heartbeat ──────────────────────────────────────────────────────
-  // Uses Date.now() elapsed so progress is saved even when the Bunny iframe sends
-  // no JS messages. Guard on isPlayingRef prevents wall-clock time from accumulating
-  // while the video is paused (would otherwise inflate watchedSeconds and falsely
-  // trigger the 85% completion threshold).
+  // watchedSeconds uses the actual video playhead (lastPlayheadRef) — not
+  // wall-clock elapsed — so pausing for several minutes doesn't inflate the
+  // stored position and falsely trigger the 85% completion threshold.
+  // deltaSeconds still uses elapsed time (capped at 30s) to measure activity
+  // since the last heartbeat, which is correct regardless of player type.
   useEffect(() => {
     if (!selectedLesson) return;
 
@@ -1664,7 +1665,7 @@ export default function CourseDetailPage({
       lastHeartbeatWatchedRef.current = elapsed;
       markComplete.mutate({
         lessonId: lesson.id,
-        watchedSeconds: Math.floor((lesson.resumeAtSeconds ?? 0) + elapsed),
+        watchedSeconds: Math.floor(lastPlayheadRef.current),
         deltaSeconds: delta,
       });
     }, 30_000);

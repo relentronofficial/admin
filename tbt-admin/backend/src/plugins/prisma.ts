@@ -54,7 +54,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS quiz_unlock_percent INTEGER NOT NULL DEFAULT 80,
           ADD COLUMN IF NOT EXISTS drm_enabled BOOLEAN NOT NULL DEFAULT false,
           ADD COLUMN IF NOT EXISTS bunny_drm_token TEXT,
-          ADD COLUMN IF NOT EXISTS timer_seconds INT
+          ADD COLUMN IF NOT EXISTS timer_seconds INT,
+          ADD COLUMN IF NOT EXISTS description TEXT
       `),
       // products
       prisma.$executeRawUnsafe(`
@@ -924,6 +925,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         );
         CREATE INDEX IF NOT EXISTS idx_helpdesk_feedback_status ON helpdesk_feedback(status);
       `),
+      // Backfill columns added to helpdesk_settings after initial deploy —
+      // CREATE TABLE IF NOT EXISTS won't add them to an existing table.
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_settings ADD COLUMN IF NOT EXISTS website_url TEXT`),
       // Seed default helpdesk settings row so first-time admins see a
       // populated form. Idempotent — only inserts if the table is empty.
       prisma.$executeRawUnsafe(`

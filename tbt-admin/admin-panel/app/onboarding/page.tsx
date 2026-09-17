@@ -22,10 +22,14 @@ import {
   Radio,
   Ban,
   Users,
+  Upload,
+  Loader2,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers, useGetMember, useApproveMember } from "@/lib/hooks/useMembers";
-import { useListAdmins } from "@/lib/hooks/useAdmin";
+import { useListAdmins, useCreateBunnyVideo } from "@/lib/hooks/useAdmin";
 import {
   useRejectOnboarding,
   useRequestOnboardingChanges,
@@ -767,6 +771,7 @@ function ContentTab() {
   const update = useUpdateOnboardingContent();
   const del = useDeleteOnboardingContent();
   const reorder = useReorderOnboardingContent();
+  const createBunnyVideo = useCreateBunnyVideo();
   const serverRows: any[] = data?.data ?? [];
 
   // DnD reorder state
@@ -790,6 +795,15 @@ function ContentTab() {
     setDragOver(null);
   };
 
+  const moveRow = (from: number, to: number) => {
+    if (to < 0 || to >= localRows.length) return;
+    const next = [...localRows];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setLocalRows(next);
+    setIsDirty(true);
+  };
+
   const handleSaveOrder = async () => {
     await reorder.mutateAsync(localRows.map((r) => r.id));
     setIsDirty(false);
@@ -802,6 +816,47 @@ function ContentTab() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [quizQs, setQuizQs] = useState<QuizQuestion[]>([]);
   const [showQuizBuilder, setShowQuizBuilder] = useState(false);
+
+  // Video upload state
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const handleVideoUpload = async (file: File) => {
+    try {
+      setVideoUploading(true);
+      setUploadProgress(0);
+      const { videoId, tusUploadUrl, tusHeaders, embedUrl } = await createBunnyVideo.mutateAsync({
+        title: form.title || file.name,
+      });
+      const { Upload: TusUpload } = await import("tus-js-client");
+      await new Promise<void>((resolve, reject) => {
+        const upload = new TusUpload(file, {
+          endpoint: tusUploadUrl,
+          headers: {
+            AuthorizationSignature: tusHeaders.AuthorizationSignature,
+            AuthorizationExpire: String(tusHeaders.AuthorizationExpire),
+            VideoId: tusHeaders.VideoId,
+            LibraryId: tusHeaders.LibraryId,
+          },
+          chunkSize: 5 * 1024 * 1024,
+          retryDelays: [0, 3000, 5000, 10000],
+          metadata: { filetype: file.type, title: form.title || file.name },
+          onProgress(b: number, t: number) { setUploadProgress(Math.round((b / t) * 100)); },
+          onSuccess() { resolve(); },
+          onError(err: any) { reject(err); },
+        });
+        upload.start();
+      });
+      void videoId;
+      setForm((f) => ({ ...f, videoUrl: embedUrl }));
+    } catch (e: any) {
+      window.alert(e.message || "Video upload failed");
+    } finally {
+      setVideoUploading(false);
+      setUploadProgress(0);
+    }
+  };
 
   const addQuestion = () => setQuizQs((qs) => [
     ...qs,
@@ -868,7 +923,27 @@ function ContentTab() {
 
         {/* Media URLs */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input placeholder="Video URL (HLS/mp4, optional)" value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} className={inputCls} />
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => videoInputRef.current?.click()}
+                disabled={videoUploading}
+                className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest font-rajdhani hover:border-[#dc2626] transition-all disabled:opacity-50"
+              >
+                {videoUploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                {videoUploading
+                  ? uploadProgress > 0 ? `${uploadProgress}%` : "Preparing…"
+                  : "Upload to Bunny"}
+              </button>
+              {form.videoUrl?.includes("iframe.mediadelivery.net") && (
+                <span className="text-[10px] text-green-500 font-rajdhani font-bold uppercase tracking-widest">Bunny Stream ✓</span>
+              )}
+              <input ref={videoInputRef} type="file" accept="video/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
+            </div>
+            <input placeholder="Or paste video URL (HLS/embed, optional)" value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} className={inputCls} />
+          </div>
           <input placeholder="Audio URL (optional)" value={form.audioUrl} onChange={(e) => setForm({ ...form, audioUrl: e.target.value })} className={inputCls} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -986,8 +1061,28 @@ function ContentTab() {
                       dragOver === i && "border-t-2 border-t-[#dc2626]",
                     )}
                   >
-                    <td className="px-2 py-3 text-[#444] cursor-grab active:cursor-grabbing">
-                      <GripVertical size={14} />
+                    <td className="px-2 py-3">
+                      <div className="flex items-center gap-1">
+                        <GripVertical size={14} className="text-[#444] cursor-grab active:cursor-grabbing" />
+                        <div className="flex flex-col">
+                          <button
+                            onClick={() => moveRow(i, i - 1)}
+                            disabled={i === 0}
+                            className="text-[#555] hover:text-[#a0a0a0] disabled:opacity-20 transition-colors"
+                            title="Move up"
+                          >
+                            <ChevronUp size={11} />
+                          </button>
+                          <button
+                            onClick={() => moveRow(i, i + 1)}
+                            disabled={i === localRows.length - 1}
+                            className="text-[#555] hover:text-[#a0a0a0] disabled:opacity-20 transition-colors"
+                            title="Move down"
+                          >
+                            <ChevronDown size={11} />
+                          </button>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-[#a0a0a0] text-xs font-mono">{row.stepKey}</td>
                     <td className="px-4 py-3 text-[#f0f0f0] text-xs">{row.title}</td>

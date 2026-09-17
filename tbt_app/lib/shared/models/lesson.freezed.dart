@@ -47,6 +47,9 @@ mixin _$Lesson {
   bool get completedByThreshold =>
       throw _privateConstructorUsedError; // 0..100, may be null if backend can't compute the exact fraction.
   int? get watchPercent =>
+      throw _privateConstructorUsedError; // Focus timer for this episode (seconds). Null = no per-episode timer.
+  // The effective timer is this value OR the section's timerSeconds if set.
+  int? get timerSeconds =>
       throw _privateConstructorUsedError; // Section grouping (null = unsectioned)
   String? get sectionId => throw _privateConstructorUsedError;
   String? get sectionTitle => throw _privateConstructorUsedError;
@@ -84,6 +87,7 @@ abstract class $LessonCopyWith<$Res> {
     bool locked,
     bool completedByThreshold,
     int? watchPercent,
+    int? timerSeconds,
     String? sectionId,
     String? sectionTitle,
     int? sectionOrder,
@@ -122,6 +126,7 @@ class _$LessonCopyWithImpl<$Res, $Val extends Lesson>
     Object? locked = null,
     Object? completedByThreshold = null,
     Object? watchPercent = freezed,
+    Object? timerSeconds = freezed,
     Object? sectionId = freezed,
     Object? sectionTitle = freezed,
     Object? sectionOrder = freezed,
@@ -213,6 +218,11 @@ class _$LessonCopyWithImpl<$Res, $Val extends Lesson>
                     ? _value.watchPercent
                     : watchPercent // ignore: cast_nullable_to_non_nullable
                         as int?,
+            timerSeconds:
+                freezed == timerSeconds
+                    ? _value.timerSeconds
+                    : timerSeconds // ignore: cast_nullable_to_non_nullable
+                        as int?,
             sectionId:
                 freezed == sectionId
                     ? _value.sectionId
@@ -260,6 +270,7 @@ abstract class _$$LessonImplCopyWith<$Res> implements $LessonCopyWith<$Res> {
     bool locked,
     bool completedByThreshold,
     int? watchPercent,
+    int? timerSeconds,
     String? sectionId,
     String? sectionTitle,
     int? sectionOrder,
@@ -297,6 +308,7 @@ class __$$LessonImplCopyWithImpl<$Res>
     Object? locked = null,
     Object? completedByThreshold = null,
     Object? watchPercent = freezed,
+    Object? timerSeconds = freezed,
     Object? sectionId = freezed,
     Object? sectionTitle = freezed,
     Object? sectionOrder = freezed,
@@ -388,6 +400,11 @@ class __$$LessonImplCopyWithImpl<$Res>
                 ? _value.watchPercent
                 : watchPercent // ignore: cast_nullable_to_non_nullable
                     as int?,
+        timerSeconds:
+            freezed == timerSeconds
+                ? _value.timerSeconds
+                : timerSeconds // ignore: cast_nullable_to_non_nullable
+                    as int?,
         sectionId:
             freezed == sectionId
                 ? _value.sectionId
@@ -429,6 +446,7 @@ class _$LessonImpl implements _Lesson {
     this.locked = false,
     this.completedByThreshold = false,
     this.watchPercent,
+    this.timerSeconds,
     this.sectionId,
     this.sectionTitle,
     this.sectionOrder,
@@ -491,6 +509,10 @@ class _$LessonImpl implements _Lesson {
   // 0..100, may be null if backend can't compute the exact fraction.
   @override
   final int? watchPercent;
+  // Focus timer for this episode (seconds). Null = no per-episode timer.
+  // The effective timer is this value OR the section's timerSeconds if set.
+  @override
+  final int? timerSeconds;
   // Section grouping (null = unsectioned)
   @override
   final String? sectionId;
@@ -501,7 +523,7 @@ class _$LessonImpl implements _Lesson {
 
   @override
   String toString() {
-    return 'Lesson(id: $id, title: $title, type: $type, hlsUrl: $hlsUrl, videoUrl: $videoUrl, videoType: $videoType, durationSeconds: $durationSeconds, duration: $duration, order: $order, hasQuiz: $hasQuiz, isCompleted: $isCompleted, resumeAtSeconds: $resumeAtSeconds, actualWatchedSecs: $actualWatchedSecs, quizUnlockPercent: $quizUnlockPercent, locked: $locked, completedByThreshold: $completedByThreshold, watchPercent: $watchPercent, sectionId: $sectionId, sectionTitle: $sectionTitle, sectionOrder: $sectionOrder)';
+    return 'Lesson(id: $id, title: $title, type: $type, hlsUrl: $hlsUrl, videoUrl: $videoUrl, videoType: $videoType, durationSeconds: $durationSeconds, duration: $duration, order: $order, hasQuiz: $hasQuiz, isCompleted: $isCompleted, resumeAtSeconds: $resumeAtSeconds, actualWatchedSecs: $actualWatchedSecs, quizUnlockPercent: $quizUnlockPercent, locked: $locked, completedByThreshold: $completedByThreshold, watchPercent: $watchPercent, timerSeconds: $timerSeconds, sectionId: $sectionId, sectionTitle: $sectionTitle, sectionOrder: $sectionOrder)';
   }
 
   @override
@@ -536,6 +558,8 @@ class _$LessonImpl implements _Lesson {
                 other.completedByThreshold == completedByThreshold) &&
             (identical(other.watchPercent, watchPercent) ||
                 other.watchPercent == watchPercent) &&
+            (identical(other.timerSeconds, timerSeconds) ||
+                other.timerSeconds == timerSeconds) &&
             (identical(other.sectionId, sectionId) ||
                 other.sectionId == sectionId) &&
             (identical(other.sectionTitle, sectionTitle) ||
@@ -565,6 +589,7 @@ class _$LessonImpl implements _Lesson {
     locked,
     completedByThreshold,
     watchPercent,
+    timerSeconds,
     sectionId,
     sectionTitle,
     sectionOrder,
@@ -603,6 +628,7 @@ abstract class _Lesson implements Lesson {
     final bool locked,
     final bool completedByThreshold,
     final int? watchPercent,
+    final int? timerSeconds,
     final String? sectionId,
     final String? sectionTitle,
     final int? sectionOrder,
@@ -649,7 +675,10 @@ abstract class _Lesson implements Lesson {
   @override
   bool get completedByThreshold; // 0..100, may be null if backend can't compute the exact fraction.
   @override
-  int? get watchPercent; // Section grouping (null = unsectioned)
+  int? get watchPercent; // Focus timer for this episode (seconds). Null = no per-episode timer.
+  // The effective timer is this value OR the section's timerSeconds if set.
+  @override
+  int? get timerSeconds; // Section grouping (null = unsectioned)
   @override
   String? get sectionId;
   @override

@@ -40,14 +40,15 @@ export function canApproveMember(params: {
   createdBy: string | null;
   verificationStatus: VerificationStatus;
 }): boolean {
-  if (params.status !== 'pending') return false;
-  if (params.createdBy !== null) return true;
-  return params.verificationStatus === 'under_review';
+  // Any pending member can be approved by admin — whether admin-created or
+  // self-registered. The KYC wizard is a helpful step but not a hard gate;
+  // the admin is the final authority on approval.
+  return params.status === 'pending';
 }
 
 /** Minimal required fields to submit — deliberately smaller than the full
  * ~25-field admin form (see SELF_ONBOARDING_SPECKIT.md §11 item 1). */
-export const REQUIRED_ONBOARDING_FIELDS = ['firstName', 'businessName', 'businessType', 'city', 'state'] as const;
+export const REQUIRED_ONBOARDING_FIELDS = ['firstName', 'businessName', 'productServiceType', 'city', 'state'] as const;
 
 export interface OnboardingReadyCheck {
   valid: boolean;

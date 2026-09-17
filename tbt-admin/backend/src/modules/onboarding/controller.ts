@@ -1,8 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getPresignedUrlHandler } from '../upload/controller.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { canEditOnboarding, canSubmitOnboarding, checkOnboardingReadyToSubmit } from '../../lib/onboardingLogic.js';
 import { onboardingContentSchema, onboardingUpdateSchema, presignDocumentSchema, registerDocumentSchema } from './schema.js';
+import { env } from '../../config/env.js';
 
 const PROFILE_SELECT = {
   phone: true, email: true,
@@ -205,6 +207,74 @@ export async function presignOnboardingDocumentHandler(req: FastifyRequest, repl
   (req.body as any).bucket = 'kyc-documents';
   (req.body as any).pathPrefix = `members/${memberId}`;
   return getPresignedUrlHandler(req, reply);
+}
+
+// POST /api/onboarding/documents/upload — member-facing, upload document via backend (avoids R2 CORS from user-web domain)
+export async function uploadOnboardingDocumentHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const { documentType = 'other', filename = 'document' } = req.query as { documentType?: string; filename?: string };
+
+  const member = await req.server.prisma.member.findUnique({ where: { id: memberId }, select: { verificationStatus: true } as any });
+  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+  if (!canEditOnboarding((member as any).verificationStatus)) {
+    return reply.status(403).send({ success: false, data: null, error: 'Documents cannot be uploaded in the current state' });
+  }
+
+  const body = req.body as Buffer;
+  if (!Buffer.isBuffer(body) || body.length === 0) {
+    return reply.status(400).send({ success: false, data: null, error: 'No file received' });
+  }
+
+  const contentType = (req.headers['content-type'] ?? 'application/octet-stream').split(';')[0].trim();
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
+  const key = `members/${memberId}/${Date.now()}-${safeFilename}`;
+
+  let publicUrl: string | undefined;
+
+  // Primary: Bunny Storage
+  if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && env.BUNNY_CDN_URL) {
+    try {
+      const res = await fetch(`https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`, {
+        method: 'PUT',
+        headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
+        body: new Uint8Array(body),
+      });
+      if (res.ok) {
+        publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+        req.log.info(`KYC doc uploaded to Bunny: ${publicUrl}`);
+      } else {
+        req.log.warn(`Bunny KYC upload [${res.status}] – trying R2`);
+      }
+    } catch (e: any) {
+      req.log.warn(`Bunny KYC upload error – trying R2: ${e.message}`);
+    }
+  }
+
+  // Fallback: R2
+  if (!publicUrl && env.CLOUDFLARE_R2_ACCOUNT_ID && env.CLOUDFLARE_R2_ACCESS_KEY_ID && env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && env.CLOUDFLARE_R2_BUCKET_NAME) {
+    try {
+      const s3 = new S3Client({
+        region: 'auto',
+        endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID, secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY },
+      });
+      await s3.send(new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, Body: body, ContentType: contentType }));
+      publicUrl = env.BUNNY_CDN_URL ? `https://${env.BUNNY_CDN_URL}/${key}` : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
+      req.log.info(`KYC doc uploaded to R2: ${publicUrl}`);
+    } catch (e: any) {
+      req.log.error(`R2 KYC upload failed: ${e.message}`);
+    }
+  }
+
+  if (!publicUrl) {
+    return reply.status(502).send({ success: false, data: null, error: 'Upload failed – no storage service available' });
+  }
+
+  const doc = await req.server.prisma.kycDocument.create({
+    data: { memberId, documentType, documentUrl: publicUrl, status: 'pending' },
+    select: { id: true, documentType: true, documentUrl: true, status: true },
+  });
+  return reply.status(201).send({ success: true, data: doc, error: null });
 }
 
 // POST /api/onboarding/documents — member-facing, register an uploaded document

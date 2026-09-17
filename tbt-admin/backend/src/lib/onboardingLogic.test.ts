@@ -47,18 +47,15 @@ describe('canReviewOnboarding', () => {
 });
 
 describe('canApproveMember', () => {
-  it('allows approving an admin-created member regardless of verificationStatus', () => {
+  it('allows approving any pending member regardless of createdBy or verificationStatus', () => {
     expect(canApproveMember({ status: 'pending', createdBy: 'admin-1', verificationStatus: 'awaiting_kyc' })).toBe(true);
     expect(canApproveMember({ status: 'pending', createdBy: 'admin-1', verificationStatus: 'under_review' })).toBe(true);
-  });
-
-  it('requires under_review to approve a self-signed-up member', () => {
     expect(canApproveMember({ status: 'pending', createdBy: null, verificationStatus: 'under_review' })).toBe(true);
-    expect(canApproveMember({ status: 'pending', createdBy: null, verificationStatus: 'awaiting_kyc' })).toBe(false);
-    expect(canApproveMember({ status: 'pending', createdBy: null, verificationStatus: 'changes_requested' })).toBe(false);
+    expect(canApproveMember({ status: 'pending', createdBy: null, verificationStatus: 'awaiting_kyc' })).toBe(true);
+    expect(canApproveMember({ status: 'pending', createdBy: null, verificationStatus: 'changes_requested' })).toBe(true);
   });
 
-  it('never allows approving a member that is not pending, even if otherwise eligible', () => {
+  it('never allows approving a member that is not pending', () => {
     expect(canApproveMember({ status: 'active', createdBy: null, verificationStatus: 'under_review' })).toBe(false);
     expect(canApproveMember({ status: 'suspended', createdBy: 'admin-1', verificationStatus: 'awaiting_kyc' })).toBe(false);
   });
@@ -68,7 +65,7 @@ describe('checkOnboardingReadyToSubmit', () => {
   const completeProfile = {
     firstName: 'Priya',
     businessName: 'Priya Textiles',
-    businessType: 'Retail',
+    productServiceType: 'Retail',
     city: 'Chennai',
     state: 'Tamil Nadu',
   };
@@ -81,7 +78,7 @@ describe('checkOnboardingReadyToSubmit', () => {
   it('lists every missing required field', () => {
     const result = checkOnboardingReadyToSubmit({ firstName: 'Priya' }, 1);
     expect(result.valid).toBe(false);
-    expect(result.missingFields).toEqual(['businessName', 'businessType', 'city', 'state']);
+    expect(result.missingFields).toEqual(['businessName', 'productServiceType', 'city', 'state']);
   });
 
   it('treats empty string the same as missing, not as provided', () => {
@@ -98,6 +95,6 @@ describe('checkOnboardingReadyToSubmit', () => {
   });
 
   it('required field list matches the documented minimal set', () => {
-    expect(REQUIRED_ONBOARDING_FIELDS).toEqual(['firstName', 'businessName', 'businessType', 'city', 'state']);
+    expect(REQUIRED_ONBOARDING_FIELDS).toEqual(['firstName', 'businessName', 'productServiceType', 'city', 'state']);
   });
 });

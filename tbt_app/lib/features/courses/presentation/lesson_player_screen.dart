@@ -19,6 +19,7 @@ import '../../../shared/video/tbt_video_player_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/courses_service.dart';
+import '../providers/courses_provider.dart';
 import 'widgets/feedback_modal.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
@@ -394,6 +395,16 @@ window.addEventListener('message', function(e) {
           watchedSeconds: _currentTime.toInt(),
           isCompleted: true,
         )
+        .then((_) {
+          // Refresh all providers that depend on lesson progress so that
+          // CourseDetailScreen, LearningOverviewScreen, and the certificate
+          // eligibility badge are up-to-date when the user navigates back.
+          ref.invalidate(lessonProgressProvider(widget.courseId));
+          ref.invalidate(courseDetailProvider(widget.courseId));
+          ref.invalidate(certEligibilityProvider(widget.courseId));
+          ref.invalidate(myEnrollmentsProvider);
+          ref.invalidate(learningCoursesProvider);
+        })
         .catchError((_) {});
     _maybeShowReflection();
     _maybeShowFeedback();

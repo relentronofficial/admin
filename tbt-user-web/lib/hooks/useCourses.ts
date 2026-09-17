@@ -81,6 +81,7 @@ export const useMarkLessonComplete = (courseId: string) => {
       queryClient.invalidateQueries({ queryKey: ["user", "progress", courseId] });
       if (isCompleted) {
         queryClient.invalidateQueries({ queryKey: ["user", "dashboard"] });
+        queryClient.invalidateQueries({ queryKey: ["user", "enrollments"] });
         queryClient.invalidateQueries({ queryKey: ["course-xp", courseId] });
         queryClient.invalidateQueries({ queryKey: ["course-leaderboard", courseId] });
         queryClient.invalidateQueries({ queryKey: ["certificate-eligibility", courseId] });
