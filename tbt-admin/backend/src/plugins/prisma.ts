@@ -1448,6 +1448,26 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE INDEX IF NOT EXISTS idx_course_reflections_member_course
           ON course_reflections(member_id, course_id)
       `),
+      // Lesson feedback — member's 1-10 rating + optional written feedback per
+      // lesson, shown inline below the video once the lesson is completed.
+      // Distinct from video_feedback_* (admin-authored per-episode questions).
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS lesson_feedback (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+          course_id TEXT NOT NULL,
+          lesson_id TEXT NOT NULL,
+          rating INT NOT NULL,
+          feedback_text TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(member_id, course_id, lesson_id)
+        )
+      `),
+      prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_lesson_feedback_member_course
+          ON lesson_feedback(member_id, course_id)
+      `),
       // ── Video Feedback (2026-08-28) ────────────────────────────────
       // Admin-configured questions per episode; member responses.
       prisma.$executeRawUnsafe(`

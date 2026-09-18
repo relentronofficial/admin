@@ -62,6 +62,12 @@ export const coursesService = {
   getReflections: (courseId: string) =>
     apiClient.get<never, ApiResponse<Array<{ lessonId: string; text: string; savedAt: string }>>>(`/api/user/courses/${courseId}/reflections`),
 
+  saveLessonFeedback: (courseId: string, lessonId: string, body: { rating: number; feedbackText?: string }) =>
+    apiClient.put<never, ApiResponse<{ saved: boolean }>>(`/api/user/courses/${courseId}/lesson-feedback/${lessonId}`, body),
+
+  getLessonFeedback: (courseId: string) =>
+    apiClient.get<never, ApiResponse<Array<{ lessonId: string; rating: number; feedbackText: string | null; updatedAt: string }>>>(`/api/user/courses/${courseId}/lesson-feedback`),
+
   getCategories: () =>
     apiClient.get<never, ApiResponse<Array<{ id: string; name: string }>>>("/api/user/courses/categories"),
 
