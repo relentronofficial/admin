@@ -2747,29 +2747,6 @@ export default function CourseDetailPage({
           </div>
         </div>
 
-        {/* Module tabs — only shown when course has modules */}
-        {courseModules.length > 0 && (
-          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
-            <button
-              onClick={() => setSelectedModule(null)}
-              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selectedModule === null ? "text-white" : "opacity-60 hover:opacity-90"}`}
-              style={selectedModule === null ? { background: "var(--color-accent)" } : { background: "transparent" }}
-            >
-              All
-            </button>
-            {courseModules.map((m: any) => (
-              <button
-                key={m.id}
-                onClick={() => setSelectedModule(selectedModule === m.id ? null : m.id)}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selectedModule === m.id ? "text-white" : "opacity-60 hover:opacity-90"}`}
-                style={selectedModule === m.id ? { background: "var(--color-accent)" } : { background: "transparent" }}
-              >
-                {m.title}
-              </button>
-            ))}
-          </div>
-        )}
-
         <div>
           {visibleLessons.length === 0 ? (
             <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
