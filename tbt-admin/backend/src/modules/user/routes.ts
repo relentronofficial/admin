@@ -93,6 +93,8 @@ import {
   requestCourseAccessHandler,
   upsertReflectionHandler,
   listReflectionsHandler,
+  upsertLessonFeedbackHandler,
+  listLessonFeedbackHandler,
   searchHandler,
   getMyInquiredProductsHandler,
   listUserProgramsHandler,
@@ -133,6 +135,8 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/courses/:courseId/certificate', getCourseCertificateHandler);
   fastify.put('/courses/:courseId/reflections/:lessonId', upsertReflectionHandler);
   fastify.get('/courses/:courseId/reflections', listReflectionsHandler);
+  fastify.put('/courses/:courseId/lesson-feedback/:lessonId', upsertLessonFeedbackHandler);
+  fastify.get('/courses/:courseId/lesson-feedback', listLessonFeedbackHandler);
 
   // ── Enrollments & lesson progress ─────────────────────────────────────────
   fastify.get('/enrollments', getEnrollmentsHandler);
