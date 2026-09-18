@@ -36,6 +36,7 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import { FeedbackModal } from "@/components/features/video/FeedbackModal";
+import { VideoFeedbackCard } from "@/components/features/video/VideoFeedbackCard";
 import { useVideoFeedbackQuestions } from "@/lib/hooks/useVideoFeedback";
 import type { Lesson } from "@/types";
 
@@ -3028,6 +3029,11 @@ export default function CourseDetailPage({
                 courseId={courseId}
                 existing={lessonFeedbackList?.find((f: any) => f.lessonId === selectedLesson.id)}
               />
+            )}
+
+            {/* Video feedback — only once this video is completed */}
+            {(watchState === "completed" || !!selectedLesson.isCompleted) && (
+              <VideoFeedbackCard courseId={courseId} episodeId={selectedLesson.id} />
             )}
 
             {/* Episode Resources */}

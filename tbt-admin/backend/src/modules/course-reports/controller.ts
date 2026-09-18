@@ -11,10 +11,11 @@
  */
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { deliverMemberCourseReport, deliverMemberFeedbackToAdmin } from '../../lib/courseReports.js';
+import { deliverMemberCourseReport, deliverMemberEpisodeFeedbackToAdmin, deliverMemberFeedbackToAdmin } from '../../lib/courseReports.js';
 import { computeWeekNumberForDate } from '../../lib/courseReportLogic.js';
 import {
   createOrSendReportSchema,
+  submitEpisodeFeedbackSchema,
   submitFeedbackSchema,
   updateFeedbackStatusSchema,
   updateRemarksSchema,
@@ -29,6 +30,7 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
 
 const memberSelect = { id: true, firstName: true, lastName: true, phone: true, memberId: true } as const;
 const courseSelect = { id: true, title: true, slug: true } as const;
+const episodeSelect = { id: true, title: true } as const;
 
 // ────────────────────────────────────────────────────────────────
 // ADMIN — reports
@@ -163,6 +165,60 @@ export async function adminUpdateFeedbackStatusHandler(req: FastifyRequest, repl
 }
 
 // ────────────────────────────────────────────────────────────────
+// ADMIN — video (episode) feedback
+// ────────────────────────────────────────────────────────────────
+
+export async function adminListEpisodeFeedbackHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { page = '1', limit = '25', memberId, courseId, episodeId, status } = req.query as Record<string, string>;
+  const p = Math.max(1, Number(page) || 1);
+  const l = Math.min(100, Math.max(1, Number(limit) || 25));
+
+  const where: any = {};
+  if (memberId) where.memberId = memberId;
+  if (courseId) where.courseId = courseId;
+  if (episodeId) where.episodeId = episodeId;
+  if (status) where.status = status;
+
+  const [rows, total] = await Promise.all([
+    req.server.prisma.courseEpisodeFeedback.findMany({
+      where,
+      include: { member: { select: memberSelect }, course: { select: courseSelect }, episode: { select: episodeSelect } },
+      orderBy: { submittedAt: 'desc' },
+      skip: (p - 1) * l,
+      take: l,
+    }),
+    req.server.prisma.courseEpisodeFeedback.count({ where }),
+  ]);
+  return reply.send({ success: true, data: rows, meta: { total, page: p, limit: l }, error: null });
+}
+
+export async function adminGetEpisodeFeedbackHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const row = await req.server.prisma.courseEpisodeFeedback.findUnique({
+    where: { id },
+    include: { member: { select: memberSelect }, course: { select: courseSelect }, episode: { select: episodeSelect } },
+  });
+  if (!row) return fail(reply, 404, 'not_found', 'Feedback not found.');
+  return ok(reply, row);
+}
+
+export async function adminUpdateEpisodeFeedbackStatusHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const parsed = updateFeedbackStatusSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  try {
+    const updated = await req.server.prisma.courseEpisodeFeedback.update({
+      where: { id },
+      data: { status: parsed.data.status },
+    });
+    return ok(reply, updated);
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(reply, 404, 'not_found', 'Feedback not found.');
+    throw err;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
 // MEMBER — own reports (read-only)
 // ────────────────────────────────────────────────────────────────
 
@@ -241,4 +297,58 @@ export async function getMyFeedbackHistoryHandler(req: FastifyRequest, reply: Fa
     orderBy: { weekNumber: 'desc' },
   });
   return ok(reply, rows);
+}
+
+// ────────────────────────────────────────────────────────────────
+// MEMBER — video (episode) feedback
+// ────────────────────────────────────────────────────────────────
+
+/** Member submits (or edits — upsert by member+episode) feedback for one
+ * course video. Ownership is structural: memberId always comes from the
+ * JWT, never the request body. Watch-completion is enforced by the frontend
+ * UX gate only (the feedback UI appears once the lesson is marked complete)
+ * — mirrors the existing weekly-feedback and course_reflections precedent
+ * of not re-enforcing that gate server-side. */
+export async function submitEpisodeFeedbackHandler(req: FastifyRequest, reply: FastifyReply) {
+  const parsed = submitEpisodeFeedbackSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+  const { courseId, episodeId, feedback } = parsed.data;
+
+  const [enrollment, episode] = await Promise.all([
+    req.server.prisma.courseEnrollment.findUnique({
+      where: { memberId_courseId: { memberId: req.memberId!, courseId } },
+      select: { id: true },
+    }),
+    req.server.prisma.courseEpisode.findUnique({ where: { id: episodeId }, select: { id: true, courseId: true } }),
+  ]);
+  if (!enrollment) return fail(reply, 404, 'not_found', 'You are not enrolled in this course.');
+  if (!episode || episode.courseId !== courseId) return fail(reply, 404, 'not_found', 'Video not found in this course.');
+
+  let result;
+  try {
+    result = await deliverMemberEpisodeFeedbackToAdmin(req.server.prisma, req.memberId!, episodeId, feedback);
+  } catch (err: any) {
+    return fail(reply, 404, 'not_found', err?.message ?? 'Unable to submit feedback.');
+  }
+
+  const member = await req.server.prisma.member.findUnique({ where: { id: req.memberId! }, select: { firstName: true } });
+  req.server.io.to('admin').emit('admin:course_episode_feedback', {
+    feedbackId: result.feedbackId,
+    memberName: member?.firstName,
+    courseId,
+    episodeId,
+  });
+
+  return ok(reply, result);
+}
+
+/** The member's own feedback for one episode, if any — lets the frontend
+ * prefill "Update Feedback" instead of "Submit Feedback" on revisit. */
+export async function getMyEpisodeFeedbackHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { episodeId } = req.query as { episodeId?: string };
+  if (!episodeId) return fail(reply, 400, 'invalid_input', 'episodeId query param is required.');
+  const row = await req.server.prisma.courseEpisodeFeedback.findUnique({
+    where: { memberId_episodeId: { memberId: req.memberId!, episodeId } },
+  });
+  return ok(reply, row ?? null);
 }

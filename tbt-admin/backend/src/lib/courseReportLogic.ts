@@ -104,3 +104,28 @@ export function buildFeedbackMessage(params: {
     remarks?.trim() || 'None',
   ].join('\n');
 }
+
+/** "Video Feedback" message sent member → admin after watching a course
+ * episode. `submittedAt` is pre-formatted by the caller (courseReports.ts)
+ * so this function stays pure/timezone-agnostic and unit-testable. */
+export function buildEpisodeFeedbackMessage(params: {
+  userName: string;
+  courseName: string;
+  episodeName: string;
+  feedback: string;
+  submittedAt: string;
+}): string {
+  const { userName, courseName, episodeName, feedback, submittedAt } = params;
+  return [
+    'Video Feedback',
+    '',
+    `User: ${userName}`,
+    `Course: ${courseName}`,
+    `Video: ${episodeName}`,
+    '',
+    'Feedback:',
+    feedback.trim(),
+    '',
+    `Submitted: ${submittedAt}`,
+  ].join('\n');
+}

@@ -8,11 +8,16 @@ import {
   adminListFeedbackHandler,
   adminGetFeedbackHandler,
   adminUpdateFeedbackStatusHandler,
+  adminListEpisodeFeedbackHandler,
+  adminGetEpisodeFeedbackHandler,
+  adminUpdateEpisodeFeedbackStatusHandler,
   // member
   getMyCurrentReportHandler,
   getMyReportHistoryHandler,
   submitFeedbackHandler,
   getMyFeedbackHistoryHandler,
+  submitEpisodeFeedbackHandler,
+  getMyEpisodeFeedbackHandler,
 } from './controller.js';
 
 /**
@@ -36,6 +41,10 @@ export async function courseReportRoutes(fastify: FastifyInstance) {
       adminScope.get('/feedback', adminListFeedbackHandler);
       adminScope.get('/feedback/:id', adminGetFeedbackHandler);
       adminScope.patch('/feedback/:id/status', adminUpdateFeedbackStatusHandler);
+
+      adminScope.get('/episode-feedback', adminListEpisodeFeedbackHandler);
+      adminScope.get('/episode-feedback/:id', adminGetEpisodeFeedbackHandler);
+      adminScope.patch('/episode-feedback/:id/status', adminUpdateEpisodeFeedbackStatusHandler);
     },
     { prefix: '/admin' },
   );
@@ -48,5 +57,8 @@ export async function courseReportRoutes(fastify: FastifyInstance) {
     userScope.get('/mine', getMyReportHistoryHandler);
     userScope.post('/feedback', submitFeedbackHandler);
     userScope.get('/feedback/mine', getMyFeedbackHistoryHandler);
+
+    userScope.post('/episode-feedback', submitEpisodeFeedbackHandler);
+    userScope.get('/episode-feedback/mine', getMyEpisodeFeedbackHandler);
   });
 }

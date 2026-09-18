@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCourseReportMessage,
+  buildEpisodeFeedbackMessage,
   buildFeedbackMessage,
   computeCourseStats,
   computeWeekNumberForDate,
@@ -167,5 +168,43 @@ describe('buildFeedbackMessage', () => {
       remarks: undefined,
     });
     expect(message).toContain('Additional Remarks:\nNone');
+  });
+});
+
+describe('buildEpisodeFeedbackMessage', () => {
+  it('renders the exact requested WhatsApp video-feedback format', () => {
+    const message = buildEpisodeFeedbackMessage({
+      userName: 'Kavya',
+      courseName: 'React Fundamentals',
+      episodeName: 'Intro to JSX',
+      feedback: 'This lesson was super clear.',
+      submittedAt: '18 Sep 2026, 10:30 AM',
+    });
+
+    expect(message).toBe(
+      [
+        'Video Feedback',
+        '',
+        'User: Kavya',
+        'Course: React Fundamentals',
+        'Video: Intro to JSX',
+        '',
+        'Feedback:',
+        'This lesson was super clear.',
+        '',
+        'Submitted: 18 Sep 2026, 10:30 AM',
+      ].join('\n'),
+    );
+  });
+
+  it('trims surrounding whitespace from the feedback body', () => {
+    const message = buildEpisodeFeedbackMessage({
+      userName: 'Arun',
+      courseName: 'Node Basics',
+      episodeName: 'Lesson 1',
+      feedback: '  Great video!  ',
+      submittedAt: '18 Sep 2026, 10:30 AM',
+    });
+    expect(message).toContain('Feedback:\nGreat video!');
   });
 });
