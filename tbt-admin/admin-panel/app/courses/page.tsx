@@ -67,10 +67,15 @@ const EMPTY_EP = {
   title: "", videoUrl: "", bunnyVideoId: "", thumbnailUrl: "",
   durationSeconds: "", isVisible: true,
   quizUnlockPercent: "80", drmEnabled: false, bunnyDrmToken: "",
+  streakPoints: "0",
   quizData: null as any,
   timerSeconds: "" as string | number,
   sectionId: null as string | null,
   moduleIds: [] as string[],
+  lifelineEnabled: true,
+  lifelineCount: 3 as number,
+  lifelineCoinCost: 50 as number,
+  maxPurchasedLifelines: 5 as number,
   // Assessment type (2026-09) — a simplified single-task view over the same
   // `tasks` row(s) the full "Tasks" modal manages via course_episode_id +
   // completion_mode. "none" = no active task linked to this episode — only
@@ -807,9 +812,14 @@ function EpisodesTab({ course }: { course: any }) {
       quizUnlockPercent: String(ep.quizUnlockPercent ?? 80),
       drmEnabled: ep.drmEnabled ?? false,
       bunnyDrmToken: ep.bunnyDrmToken || "",
+      streakPoints: String(ep.streakPoints ?? 0),
       timerSeconds: ep.timerSeconds != null ? Math.round(ep.timerSeconds / 60) : "",
       sectionId: ep.sectionId ?? null,
       moduleIds: ep.moduleIds ?? [],
+      lifelineEnabled: ep.lifelineEnabled !== false,
+      lifelineCount: ep.lifelineCount ?? 3,
+      lifelineCoinCost: ep.lifelineCoinCost ?? 50,
+      maxPurchasedLifelines: ep.maxPurchasedLifelines ?? 5,
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
@@ -925,10 +935,15 @@ function EpisodesTab({ course }: { course: any }) {
       quizUnlockPercent: Number(epForm.quizUnlockPercent) || 80,
       drmEnabled: epForm.drmEnabled,
       bunnyDrmToken: epForm.bunnyDrmToken || undefined,
+      streakPoints: Number(epForm.streakPoints) || 0,
       quizData,
       timerSeconds: epForm.timerSeconds !== "" ? Math.max(1, parseInt(String(epForm.timerSeconds)) || 1) * 60 : null,
       sectionId: epForm.sectionId || null,
       moduleIds: epForm.moduleIds ?? [],
+      lifelineEnabled: epForm.lifelineEnabled,
+      lifelineCount: Number(epForm.lifelineCount) || 3,
+      lifelineCoinCost: Number(epForm.lifelineCoinCost) || 50,
+      maxPurchasedLifelines: Number(epForm.maxPurchasedLifelines) || 5,
     };
     try {
       let episodeId: string;
@@ -1346,6 +1361,12 @@ function EpisodesTab({ course }: { course: any }) {
             <input type="number" min="0" value={epForm.durationSeconds} onChange={e => setEpField("durationSeconds", e.target.value)}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
           </div>
+          {/* Streak Points */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Streak Points</label>
+            <input type="number" min="0" value={epForm.streakPoints} onChange={e => setEpField("streakPoints", e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+          </div>
           {/* Episode focus timer */}
           {(() => {
             const epSection = localSections.find((s: any) => s.id === epForm.sectionId);
@@ -1369,6 +1390,35 @@ function EpisodesTab({ course }: { course: any }) {
               </div>
             );
           })()}
+          {/* Lifeline config */}
+          <div className="col-span-2">
+            <div className="flex items-center gap-3 mb-2">
+              <button type="button" onClick={() => setEpField("lifelineEnabled", !epForm.lifelineEnabled)}
+                className={`w-8 h-4 rounded-full relative transition-all ${epForm.lifelineEnabled ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${epForm.lifelineEnabled ? "right-0.5" : "left-0.5"}`} />
+              </button>
+              <span className="text-[11px] text-[#a0a0a0] font-rajdhani flex items-center gap-1">⚡ Lifelines Enabled</span>
+            </div>
+            {epForm.lifelineEnabled && (
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Free Lifelines</label>
+                  <input type="number" min={0} max={99} value={epForm.lifelineCount} onChange={e => setEpField("lifelineCount", Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Coin Cost / Lifeline</label>
+                  <input type="number" min={0} value={epForm.lifelineCoinCost} onChange={e => setEpField("lifelineCoinCost", Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Max Paid Lifelines</label>
+                  <input type="number" min={0} max={99} value={epForm.maxPurchasedLifelines} onChange={e => setEpField("maxPurchasedLifelines", Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
+                </div>
+              </div>
+            )}
+          </div>
           {/* Quiz unlock % */}
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Quiz Unlock at % watched</label>

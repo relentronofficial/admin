@@ -189,6 +189,9 @@ function ProfileButton() {
   const queryClient = useQueryClient();
   const { hiddenMenuKeys } = useSiteConfig();
   const [open, setOpen] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  const avatarUrl = (me as any)?.avatarUrl ?? null;
+  useEffect(() => { setAvatarError(false); }, [avatarUrl]);
 
   const handleLogout = async () => {
     await apiClient.post("/api/user-auth/logout").catch(() => {});
@@ -212,9 +215,16 @@ function ProfileButton() {
         style={{ background: (me as any)?.avatarGradient || "var(--color-accent, #dc2626)" }}
         aria-label="Account menu"
       >
-        {(me as any)?.profilePhotoUrl ? (
+        {avatarUrl && !avatarError ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={(me as any).profilePhotoUrl} alt="" width={28} height={28} className="w-full h-full object-cover" />
+          <img
+            src={avatarUrl}
+            alt=""
+            width={28}
+            height={28}
+            className="w-full h-full object-cover"
+            onError={() => setAvatarError(true)}
+          />
         ) : initials}
       </button>
 

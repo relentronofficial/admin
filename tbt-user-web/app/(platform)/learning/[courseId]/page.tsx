@@ -7,7 +7,7 @@ import {
   Lock, Trophy, ChevronDown, ChevronUp, Share2, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
   Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
-  Star,
+  Star, Heart,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
@@ -22,8 +22,11 @@ import {
   useSaveReflection, useReflections,
   useLessonFeedback, useSaveLessonFeedback,
   useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
+  useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
+  useEpisodeLifelines, useUseEpisodeLifeline,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
+import { coursesService } from "@/lib/api/services/courses.service";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
 import { getSocket } from "@/lib/socket/client";
@@ -1028,7 +1031,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
 
   const proofType = task.proofType || "watch";
   const status = task.submission?.status ?? null;
-  const isEditable = status === null || status === "rejected" || status === "resubmission_required";
+  const isEditable = status === null || status === "pending" || status === "rejected" || status === "resubmission_required";
 
   const handleFileSelect = async (file: File) => {
     setUploading(true);
@@ -1083,9 +1086,14 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                 <Check size={10} /> Completed
               </span>
             )}
-            {status === "pending" && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
-                <Clock size={10} /> Pending Admin Review
+            {status === "pending" && task.completionMode === "ADMIN_CHECK" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #f59e0b 20%, transparent)", color: "#f59e0b" }}>
+                <Clock size={10} /> Pending Review
+              </span>
+            )}
+            {status === "pending" && task.completionMode === "SELF_ASSESSMENT" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, var(--color-success) 20%, transparent)", color: "var(--color-success)" }}>
+                <Check size={10} /> Uploaded
               </span>
             )}
             {(status === "rejected" || status === "resubmission_required") && (
@@ -1111,6 +1119,15 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
             {!!task.basePoints && (
               <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}>
                 <Zap size={10} /> {task.basePoints} pts
+              </span>
+            )}
+            {task.completionMode === "SELF_ASSESSMENT" ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #6366f1 15%, transparent)", color: "#818cf8" }}>
+                <ClipboardList size={9} /> Self Assessment
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "color-mix(in srgb, #f59e0b 15%, transparent)", color: "#f59e0b" }}>
+                <FileText size={9} /> Admin Review
               </span>
             )}
           </div>
@@ -1150,7 +1167,9 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                     style={{ background: "var(--color-accent)" }}
                   >
                     {uploading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} className="rotate-180" />}
-                    {uploading ? "Uploading…" : status ? "Re-upload & Resubmit" : "Upload & Submit"}
+                    {uploading ? "Uploading…" : status
+                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Re-upload" : "Re-upload & Resubmit")
+                      : (task.completionMode === "SELF_ASSESSMENT" ? "Upload & Complete" : "Upload & Submit")}
                   </button>
                 ) : (
                   <button
@@ -1160,13 +1179,179 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                     style={{ background: "var(--color-accent)" }}
                   >
                     {submitTask.isPending ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                    {status ? "Resubmit" : "Submit Task"}
+                    {status
+                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Update" : "Resubmit")
+                      : (task.completionMode === "SELF_ASSESSMENT" ? "Mark Complete" : "Submit for Review")}
                   </button>
                 )}
               </div>
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Learning Challenge Timer Card ─────────────────────────────────────────────
+// Appears below the video while the focus timer is active. Purely presentational
+// — no hooks, no extra timers. Re-renders are driven by the parent's lessonTimers
+// state (updated every ~500 ms), which is already happening.
+function LearningChallengeCard({
+  timerSecs, totalSeconds, lifelinesLeft, maxLifelines,
+  coinBalance, lifelineCoinCost, onBuyWithCoins, isPurchasing, isDone,
+}: {
+  timerSecs: number;
+  totalSeconds: number;
+  lifelinesLeft: number;
+  maxLifelines: number;
+  coinBalance?: number;
+  lifelineCoinCost: number;
+  onBuyWithCoins: () => void;
+  isPurchasing?: boolean;
+  /** true when lesson is already completed — shows a static "Challenge Complete" badge */
+  isDone?: boolean;
+}) {
+  const fraction = totalSeconds > 0 ? Math.max(0, Math.min(1, timerSecs / totalSeconds)) : 1;
+  const pct = isDone ? 100 : Math.round(fraction * 100);
+  const isExpired = !isDone && timerSecs === 0;
+  const isCritical = !isDone && !isExpired && timerSecs <= 60;
+  const isWarning = !isDone && !isExpired && !isCritical && pct <= 20;
+
+  const accentColor = isDone ? "#22c55e"
+    : isExpired ? "#6b7280"
+    : isCritical ? "#ef4444"
+    : isWarning ? "#f59e0b"
+    : "var(--color-accent)";
+
+  const cardBg = isDone
+    ? "color-mix(in srgb, #22c55e 8%, var(--color-bg-surface))"
+    : isExpired
+    ? "color-mix(in srgb, #6b7280 8%, var(--color-bg-surface))"
+    : isCritical ? "color-mix(in srgb, #ef4444 7%, var(--color-bg-surface))"
+    : isWarning ? "color-mix(in srgb, #f59e0b 6%, var(--color-bg-surface))"
+    : "color-mix(in srgb, var(--color-accent) 6%, var(--color-bg-surface))";
+
+  const cardBorder = isDone
+    ? "1px solid color-mix(in srgb, #22c55e 30%, transparent)"
+    : isExpired
+    ? "1px solid color-mix(in srgb, #6b7280 25%, transparent)"
+    : isCritical ? "1px solid color-mix(in srgb, #ef4444 35%, transparent)"
+    : isWarning ? "1px solid color-mix(in srgb, #f59e0b 30%, transparent)"
+    : "1px solid color-mix(in srgb, var(--color-accent) 22%, transparent)";
+
+  const headingText = isDone ? "Challenge Complete!"
+    : isExpired ? "Time's Up!"
+    : isCritical ? "Complete Now!"
+    : isWarning ? "Time Running Low"
+    : "Learning Challenge";
+
+  const subText = isDone
+    ? "You completed this lesson's challenge"
+    : isExpired
+    ? "Your learning time has ended"
+    : isCritical
+    ? "Under 1 minute — finish the lesson!"
+    : isWarning
+    ? "Less than 20% time left — keep going!"
+    : "Complete the lesson before time runs out";
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: cardBg, border: cardBorder }}
+      role="timer"
+    >
+      <div className="p-4 space-y-3">
+        {/* Header row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm select-none" aria-hidden="true">
+              {isDone ? "✅" : isExpired ? "⏰" : isCritical ? "🔥" : isWarning ? "⚠️" : "🎯"}
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: accentColor }}>
+              {headingText}
+            </span>
+          </div>
+          {/* Lifeline hearts */}
+          <div
+            className="flex items-center gap-0.5 px-2 py-1 rounded-full"
+            style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-subtle)" }}
+            title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
+          >
+            {Array.from({ length: maxLifelines }).map((_, i) => (
+              <Heart key={i} size={12}
+                fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                stroke={i < lifelinesLeft ? "#ef4444" : "rgba(128,128,128,0.35)"}
+                style={{ transition: "fill 0.3s, stroke 0.3s" }}
+              />
+            ))}
+            <span
+              className="text-[10px] font-bold ml-1 tabular-nums"
+              style={{ color: lifelinesLeft > 0 ? "#ef4444" : "var(--color-text-disabled)" }}
+            >
+              {lifelinesLeft}
+            </span>
+          </div>
+        </div>
+
+        {/* Large timer + sub-text */}
+        <div className="flex items-end gap-3">
+          <span
+            className={cn(
+              "font-mono font-bold tabular-nums leading-none",
+              isCritical && "animate-pulse motion-reduce:animate-none",
+            )}
+            style={{ fontSize: "2.5rem", color: accentColor, transition: "color 0.4s ease" }}
+            aria-live={isDone ? undefined : "polite"}
+            aria-label={isDone ? "Challenge completed" : `${Math.floor(timerSecs / 60)} minutes ${timerSecs % 60} seconds remaining`}
+          >
+            {isDone ? "Done ✓" : fmtTime(timerSecs)}
+          </span>
+          <span className="text-xs leading-snug pb-1" style={{ color: "var(--color-text-subtle)" }}>
+            {subText}
+          </span>
+        </div>
+
+        {/* Progress bar */}
+        <div>
+          <div
+            className="h-2 rounded-full overflow-hidden"
+            style={{ background: "var(--color-progress-track)" }}
+            role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${pct}%`,
+                background: accentColor,
+                transition: "width 0.5s linear, background 0.4s ease",
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-1.5 text-[10px]" style={{ color: "var(--color-text-disabled)" }}>
+            <span>{pct}% remaining</span>
+            <span>{fmtTime(totalSeconds)} total</span>
+          </div>
+        </div>
+
+        {/* Expired + no lifelines: coin purchase CTA (coinDialog is also open, this is a secondary CTA) */}
+        {isExpired && lifelinesLeft === 0 && (
+          <div className="pt-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }}>
+            <button
+              onClick={onBuyWithCoins}
+              disabled={isPurchasing || (coinBalance ?? 0) < lifelineCoinCost}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: "#d97706" }}
+            >
+              {isPurchasing ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+              Spend {lifelineCoinCost} Coins
+              {coinBalance != null && (
+                <span className="text-xs font-normal opacity-70 ml-1">({coinBalance} available)</span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1233,6 +1418,7 @@ export default function CourseDetailPage({
   const [quizResult, setQuizResult] = useState<any>(null);
   const [xpFlash, setXpFlash] = useState<number | null>(null);
   const [bonusXpFlash, setBonusXpFlash] = useState<number | null>(null); // MG-04: early completion bonus
+  const [missionComplete, setMissionComplete] = useState<{ title: string; xp: number } | null>(null);
   const [downloadingCert, setDownloadingCert] = useState(false);
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
   const { data: certData } = useCertificateEligibility(courseId);
@@ -1246,6 +1432,7 @@ export default function CourseDetailPage({
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
   const [focusDialog, setFocusDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [coinDialog, setCoinDialog] = useState<{ lesson: any; duration: number } | null>(null);
+  const [lifelineDialog, setLifelineDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [lessonTimers, setLessonTimers] = useState<Record<string, number>>({});
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const timerLessonRef = useRef<string | null>(null);
@@ -1271,6 +1458,21 @@ export default function CourseDetailPage({
   // preventing an infinite loop when selectedLesson stays null (user hasn't confirmed yet).
   const urlFocusDialogShownRef = useRef<string | null>(null);
   const spendCoins = useSpendCoins();
+  // Server-side timer session + per-episode lifeline persistence
+  const startEpisodeTimerMutation = useStartEpisodeTimer();
+  const heartbeatEpisodeTimerMutation = useHeartbeatEpisodeTimer();
+  const useEpisodeLifelineMutation = useUseEpisodeLifeline(selectedLesson?.id);
+  const { data: episodeLifelineData } = useEpisodeLifelines(selectedLesson?.id);
+  const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id);
+  // Stable refs for mutation functions (safe inside setInterval callbacks)
+  const startEpisodeTimerRef = useRef(startEpisodeTimerMutation.mutate);
+  useEffect(() => { startEpisodeTimerRef.current = startEpisodeTimerMutation.mutate; }, [startEpisodeTimerMutation.mutate]);
+  const episodeLifelineMutateRef = useRef(useEpisodeLifelineMutation.mutateAsync);
+  useEffect(() => { episodeLifelineMutateRef.current = useEpisodeLifelineMutation.mutateAsync; }, [useEpisodeLifelineMutation.mutateAsync]);
+  const heartbeatMutateRef = useRef(heartbeatEpisodeTimerMutation.mutate);
+  useEffect(() => { heartbeatMutateRef.current = heartbeatEpisodeTimerMutation.mutate; }, [heartbeatEpisodeTimerMutation.mutate]);
+  // Timer restoration tracking
+  const timerRestoredForRef = useRef<string | null>(null);
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
   useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
   // Initialize lifeline count: program-wide DB value takes priority over session config
@@ -1290,6 +1492,40 @@ export default function CourseDetailPage({
       lifelinesLeftRef.current = config.freeLifelinesPerSession;
     }
   }, [batchData, config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Per-episode lifeline override for non-batch members: persists across page refreshes
+  useEffect(() => {
+    if (isProgramLifeline || !episodeLifelineData || !selectedLesson) return;
+    setLifelinesLeft(episodeLifelineData.freeRemaining);
+    lifelinesLeftRef.current = episodeLifelineData.freeRemaining;
+  }, [episodeLifelineData, isProgramLifeline, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Restore active timer session from server on lesson load (survives page refresh)
+  useEffect(() => {
+    if (!selectedLesson || !existingTimerSession) return;
+    if (existingTimerSession.status !== 'ACTIVE') return;
+    if (timerRestoredForRef.current === selectedLesson.id) return;
+    if (timerLessonRef.current === selectedLesson.id) return; // already running
+    const remaining = existingTimerSession.remainingSeconds;
+    if (remaining <= 0) return;
+    timerRestoredForRef.current = selectedLesson.id;
+    const fullDuration = (existingTimerSession as any).durationSeconds ?? remaining;
+    // Start client-side timer from remaining seconds (no server call — session already active)
+    startLessonTimer(selectedLesson.id, remaining, true);
+    timerDurationRef.current = fullDuration; // restore full duration for lifeline resets
+    // Restore original start time so MG-04 early-completion bonus uses real elapsed time,
+    // not the refresh time. Without this, a refresh near the end would look like an early finish.
+    if (existingTimerSession.startedAt) {
+      timerStartedAtRef.current = new Date(existingTimerSession.startedAt).getTime();
+    }
+  }, [selectedLesson?.id, existingTimerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 30s heartbeat to keep server timer session alive while lesson is open
+  useEffect(() => {
+    const id = setInterval(() => {
+      const lessonId = timerLessonRef.current;
+      if (!lessonId) return;
+      heartbeatMutateRef.current({ episodeId: lessonId });
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
@@ -1326,6 +1562,7 @@ export default function CourseDetailPage({
   const justCompletedInSessionRef = useRef(false);
   // Prevents double XP flash when both lesson completion and quiz pass fire for the same lesson.
   const xpFlashedRef = useRef<string | null>(null);
+  const missionFlashedRef = useRef<string | null>(null);
 
   // Section accordion state — start all sections expanded; collapse all except the active lesson's section
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -1431,7 +1668,7 @@ export default function CourseDetailPage({
         } else {
           // Incomplete lesson — show focus dialog instead of auto-playing
           urlFocusDialogShownRef.current = targetLessonId;
-          const dur = (target as any).timerSeconds ?? config?.taskTimerSeconds ?? 300;
+          const dur = (target as any).timerSeconds ?? (target as any).sectionTimerSeconds ?? config?.taskTimerSeconds ?? 300;
           setFocusDialog({ lesson: target, duration: dur });
         }
       } else if (target && target.videoUrl && (target as any).locked) {
@@ -1617,6 +1854,7 @@ export default function CourseDetailPage({
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
+    missionFlashedRef.current = null;
 
     if (!selectedLesson) return;
     lastPlayheadRef.current = selectedLesson.resumeAtSeconds ?? 0;
@@ -1644,6 +1882,19 @@ export default function CourseDetailPage({
     xpFlashedRef.current = lessonId;
     setXpFlash(xp);
     const t = setTimeout(() => setXpFlash(null), 3000);
+    return () => clearTimeout(t);
+  }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mission Complete cinematic overlay on fresh lesson completion.
+  useEffect(() => {
+    if (watchState !== "completed" || !justCompletedInSessionRef.current) return;
+    const lessonId = selectedLessonRef.current?.id;
+    if (!lessonId || missionFlashedRef.current === lessonId) return;
+    missionFlashedRef.current = lessonId;
+    const title = selectedLessonRef.current?.title ?? "";
+    const xp = (courseRef.current as any)?.xpPerEpisode ?? 0;
+    setMissionComplete({ title, xp });
+    const t = setTimeout(() => setMissionComplete(null), 2800);
     return () => clearTimeout(t);
   }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1733,6 +1984,12 @@ export default function CourseDetailPage({
     if (!markCalledRef.current) {
       markCalledRef.current = true;
       doMarkCompleteRef.current = false;
+      // Mark server timer session as completed
+      if (timerLessonRef.current === lesson.id) {
+        heartbeatMutateRef.current({ episodeId: lesson.id, completed: true });
+        clearInterval(timerIntervalRef.current);
+        timerLessonRef.current = null;
+      }
       markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true, videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
     }
   };
@@ -1754,13 +2011,22 @@ export default function CourseDetailPage({
     const playhead = lastPlayheadRef.current > 0
       ? Math.floor(lastPlayheadRef.current)
       : (selectedLesson.resumeAtSeconds ?? 0);
+    // Capture timer data before clearing (for MG-04 early completion bonus)
+    const wasTimerLesson = timerLessonRef.current === selectedLesson.id;
+    const capturedTimerDuration = wasTimerLesson ? timerDurationRef.current : undefined;
+    // Mark server timer session as completed (if timer was running for this lesson)
+    if (wasTimerLesson) {
+      heartbeatMutateRef.current({ episodeId: selectedLesson.id, completed: true });
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+    }
     markComplete.mutate({
       lessonId: selectedLesson.id,
       watchedSeconds: playhead,
       isCompleted: true,
       videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
       timerStartedAt: timerStartedAtRef.current,
-      timerSeconds: timerLessonRef.current === selectedLesson.id ? timerDurationRef.current : undefined,
+      timerSeconds: capturedTimerDuration,
     }, {
       onSuccess: (data: any) => {
         if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
@@ -2086,13 +2352,17 @@ export default function CourseDetailPage({
   const getLessonTimerDuration = (lesson: any): number =>
     lesson?.timerSeconds ?? (lesson?.sectionTimerSeconds ?? null) ?? config?.taskTimerSeconds ?? 300;
 
-  const startLessonTimer = (lessonId: string, duration: number) => {
+  const startLessonTimer = (lessonId: string, duration: number, skipServerStart?: boolean) => {
     clearInterval(timerIntervalRef.current);
     timerLessonRef.current = lessonId;
     timerDurationRef.current = duration;
     timerEndTimeRef.current = Date.now() + duration * 1000;
     timerStartedAtRef.current = Date.now(); // MG-04: record focus start time
     setLessonTimers(prev => ({ ...prev, [lessonId]: duration }));
+    // Persist session to server so timer survives page refresh
+    if (!skipServerStart) {
+      startEpisodeTimerRef.current({ episodeId: lessonId, durationSeconds: duration });
+    }
 
     function tick() {
       const secsLeft = Math.max(0, Math.ceil((timerEndTimeRef.current - Date.now()) / 1000));
@@ -2103,34 +2373,15 @@ export default function CourseDetailPage({
       timerLessonRef.current = null;
       if (completedIdsRef.current.has(lessonId)) return;
 
+      // Pause the video and lock the lesson — user must manually choose to use a lifeline
+      pausePlayerRef.current();
+      setFocusLockedIds(prev => new Set([...prev, lessonId]));
+      const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
+      if (!lessonData || selectedLessonRef.current?.id !== lessonId) return;
       if (lifelinesLeftRef.current > 0) {
-        const remaining = lifelinesLeftRef.current - 1;
-        lifelinesLeftRef.current = remaining;
-        setLifelinesLeft(remaining);
-        // Persist to backend if in program context (fire-and-forget; local state already updated)
-        if (isProgramLifelineRef.current && batchIdRef.current) {
-          programLifelineMutateRef.current({ batchId: batchIdRef.current, episodeId: lessonId, context: 'episode' })
-            .then((res) => {
-              lifelinesLeftRef.current = res.lifelinesRemaining;
-              setLifelinesLeft(res.lifelinesRemaining);
-            })
-            .catch(() => {}); // network failure: local state already shows deduction
-        }
-        toast.success(
-          `⚡ Time's up — lifeline auto-used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`,
-          { duration: 3500 },
-        );
-        timerEndTimeRef.current = Date.now() + timerDurationRef.current * 1000;
-        timerLessonRef.current = lessonId;
-        setLessonTimers(prev => ({ ...prev, [lessonId]: timerDurationRef.current }));
-        timerIntervalRef.current = setInterval(tick, 500);
+        setLifelineDialog({ lesson: lessonData, duration: timerDurationRef.current });
       } else {
-        setFocusLockedIds(prev => new Set([...prev, lessonId]));
-        const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
-        if (lessonData && selectedLessonRef.current?.id === lessonId) {
-          setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
-        }
-        toast.error("⏰ Time's up! No lifelines left — spend TBT coins to continue.", { duration: 4000 });
+        setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
       }
     }
 
@@ -2187,6 +2438,10 @@ export default function CourseDetailPage({
         const remaining = lifelinesLeft - 1;
         setLifelinesLeft(remaining);
         lifelinesLeftRef.current = remaining;
+        // Non-batch: call directly with the target lesson's id so that clicking a
+        // focus-locked lesson from the sidebar (when a different lesson is selected)
+        // doesn't decrement the wrong episode's lifeline count.
+        coursesService.useEpisodeLifeline(lesson.id, 'free').catch(() => {});
       }
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
@@ -2200,16 +2455,46 @@ export default function CourseDetailPage({
 
   const handleSpendCoinsForLesson = async (lesson: any, duration: number) => {
     try {
-      const res = await spendCoins.mutateAsync({ amount: LIFELINE_COIN_COST });
+      // Call the service directly so the coin deduction always targets lesson.id regardless
+      // of which lesson is currently selected (avoids stale hook binding for cross-episode clicks)
+      const res = await coursesService.useEpisodeLifeline(lesson.id, 'coin');
       setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
       startLessonTimer(lesson.id, duration);
       handleSelectLesson(lesson);
       setCoinDialog(null);
-      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${res.remainingCoins} coins.`);
+      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${(res as any).data?.remainingCoins ?? '?'} coins.`);
     } catch (err: any) {
       setCoinDialog(null);
       toast.error(err?.response?.data?.error ?? "Not enough TBT coins");
     }
+  };
+
+  const handleManualUseLifeline = async (lesson: any, duration: number) => {
+    setLifelineDialog(null);
+    if (isProgramLifeline && batchId) {
+      try {
+        const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
+        setLifelinesLeft(res.lifelinesRemaining);
+        lifelinesLeftRef.current = res.lifelinesRemaining;
+      } catch (err: any) {
+        if (err?.response?.data?.error === 'exhausted') {
+          setCoinDialog({ lesson, duration });
+          return;
+        }
+        toast.error("Failed to use lifeline — try again");
+        return;
+      }
+    } else {
+      const remaining = lifelinesLeft - 1;
+      setLifelinesLeft(remaining);
+      lifelinesLeftRef.current = remaining;
+      coursesService.useEpisodeLifeline(lesson.id, 'free').catch(() => {});
+    }
+    setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
+    startLessonTimer(lesson.id, duration);
+    resumePlayerRef.current();
+    const remaining = lifelinesLeftRef.current;
+    toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`);
   };
 
   const handleRewatch = () => {
@@ -2270,6 +2555,9 @@ export default function CourseDetailPage({
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
   const activeTimerSecs = selectedLesson ? lessonTimers[selectedLesson.id] : undefined;
   const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
+  const maxLifelines = isProgramLifeline
+    ? ((batchData as any)?.lifelinesTotal ?? MAX_FREE_LIFELINES)
+    : (episodeLifelineData?.lifelineCount ?? MAX_FREE_LIFELINES);
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
@@ -2394,6 +2682,48 @@ export default function CourseDetailPage({
         </div>
       )}
 
+      {/* ── Time's Up — Manual Lifeline Dialog ────────────────────────────── */}
+      {lifelineDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.82)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(239,68,68,0.15)" }}>
+                <span className="text-xl">⏰</span>
+              </div>
+              <div>
+                <p className="font-bold text-base">Time's up!</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>{lifelineDialog.lesson.title}</p>
+              </div>
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+              The focus timer has ended and the video has been paused.
+              Use a lifeline to reset the timer and continue watching.
+              You have <strong style={{ color: "var(--color-text-normal)" }}>{lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setLifelineDialog(null);
+                  setCoinDialog({ lesson: lifelineDialog.lesson, duration: lifelineDialog.duration });
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all"
+                style={{ borderColor: "var(--color-border-medium)", background: "transparent" }}
+              >
+                Use Coins
+              </button>
+              <button
+                onClick={() => handleManualUseLifeline(lifelineDialog.lesson, lifelineDialog.duration)}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                style={{ background: "var(--color-accent)" }}
+              >
+                <Heart size={14} />
+                Use Lifeline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Back */}
       <button
         onClick={() => { selectedLesson ? setSelectedLesson(null) : router.back(); }}
@@ -2459,31 +2789,75 @@ export default function CourseDetailPage({
                   onEnded={handleVideoEnded}
                 />
               )}
-              {showTimerOverlay && (
-                <div className="absolute inset-x-0 top-4 flex justify-center z-[55] pointer-events-none">
-                  <div
-                    className={cn(
-                      "flex items-center gap-2 px-5 py-2.5 rounded-2xl backdrop-blur-sm",
-                      activeTimerSecs! < 30 ? "animate-pulse" : ""
-                    )}
-                    style={{
-                      background: activeTimerSecs! < 30
-                        ? "rgba(239,68,68,0.85)"
-                        : activeTimerSecs! < 60
-                        ? "rgba(245,158,11,0.85)"
-                        : "rgba(34,197,94,0.85)",
-                      border: "1px solid rgba(255,255,255,0.25)",
-                      boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-                    }}
-                  >
-                    <Timer size={18} className="text-white" />
-                    <span className="text-white font-mono font-bold text-2xl tabular-nums tracking-wide">
-                      {fmtTime(activeTimerSecs!)}
-                    </span>
+              {showTimerOverlay && (() => {
+                const totalDuration = getLessonTimerDuration(selectedLesson);
+                const fraction = totalDuration > 0
+                  ? Math.max(0, Math.min(1, (activeTimerSecs ?? 0) / totalDuration))
+                  : 1;
+                const R = 38;
+                const C = 2 * Math.PI * R;
+                const ringColor = (activeTimerSecs ?? 0) < 30 ? "#ef4444"
+                  : (activeTimerSecs ?? 0) < 60 ? "#f59e0b"
+                  : "#22c55e";
+                return (
+                  <div className={cn(
+                    "absolute top-3 right-3 z-[55] pointer-events-none flex flex-col items-center gap-1.5",
+                    (activeTimerSecs ?? 0) < 30 ? "animate-pulse" : ""
+                  )}>
+                    <div className="relative w-[88px] h-[88px] drop-shadow-lg">
+                      <svg width="88" height="88" viewBox="0 0 88 88">
+                        <circle cx="44" cy="44" r={R} fill="rgba(0,0,0,0.65)" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
+                        <circle
+                          cx="44" cy="44" r={R}
+                          fill="none" stroke={ringColor} strokeWidth="5" strokeLinecap="round"
+                          strokeDasharray={`${C}`}
+                          strokeDashoffset={C * (1 - fraction)}
+                          transform="rotate(-90, 44, 44)"
+                          style={{ transition: "stroke-dashoffset 0.5s linear, stroke 0.3s ease" }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+                        <span className="text-white font-mono font-bold text-sm tabular-nums leading-none"
+                          style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
+                          {fmtTime(activeTimerSecs!)}
+                        </span>
+                        <Timer size={10} className="text-white/60" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-1 rounded-full"
+                      style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                      {Array.from({ length: maxLifelines }).map((_, i) => (
+                        <Heart key={i} size={12}
+                          fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                          stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.3)"}
+                          style={{ transition: "fill 0.3s, stroke 0.3s" }}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </VideoWatermark>
+
+            {/* ── Learning Challenge Timer Card ──────────────────────────────
+                Shows while timer is active OR when the lesson is already done
+                (completed-challenge badge). Wired to existing state only. */}
+            {(activeTimerSecs !== undefined || (selectedLesson && completedIds.has(selectedLesson.id) && getLessonTimerDuration(selectedLesson) > 0)) && (
+              <LearningChallengeCard
+                timerSecs={activeTimerSecs ?? 0}
+                totalSeconds={timerDurationRef.current || getLessonTimerDuration(selectedLesson)}
+                lifelinesLeft={lifelinesLeft}
+                maxLifelines={maxLifelines}
+                coinBalance={me?.totalPoints ?? undefined}
+                lifelineCoinCost={LIFELINE_COIN_COST}
+                onBuyWithCoins={() => {
+                  const lesson = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
+                  if (lesson) setCoinDialog({ lesson, duration: timerDurationRef.current });
+                }}
+                isPurchasing={spendCoins.isPending}
+                isDone={activeTimerSecs === undefined && completedIds.has(selectedLesson.id)}
+              />
+            )}
 
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
@@ -2823,15 +3197,17 @@ export default function CourseDetailPage({
               </span>
             )}
             <span
-              className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-              style={{
-                background: lifelinesLeft > 0 ? "rgba(34,197,94,0.12)" : "rgba(251,191,36,0.12)",
-                color: lifelinesLeft > 0 ? "#22c55e" : "#fbbf24",
-              }}
-              title="Free lifelines remaining this session"
+              className="flex items-center gap-0.5 px-2 py-1 rounded-full"
+              style={{ background: lifelinesLeft > 0 ? "rgba(239,68,68,0.1)" : "rgba(251,191,36,0.1)" }}
+              title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
             >
-              <Zap size={9} />
-              {lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}
+              {Array.from({ length: maxLifelines }).map((_, i) => (
+                <Heart key={i} size={10}
+                  fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                  stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.2)"}
+                  style={{ transition: "fill 0.3s, stroke 0.3s" }}
+                />
+              ))}
             </span>
             {me?.totalPoints != null && (
               <span
@@ -3002,6 +3378,14 @@ export default function CourseDetailPage({
                             <Zap size={9} />+{(course as any).xpPerEpisode} XP
                           </span>
                         )}
+                        {((lesson as any).streakPoints ?? 0) > 0 && (
+                          <span
+                            className="text-[10px] flex items-center gap-0.5 font-semibold"
+                            style={{ color: "#f59e0b" }}
+                          >
+                            <Coins size={9} />+{(lesson as any).streakPoints} pts
+                          </span>
+                        )}
                         {reviewDueIds.includes(lesson.id) && (
                           <span
                             className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
@@ -3010,8 +3394,8 @@ export default function CourseDetailPage({
                             <RefreshCw size={8} /> Review
                           </span>
                         )}
-                        {/* Focus timer badge */}
-                        {!isCompleted && timerStarted && (
+                        {/* Focus timer badge — static duration when not started, live countdown when running */}
+                        {!isCompleted && focusTimerDuration > 0 && (
                           <span
                             className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
                             style={{
@@ -3019,12 +3403,24 @@ export default function CourseDetailPage({
                                 ? "rgba(34,197,94,0.12)"
                                 : timerWarn
                                   ? "rgba(239,68,68,0.1)"
-                                  : "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                              color: timerDone ? "#22c55e" : timerWarn ? "#ef4444" : "var(--color-accent)",
+                                  : timerStarted
+                                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
+                                    : "color-mix(in srgb, var(--color-text-subtle) 12%, transparent)",
+                              color: timerDone
+                                ? "#22c55e"
+                                : timerWarn
+                                  ? "#ef4444"
+                                  : timerStarted
+                                    ? "var(--color-accent)"
+                                    : "var(--color-text-secondary)",
                             }}
                           >
                             <Timer size={9} />
-                            {timerDone ? "Time's up!" : fmtTime(timerSecs!)}
+                            {timerDone
+                              ? "Time's up!"
+                              : timerStarted
+                                ? fmtTime(timerSecs!)
+                                : fmtTime(focusTimerDuration)}
                           </span>
                         )}
                       </div>
@@ -3259,6 +3655,64 @@ export default function CourseDetailPage({
           lessons={course?.lessons ?? []}
           onClose={() => setReflectionsOpen(false)}
         />
+      )}
+
+      {/* Mission Complete cinematic overlay */}
+      {missionComplete && (
+        <>
+          <style>{`
+            @keyframes mc-overlay{0%{opacity:0}8%{opacity:1}78%{opacity:1}100%{opacity:0}}
+            @keyframes mc-pop{0%{transform:scale(0) rotate(-15deg);opacity:0}55%{transform:scale(1.2) rotate(4deg);opacity:1}75%{transform:scale(0.93)}100%{transform:scale(1);opacity:1}}
+            @keyframes mc-rise{0%{transform:translateY(18px);opacity:0}100%{transform:translateY(0);opacity:1}}
+            @keyframes mc-particle{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--ptx),var(--pty)) scale(0);opacity:0}}
+          `}</style>
+          <div
+            className="fixed inset-0 z-[65] pointer-events-none flex items-center justify-center"
+            style={{ animation: "mc-overlay 2.8s ease-in-out forwards", background: "radial-gradient(ellipse at center, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.88) 100%)" }}
+          >
+            {/* Radial burst particles */}
+            {([
+              [0,-90,"#f59e0b"],[64,-64,"#ef4444"],[90,0,"#22c55e"],[64,64,"#3b82f6"],
+              [0,90,"#a855f7"],[-64,64,"#ec4899"],[-90,0,"#14b8a6"],[-64,-64,"#f97316"],
+            ] as [number,number,string][]).map(([tx, ty, color], i) => (
+              <div key={i} className="absolute rounded-full"
+                style={{
+                  width: 10, height: 10, top: "50%", left: "50%",
+                  marginTop: -5, marginLeft: -5, background: color,
+                  ["--ptx" as string]: `${tx}px`, ["--pty" as string]: `${ty}px`,
+                  animation: `mc-particle 0.9s cubic-bezier(0.25,0.46,0.45,0.94) ${0.25 + i * 0.04}s forwards`,
+                }}
+              />
+            ))}
+            {/* Content */}
+            <div className="flex flex-col items-center gap-4 text-center px-8 select-none">
+              <div style={{ animation: "mc-pop 0.65s cubic-bezier(0.34,1.56,0.64,1) 0.15s both" }}>
+                <Trophy size={80} style={{ color: "#f59e0b", filter: "drop-shadow(0 0 24px rgba(245,158,11,0.7))" }} />
+              </div>
+              <div style={{ animation: "mc-rise 0.5s ease-out 0.55s both" }}>
+                <p className="text-4xl font-black tracking-widest text-white uppercase"
+                  style={{ textShadow: "0 0 30px rgba(245,158,11,0.5), 0 2px 8px rgba(0,0,0,0.8)" }}>
+                  Mission Complete
+                </p>
+              </div>
+              <div style={{ animation: "mc-rise 0.5s ease-out 0.7s both" }}>
+                <p className="text-sm font-medium max-w-xs leading-snug" style={{ color: "rgba(255,255,255,0.7)" }}>
+                  {missionComplete.title}
+                </p>
+              </div>
+              {missionComplete.xp > 0 && (
+                <div style={{ animation: "mc-rise 0.5s ease-out 0.85s both" }}>
+                  <span
+                    className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-bold text-white"
+                    style={{ background: "color-mix(in srgb, var(--color-accent) 80%, transparent)", boxShadow: "0 0 20px rgba(239,68,68,0.45)" }}
+                  >
+                    <Zap size={14} /> +{missionComplete.xp} XP earned
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* XP flash */}

@@ -528,7 +528,7 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
       final remaining = await ref.read(batchServiceProvider).spendCoins(
             _lifelineCoinCost,
             taskId: taskId,
-            dayNumber: widget.dayNumber,
+            dayNumber: widget.day,
           );
       setState(() {
         _spendingCoins = false;

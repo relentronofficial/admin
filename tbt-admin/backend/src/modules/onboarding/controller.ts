@@ -3,7 +3,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getPresignedUrlHandler } from '../upload/controller.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { canEditOnboarding, canSubmitOnboarding, checkOnboardingReadyToSubmit } from '../../lib/onboardingLogic.js';
-import { onboardingContentSchema, onboardingUpdateSchema, presignDocumentSchema, registerDocumentSchema } from './schema.js';
+import { onboardingButtonSchema, onboardingContentSchema, onboardingUpdateSchema, presignDocumentSchema, registerDocumentSchema } from './schema.js';
 import { env } from '../../config/env.js';
 
 const PROFILE_SELECT = {
@@ -164,6 +164,16 @@ const CONTENT_COLS = `id, step_key AS "stepKey", title, text_body AS "textBody",
 export async function getOnboardingContentHandler(req: FastifyRequest, reply: FastifyReply) {
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT ${CONTENT_COLS} FROM onboarding_content WHERE is_active = true ORDER BY sort_order ASC`,
+  );
+  return reply.send({ success: true, data: rows, error: null });
+}
+
+const BUTTON_COLS = `id, name, is_active AS "isActive"`;
+
+// GET /api/onboarding/buttons — active CTA buttons (member-facing)
+export async function getOnboardingButtonsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT ${BUTTON_COLS} FROM onboarding_buttons WHERE is_active = true ORDER BY created_at ASC`,
   );
   return reply.send({ success: true, data: rows, error: null });
 }
@@ -441,5 +451,82 @@ export async function adminReorderOnboardingContentHandler(req: FastifyRequest, 
       ),
     ),
   );
+  return reply.send({ success: true, data: null, error: null });
+}
+
+// ── Admin onboarding-button management (Clerk-protected, registered under /admin) ──
+
+export async function adminListOnboardingButtonsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT ${BUTTON_COLS}, created_at AS "createdAt", updated_at AS "updatedAt" FROM onboarding_buttons ORDER BY created_at ASC`,
+  );
+  return reply.send({ success: true, data: rows, error: null });
+}
+
+export async function adminCreateOnboardingButtonHandler(req: FastifyRequest, reply: FastifyReply) {
+  const parsed = onboardingButtonSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
+  }
+  const name = parsed.data.name.trim();
+
+  const [dup] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id FROM onboarding_buttons WHERE lower(name) = lower($1) LIMIT 1`, name,
+  );
+  if (dup) {
+    return reply.status(409).send({ success: false, data: null, error: 'A button with this name already exists' });
+  }
+
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO onboarding_buttons (name, is_active) VALUES ($1, $2) RETURNING ${BUTTON_COLS}`,
+    name, parsed.data.isActive ?? true,
+  );
+  return reply.status(201).send({ success: true, data: row, error: null });
+}
+
+export async function adminUpdateOnboardingButtonHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const parsed = onboardingButtonSchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
+  }
+  const d = parsed.data;
+  if (d.name === undefined && d.isActive === undefined) {
+    return reply.status(400).send({ success: false, data: null, error: 'Nothing to update' });
+  }
+
+  let name: string | undefined;
+  if (d.name !== undefined) {
+    name = d.name.trim();
+    if (!name) {
+      return reply.status(400).send({ success: false, data: null, error: 'Button name is required' });
+    }
+    const [dup] = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM onboarding_buttons WHERE lower(name) = lower($1) AND id != $2::uuid LIMIT 1`,
+      name, req.params.id,
+    );
+    if (dup) {
+      return reply.status(409).send({ success: false, data: null, error: 'A button with this name already exists' });
+    }
+  }
+
+  const setClauses: string[] = [];
+  const vals: unknown[] = [];
+  let idx = 1;
+  if (name !== undefined) { setClauses.push(`name = $${idx++}`); vals.push(name); }
+  if (d.isActive !== undefined) { setClauses.push(`is_active = $${idx++}`); vals.push(d.isActive); }
+  setClauses.push(`updated_at = NOW()`);
+  vals.push(req.params.id);
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE onboarding_buttons SET ${setClauses.join(', ')} WHERE id = $${idx}::uuid RETURNING ${BUTTON_COLS}`,
+    ...vals,
+  );
+  if (!row) {
+    return reply.status(404).send({ success: false, data: null, error: 'Button not found' });
+  }
+  return reply.send({ success: true, data: row, error: null });
+}
+
+export async function adminDeleteOnboardingButtonHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  await req.server.prisma.$executeRawUnsafe(`DELETE FROM onboarding_buttons WHERE id = $1::uuid`, req.params.id);
   return reply.send({ success: true, data: null, error: null });
 }

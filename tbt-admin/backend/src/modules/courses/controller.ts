@@ -226,7 +226,8 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
   const { id } = req.params as any;
   const [rows, moduleRows] = await Promise.all([
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT e.*, e.section_id, e.timer_seconds,
+      `SELECT e.*, e.section_id, e.timer_seconds, e.streak_points,
+         e.lifeline_enabled, e.lifeline_count, e.lifeline_coin_cost, e.max_purchased_lifelines,
          s.title AS section_title, s.sort_order AS section_sort_order
        FROM course_episodes e
        LEFT JOIN course_sections s ON s.id = e.section_id
@@ -253,6 +254,11 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
     quizData: e.quiz_data, quizUnlockPercent: Number(e.quiz_unlock_percent ?? 80),
     drmEnabled: e.drm_enabled, bunnyDrmToken: e.bunny_drm_token,
     timerSeconds: e.timer_seconds != null ? Number(e.timer_seconds) : null,
+    streakPoints: Number(e.streak_points ?? 0),
+    lifelineEnabled: e.lifeline_enabled !== false,
+    lifelineCount: Number(e.lifeline_count ?? 3),
+    lifelineCoinCost: Number(e.lifeline_coin_cost ?? 50),
+    maxPurchasedLifelines: Number(e.max_purchased_lifelines ?? 5),
     sectionId: e.section_id ?? null, sectionTitle: e.section_title ?? null,
     sectionSortOrder: e.section_sort_order != null ? Number(e.section_sort_order) : null,
     moduleIds: modulesByEpisode.get(e.id) ?? [],
@@ -301,11 +307,15 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
     },
   });
   const timerSecs = body.timerSeconds != null ? Number(body.timerSeconds) : null;
+  const streakPoints = body.streakPoints != null ? Number(body.streakPoints) || 0 : 0;
   const sectionId = body.sectionId || null;
   const moduleIds: string[] = Array.isArray(body.moduleIds) ? body.moduleIds : [];
   const rawUpdates: Promise<any>[] = [];
   if (timerSecs !== null) rawUpdates.push(req.server.prisma.$executeRawUnsafe(
     'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid', timerSecs, episode.id
+  ).catch(() => {}));
+  rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+    'UPDATE course_episodes SET streak_points = $1 WHERE id = $2::uuid', streakPoints, episode.id
   ).catch(() => {}));
   if (sectionId) rawUpdates.push(req.server.prisma.$executeRawUnsafe(
     'UPDATE course_episodes SET section_id = $1::uuid WHERE id = $2::uuid', sectionId, episode.id
@@ -319,7 +329,7 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   }
   if (rawUpdates.length) await Promise.all(rawUpdates);
   bustHome(req);
-  return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs, sectionId, moduleIds }, error: null });
+  return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs, streakPoints, sectionId, moduleIds }, error: null });
 }
 
 export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -334,13 +344,23 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   if (body.quizUnlockPercent !== undefined) data.quizUnlockPercent = Number(body.quizUnlockPercent);
   if (body.drmEnabled !== undefined) data.drmEnabled = Boolean(body.drmEnabled);
   const timerSecs = 'timerSeconds' in body ? (body.timerSeconds != null ? Number(body.timerSeconds) : null) : undefined;
+  const streakPoints = 'streakPoints' in body ? (Number(body.streakPoints) || 0) : undefined;
   const sectionId = 'sectionId' in body ? (body.sectionId || null) : undefined;
+  const lifelineEnabled = 'lifelineEnabled' in body ? Boolean(body.lifelineEnabled) : undefined;
+  const lifelineCount = 'lifelineCount' in body ? (Number(body.lifelineCount) || 3) : undefined;
+  const lifelineCoinCost = 'lifelineCoinCost' in body ? (Number(body.lifelineCoinCost) || 50) : undefined;
+  const maxPurchasedLifelines = 'maxPurchasedLifelines' in body ? (Number(body.maxPurchasedLifelines) || 5) : undefined;
   const moduleIds: string[] | undefined = 'moduleIds' in body && Array.isArray(body.moduleIds) ? body.moduleIds : undefined;
   const episode = await req.server.prisma.courseEpisode.update({ where: { id: eid }, data });
   const rawUpdates: Promise<any>[] = [];
   if (timerSecs !== undefined) {
     rawUpdates.push(req.server.prisma.$executeRawUnsafe(
       'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid', timerSecs, episode.id
+    ).catch(() => {}));
+  }
+  if (streakPoints !== undefined) {
+    rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+      'UPDATE course_episodes SET streak_points = $1 WHERE id = $2::uuid', streakPoints, episode.id
     ).catch(() => {}));
   }
   if (sectionId !== undefined) {
@@ -362,9 +382,13 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
       }).catch(() => {}),
     );
   }
+  if (lifelineEnabled !== undefined) rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+    `UPDATE course_episodes SET lifeline_enabled = $1, lifeline_count = $2, lifeline_coin_cost = $3, max_purchased_lifelines = $4 WHERE id = $5::uuid`,
+    lifelineEnabled, lifelineCount ?? 3, lifelineCoinCost ?? 50, maxPurchasedLifelines ?? 5, eid,
+  ).catch(() => {}));
   if (rawUpdates.length) await Promise.all(rawUpdates);
   bustHome(req);
-  return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null, sectionId: sectionId ?? null, moduleIds: moduleIds ?? [] }, error: null });
+  return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null, streakPoints: streakPoints ?? undefined, sectionId: sectionId ?? null, moduleIds: moduleIds ?? [], lifelineEnabled: lifelineEnabled ?? true, lifelineCount: lifelineCount ?? 3, lifelineCoinCost: lifelineCoinCost ?? 50, maxPurchasedLifelines: maxPurchasedLifelines ?? 5 }, error: null });
 }
 
 export async function deleteCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {

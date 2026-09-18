@@ -62,6 +62,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS timer_seconds INT,
           ADD COLUMN IF NOT EXISTS description TEXT
       `),
+      // member_sessions — token_hash links the DB record to the Redis refresh token
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE member_sessions
+          ADD COLUMN IF NOT EXISTS token_hash TEXT
+      `),
       // products
       prisma.$executeRawUnsafe(`
         ALTER TABLE products
@@ -205,6 +210,65 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         )
       `),
       prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS helpdesk_ticket_replies_ticket_id_created_at_idx ON helpdesk_ticket_replies(ticket_id, created_at)`),
+      // Support alarm system (2026-08-29) — `status` gains 'acknowledged' and
+      // 'waiting_for_user'. status === 'new' IS "alarm active, unacknowledged"
+      // (no separate boolean column). See helpdeskTicketRules.ts.
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS acknowledged_by UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS assigned_to UUID`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_tickets ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ`),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_helpdesk_tickets_assigned_to ON helpdesk_tickets(assigned_to)`),
+      // Widen the original CREATE TABLE's inline, unnamed CHECK. Postgres's
+      // default naming convention for an unnamed column constraint is
+      // `<table>_<column>_check`, but we don't rely on that guess — this
+      // looks up whatever CHECK constraint actually exists on the `status`
+      // column via the catalog and drops it by its real name, then adds our
+      // own (named) constraint back. Idempotent: on every subsequent
+      // startup this finds and re-drops the constraint it added last time
+      // (by column, not by name) before re-adding it — safe even if a
+      // future edit changes the allowed value list again.
+      prisma.$executeRawUnsafe(`
+        DO $$
+        DECLARE
+          cname text;
+        BEGIN
+          SELECT con.conname INTO cname
+            FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = ANY(con.conkey)
+           WHERE rel.relname = 'helpdesk_tickets'
+             AND att.attname = 'status'
+             AND con.contype = 'c'
+           LIMIT 1;
+          IF cname IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE helpdesk_tickets DROP CONSTRAINT %I', cname);
+          END IF;
+        END $$;
+      `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE helpdesk_tickets ADD CONSTRAINT helpdesk_tickets_status_check
+          CHECK (status IN ('new', 'acknowledged', 'in_progress', 'waiting_for_user', 'resolved', 'closed'))
+      `),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_ticket_replies ADD COLUMN IF NOT EXISTS is_internal BOOLEAN NOT NULL DEFAULT false`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_settings ADD COLUMN IF NOT EXISTS alarm_repeat_interval_seconds INT NOT NULL DEFAULT 30`),
+      prisma.$executeRawUnsafe(`ALTER TABLE helpdesk_settings ADD COLUMN IF NOT EXISTS escalation_minutes INT NOT NULL DEFAULT 10`),
+      // Immutable audit trail — raw SQL only (no Prisma model), same
+      // convention as admin_notifications. Written via helpdeskActivityLog.ts.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS helpdesk_ticket_activity_log (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          ticket_id UUID NOT NULL REFERENCES helpdesk_tickets(id) ON DELETE CASCADE,
+          actor_type VARCHAR(20) NOT NULL,
+          actor_id UUID,
+          action VARCHAR(50) NOT NULL,
+          previous_value TEXT,
+          new_value TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+      prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_helpdesk_ticket_activity_log_ticket ON helpdesk_ticket_activity_log(ticket_id, created_at)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batch_days ADD COLUMN IF NOT EXISTS category VARCHAR(100)`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`),
       prisma.$executeRawUnsafe(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS snapshot_days INT`),
@@ -252,6 +316,17 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS image_url TEXT,
           ADD COLUMN IF NOT EXISTS lottie_url TEXT,
           ADD COLUMN IF NOT EXISTS quiz_data JSONB
+      `),
+      // Onboarding CTA buttons — admin-managed, simple name + active/inactive
+      // toggle shown in the onboarding wizard's welcome step.
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS onboarding_buttons (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
       `),
       // Virtual Self Onboarding — LiveKit verification meetings
       prisma.$executeRawUnsafe(`
@@ -1476,6 +1551,22 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_mode VARCHAR(20) NOT NULL DEFAULT 'ADMIN_CHECK'
     `).catch(() => {});
 
+    // Streak Points — video side (2026-09). Per-episode point value, admin-set,
+    // paid into the existing points_ledger on first-ever completion of that
+    // episode. Task-side streak points needed no new column: Task.base_points +
+    // the completion_mode flow above already pay into points_ledger exactly once
+    // per task per member.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS streak_points INT NOT NULL DEFAULT 0
+    `).catch(() => {});
+    // Belt-and-suspenders DB-level dedup for video streak-point awards. Scoped by
+    // reference_type so it can never collide with (or constrain) the pre-existing
+    // task_submission/milestone/batch_day points_ledger rows written elsewhere.
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS points_ledger_episode_completion_dedup
+      ON points_ledger (member_id, reference_id) WHERE reference_type = 'episode_completion'
+    `).catch(() => {});
+
     // Backfill: publish any active courses that were created before the admin
     // Publish toggle existed (the create handler now defaults isPublished=true,
     // but earlier rows are stuck at is_published=false and never appear on the
@@ -1772,6 +1863,54 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           END IF;
         END LOOP;
       END $$
+    `).catch(() => {});
+
+    // ── Episode Timer Sessions (2026-09-16) ─────────────────────────────────
+    // Server-side timer tracking so focus timers survive page refresh.
+    // One row per (member, episode) — UPSERT resets/restarts the timer.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS lesson_timer_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+        duration_seconds INT NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
+        last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, episode_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_lesson_timer_sessions_member ON lesson_timer_sessions(member_id)`
+    ).catch(() => {});
+
+    // ── Per-Episode Lifeline State (2026-09-16) ──────────────────────────────
+    // Persists free/purchased lifeline usage per member per episode across refreshes.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS episode_lifeline_state (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        free_used INT NOT NULL DEFAULT 0,
+        purchased_used INT NOT NULL DEFAULT 0,
+        total_used INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, episode_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_episode_lifeline_state_member ON episode_lifeline_state(member_id)`
+    ).catch(() => {});
+
+    // Per-episode lifeline config (admin-configurable overrides)
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE course_episodes
+        ADD COLUMN IF NOT EXISTS lifeline_enabled BOOLEAN NOT NULL DEFAULT true,
+        ADD COLUMN IF NOT EXISTS lifeline_count INT NOT NULL DEFAULT 3,
+        ADD COLUMN IF NOT EXISTS lifeline_coin_cost INT NOT NULL DEFAULT 50,
+        ADD COLUMN IF NOT EXISTS max_purchased_lifelines INT NOT NULL DEFAULT 5
     `).catch(() => {});
 
   } catch (err) {

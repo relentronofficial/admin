@@ -11,22 +11,16 @@ import {
   ticketDisplayId,
 } from "@/lib/hooks/useSupport";
 import type { SupportReply, SupportTicket, SupportTicketStatus } from "@/types";
+import { SUPPORT_STATUS_MAP } from "@/lib/constants/supportStatus";
 import { cn } from "@/lib/utils/cn";
 
 // ── Status pill ─────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<SupportTicketStatus, { color: string; label: string }> = {
-  new: { color: "#60a5fa", label: "NEW" },
-  in_progress: { color: "#facc15", label: "IN PROGRESS" },
-  resolved: { color: "#4ade80", label: "RESOLVED" },
-  closed: { color: "#a0a0a0", label: "CLOSED" },
-};
-
 function StatusPill({ status }: { status: SupportTicketStatus }) {
-  const { color, label } = STATUS_MAP[status] ?? STATUS_MAP.new;
+  const { color, label } = SUPPORT_STATUS_MAP[status] ?? SUPPORT_STATUS_MAP.new;
   return (
     <span
-      className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider"
+      className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider"
       style={{
         color,
         background: `color-mix(in srgb, ${color} 10%, transparent)`,
@@ -38,9 +32,54 @@ function StatusPill({ status }: { status: SupportTicketStatus }) {
   );
 }
 
+// ── Activity timeline ───────────────────────────────────────────────────────
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  created: "Ticket created",
+  acknowledged: "Support team acknowledged your ticket",
+  assigned: "Assigned to a team member",
+  status_changed: "Status updated",
+  priority_changed: "Priority updated",
+  replied: "Support replied",
+  escalated: "Escalated for faster attention",
+  resolved: "Marked resolved",
+  closed: "Ticket closed",
+};
+
+function ActivityTimeline({ activity }: { activity: SupportTicket["activityLog"] }) {
+  if (!activity || activity.length === 0) return null;
+  return (
+    <div
+      className="p-3 rounded-2xl flex flex-wrap gap-x-4 gap-y-2"
+      style={{
+        background: "var(--color-bg-surface)",
+        border: "1px solid var(--color-border-subtle)",
+      }}
+    >
+      {activity.map((a, i) => (
+        <div key={i} className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+          <span
+            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+            style={{ background: "var(--color-accent)" }}
+          />
+          {ACTIVITY_LABELS[a.action] ?? a.action}
+          <span className="opacity-60">
+            ·{" "}
+            {new Date(a.createdAt).toLocaleTimeString(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Priority chip ───────────────────────────────────────────────────────────
 
 function priorityColor(priority: string): string {
+  if (priority === "urgent") return "#dc2626";
   if (priority === "high") return "#ef4444";
   if (priority === "low") return "#60a5fa";
   return "#facc15";
@@ -331,6 +370,7 @@ export default function TicketDetailPage() {
         }}
       >
         <TicketHeaderCard ticket={ticket} />
+        <ActivityTimeline activity={ticket.activityLog} />
         <ChatBubble
           isMine
           author="You"

@@ -28,19 +28,13 @@ import {
   ticketDisplayId,
 } from "@/lib/hooks/useSupport";
 import type { Faq, HelpdeskSettings, SupportTicket, SupportTicketStatus } from "@/types";
+import { SUPPORT_STATUS_MAP } from "@/lib/constants/supportStatus";
 import { cn } from "@/lib/utils/cn";
 
 // ── Status pill ─────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<SupportTicketStatus, { color: string; label: string }> = {
-  new: { color: "#60a5fa", label: "New" },
-  in_progress: { color: "#facc15", label: "In Progress" },
-  resolved: { color: "#4ade80", label: "Resolved" },
-  closed: { color: "#a0a0a0", label: "Closed" },
-};
-
 function StatusPill({ status }: { status: SupportTicketStatus }) {
-  const { color, label } = STATUS_MAP[status] ?? STATUS_MAP.new;
+  const { color, label } = SUPPORT_STATUS_MAP[status] ?? SUPPORT_STATUS_MAP.new;
   return (
     <span
       className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider"

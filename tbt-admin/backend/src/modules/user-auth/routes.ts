@@ -11,6 +11,9 @@ export async function userAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/resend-otp', (req, reply) => controller.resendOtp(fastify, req, reply));
   fastify.post('/refresh', (req, reply) => controller.refresh(fastify, req, reply));
   fastify.post('/logout', (req, reply) => controller.logout(fastify, req, reply));
+  // Session management during login-conflict flow (unauthenticated — validated by pendingToken)
+  fastify.post('/session-revoke', (req, reply) => controller.sessionRevokeDuringLogin(fastify, req, reply));
+  fastify.post('/complete-login', (req, reply) => controller.completeLogin(fastify, req, reply));
   // Member-facing "sign out on all devices". Requires the current
   // access token (authenticateUser) and kills every refresh token
   // for the member across all devices — any other device holding a

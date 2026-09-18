@@ -83,14 +83,43 @@ export const coursesService = {
   submitEpisodeTask: (episodeId: string, taskId: string, body: { responseValue?: string; proofUrl?: string; proofType?: string }) =>
     apiClient.post<never, ApiResponse<EpisodeTaskSubmissionResult>>(`/api/user/episodes/${episodeId}/tasks/${taskId}/submit`, body),
 
-  presignEpisodeTaskProof: (filename: string, contentType: string, episodeId: string, taskId: string) =>
-    apiClient.post<never, ApiResponse<{ uploadUrl: string; publicUrl: string }>>("/api/upload/presigned-url", {
-      filename,
-      contentType,
-      bucket: "episode-task-proofs",
-      pathPrefix: `${episodeId}/${taskId}`,
+  uploadTaskProofFile: (queryParams: string, file: File) =>
+    apiClient.post<never, ApiResponse<{ publicUrl: string }>>(`/api/upload/image?${queryParams}`, file, {
+      headers: { "Content-Type": file.type },
     }),
+
+  getStreakPoints: () =>
+    apiClient.get<never, ApiResponse<StreakPointsSummary>>("/api/user/streak-points"),
+
+  startEpisodeTimer: (episodeId: string, durationSeconds: number) =>
+    apiClient.post<never, ApiResponse<EpisodeTimerSession>>(`/api/user/episodes/${episodeId}/timer/start`, { durationSeconds }),
+
+  getEpisodeTimerSession: (episodeId: string) =>
+    apiClient.get<never, ApiResponse<EpisodeTimerSession | null>>(`/api/user/episodes/${episodeId}/timer/session`),
+
+  heartbeatEpisodeTimer: (episodeId: string, completed?: boolean) =>
+    apiClient.post<never, ApiResponse<{ status: string; remainingSeconds: number }>>(`/api/user/episodes/${episodeId}/timer/heartbeat`, { completed }),
+
+  getEpisodeLifelines: (episodeId: string) =>
+    apiClient.get<never, ApiResponse<EpisodeLifelineState>>(`/api/user/episodes/${episodeId}/lifelines`),
+
+  useEpisodeLifeline: (episodeId: string, type: 'free' | 'coin') =>
+    apiClient.post<never, ApiResponse<{ freeRemaining: number; totalUsed: number; coinsDeducted?: number; remainingCoins?: number }>>(`/api/user/episodes/${episodeId}/lifelines/use`, { type }),
 };
+
+export interface StreakPointsHistoryEntry {
+  type: "video" | "task";
+  title: string;
+  points: number;
+  createdAt: string;
+}
+
+export interface StreakPointsSummary {
+  total: number;
+  videoTotal: number;
+  taskTotal: number;
+  history: StreakPointsHistoryEntry[];
+}
 
 export interface EpisodeResource {
   id: string;
@@ -120,6 +149,27 @@ export interface EpisodeTaskSubmissionResult {
   status: TaskSubmissionStatus;
   feedback?: string | null;
   completionMode?: TaskCompletionMode;
+}
+
+export interface EpisodeTimerSession {
+  id?: string;
+  status: 'ACTIVE' | 'COMPLETED' | 'EXPIRED';
+  durationSeconds?: number;
+  startedAt?: string;
+  expiresAt?: string;
+  completedAt?: string | null;
+  remainingSeconds: number;
+}
+
+export interface EpisodeLifelineState {
+  lifelineEnabled: boolean;
+  lifelineCount: number;
+  lifelineCoinCost: number;
+  maxPurchasedLifelines: number;
+  freeUsed: number;
+  purchasedUsed: number;
+  totalUsed: number;
+  freeRemaining: number;
 }
 
 export interface EpisodeTask {

@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { generateBunnyToken } from '../../lib/bunnyToken.js';
+import { bunnyCdnOrigin } from '../../lib/bunny.js';
 import {
   computeLessonLockStates,
   isEpisodeUnlocked,
@@ -20,6 +21,7 @@ import {
 } from '../../lib/courseNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { computeMemberStats } from '../../lib/tbtStats.js';
+import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -662,6 +664,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     ),
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT e.id AS episode_id, e.section_id, e.timer_seconds AS episode_timer_seconds,
+              e.streak_points AS streak_points,
               s.title AS section_title, s.sort_order AS section_sort_order, s.timer_seconds AS section_timer_seconds
        FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
        WHERE e.course_id = $1::uuid`,
@@ -696,6 +699,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionOrder: r.section_sort_order != null ? Number(r.section_sort_order) : null,
       sectionTimerSeconds: r.section_timer_seconds != null ? Number(r.section_timer_seconds) : null,
       episodeTimerSeconds: r.episode_timer_seconds != null ? Number(r.episode_timer_seconds) : null,
+      streakPoints: r.streak_points != null ? Number(r.streak_points) : 0,
     }]),
   );
 
@@ -771,6 +775,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       completedByThreshold: lockState?.completed ?? false,
       watchPercent: lockState?.watchPercent ?? null,
       timerSeconds: episodeSectionMap.get(ep.id)?.episodeTimerSeconds ?? null,
+      streakPoints: episodeSectionMap.get(ep.id)?.streakPoints ?? 0,
       sectionId: episodeSectionMap.get(ep.id)?.sectionId ?? null,
       sectionTitle: episodeSectionMap.get(ep.id)?.sectionTitle ?? null,
       sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
@@ -1399,6 +1404,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       episodeId,
       (courseForXp as any)?.xpPerEpisode ?? 10,
     );
+    void awardVideoStreakPoints(request.server.prisma as any, request.memberId!, episodeId);
 
     // 7.1 — episode complete notification
     void notifyEpisodeCompleted({
@@ -1539,6 +1545,29 @@ async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, e
       });
     }
   } catch { /* fire-and-forget */ }
+}
+
+// Streak Points — video side. Pays the episode's admin-configured streak_points
+// into the existing points_ledger, once per member per episode. App-level
+// pre-check is the fast path; the DB partial unique index
+// points_ledger_episode_completion_dedup (prisma.ts) is the real backstop against
+// a duplicate award if this ever races.
+async function awardVideoStreakPoints(prisma: any, memberId: string, episodeId: string) {
+  try {
+    const rows = (await prisma.$queryRawUnsafe(
+      `SELECT streak_points FROM course_episodes WHERE id = $1::uuid`, episodeId,
+    )) as { streak_points: number }[];
+    const points = Number(rows[0]?.streak_points ?? 0);
+    if (points <= 0) return;
+    const already = await prisma.pointsLedger.findFirst({
+      where: { memberId, referenceType: 'episode_completion', referenceId: episodeId },
+      select: { id: true },
+    });
+    if (already) return;
+    await prisma.pointsLedger.create({
+      data: { memberId, points, reason: 'Video completed', referenceType: 'episode_completion', referenceId: episodeId },
+    });
+  } catch { /* fire-and-forget, matches awardEpisodeXp style */ }
 }
 
 // ─── Course quiz submission ───────────────────────────────────────────────────
@@ -1752,6 +1781,38 @@ export async function getUserBadgesHandler(request: FastifyRequest, reply: Fasti
     earnedAt: b.earnedAt,
     badge: b.badge,
   })));
+}
+
+// Streak Points history — reads the existing points_ledger for the two award
+// paths that feed it (video: reference_type='episode_completion', written by
+// awardVideoStreakPoints above; task: reference_type in ('task_submission',
+// 'milestone') written by the pre-existing completionMode flow, scoped here to
+// course-episode tasks via course_episode_id IS NOT NULL). points_ledger has no
+// other reader anywhere in the backend today — this is the first.
+export async function getMyStreakPointsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const rows = await request.server.prisma.$queryRawUnsafe<StreakPointsRow[]>(
+    `SELECT pl.points, pl.reference_type, pl.created_at,
+       CASE
+         WHEN pl.reference_type = 'episode_completion' THEN ce.title
+         WHEN pl.reference_type = 'task_submission' THEN t1.title
+         WHEN pl.reference_type = 'milestone' THEN t2.title
+       END AS title
+     FROM points_ledger pl
+     LEFT JOIN course_episodes ce ON pl.reference_type = 'episode_completion' AND ce.id = pl.reference_id
+     LEFT JOIN task_submissions ts ON pl.reference_type = 'task_submission' AND ts.id = pl.reference_id
+     LEFT JOIN tasks t1 ON t1.id = ts.task_id AND t1.course_episode_id IS NOT NULL
+     LEFT JOIN tasks t2 ON pl.reference_type = 'milestone' AND t2.id = pl.reference_id AND t2.course_episode_id IS NOT NULL
+     WHERE pl.member_id = $1::uuid
+       AND (
+         pl.reference_type = 'episode_completion'
+         OR (pl.reference_type = 'task_submission' AND t1.id IS NOT NULL)
+         OR (pl.reference_type = 'milestone' AND t2.id IS NOT NULL)
+       )
+     ORDER BY pl.created_at DESC`,
+    request.memberId,
+  ).catch(() => [] as StreakPointsRow[]);
+
+  return ok(reply, computeStreakPointsSummary(rows));
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -4125,8 +4186,6 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const resources = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id, title, description, file_url AS "fileUrl", file_type AS "fileType",
             file_type_icon_url AS "fileTypeIconUrl", download_label AS "downloadLabel"
@@ -4145,8 +4204,6 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
   const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT t.id, t.title, t.description, t.deliverables,
             t.estimated_minutes AS "estimatedMinutes",
@@ -4205,8 +4262,6 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
-  const access = await getCourseAccessRecord(request.server.prisma as any, memberId, ep.courseId);
-  if (!isAccessValid(access)) return fail(reply, 403, 'Access required for this course');
 
   // Task must actually belong to this episode — prevents a client from
   // submitting against an arbitrary task ID that lives on a different episode.
@@ -4296,6 +4351,185 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
   return reply.status(existing ? 200 : 201).send({
     success: true,
     data: { id: submission.id, status: submission.status, completionMode },
+    error: null,
+  });
+}
+
+// ── Episode Timer Session ──────────────────────────────────────────────────────
+// POST /api/user/episodes/:id/timer/start  — start or reset a server-side timer session
+export async function startEpisodeTimerHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { durationSeconds } = request.body as { durationSeconds: number };
+  const memberId = request.memberId!;
+  if (!durationSeconds || durationSeconds <= 0) return fail(reply, 400, 'durationSeconds required');
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + durationSeconds * 1000);
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lesson_timer_sessions (member_id, episode_id, status, duration_seconds, started_at, expires_at, last_heartbeat_at)
+     VALUES ($1::uuid, $2::uuid, 'ACTIVE', $3, $4, $5, $4)
+     ON CONFLICT (member_id, episode_id) DO UPDATE SET
+       status = 'ACTIVE', duration_seconds = $3, started_at = $4,
+       expires_at = $5, completed_at = NULL, last_heartbeat_at = $4
+     WHERE lesson_timer_sessions.status != 'COMPLETED'`,
+    memberId, episodeId, durationSeconds, now, expiresAt,
+  );
+  return reply.send({ success: true, data: { expiresAt, remainingSeconds: durationSeconds, status: 'ACTIVE' }, error: null });
+}
+
+// GET /api/user/episodes/:id/timer/session — fetch current timer state (survives refresh)
+export async function getEpisodeTimerSessionHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status, duration_seconds AS "durationSeconds", started_at AS "startedAt",
+            expires_at AS "expiresAt", completed_at AS "completedAt"
+     FROM lesson_timer_sessions WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+    memberId, episodeId,
+  );
+  const session = rows[0] ?? null;
+  if (session && session.status === 'ACTIVE' && new Date(session.expiresAt) < new Date()) {
+    // Auto-expire stale session
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'EXPIRED' WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ).catch(() => {});
+    session.status = 'EXPIRED';
+  }
+  const remainingSeconds = session?.status === 'ACTIVE'
+    ? Math.max(0, Math.ceil((new Date(session.expiresAt).getTime() - Date.now()) / 1000))
+    : 0;
+  return reply.send({ success: true, data: session ? { ...session, remainingSeconds } : null, error: null });
+}
+
+// POST /api/user/episodes/:id/timer/heartbeat — keep session alive; also marks COMPLETED
+export async function heartbeatEpisodeTimerHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { completed } = request.body as { completed?: boolean };
+  const memberId = request.memberId!;
+  const now = new Date();
+  if (completed) {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'COMPLETED', completed_at = $3, last_heartbeat_at = $3
+       WHERE member_id = $1::uuid AND episode_id = $2::uuid AND status = 'ACTIVE'`,
+      memberId, episodeId, now,
+    ).catch(() => {});
+    return reply.send({ success: true, data: { status: 'COMPLETED', remainingSeconds: 0 }, error: null });
+  }
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE lesson_timer_sessions SET last_heartbeat_at = $3
+     WHERE member_id = $1::uuid AND episode_id = $2::uuid AND status = 'ACTIVE'
+     RETURNING expires_at AS "expiresAt", status`,
+    memberId, episodeId, now,
+  );
+  const row = rows[0];
+  if (!row) return reply.send({ success: true, data: null, error: null });
+  const isExpired = new Date(row.expiresAt) < now;
+  if (isExpired) {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE lesson_timer_sessions SET status = 'EXPIRED' WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ).catch(() => {});
+  }
+  const remainingSeconds = isExpired ? 0 : Math.max(0, Math.ceil((new Date(row.expiresAt).getTime() - Date.now()) / 1000));
+  return reply.send({ success: true, data: { status: isExpired ? 'EXPIRED' : 'ACTIVE', remainingSeconds }, error: null });
+}
+
+// ── Episode Lifelines ──────────────────────────────────────────────────────────
+// GET /api/user/episodes/:id/lifelines — per-episode lifeline state + config
+export async function getEpisodeLifelinesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const [configRows, stateRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifeline_enabled AS "lifelineEnabled", lifeline_count AS "lifelineCount",
+              lifeline_coin_cost AS "lifelineCoinCost", max_purchased_lifelines AS "maxPurchasedLifelines"
+       FROM course_episodes WHERE id = $1::uuid`,
+      episodeId,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT free_used AS "freeUsed", purchased_used AS "purchasedUsed", total_used AS "totalUsed"
+       FROM episode_lifeline_state WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ),
+  ]);
+  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
+  const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
+  return reply.send({
+    success: true,
+    data: { ...cfg, ...state, freeRemaining },
+    error: null,
+  });
+}
+
+// POST /api/user/episodes/:id/lifelines/use — spend a lifeline on this episode
+export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: episodeId } = request.params as { id: string };
+  const { type } = request.body as { type: 'free' | 'coin' };
+  const memberId = request.memberId!;
+
+  const [configRows, stateRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lifeline_enabled AS "lifelineEnabled", lifeline_count AS "lifelineCount",
+              lifeline_coin_cost AS "lifelineCoinCost", max_purchased_lifelines AS "maxPurchasedLifelines"
+       FROM course_episodes WHERE id = $1::uuid`,
+      episodeId,
+    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT free_used AS "freeUsed", purchased_used AS "purchasedUsed", total_used AS "totalUsed"
+       FROM episode_lifeline_state WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    ),
+  ]);
+  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
+  if (!cfg.lifelineEnabled) return fail(reply, 403, 'Lifelines disabled for this episode');
+
+  if (type === 'free') {
+    const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
+    if (freeRemaining <= 0) return fail(reply, 400, 'No free lifelines remaining');
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO episode_lifeline_state (member_id, episode_id, free_used, total_used, updated_at)
+       VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
+       ON CONFLICT (member_id, episode_id) DO UPDATE SET
+         free_used = episode_lifeline_state.free_used + 1,
+         total_used = episode_lifeline_state.total_used + 1,
+         updated_at = NOW()`,
+      memberId, episodeId,
+    );
+    return reply.send({
+      success: true,
+      data: { freeRemaining: freeRemaining - 1, totalUsed: state.totalUsed + 1 },
+      error: null,
+    });
+  }
+
+  // type === 'coin' — deduct coins from tbt_activity_log
+  const coinCost = cfg.lifelineCoinCost ?? 50;
+  const purchasedSoFar = state.purchasedUsed ?? 0;
+  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
+  const balanceRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT COALESCE(SUM(points), 0) AS balance FROM tbt_activity_log WHERE member_id = $1::uuid`,
+    memberId,
+  );
+  const balance = Number(balanceRows[0]?.balance ?? 0);
+  if (balance < coinCost) return fail(reply, 400, 'Insufficient TBT coins');
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, activity_date) VALUES ($1::uuid, $2, 'lifeline_spend', NOW()::DATE)`,
+    memberId, -coinCost,
+  );
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO episode_lifeline_state (member_id, episode_id, purchased_used, total_used, updated_at)
+     VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
+     ON CONFLICT (member_id, episode_id) DO UPDATE SET
+       purchased_used = episode_lifeline_state.purchased_used + 1,
+       total_used = episode_lifeline_state.total_used + 1,
+       updated_at = NOW()`,
+    memberId, episodeId,
+  );
+  return reply.send({
+    success: true,
+    data: { freeRemaining: Math.max(0, cfg.lifelineCount - state.freeUsed), totalUsed: state.totalUsed + 1, coinsDeducted: coinCost, remainingCoins: balance - coinCost },
     error: null,
   });
 }
@@ -4652,6 +4886,9 @@ export async function updateAvatarHandler(request: FastifyRequest, reply: Fastif
     where: { id: request.memberId },
     data: { profilePhotoUrl: avatarUrl },
   });
+  // Without this, the cached /me payload (see getMeHandler's 60s cacheSet)
+  // keeps serving the pre-upload avatarUrl until the TTL expires.
+  void invalidateCache(request.server.redis ?? null, `me:${request.memberId}`);
   return ok(reply, { avatarUrl });
 }
 
@@ -4709,7 +4946,14 @@ export async function avatarPresignHandler(request: FastifyRequest, reply: Fasti
   });
   const command = new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, ContentType: contentType });
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-  const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+  // BUNNY_CDN_URL is optional — R2 can be configured without a Bunny CDN in
+  // front of it. Falling back to the raw R2 endpoint (same convention as
+  // uploadBufferToR2 in lib/r2.ts) avoids emitting a publicUrl with an empty
+  // host (`https:///members/photos/...`) when it's unset.
+  const cdnOrigin = bunnyCdnOrigin();
+  const publicUrl = cdnOrigin
+    ? `${cdnOrigin}/${key}`
+    : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
   return ok(reply, { uploadUrl, publicUrl });
 }
 
@@ -4776,10 +5020,15 @@ export async function assignmentFilePresignHandler(request: FastifyRequest, repl
 export async function revokeDeviceHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
   const currentDeviceId = request.headers['x-device-id'] as string | undefined;
-  const session = await request.server.prisma.memberSession.findFirst({ where: { id, memberId: request.memberId } });
+  const session = await (request.server.prisma.memberSession as any).findFirst({ where: { id, memberId: request.memberId } });
   if (!session) return fail(reply, 404, 'Device session not found');
   if (currentDeviceId && session.deviceId === currentDeviceId) return fail(reply, 400, 'Cannot revoke current device');
-  await request.server.prisma.memberSession.delete({ where: { id } });
+  // Also revoke the Redis refresh token so the device is kicked immediately
+  if (session.tokenHash) {
+    const { revokeRefreshTokenByHash } = await import('../../plugins/jwt.js');
+    await revokeRefreshTokenByHash(request.server.redis ?? null, session.tokenHash).catch(() => {});
+  }
+  await (request.server.prisma.memberSession as any).delete({ where: { id } });
   return ok(reply, { revoked: true });
 }
 

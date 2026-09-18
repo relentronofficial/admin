@@ -20,6 +20,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 
 **Non-TBT directories at repo root (ignore for TBT work):**
 - `form/` — standalone Next.js 16 app (port 3007) for an Office Assistant job application form. Separate Prisma schema, separate Vercel Blob storage. Not part of the TBT monorepo.
+- `co-worker/` — separate Flutter app with its own Supabase backend (community/AI content). Completely unrelated to TBT; has its own `CLAUDE.md`, `pubspec.yaml`, and `FULL_MIGRATION.sql`.
 
 **NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.** (The legacy name still appears in a few root doc filenames — e.g. `EiFlix_PRD.md`, `EiFlix_Admin_PRD.md` — those are historical filenames only, not something to propagate into code.)
 
@@ -156,6 +157,7 @@ Root `package.json` also declares `percy:player`/`percy:all` scripts (`percy exe
 **User web auth (custom JWT cookies):**
 - `@clerk/nextjs` IS installed in user-web, but only for: the `app/(auth)/` Clerk-hosted route group and middleware auth-state detection. The main `/login` page and all backend API calls use custom JWT cookies — never Clerk JWTs or bearer tokens.
 - `POST /api/user-auth/login` → phone + password → bcrypt check → OTP sent via WhatsApp (WABA) or SMS (MSG91) → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
+- **Single active session per member** — `verifyOtp` and `setPassword` both call `revokeAllForMember(redis, memberId)` before `issueTokens`. This wipes every existing `refresh:*` and `refresh_grace:*` key for that member from Redis, so logging in on a second device terminates the first device's session on its next refresh (≤15-min JWT window). `revokeAllForMember` is also called by `DELETE /api/user-auth/sessions` and the admin session-kill endpoint. Fails silently on Redis outage (safe to fail open).
 - Full user-auth route list: `POST /signup`, `POST /login`, `POST /forgot-password`, `POST /verify-otp`, `POST /set-password`, `POST /resend-otp`, `POST /refresh`, `POST /logout`, `DELETE /sessions` (revoke all sessions, requires `authenticateUser`), `GET /me` (requires `authenticateUser`), `GET /whatsapp-diagnostic` (CRON_SECRET header — support engineers only, no Clerk/member auth). Dev-only: `GET /dev-otp/:phone`.
 - **OTP rate limits** — 60-second cooldown between sends to the same phone; 5 OTPs/hour cap per phone (both enforced in `backend/src/lib/otp.ts`). **Fails open on Redis errors** — a wedged Upstash must not lock users out. OTPs are also mirrored to an in-process `Map` as a resilience fallback (Upstash has intermittent ETIMEDOUT spikes in Cloud Run). The same Cloud Run instance that stored the OTP is likely to serve verify-otp (30-60 s later); if a cold-start routes the request to a new instance, the user taps Resend.
 - Axios client has `withCredentials: true`; cookies are sent automatically on every request
@@ -565,6 +567,7 @@ Shared lookup data (categories, tags, dropdown options). Controller + routes onl
   - Unique constraint: `(memberId, courseId)`
 - **`CoursePayment`** — payment ledger record. `method`: `"manual" | "razorpay" | "bank_transfer" | "upi" | "free" | "external"`. Approved by admin via `POST /api/courses/:id/payments/:paymentId/approve`.
 - **`MemberXP`** — XP ledger. `source`: `"episode_complete" | "quiz_pass"`. Amount comes from `course.xpPerEpisode`.
+- **`tbt_activity_log` sources** — valid `source` values: `"episode_complete"`, `"quiz_pass"`, `"batch_day"` (one row per approved batch day, `reference_id = batchDayId`, `activity_date` = submission date not approval date), `"task_submission"` (one row per approved task submission, `reference_id = submissionId`). Ledger rows are idempotent via a conflict index on `(member_id, reference_id, source)` — safe to insert twice. New sources must be added to `syncLegacyPointsToLedger` in `tbtStats.ts` or historical data will not backfill.
 - **`CourseBadge`** — manually awardable badge per course. Admin awards via `POST /api/courses/:id/badges/:badgeId/award`.
 
 ### Sequential Lesson Unlock (added 2026-07-16 — real Prisma columns, not a raw-SQL ALTER)
@@ -733,7 +736,7 @@ Socket.IO rooms and the events each room receives:
 
 | Room | Events emitted |
 |---|---|
-| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`), `admin:credit_purchase` (`{ memberId, creditType, quantity, amountInr, purchaseId }` — MG-05), `admin:course_weekly_feedback` (`{ feedbackId, memberName, courseId }`) |
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`), `admin:helpdesk_ticket` (new ticket/reply — alarm starts), `admin:helpdesk_ticket_acknowledged` (`{ ticketId, acknowledgedBy, acknowledgedAt }` — alarm stops for that ticket only), `admin:helpdesk_ticket_escalated` (unacknowledged past `escalationMinutes`), `admin:helpdesk_ticket_updated` (assign/status/priority — list refresh only), `admin:credit_purchase` (`{ memberId, creditType, quantity, amountInr, purchaseId }` — MG-05), `admin:course_weekly_feedback` (`{ feedbackId, memberName, courseId }`) |
 | `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`), `batch:stage_unlocked` (`{ processTitle, nextStageTitle }` — MG-03), `course:access_granted` (`{ courseId }`), `credit_approved` (`{ creditType, quantity }` — MG-05), `credit_rejected` (MG-05) |
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |

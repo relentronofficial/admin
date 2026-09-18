@@ -84,3 +84,46 @@ export const useReorderOnboardingContent = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['onboarding-content'] }),
   });
 };
+
+// ── Onboarding CTA buttons (name + active/inactive) ─────────────────────────
+
+export const useListOnboardingButtons = () =>
+  useQuery({
+    queryKey: ['onboarding-buttons'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/onboarding/admin/buttons');
+      return res;
+    },
+  });
+
+export const useCreateOnboardingButton = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; isActive?: boolean }) => {
+      const res: any = await apiClient.post('/api/onboarding/admin/buttons', data);
+      return res.data || res;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['onboarding-buttons'] }),
+  });
+};
+
+export const useUpdateOnboardingButton = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; isActive?: boolean } }) => {
+      const res: any = await apiClient.put(`/api/onboarding/admin/buttons/${id}`, data);
+      return res.data || res;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['onboarding-buttons'] }),
+  });
+};
+
+export const useDeleteOnboardingButton = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/onboarding/admin/buttons/${id}`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['onboarding-buttons'] }),
+  });
+};

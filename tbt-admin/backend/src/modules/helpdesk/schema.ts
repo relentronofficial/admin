@@ -8,7 +8,14 @@ const slugSchema = z
 
 const statusSchema = z.enum(['active', 'inactive']);
 
-const ticketStatusSchema = z.enum(['new', 'in_progress', 'resolved', 'closed']);
+const ticketStatusSchema = z.enum([
+  'new',
+  'acknowledged',
+  'in_progress',
+  'waiting_for_user',
+  'resolved',
+  'closed',
+]);
 
 // ── Categories ──────────────────────────────────────────────────
 export const createCategorySchema = z.object({
@@ -44,10 +51,12 @@ export const updateSettingsSchema = z.object({
   buttonText: z.string().max(100).optional(),
   bannerImage: z.string().url().optional().nullable().or(z.literal('')),
   status: statusSchema.optional(),
+  alarmRepeatIntervalSeconds: z.number().int().min(5).max(600).optional(),
+  escalationMinutes: z.number().int().min(1).max(1440).optional(),
 });
 
 // ── Tickets ─────────────────────────────────────────────────────
-const priorityEnum = z.enum(['low', 'medium', 'high']);
+export const priorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
 const preferredContactEnum = z.enum(['email', 'whatsapp', 'phone']);
 
 export const submitTicketSchema = z.object({
@@ -68,10 +77,19 @@ export const updateTicketStatusSchema = z.object({
   adminNotes: z.string().optional().nullable(),
 });
 
-// Admin posts a member-visible reply. Non-empty appends a reply row on
-// the ticket thread; empty string is treated as a no-op.
+export const updateTicketPrioritySchema = z.object({
+  priority: priorityEnum,
+});
+
+export const assignTicketSchema = z.object({
+  assignedTo: z.string().uuid().nullable(),
+});
+
+// Admin posts a member-visible (or internal-only) reply. Non-empty appends a
+// reply row on the ticket thread; empty string is treated as a no-op.
 export const replyTicketSchema = z.object({
   reply: z.string().max(5000),
+  isInternal: z.boolean().optional(),
 });
 
 // Member posts a follow-up reply on their own ticket.

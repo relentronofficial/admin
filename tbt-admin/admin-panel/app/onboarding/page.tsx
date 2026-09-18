@@ -26,6 +26,8 @@ import {
   Loader2,
   ChevronUp,
   ChevronDown,
+  Pencil,
+  MousePointerClick,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers, useGetMember, useApproveMember } from "@/lib/hooks/useMembers";
@@ -38,6 +40,10 @@ import {
   useUpdateOnboardingContent,
   useDeleteOnboardingContent,
   useReorderOnboardingContent,
+  useListOnboardingButtons,
+  useCreateOnboardingButton,
+  useUpdateOnboardingButton,
+  useDeleteOnboardingButton,
 } from "@/lib/hooks/useOnboarding";
 import {
   useListOnboardingMeetings,
@@ -765,6 +771,274 @@ function MeetingsTab({ onOpenRoom, onOpenDetail }: { onOpenRoom: (creds: any, ti
   );
 }
 
+// ─── Onboarding Buttons (simple name + active/inactive CTA buttons) ─────────
+
+// Only the backend's own `{ success:false, data:null, error:"<message>" }`
+// envelope is safe to show verbatim. Anything else — a framework-level 404
+// like Fastify's default `{ message, error:"Not Found", statusCode }` when a
+// route isn't deployed yet, a proxy/CDN error page, or a network failure with
+// no response at all — is not meant for an admin to read and would surface
+// confusing raw text (e.g. literally "Not Found") instead of an explanation.
+// Full details are still logged to the console for debugging.
+function getErrorMessage(e: any, fallback = "Something went wrong. Please try again."): string {
+  const data = e?.response?.data;
+  if (data && data.success === false && typeof data.error === "string" && data.error.trim()) {
+    return data.error;
+  }
+  // eslint-disable-next-line no-console
+  console.error("[onboarding-buttons] request failed:", {
+    status: e?.response?.status,
+    method: e?.config?.method,
+    url: e?.config?.url,
+    responseData: data,
+    message: e?.message,
+  });
+  return fallback;
+}
+
+function ToggleSwitch({
+  checked,
+  onChange,
+  ariaLabel,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  ariaLabel: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "relative inline-flex flex-shrink-0 h-6 w-11 rounded-full transition-colors disabled:opacity-40",
+        checked ? "bg-[#22c55e]" : "bg-[#333]"
+      )}
+    >
+      <span
+        className={cn(
+          "inline-block w-5 h-5 rounded-full bg-white transform transition-transform mt-0.5",
+          checked ? "translate-x-[22px]" : "translate-x-0.5"
+        )}
+      />
+    </button>
+  );
+}
+
+function OnboardingButtonFormModal({
+  initial,
+  onClose,
+  onSave,
+  saving,
+  existingNames,
+}: {
+  initial?: { id: string; name: string; isActive: boolean } | null;
+  onClose: () => void;
+  onSave: (data: { name: string; isActive: boolean }) => Promise<void>;
+  saving: boolean;
+  existingNames: string[];
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Button name is required.");
+      return;
+    }
+    const isDuplicate = existingNames.some(
+      (n) => n.toLowerCase() === trimmed.toLowerCase() && n.toLowerCase() !== (initial?.name ?? "").toLowerCase()
+    );
+    if (isDuplicate) {
+      setError("A button with this name already exists.");
+      return;
+    }
+    setError("");
+    try {
+      await onSave({ name: trimmed, isActive });
+    } catch (e: any) {
+      setError(getErrorMessage(e, "Unable to save this onboarding button. Please try again."));
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[999] bg-black/75 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-widest">
+          {initial ? "Edit Button" : "Add Button"}
+        </h3>
+
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1.5">
+            Button Name
+          </label>
+          <input
+            autoFocus
+            placeholder="e.g. Get Started"
+            value={name}
+            onChange={(e) => { setName(e.target.value); setError(""); }}
+            className="w-full h-10 px-3 text-sm bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-[#f0f0f0] placeholder-[#606060] outline-none focus:border-[#dc2626]"
+          />
+          {error && <p className="mt-1.5 text-[11px] text-[#dc2626]">{error}</p>}
+        </div>
+
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <p className="text-xs font-medium text-[#f0f0f0]">{isActive ? "Active" : "Inactive"}</p>
+            <p className="text-[11px] text-[#888]">{isActive ? "Visible to members" : "Hidden from members"}</p>
+          </div>
+          <ToggleSwitch checked={isActive} onChange={setIsActive} ariaLabel="Button active status" />
+        </div>
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button onClick={onClose} className="px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg border border-[#2a2a2a] text-[#a0a0a0] hover:text-[#f0f0f0]">
+            Cancel
+          </button>
+          <button onClick={handleSubmit} disabled={saving} className="px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40">
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnboardingButtonsSection() {
+  const { data, isLoading, isError, error: loadError } = useListOnboardingButtons();
+  const create = useCreateOnboardingButton();
+  const update = useUpdateOnboardingButton();
+  const del = useDeleteOnboardingButton();
+  const rows: any[] = data?.data ?? [];
+
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<{ id: string; name: string; isActive: boolean } | null>(null);
+  const [listError, setListError] = useState("");
+
+  const openCreate = () => { setEditing(null); setShowModal(true); };
+  const openEdit = (row: any) => { setEditing(row); setShowModal(true); };
+
+  const handleSaveButton = async (formData: { name: string; isActive: boolean }) => {
+    if (editing) {
+      await update.mutateAsync({ id: editing.id, data: formData });
+    } else {
+      await create.mutateAsync(formData);
+    }
+    setShowModal(false);
+    setEditing(null);
+  };
+
+  const handleToggle = async (row: any) => {
+    setListError("");
+    try {
+      await update.mutateAsync({ id: row.id, data: { isActive: !row.isActive } });
+    } catch (e: any) {
+      setListError(getErrorMessage(e, "Unable to update button status. Please try again."));
+    }
+  };
+
+  const handleDelete = async (row: any) => {
+    if (!window.confirm(`Delete onboarding button "${row.name}"? This cannot be undone.`)) return;
+    setListError("");
+    try {
+      await del.mutateAsync(row.id);
+    } catch (e: any) {
+      setListError(getErrorMessage(e, "Unable to delete this onboarding button. Please try again."));
+    }
+  };
+
+  return (
+    <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-5 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani flex items-center gap-2">
+            <MousePointerClick size={13} className="text-[#dc2626]" /> Onboarding Buttons
+          </h3>
+          <p className="text-xs text-[#888] mt-1">CTA buttons shown to members on the onboarding welcome step. Only active buttons are visible.</p>
+        </div>
+        <button
+          onClick={openCreate}
+          className="inline-flex items-center gap-1.5 px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg bg-[#dc2626] hover:bg-red-700 text-white shrink-0"
+        >
+          <Plus size={13} /> Add Button
+        </button>
+      </div>
+
+      {listError && (
+        <div className="px-3 py-2 rounded-lg bg-[rgba(220,38,38,0.08)] border border-[#7f1d1d] text-xs text-[#dc2626]">{listError}</div>
+      )}
+
+      <div className="rounded-lg border border-[#2a2a2a] overflow-hidden">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8 text-[#888] text-sm">Loading…</div>
+        ) : isError ? (
+          <div className="flex items-center justify-center py-8 text-[#dc2626] text-sm text-center px-4">
+            {getErrorMessage(loadError, "Unable to load onboarding buttons. Please refresh the page and try again.")}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex items-center justify-center py-8 text-[#888] text-sm">No onboarding buttons yet</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#2a2a2a] bg-[#0d0d0d]">
+                {["Button Name", "Status", ""].map((h) => (
+                  <th key={h} className="text-left px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row: any, i: number) => (
+                <tr key={row.id} className={cn("border-b border-[#1f1f1f]", i === rows.length - 1 && "border-b-0")}>
+                  <td className="px-4 py-3 text-[#f0f0f0] text-xs font-medium">{row.name}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <ToggleSwitch
+                        checked={row.isActive}
+                        onChange={() => handleToggle(row)}
+                        ariaLabel={`Toggle ${row.name}`}
+                        disabled={update.isPending}
+                      />
+                      <span className={cn("text-[11px] font-bold uppercase", row.isActive ? "text-[#22c55e]" : "text-[#888]")}>
+                        {row.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => openEdit(row)} className="text-[#888] hover:text-[#f0f0f0] transition-colors" title="Edit">
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => handleDelete(row)} className="text-[#dc2626] hover:text-red-400 transition-colors" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {showModal && (
+        <OnboardingButtonFormModal
+          initial={editing}
+          onClose={() => { setShowModal(false); setEditing(null); }}
+          onSave={handleSaveButton}
+          saving={create.isPending || update.isPending}
+          existingNames={rows.map((r) => r.name)}
+        />
+      )}
+    </div>
+  );
+}
+
 function ContentTab() {
   const { data, isLoading } = useListOnboardingContent();
   const create = useCreateOnboardingContent();
@@ -899,6 +1173,8 @@ function ContentTab() {
 
   return (
     <div className="space-y-5">
+      <OnboardingButtonsSection />
+
       <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-5 space-y-4">
         <h3 className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Add Step Content</h3>
 

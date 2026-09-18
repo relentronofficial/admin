@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, type CreditPricingItem } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
+import { useMyStreakPoints } from "@/lib/hooks/useCourses";
 import { cn } from "@/lib/utils/cn";
 import toast from "react-hot-toast";
 import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge, DeviceSession } from "@/types";
@@ -32,6 +33,9 @@ function Avatar({
   isUploading: boolean;
 }) {
   const ring = avatarGradient ?? "var(--color-accent)";
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => { setImgError(false); }, [avatarUrl]);
+  const showImage = !!avatarUrl && !imgError;
   return (
     <button
       onClick={onUploadClick}
@@ -40,10 +44,15 @@ function Avatar({
       title="Change photo"
     >
       <div className="rounded-full p-[3px]" style={{ background: ring }}>
-        {avatarUrl ? (
+        {showImage ? (
           <div className="relative w-20 h-20 rounded-full overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={avatarUrl} alt={firstName} className="w-full h-full object-cover" />
+            <img
+              src={avatarUrl as string}
+              alt={firstName}
+              className="w-full h-full object-cover"
+              onError={() => setImgError(true)}
+            />
           </div>
         ) : (
           <div
@@ -140,6 +149,46 @@ function StatsStrip({ profile }: { profile: MemberProfile }) {
           <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Streak Points section ─────────────────────────────────────────────────────
+
+function StreakPointsSection() {
+  const { data } = useMyStreakPoints();
+  if (!data || data.history.length === 0) return null;
+  return (
+    <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-foreground">Streak Points</h3>
+        <span className="text-lg font-bold text-foreground">{data.total.toLocaleString()}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex items-center gap-2 p-3 rounded-xl border border-border">
+          <span className="text-base">🎥</span>
+          <div>
+            <p className="text-sm font-bold text-foreground leading-none">{data.videoTotal.toLocaleString()}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Video</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 p-3 rounded-xl border border-border">
+          <span className="text-base">📝</span>
+          <div>
+            <p className="text-sm font-bold text-foreground leading-none">{data.taskTotal.toLocaleString()}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Task</p>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {data.history.slice(0, 8).map((entry, i) => (
+          <div key={i} className="flex items-center gap-2 py-1.5">
+            <span className="text-sm flex-shrink-0">{entry.type === "video" ? "🎥" : "📝"}</span>
+            <span className="text-sm text-foreground truncate flex-1">{entry.title}</span>
+            <span className="text-xs font-bold text-foreground flex-shrink-0">+{entry.points}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -850,6 +899,9 @@ export default function ProfilePage() {
 
       {/* Stats strip — only rendered when new fields are present (guards old cached backend response) */}
       {profile.totalPoints != null && <StatsStrip profile={profile} />}
+
+      {/* Streak Points — video + task points from points_ledger; hides itself until there's history */}
+      <StreakPointsSection />
 
       {/* Mentorship Benefits */}
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
