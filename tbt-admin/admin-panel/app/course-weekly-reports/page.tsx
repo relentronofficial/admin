@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ClipboardList,
   ChevronLeft,
@@ -12,6 +12,9 @@ import {
   XCircle,
   Clock,
   MessageSquareText,
+  Video,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -19,6 +22,8 @@ import {
   useCreateOrSendCourseReport,
   useListCourseWeeklyFeedback,
   useUpdateCourseFeedbackStatus,
+  useListCourseEpisodeFeedback,
+  useUpdateCourseEpisodeFeedbackStatus,
   useListVodCourses,
 } from "@/lib/hooks/useTbt";
 import { useListMembers } from "@/lib/hooks/useMembers";
@@ -416,10 +421,149 @@ function FeedbackTab({ courses }: { courses: any[] }) {
   );
 }
 
+// ─── Video (episode) feedback tab ───────────────────────────────────────────
+
+function EpisodeFeedbackTab({ courses, initialOpenId }: { courses: any[]; initialOpenId: string | null }) {
+  const [page, setPage] = useState(1);
+  const [courseFilter, setCourseFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(initialOpenId);
+  const LIMIT = 25;
+
+  const { data, isLoading } = useListCourseEpisodeFeedback({
+    page,
+    limit: LIMIT,
+    courseId: courseFilter || undefined,
+    status: statusFilter || undefined,
+  });
+  const rows: any[] = data?.data ?? [];
+  const total: number = data?.meta?.total ?? 0;
+  const updateStatus = useUpdateCourseEpisodeFeedbackStatus();
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-3">
+        <div className="relative">
+          <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
+          <select
+            value={courseFilter}
+            onChange={(e) => { setCourseFilter(e.target.value); setPage(1); }}
+            className="pl-9 pr-4 h-9 text-sm bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-[#a0a0a0] outline-none focus:border-[#dc2626] appearance-none cursor-pointer"
+          >
+            <option value="">All courses</option>
+            {courses.map((c: any) => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+        </div>
+        <div className="relative">
+          <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            className="pl-9 pr-4 h-9 text-sm bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-[#a0a0a0] outline-none focus:border-[#dc2626] appearance-none cursor-pointer"
+          >
+            <option value="">All statuses</option>
+            <option value="new">New</option>
+            <option value="reviewed">Reviewed</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="bg-[#111] border border-[#2a2a2a] rounded-xl overflow-hidden">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16 text-[#888] text-sm">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-2">
+            <Video size={32} className="text-[#666]" />
+            <p className="text-[#888] text-sm">No video feedback submitted yet</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#2a2a2a]">
+                  {["Member", "Course", "Video", "Feedback", "Status", "WhatsApp", "Submitted", ""].map((h) => (
+                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => {
+                  const expanded = expandedId === row.id;
+                  return (
+                    <>
+                      <tr key={row.id} className={cn("border-b border-[#1f1f1f] hover:bg-[#181818] transition-colors", i === rows.length - 1 && !expanded && "border-b-0")}>
+                        <td className="px-4 py-3">
+                          <p className="text-[#f0f0f0] font-medium text-xs">{row.member?.firstName} {row.member?.lastName ?? ""}</p>
+                          <p className="text-[#888] text-[11px]">{row.member?.phone}</p>
+                        </td>
+                        <td className="px-4 py-3 text-[#a0a0a0] text-xs">{row.course?.title}</td>
+                        <td className="px-4 py-3 text-[#a0a0a0] text-xs">{row.episode?.title}</td>
+                        <td className="px-4 py-3 max-w-xs text-[#888] text-xs truncate">{row.feedback}</td>
+                        <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                        <td className="px-4 py-3"><StatusBadge status={row.whatsappStatus} /></td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <p className="text-[#a0a0a0] text-xs">{format(new Date(row.submittedAt), "dd MMM yyyy")}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => setExpandedId(expanded ? null : row.id)}
+                              className="text-[#888] hover:text-[#f0f0f0] transition-colors"
+                              title={expanded ? "Hide full feedback" : "View full feedback"}
+                            >
+                              {expanded ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                            {row.status === "new" && (
+                              <button
+                                onClick={() => updateStatus.mutate({ id: row.id, status: "reviewed" })}
+                                disabled={updateStatus.isPending}
+                                className="text-[11px] font-bold uppercase tracking-wider text-[#dc2626] hover:text-red-400 disabled:opacity-40 transition-colors whitespace-nowrap"
+                              >
+                                Mark Reviewed
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr key={`${row.id}-detail`} className={cn("border-b border-[#1f1f1f]", i === rows.length - 1 && "border-b-0")}>
+                          <td colSpan={8} className="px-4 py-3 bg-[#0a0a0a]">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1.5">Full Feedback</p>
+                            <p className="text-xs text-[#e0e0e0] whitespace-pre-wrap leading-relaxed">{row.feedback}</p>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <Pagination page={page} setPage={setPage} total={total} limit={LIMIT} />
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CourseWeeklyReportsPage() {
-  const [tab, setTab] = useState<"reports" | "feedback">("reports");
+  const [tab, setTab] = useState<"reports" | "feedback" | "video-feedback">("reports");
+  const [initialOpenFeedbackId, setInitialOpenFeedbackId] = useState<string | null>(null);
+
+  // Deep-link from notification: ?tab=video-feedback&open=<feedbackId>
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    const openId = params.get("open");
+    if (t === "video-feedback" || t === "feedback" || t === "reports") setTab(t);
+    if (openId) setInitialOpenFeedbackId(openId);
+    if (t || openId) window.history.replaceState({}, "", "/course-weekly-reports");
+  }, []);
   const { data: coursesRes } = useListVodCourses({ limit: 200 });
   const courses: any[] = coursesRes?.data ?? [];
 
@@ -432,14 +576,14 @@ export default function CourseWeeklyReportsPage() {
             Weekly Course Reports
           </h1>
           <p className="text-xs text-[#888] mt-0.5">
-            Weekly course progress reports (admin → member) and feedback (member → admin) — delivered over WhatsApp, continues every week until course completion
+            Weekly course progress reports (admin → member), weekly feedback, and per-video feedback (member → admin) — delivered over WhatsApp
           </p>
         </div>
 
         <CreateSendPanel />
 
         <div className="flex items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg p-1 w-fit">
-          {(["reports", "feedback"] as const).map((t) => (
+          {(["reports", "feedback", "video-feedback"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -448,12 +592,18 @@ export default function CourseWeeklyReportsPage() {
                 tab === t ? "bg-[#dc2626] text-white shadow-sm" : "text-[#505050] hover:text-[#a0a0a0] hover:bg-[#181818]",
               )}
             >
-              {t === "reports" ? "Reports" : "Feedback"}
+              {t === "reports" ? "Reports" : t === "feedback" ? "Weekly Feedback" : "Video Feedback"}
             </button>
           ))}
         </div>
 
-        {tab === "reports" ? <ReportsTab courses={courses} /> : <FeedbackTab courses={courses} />}
+        {tab === "reports" ? (
+          <ReportsTab courses={courses} />
+        ) : tab === "feedback" ? (
+          <FeedbackTab courses={courses} />
+        ) : (
+          <EpisodeFeedbackTab courses={courses} initialOpenId={initialOpenFeedbackId} />
+        )}
       </div>
     </DashboardLayout>
   );

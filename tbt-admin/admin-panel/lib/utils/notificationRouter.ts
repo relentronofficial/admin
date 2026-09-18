@@ -48,6 +48,11 @@ export function resolveNotificationRoute(notification: {
         ? `/course-weekly-reports?tab=feedback&open=${m.feedbackId}`
         : "/course-weekly-reports?tab=feedback";
 
+    case "course_episode_feedback":
+      return m.feedbackId
+        ? `/course-weekly-reports?tab=video-feedback&open=${m.feedbackId}`
+        : "/course-weekly-reports?tab=video-feedback";
+
     case "announcement":
       return "/app-notifications";
 

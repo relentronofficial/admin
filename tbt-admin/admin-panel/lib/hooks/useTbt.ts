@@ -1870,6 +1870,29 @@ export const useUpdateCourseFeedbackStatus = () => {
   });
 };
 
+// ── Course video (episode) feedback — member → admin per-video feedback ──
+
+export const useListCourseEpisodeFeedback = (params: { page?: number; limit?: number; memberId?: string; courseId?: string; episodeId?: string; status?: string } = {}) =>
+  useQuery({
+    queryKey: ['course-episode-feedback', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/course-reports/admin/episode-feedback', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useUpdateCourseEpisodeFeedbackStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'new' | 'reviewed' }) => {
+      const res: any = await apiClient.patch(`/api/course-reports/admin/episode-feedback/${id}/status`, { status });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-episode-feedback'] }); },
+  });
+};
+
 // ── Episode Resources & Tasks ──────────────────────────────────────────
 
 export const useListEpisodeResources = (episodeId: string) =>
