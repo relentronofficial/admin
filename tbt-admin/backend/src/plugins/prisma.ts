@@ -1516,7 +1516,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         sort_order INT NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ course_sections CREATE failed:', err); });
     await prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS idx_course_sections_course ON course_sections(course_id)
     `).catch(() => {});
@@ -1825,7 +1825,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         sort_order INT NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ course_modules CREATE failed:', err); });
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_course_modules_course ON course_modules(course_id)`
     ).catch(() => {});
@@ -1835,7 +1835,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         module_id UUID NOT NULL REFERENCES course_modules(id) ON DELETE CASCADE,
         PRIMARY KEY (episode_id, module_id)
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ course_episode_modules CREATE failed:', err); });
     // Seed E-commerce, Service, Coaching for every course that has no modules yet.
     // All existing episodes are assigned to all 3 modules so nothing is hidden by default.
     await prisma.$executeRawUnsafe(`
@@ -1881,7 +1881,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(member_id, episode_id)
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ lesson_timer_sessions CREATE failed:', err); });
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_lesson_timer_sessions_member ON lesson_timer_sessions(member_id)`
     ).catch(() => {});
