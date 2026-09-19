@@ -1072,6 +1072,28 @@ export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, re
   if (!existing) return reply.status(404).send({ success: false, data: null, error: 'Submission not found' });
   const alreadyApproved = existing.status === 'approved';
 
+  // Deep-link the member-facing notification straight back to the lesson
+  // this task belongs to, instead of the generic course catalog. tasks.
+  // course_episode_id is a raw-SQL column (not in the Prisma Task model —
+  // see CLAUDE.md), so this needs its own query. Falls back to the
+  // catalog page if the task/episode lookup ever comes back empty (e.g. a
+  // batch/program task with no course_episode_id, or the episode was
+  // since deleted).
+  let taskActionUrl = '/learning';
+  const [taskEpisodeRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT course_episode_id AS "courseEpisodeId" FROM tasks WHERE id = $1::uuid`,
+    existing.taskId,
+  );
+  if (taskEpisodeRow?.courseEpisodeId) {
+    const episode = await req.server.prisma.courseEpisode.findUnique({
+      where: { id: taskEpisodeRow.courseEpisodeId },
+      select: { courseId: true },
+    });
+    if (episode) {
+      taskActionUrl = `/learning/${episode.courseId}?lesson=${taskEpisodeRow.courseEpisodeId}`;
+    }
+  }
+
   const updated = await req.server.prisma.taskSubmission.update({
     where: { id: sid },
     data: {
@@ -1111,7 +1133,7 @@ export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, re
       title: 'Task Approved ✓',
       body: 'Your task submission has been approved.',
       type: 'task_approved',
-      actionUrl: '/learning',
+      actionUrl: taskActionUrl,
     });
   } else if (body.status === 'rejected') {
     void notifyMembers(req.server, {
@@ -1119,7 +1141,7 @@ export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, re
       title: 'Task Needs Revision',
       body: body.feedback ?? 'Your task submission needs revision.',
       type: 'task_rejected',
-      actionUrl: '/learning',
+      actionUrl: taskActionUrl,
     });
   }
 
