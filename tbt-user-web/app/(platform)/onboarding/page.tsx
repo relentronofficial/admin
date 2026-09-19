@@ -617,10 +617,6 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             </div>
 
             {ctaButtons && ctaButtons.length > 0 && (
-              // All admin-configured buttons are intentionally equivalent CTAs
-              // ("Get Started", "Join Now", etc.) that just advance the wizard —
-              // there's no per-button destination field, so every one of them
-              // goes to the same next step by design, not by omission.
               <div className="flex flex-wrap gap-3 mt-6">
                 {ctaButtons.map((btn) => (
                   <button
