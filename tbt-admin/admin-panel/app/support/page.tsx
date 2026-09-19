@@ -438,6 +438,8 @@ function TicketDetailPanel({
   const updatePriority = useUpdateTicketPriority();
   const postReply = useReplyHelpdeskTicket();
   const del = useDeleteHelpdeskTicket();
+  const { data: adminsRes } = useListAdmins({ limit: 100 });
+  const admins: { id: string; fullName: string }[] = adminsRes?.data ?? [];
   const [notes, setNotes] = useState("");
   const [reply, setReply] = useState("");
   const [isInternal, setIsInternal] = useState(false);
