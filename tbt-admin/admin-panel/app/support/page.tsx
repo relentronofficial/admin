@@ -158,7 +158,7 @@ export default function SupportPage() {
   const [initialFeedbackId, setInitialFeedbackId] = useState<string | null>(null);
   const { data: stats } = useHelpdeskDashboard();
   const { data: me } = useMe();
-  const canManageSettings = HELPDESK_MANAGER_ROLES.has(me?.role);
+  const canManageSettings = !!me && HELPDESK_MANAGER_ROLES.has(me.role);
 
   // Read ?tab= + ?id= injected by the topbar notification bell so a
   // click on a helpdesk_ticket / helpdesk_feedback notification lands
@@ -358,13 +358,14 @@ function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }
               onClick={() => setSelectedId(t.id)}
               className={
                 "grid grid-cols-[2fr_1.5fr_110px_100px_90px] px-4 py-3 border-b border-[#2a2a2a]/50 last:border-b-0 items-center text-left w-full transition-colors " +
-                (selectedId === t.id ? "bg-[#dc2626]/10" : "hover:bg-white/[0.02]") +
-                (t.status === "new" ? " animate-pulse" : "")
+                (selectedId === t.id ? "bg-[#dc2626]/10" : "hover:bg-white/[0.02]")
               }
             >
               <div className="min-w-0">
-                <div className="text-[13px] text-white font-medium truncate">
-                  {t.status === "new" && "🔔 "}
+                <div className="text-[13px] text-white font-medium truncate flex items-center gap-1.5">
+                  {t.status === "new" && (
+                    <span className="inline-block w-2 h-2 rounded-full bg-[#dc2626] animate-pulse shrink-0" aria-label="New" />
+                  )}
                   {t.displayNumber ? `#TBT-${t.displayNumber} · ` : ""}
                   {t.subject}
                 </div>
@@ -416,7 +417,7 @@ function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }
         </div>
       </div>
 
-      <TicketDetailPanel ticketId={selectedId} onClose={() => setSelectedId(null)} />
+      <TicketDetailPanel ticketId={selectedId} onClose={() => setSelectedId(null)} admins={admins} />
     </div>
   );
 }
@@ -424,9 +425,11 @@ function TicketsTab({ initialSelectedId }: { initialSelectedId?: string | null }
 function TicketDetailPanel({
   ticketId,
   onClose,
+  admins,
 }: {
   ticketId: string | null;
   onClose: () => void;
+  admins: { id: string; fullName: string }[];
 }) {
   const { data: ticket, isLoading } = useGetHelpdeskTicket(ticketId);
   const updateStatus = useUpdateTicketStatus();
@@ -435,8 +438,6 @@ function TicketDetailPanel({
   const updatePriority = useUpdateTicketPriority();
   const postReply = useReplyHelpdeskTicket();
   const del = useDeleteHelpdeskTicket();
-  const { data: adminsRes } = useListAdmins({ limit: 100 });
-  const admins: { id: string; fullName: string }[] = adminsRes?.data ?? [];
   const [notes, setNotes] = useState("");
   const [reply, setReply] = useState("");
   const [isInternal, setIsInternal] = useState(false);
