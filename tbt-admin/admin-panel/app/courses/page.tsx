@@ -11,7 +11,6 @@ import {
   MessageSquare, Star, ThumbsUp, Layers, Copy,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { CourseFeedbackTab } from "@/components/courses/CourseFeedbackTab";
 import {
   useListVodCourses, useCreateVodCourse, useUpdateVodCourse, useDeleteVodCourse,
   useListCourseEpisodes, useCreateCourseEpisode, useUpdateCourseEpisode,
@@ -162,7 +161,7 @@ export default function CoursesPage() {
   const { data: pendingCountData } = useListCoursePayments({ status: "pending", limit: 1 });
   const pendingPaymentsTotal: number = (pendingCountData as any)?.meta?.total ?? 0;
 
-  const [viewMode, setViewMode] = useState<"courses" | "payments" | "feedback">("courses");
+  const [viewMode, setViewMode] = useState<"courses" | "payments">("courses");
   const [showCourseForm, setShowCourseForm] = useState(false);
   const [editingCourse, setEditingCourse] = useState<any>(null);
   const [deletingCourse, setDeletingCourse] = useState<string | null>(null);
@@ -287,10 +286,6 @@ export default function CoursesPage() {
                   </span>
                 )}
               </button>
-              <button onClick={() => setViewMode("feedback")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all ${viewMode === "feedback" ? "bg-[#dc2626] text-white" : "text-[#888] hover:text-[#f0f0f0]"}`}>
-                <MessageSquare size={12} /> Feedback
-              </button>
             </div>
             {viewMode === "courses" && (
               <button onClick={openCreateCourse}
@@ -302,8 +297,6 @@ export default function CoursesPage() {
         </div>
 
         {viewMode === "payments" && <PaymentsDashboard courses={courses} />}
-
-        {viewMode === "feedback" && <CourseFeedbackTab courses={courses} />}
 
         {/* Stats + Course list (courses view only) */}
         {viewMode === "courses" && <>
