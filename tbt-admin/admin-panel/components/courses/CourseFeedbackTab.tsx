@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Filter, Eye, EyeOff, Video, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useListCourseEpisodeFeedback, useUpdateCourseEpisodeFeedbackStatus } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
@@ -138,7 +138,7 @@ export function CourseFeedbackTab({ courses, initialOpenId }: { courses: any[]; 
                 {rows.map((row, i) => {
                   const expanded = expandedId === row.id;
                   return (
-                    <>
+                    <React.Fragment key={row.id}>
                       <tr key={row.id} className={cn("border-b border-[#1f1f1f] hover:bg-[#181818] transition-colors", i === rows.length - 1 && !expanded && "border-b-0")}>
                         <td className="px-4 py-3">
                           <p className="text-[#f0f0f0] font-medium text-xs">{row.member?.firstName} {row.member?.lastName ?? ""}</p>
@@ -181,7 +181,7 @@ export function CourseFeedbackTab({ courses, initialOpenId }: { courses: any[]; 
                           </td>
                         </tr>
                       )}
-                    </>
+                    </React.Fragment>
                   );
                 })}
               </tbody>
