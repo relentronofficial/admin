@@ -7,12 +7,13 @@ import {
   Lock, Trophy, ChevronDown, ChevronUp, Share2, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
   Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
-  Star, Heart,
+  Heart,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
+import { LessonFeedbackSection } from "@/components/features/course/LessonFeedbackSection";
 import { useRegisterMedia, useSuppressAds } from "@/lib/ads/useRegisterMedia";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -20,7 +21,7 @@ import {
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
   useSaveReflection, useReflections,
-  useLessonFeedback, useSaveLessonFeedback,
+  useLessonFeedback,
   useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
   useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
   useEpisodeLifelines, useUseEpisodeLifeline,
@@ -383,98 +384,6 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Lesson Feedback Section — inline (not a modal), rendered below the video
-// once the lesson is completed. One 1-10 star rating + optional text per
-// lesson, upserted so re-submitting updates the same row instead of creating
-// a duplicate. Distinct from the admin-authored per-question FeedbackModal
-// (video-feedback module) and from ReflectionModal (free-text only, no rating).
-function LessonFeedbackSection({ lessonId, courseId, existing }: {
-  lessonId: string;
-  courseId: string;
-  existing: { rating: number; feedbackText: string | null } | undefined;
-}) {
-  const [rating, setRating] = useState(existing?.rating ?? 0);
-  const [hoverRating, setHoverRating] = useState(0);
-  const [text, setText] = useState(existing?.feedbackText ?? "");
-  const [justSaved, setJustSaved] = useState(false);
-  const saveFeedback = useSaveLessonFeedback(courseId);
-
-  // Keep local state in sync when switching between lessons that already
-  // have saved feedback (this component is keyed by lessonId by the parent).
-  useEffect(() => {
-    setRating(existing?.rating ?? 0);
-    setText(existing?.feedbackText ?? "");
-    setJustSaved(false);
-  }, [lessonId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const displayRating = hoverRating || rating;
-
-  const handleSubmit = () => {
-    if (!rating) return;
-    saveFeedback.mutate(
-      { lessonId, rating, feedbackText: text.trim() || undefined },
-      { onSuccess: () => setJustSaved(true) }
-    );
-  };
-
-  return (
-    <div
-      className="rounded-xl p-4 space-y-3"
-      style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-card)" }}
-    >
-      <div className="flex items-center gap-2">
-        <Star size={13} style={{ color: "var(--color-accent)" }} />
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>
-          Rate this lesson
-        </p>
-      </div>
-
-      <div className="flex items-center gap-1 flex-wrap" onMouseLeave={() => setHoverRating(0)}>
-        {Array.from({ length: 10 }, (_, i) => i + 1).map((i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setRating(i)}
-            onMouseEnter={() => setHoverRating(i)}
-            aria-label={`Rate ${i} out of 10`}
-            className="transition-transform hover:scale-110"
-          >
-            <Star size={22} fill={i <= displayRating ? "#facc15" : "none"} color={i <= displayRating ? "#facc15" : "#666"} />
-          </button>
-        ))}
-        {rating > 0 && (
-          <span className="ml-2 text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
-            {rating}/10
-          </span>
-        )}
-      </div>
-
-      <textarea
-        value={text}
-        onChange={(e) => { setText(e.target.value); setJustSaved(false); }}
-        placeholder="Share your feedback about this video..."
-        rows={3}
-        className="w-full rounded-xl p-3 text-sm text-foreground resize-none outline-none placeholder:opacity-40"
-        style={{ background: "var(--color-surface-overlay)", border: "1px solid var(--color-border-medium)" }}
-      />
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSubmit}
-          disabled={!rating || saveFeedback.isPending}
-          className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-          style={{ background: "var(--color-accent)" }}
-        >
-          {saveFeedback.isPending ? <Loader2 size={13} className="animate-spin" /> : existing ? "Update Feedback" : "Submit Feedback"}
-        </button>
-        {justSaved && (
-          <span className="text-xs font-semibold" style={{ color: "var(--color-success)" }}>✓ Feedback saved</span>
-        )}
       </div>
     </div>
   );

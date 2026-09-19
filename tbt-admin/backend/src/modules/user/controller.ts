@@ -1668,19 +1668,22 @@ export async function listReflectionsHandler(request: FastifyRequest, reply: Fas
 
 export async function upsertLessonFeedbackHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId, lessonId } = request.params as { courseId: string; lessonId: string };
-  const { rating, feedbackText } = request.body as { rating: number; feedbackText?: string };
+  const { rating, feedbackText, liked } = request.body as { rating: number; feedbackText?: string; liked?: boolean };
 
   const ratingNum = Number(rating);
   if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 10) {
     return fail(reply, 400, 'rating must be an integer between 1 and 10');
   }
+  if (liked !== undefined && typeof liked !== 'boolean') {
+    return fail(reply, 400, 'liked must be a boolean');
+  }
 
   await request.server.prisma.$executeRawUnsafe(
-    `INSERT INTO lesson_feedback (member_id, course_id, lesson_id, rating, feedback_text, updated_at)
-     VALUES ($1::uuid, $2, $3, $4, $5, NOW())
+    `INSERT INTO lesson_feedback (member_id, course_id, lesson_id, rating, feedback_text, liked, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, NOW())
      ON CONFLICT (member_id, course_id, lesson_id)
-     DO UPDATE SET rating = EXCLUDED.rating, feedback_text = EXCLUDED.feedback_text, updated_at = NOW()`,
-    request.memberId, courseId, lessonId, ratingNum, feedbackText?.trim() || null,
+     DO UPDATE SET rating = EXCLUDED.rating, feedback_text = EXCLUDED.feedback_text, liked = EXCLUDED.liked, updated_at = NOW()`,
+    request.memberId, courseId, lessonId, ratingNum, feedbackText?.trim() || null, liked ?? null,
   );
   return ok(reply, { saved: true });
 }
@@ -1689,9 +1692,9 @@ export async function listLessonFeedbackHandler(request: FastifyRequest, reply: 
   const { courseId } = request.params as { courseId: string };
 
   const rows = await request.server.prisma.$queryRawUnsafe<
-    Array<{ lesson_id: string; rating: number; feedback_text: string | null; updated_at: Date }>
+    Array<{ lesson_id: string; rating: number; feedback_text: string | null; liked: boolean | null; updated_at: Date }>
   >(
-    `SELECT lesson_id, rating, feedback_text, updated_at FROM lesson_feedback
+    `SELECT lesson_id, rating, feedback_text, liked, updated_at FROM lesson_feedback
      WHERE member_id = $1::uuid AND course_id = $2
      ORDER BY updated_at DESC`,
     request.memberId, courseId,
@@ -1701,6 +1704,7 @@ export async function listLessonFeedbackHandler(request: FastifyRequest, reply: 
     lessonId: r.lesson_id,
     rating: Number(r.rating),
     feedbackText: r.feedback_text,
+    liked: r.liked,
     updatedAt: r.updated_at,
   })));
 }
