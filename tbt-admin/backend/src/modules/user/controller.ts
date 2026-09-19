@@ -1664,6 +1664,47 @@ export async function listReflectionsHandler(request: FastifyRequest, reply: Fas
   })));
 }
 
+// ─── Lesson feedback (1-10 rating + optional text, per lesson) ────────────────
+
+export async function upsertLessonFeedbackHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { courseId, lessonId } = request.params as { courseId: string; lessonId: string };
+  const { rating, feedbackText } = request.body as { rating: number; feedbackText?: string };
+
+  const ratingNum = Number(rating);
+  if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 10) {
+    return fail(reply, 400, 'rating must be an integer between 1 and 10');
+  }
+
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO lesson_feedback (member_id, course_id, lesson_id, rating, feedback_text, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, NOW())
+     ON CONFLICT (member_id, course_id, lesson_id)
+     DO UPDATE SET rating = EXCLUDED.rating, feedback_text = EXCLUDED.feedback_text, updated_at = NOW()`,
+    request.memberId, courseId, lessonId, ratingNum, feedbackText?.trim() || null,
+  );
+  return ok(reply, { saved: true });
+}
+
+export async function listLessonFeedbackHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { courseId } = request.params as { courseId: string };
+
+  const rows = await request.server.prisma.$queryRawUnsafe<
+    Array<{ lesson_id: string; rating: number; feedback_text: string | null; updated_at: Date }>
+  >(
+    `SELECT lesson_id, rating, feedback_text, updated_at FROM lesson_feedback
+     WHERE member_id = $1::uuid AND course_id = $2
+     ORDER BY updated_at DESC`,
+    request.memberId, courseId,
+  );
+
+  return ok(reply, rows.map((r) => ({
+    lessonId: r.lesson_id,
+    rating: Number(r.rating),
+    feedbackText: r.feedback_text,
+    updatedAt: r.updated_at,
+  })));
+}
+
 // ─── Course XP & leaderboard ─────────────────────────────────────────────────
 
 export async function getCourseXpHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -4328,7 +4369,8 @@ export async function startEpisodeTimerHandler(request: FastifyRequest, reply: F
      VALUES ($1::uuid, $2::uuid, 'ACTIVE', $3, $4, $5, $4)
      ON CONFLICT (member_id, episode_id) DO UPDATE SET
        status = 'ACTIVE', duration_seconds = $3, started_at = $4,
-       expires_at = $5, completed_at = NULL, last_heartbeat_at = $4`,
+       expires_at = $5, completed_at = NULL, last_heartbeat_at = $4
+     WHERE lesson_timer_sessions.status != 'COMPLETED'`,
     memberId, episodeId, durationSeconds, now, expiresAt,
   );
   return reply.send({ success: true, data: { expiresAt, remainingSeconds: durationSeconds, status: 'ACTIVE' }, error: null });
@@ -4464,6 +4506,8 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
 
   // type === 'coin' — deduct coins from tbt_activity_log
   const coinCost = cfg.lifelineCoinCost ?? 50;
+  const purchasedSoFar = state.purchasedUsed ?? 0;
+  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
   const balanceRows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT COALESCE(SUM(points), 0) AS balance FROM tbt_activity_log WHERE member_id = $1::uuid`,
     memberId,
@@ -4474,8 +4518,6 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
     `INSERT INTO tbt_activity_log (member_id, points, source, activity_date) VALUES ($1::uuid, $2, 'lifeline_spend', NOW()::DATE)`,
     memberId, -coinCost,
   );
-  const purchasedSoFar = state.purchasedUsed ?? 0;
-  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
   await request.server.prisma.$executeRawUnsafe(
     `INSERT INTO episode_lifeline_state (member_id, episode_id, purchased_used, total_used, updated_at)
      VALUES ($1::uuid, $2::uuid, 1, 1, NOW())

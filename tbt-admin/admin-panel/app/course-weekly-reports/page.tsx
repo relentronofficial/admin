@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ClipboardList,
   ChevronLeft,
@@ -21,6 +21,7 @@ import {
   useUpdateCourseFeedbackStatus,
   useListVodCourses,
 } from "@/lib/hooks/useTbt";
+import { CourseFeedbackTab } from "@/components/courses/CourseFeedbackTab";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -419,7 +420,18 @@ function FeedbackTab({ courses }: { courses: any[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CourseWeeklyReportsPage() {
-  const [tab, setTab] = useState<"reports" | "feedback">("reports");
+  const [tab, setTab] = useState<"reports" | "feedback" | "video-feedback">("reports");
+  const [initialOpenFeedbackId, setInitialOpenFeedbackId] = useState<string | null>(null);
+
+  // Deep-link from notification: ?tab=video-feedback&open=<feedbackId>
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    const openId = params.get("open");
+    if (t === "video-feedback" || t === "feedback" || t === "reports") setTab(t);
+    if (openId) setInitialOpenFeedbackId(openId);
+    if (t || openId) window.history.replaceState({}, "", "/course-weekly-reports");
+  }, []);
   const { data: coursesRes } = useListVodCourses({ limit: 200 });
   const courses: any[] = coursesRes?.data ?? [];
 
@@ -432,14 +444,14 @@ export default function CourseWeeklyReportsPage() {
             Weekly Course Reports
           </h1>
           <p className="text-xs text-[#888] mt-0.5">
-            Weekly course progress reports (admin → member) and feedback (member → admin) — delivered over WhatsApp, continues every week until course completion
+            Weekly course progress reports (admin → member), weekly feedback, and per-video feedback (member → admin) — delivered over WhatsApp
           </p>
         </div>
 
         <CreateSendPanel />
 
         <div className="flex items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg p-1 w-fit">
-          {(["reports", "feedback"] as const).map((t) => (
+          {(["reports", "feedback", "video-feedback"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -448,12 +460,18 @@ export default function CourseWeeklyReportsPage() {
                 tab === t ? "bg-[#dc2626] text-white shadow-sm" : "text-[#505050] hover:text-[#a0a0a0] hover:bg-[#181818]",
               )}
             >
-              {t === "reports" ? "Reports" : "Feedback"}
+              {t === "reports" ? "Reports" : t === "feedback" ? "Weekly Feedback" : "Video Feedback"}
             </button>
           ))}
         </div>
 
-        {tab === "reports" ? <ReportsTab courses={courses} /> : <FeedbackTab courses={courses} />}
+        {tab === "reports" ? (
+          <ReportsTab courses={courses} />
+        ) : tab === "feedback" ? (
+          <FeedbackTab courses={courses} />
+        ) : (
+          <CourseFeedbackTab courses={courses} initialOpenId={initialOpenFeedbackId} />
+        )}
       </div>
     </DashboardLayout>
   );

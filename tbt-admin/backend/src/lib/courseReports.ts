@@ -11,6 +11,7 @@ import { createAdminNotification } from './adminNotifications.js';
 import { env } from '../config/env.js';
 import {
   buildCourseReportMessage,
+  buildEpisodeFeedbackMessage,
   buildFeedbackMessage,
   computeCourseStats,
   computeWeekNumberForDate,
@@ -303,6 +304,99 @@ export async function deliverMemberFeedbackToAdmin(
     body: `${member.firstName} — ${course.title} (Week ${weekNumber})`,
     type: 'course_weekly_feedback',
     metadata: { feedbackId: row.id, memberId, courseId, weekNumber },
+  });
+
+  return ok
+    ? { status: 'sent', feedbackId: row.id }
+    : { status: 'failed', reason: errMsg ?? undefined, feedbackId: row.id };
+}
+
+// ── Member → admin video (episode) feedback ─────────────────────────────
+
+/** Upserts the member's feedback for one course episode and WhatsApps it to
+ * ADMIN_WHATSAPP_NUMBER if configured. Same guarantee as
+ * deliverMemberFeedbackToAdmin above: the DB write always happens first and
+ * always succeeds independently of the WhatsApp leg — feedback is never lost
+ * on send failure, and an unconfigured admin number is not an error (the
+ * caller still gets an in-app admin_notifications + socket alert — see
+ * submitEpisodeFeedbackHandler in course-reports/controller.ts). */
+export async function deliverMemberEpisodeFeedbackToAdmin(
+  prisma: any,
+  memberId: string,
+  episodeId: string,
+  feedback: string,
+  now: Date = new Date(),
+): Promise<DeliverFeedbackResult> {
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { firstName: true },
+  });
+  const episode = await prisma.courseEpisode.findUnique({
+    where: { id: episodeId },
+    select: { title: true, courseId: true },
+  });
+  if (!member || !episode) {
+    throw new Error('Member or episode not found');
+  }
+  const course = await prisma.course.findUnique({ where: { id: episode.courseId }, select: { title: true } });
+  if (!course) {
+    throw new Error('Course not found');
+  }
+
+  const row = await prisma.courseEpisodeFeedback.upsert({
+    where: { memberId_episodeId: { memberId, episodeId } },
+    create: { memberId, courseId: episode.courseId, episodeId, feedback },
+    update: { feedback },
+  });
+
+  if (!env.ADMIN_WHATSAPP_NUMBER) {
+    await prisma.courseEpisodeFeedback.update({
+      where: { id: row.id },
+      data: { whatsappStatus: 'skipped' },
+    }).catch(() => {});
+    void createAdminNotification(prisma, {
+      title: 'New Video Feedback',
+      body: `${member.firstName} — ${course.title} / ${episode.title}`,
+      type: 'course_episode_feedback',
+      metadata: { feedbackId: row.id, memberId, courseId: episode.courseId, episodeId },
+    });
+    return { status: 'skipped', reason: 'ADMIN_WHATSAPP_NUMBER not configured', feedbackId: row.id };
+  }
+
+  const submittedAt = now.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const message = buildEpisodeFeedbackMessage({
+    userName: member.firstName,
+    courseName: course.title,
+    episodeName: episode.title,
+    feedback,
+    submittedAt,
+  });
+
+  let ok = false;
+  let errMsg: string | null = null;
+  try {
+    ok = await sendWhatsappMessage(env.ADMIN_WHATSAPP_NUMBER, message);
+    if (!ok) errMsg = 'WABA send returned false';
+  } catch (err) {
+    errMsg = err instanceof Error ? err.message : String(err);
+  }
+
+  await prisma.courseEpisodeFeedback.update({
+    where: { id: row.id },
+    data: {
+      whatsappStatus: ok ? 'sent' : 'failed',
+      whatsappSentAt: ok ? new Date() : undefined,
+      whatsappFailureReason: ok ? null : errMsg,
+    },
+  }).catch(() => {});
+
+  void createAdminNotification(prisma, {
+    title: 'New Video Feedback',
+    body: `${member.firstName} — ${course.title} / ${episode.title}`,
+    type: 'course_episode_feedback',
+    metadata: { feedbackId: row.id, memberId, courseId: episode.courseId, episodeId },
   });
 
   return ok

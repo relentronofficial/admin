@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { courseReportsService, type SubmitFeedbackBody } from "@/lib/api/services/courseReports.service";
+import { courseReportsService, type SubmitEpisodeFeedbackBody, type SubmitFeedbackBody } from "@/lib/api/services/courseReports.service";
 
 /** Current week's report for a course. Resolves to `null` (not an error)
  * when the week's report hasn't been generated yet — that's an expected
@@ -53,5 +53,28 @@ export function useMyCourseFeedbackHistory(courseId: string) {
       return res.data ?? [];
     },
     enabled: !!courseId,
+  });
+}
+
+/** The member's own feedback for one video/episode, if any — `null` (not an
+ * error) when they haven't submitted feedback for this episode yet. */
+export function useMyEpisodeFeedback(episodeId: string | null) {
+  return useQuery({
+    queryKey: ["course-reports", "episode-feedback", episodeId],
+    queryFn: async () => {
+      const res = await courseReportsService.getMyEpisodeFeedback(episodeId!);
+      return res.data ?? null;
+    },
+    enabled: !!episodeId,
+  });
+}
+
+export function useSubmitEpisodeFeedback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SubmitEpisodeFeedbackBody) => courseReportsService.submitEpisodeFeedback(body),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["course-reports", "episode-feedback", vars.episodeId] });
+    },
   });
 }

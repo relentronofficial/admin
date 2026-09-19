@@ -199,6 +199,28 @@ export const useSaveReflection = (courseId: string) => {
   });
 };
 
+export const useLessonFeedback = (courseId: string) =>
+  useQuery({
+    queryKey: ["lesson-feedback", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getLessonFeedback(courseId);
+      return res.data ?? [];
+    },
+    enabled: !!courseId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useSaveLessonFeedback = (courseId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lessonId, rating, feedbackText }: { lessonId: string; rating: number; feedbackText?: string }) =>
+      coursesService.saveLessonFeedback(courseId, lessonId, { rating, feedbackText }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lesson-feedback", courseId] });
+    },
+  });
+};
+
 export const useEpisodeResources = (episodeId: string | null | undefined) =>
   useQuery({
     queryKey: ["episode-resources", episodeId],

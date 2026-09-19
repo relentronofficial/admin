@@ -773,8 +773,27 @@ function MeetingsTab({ onOpenRoom, onOpenDetail }: { onOpenRoom: (creds: any, ti
 
 // ─── Onboarding Buttons (simple name + active/inactive CTA buttons) ─────────
 
-function getErrorMessage(e: any): string {
-  return (typeof e?.response?.data?.error === "string" && e.response.data.error) || e?.message || "Something went wrong";
+// Only the backend's own `{ success:false, data:null, error:"<message>" }`
+// envelope is safe to show verbatim. Anything else — a framework-level 404
+// like Fastify's default `{ message, error:"Not Found", statusCode }` when a
+// route isn't deployed yet, a proxy/CDN error page, or a network failure with
+// no response at all — is not meant for an admin to read and would surface
+// confusing raw text (e.g. literally "Not Found") instead of an explanation.
+// Full details are still logged to the console for debugging.
+function getErrorMessage(e: any, fallback = "Something went wrong. Please try again."): string {
+  const data = e?.response?.data;
+  if (data && data.success === false && typeof data.error === "string" && data.error.trim()) {
+    return data.error;
+  }
+  // eslint-disable-next-line no-console
+  console.error("[onboarding-buttons] request failed:", {
+    status: e?.response?.status,
+    method: e?.config?.method,
+    url: e?.config?.url,
+    responseData: data,
+    message: e?.message,
+  });
+  return fallback;
 }
 
 function ToggleSwitch({
@@ -845,7 +864,7 @@ function OnboardingButtonFormModal({
     try {
       await onSave({ name: trimmed, isActive });
     } catch (e: any) {
-      setError(getErrorMessage(e));
+      setError(getErrorMessage(e, "Unable to save this onboarding button. Please try again."));
     }
   };
 
@@ -892,7 +911,7 @@ function OnboardingButtonFormModal({
 }
 
 function OnboardingButtonsSection() {
-  const { data, isLoading } = useListOnboardingButtons();
+  const { data, isLoading, isError, error: loadError } = useListOnboardingButtons();
   const create = useCreateOnboardingButton();
   const update = useUpdateOnboardingButton();
   const del = useDeleteOnboardingButton();
@@ -920,7 +939,7 @@ function OnboardingButtonsSection() {
     try {
       await update.mutateAsync({ id: row.id, data: { isActive: !row.isActive } });
     } catch (e: any) {
-      setListError(getErrorMessage(e));
+      setListError(getErrorMessage(e, "Unable to update button status. Please try again."));
     }
   };
 
@@ -930,7 +949,7 @@ function OnboardingButtonsSection() {
     try {
       await del.mutateAsync(row.id);
     } catch (e: any) {
-      setListError(getErrorMessage(e));
+      setListError(getErrorMessage(e, "Unable to delete this onboarding button. Please try again."));
     }
   };
 
@@ -958,6 +977,10 @@ function OnboardingButtonsSection() {
       <div className="rounded-lg border border-[#2a2a2a] overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-8 text-[#888] text-sm">Loading…</div>
+        ) : isError ? (
+          <div className="flex items-center justify-center py-8 text-[#dc2626] text-sm text-center px-4">
+            {getErrorMessage(loadError, "Unable to load onboarding buttons. Please refresh the page and try again.")}
+          </div>
         ) : rows.length === 0 ? (
           <div className="flex items-center justify-center py-8 text-[#888] text-sm">No onboarding buttons yet</div>
         ) : (
