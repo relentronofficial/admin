@@ -36,8 +36,8 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import { FeedbackModal } from "@/components/features/video/FeedbackModal";
-import { VideoFeedbackCard } from "@/components/features/video/VideoFeedbackCard";
 import { useVideoFeedbackQuestions } from "@/lib/hooks/useVideoFeedback";
+import { useSubmitEpisodeFeedback } from "@/lib/hooks/useCourseReports";
 import type { Lesson } from "@/types";
 
 type WatchState = "not_started" | "watching" | "paused" | "completed";
@@ -404,6 +404,13 @@ function LessonFeedbackSection({ lessonId, courseId, existing }: {
   const [text, setText] = useState(existing?.feedbackText ?? "");
   const [justSaved, setJustSaved] = useState(false);
   const saveFeedback = useSaveLessonFeedback(courseId);
+  // Also feeds Admin -> Courses -> Feedback (CourseEpisodeFeedback) so this
+  // single on-screen section still reaches the admin panel — previously a
+  // second, separate "Your Feedback On This Video" card (VideoFeedbackCard)
+  // handled that, duplicating this section's UI. Best-effort: a failure here
+  // must never block the rating/lesson_feedback save above, which remains
+  // the source of truth for this section's own saved/loading state.
+  const submitEpisodeFeedback = useSubmitEpisodeFeedback();
 
   // Keep local state in sync when switching between lessons that already
   // have saved feedback (this component is keyed by lessonId by the parent).
@@ -421,6 +428,12 @@ function LessonFeedbackSection({ lessonId, courseId, existing }: {
       { lessonId, rating, feedbackText: text.trim() || undefined },
       { onSuccess: () => setJustSaved(true) }
     );
+    const trimmedText = text.trim();
+    submitEpisodeFeedback.mutate({
+      courseId,
+      episodeId: lessonId,
+      feedback: trimmedText ? `Rating: ${rating}/10\n\n${trimmedText}` : `Rating: ${rating}/10`,
+    });
   };
 
   return (
@@ -3021,7 +3034,10 @@ export default function CourseDetailPage({
             )}
 
             {/* Per-lesson rating + feedback — shown once this specific lesson
-                is completed; each lesson gets its own independent section. */}
+                is completed; each lesson gets its own independent section.
+                Submits to both lesson_feedback (rating) and
+                CourseEpisodeFeedback (admin panel — Courses -> Feedback);
+                this is the only feedback UI on this page. */}
             {(watchState === "completed" || !!selectedLesson.isCompleted) && (
               <LessonFeedbackSection
                 key={selectedLesson.id}
@@ -3029,11 +3045,6 @@ export default function CourseDetailPage({
                 courseId={courseId}
                 existing={lessonFeedbackList?.find((f: any) => f.lessonId === selectedLesson.id)}
               />
-            )}
-
-            {/* Video feedback — only once this video is completed */}
-            {(watchState === "completed" || !!selectedLesson.isCompleted) && (
-              <VideoFeedbackCard courseId={courseId} episodeId={selectedLesson.id} />
             )}
 
             {/* Episode Resources */}
