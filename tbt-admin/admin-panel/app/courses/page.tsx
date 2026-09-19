@@ -32,12 +32,14 @@ import {
   useListEpisodeTaskSubmissions, useReviewEpisodeTaskSubmission,
   useVideoFeedbackQuestions, useCreateVideoFeedbackQuestion, useUpdateVideoFeedbackQuestion,
   useDeleteVideoFeedbackQuestion, useReorderVideoFeedbackQuestions, useVideoFeedbackResponses,
+  useListCourseEpisodeFeedback, useUpdateCourseEpisodeFeedbackStatus,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
 import { getAdminSocket } from "@/lib/socket/client";
+import { format } from "date-fns";
 
 const toSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -3210,7 +3212,16 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ questionText: '', questionType: 'rating' });
   const [editId, setEditId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'questions' | 'analytics'>('questions');
+  const [activeTab, setActiveTab] = useState<'feedback' | 'questions' | 'analytics'>('feedback');
+
+  // User-submitted free-text feedback for this exact episode (CourseEpisodeFeedback,
+  // filtered by episodeId — never falls back to course-level). Distinct from the
+  // "Questions"/"Analytics" tabs above, which manage/aggregate the separate
+  // admin-authored rating-survey (video_feedback_questions/_responses).
+  const { data: userFeedbackData, isLoading: userFeedbackLoading, isError: userFeedbackError } =
+    useListCourseEpisodeFeedback({ episodeId: episode.id, limit: 100 });
+  const userFeedback: any[] = (userFeedbackData as any)?.data ?? [];
+  const updateFeedbackStatus = useUpdateCourseEpisodeFeedbackStatus();
 
   const serverItems: any[] = (data as any)?.data || [];
   const responses: any[] = (responsesData as any)?.data || [];
@@ -3255,7 +3266,7 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
           <div>
             <h3 className="text-[13px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider flex items-center gap-2">
               <MessageSquare size={14} className="text-purple-400" />
-              Feedback Questions
+              Episode Feedback
             </h3>
             <p className="text-[11px] text-[#666] mt-0.5 truncate max-w-xs">{episode.title}</p>
           </div>
@@ -3270,14 +3281,51 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
         </div>
 
         <div className="flex gap-1 px-5 pt-3">
-          {(['questions', 'analytics'] as const).map(tab => (
+          {(['feedback', 'questions', 'analytics'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide font-rajdhani rounded-lg transition-colors ${activeTab === tab ? 'bg-[#dc2626] text-white' : 'text-[#666] hover:text-[#f0f0f0]'}`}>
-              {tab === 'questions' ? 'Questions' : 'Analytics'}
+              {tab === 'feedback' ? 'User Feedback' : tab === 'questions' ? 'Questions' : 'Analytics'}
             </button>
           ))}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
+          {activeTab === 'feedback' && (
+            <>
+              {userFeedbackLoading ? (
+                <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-[#dc2626]" /></div>
+              ) : userFeedbackError ? (
+                <p className="text-[12px] text-[#dc2626] text-center py-6">Unable to load episode feedback. Please try again.</p>
+              ) : userFeedback.length === 0 ? (
+                <p className="text-[12px] text-[#555] text-center py-6">No feedback received for this episode yet.</p>
+              ) : (
+                userFeedback.map((f: any) => (
+                  <div key={f.id} className="p-3 border border-[#2a2a2a] bg-[#1a1a1a] rounded-lg space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[12px] font-bold text-[#f0f0f0]">
+                        {f.member?.firstName} {f.member?.lastName ?? ''}
+                      </p>
+                      {f.status === 'new' ? (
+                        <button
+                          onClick={() => updateFeedbackStatus.mutate({ id: f.id, status: 'reviewed' })}
+                          disabled={updateFeedbackStatus.isPending}
+                          className="text-[10px] font-bold uppercase tracking-wide text-[#dc2626] hover:text-red-400 disabled:opacity-40 transition-colors shrink-0"
+                        >
+                          Mark Reviewed
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-green-400 shrink-0">
+                          <CheckCircle2 size={10} /> Reviewed
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-[#a0a0a0] whitespace-pre-wrap leading-relaxed">{f.feedback}</p>
+                    <p className="text-[10px] text-[#555]">{format(new Date(f.submittedAt), 'dd MMM yyyy, HH:mm')}</p>
+                  </div>
+                ))
+              )}
+            </>
+          )}
+
           {activeTab === 'questions' && (
             <>
               {isLoading ? (
