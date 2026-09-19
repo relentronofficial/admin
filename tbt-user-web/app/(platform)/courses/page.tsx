@@ -62,15 +62,15 @@ function CourseCardSkeleton() {
 function ContinueLearningCardSkeleton() {
   return (
     <div
-      className="rounded-2xl overflow-hidden animate-pulse flex gap-5 p-5"
+      className="rounded-xl overflow-hidden animate-pulse flex gap-3 p-3"
       style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
     >
-      <div className="w-36 h-24 rounded-xl shrink-0" style={{ background: "var(--color-surface-overlay-md)" }} />
-      <div className="flex-1 space-y-3 pt-1">
-        <div className="h-3 rounded-full w-24" style={{ background: "var(--color-surface-overlay)" }} />
-        <div className="h-5 rounded-full w-3/4" style={{ background: "var(--color-surface-overlay-md)" }} />
-        <div className="h-3 rounded-full w-1/2" style={{ background: "var(--color-surface-overlay)" }} />
-        <div className="h-2 rounded-full w-full mt-4" style={{ background: "var(--color-surface-overlay)" }} />
+      <div className="w-24 h-16 rounded-lg shrink-0" style={{ background: "var(--color-surface-overlay-md)" }} />
+      <div className="flex-1 space-y-2 pt-1">
+        <div className="h-2.5 rounded-full w-20" style={{ background: "var(--color-surface-overlay)" }} />
+        <div className="h-4 rounded-full w-3/4" style={{ background: "var(--color-surface-overlay-md)" }} />
+        <div className="h-2.5 rounded-full w-1/2" style={{ background: "var(--color-surface-overlay)" }} />
+        <div className="h-1.5 rounded-full w-full mt-3" style={{ background: "var(--color-surface-overlay)" }} />
       </div>
     </div>
   );
@@ -106,7 +106,7 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
   return (
     <Link
       href={resumeLink}
-      className="group flex gap-5 p-5 rounded-2xl transition-all duration-200"
+      className="group flex gap-3 p-3 rounded-xl transition-all duration-200"
       style={{
         background: "var(--color-bg-surface)",
         border: "1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle))",
@@ -124,12 +124,12 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
       }}
     >
       {/* Thumbnail */}
-      <div className="relative w-36 h-24 rounded-xl overflow-hidden shrink-0 bg-black">
+      <div className="relative w-24 h-16 rounded-lg overflow-hidden shrink-0 bg-black">
         {item.thumbnailUrl ? (
           <Image src={item.thumbnailUrl} alt={item.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <BookOpen size={22} className="text-muted-foreground opacity-20" />
+            <BookOpen size={18} className="text-muted-foreground opacity-20" />
           </div>
         )}
         {/* Play overlay */}
@@ -138,10 +138,10 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
           style={{ background: "rgba(0,0,0,0.55)" }}
         >
           <div
-            className="w-10 h-10 rounded-full flex items-center justify-center"
+            className="w-7 h-7 rounded-full flex items-center justify-center"
             style={{ background: "var(--color-accent)" }}
           >
-            <Play size={14} fill="white" className="text-white ml-0.5" />
+            <Play size={11} fill="white" className="text-white ml-0.5" />
           </div>
         </div>
         {/* Course completion bar on thumbnail */}
@@ -154,38 +154,38 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
       <div className="flex-1 min-w-0 flex flex-col justify-between">
         <div>
           <span
-            className="text-[10px] font-bold uppercase tracking-widest"
+            className="text-[9px] font-bold uppercase tracking-widest"
             style={{ color: "var(--color-accent)" }}
           >
             Continue Learning
           </span>
-          <h3 className="text-[15px] font-semibold text-foreground mt-1 line-clamp-1 group-hover:text-[var(--color-accent)] transition-colors">
+          <h3 className="text-[13px] font-semibold text-foreground mt-0.5 line-clamp-1 group-hover:text-[var(--color-accent)] transition-colors">
             {item.title}
           </h3>
           {item.lastLessonTitle && (
-            <p className="text-[12px] text-muted-foreground mt-1 line-clamp-1 flex items-center gap-1.5">
-              <Play size={10} />
+            <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 flex items-center gap-1.5">
+              <Play size={9} />
               {item.lastLessonTitle}
             </p>
           )}
         </div>
 
-        <div className="space-y-2 mt-3">
+        <div className="space-y-1.5 mt-2">
           {/* Videos completed row */}
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Layers size={10} />
+              <Layers size={9} />
               {completedLessons} / {item.episodeCount} videos completed · {pct}% done
             </span>
             {videoWatchedPct > 0 && (
               <span className="flex items-center gap-1 shrink-0 ml-2">
-                <Clock size={9} />
+                <Clock size={8} />
                 {videoWatchedPct}% of current video
               </span>
             )}
           </div>
           {/* Course-level progress bar */}
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track, rgba(255,255,255,0.08))" }}>
+          <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--color-progress-track, rgba(255,255,255,0.08))" }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{ width: `${pct}%`, background: "var(--color-accent)" }}
@@ -195,13 +195,13 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
       </div>
 
       {/* Arrow */}
-      <div className="self-center shrink-0 hidden sm:flex items-center justify-center w-8 h-8 rounded-xl transition-all duration-200 group-hover:translate-x-0.5"
+      <div className="self-center shrink-0 hidden sm:flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 group-hover:translate-x-0.5"
         style={{
           background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
           border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
         }}
       >
-        <ChevronRight size={14} style={{ color: "var(--color-accent)" }} />
+        <ChevronRight size={13} style={{ color: "var(--color-accent)" }} />
       </div>
     </Link>
   );
@@ -627,7 +627,7 @@ export default function CoursesPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 {continueCourseItems.slice(0, 3).map((item) => (
                   <ContinueLearningCourseCard key={item.id} item={item} />
                 ))}
