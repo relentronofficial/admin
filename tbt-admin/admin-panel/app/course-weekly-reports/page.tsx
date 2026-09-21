@@ -15,6 +15,9 @@ import {
   Video,
   Eye,
   EyeOff,
+  Star,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -481,7 +484,7 @@ function EpisodeFeedbackTab({ courses, initialOpenId }: { courses: any[]; initia
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#2a2a2a]">
-                  {["Member", "Course", "Video", "Feedback", "Status", "WhatsApp", "Submitted", ""].map((h) => (
+                  {["Member", "Course", "Video", "Rating", "Liked", "Feedback", "Status", "WhatsApp", "Submitted", ""].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani whitespace-nowrap">
                       {h}
                     </th>
@@ -500,6 +503,21 @@ function EpisodeFeedbackTab({ courses, initialOpenId }: { courses: any[]; initia
                         </td>
                         <td className="px-4 py-3 text-[#a0a0a0] text-xs">{row.course?.title}</td>
                         <td className="px-4 py-3 text-[#a0a0a0] text-xs">{row.episode?.title}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {row.rating != null ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-yellow-400">
+                              <Star size={11} fill="currentColor" />
+                              {row.rating}/10
+                            </span>
+                          ) : (
+                            <span className="text-[#606060] text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {row.liked === true && <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-400"><ThumbsUp size={11} /> Like</span>}
+                          {row.liked === false && <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-400"><ThumbsDown size={11} /> Dislike</span>}
+                          {row.liked == null && <span className="text-[#606060] text-xs">—</span>}
+                        </td>
                         <td className="px-4 py-3 max-w-xs text-[#888] text-xs truncate">{row.feedback}</td>
                         <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
                         <td className="px-4 py-3"><StatusBadge status={row.whatsappStatus} /></td>
@@ -529,9 +547,29 @@ function EpisodeFeedbackTab({ courses, initialOpenId }: { courses: any[]; initia
                       </tr>
                       {expanded && (
                         <tr key={`${row.id}-detail`} className={cn("border-b border-[#1f1f1f]", i === rows.length - 1 && "border-b-0")}>
-                          <td colSpan={8} className="px-4 py-3 bg-[#0a0a0a]">
+                          <td colSpan={10} className="px-4 py-3 bg-[#0a0a0a]">
+                            <div className="flex items-center gap-4 mb-2">
+                              {row.rating != null && (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-yellow-400">
+                                  <Star size={11} fill="currentColor" /> {row.rating}/10
+                                </span>
+                              )}
+                              {row.liked === true && (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-400">
+                                  <ThumbsUp size={11} /> Liked
+                                </span>
+                              )}
+                              {row.liked === false && (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-400">
+                                  <ThumbsDown size={11} /> Disliked
+                                </span>
+                              )}
+                              {row.updatedAt && row.updatedAt !== row.submittedAt && (
+                                <span className="text-[10px] text-[#606060]">Updated {format(new Date(row.updatedAt), "dd MMM yyyy HH:mm")}</span>
+                              )}
+                            </div>
                             <p className="text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1.5">Full Feedback</p>
-                            <p className="text-xs text-[#e0e0e0] whitespace-pre-wrap leading-relaxed">{row.feedback}</p>
+                            <p className="text-xs text-[#e0e0e0] whitespace-pre-wrap leading-relaxed">{row.feedback || <span className="text-[#606060] italic">No comment provided</span>}</p>
                           </td>
                         </tr>
                       )}
