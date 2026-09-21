@@ -16,10 +16,10 @@ import type { ContinueLearningItem } from "@/types";
 
 // ── Module config ─────────────────────────────────────────────────────────────
 
-const MODULE_CONFIG: Record<string, { icon: React.ReactNode; description: string; label: string }> = {
-  product: { label: "Product", icon: <ShoppingBag size={22} />, description: "Build & sell products" },
-  service: { label: "Service", icon: <Briefcase size={22} />, description: "Offer your services" },
-  coach:   { label: "Coach",   icon: <Users size={22} />,       description: "Coach & mentor others" },
+const MODULE_CONFIG: Record<string, { label: string; displayLabel: string; icon: React.ReactNode; description: string }> = {
+  product: { label: "Product", displayLabel: "Product", icon: <ShoppingBag size={22} />, description: "Build & sell products" },
+  service: { label: "Service", displayLabel: "Service", icon: <Briefcase size={22} />, description: "Offer your services" },
+  coach:   { label: "Coach",   displayLabel: "CoachX",  icon: <Users size={22} />,       description: "Coach & mentor others" },
 };
 
 const VALID_MODULES = Object.keys(MODULE_CONFIG);
@@ -332,7 +332,7 @@ export default function ModuleCoursesPage() {
               </div>
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>TBT Learning</span>
-                <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-tight">{cfg.label} Courses</h1>
+                <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-tight">{cfg.displayLabel} Courses</h1>
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-1 max-w-md">{cfg.description} — explore all courses in this module.</p>
@@ -408,7 +408,7 @@ export default function ModuleCoursesPage() {
       <section className="space-y-5">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-            <Layers size={15} style={{ color: "var(--color-accent)" }} /> All {cfg.label} Courses
+            <Layers size={15} style={{ color: "var(--color-accent)" }} /> All {cfg.displayLabel} Courses
           </h2>
           {!catalogLoading && catalogCourses.length > 0 && (
             <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
@@ -420,7 +420,7 @@ export default function ModuleCoursesPage() {
           <div className="relative flex-1 max-w-sm">
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Search ${cfg.label} courses...`}
+              placeholder={`Search ${cfg.displayLabel} courses...`}
               className="w-full pl-9 pr-4 h-10 text-sm text-foreground placeholder:text-muted-foreground rounded-xl outline-none transition-all"
               style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
               onFocus={(e) => (e.target.style.borderColor = "var(--color-accent)")}

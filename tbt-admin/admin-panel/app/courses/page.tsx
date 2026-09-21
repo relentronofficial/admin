@@ -421,7 +421,7 @@ export default function CoursesPage() {
                   <option value="">— No module —</option>
                   <option value="Product">Product</option>
                   <option value="Service">Service</option>
-                  <option value="Coach">Coach</option>
+                  <option value="Coach">CoachX</option>
                 </select>
               </div>
               <div>
