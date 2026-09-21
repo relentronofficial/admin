@@ -14,7 +14,7 @@ export async function getAdminSocket(): Promise<Socket> {
 
   _socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000', {
     auth: { token },
-    transports: ['websocket'],
+    transports: ['polling', 'websocket'],
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 2000,
