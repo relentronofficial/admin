@@ -62,7 +62,7 @@ function CourseCardSkeleton() {
 function ContinueLearningCardSkeleton() {
   return (
     <div
-      className="rounded-xl overflow-hidden animate-pulse flex gap-3 p-3"
+      className="rounded-xl overflow-hidden animate-pulse flex gap-3 p-3 shrink-0 w-80"
       style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}
     >
       <div className="w-24 h-16 rounded-lg shrink-0" style={{ background: "var(--color-surface-overlay-md)" }} />
@@ -106,7 +106,7 @@ function ContinueLearningCourseCard({ item }: { item: ContinueLearningItem }) {
   return (
     <Link
       href={resumeLink}
-      className="group flex gap-3 p-3 rounded-xl transition-all duration-200"
+      className="group flex gap-3 p-3 rounded-xl transition-all duration-200 shrink-0 w-80"
       style={{
         background: "var(--color-bg-surface)",
         border: "1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle))",
@@ -611,7 +611,9 @@ export default function CoursesPage() {
               Continue Learning
             </h2>
             {continueLoading ? (
-              <ContinueLearningCardSkeleton />
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
+                {Array.from({ length: 3 }).map((_, i) => <ContinueLearningCardSkeleton key={i} />)}
+              </div>
             ) : continueCourseItems.length === 0 ? (
               <div className="flex items-center gap-4 px-5 py-4 rounded-2xl"
                 style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
@@ -627,8 +629,8 @@ export default function CoursesPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col gap-2">
-                {continueCourseItems.slice(0, 3).map((item) => (
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
+                {continueCourseItems.slice(0, 8).map((item) => (
                   <ContinueLearningCourseCard key={item.id} item={item} />
                 ))}
               </div>
