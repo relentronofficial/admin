@@ -25,10 +25,10 @@ function formatSeconds(secs: number): string {
 
 const MODULE_TABS = ["Product", "Service", "Coach"] as const;
 
-const MODULE_CONFIG: Record<string, { icon: React.ReactNode; description: string }> = {
-  Product: { icon: <ShoppingBag size={28} />, description: "Build & sell products" },
-  Service: { icon: <Briefcase size={28} />, description: "Offer your services" },
-  Coach:   { icon: <Users    size={28} />, description: "Coach & mentor others" },
+const MODULE_CONFIG: Record<string, { displayLabel: string; icon: React.ReactNode; description: string }> = {
+  Product: { displayLabel: "Product",  icon: <ShoppingBag size={28} />, description: "Build & sell products" },
+  Service: { displayLabel: "Service",  icon: <Briefcase size={28} />, description: "Offer your services" },
+  Coach:   { displayLabel: "CoachX",   icon: <Users    size={28} />, description: "Coach & mentor others" },
 };
 
 // ── Level config ──────────────────────────────────────────────────────────────
@@ -587,7 +587,7 @@ export default function CoursesPage() {
                 <div>
                   <p className="text-[15px] font-bold tracking-wide transition-colors group-hover:text-[var(--color-accent)]"
                     style={{ color: "var(--color-text-normal)" }}>
-                    {m}
+                    {cfg.displayLabel}
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
                     {cfg.description}
