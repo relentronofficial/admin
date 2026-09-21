@@ -1062,17 +1062,35 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
 }
 
 // ── Episode Task Item (submit + review-status) ──────────────────────────────
-function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: EpisodeTask; index: number }) {
+function EpisodeTaskItem({
+  episodeId, task, index, onPauseVideo, onResumeVideo,
+}: {
+  episodeId: string;
+  task: EpisodeTask;
+  index: number;
+  onPauseVideo?: () => void;
+  onResumeVideo?: () => void;
+}) {
   const submitTask = useSubmitEpisodeTask(episodeId);
   const uploadProof = useUploadEpisodeTaskProof(episodeId);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [textValue, setTextValue] = useState(task.submission?.responseValue ?? "");
   const [urlValue, setUrlValue] = useState(task.submission?.proofUrl ?? "");
   const [uploading, setUploading] = useState(false);
+  // Tracks whether this task item has paused the video — ensures we only resume
+  // if we were the one to pause, and avoids calling pause more than once.
+  const didPauseRef = useRef(false);
 
   const proofType = task.proofType || "watch";
   const status = task.submission?.status ?? null;
   const isEditable = status === null || status === "pending" || status === "rejected" || status === "resubmission_required";
+
+  const pauseOnce = () => {
+    if (!didPauseRef.current) {
+      didPauseRef.current = true;
+      onPauseVideo?.();
+    }
+  };
 
   const handleFileSelect = async (file: File) => {
     setUploading(true);
@@ -1080,6 +1098,10 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
       const publicUrl = await uploadProof(file, task.id);
       await submitTask.mutateAsync({ taskId: task.id, proofUrl: publicUrl, proofType });
       toast.success("Task submitted");
+      if (didPauseRef.current) {
+        didPauseRef.current = false;
+        onResumeVideo?.();
+      }
     } catch {
       toast.error("Upload failed — please try again");
     } finally {
@@ -1098,6 +1120,10 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
         proofType,
       });
       toast.success(task.completionMode === "SELF_ASSESSMENT" ? "Task completed" : "Submitted for review");
+      if (didPauseRef.current) {
+        didPauseRef.current = false;
+        onResumeVideo?.();
+      }
     } catch {
       toast.error("Couldn't submit — please try again");
     }
@@ -1183,6 +1209,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                 <textarea
                   value={textValue}
                   onChange={(e) => setTextValue(e.target.value)}
+                  onFocus={pauseOnce}
                   rows={2}
                   placeholder="Describe what you did…"
                   className="w-full rounded-lg px-3 py-2 text-xs outline-none resize-none"
@@ -1194,6 +1221,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                   type="url"
                   value={urlValue}
                   onChange={(e) => setUrlValue(e.target.value)}
+                  onFocus={pauseOnce}
                   placeholder={proofType === "video" ? "Paste your video URL…" : "Paste your link URL…"}
                   className="w-full rounded-lg px-3 py-2 text-xs outline-none"
                   style={{ background: "var(--color-surface-xs)", color: "var(--color-text-normal)", border: "1px solid var(--color-border-card)" }}
@@ -1202,7 +1230,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
               <div className="flex items-center gap-2">
                 {(proofType === "image" || proofType === "file") ? (
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => { pauseOnce(); fileInputRef.current?.click(); }}
                     disabled={uploading}
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
                     style={{ background: "var(--color-accent)" }}
@@ -1214,7 +1242,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                   </button>
                 ) : (
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => { pauseOnce(); handleSubmit(); }}
                     disabled={submitTask.isPending}
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
                     style={{ background: "var(--color-accent)" }}
@@ -1614,6 +1642,9 @@ export default function CourseDetailPage({
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
   const firedCuesRef = useRef<Set<string>>(new Set());
   const cueQuizActiveRef = useRef(false);
+  // When true, any unexpected play event is intercepted and re-paused.
+  // Set during cue quizzes; cleared on dismiss.
+  const videoBlockedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Pause/resume helpers — assigned each render so they always read fresh refs
@@ -1892,6 +1923,7 @@ export default function CourseDetailPage({
     setUpNextVisible(false);
     firedCuesRef.current = new Set();
     cueQuizActiveRef.current = false;
+    videoBlockedRef.current = false;
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
@@ -1960,6 +1992,12 @@ export default function CourseDetailPage({
   };
 
   const handleVideoPlay = () => {
+    // If a cue quiz is blocking playback, re-pause immediately instead of
+    // letting the video resume through HLS buffering or Plyr internal state.
+    if (videoBlockedRef.current) {
+      pausePlayerRef.current();
+      return;
+    }
     isPlayingRef.current = true;
     setWatchState((prev) => (prev === "completed" ? "completed" : "watching"));
   };
@@ -1986,6 +2024,7 @@ export default function CourseDetailPage({
         if (!firedCuesRef.current.has(cue.id) && s >= cue.atSeconds) {
           firedCuesRef.current.add(cue.id);
           cueQuizActiveRef.current = true;
+          videoBlockedRef.current = true;
           pausePlayerRef.current();
           // Exit fullscreen first — modal is in the parent document and won't
           // appear over a native fullscreen iframe/video element otherwise.
@@ -2185,6 +2224,7 @@ export default function CourseDetailPage({
               if (!firedCuesRef.current.has(cue.id) && currentTime >= cue.atSeconds) {
                 firedCuesRef.current.add(cue.id);
                 cueQuizActiveRef.current = true;
+                videoBlockedRef.current = true;
                 pausePlayerRef.current();
                 // Exit fullscreen first — modal is in the parent document and won't
                 // appear over a native fullscreen iframe/video element otherwise.
@@ -2213,8 +2253,12 @@ export default function CourseDetailPage({
       }
 
       if (isPlay && !isEnd) {
-        isPlayingRef.current = true;
-        setWatchState((s) => (s === "completed" ? "completed" : "watching"));
+        if (videoBlockedRef.current) {
+          pausePlayerRef.current();
+        } else {
+          isPlayingRef.current = true;
+          setWatchState((s) => (s === "completed" ? "completed" : "watching"));
+        }
       } else if (isPause && !isEnd) {
         isPlayingRef.current = false;
         setWatchState((s) => (s === "completed" ? "completed" : "paused"));
@@ -2299,6 +2343,7 @@ export default function CourseDetailPage({
   const handleCloseCueQuiz = useCallback(() => {
     setCueQuizModal(null);
     cueQuizActiveRef.current = false;
+    videoBlockedRef.current = false;
     // Skip resume if the video already ended while the cue quiz was showing (iframe race:
     // the `ended` postMessage can arrive before the pause postMessage is processed).
     // markCalledRef is set by handleVideoEnded / doMarkComplete on natural completion.
@@ -3127,7 +3172,7 @@ export default function CourseDetailPage({
                 </div>
                 <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
                   {episodeTasks.map((t: EpisodeTask, i: number) => (
-                    <EpisodeTaskItem key={t.id} episodeId={selectedLesson!.id} task={t} index={i} />
+                    <EpisodeTaskItem key={t.id} episodeId={selectedLesson!.id} task={t} index={i} onPauseVideo={() => pausePlayerRef.current()} onResumeVideo={() => resumePlayerRef.current()} />
                   ))}
                 </div>
               </div>
