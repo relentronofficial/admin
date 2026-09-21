@@ -312,7 +312,7 @@ export async function getMyFeedbackHistoryHandler(req: FastifyRequest, reply: Fa
 export async function submitEpisodeFeedbackHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = submitEpisodeFeedbackSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
-  const { courseId, episodeId, feedback } = parsed.data;
+  const { courseId, episodeId, feedback, rating, liked } = parsed.data;
 
   const [enrollment, episode] = await Promise.all([
     req.server.prisma.courseEnrollment.findUnique({
@@ -326,7 +326,7 @@ export async function submitEpisodeFeedbackHandler(req: FastifyRequest, reply: F
 
   let result;
   try {
-    result = await deliverMemberEpisodeFeedbackToAdmin(req.server.prisma, req.memberId!, episodeId, feedback);
+    result = await deliverMemberEpisodeFeedbackToAdmin(req.server.prisma, req.memberId!, episodeId, feedback, undefined, rating, liked);
   } catch (err: any) {
     return fail(reply, 404, 'not_found', err?.message ?? 'Unable to submit feedback.');
   }

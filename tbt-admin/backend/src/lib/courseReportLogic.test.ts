@@ -172,12 +172,14 @@ describe('buildFeedbackMessage', () => {
 });
 
 describe('buildEpisodeFeedbackMessage', () => {
-  it('renders the exact requested WhatsApp video-feedback format', () => {
+  it('renders structured format with rating, liked, and comment', () => {
     const message = buildEpisodeFeedbackMessage({
       userName: 'Kavya',
       courseName: 'React Fundamentals',
       episodeName: 'Intro to JSX',
       feedback: 'This lesson was super clear.',
+      rating: 9,
+      liked: true,
       submittedAt: '18 Sep 2026, 10:30 AM',
     });
 
@@ -188,13 +190,29 @@ describe('buildEpisodeFeedbackMessage', () => {
         'User: Kavya',
         'Course: React Fundamentals',
         'Video: Intro to JSX',
+        'Rating: 9/10',
+        'Liked: 👍 Yes',
         '',
-        'Feedback:',
+        'Comment:',
         'This lesson was super clear.',
         '',
         'Submitted: 18 Sep 2026, 10:30 AM',
       ].join('\n'),
     );
+  });
+
+  it('omits Comment section when no feedback text is provided', () => {
+    const message = buildEpisodeFeedbackMessage({
+      userName: 'Arun',
+      courseName: 'Node Basics',
+      episodeName: 'Lesson 1',
+      rating: 7,
+      liked: false,
+      submittedAt: '18 Sep 2026, 10:30 AM',
+    });
+    expect(message).toContain('Rating: 7/10');
+    expect(message).toContain('Liked: 👎 No');
+    expect(message).not.toContain('Comment:');
   });
 
   it('trims surrounding whitespace from the feedback body', () => {
@@ -205,6 +223,6 @@ describe('buildEpisodeFeedbackMessage', () => {
       feedback: '  Great video!  ',
       submittedAt: '18 Sep 2026, 10:30 AM',
     });
-    expect(message).toContain('Feedback:\nGreat video!');
+    expect(message).toContain('Comment:\nGreat video!');
   });
 });

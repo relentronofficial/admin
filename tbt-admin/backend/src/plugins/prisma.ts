@@ -1468,6 +1468,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE INDEX IF NOT EXISTS idx_lesson_feedback_member_course
           ON lesson_feedback(member_id, course_id)
       `),
+      // Belt-and-suspenders: extend course_episode_feedback and lesson_feedback
+      // with rating + liked columns if not already present (Prisma schema was
+      // updated to add them, but existing prod tables need a safe backfill).
+      prisma.$executeRawUnsafe(`ALTER TABLE course_episode_feedback ADD COLUMN IF NOT EXISTS rating INT CHECK (rating >= 1 AND rating <= 10)`).catch(() => {}),
+      prisma.$executeRawUnsafe(`ALTER TABLE course_episode_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN`).catch(() => {}),
+      prisma.$executeRawUnsafe(`ALTER TABLE lesson_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN`).catch(() => {}),
       // ── Video Feedback (2026-08-28) ────────────────────────────────
       // Admin-configured questions per episode; member responses.
       prisma.$executeRawUnsafe(`

@@ -26,5 +26,7 @@ export const submitFeedbackSchema = z.object({
 export const submitEpisodeFeedbackSchema = z.object({
   courseId: z.string().uuid(),
   episodeId: z.string().uuid(),
-  feedback: z.string().trim().min(1, 'Feedback is required').max(4000),
+  feedback: z.string().trim().max(4000).optional(),
+  rating: z.number().int().min(1).max(10).optional(),
+  liked: z.boolean().optional(),
 });

@@ -213,8 +213,8 @@ export const useLessonFeedback = (courseId: string) =>
 export const useSaveLessonFeedback = (courseId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ lessonId, rating, feedbackText }: { lessonId: string; rating: number; feedbackText?: string }) =>
-      coursesService.saveLessonFeedback(courseId, lessonId, { rating, feedbackText }),
+    mutationFn: ({ lessonId, rating, feedbackText, liked }: { lessonId: string; rating: number; feedbackText?: string; liked?: boolean }) =>
+      coursesService.saveLessonFeedback(courseId, lessonId, { rating, feedbackText, liked }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lesson-feedback", courseId] });
     },

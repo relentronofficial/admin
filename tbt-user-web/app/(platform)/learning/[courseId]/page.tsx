@@ -397,10 +397,11 @@ function ReflectionModal({ lessonId, lessonTitle, courseId, onClose }: {
 function LessonFeedbackSection({ lessonId, courseId, existing }: {
   lessonId: string;
   courseId: string;
-  existing: { rating: number; feedbackText: string | null } | undefined;
+  existing: { rating: number; feedbackText: string | null; liked?: boolean | null } | undefined;
 }) {
   const [rating, setRating] = useState(existing?.rating ?? 0);
   const [hoverRating, setHoverRating] = useState(0);
+  const [liked, setLiked] = useState<boolean | null>(existing?.liked ?? null);
   const [text, setText] = useState(existing?.feedbackText ?? "");
   const [justSaved, setJustSaved] = useState(false);
   const saveFeedback = useSaveLessonFeedback(courseId);
@@ -416,6 +417,7 @@ function LessonFeedbackSection({ lessonId, courseId, existing }: {
   // have saved feedback (this component is keyed by lessonId by the parent).
   useEffect(() => {
     setRating(existing?.rating ?? 0);
+    setLiked(existing?.liked ?? null);
     setText(existing?.feedbackText ?? "");
     setJustSaved(false);
   }, [lessonId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -424,15 +426,17 @@ function LessonFeedbackSection({ lessonId, courseId, existing }: {
 
   const handleSubmit = () => {
     if (!rating) return;
+    const trimmedText = text.trim() || undefined;
     saveFeedback.mutate(
-      { lessonId, rating, feedbackText: text.trim() || undefined },
+      { lessonId, rating, feedbackText: trimmedText, liked: liked ?? undefined },
       { onSuccess: () => setJustSaved(true) }
     );
-    const trimmedText = text.trim();
     submitEpisodeFeedback.mutate({
       courseId,
       episodeId: lessonId,
-      feedback: trimmedText ? `Rating: ${rating}/10\n\n${trimmedText}` : `Rating: ${rating}/10`,
+      rating,
+      liked: liked ?? undefined,
+      feedback: trimmedText,
     });
   };
 
@@ -448,12 +452,35 @@ function LessonFeedbackSection({ lessonId, courseId, existing }: {
         </p>
       </div>
 
+      {/* Like / Dislike */}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => { setLiked(liked === true ? null : true); setJustSaved(false); }}
+          aria-label="Like this lesson"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${liked === true ? "border-green-500 text-green-400 bg-green-500/10" : "border-transparent text-[var(--color-text-subtle)] bg-[var(--color-surface-overlay)] hover:border-green-500/50"}`}
+        >
+          <Heart size={13} fill={liked === true ? "currentColor" : "none"} />
+          Like
+        </button>
+        <button
+          type="button"
+          onClick={() => { setLiked(liked === false ? null : false); setJustSaved(false); }}
+          aria-label="Dislike this lesson"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${liked === false ? "border-red-500 text-red-400 bg-red-500/10" : "border-transparent text-[var(--color-text-subtle)] bg-[var(--color-surface-overlay)] hover:border-red-500/50"}`}
+        >
+          <Heart size={13} fill={liked === false ? "currentColor" : "none"} className={liked === false ? "rotate-180" : ""} />
+          Dislike
+        </button>
+      </div>
+
+      {/* Star rating */}
       <div className="flex items-center gap-1 flex-wrap" onMouseLeave={() => setHoverRating(0)}>
         {Array.from({ length: 10 }, (_, i) => i + 1).map((i) => (
           <button
             key={i}
             type="button"
-            onClick={() => setRating(i)}
+            onClick={() => { setRating(i); setJustSaved(false); }}
             onMouseEnter={() => setHoverRating(i)}
             aria-label={`Rate ${i} out of 10`}
             className="transition-transform hover:scale-110"
