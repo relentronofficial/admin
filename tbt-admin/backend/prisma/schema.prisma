@@ -661,7 +661,9 @@ model CourseEpisodeFeedback {
   memberId              String    @map("member_id") @db.Uuid
   courseId              String    @map("course_id") @db.Uuid
   episodeId             String    @map("episode_id") @db.Uuid
-  feedback              String
+  feedback              String    @default("")
+  rating                Int?
+  liked                 Boolean?
   status                String    @default("new")
   whatsappStatus        String?   @map("whatsapp_status")
   whatsappSentAt        DateTime? @map("whatsapp_sent_at") @db.Timestamptz(6)

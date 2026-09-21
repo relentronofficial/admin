@@ -44,6 +44,8 @@ export interface CourseEpisodeFeedback {
   courseId: string;
   episodeId: string;
   feedback: string;
+  rating: number | null;
+  liked: boolean | null;
   status: "new" | "reviewed";
   whatsappStatus: "sent" | "failed" | "skipped" | null;
   submittedAt: string;
@@ -52,7 +54,9 @@ export interface CourseEpisodeFeedback {
 export interface SubmitEpisodeFeedbackBody {
   courseId: string;
   episodeId: string;
-  feedback: string;
+  feedback?: string;
+  rating?: number;
+  liked?: boolean;
 }
 
 export const courseReportsService = {

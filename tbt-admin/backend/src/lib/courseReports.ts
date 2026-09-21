@@ -324,8 +324,10 @@ export async function deliverMemberEpisodeFeedbackToAdmin(
   prisma: any,
   memberId: string,
   episodeId: string,
-  feedback: string,
+  feedback: string | undefined,
   now: Date = new Date(),
+  rating?: number,
+  liked?: boolean,
 ): Promise<DeliverFeedbackResult> {
   const member = await prisma.member.findUnique({
     where: { id: memberId },
@@ -343,10 +345,11 @@ export async function deliverMemberEpisodeFeedbackToAdmin(
     throw new Error('Course not found');
   }
 
+  const feedbackText = feedback ?? '';
   const row = await prisma.courseEpisodeFeedback.upsert({
     where: { memberId_episodeId: { memberId, episodeId } },
-    create: { memberId, courseId: episode.courseId, episodeId, feedback },
-    update: { feedback },
+    create: { memberId, courseId: episode.courseId, episodeId, feedback: feedbackText, rating: rating ?? null, liked: liked ?? null },
+    update: { feedback: feedbackText, ...(rating != null ? { rating } : {}), ...(liked != null ? { liked } : {}) },
   });
 
   if (!env.ADMIN_WHATSAPP_NUMBER) {
@@ -371,6 +374,8 @@ export async function deliverMemberEpisodeFeedbackToAdmin(
     courseName: course.title,
     episodeName: episode.title,
     feedback,
+    rating,
+    liked,
     submittedAt,
   });
 

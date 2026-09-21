@@ -3318,7 +3318,27 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
                         </span>
                       )}
                     </div>
-                    <p className="text-[12px] text-[#a0a0a0] whitespace-pre-wrap leading-relaxed">{f.feedback}</p>
+                    {/* Structured rating + liked badges */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {f.rating != null && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">
+                          <Star size={10} fill="currentColor" />{f.rating}/10
+                        </span>
+                      )}
+                      {f.liked === true && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+                          <ThumbsUp size={10} /> Liked
+                        </span>
+                      )}
+                      {f.liked === false && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full">
+                          <ThumbsUp size={10} className="rotate-180" /> Disliked
+                        </span>
+                      )}
+                    </div>
+                    {f.feedback?.trim() && (
+                      <p className="text-[12px] text-[#a0a0a0] whitespace-pre-wrap leading-relaxed">{f.feedback}</p>
+                    )}
                     <p className="text-[10px] text-[#555]">{format(new Date(f.submittedAt), 'dd MMM yyyy, HH:mm')}</p>
                   </div>
                 ))
