@@ -16,6 +16,7 @@ import '../data/courses_service.dart';
 import '../providers/courses_provider.dart';
 import 'widgets/practice_arena_modal.dart';
 
+import '../../../core/constants/routes.dart';
 import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -220,6 +221,13 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
                         accent: accent,
                       ),
                     ),
+                    if (course.hasAccess)
+                      SliverToBoxAdapter(
+                        child: _WeeklyReportTile(
+                          courseId: widget.courseId,
+                          courseTitle: course.title,
+                        ),
+                      ),
                     const SliverToBoxAdapter(child: SizedBox(height: 16)),
                   ],
                 ),
@@ -1420,6 +1428,60 @@ class _XpAndPracticeRow extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Weekly Report tile ────────────────────────────────────────────────────────
+
+class _WeeklyReportTile extends StatelessWidget {
+  const _WeeklyReportTile({
+    required this.courseId,
+    required this.courseTitle,
+  });
+
+  final String courseId;
+  final String courseTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: InkWell(
+        onTap: () => context.push(
+          AppRoutes.courseWeeklyReportPath(courseId),
+          extra: {'title': courseTitle},
+        ),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: context.tokens.bgSurface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: context.tokens.borderCard),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.bar_chart_rounded,
+                  color: context.tokens.textSecondary, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Weekly Report',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: context.tokens.textPrimary,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  color: context.tokens.textMuted, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -21,12 +21,14 @@ import 'features/auth/presentation/video_splash_screen.dart';
 import 'features/auth/presentation/forgot_password_screen.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'shared/api/services/auth_service.dart';
+import 'features/batch_program/presentation/batch_attendance_screen.dart';
 import 'features/batch_program/presentation/batch_day_screen.dart';
 import 'features/batch_program/presentation/batch_program_screen.dart';
 import 'features/courses/presentation/badges_screen.dart';
 import 'features/courses/presentation/course_detail_screen.dart';
 import 'features/courses/presentation/courses_screen.dart';
 import 'features/courses/presentation/learning_overview_screen.dart';
+import 'features/courses/presentation/course_weekly_report_screen.dart';
 import 'features/courses/presentation/lesson_player_screen.dart';
 import 'features/dashboard/presentation/dashboard_screen.dart';
 import 'features/events/presentation/event_detail_screen.dart';
@@ -43,6 +45,7 @@ import 'features/messages/presentation/messages_screen.dart';
 import 'features/notifications/presentation/notifications_screen.dart';
 import 'features/products/presentation/products_screen.dart';
 import 'features/profile/presentation/profile_screen.dart';
+import 'features/profile/presentation/psychometric_screen.dart';
 import 'features/onboarding/presentation/onboarding_screen.dart';
 import 'features/onboarding/presentation/onboarding_meeting_screen.dart';
 import 'features/profile/presentation/connections_screen.dart';
@@ -344,6 +347,11 @@ List<RouteBase> _buildRoutes() => [
         builder: (_, __) => const ConnectionsScreen(),
       ),
       GoRoute(
+        path: AppRoutes.profilePsychometric,
+        name: RouteNames.profilePsychometric,
+        builder: (_, __) => const PsychometricScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.legalTerms,
         name: RouteNames.legalTerms,
         builder: (_, __) => const LegalPageScreen(slug: 'terms'),
@@ -422,6 +430,15 @@ List<RouteBase> _buildRoutes() => [
                   lessonId: state.pathParameters['lessonId']!,
                 ),
               ),
+              GoRoute(
+                path: 'weekly',
+                name: RouteNames.courseWeeklyReport,
+                builder: (_, state) => CourseWeeklyReportScreen(
+                  courseId: state.pathParameters['courseId']!,
+                  courseTitle:
+                      state.uri.queryParameters['title'] ?? '',
+                ),
+              ),
             ],
           ),
         ],
@@ -439,6 +456,11 @@ List<RouteBase> _buildRoutes() => [
         builder: (_, state) => BatchDayScreen(
           day: int.tryParse(state.pathParameters['day'] ?? '1') ?? 1,
         ),
+      ),
+      GoRoute(
+        path: AppRoutes.batchAttendance,
+        name: RouteNames.batchAttendance,
+        builder: (_, __) => const BatchAttendanceScreen(),
       ),
 
       // ── Outside shell — Member pages ───────────────────────────────────────

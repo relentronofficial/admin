@@ -53,6 +53,12 @@ class BatchService {
   /// and codegen is currently blocked.
   final Map<int, BatchDayMeta> dayMeta = {};
 
+  /// Program-wide lifeline state — populated on every successful [getBatchProgram]
+  /// call and updated in place by [useLifeline]. Consumers read these directly.
+  int lifelinesTotal = 3;
+  int lifelinesUsed = 0;
+  int lifelinesRemaining = 3;
+
   // ── GET /api/user-batch ──────────────────────────────────────────────────────
   // Returns null when the member has no batch assigned.
 
@@ -187,6 +193,12 @@ class BatchService {
           .map(BatchBreak.fromJson)
           .toList();
 
+      // Parse program-wide lifelines (MG-02) and cache on the service instance
+      // so callers don't need to await getBatchProgram again just to read them.
+      lifelinesTotal = (data['lifelinesTotal'] as num?)?.toInt() ?? 3;
+      lifelinesUsed = (data['lifelinesUsed'] as num?)?.toInt() ?? 0;
+      lifelinesRemaining = (data['lifelinesRemaining'] as num?)?.toInt() ?? 3;
+
       return BatchProgram(
         batch: batch,
         totalDays: totalDays,
@@ -307,6 +319,25 @@ class BatchService {
       return (res.data?['data']?['remainingCoins'] as num?)?.toInt() ?? 0;
     } on DioException catch (e) {
       throw Exception(e.response?.data?['error'] ?? 'Not enough TBT coins');
+    }
+  }
+
+  // ── POST /api/user-batch/lifeline/use (MG-02) ────────────────────────────────
+  /// Deducts one program-wide lifeline from the backend.
+  /// Updates the cached [lifelinesRemaining]/[lifelinesUsed]/[lifelinesTotal]
+  /// fields in place so callers get the updated count without a full reload.
+  /// Returns the new [lifelinesRemaining] count.
+  Future<int> useLifeline() async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(kUserBatchLifeline);
+      final data = res.data?['data'] as Map<String, dynamic>?;
+      final remaining = (data?['lifelinesRemaining'] as num?)?.toInt() ?? 0;
+      lifelinesRemaining = remaining;
+      lifelinesUsed = (data?['lifelinesUsed'] as num?)?.toInt() ?? lifelinesUsed;
+      lifelinesTotal = (data?['lifelinesTotal'] as num?)?.toInt() ?? lifelinesTotal;
+      return remaining;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['error'] ?? 'No lifelines remaining');
     }
   }
 

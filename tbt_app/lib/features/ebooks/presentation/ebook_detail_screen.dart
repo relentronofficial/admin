@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/constants/routes.dart';
@@ -119,6 +120,8 @@ class EbookDetailScreen extends ConsumerWidget {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 32),
+                  _ReviewsSection(book: book),
                 ],
               ),
             ),
@@ -318,6 +321,445 @@ class _ActionRowState extends ConsumerState<_ActionRow> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reviews section
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ReviewsSection extends ConsumerWidget {
+  const _ReviewsSection({required this.book});
+  final Ebook book;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final reviewsAsync = ref.watch(ebookReviewsProvider(book.id));
+    final alreadyReviewed = book.myReview != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Reviews & Ratings',
+              style: TextStyle(
+                color: tokens.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const Spacer(),
+            if (book.averageRating > 0) ...[
+              Icon(Icons.star_rounded, size: 14, color: const Color(0xFFFBBF24)),
+              const SizedBox(width: 3),
+              Text(
+                book.averageRating.toStringAsFixed(1),
+                style: TextStyle(
+                  color: tokens.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '(${book.reviewCount})',
+                style: TextStyle(color: tokens.textMuted, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 12),
+        reviewsAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: AppLoader.center(),
+          ),
+          error: (_, __) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Could not load reviews.',
+              style: TextStyle(color: tokens.textMuted, fontSize: 13),
+            ),
+          ),
+          data: (reviews) => reviews.isEmpty
+              ? _EmptyReviews(tokens: tokens)
+              : Column(
+                  children: [
+                    for (final r in reviews) ...[
+                      _ReviewCard(review: r),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+        ),
+        const SizedBox(height: 16),
+        if (!alreadyReviewed)
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => _WriteReviewSheet(bookId: book.id),
+                );
+                // Refresh reviews + detail (myReview inline) after sheet closes.
+                ref.invalidate(ebookReviewsProvider(book.id));
+                ref.invalidate(ebookDetailProvider(book.id));
+              },
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: tokens.borderCard),
+                minimumSize: const Size.fromHeight(44),
+              ),
+              icon: Icon(Icons.rate_review_outlined, color: tokens.textSecondary),
+              label: Text(
+                'Write a Review',
+                style: TextStyle(color: tokens.textSecondary),
+              ),
+            ),
+          )
+        else if (book.myReview != null)
+          _MyReviewBanner(review: book.myReview!, tokens: tokens),
+      ],
+    );
+  }
+}
+
+class _EmptyReviews extends StatelessWidget {
+  const _EmptyReviews({required this.tokens});
+  final ThemeTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        color: tokens.bgSurface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderCard),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.rate_review_outlined, size: 32, color: tokens.textMuted),
+          const SizedBox(height: 8),
+          Text(
+            'No reviews yet.',
+            style: TextStyle(color: tokens.textSecondary, fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Be the first to share your thoughts.',
+            style: TextStyle(color: tokens.textMuted, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({required this.review});
+  final EbookReview review;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final dateStr = DateFormat('dd MMM yyyy').format(review.updatedAt.toLocal());
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.bgSurface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderCard),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: tokens.borderCard,
+                backgroundImage: review.authorPhotoUrl != null && review.authorPhotoUrl!.isNotEmpty
+                    ? NetworkImage(review.authorPhotoUrl!)
+                    : null,
+                child: (review.authorPhotoUrl == null || review.authorPhotoUrl!.isEmpty)
+                    ? Text(
+                        (review.authorName?.isNotEmpty == true)
+                            ? review.authorName![0].toUpperCase()
+                            : '?',
+                        style: TextStyle(color: tokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w700),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      review.authorName ?? 'Member',
+                      style: TextStyle(
+                        color: tokens.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      dateStr,
+                      style: TextStyle(color: tokens.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              _StarRow(rating: review.rating, size: 14),
+            ],
+          ),
+          if (review.reviewText != null && review.reviewText!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              review.reviewText!,
+              style: TextStyle(color: tokens.textSecondary, fontSize: 13, height: 1.45),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MyReviewBanner extends StatelessWidget {
+  const _MyReviewBanner({required this.review, required this.tokens});
+  final EbookReviewSummary review;
+  final ThemeTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusLabel = switch (review.status) {
+      'approved' => 'Approved',
+      'rejected' => 'Not published',
+      _ => 'Pending review',
+    };
+    final statusColor = switch (review.status) {
+      'approved' => const Color(0xFF22C55E),
+      'rejected' => const Color(0xFFEF4444),
+      _ => const Color(0xFFFBBF24),
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tokens.bgSurface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tokens.borderCard),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _StarRow(rating: review.rating, size: 14),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          if (review.reviewText != null && review.reviewText!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              review.reviewText!,
+              style: TextStyle(color: tokens.textSecondary, fontSize: 13, height: 1.4),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            'Your review',
+            style: TextStyle(color: tokens.textMuted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StarRow extends StatelessWidget {
+  const _StarRow({required this.rating, this.size = 16});
+  final int rating;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        return Icon(
+          i < rating ? Icons.star_rounded : Icons.star_border_rounded,
+          size: size,
+          color: const Color(0xFFFBBF24),
+        );
+      }),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Write Review bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WriteReviewSheet extends ConsumerStatefulWidget {
+  const _WriteReviewSheet({required this.bookId});
+  final String bookId;
+
+  @override
+  ConsumerState<_WriteReviewSheet> createState() => _WriteReviewSheetState();
+}
+
+class _WriteReviewSheetState extends ConsumerState<_WriteReviewSheet> {
+  int _rating = 0;
+  final _textCtl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _textCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_rating == 0) {
+      _snack('Please select a star rating.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await ref.read(ebookServiceProvider).submitReview(
+            bookId: widget.bookId,
+            rating: _rating,
+            reviewText: _textCtl.text.trim().isEmpty ? null : _textCtl.text.trim(),
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Review submitted — pending approval.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      _snack('Could not submit review. Please try again.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: tokens.borderCard,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Write a Review',
+              style: TextStyle(
+                color: tokens.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Star rating selector
+            Row(
+              children: List.generate(5, (i) {
+                final filled = i < _rating;
+                return GestureDetector(
+                  onTap: () => setState(() => _rating = i + 1),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Icon(
+                      filled ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 36,
+                      color: const Color(0xFFFBBF24),
+                    ),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _textCtl,
+              maxLines: 4,
+              minLines: 3,
+              style: TextStyle(color: tokens.textPrimary),
+              decoration: inputDecorationOf(context, 'Share your thoughts (optional)…'),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _saving ? null : () => Navigator.pop(context),
+                  child: Text('Cancel', style: TextStyle(color: tokens.textSecondary)),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _saving ? null : _submit,
+                  style: FilledButton.styleFrom(backgroundColor: kColorAccent),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Submit', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
