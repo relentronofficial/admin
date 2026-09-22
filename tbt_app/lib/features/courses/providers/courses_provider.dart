@@ -5,6 +5,7 @@ import '../../../shared/models/course.dart';
 import '../../../shared/models/lesson.dart';
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/socket/socket_events.dart';
+import '../data/course_reports_service.dart';
 import '../data/courses_service.dart';
 
 part 'courses_provider.g.dart';
@@ -105,6 +106,22 @@ final psychometricQuestionsProvider =
 final psychometricResultProvider =
     FutureProvider.autoDispose<PsychometricResponse?>((ref) =>
         ref.read(coursesServiceProvider).getMyPsychometricResult());
+
+// ── Course weekly report ──────────────────────────────────────────────────────
+
+final courseWeeklyReportProvider = FutureProvider.autoDispose
+    .family<CourseWeeklyReport?, String>(
+  (ref, courseId) =>
+      ref.read(courseReportsServiceProvider).getMyReport(courseId),
+);
+
+// ── Course feedback history ───────────────────────────────────────────────────
+
+final courseFeedbackHistoryProvider = FutureProvider.autoDispose
+    .family<List<CourseWeeklyReport>, String>(
+  (ref, courseId) =>
+      ref.read(courseReportsServiceProvider).getFeedbackHistory(courseId),
+);
 
 // ── Course access granted event (keepAlive) ───────────────────────────────────
 

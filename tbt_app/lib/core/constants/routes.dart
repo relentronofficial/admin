@@ -27,8 +27,10 @@ class AppRoutes {
   static const String learningBadges = '/learning/badges';
   static const String courseDetail = '/learning/:courseId';
   static const String lessonPlayer = '/learning/:courseId/:lessonId';
+  static const String courseWeeklyReport = '/learning/:courseId/weekly';
   static const String batchProgram = '/batch-program';
   static const String batchDay = '/batch-program/:day';
+  static const String batchAttendance = '/batch-program/attendance';
   static const String products = '/Products';
   static const String resources = '/Resources';
   static const String history = '/history';
@@ -80,6 +82,7 @@ class AppRoutes {
 
   // Profile extras (2026-07-28)
   static const String profileConnections = '/profile/connections';
+  static const String profilePsychometric = '/profile/psychometric';
   static const String legalTerms = '/legal/terms';
   static const String legalPrivacy = '/legal/privacy';
 
@@ -89,6 +92,8 @@ class AppRoutes {
   static String courseDetailPath(String courseId) => '/learning/$courseId';
   static String lessonPlayerPath(String courseId, String lessonId) =>
       '/learning/$courseId/$lessonId';
+  static String courseWeeklyReportPath(String courseId) =>
+      '/learning/$courseId/weekly';
   static String batchDayPath(int day) => '/batch-program/$day';
   static String eventDetailPath(String id) => '/events/$id';
   static String programDetailPath(String id) => '/programs/$id';
@@ -119,8 +124,10 @@ class RouteNames {
   static const String learningBadges = 'learning-badges';
   static const String courseDetail = 'course-detail';
   static const String lessonPlayer = 'lesson-player';
+  static const String courseWeeklyReport = 'course-weekly-report';
   static const String batchProgram = 'batch-program';
   static const String batchDay = 'batch-day';
+  static const String batchAttendance = 'batch-attendance';
   static const String products = 'products';
   static const String resources = 'resources';
   static const String history = 'history';
@@ -153,6 +160,7 @@ class RouteNames {
   static const String community = 'community';
   static const String communitySaved = 'community-saved';
   static const String profileConnections = 'profile-connections';
+  static const String profilePsychometric = 'profile-psychometric';
   static const String legalTerms = 'legal-terms';
   static const String legalPrivacy = 'legal-privacy';
 }

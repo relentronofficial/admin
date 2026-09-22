@@ -41,6 +41,8 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
   final _journalController = TextEditingController();
 
   // ── Focus-mode gamification ──────────────────────────────────────────────────
+  // Initialized from cached service value in initState; updated by the backend
+  // after each lifeline use (MG-02).
   int _lifelinesLeft = 3;
   static const int _lifelineCoinCost = 50;
   final Set<String> _lockedTaskIds = {};
@@ -54,6 +56,14 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed from the last-known service value so the badge reflects the real
+    // count before a fresh getBatchProgram fetch completes.
+    _lifelinesLeft = ref.read(batchServiceProvider).lifelinesRemaining;
   }
 
   @override
@@ -319,22 +329,34 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
     );
   }
 
-  void _handleLifeline(String taskId) {
+  Future<void> _handleLifeline(String taskId) async {
     if (_lifelinesLeft > 0) {
+      // Optimistic update — decrement locally so the UI responds instantly.
       setState(() {
         _lifelinesLeft--;
         _lockedTaskIds.remove(taskId);
       });
       _taskRowKeys[taskId]?.currentState?._startTimer();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Lifeline used! $_lifelinesLeft free lifeline'
-            '${_lifelinesLeft == 1 ? '' : 's'} remaining.',
+      // Best-effort backend sync — failure keeps the local decrement so the
+      // user isn't blocked mid-session.
+      try {
+        final remaining =
+            await ref.read(batchServiceProvider).useLifeline();
+        if (mounted) setState(() => _lifelinesLeft = remaining);
+      } catch (_) {
+        // Backend call failed — local decrement stays (optimistic).
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Lifeline used! $_lifelinesLeft free lifeline'
+              '${_lifelinesLeft == 1 ? '' : 's'} remaining.',
+            ),
+            backgroundColor: const Color(0xFF16a34a),
           ),
-          backgroundColor: const Color(0xFF16a34a),
-        ),
-      );
+        );
+      }
     } else {
       _showCoinDialog(taskId);
     }

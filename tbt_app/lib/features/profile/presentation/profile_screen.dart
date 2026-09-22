@@ -17,7 +17,9 @@ import '../../../shared/providers/me_provider.dart';
 import '../../../shared/providers/theme_mode_provider.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../data/profile_extras_service.dart';
+import '../data/support_quota_service.dart';
 import '../providers/profile_provider.dart';
+import '../providers/support_quota_provider.dart';
 import 'widgets/membership_card.dart';
 import 'widgets/profile_tabs.dart';
 import '../../courses/providers/courses_provider.dart';
@@ -341,6 +343,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 16),
             // ── Business Assessment card ──────────────────────────────────
             const _PsychometricCard(),
+            const SizedBox(height: 16),
+            // ── Mentorship Benefits (MG-01 / MG-05) ──────────────────────
+            const _MentorshipBenefitsSection(),
             const SizedBox(height: 16),
             // Retained backend-driven sections (below settings so they
             // don't clutter the hero â€” kept because they surface DB
@@ -2131,6 +2136,648 @@ class _AppVersionRowState extends State<_AppVersionRow> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Mentorship Benefits section (MG-01 / MG-05) ──────────────────────────────
+
+class _MentorshipBenefitsSection extends ConsumerWidget {
+  const _MentorshipBenefitsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final quotaAsync = ref.watch(supportQuotaProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF141416) : Colors.white;
+    final border = isDark ? const Color(0xFF232326) : const Color(0xFFE5E5EA);
+    final tokens = context.tokens;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Benefits card ──────────────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: border),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD30814).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.workspace_premium_rounded,
+                        color: Color(0xFFD30814),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Your Mentorship Benefits',
+                        style: TextStyle(
+                          color: tokens.textPrimary,
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Entitlement rows
+                quotaAsync.when(
+                  loading: () => const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                  error: (_, __) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Unable to load quota. Pull to refresh.',
+                      style: TextStyle(
+                          color: tokens.textMuted, fontSize: 13),
+                    ),
+                  ),
+                  data: (quota) => Column(
+                    children: [
+                      _EntitlementRow(
+                        label: 'Tech Support',
+                        entitlement: quota.techSupport,
+                      ),
+                      _EntitlementRow(
+                        label: 'Ad Support',
+                        entitlement: quota.adSupport,
+                      ),
+                      _EntitlementRow(
+                        label: 'Group Call',
+                        entitlement: quota.groupCall,
+                      ),
+                      _EntitlementRow(
+                        label: '1:1 Session',
+                        entitlement: quota.oneToOne,
+                      ),
+                      _EntitlementRow(
+                        label: 'Call Credits',
+                        entitlement: quota.callCredits,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Buy More Credits button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const _BuyCreditsSheet(),
+                    ).then((_) {
+                      // Refresh quota + history after sheet closes
+                      ref.invalidate(supportQuotaProvider);
+                      ref.invalidate(myCreditPurchasesProvider);
+                    }),
+                    icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+                    label: const Text('Buy More Credits'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD30814),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // ── Purchase history card ──────────────────────────────────────
+          _PurchaseHistoryCard(cardBg: cardBg, border: border),
+        ],
+      ),
+    );
+  }
+}
+
+class _EntitlementRow extends StatelessWidget {
+  const _EntitlementRow({
+    required this.label,
+    required this.entitlement,
+  });
+
+  final String label;
+  final SupportEntitlement entitlement;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final total = entitlement.allocated;
+    final used = entitlement.used;
+    final remaining = entitlement.remaining;
+    final progress = total > 0 ? (used / total).clamp(0.0, 1.0) : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: tokens.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              // Used / Allocated label
+              Text(
+                '$used / $total',
+                style: TextStyle(
+                  color: tokens.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Remaining chip
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: remaining > 0
+                      ? const Color(0xFF22c55e).withValues(alpha: 0.15)
+                      : const Color(0xFFD30814).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '$remaining left',
+                  style: TextStyle(
+                    color: remaining > 0
+                        ? const Color(0xFF22c55e)
+                        : const Color(0xFFD30814),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: tokens.borderCard,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                remaining > 0
+                    ? const Color(0xFFD30814)
+                    : const Color(0xFF606060),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Purchase history card ─────────────────────────────────────────────────────
+
+class _PurchaseHistoryCard extends ConsumerWidget {
+  const _PurchaseHistoryCard({
+    required this.cardBg,
+    required this.border,
+  });
+
+  final Color cardBg;
+  final Color border;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final purchasesAsync = ref.watch(myCreditPurchasesProvider);
+    final tokens = context.tokens;
+
+    return purchasesAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (purchases) {
+        if (purchases.isEmpty) return const SizedBox.shrink();
+        return Container(
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: border),
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'PURCHASE HISTORY',
+                style: TextStyle(
+                  fontFamily: 'Rajdhani',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.8,
+                  color: tokens.textMuted,
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (var i = 0; i < purchases.length; i++) ...[
+                if (i > 0) Divider(height: 1, color: tokens.borderCard),
+                _PurchaseTile(purchase: purchases[i]),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PurchaseTile extends StatelessWidget {
+  const _PurchaseTile({required this.purchase});
+  final CreditPurchase purchase;
+
+  Color _statusColor(String status) => switch (status) {
+        'approved' => const Color(0xFF22c55e),
+        'rejected' => const Color(0xFFD30814),
+        _ => const Color(0xFFF59E0B), // pending = amber
+      };
+
+  String _fmtDate(String iso) {
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return 'â€”';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final statusColor = _statusColor(purchase.status);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  purchase.creditTypeLabel,
+                  style: TextStyle(
+                    color: tokens.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${purchase.quantity}x · â‚¹${purchase.amountInr.toStringAsFixed(0)} · ${_fmtDate(purchase.createdAt)}',
+                  style: TextStyle(color: tokens.textMuted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              purchase.status.toUpperCase(),
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Buy Credits bottom sheet ──────────────────────────────────────────────────
+
+class _BuyCreditsSheet extends ConsumerStatefulWidget {
+  const _BuyCreditsSheet();
+
+  @override
+  ConsumerState<_BuyCreditsSheet> createState() => _BuyCreditsSheetState();
+}
+
+class _BuyCreditsSheetState extends ConsumerState<_BuyCreditsSheet> {
+  CreditPricingItem? _selected;
+  final _paymentRefController = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _paymentRefController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final item = _selected;
+    if (item == null) return;
+    setState(() => _submitting = true);
+    try {
+      await ref.read(supportQuotaServiceProvider).purchaseCredit(
+            creditType: item.creditType,
+            paymentRef: _paymentRefController.text.trim().isEmpty
+                ? null
+                : _paymentRefController.text.trim(),
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Purchase request sent! An admin will review it shortly.',
+            ),
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to submit: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pricingAsync = ref.watch(creditPricingProvider);
+    final tokens = context.tokens;
+    final inset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: inset),
+      child: Container(
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border(top: BorderSide(color: tokens.borderCard)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: tokens.textMuted.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.workspace_premium_rounded,
+                    color: Color(0xFFD30814),
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Buy Extra Credits',
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Select a credit type to request a purchase. An admin will review and approve it.',
+                style: TextStyle(
+                  color: tokens.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 18),
+              // Pricing list
+              pricingAsync.when(
+                loading: () => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                error: (_, __) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'Unable to load pricing.',
+                    style: TextStyle(color: tokens.textMuted),
+                  ),
+                ),
+                data: (items) {
+                  if (items.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'No credit packages available right now.',
+                        style: TextStyle(color: tokens.textMuted),
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: items.map((item) {
+                      final isSelected =
+                          _selected?.creditType == item.creditType;
+                      return GestureDetector(
+                        onTap: () =>
+                            setState(() => _selected = item),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFFD30814)
+                                    .withValues(alpha: 0.10)
+                                : tokens.bgInput,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFFD30814)
+                                  : tokens.borderCard,
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.label,
+                                      style: TextStyle(
+                                        color: tokens.textPrimary,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (item.description != null &&
+                                        item.description!.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        item.description!,
+                                        style: TextStyle(
+                                          color: tokens.textMuted,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${item.quantity} credit${item.quantity != 1 ? 's' : ''}',
+                                      style: TextStyle(
+                                        color: tokens.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                'â‚¹${item.amountInr.toStringAsFixed(0)}',
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? const Color(0xFFD30814)
+                                      : tokens.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (isSelected) ...[
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: Color(0xFFD30814),
+                                  size: 18,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              // Optional payment ref field
+              TextField(
+                controller: _paymentRefController,
+                style: TextStyle(color: tokens.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  isDense: true,
+                  filled: true,
+                  fillColor: tokens.bgInput,
+                  hintText: 'Payment reference / UPI ID (optional)',
+                  hintStyle:
+                      TextStyle(color: tokens.textMuted, fontSize: 13),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: tokens.borderCard),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: tokens.borderCard),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide:
+                        const BorderSide(color: Color(0xFFD30814)),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: (_selected == null || _submitting)
+                      ? null
+                      : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD30814),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFD30814)
+                        .withValues(alpha: 0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Request Purchase',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

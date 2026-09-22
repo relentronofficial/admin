@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../shared/theme/design_constants.dart';
 import '../../../shared/theme/theme_tokens.dart';
 import '../data/ebook_service.dart';
+import '../domain/ebook_models.dart';
 import '../providers/ebook_providers.dart';
 import '../../../shared/widgets/app_loader.dart';
 
@@ -147,6 +148,21 @@ class _EbookReaderScreenState extends ConsumerState<EbookReaderScreen> {
     );
   }
 
+  Future<void> _openHighlightsPanel() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _HighlightsPanel(
+        bookId: widget.bookId,
+        onChanged: () {
+          ref.invalidate(bookHighlightsProvider(widget.bookId));
+          ref.invalidate(myHighlightsProvider);
+        },
+      ),
+    );
+  }
+
   @override
   void dispose() {
     // Flush final progress before the screen disappears.
@@ -168,6 +184,11 @@ class _EbookReaderScreenState extends ConsumerState<EbookReaderScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
         ),
         actions: [
+          IconButton(
+            tooltip: 'View highlights',
+            icon: const Icon(Icons.format_quote_rounded, color: Colors.white),
+            onPressed: _openHighlightsPanel,
+          ),
           IconButton(
             tooltip: 'Add highlight / note',
             icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
@@ -446,6 +467,239 @@ class _HighlightComposerSheetState
                       : const Text('Save'),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Highlights panel — view, delete existing highlights
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _HighlightsPanel extends ConsumerStatefulWidget {
+  const _HighlightsPanel({
+    required this.bookId,
+    required this.onChanged,
+  });
+  final String bookId;
+  final VoidCallback onChanged;
+
+  @override
+  ConsumerState<_HighlightsPanel> createState() => _HighlightsPanelState();
+}
+
+class _HighlightsPanelState extends ConsumerState<_HighlightsPanel> {
+  static const _colorMap = <String, Color>{
+    'yellow': Color(0xFFFFD54F),
+    'green': Color(0xFF81C784),
+    'pink': Color(0xFFF48FB1),
+    'blue': Color(0xFF64B5F6),
+  };
+
+  Future<void> _delete(EbookHighlight highlight) async {
+    try {
+      await ref.read(ebookServiceProvider).deleteHighlight(highlight.id);
+      ref.invalidate(bookHighlightsProvider(widget.bookId));
+      ref.invalidate(myHighlightsProvider);
+      widget.onChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Highlight deleted.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete highlight.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final highlightsAsync = ref.watch(bookHighlightsProvider(widget.bookId));
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (_, scrollCtl) => Container(
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // Drag handle + header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: tokens.borderCard,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        'My Highlights',
+                        style: TextStyle(
+                          color: tokens.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      highlightsAsync.whenOrNull(
+                        data: (list) => Text(
+                          '${list.length}',
+                          style: TextStyle(color: tokens.textMuted, fontSize: 14),
+                        ),
+                      ) ?? const SizedBox.shrink(),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: highlightsAsync.when(
+                loading: () => const AppLoader.center(),
+                error: (_, __) => Center(
+                  child: Text(
+                    'Could not load highlights.',
+                    style: TextStyle(color: tokens.textMuted, fontSize: 14),
+                  ),
+                ),
+                data: (highlights) => highlights.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.format_quote_rounded,
+                                size: 48,
+                                color: tokens.textMuted,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No highlights yet.',
+                                style: TextStyle(
+                                  color: tokens.textSecondary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Tap the pencil icon to save a passage.',
+                                style: TextStyle(color: tokens.textMuted, fontSize: 13),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        controller: scrollCtl,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        itemCount: highlights.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) {
+                          final h = highlights[i];
+                          final accent =
+                              _colorMap[h.highlightColor] ?? const Color(0xFFFFD54F);
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: tokens.bgPage,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border(
+                                left: BorderSide(color: accent, width: 3),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.menu_book_outlined,
+                                            size: 12,
+                                            color: tokens.textMuted,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Page ${h.pageNumber}',
+                                            style: TextStyle(
+                                              color: tokens.textMuted,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        h.selectedText,
+                                        style: TextStyle(
+                                          color: tokens.textPrimary,
+                                          fontSize: 13,
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                      if (h.notes != null && h.notes!.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          h.notes!,
+                                          style: TextStyle(
+                                            color: tokens.textSecondary,
+                                            fontSize: 12,
+                                            fontStyle: FontStyle.italic,
+                                            height: 1.35,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.close, size: 18, color: tokens.textMuted),
+                                  tooltip: 'Delete highlight',
+                                  onPressed: () => _delete(h),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
             ),
           ],
         ),
