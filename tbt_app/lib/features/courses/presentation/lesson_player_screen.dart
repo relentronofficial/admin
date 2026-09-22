@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/courses_service.dart';
 import '../providers/courses_provider.dart';
 import 'widgets/feedback_modal.dart';
+import 'widgets/lesson_rating_sheet.dart';
 import 'widgets/mission_complete_overlay.dart';
 import 'widgets/quiz_bottom_sheet.dart';
 import 'widgets/reflection_modal.dart';
@@ -441,7 +442,11 @@ window.addEventListener('message', function(e) {
       final questions = await ref
           .read(coursesServiceProvider)
           .getVideoFeedbackQuestions(widget.lessonId);
-      if (questions.isEmpty) return;
+      if (questions.isEmpty) {
+        // No video-feedback questions — go straight to lesson rating sheet.
+        _maybShowLessonRatingSheet();
+        return;
+      }
       if (!mounted) return;
       setState(() => _feedbackQuestions = questions);
       await Future.delayed(const Duration(milliseconds: 600));
@@ -456,6 +461,26 @@ window.addEventListener('message', function(e) {
         ),
       );
     } catch (_) {}
+    // After video feedback (or on error), show lesson rating sheet.
+    _maybShowLessonRatingSheet();
+  }
+
+  void _maybShowLessonRatingSheet() {
+    if (_wasAlreadyCompleted || !mounted) return;
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => LessonRatingSheet(
+          courseId: widget.courseId,
+          lessonId: widget.lessonId,
+          lessonTitle: _playback?.title ?? '',
+          onDone: () {},
+        ),
+      );
+    });
   }
 
   // ── Position change — drives cue quizzes + 85% completion (CC-33) ────────────

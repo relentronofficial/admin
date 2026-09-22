@@ -20,6 +20,7 @@ import '../data/profile_extras_service.dart';
 import '../providers/profile_provider.dart';
 import 'widgets/membership_card.dart';
 import 'widgets/profile_tabs.dart';
+import '../../courses/providers/courses_provider.dart';
 
 import '../../../shared/theme/theme_tokens.dart';
 import '../../../shared/widgets/app_loader.dart';
@@ -337,6 +338,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 _SettingsThemeRow(),
               ],
             ),
+            const SizedBox(height: 16),
+            // ── Business Assessment card ──────────────────────────────────
+            const _PsychometricCard(),
             const SizedBox(height: 16),
             // Retained backend-driven sections (below settings so they
             // don't clutter the hero â€” kept because they surface DB
@@ -1971,6 +1975,106 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Psychometric / Business Assessment card ───────────────────────────────────
+
+class _PsychometricCard extends ConsumerWidget {
+  const _PsychometricCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF141416) : Colors.white;
+    final border = isDark ? const Color(0xFF232326) : const Color(0xFFE5E5EA);
+    final tokens = context.tokens;
+
+    final resultAsync = ref.watch(psychometricResultProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD30814).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.psychology_alt_rounded,
+                color: Color(0xFFD30814),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Business Assessment',
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  resultAsync.when(
+                    loading: () => Text(
+                      'Loading...',
+                      style: TextStyle(color: tokens.textMuted, fontSize: 12),
+                    ),
+                    error: (_, __) => Text(
+                      'Psychometric profile',
+                      style: TextStyle(color: tokens.textMuted, fontSize: 12),
+                    ),
+                    data: (result) => Text(
+                      result != null
+                          ? '${result.results.overallLabel} · ${result.results.overallPercentage}%'
+                          : 'Not taken yet',
+                      style: TextStyle(
+                        color: result != null
+                            ? const Color(0xFFD30814)
+                            : tokens.textMuted,
+                        fontSize: 12,
+                        fontWeight: result != null
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => context.push('/profile/psychometric'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFD30814),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              ),
+              child: Text(
+                resultAsync.valueOrNull != null ? 'View Results' : 'Start',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
