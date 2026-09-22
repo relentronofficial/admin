@@ -6101,3 +6101,99 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
     lifelines:    { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
   });
 }
+
+// ── Psychometric Assessment ───────────────────────────────────────────────────
+
+const SCORE_LABEL = (pct: number): string => {
+  if (pct >= 81) return 'Expert';
+  if (pct >= 66) return 'Proficient';
+  if (pct >= 41) return 'Growing';
+  return 'Developing';
+};
+
+const CATEGORY_RECOMMENDATION: Record<string, string> = {
+  Vision:     'Focus on defining your long-term goals and creating a clear written roadmap for your business.',
+  Execution:  'Build consistent habits and follow-through systems to complete what you start.',
+  Leadership: 'Invest in developing your communication and team-building skills to inspire those around you.',
+  Innovation: 'Practice regular experimentation and stay curious about new approaches and industry trends.',
+  Resilience: 'Build stress management practices and embrace a growth mindset when facing setbacks.',
+};
+
+export async function getPsychometricQuestionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, question_text, category, options, sort_order
+     FROM psychometric_questions
+     WHERE is_active = true
+     ORDER BY sort_order ASC, created_at ASC`
+  );
+  return ok(reply, rows.map((r) => ({
+    id: r.id,
+    questionText: r.question_text,
+    category: r.category,
+    options: r.options,
+  })));
+}
+
+export async function submitPsychometricHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const { answers } = req.body as { answers: Record<string, string> };
+
+  if (!answers || typeof answers !== 'object') {
+    return reply.status(400).send({ success: false, data: null, error: { message: 'answers object required' } });
+  }
+
+  // Fetch all active questions
+  const questions = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, category, options FROM psychometric_questions WHERE is_active = true`
+  );
+
+  // Compute category scores
+  const catScores: Record<string, { sum: number; max: number }> = {};
+  for (const q of questions) {
+    const optionId = answers[q.id];
+    const opts: Array<{ id: string; score: number }> = Array.isArray(q.options) ? q.options : [];
+    const chosen = opts.find((o) => o.id === optionId);
+    const maxScore = opts.reduce((m, o) => Math.max(m, o.score), 0);
+    if (!catScores[q.category]) catScores[q.category] = { sum: 0, max: 0 };
+    catScores[q.category].sum += chosen?.score ?? 0;
+    catScores[q.category].max += maxScore;
+  }
+
+  const categories = Object.entries(catScores).map(([name, { sum, max }]) => {
+    const pct = max > 0 ? Math.round((sum / max) * 100) : 0;
+    return { name, score: sum, max, percentage: pct, label: SCORE_LABEL(pct) };
+  });
+
+  const totalPct = categories.length > 0
+    ? Math.round(categories.reduce((s, c) => s + c.percentage, 0) / categories.length)
+    : 0;
+
+  // Weakest category drives primary recommendation
+  const weakest = categories.slice().sort((a, b) => a.percentage - b.percentage)[0];
+  const recommendation = weakest ? (CATEGORY_RECOMMENDATION[weakest.name] ?? '') : '';
+
+  const results = { categories, overallPercentage: totalPct, overallLabel: SCORE_LABEL(totalPct), recommendation };
+
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO psychometric_responses (member_id, answers, results)
+     VALUES ($1::uuid, $2::jsonb, $3::jsonb)
+     RETURNING id, created_at`,
+    memberId, JSON.stringify(answers), JSON.stringify(results)
+  );
+
+  return ok(reply, { id: row.id, results, createdAt: row.created_at });
+}
+
+export async function getMyPsychometricResultHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, results, answers, created_at
+     FROM psychometric_responses
+     WHERE member_id = $1::uuid
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    memberId
+  );
+  if (!row) return ok(reply, null);
+  return ok(reply, { id: row.id, results: row.results, createdAt: row.created_at });
+}

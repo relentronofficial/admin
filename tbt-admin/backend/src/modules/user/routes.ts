@@ -109,6 +109,9 @@ import {
   heartbeatEpisodeTimerHandler,
   getEpisodeLifelinesHandler,
   useEpisodeLifelineHandler,
+  getPsychometricQuestionsHandler,
+  submitPsychometricHandler,
+  getMyPsychometricResultHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
@@ -268,4 +271,9 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Global search ─────────────────────────────────────────────────────────
   fastify.get('/search', searchHandler);
+
+  // ── Psychometric Assessment ────────────────────────────────────────────────
+  fastify.get('/psychometric/questions', getPsychometricQuestionsHandler);
+  fastify.post('/psychometric/submit',   submitPsychometricHandler);
+  fastify.get('/psychometric/result',    getMyPsychometricResultHandler);
 }

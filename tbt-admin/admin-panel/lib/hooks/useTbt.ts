@@ -2353,3 +2353,57 @@ export const useReorderCourseModules = (courseId: string) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
   });
 };
+
+// ── Psychometric Admin ────────────────────────────────────────────────────────
+
+export const useAdminPsychometricQuestions = () =>
+  useQuery({
+    queryKey: ['psychometric', 'questions'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/psychometric/admin/questions');
+      return res?.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+export const useAdminCreatePsychometricQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { questionText: string; category: string; options: any[]; sortOrder?: number; isActive?: boolean }) => {
+      const res: any = await apiClient.post('/api/psychometric/admin/questions', data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['psychometric', 'questions'] }),
+  });
+};
+
+export const useAdminUpdatePsychometricQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; questionText?: string; category?: string; options?: any[]; sortOrder?: number; isActive?: boolean }) => {
+      const res: any = await apiClient.put(`/api/psychometric/admin/questions/${id}`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['psychometric', 'questions'] }),
+  });
+};
+
+export const useAdminDeletePsychometricQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/psychometric/admin/questions/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['psychometric', 'questions'] }),
+  });
+};
+
+export const useAdminPsychometricResponses = (params?: { page?: number; limit?: number; memberId?: string }) =>
+  useQuery({
+    queryKey: ['psychometric', 'responses', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/psychometric/admin/responses', { params });
+      return res ?? { data: [], meta: { total: 0 } };
+    },
+    staleTime: 30_000,
+  });

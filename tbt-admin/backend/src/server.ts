@@ -25,6 +25,7 @@ import { adsRoutes } from './modules/ads/routes.js';
 import { videoFeedbackRoutes } from './modules/video-feedback/routes.js';
 import { supportEntitlementsRoutes } from './modules/support-entitlements/routes.js';
 import { creditsRoutes } from './modules/credits/routes.js';
+import { psychometricRoutes } from './modules/psychometric/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
 import { webinarRoutes } from './modules/webinar/routes.js';
 import { dashboardRoutes } from './modules/dashboard/routes.js';
@@ -211,6 +212,7 @@ async function bootstrap() {
     await fastify.register(videoFeedbackRoutes, { prefix: '/api/video-feedback' });
     await fastify.register(supportEntitlementsRoutes, { prefix: '/api/support-entitlements' });
     await fastify.register(creditsRoutes, { prefix: '/api/credits' });
+    await fastify.register(psychometricRoutes, { prefix: '/api/psychometric/admin' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
