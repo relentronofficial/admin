@@ -21,12 +21,14 @@ import {
   usePresignProfilePhoto,
 } from "@/lib/hooks/useOnboarding";
 import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
+import { usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric } from "@/lib/hooks/useUser";
+import { Brain } from "lucide-react";
 import type { OnboardingContentStep } from "@/lib/api/services/onboarding.service";
 import apiClient from "@/lib/api/client";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type FixedStep = "welcome" | "profile" | "skills" | "documents" | "review";
+type FixedStep = "welcome" | "profile" | "skills" | "documents" | "psychometric" | "review";
 type DynamicStep = `education:${string}`;
 type Step = FixedStep | DynamicStep;
 
@@ -47,7 +49,7 @@ const ANNUAL_TURNOVER_OPTIONS = [
 
 function buildStepOrder(contentSteps: OnboardingContentStep[]): Step[] {
   const educationSteps: DynamicStep[] = contentSteps.map((c) => `education:${c.stepKey}` as DynamicStep);
-  return ["welcome", ...educationSteps, "profile", "skills", "documents", "review"];
+  return ["welcome", ...educationSteps, "profile", "skills", "documents", "psychometric", "review"];
 }
 
 const SKILL_FIELDS = [
@@ -143,6 +145,7 @@ function StepProgress({ step, stepOrder }: { step: Step; stepOrder: Step[] }) {
     : step === "profile" ? "Profile"
     : step === "skills" ? "Skills"
     : step === "documents" ? "Documents"
+    : step === "psychometric" ? "Assessment"
     : "Review";
 
   return (
@@ -385,6 +388,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const presignPhoto = usePresignProfilePhoto();
   const submit = useSubmitOnboarding();
 
+  const { data: psycQuestions, isLoading: psycQuestionsLoading } = usePsychometricQuestions();
+  const { data: existingPsycResult, isLoading: psycResultLoading } = useMyPsychometricResult();
+  const submitPsychometric = useSubmitPsychometric();
+  const [psychoAnswers, setPsychoAnswers] = useState<Record<string, string>>({});
+
   const stepOrder = useMemo(() => buildStepOrder(contentSteps ?? []), [contentSteps]);
   const [step, setStep] = useState<Step>("welcome");
 
@@ -598,6 +606,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 { icon: Users, label: "Personal & business details" },
                 { icon: TrendingUp, label: "Skills & learning goals" },
                 { icon: Upload, label: "Upload a KYC document" },
+                { icon: Brain, label: "Complete a short business assessment" },
                 { icon: CheckCircle2, label: "Submit for admin review" },
               ].map(({ icon: Icon, label }, i) => (
                 <div
@@ -1198,6 +1207,128 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             </div>
           </StepShell>
         )}
+
+        {/* ── Psychometric Assessment ── */}
+        {step === "psychometric" && (() => {
+          const allAnswered = (psycQuestions?.length ?? 0) > 0
+            && Object.keys(psychoAnswers).length >= (psycQuestions?.length ?? 0);
+          const handlePsychoNext = async () => {
+            if (existingPsycResult) { setStep(nextStep ?? "review"); return; }
+            if (!allAnswered) { toast.error("Please answer all questions to continue."); return; }
+            try {
+              await submitPsychometric.mutateAsync(psychoAnswers);
+              setStep(nextStep ?? "review");
+            } catch { toast.error("Failed to save assessment. Please try again."); }
+          };
+          const PSYC_COLORS: Record<string, string> = {
+            Vision: "#3b82f6", Execution: "#f59e0b", Leadership: "#8b5cf6",
+            Innovation: "#10b981", Resilience: "#ef4444",
+          };
+          return (
+            <StepShell
+              title="Business Mindset Assessment"
+              subtitle="Answer honestly — this helps us understand your entrepreneurial strengths and areas to focus on."
+              onBack={prevStep ? () => setStep(prevStep) : undefined}
+              onNext={handlePsychoNext}
+              nextLabel={existingPsycResult ? "Continue" : "Submit & Continue"}
+              nextDisabled={!existingPsycResult && !allAnswered}
+              saving={submitPsychometric.isPending}
+            >
+              {psycQuestionsLoading || psycResultLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-7 h-7 border-2 border-muted-foreground/20 border-t-[var(--color-accent)] rounded-full animate-spin" />
+                </div>
+              ) : existingPsycResult ? (
+                <div className="space-y-4">
+                  <div
+                    className="p-4 rounded-xl flex items-center gap-3"
+                    style={{
+                      background: "color-mix(in srgb, var(--color-success, #22c55e) 8%, transparent)",
+                      border: "1px solid color-mix(in srgb, var(--color-success, #22c55e) 20%, transparent)",
+                    }}
+                  >
+                    <CheckCircle2 size={18} style={{ color: "var(--color-success, #22c55e)" }} />
+                    <p className="text-sm font-semibold text-foreground">
+                      Assessment completed — you can continue to the review step.
+                    </p>
+                  </div>
+                  {existingPsycResult.results.categories.map((cat) => {
+                    const color = PSYC_COLORS[cat.name] ?? "var(--color-accent)";
+                    return (
+                      <div key={cat.name} className="space-y-1.5">
+                        <div className="flex justify-between text-xs font-medium">
+                          <span className="text-foreground">{cat.name}</span>
+                          <span style={{ color }}>{cat.label} ({cat.percentage}%)</span>
+                        </div>
+                        <div className="h-2 rounded-full overflow-hidden" style={{ background: OVERLAY }}>
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${cat.percentage}%`, background: color }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {existingPsycResult.results.recommendation && (
+                    <p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                      {existingPsycResult.results.recommendation}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {(psycQuestions ?? []).map((q, qi) => (
+                    <div key={q.id} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+                      <div className="px-5 py-3.5" style={{ background: OVERLAY }}>
+                        <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: "var(--color-accent)" }}>
+                          {q.category}
+                        </p>
+                        <p className="text-sm font-medium text-foreground">{qi + 1}. {q.questionText}</p>
+                      </div>
+                      <div className="divide-y" style={{ borderColor: BORDER }}>
+                        {q.options.map((opt) => {
+                          const selected = psychoAnswers[q.id] === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => setPsychoAnswers((prev) => ({ ...prev, [q.id]: opt.id }))}
+                              className="w-full flex items-center gap-3 px-5 py-3.5 text-left transition-all"
+                              style={{
+                                background: selected
+                                  ? "color-mix(in srgb, var(--color-accent) 8%, transparent)"
+                                  : "transparent",
+                                borderLeft: selected
+                                  ? "3px solid var(--color-accent)"
+                                  : "3px solid transparent",
+                              }}
+                            >
+                              <div
+                                className="w-4 h-4 rounded-full shrink-0 border-2 flex items-center justify-center"
+                                style={{
+                                  borderColor: selected ? "var(--color-accent)" : "var(--color-text-subtle, #666)",
+                                  background: selected ? "var(--color-accent)" : "transparent",
+                                }}
+                              >
+                                {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                              <span className="text-sm text-foreground">{opt.text}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {(psycQuestions?.length ?? 0) > 0 && (
+                    <p className="text-xs text-center" style={{ color: "var(--color-text-subtle)" }}>
+                      {Object.keys(psychoAnswers).length} of {psycQuestions!.length} answered
+                    </p>
+                  )}
+                </div>
+              )}
+            </StepShell>
+          );
+        })()}
 
         {/* ── Review & Submit ── */}
         {step === "review" && (
