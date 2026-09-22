@@ -215,3 +215,14 @@ const String kOnboardingSubmit = '/api/onboarding/submit';
 const String kOnboardingMeetings = '/api/onboarding-meetings';
 // /api/onboarding-meetings/:id/token — built at call site
 // /api/onboarding-meetings/:id/leave — built at call site
+
+// ── Psychometric Assessment ────────────────────────────────────────────────────
+const String kUserPsychometricQuestions = '/api/user/psychometric/questions';
+const String kUserPsychometricSubmit = '/api/user/psychometric/submit';
+const String kUserPsychometricResult = '/api/user/psychometric/result';
+
+// ── Lesson Feedback ────────────────────────────────────────────────────────────
+// /api/user/courses/:courseId/lesson-feedback — GET and PUT, built at call site
+
+// ── Course Module Tabs ─────────────────────────────────────────────────────────
+const String kUserCourseModuleTabs = '/api/user/courses/module-tabs';

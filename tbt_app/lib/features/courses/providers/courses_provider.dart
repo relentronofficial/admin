@@ -86,6 +86,26 @@ final coursePendingPaymentProvider = FutureProvider.autoDispose
 Future<List<CourseEnrollment>> learningCourses(Ref ref) =>
     ref.read(coursesServiceProvider).getEnrollments();
 
+// ── Course module tabs ────────────────────────────────────────────────────────
+final courseModuleTabsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) =>
+        ref.read(coursesServiceProvider).getCourseModuleTabs());
+
+// ── Courses filtered by module ────────────────────────────────────────────────
+// Used by courses_screen when a specific module tab is selected.
+final coursesByModuleProvider =
+    FutureProvider.autoDispose.family<List<Course>, String>((ref, module) =>
+        ref.read(coursesServiceProvider).listCoursesByModule(module));
+
+// ── Psychometric assessment ───────────────────────────────────────────────────
+final psychometricQuestionsProvider =
+    FutureProvider.autoDispose<List<PsychometricQuestion>>((ref) =>
+        ref.read(coursesServiceProvider).getPsychometricQuestions());
+
+final psychometricResultProvider =
+    FutureProvider.autoDispose<PsychometricResponse?>((ref) =>
+        ref.read(coursesServiceProvider).getMyPsychometricResult());
+
 // ── Course access granted event (keepAlive) ───────────────────────────────────
 
 /// Holds the courseId from the most recent `course:access_granted` socket event.

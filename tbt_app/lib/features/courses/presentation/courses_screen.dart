@@ -26,6 +26,7 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
   Timer? _debounce;
   String _query = '';
   String _level = 'all';
+  String _module = 'all';
 
   static const _levels = ['all', 'beginner', 'intermediate', 'advanced'];
   static const _accent = Color(0xFFD30814);
@@ -58,7 +59,6 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final coursesAsync = ref.watch(coursesProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgGradient = LinearGradient(
       begin: Alignment.topLeft,
@@ -68,6 +68,17 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
           : const [Color(0xFFF5F5F5), Color(0xFFE5E5EA)],
     );
     final textColor = isDark ? Colors.white : Colors.black;
+
+    // Choose provider based on selected module.
+    final AsyncValue<List<Course>> coursesAsync = _module == 'all'
+        ? ref.watch(coursesProvider)
+        : ref.watch(coursesByModuleProvider(_module));
+
+    // Load module tabs (fail silent — show only level chips if unavailable).
+    final moduleTabsAsync = ref.watch(courseModuleTabsProvider);
+    final moduleTabs = moduleTabsAsync.valueOrNull ?? [];
+    // Only show module row when ≥2 modules exist.
+    final showModuleTabs = moduleTabs.length >= 2;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -103,7 +114,38 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                 child: _neumorphicSearchField(context, isDark),
               ),
 
-              // Filter chips row
+              // Module tabs row (only shown when ≥2 modules from API)
+              if (showModuleTabs) ...[
+                SizedBox(
+                  height: 44,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: moduleTabs.length + 1, // +1 for "All"
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (_, i) {
+                      if (i == 0) {
+                        return _NeumorphicFilterChip(
+                          label: 'All',
+                          active: _module == 'all',
+                          onTap: () => setState(() => _module = 'all'),
+                        );
+                      }
+                      final tab = moduleTabs[i - 1];
+                      final modKey = (tab['module'] as String? ?? '').toLowerCase();
+                      final modLabel = tab['label'] as String? ?? modKey;
+                      return _NeumorphicFilterChip(
+                        label: modLabel,
+                        active: _module == modKey,
+                        onTap: () => setState(() => _module = modKey),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              // Level filter chips row
               SizedBox(
                 height: 44,
                 child: ListView.separated(
@@ -131,7 +173,13 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                   loading: () => _buildSkeleton(context),
                   error: (e, _) => AppErrorState(
                     error: e,
-                    onRetry: () => ref.invalidate(coursesProvider),
+                    onRetry: () {
+                      if (_module == 'all') {
+                        ref.invalidate(coursesProvider);
+                      } else {
+                        ref.invalidate(coursesByModuleProvider(_module));
+                      }
+                    },
                   ),
                   data: (all) {
                     final courses = _filter(all);
@@ -143,10 +191,13 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                       backgroundColor:
                           isDark ? const Color(0xFF141416) : Colors.white,
                       onRefresh: () async {
-                        ref.invalidate(coursesProvider);
-                        try {
-                          await ref.read(coursesProvider.future);
-                        } catch (_) {}
+                        if (_module == 'all') {
+                          ref.invalidate(coursesProvider);
+                          try { await ref.read(coursesProvider.future); } catch (_) {}
+                        } else {
+                          ref.invalidate(coursesByModuleProvider(_module));
+                          try { await ref.read(coursesByModuleProvider(_module).future); } catch (_) {}
+                        }
                       },
                       child: GridView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
