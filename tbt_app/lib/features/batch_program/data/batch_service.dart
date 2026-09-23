@@ -20,6 +20,11 @@ class BatchTaskMeta {
     this.contentUrl,
     this.responseValue,
     this.timerSeconds,
+    this.processId,
+    this.processTitle,
+    this.stagePosition,
+    this.totalStagesInProcess,
+    this.stageLocked = false,
   });
 
   final String proofType;
@@ -32,6 +37,16 @@ class BatchTaskMeta {
   final String? responseValue;
   /// Per-task focus timer override (seconds). Null = use global site config value.
   final int? timerSeconds;
+  /// Non-null when this task is a stage in a multi-stage process (MG-03).
+  final String? processId;
+  /// Display name of the process (e.g. "Sales Funnel").
+  final String? processTitle;
+  /// Which stage this task is (1 = first, always unlocked).
+  final int? stagePosition;
+  /// Total number of stages in this process.
+  final int? totalStagesInProcess;
+  /// True when the previous stage has not yet been approved.
+  final bool stageLocked;
 }
 
 class BatchDayMeta {
@@ -124,6 +139,11 @@ class BatchService {
           contentUrl: t['contentUrl'] as String?,
           responseValue: sub?['responseValue'] as String?,
           timerSeconds: (t['timerSeconds'] as num?)?.toInt(),
+          processId: t['processId'] as String?,
+          processTitle: t['processTitle'] as String?,
+          stagePosition: (t['stagePosition'] as num?)?.toInt(),
+          totalStagesInProcess: (t['totalStagesInProcess'] as num?)?.toInt(),
+          stageLocked: (t['stageLocked'] as bool?) ?? false,
         );
       }
 
