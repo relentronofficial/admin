@@ -151,7 +151,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 
   // Refresh member stats (throttled to once per 60 s) before reading DB so the
   // profile page always reflects current points/streak/health.
-  await recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined);
+  void recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined);
 
   const [member, allTiers, uiStrings] = await Promise.all([
     request.server.prisma.member.findUnique({
@@ -351,7 +351,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     saveLabel: uiStrings?.profileSaveLabel ?? 'Save Changes',
     signOutLabel: uiStrings?.profileSignOutLabel ?? 'Sign Out',
   };
-  void cacheSet(redis, meKey, mePayload, 60);
+  void cacheSet(redis, meKey, mePayload, 300);
   return ok(reply, mePayload);
 }
 
@@ -1869,10 +1869,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
   const redis = request.server.redis ?? null;
   const clKey = `cont-learn:v3:${request.memberId}`;
   const cachedCl = await cacheGet<unknown[]>(redis, clKey);
-  // Only serve cache when it actually has items — an empty [] is falsy-adjacent
-  // but truthy in JS, so `if (cachedCl)` would serve a stale empty result even
-  // after the user starts watching their first video.
-  if (cachedCl !== null && cachedCl.length > 0) return ok(reply, cachedCl);
+  if (cachedCl !== null) return ok(reply, cachedCl);
 
   // Fetch recent activity across both types — no completion filter so recently-finished
   // items stay visible. Fetch more than needed so deduplication still yields up to 6.
@@ -4703,9 +4700,14 @@ export async function startConversationHandler(request: FastifyRequest, reply: F
 
 export async function getConversationUnreadCountHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
+  const redis = request.server.redis ?? null;
+  const cacheKey = `conv:unread:${memberId}`;
+  const cached = await cacheGet<{ count: number }>(redis, cacheKey);
+  if (cached !== null) return ok(reply, cached);
   const count = await request.server.prisma.conversation.count({
     where: { memberId, memberUnreadCount: { gt: 0 }, memberHidden: false },
   });
+  void cacheSet(redis, cacheKey, { count }, 30);
   return ok(reply, { count });
 }
 
