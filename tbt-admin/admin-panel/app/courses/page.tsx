@@ -21,7 +21,7 @@ import {
   useDeleteCourseModule, useReorderCourseModules,
   useListTiers,
   useListCourseAccess, useGrantCourseAccess, useRevokeCourseAccess,
-  useListCoursePayments, useApproveCoursePayment,
+  useListCoursePayments, useApproveCoursePayment, useRefundCoursePayment,
   useCourseAnalyticsAdmin, useCourseLeaderboardAdmin, useAtRiskMembers,
   useListCourseBadges, useCreateCourseBadge, useUpdateCourseBadge,
   useDeleteCourseBadge, useAwardCourseBadge,
@@ -2212,6 +2212,7 @@ function BadgesTab({ course }: { course: any }) {
 function PaymentsDashboard({ courses }: { courses: any[] }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [courseIdFilter, setCourseIdFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
   const [page, setPage] = useState(1);
   const qc = useQueryClient();
 
@@ -2225,9 +2226,22 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
     },
   });
 
+  const refundPayment = useRefundCoursePayment();
+
+  const handleRefund = async (payment: any) => {
+    if (!window.confirm(`Refund ₹${Number(payment.amount).toLocaleString("en-IN")} to ${payment.member?.firstName} ${payment.member?.lastName}? This cannot be undone.`)) return;
+    try {
+      await refundPayment.mutateAsync({ courseId: payment.course?.id, paymentId: payment.id });
+      toast.success("Refund initiated — course access revoked");
+    } catch (e: any) {
+      toast.error(e.message || "Refund failed");
+    }
+  };
+
   const { data, isLoading } = useListCoursePayments({
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(courseIdFilter ? { courseId: courseIdFilter } : {}),
+    ...(methodFilter ? { method: methodFilter } : {}),
     page,
     limit: 20,
   });
@@ -2235,10 +2249,8 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
   const payments: any[] = (data as any)?.data || [];
   const total = (data as any)?.meta?.total || 0;
   const totalPages = Math.ceil(total / 20);
-
-  const totalRevenue = payments
-    .filter((p: any) => p.status === "completed")
-    .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+  // Revenue from backend aggregate (all pages, not just current page)
+  const totalRevenue = (data as any)?.meta?.totalRevenue ?? 0;
 
   const handleApprove = async (payment: any) => {
     try {
@@ -2277,6 +2289,8 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
     if (status === "completed") return "bg-green-500/20 text-green-400";
     if (status === "pending") return "bg-amber-500/20 text-amber-400";
     if (status === "refunded") return "bg-blue-500/20 text-blue-400";
+    if (status === "failed") return "bg-red-500/20 text-red-400";
+    if (status === "expired") return "bg-[#333] text-[#666]";
     return "bg-[#333] text-[#888]";
   };
 
@@ -2311,6 +2325,17 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
             <option value="completed">Completed</option>
             <option value="pending">Pending</option>
             <option value="refunded">Refunded</option>
+            <option value="failed">Failed</option>
+            <option value="expired">Expired</option>
+          </select>
+          <select value={methodFilter} onChange={e => { setMethodFilter(e.target.value); setPage(1); }}
+            className="bg-[#141414] border border-[#333] rounded-md h-8 px-3 text-[12px] text-[#f0f0f0] outline-none focus:border-[#dc2626] appearance-none transition-all">
+            <option value="">All Methods</option>
+            <option value="razorpay">Razorpay</option>
+            <option value="manual">Manual</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="upi">UPI</option>
+            <option value="free">Free</option>
           </select>
           <select value={courseIdFilter} onChange={e => { setCourseIdFilter(e.target.value); setPage(1); }}
             className="bg-[#141414] border border-[#333] rounded-md h-8 px-3 text-[12px] text-[#f0f0f0] outline-none focus:border-[#dc2626] appearance-none transition-all max-w-[220px]">
@@ -2336,7 +2361,7 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[#2a2a2a]">
-                    {["Member", "Course", "Amount", "Method", "Status", "Date", ""].map(h => (
+                    {["Member", "Course", "Amount", "Method", "Razorpay Ref", "Status", "Date", ""].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-[#666] font-rajdhani whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -2357,6 +2382,18 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
                       <td className="px-4 py-3 whitespace-nowrap">
                         <p className="text-[11px] text-[#888] uppercase font-rajdhani">{p.method || "—"}</p>
                       </td>
+                      <td className="px-4 py-3 max-w-[160px]">
+                        {p.razorpayPaymentId ? (
+                          <div>
+                            <p className="text-[10px] text-[#888] font-mono truncate" title={p.razorpayPaymentId}>{p.razorpayPaymentId}</p>
+                            {p.razorpayOrderId && (
+                              <p className="text-[10px] text-[#606060] font-mono truncate" title={p.razorpayOrderId}>{p.razorpayOrderId}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-[#555]">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase font-rajdhani ${statusBadgeClass(p.status)}`}>{p.status}</span>
                       </td>
@@ -2364,10 +2401,19 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
                         <p className="text-[11px] text-[#888]">{fmtDate(p.createdAt)}</p>
                       </td>
                       <td className="px-4 py-3">
-                        {p.status === "pending" && (
+                        {p.status === "pending" && p.method !== "razorpay" && (
                           <button onClick={() => handleApprove(p)} disabled={approvePayment.isPending}
                             className="bg-green-600 hover:bg-green-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded disabled:opacity-60 flex items-center gap-1 transition-all whitespace-nowrap">
                             {approvePayment.isPending ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />} Approve
+                          </button>
+                        )}
+                        {p.status === "pending" && p.method === "razorpay" && (
+                          <span className="text-[10px] text-amber-400 font-rajdhani font-bold uppercase tracking-widest">Auto-pending</span>
+                        )}
+                        {p.status === "completed" && (
+                          <button onClick={() => handleRefund(p)} disabled={refundPayment.isPending}
+                            className="bg-[#1a1a1a] border border-[#333] hover:border-red-600 text-[#a0a0a0] hover:text-red-400 text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded disabled:opacity-60 flex items-center gap-1 transition-all whitespace-nowrap">
+                            {refundPayment.isPending ? <Loader2 size={10} className="animate-spin" /> : null} Refund
                           </button>
                         )}
                       </td>

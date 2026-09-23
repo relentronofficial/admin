@@ -1964,6 +1964,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ADD COLUMN IF NOT EXISTS max_purchased_lifelines INT NOT NULL DEFAULT 5
     `).catch(() => {});
 
+    // ── Razorpay course payments (2026-09-23) ────────────────────────────────
+    // Three separate calls — see CLAUDE.md pitfall #32 (multi-statement fails).
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_order_id TEXT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_payment_id TEXT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_signature TEXT`
+    ).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

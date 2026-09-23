@@ -434,12 +434,13 @@ export async function updateCurriculumHandler(req: FastifyRequest, reply: Fastif
 // ── COURSE PAYMENTS (admin) ───────────────────────────────────────────
 
 export async function listCoursePaymentsHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 20, courseId, status } = req.query as any;
+  const { page = 1, limit = 20, courseId, status, method } = req.query as any;
   const where: any = {};
   if (courseId) where.courseId = courseId;
   if (status) where.status = status;
+  if (method) where.method = method;
 
-  const [payments, total] = await Promise.all([
+  const [payments, total, revenueAgg] = await Promise.all([
     (req.server.prisma as any).coursePayment.findMany({
       where,
       skip: (Number(page) - 1) * Number(limit),
@@ -451,9 +452,31 @@ export async function listCoursePaymentsHandler(req: FastifyRequest, reply: Fast
       },
     }),
     (req.server.prisma as any).coursePayment.count({ where }),
+    // Aggregate total revenue across ALL pages matching the current filters
+    (req.server.prisma as any).coursePayment.aggregate({
+      where: { ...where, status: 'completed' },
+      _sum: { amount: true },
+    }),
   ]);
 
-  return reply.send({ success: true, data: payments, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+  const totalRevenue = Number((revenueAgg as any)._sum?.amount ?? 0);
+
+  // Merge Razorpay columns (raw SQL — not in Prisma schema)
+  const paymentIds: string[] = payments.map((p: any) => p.id);
+  const rzpRows = paymentIds.length
+    ? await req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id, razorpay_order_id, razorpay_payment_id FROM course_payments WHERE id = ANY($1::uuid[])`,
+        paymentIds,
+      ).catch(() => [] as any[])
+    : [];
+  const rzpByPaymentId = Object.fromEntries(rzpRows.map((r: any) => [r.id, r]));
+  const data = payments.map((p: any) => ({
+    ...p,
+    razorpayOrderId: rzpByPaymentId[p.id]?.razorpay_order_id ?? null,
+    razorpayPaymentId: rzpByPaymentId[p.id]?.razorpay_payment_id ?? null,
+  }));
+
+  return reply.send({ success: true, data, meta: { total, page: Number(page), limit: Number(limit), totalRevenue }, error: null });
 }
 
 // ── COURSE ACCESS (admin) ─────────────────────────────────────────────
@@ -584,6 +607,49 @@ export async function approveCoursePaymentHandler(req: FastifyRequest, reply: Fa
   }).catch(() => {});
 
   return reply.send({ success: true, data: { approved: true }, error: null });
+}
+
+export async function refundCoursePaymentHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId, paymentId } = req.params as any;
+
+  const [payment] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, course_id, member_id, status, amount, method, razorpay_payment_id
+     FROM course_payments WHERE id = $1::uuid`,
+    paymentId,
+  ).catch(() => [] as any[]);
+
+  if (!payment || payment.course_id !== courseId) {
+    return reply.status(404).send({ success: false, data: null, error: 'Payment not found' });
+  }
+  if (payment.status !== 'completed') {
+    return reply.status(409).send({ success: false, data: null, error: 'Only completed payments can be refunded' });
+  }
+
+  // Attempt Razorpay refund if this was a Razorpay payment
+  if (payment.method === 'razorpay' && payment.razorpay_payment_id) {
+    const { getRazorpay } = await import('../../lib/razorpay.js');
+    try {
+      await getRazorpay().payments.refund(payment.razorpay_payment_id, {
+        amount: Math.round(Number(payment.amount) * 100),
+        speed: 'normal',
+        notes: { reason: 'Admin-initiated refund', courseId, paymentId },
+      });
+    } catch (e: any) {
+      return reply.status(502).send({ success: false, data: null, error: `Razorpay refund failed: ${e?.error?.description ?? e?.message ?? 'unknown error'}` });
+    }
+  }
+
+  // Mark refunded and revoke course access
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments SET status='refunded', updated_at=NOW() WHERE id=$1::uuid`,
+    paymentId,
+  );
+  await (req.server.prisma as any).courseAccess.updateMany({
+    where: { memberId: payment.member_id, courseId },
+    data: { isActive: false, revokedAt: new Date() },
+  }).catch(() => {});
+
+  return reply.send({ success: true, data: { refunded: true }, error: null });
 }
 
 // ── COURSE ANALYTICS (admin) ──────────────────────────────────────────

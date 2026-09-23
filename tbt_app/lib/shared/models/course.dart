@@ -63,9 +63,16 @@ class Course with _$Course {
 // detail payload. Not on `CourseDetail` (would require build_runner regen);
 // exposed via a companion provider that reads the same endpoint.
 class CoursePendingPayment {
-  const CoursePendingPayment({required this.id, this.paymentUrl});
+  const CoursePendingPayment({
+    required this.id,
+    this.paymentUrl,
+    this.method,
+    this.razorpayOrderId,
+  });
   final String id;
   final String? paymentUrl;
+  final String? method;
+  final String? razorpayOrderId;
 
   static CoursePendingPayment? fromJson(Map<String, dynamic>? json) {
     if (json == null) return null;
@@ -74,6 +81,8 @@ class CoursePendingPayment {
     return CoursePendingPayment(
       id: id,
       paymentUrl: json['paymentUrl'] as String?,
+      method: json['method'] as String?,
+      razorpayOrderId: json['razorpayOrderId'] as String?,
     );
   }
 }

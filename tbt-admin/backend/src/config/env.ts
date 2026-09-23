@@ -79,6 +79,9 @@ const envSchema = z.object({
   ANDROID_APP_SHA256: z.string().optional().or(z.literal('')),
   IOS_TEAM_ID: z.string().optional().or(z.literal('')),
   IOS_BUNDLE_ID: z.string().optional().or(z.literal('')),
+  RAZORPAY_KEY_ID: z.string().optional().or(z.literal('')),
+  RAZORPAY_KEY_SECRET: z.string().optional().or(z.literal('')),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
 });
 
 const _env = envSchema.safeParse(process.env);

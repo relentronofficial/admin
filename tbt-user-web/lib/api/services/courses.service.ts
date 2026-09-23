@@ -105,7 +105,35 @@ export const coursesService = {
 
   useEpisodeLifeline: (episodeId: string, type: 'free' | 'coin') =>
     apiClient.post<never, ApiResponse<{ freeRemaining: number; totalUsed: number; coinsDeducted?: number; remainingCoins?: number }>>(`/api/user/episodes/${episodeId}/lifelines/use`, { type }),
+
+  createRazorpayOrder: (courseId: string) =>
+    apiClient.post<never, ApiResponse<RazorpayOrderResult>>(`/api/user/courses/${courseId}/razorpay/create-order`),
+
+  verifyRazorpayPayment: (params: {
+    courseId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+    paymentRecordId: string;
+  }) =>
+    apiClient.post<never, ApiResponse<{ accessGranted: boolean; courseId: string }>>(
+      `/api/user/courses/${params.courseId}/razorpay/verify`,
+      {
+        razorpayOrderId: params.razorpayOrderId,
+        razorpayPaymentId: params.razorpayPaymentId,
+        razorpaySignature: params.razorpaySignature,
+        paymentRecordId: params.paymentRecordId,
+      },
+    ),
 };
+
+export interface RazorpayOrderResult {
+  orderId: string;
+  amount: number;
+  currency: string;
+  keyId: string;
+  paymentRecordId: string;
+}
 
 export interface StreakPointsHistoryEntry {
   type: "video" | "task";

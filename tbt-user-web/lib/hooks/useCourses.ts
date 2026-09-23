@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
-export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState } from "@/lib/api/services/courses.service";
+export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState, RazorpayOrderResult } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -153,6 +153,28 @@ export const useRequestCourseAccess = () => {
     mutationFn: (courseId: string) => coursesService.requestAccess(courseId),
     onSuccess: (_data, courseId) => {
       queryClient.invalidateQueries({ queryKey: ["courses", courseId] });
+    },
+  });
+};
+
+export const useCreateRazorpayOrder = () =>
+  useMutation({
+    mutationFn: (courseId: string) => coursesService.createRazorpayOrder(courseId),
+  });
+
+export const useVerifyRazorpayPayment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      courseId: string;
+      razorpayOrderId: string;
+      razorpayPaymentId: string;
+      razorpaySignature: string;
+      paymentRecordId: string;
+    }) => coursesService.verifyRazorpayPayment(params),
+    onSuccess: (_data, { courseId }) => {
+      queryClient.invalidateQueries({ queryKey: ["courses", courseId] });
+      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
     },
   });
 };

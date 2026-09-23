@@ -110,6 +110,30 @@ class CourseAccessRequest {
       );
 }
 
+class RazorpayOrderResult {
+  const RazorpayOrderResult({
+    required this.orderId,
+    required this.amount,
+    required this.currency,
+    required this.keyId,
+    required this.paymentRecordId,
+  });
+  final String orderId;
+  final int amount;
+  final String currency;
+  final String keyId;
+  final String paymentRecordId;
+
+  factory RazorpayOrderResult.fromJson(Map<String, dynamic> json) =>
+      RazorpayOrderResult(
+        orderId: json['orderId'] as String,
+        amount: (json['amount'] as num).toInt(),
+        currency: json['currency'] as String? ?? 'INR',
+        keyId: json['keyId'] as String,
+        paymentRecordId: json['paymentRecordId'] as String,
+      );
+}
+
 class CourseXp {
   const CourseXp({
     required this.totalXp,
@@ -625,6 +649,40 @@ class CoursesService {
       final list = (res.data?['data'] as List<dynamic>?) ?? [];
       return list.cast<Map<String, dynamic>>().map(Course.fromJson).toList();
     } on DioException catch (e) { throw mapDioError(e); }
+  }
+
+  Future<RazorpayOrderResult> createRazorpayOrder(String courseId) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '$kUserCourses/$courseId/razorpay/create-order',
+      );
+      final data = res.data?['data'] as Map<String, dynamic>? ?? {};
+      return RazorpayOrderResult.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> verifyRazorpayPayment({
+    required String courseId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+    required String paymentRecordId,
+  }) async {
+    try {
+      await _dio.post<Map<String, dynamic>>(
+        '$kUserCourses/$courseId/razorpay/verify',
+        data: {
+          'razorpayOrderId': razorpayOrderId,
+          'razorpayPaymentId': razorpayPaymentId,
+          'razorpaySignature': razorpaySignature,
+          'paymentRecordId': paymentRecordId,
+        },
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
   }
 }
 

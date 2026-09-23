@@ -22,6 +22,8 @@ import {
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { computeMemberStats } from '../../lib/tbtStats.js';
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
+import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
+import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -606,11 +608,14 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, id);
   const hasAccess = isAccessValid(accessRecord);
 
-  // Check for a pending external payment request from this member
-  const pendingPayment = await (request.server.prisma as any).coursePayment.findFirst({
-    where: { memberId: request.memberId, courseId: id, status: 'pending' },
-    select: { id: true, status: true },
-  }).catch(() => null);
+  // Check for a pending payment from this member (any method)
+  const pendingPaymentRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, method, razorpay_order_id FROM course_payments
+     WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending'
+     ORDER BY created_at DESC LIMIT 1`,
+    request.memberId, id,
+  ).catch(() => [] as any[]);
+  const pendingPaymentRow = pendingPaymentRows[0] ?? null;
 
   // Resolve upsell / cross-sell course IDs to lightweight course objects
   const upsellIds: string[] = (course as any).upsellCourseIds ?? [];
@@ -801,7 +806,12 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     accessType: accessRecord?.accessType ?? null,
     accessExpiresAt: accessRecord?.expiresAt ?? null,
     paymentLinkUrl: course.paymentLinkUrl ?? null,
-    pendingPayment: pendingPayment ? { id: pendingPayment.id, paymentUrl: course.paymentLinkUrl ?? null } : null,
+    pendingPayment: pendingPaymentRow ? {
+      id: pendingPaymentRow.id,
+      paymentUrl: course.paymentLinkUrl ?? null,
+      method: pendingPaymentRow.method ?? null,
+      razorpayOrderId: pendingPaymentRow.razorpay_order_id ?? null,
+    } : null,
     xpPerEpisode: (course as any).xpPerEpisode ?? 10,
     passingScorePercent: (course as any).passingScorePercent ?? 70,
     requireSequential: (course as any).requireSequential ?? true,
@@ -6198,4 +6208,204 @@ export async function getMyPsychometricResultHandler(req: FastifyRequest, reply:
   );
   if (!row) return ok(reply, null);
   return ok(reply, { id: row.id, results: row.results, createdAt: row.created_at });
+}
+
+// ── Razorpay Course Payments ──────────────────────────────────────────────────
+
+// POST /api/user/courses/:id/razorpay/create-order
+export async function createRazorpayOrderHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const redis = (request.server as any).redis ?? null;
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
+  const course = await request.server.prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, title: true, isPublished: true },
+  });
+  if (!course || !course.isPublished) return fail(reply, 404, 'Course not found');
+
+  // Fetch raw SQL columns not in Prisma schema
+  const [priceRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT price, access_duration_days FROM courses WHERE id = $1::uuid`, courseId,
+  );
+  const price = priceRow?.price != null ? Number(priceRow.price) : null;
+  const accessDurationDays = priceRow?.access_duration_days != null ? Number(priceRow.access_duration_days) : null;
+
+  if (price == null || price <= 0) return fail(reply, 400, 'COURSE_IS_FREE');
+
+  const existingAccess = await getCourseAccessRecord(request.server.prisma as any, memberId, courseId);
+  if (isAccessValid(existingAccess)) return fail(reply, 409, 'ALREADY_HAS_ACCESS');
+
+  // Lazily expire stale pending Razorpay orders for this member+course.
+  // Razorpay orders expire at 15 min; records older than that can never
+  // capture, so marking them 'expired' unblocks future retry attempts.
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments SET status='expired', updated_at=NOW()
+     WHERE member_id = $1::uuid AND course_id = $2::uuid
+       AND status = 'pending' AND method = 'razorpay'
+       AND created_at < NOW() - INTERVAL '15 minutes'`,
+    memberId, courseId,
+  ).catch(() => {});
+
+  // Idempotency: reuse existing pending razorpay order if not yet expired
+  const existingPending = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, razorpay_order_id FROM course_payments
+     WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending' AND method = 'razorpay'
+     AND created_at > NOW() - INTERVAL '14 minutes'
+     ORDER BY created_at DESC LIMIT 1`,
+    memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (existingPending[0]?.razorpay_order_id) {
+    return ok(reply, {
+      orderId: existingPending[0].razorpay_order_id,
+      amount: Math.round(price * 100),
+      currency: 'INR',
+      keyId: env.RAZORPAY_KEY_ID,
+      paymentRecordId: existingPending[0].id,
+    });
+  }
+
+  let rzpOrder: any;
+  try {
+    rzpOrder = await getRazorpay().orders.create({
+      amount: Math.round(price * 100),
+      currency: 'INR',
+      receipt: `tbt-${courseId.slice(0, 8)}-${Date.now()}`,
+      notes: { courseId, memberId },
+    });
+  } catch (e: any) {
+    return fail(reply, 500, 'ORDER_CREATE_FAILED');
+  }
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO course_payments (id, member_id, course_id, amount, currency, method, status, razorpay_order_id)
+     VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3, 'INR', 'razorpay', 'pending', $4)
+     RETURNING id`,
+    memberId, courseId, price, rzpOrder.id,
+  );
+
+  return ok(reply, {
+    orderId: rzpOrder.id,
+    amount: Math.round(price * 100),
+    currency: 'INR',
+    keyId: env.RAZORPAY_KEY_ID,
+    paymentRecordId: paymentRow.id,
+  });
+}
+
+// POST /api/user/courses/:id/razorpay/verify
+export async function verifyRazorpayPaymentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature, paymentRecordId } =
+    request.body as any;
+  const redis = (request.server as any).redis ?? null;
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status FROM course_payments WHERE id = $1::uuid AND member_id = $2::uuid AND course_id = $3::uuid`,
+    paymentRecordId, memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (!paymentRow) return fail(reply, 404, 'Payment record not found');
+
+  // Idempotent — already granted
+  if (paymentRow.status === 'completed') return ok(reply, { accessGranted: true, courseId });
+
+  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+    return fail(reply, 400, 'SIGNATURE_INVALID');
+  }
+
+  const [courseRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, courseId,
+  ).catch(() => [] as any[]);
+
+  await grantCourseAccessAfterPayment({
+    prisma: request.server.prisma,
+    io: (request.server as any).io ?? null,
+    redis,
+    paymentRecordId,
+    razorpayPaymentId,
+    razorpaySignature,
+    memberId,
+    courseId,
+    accessDurationDays: courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null,
+  });
+
+  return ok(reply, { accessGranted: true, courseId });
+}
+
+// POST /api/user/courses/razorpay/webhook — unauthenticated, raw body required
+export async function razorpayWebhookHandler(request: FastifyRequest, reply: FastifyReply) {
+  // If webhook secret isn't configured, acknowledge without processing so
+  // Razorpay doesn't retry endlessly. The client-side /verify path is the
+  // primary grant mechanism; webhook is the edge-case fallback.
+  if (!env.RAZORPAY_WEBHOOK_SECRET) {
+    return reply.send({ ok: true });
+  }
+
+  const signature = (request.headers as any)['x-razorpay-signature'] as string | undefined;
+  if (!signature) return reply.status(400).send({ ok: false });
+
+  const rawBody = (request as any).rawBody as string | undefined;
+  if (!rawBody) return reply.status(400).send({ ok: false });
+
+  if (!verifyWebhookSignature(rawBody, signature)) {
+    return reply.status(400).send({ ok: false });
+  }
+
+  let body: any;
+  try { body = JSON.parse(rawBody); } catch { return reply.status(400).send({ ok: false }); }
+
+  if (body.event === 'payment.failed') {
+    const failedOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;
+    if (failedOrderId) {
+      await request.server.prisma.$executeRawUnsafe(
+        `UPDATE course_payments SET status='failed', updated_at=NOW()
+         WHERE razorpay_order_id = $1 AND method = 'razorpay' AND status = 'pending'`,
+        failedOrderId,
+      ).catch(() => {});
+    }
+    return reply.send({ ok: true });
+  }
+
+  if (body.event !== 'payment.captured') return reply.send({ ok: true });
+
+  const rzpOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;
+  if (!rzpOrderId) return reply.send({ ok: true });
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT cp.id, cp.status, cp.member_id, cp.course_id
+     FROM course_payments cp
+     WHERE cp.razorpay_order_id = $1 AND cp.method = 'razorpay'
+     LIMIT 1`,
+    rzpOrderId,
+  ).catch(() => [] as any[]);
+
+  if (!paymentRow || paymentRow.status === 'completed') return reply.send({ ok: true });
+
+  const [courseRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, paymentRow.course_id,
+  ).catch(() => [] as any[]);
+
+  const rzpPaymentId: string = body?.payload?.payment?.entity?.id ?? '';
+  const redis = (request.server as any).redis ?? null;
+
+  await grantCourseAccessAfterPayment({
+    prisma: request.server.prisma,
+    io: (request.server as any).io ?? null,
+    redis,
+    paymentRecordId: paymentRow.id,
+    razorpayPaymentId: rzpPaymentId,
+    razorpaySignature: undefined,
+    memberId: paymentRow.member_id,
+    courseId: paymentRow.course_id,
+    accessDurationDays: courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null,
+  }).catch(() => {});
+
+  return reply.send({ ok: true });
 }

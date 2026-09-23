@@ -563,6 +563,19 @@ export const useApproveCoursePayment = (courseId: string) => {
   });
 };
 
+export const useRefundCoursePayment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ courseId, paymentId }: { courseId: string; paymentId: string }) => {
+      await apiClient.post(`/api/courses/${courseId}/payments/${paymentId}/refund`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['course-payments'] });
+      qc.invalidateQueries({ queryKey: ['course-access'] });
+    },
+  });
+};
+
 // ── Per-member progression admin controls ─────────────────────────────
 // Two mutations for the sequential-unlock feature. Both call
 // backend endpoints under /api/courses/:id/members/:memberId/... —

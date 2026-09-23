@@ -24,6 +24,7 @@ import {
   useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
   useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
   useEpisodeLifelines, useUseEpisodeLifeline,
+  useCreateRazorpayOrder, useVerifyRazorpayPayment,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
 import { coursesService } from "@/lib/api/services/courses.service";
@@ -879,7 +880,98 @@ function RelatedCourses({ courses, title }: { courses: any[]; title: string }) {
 function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: string }) {
   const course = courseRaw as any;
   const requestAccess = useRequestCourseAccess();
+  const createOrder = useCreateRazorpayOrder();
+  const verifyPayment = useVerifyRazorpayPayment();
+  const { data: meData } = useMe();
+  const isCheckoutOpen = useRef(false);
   const lessons = course.lessons ?? [];
+
+  const showRazorpay =
+    Number(course.price) > 0 &&
+    !!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID &&
+    !course.pendingPayment;
+
+  // Load Razorpay Checkout.js once
+  useEffect(() => {
+    if (!showRazorpay) return;
+    if (document.getElementById("rzp-checkout-js")) return;
+    const s = document.createElement("script");
+    s.id = "rzp-checkout-js";
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.async = true;
+    document.body.appendChild(s);
+  }, [showRazorpay]);
+
+  const handleRazorpayPay = async () => {
+    // Fix #6: guard against script not yet loaded
+    if (!(window as any).Razorpay) {
+      toast.error("Payment system loading, please try again in a moment.");
+      return;
+    }
+    try {
+      const order = await createOrder.mutateAsync(courseId);
+      const { orderId, amount, currency, keyId, paymentRecordId } = order.data as any;
+
+      const options: any = {
+        key: keyId,
+        amount,
+        currency,
+        order_id: orderId,
+        name: "Tamil Business Tribe",
+        description: course.title,
+        image: course.thumbnailUrl ?? undefined,
+        handler: async (response: any) => {
+          isCheckoutOpen.current = false; // Fix #4: modal closed on payment
+          try {
+            await verifyPayment.mutateAsync({
+              courseId,
+              razorpayOrderId: orderId,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              paymentRecordId,
+            });
+            // Receipt copy (#8): show amount + payment ID so member has a reference
+            const paidAmount = `₹${(amount / 100).toLocaleString("en-IN")}`;
+            toast.success(
+              `Payment of ${paidAmount} successful! Check your WhatsApp for confirmation. Ref: ${response.razorpay_payment_id}`,
+              { duration: 8000 }
+            );
+          } catch {
+            toast.error(
+              `Payment received but verification failed. Keep your payment ID ${response.razorpay_payment_id} and contact support.`,
+              { duration: 10000 }
+            );
+          }
+        },
+        // Fix #2: prefill member details to skip re-entry in checkout form
+        prefill: {
+          name: (meData as any)?.name ?? "",
+          contact: (meData as any)?.phone ?? "",
+        },
+        theme: { color: "#dc2626" },
+        modal: {
+          ondismiss: () => { isCheckoutOpen.current = false; }, // Fix #4
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+
+      // Wire up card-decline / bank-rejection handler (#7)
+      rzp.on("payment.failed", (resp: any) => {
+        isCheckoutOpen.current = false;
+        const reason =
+          resp?.error?.description ??
+          resp?.error?.reason ??
+          "Payment failed. Please try a different card or contact your bank.";
+        toast.error(reason, { duration: 6000 });
+      });
+
+      isCheckoutOpen.current = true; // Fix #4: mark modal as open
+      rzp.open();
+    } catch (e: any) {
+      toast.error(e.message || "Could not initiate payment. Please try again.");
+    }
+  };
 
   const handleGetAccess = async () => {
     try {
@@ -972,7 +1064,20 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
               <Loader2 size={14} style={{ color: "var(--color-alert)" }} className="animate-spin" />
               <span style={{ color: "var(--color-text-normal)" }}>Payment pending — awaiting confirmation</span>
             </div>
-            {course.pendingPayment.paymentUrl && (
+            {course.pendingPayment.method === "razorpay" && course.pendingPayment.razorpayOrderId ? (
+              <button
+                onClick={handleRazorpayPay}
+                disabled={createOrder.isPending || verifyPayment.isPending || isCheckoutOpen.current}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                style={{ background: "var(--color-accent)" }}
+              >
+                {createOrder.isPending || verifyPayment.isPending ? (
+                  <><Loader2 size={14} className="animate-spin" /> Processing...</>
+                ) : (
+                  <>Pay ₹{Number(course.price).toLocaleString("en-IN")} now</>
+                )}
+              </button>
+            ) : course.pendingPayment.paymentUrl ? (
               <button
                 onClick={() => window.open(course.pendingPayment.paymentUrl, "_blank")}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
@@ -980,8 +1085,21 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
               >
                 <ExternalLink size={14} /> Complete Payment
               </button>
-            )}
+            ) : null}
           </div>
+        ) : showRazorpay ? (
+          <button
+            onClick={handleRazorpayPay}
+            disabled={createOrder.isPending || verifyPayment.isPending || isCheckoutOpen.current}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {createOrder.isPending || verifyPayment.isPending ? (
+              <><Loader2 size={14} className="animate-spin" /> Processing...</>
+            ) : (
+              <>Pay ₹{Number(course.price).toLocaleString("en-IN")} now</>
+            )}
+          </button>
         ) : (
           <button
             onClick={handleGetAccess}

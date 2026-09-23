@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -32,19 +33,121 @@ class CourseDetailScreen extends ConsumerStatefulWidget {
 class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  late final Razorpay _razorpay;
   bool _accessRequested = false;
   bool _requesting = false;
+  // Held during create-order + verify so the button shows a spinner.
+  String? _pendingOrderId;
+  String? _pendingPaymentRecordId;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _razorpay.clear();
     super.dispose();
+  }
+
+  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    final orderId = _pendingOrderId;
+    final recordId = _pendingPaymentRecordId;
+    _pendingOrderId = null;
+    _pendingPaymentRecordId = null;
+    if (orderId == null || recordId == null) return;
+    try {
+      await ref.read(coursesServiceProvider).verifyRazorpayPayment(
+            courseId: widget.courseId,
+            razorpayOrderId: orderId,
+            razorpayPaymentId: response.paymentId ?? '',
+            razorpaySignature: response.signature ?? '',
+            paymentRecordId: recordId,
+          );
+      if (!mounted) return;
+      ref.invalidate(courseDetailProvider(widget.courseId));
+      ref.invalidate(coursePendingPaymentProvider(widget.courseId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Payment successful! You now have access.'),
+          backgroundColor: Color(0xFF16a34a),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Payment verification failed. Contact support if amount was deducted.'),
+          backgroundColor: Color(0xFFdc2626),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _requesting = false);
+    }
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    _pendingOrderId = null;
+    _pendingPaymentRecordId = null;
+    if (!mounted) return;
+    setState(() => _requesting = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(response.message ?? 'Payment cancelled or failed.'),
+      ),
+    );
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    _pendingOrderId = null;
+    _pendingPaymentRecordId = null;
+    if (mounted) setState(() => _requesting = false);
+  }
+
+  Future<void> _handleRazorpayPay(CourseDetail course) async {
+    if (_requesting) return;
+    setState(() => _requesting = true);
+    try {
+      final order = await ref
+          .read(coursesServiceProvider)
+          .createRazorpayOrder(widget.courseId);
+      _pendingOrderId = order.orderId;
+      _pendingPaymentRecordId = order.paymentRecordId;
+
+      final options = <String, dynamic>{
+        'key': order.keyId,
+        'amount': order.amount,
+        'currency': order.currency,
+        'order_id': order.orderId,
+        'name': 'Tamil Business Tribe',
+        'description': course.title,
+        if (course.thumbnailUrl != null) 'image': course.thumbnailUrl,
+        'theme': {'color': '#dc2626'},
+      };
+      _razorpay.open(options);
+    } catch (e) {
+      _pendingOrderId = null;
+      _pendingPaymentRecordId = null;
+      if (!mounted) return;
+      setState(() => _requesting = false);
+      if (e.toString().contains('RAZORPAY_NOT_CONFIGURED')) {
+        // Backend isn't configured for Razorpay — fall back to the manual
+        // access-request flow so the user isn't left with a raw error.
+        await _handleGetAccess(course);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
   }
 
   // Mirrors the web `handleGetAccess` flow:
@@ -173,11 +276,21 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
                         accent: accent,
                         accessRequested: _accessRequested,
                         requesting: _requesting,
-                        onGetAccess: () => _handleGetAccess(course),
+                        onGetAccess: () {
+                          if ((course.price ?? 0) > 0) {
+                            _handleRazorpayPay(course);
+                          } else {
+                            _handleGetAccess(course);
+                          }
+                        },
                         onOpenPendingPayment: () {
-                          final url = pendingPayment?.paymentUrl;
-                          if (url != null && url.isNotEmpty) {
-                            _openExternal(url);
+                          if (pendingPayment?.method == 'razorpay') {
+                            _handleRazorpayPay(course);
+                          } else {
+                            final url = pendingPayment?.paymentUrl;
+                            if (url != null && url.isNotEmpty) {
+                              _openExternal(url);
+                            }
                           }
                         },
                       ),
@@ -390,6 +503,7 @@ class _HeroSection extends StatelessWidget {
   }
 }
 
+
 // ── Access CTA (paywall) ──────────────────────────────────────────────────────
 //
 // Three visual states, mirroring the web `PaywallView`:
@@ -464,7 +578,18 @@ class _AccessCta extends StatelessWidget {
               ],
             ),
           ),
-          if (pending.paymentUrl != null && pending.paymentUrl!.isNotEmpty) ...[
+          if (pending.method == 'razorpay') ...[
+            const SizedBox(height: 10),
+            AppPrimaryButton(
+              label: requesting ? 'Processing…' : _payLabel(course.price),
+              icon: Icons.payment,
+              size: AppButtonSize.md,
+              fullWidth: true,
+              isLoading: requesting,
+              onPressed: requesting ? null : onOpenPendingPayment,
+            ),
+          ] else if (pending.paymentUrl != null &&
+              pending.paymentUrl!.isNotEmpty) ...[
             const SizedBox(height: 10),
             SizedBox(
               height: 44,
@@ -494,16 +619,27 @@ class _AccessCta extends StatelessWidget {
       );
     }
 
+    final isPriced = (course.price ?? 0) > 0;
     return AppPrimaryButton(
       label: requesting
           ? 'Processing…'
-          : (accessRequested ? 'Access requested' : 'Get access'),
-      icon: hasExternalLink ? Icons.open_in_new : Icons.lock_outline,
+          : (accessRequested
+              ? 'Access requested'
+              : (isPriced ? _payLabel(course.price) : 'Get access')),
+      icon: isPriced
+          ? Icons.payment
+          : (hasExternalLink ? Icons.open_in_new : Icons.lock_outline),
       size: AppButtonSize.md,
       fullWidth: true,
       isLoading: requesting,
       onPressed: accessRequested || requesting ? null : onGetAccess,
     );
+  }
+
+  String _payLabel(double? price) {
+    if (price == null || price == 0) return 'Get access';
+    if (price == price.truncateToDouble()) return 'Pay ₹${price.toInt()} now';
+    return 'Pay ₹${price.toStringAsFixed(2)} now';
   }
 }
 
