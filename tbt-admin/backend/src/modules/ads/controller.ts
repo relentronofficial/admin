@@ -38,6 +38,7 @@ import {
   type RequestContext,
 } from './eligibility.js';
 import { checkMediaReachable, cleanupCampaignCreative, resolveHlsUrl } from './media.js';
+import { cacheGet, cacheSet, invalidateCache } from '../../lib/cache.js';
 
 // ── Response helpers (project convention) ───────────────────────────────────
 
@@ -113,6 +114,7 @@ function announceCampaignChange(
   } catch {
     /* socket unavailable — see above */
   }
+  void invalidateCache((server as any).redis ?? null, 'ads:campaigns:active');
 }
 
 /**
@@ -577,16 +579,25 @@ export async function eligibleHandler(req: FastifyRequest, reply: FastifyReply) 
   const now = new Date();
 
   try {
-    const rows = await req.server.prisma.adCampaign.findMany({
-      where: {
-        status: 'active',
-        deletedAt: null,
-        startAt: { lte: now },
-        endAt: { gt: now },
-      },
-      orderBy: [{ priority: 'desc' }, { startAt: 'asc' }, { createdAt: 'asc' }],
-      take: 200,
-    });
+    const redis = (req.server as any).redis ?? null;
+    const campaignCacheKey = 'ads:campaigns:active';
+    const cachedRows = await cacheGet<any[]>(redis, campaignCacheKey);
+    let rows: Awaited<ReturnType<typeof req.server.prisma.adCampaign.findMany>>;
+    if (cachedRows !== null) {
+      rows = cachedRows as typeof rows;
+    } else {
+      rows = await req.server.prisma.adCampaign.findMany({
+        where: {
+          status: 'active',
+          deletedAt: null,
+          startAt: { lte: now },
+          endAt: { gt: now },
+        },
+        orderBy: [{ priority: 'desc' }, { startAt: 'asc' }, { createdAt: 'asc' }],
+        take: 200,
+      });
+      void cacheSet(redis, campaignCacheKey, rows, 30);
+    }
 
     if (rows.length === 0) return ok(reply, { showAd: false, campaign: null });
 
