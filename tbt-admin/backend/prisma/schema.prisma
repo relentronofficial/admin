@@ -757,14 +757,16 @@ model Task {
   isRequired       Boolean  @default(true) @map("is_required")
   isActive         Boolean  @default(true) @map("is_active")
   createdBy        String?  @map("created_by")
+  courseEpisodeId  String?  @map("course_episode_id") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  program     Program?         @relation(fields: [programId], references: [id], onDelete: Cascade)
-  batch       Batch?           @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  step        TaskStep?        @relation(fields: [stepId], references: [id])
-  submissions TaskSubmission[]
+  program       Program?         @relation(fields: [programId], references: [id], onDelete: Cascade)
+  batch         Batch?           @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  step          TaskStep?        @relation(fields: [stepId], references: [id])
+  courseEpisode CourseEpisode?   @relation(fields: [courseEpisodeId], references: [id], onDelete: Cascade)
+  submissions   TaskSubmission[]
 
   @@map("tasks")
 }
@@ -2384,6 +2386,8 @@ model AppResource {
   downloadLabel   String    @default("Download") @map("download_label")
   description     String?
   visibility      Json?
+  courseEpisodeId String?        @map("course_episode_id") @db.Uuid
+  courseEpisode   CourseEpisode? @relation(fields: [courseEpisodeId], references: [id], onDelete: Cascade)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -2597,6 +2601,8 @@ model CourseEpisode {
   progress        CourseEpisodeProgress[]
   quizAttempts    CourseQuizAttempt[]
   feedback        CourseEpisodeFeedback[]
+  episodeResources AppResource[]
+  episodeTasks    Task[]
   createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

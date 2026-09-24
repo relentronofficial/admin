@@ -1537,14 +1537,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`
       ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS timer_seconds INT
     `).catch(() => {});
-    // course_episode_id FK columns — must run AFTER course_episodes is no longer
-    // being altered (same lock-contention reason as course_sections above).
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
-    `).catch(() => {});
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
-    `).catch(() => {});
+    // course_episode_id FK columns are now managed by Prisma schema
+    // (AppResource.courseEpisodeId and Task.courseEpisodeId added 2026-09-24).
     // Per-task completion mode (2026-09): admin decides, per task, whether a
     // member submission is instantly self-approved (SELF_ASSESSMENT) or held
     // for admin review before it counts as complete (ADMIN_CHECK). Default is
