@@ -104,21 +104,30 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
     data.completionThresholdPercent = Math.min(100, Math.max(50, Math.round(data.completionThresholdPercent)));
   }
   if (body.order !== undefined) data.sortOrder = body.order;
-  const course = await req.server.prisma.course.update({ where: { id }, data });
-  let module: string | null = null;
-  if ('module' in body) {
-    module = body.module ?? null;
-    await req.server.prisma.$executeRawUnsafe(
-      `UPDATE courses SET module = $1 WHERE id = $2::uuid`, module, id,
-    );
-  } else {
-    const rows = await req.server.prisma.$queryRawUnsafe<{ module: string | null }[]>(
-      `SELECT module FROM courses WHERE id = $1::uuid`, id,
-    ).catch(() => []);
-    module = rows[0]?.module ?? null;
+  // Coerce price to Decimal-compatible string to avoid Prisma type errors
+  if (data.price !== undefined && data.price !== null) {
+    data.price = String(data.price);
   }
-  bustHome(req);
-  return reply.send({ success: true, data: { ...course, module }, error: null });
+  try {
+    const course = await req.server.prisma.course.update({ where: { id }, data });
+    let module: string | null = null;
+    if ('module' in body) {
+      module = body.module ?? null;
+      await req.server.prisma.$executeRawUnsafe(
+        `UPDATE courses SET module = $1 WHERE id = $2::uuid`, module, id,
+      );
+    } else {
+      const rows = await req.server.prisma.$queryRawUnsafe<{ module: string | null }[]>(
+        `SELECT module FROM courses WHERE id = $1::uuid`, id,
+      ).catch(() => []);
+      module = rows[0]?.module ?? null;
+    }
+    bustHome(req);
+    return reply.send({ success: true, data: { ...course, module }, error: null });
+  } catch (err: any) {
+    req.log.error({ err, courseId: id }, 'updateCourseHandler failed');
+    return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to update course' });
+  }
 }
 
 export async function deleteCourseHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -496,65 +505,82 @@ export async function grantCourseAccessHandler(req: FastifyRequest, reply: Fasti
   const body = req.body as any;
   const { memberId, accessType = 'lifetime', expiresAt, amount, currency, method, reference, notes } = body;
 
+  if (!memberId) return reply.status(400).send({ success: false, data: null, error: 'memberId is required' });
+
   const course = await req.server.prisma.course.findUnique({ where: { id: courseId }, select: { id: true, title: true } });
   if (!course) return reply.status(404).send({ success: false, data: null, error: 'Course not found' });
 
-  let paymentId: string | undefined;
+  // Resolve the acting admin's DB ID from their Clerk subject (req.user)
+  const adminRow = req.user
+    ? await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } }).catch(() => null)
+    : null;
+  const adminId: string | null = adminRow?.id ?? null;
 
-  if (amount && Number(amount) > 0) {
-    const payment = await (req.server.prisma as any).coursePayment.create({
-      data: {
+  try {
+    let paymentId: string | undefined;
+
+    if (amount && Number(amount) > 0) {
+      const payment = await req.server.prisma.coursePayment.create({
+        data: {
+          memberId,
+          courseId,
+          amount: Number(amount),
+          currency: currency ?? 'INR',
+          method: method ?? 'manual',
+          status: 'completed',
+          reference: reference ?? null,
+          paidAt: new Date(),
+          notes: notes ?? null,
+          grantedBy: adminId,
+        },
+      });
+      paymentId = payment.id;
+    }
+
+    const access = await req.server.prisma.courseAccess.upsert({
+      where: { memberId_courseId: { memberId, courseId } },
+      create: {
         memberId,
         courseId,
-        amount: Number(amount),
-        currency: currency ?? 'INR',
-        method: method ?? 'manual',
-        status: 'completed',
-        reference: reference ?? null,
-        paidAt: new Date(),
+        accessType,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        isActive: true,
+        grantedBy: adminId,
+        paymentId: paymentId ?? null,
         notes: notes ?? null,
-        grantedBy: (req as any).adminId ?? null,
+      },
+      update: {
+        accessType,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        isActive: true,
+        grantedBy: adminId,
+        revokedAt: null,
+        revokedBy: null,
+        paymentId: paymentId ?? undefined,
+        notes: notes ?? undefined,
       },
     });
-    paymentId = payment.id;
-  }
 
-  const access = await (req.server.prisma as any).courseAccess.upsert({
-    where: { memberId_courseId: { memberId, courseId } },
-    create: {
+    // Ensure enrollment row exists so the course shows up in user's list
+    await req.server.prisma.courseEnrollment.upsert({
+      where: { memberId_courseId: { memberId, courseId } },
+      create: { memberId, courseId, progressPercentage: 0 },
+      update: {},
+    });
+
+    void notifyCourseAccessGranted({
+      prisma: req.server.prisma as any,
+      io: req.server.io,
       memberId,
       courseId,
-      accessType,
-      expiresAt: expiresAt ? new Date(expiresAt) : null,
-      isActive: true,
-      paymentId: paymentId ?? null,
-    },
-    update: {
-      accessType,
-      expiresAt: expiresAt ? new Date(expiresAt) : null,
-      isActive: true,
-      revokedAt: null,
-      revokedBy: null,
-      paymentId: paymentId ?? undefined,
-    },
-  });
+      courseTitle: course.title,
+    }).catch(() => {});
 
-  // Ensure enrollment row exists so the course shows up in user's list
-  await req.server.prisma.courseEnrollment.upsert({
-    where: { memberId_courseId: { memberId, courseId } },
-    create: { memberId, courseId, progressPercentage: 0 },
-    update: {},
-  });
-
-  void notifyCourseAccessGranted({
-    prisma: req.server.prisma as any,
-    io: req.server.io,
-    memberId,
-    courseId,
-    courseTitle: course.title,
-  }).catch(() => {});
-
-  return reply.status(201).send({ success: true, data: access, error: null });
+    return reply.status(201).send({ success: true, data: access, error: null });
+  } catch (err: any) {
+    req.log.error({ err, courseId, memberId }, 'grantCourseAccessHandler failed');
+    return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to grant access' });
+  }
 }
 
 export async function revokeCourseAccessHandler(req: FastifyRequest, reply: FastifyReply) {
