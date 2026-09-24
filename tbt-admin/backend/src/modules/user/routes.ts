@@ -288,9 +288,10 @@ export async function userRoutes(fastify: FastifyInstance) {
 // Webhook — registered separately (no authenticateUser hook).
 // Parses application/json but preserves the raw body string for HMAC.
 export async function userWebhookRoutes(fastify: FastifyInstance) {
-  // Register in an encapsulated child scope so the content-type parser override
-  // does not conflict with the root-level parser already registered by Fastify.
   fastify.register(async (child) => {
+    // Remove the inherited parser before adding our own so Fastify doesn't
+    // throw FST_ERR_CTP_ALREADY_PRESENT (child scopes inherit parent parsers).
+    child.removeContentTypeParser('application/json');
     child.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
       try {
         const parsed = JSON.parse(body as string);
