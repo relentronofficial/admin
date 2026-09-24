@@ -933,13 +933,8 @@ export async function unlockAllLessonsForMemberHandler(
 
 export async function listEpisodeResourcesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
-  const ids = await req.server.prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM app_resources WHERE course_episode_id = $1::uuid ORDER BY "order" ASC`,
-    eid
-  ).catch(() => []);
-  if (!ids.length) return reply.send({ success: true, data: [], error: null });
   const resources = await req.server.prisma.appResource.findMany({
-    where: { id: { in: ids.map((r) => r.id) } },
+    where: { courseEpisodeId: eid },
     orderBy: { order: 'asc' },
   });
   return reply.send({ success: true, data: resources, error: null });
@@ -948,10 +943,8 @@ export async function listEpisodeResourcesHandler(req: FastifyRequest, reply: Fa
 export async function createEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
   const body = req.body as any;
-  const countRows = await req.server.prisma.$queryRawUnsafe<{ count: string }[]>(
-    `SELECT COUNT(*)::text AS count FROM app_resources WHERE course_episode_id = $1::uuid`, eid
-  ).catch(() => [{ count: '0' }]);
-  const order = parseInt(countRows[0]?.count ?? '0');
+  const order = await req.server.prisma.appResource.count({ where: { courseEpisodeId: eid } })
+    .catch(() => 0);
   const resource = await req.server.prisma.appResource.create({
     data: {
       title: body.title,
@@ -966,12 +959,10 @@ export async function createEpisodeResourceHandler(req: FastifyRequest, reply: F
       previewLabel: body.previewLabel || 'Preview',
       downloadLabel: body.downloadLabel || 'Download',
       description: body.description || null,
+      courseEpisodeId: eid,
     },
   });
-  await req.server.prisma.$executeRawUnsafe(
-    `UPDATE app_resources SET course_episode_id = $1::uuid WHERE id = $2::uuid`, eid, resource.id
-  );
-  return reply.status(201).send({ success: true, data: { ...resource, courseEpisodeId: eid }, error: null });
+  return reply.status(201).send({ success: true, data: resource, error: null });
 }
 
 export async function updateEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {

@@ -1459,6 +1459,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           lesson_id TEXT NOT NULL,
           rating INT NOT NULL,
           feedback_text TEXT,
+          liked BOOLEAN,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE(member_id, course_id, lesson_id)
@@ -1468,12 +1469,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE INDEX IF NOT EXISTS idx_lesson_feedback_member_course
           ON lesson_feedback(member_id, course_id)
       `),
-      // Belt-and-suspenders: extend course_episode_feedback and lesson_feedback
-      // with rating + liked columns if not already present (Prisma schema was
-      // updated to add them, but existing prod tables need a safe backfill).
+      // Belt-and-suspenders: extend course_episode_feedback
+      // with rating + liked columns if not already present.
       prisma.$executeRawUnsafe(`ALTER TABLE course_episode_feedback ADD COLUMN IF NOT EXISTS rating INT CHECK (rating >= 1 AND rating <= 10)`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE course_episode_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN`).catch(() => {}),
-      prisma.$executeRawUnsafe(`ALTER TABLE lesson_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN`).catch(() => {}),
+      // NOTE: lesson_feedback.liked is added in the sequential block below,
+      // after CREATE TABLE completes, to avoid the Promise.all race condition.
       // ── Video Feedback (2026-08-28) ────────────────────────────────
       // Admin-configured questions per episode; member responses.
       prisma.$executeRawUnsafe(`
@@ -1508,6 +1509,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
+
+    // lesson_feedback.liked — must run after the parallel block because the
+    // CREATE TABLE and ALTER TABLE ran in parallel, creating a race condition
+    // where the ALTER could fire before the table existed (silently failing via
+    // .catch). Running sequentially here guarantees the table exists first.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE lesson_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN`
+    ).catch(() => {});
 
     // ── Course Sections — must run SEQUENTIALLY after the parallel block ──
     // CREATE TABLE must complete before the FK on course_episodes can reference
