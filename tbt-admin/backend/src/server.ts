@@ -32,7 +32,7 @@ import { dashboardRoutes } from './modules/dashboard/routes.js';
 import { notificationRoutes } from './modules/notifications/routes.js';
 import { uploadRoutes } from './modules/upload/routes.js';
 import { locationRoutes } from './modules/location/routes.js';
-import { userRoutes } from './modules/user/routes.js';
+import { userRoutes, userWebhookRoutes } from './modules/user/routes.js';
 import { workshopRoutes } from './modules/workshops/routes.js';
 import { heroRoutes } from './modules/hero/routes.js';
 import { contentSectionRoutes } from './modules/content-sections/routes.js';
@@ -181,6 +181,7 @@ async function bootstrap() {
     await fastify.register(uploadRoutes, { prefix: '/api/upload' });
     await fastify.register(locationRoutes, { prefix: '/api/location' });
     await fastify.register(userRoutes, { prefix: '/api/user' });
+    await fastify.register(userWebhookRoutes, { prefix: '/api/user' });
     await fastify.register(workshopRoutes, { prefix: '/api/workshops' });
     await fastify.register(heroRoutes, { prefix: '/api/hero-slides' });
     await fastify.register(contentSectionRoutes, { prefix: '/api/content-sections' });

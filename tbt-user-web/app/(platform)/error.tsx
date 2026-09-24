@@ -13,9 +13,8 @@ export default function PlatformError({
   const router = useRouter();
 
   useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.error(error);
-    }
+    // Always log so Cloud Run logs capture the actual error message in production.
+    console.error("[PlatformError]", error?.message, error?.stack, "digest:", error?.digest);
   }, [error]);
 
   return (
@@ -35,6 +34,11 @@ export default function PlatformError({
           <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
             An unexpected error occurred on this page. Try again or return to the dashboard.
           </p>
+          {error?.message && (
+            <p className="text-xs mt-2 px-3 py-2 rounded-lg font-mono break-all" style={{ background: "var(--color-surface-overlay)", color: "var(--color-text-subtle)" }}>
+              {error.message}
+            </p>
+          )}
         </div>
 
         <div className="flex gap-3 justify-center">

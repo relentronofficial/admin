@@ -21,6 +21,9 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 **Non-TBT directories at repo root (ignore for TBT work):**
 - `form/` — standalone Next.js 16 app (port 3007) for an Office Assistant job application form. Separate Prisma schema, separate Vercel Blob storage. Not part of the TBT monorepo.
 - `co-worker/` — separate Flutter app with its own Supabase backend (community/AI content). Completely unrelated to TBT; has its own `CLAUDE.md`, `pubspec.yaml`, and `FULL_MIGRATION.sql`.
+- `tbt-admin-safe/` — frozen backup/reference snapshot of `tbt-admin/` taken before a risky refactor. Treat as read-only history; all active development is in `tbt-admin/`.
+
+**`GEMINI.md` (repo root)** — engineering mandates (Clerk initialization guards, surgical-update-over-refactor rule, PowerShell-safe clean build) that complement this file. Read it before touching auth/routing or schema migrations.
 
 **NEVER use the word "EiFlix" in user-facing code or string literals. Use "TBT" instead.** (The legacy name still appears in a few root doc filenames — e.g. `EiFlix_PRD.md`, `EiFlix_Admin_PRD.md` — those are historical filenames only, not something to propagate into code.)
 
@@ -54,6 +57,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **complete and committed** |
 | `SOCKET_EVENTS.md` | `tbt-admin/` | Full Socket.IO event reference (event name, room, emitter, receiver, trigger, payload) — check before adding or renaming a socket event |
 | `LIVE_CALL_FEATURES_SPEC.md` | `tbt-admin/` | Workshop live-call feature spec — additive-only implementation groups ordered by risk |
+| `SPECKIT.md` | `tbt-admin/` | Workflow audit bugs FIX-01–FIX-15 (double XP, member soft-delete, batch lifecycle, task day-scope uniqueness, etc.) — read before touching members/batches/tasks modules |
 
 **`WORKSHOP_BUG_REPORT.md` (repo root)** — 6 bugs found in a 2026-08-21 static audit of the workshop module (BUG-WS-001 through BUG-WS-006); all 6 resolved in commit `cccdf538`. Read before touching workshop-related code.
 
@@ -114,6 +118,14 @@ npx prisma db seed                   # Run from backend/ — creates super admin
 | `seed-ads.mjs` / `seed-ebooks.mjs` / `seed-podcasts.mjs` etc. | One-shot seed scripts for individual content verticals |
 | `find-kyc-member.mjs` | Locate a member in various onboarding states for debugging |
 | `send-test-report.mjs` | Trigger a batch WhatsApp report send without waiting for cron |
+| `grant-initial-coins.mjs` | Grant initial TBT coin balance to a member (post-approval seeding) |
+| `list-courses.mjs` | Print course list with IDs (quick reference for script targeting) |
+| `assign-course-modules.mjs` | Bulk-assign `module` field (Product/Service/Coach) to existing courses |
+| `seed-community.mjs` | Create 3 approved community posts + comments for QA (idempotent) |
+| `seed-chat-group.mjs` | Create sample chat groups with realistic messages for QA (idempotent — deletes and recreates by name) |
+| `seed-episode-resources-tasks.mjs` | Attach dummy resources + tasks to course episodes; skips episodes that already have them |
+
+**Throwaway scripts in `tbt-admin/backend/scripts/`** — One-off debugging scripts (underscore-prefixed, named after specific people, or hackathon-course-specific) such as `_check-pandiyan.mjs`, `get-nandhini.mjs`, `seed-manoj.mjs`, `list-hackathon-course.mjs`, `setup-hackathon-sections.mjs`, `seed-hackathon-content.mjs`, `seed-hackathon-quiz-tasks-timer.mjs` are dev artifacts. Do not commit them or treat them as canonical tools.
 
 ### User Web (from `tbt-user-web/`)
 
@@ -292,7 +304,7 @@ Additional semantic tokens from `globals.css` (not API-injected — safe to use 
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`, `useUserSupportQuota` (GET `/api/user/support-quota` — MG-01; returns `{ techSupport, adSupport, groupCall, callCredits, oneToOne }` with `allocated/used/remaining` per type), `useCreditPricing` (GET `/api/user/credits/pricing`), `usePurchaseCredit` (POST `/api/user/credits/purchase` — MG-05), `useMyCreditPurchases` (GET `/api/user/credits/purchases`)
 - `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks + `lifelinesTotal/Used/Remaining`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`), `useRequestBreak` (POST `/api/user-batch/break`), `useSpendCoins` (POST `/api/user-batch/spend-coins` — coin-based lifeline purchases; invalidates `["user","me"]` query key), `useUseProgramLifeline` (POST `/api/user-batch/lifeline/use` — MG-02 program-wide lifeline deduction; returns `{ lifelinesRemaining, lifelinesTotal, lifelinesUsed }`), `useDownloadBatchCertificate` (GET `/api/user-batch/certificate` — returns PDF blob, triggers browser download)
-- `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`, `useCourseCategories` (GET `/api/user/courses/categories`), `useReflections(courseId)` (GET reflections from backend), `useSaveReflection(courseId)` (POST reflection to backend — backs the `ReflectionModal`); backed by `lib/api/services/courses.service.ts`
+- `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`, `useCourseCategories` (GET `/api/user/courses/categories`), `useReflections(courseId)` (GET reflections from backend), `useSaveReflection(courseId)` (POST reflection to backend — backs the `ReflectionModal`), `useLessonFeedback(courseId)` (GET `/api/user/courses/:id/lesson-feedback` — member's 1–10 ratings for all lessons in a course), `useSaveLessonFeedback(courseId)` (PUT — upserts rating + optional text; shown inline below video once lesson is completed); backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
 - `lib/hooks/useAds.ts` — ad display logic: `useAdEngine` (fetches eligible ad, tracks impression/click/skip/close/complete). Backed by `lib/api/services/ads.service.ts`. Ad triggers live in `lib/ads/adTriggers.ts`; media pre-loading in `lib/ads/mediaRegistry.ts`; per-session frequency cap in `lib/ads/session.ts`; event batching in `lib/ads/trackingQueue.ts`.
 - `lib/hooks/useRituals.ts` — `useRitualHabits` (GET `/api/rituals/habits`), `useRitualsButtonsConfig` (GET `/api/rituals/buttons`); backed by `lib/api/services/rituals.service.ts`
@@ -479,6 +491,8 @@ Admin hooks in `useTbt.ts`: `useAllAssignmentSubmissions({ page?, limit?, review
 - `product_inquiry` → `/products?tab=inquiries` — products page auto-switches tab
 - `day_submitted` → `/batches/${batchId}`
 - `announcement` → `/app-notifications`
+- `course_weekly_feedback` → `/course-weekly-reports?tab=feedback&open=<feedbackId>`
+- `course_episode_feedback` → `/course-weekly-reports?tab=video-feedback&open=<feedbackId>`
 - (default) → `/dashboard`
 
 `messages/page.tsx` also reads `?conversation=<id>` on mount and auto-opens that conversation (future-proofing for message-type notifications).
@@ -594,6 +608,7 @@ course_episodes:
   drm_enabled BOOLEAN DEFAULT false
   bunny_drm_token TEXT
   timer_seconds INT            -- per-lesson focus timer (null = use global taskTimerSeconds from site config)
+  section_id UUID FK           -- NULL = no section (legacy); FK to course_sections(id) ON DELETE SET NULL
 
 products:
   price DECIMAL(10,2)
@@ -620,12 +635,22 @@ member_episode_progress:
 tasks:
   timer_seconds INT            -- per-task focus timer (null = use global taskTimerSeconds from site config)
   course_episode_id UUID FK    -- links task to a specific course episode (ON DELETE CASCADE)
+
+-- New raw SQL tables (no Prisma model):
+-- course_sections: id, course_id FK, title, description, sort_order, created_at
+--   Sections (chapters) for two-level course structure. Episodes link to sections via course_episodes.section_id.
+--   Episodes with section_id=NULL belong to a synthetic "General" group.
+-- lesson_feedback: id, member_id FK, course_id TEXT, lesson_id TEXT, rating INT (1–10), feedback_text TEXT, UNIQUE(member_id,course_id,lesson_id)
+--   Member's per-lesson rating + written feedback. Distinct from video_feedback_* (admin-authored questions)
+--   and course_reflections (private journal). Upserted on resubmit. Shown inline below video post-completion.
 ```
 
 ### Admin Hooks (`useTbt.ts`)
 `useListVodCourses`, `useCreateVodCourse`, `useUpdateVodCourse`, `useDeleteVodCourse`, `useListCourseEpisodes`, `useCreateCourseEpisode`, `useUpdateCourseEpisode`, `useDeleteCourseEpisode`, `useReorderCourseEpisodes`, `useListCourseAccess`, `useGrantCourseAccess`, `useRevokeCourseAccess`, `useListCoursePayments`, `useApproveCoursePayment`, `useCourseAnalyticsAdmin`, `useCourseLeaderboardAdmin`, `useListCourseBadges`, `useCreateCourseBadge`, `useUpdateCourseBadge`, `useDeleteCourseBadge`, `useAwardCourseBadge`
 
 Per-episode resources and tasks (added 2026-08-26): `useListEpisodeResources`, `useCreateEpisodeResource`, `useUpdateEpisodeResource`, `useDeleteEpisodeResource`, `useReorderEpisodeResources`, `useListEpisodeTasks`, `useCreateEpisodeTask`, `useUpdateEpisodeTask`, `useDeleteEpisodeTask`, `useReorderEpisodeTasks`
+
+Course sections (chapters, added 2026-08-29): `useListCourseSections(courseId)`, `useCreateCourseSection(courseId)`, `useUpdateCourseSection(courseId)`, `useDeleteCourseSection(courseId)`, `useReorderCourseSections(courseId)`, `useMoveEpisodeToSection()`, `useReorderEpisodesInSection(sectionId)`
 
 The admin courses UI lives in a single monolithic `admin-panel/app/courses/page.tsx` (same pattern as workshops). Uses `useCreateBunnyVideo` from `useAdmin` for Bunny Stream video creation.
 
@@ -655,6 +680,11 @@ PUT /api/courses/episodes/:eid/resources/reorder
 GET/POST /api/courses/episodes/:eid/tasks
 PUT/DELETE /api/courses/episodes/:eid/tasks/:tid
 PUT /api/courses/episodes/:eid/tasks/reorder
+GET/POST /api/courses/:courseId/sections
+PUT/DELETE /api/courses/:courseId/sections/:sectionId
+PUT /api/courses/:courseId/sections/reorder
+PUT /api/courses/sections/:sectionId/episodes/:episodeId/move
+PUT /api/courses/sections/:sectionId/episodes/reorder
 ```
 
 ### User-Web Course Routes
@@ -711,7 +741,7 @@ PUT /api/courses/episodes/:eid/tasks/reorder
 25. **`batches.xp_per_day` is a raw SQL column** — not in Prisma schema; added via idempotent `ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50` in `prisma.ts` startup. Reading: after `prisma.batch.findMany/findUnique`, run a supplementary `$queryRawUnsafe` and merge `xpPerDay` via object map. Writing (create/update): **destructure `xpPerDay` out of the body before spreading into `prisma.batch.create/update`** (Prisma throws "Unknown field" otherwise), then persist via `$executeRawUnsafe('UPDATE batches SET xp_per_day=$1 WHERE id=$2', xpPerDay, id)`. Default fallback: `xpRow?.xp_per_day ?? 50`. On approve, `approveDayHandler` / `bulkApproveDaysHandler` fetch `xp_per_day` from the DB (once, before any loop) and use it for `pointsLedger` + socket emit `batch:day_approved` + notification text. Similarly, `batches.status` (VARCHAR, default `'active'`) and `batches.snapshot_days` (INT, nullable) are raw SQL columns added at startup — destructure them before spreading into Prisma and persist separately.
 26. **`task_steps` table does not exist in production** — do NOT include `step: true` or `steps: true` in any Prisma `task.findMany/findUnique` `include` block. The `task_steps` table has no startup `CREATE TABLE` SQL and was never migrated, so a JOIN against it causes a Postgres error → 500 on any task endpoint. The `Task` model has a `stepId` foreign-key field (nullable) but the related table is absent; treat steps as a soft reference only.
 27. **Uploaded images are auto-converted to WebP** — `backend/src/modules/upload/controller.ts` uses `sharp` to convert JPEG/PNG/WebP/GIF to WebP (quality 85, animated GIF preserved) before writing to R2. The stored filename gets a `.webp` extension regardless of the original. Body limit for image endpoints is 50 MB. No client-side format guard is needed — accept `accept="image/*"` in file inputs; the backend normalises everything.
-28. **Several tables exist only as raw SQL — not in Prisma schema** — `member_attendance`, `batch_break_requests`, `member_batch_settings`, `product_inquiries`, `admin_notifications` are created entirely via `$executeRawUnsafe` in `prisma.ts` startup. There are no Prisma models for them; all reads/writes must use `$queryRawUnsafe` / `$executeRawUnsafe`. Never attempt `prisma.memberAttendance.findMany()` — it will fail with "does not exist on type PrismaClient".
+28. **Several tables exist only as raw SQL — not in Prisma schema** — `member_attendance`, `batch_break_requests`, `member_batch_settings`, `product_inquiries`, `admin_notifications`, `course_sections`, `lesson_feedback` are created entirely via `$executeRawUnsafe` in `prisma.ts` startup. There are no Prisma models for them; all reads/writes must use `$queryRawUnsafe` / `$executeRawUnsafe`. Never attempt `prisma.memberAttendance.findMany()` — it will fail with "does not exist on type PrismaClient".
 29. **Task unification — `tasks.batch_id` now nullable FK** — the startup SQL added `batch_id UUID REFERENCES batches(id)` to `tasks` and made `program_id` nullable. `task_submissions` gained `batch_id`, `day_progress_id`, `day_number` columns. The old global unique constraint `(member_id, task_id)` was replaced by two day-scoped partial indexes: one for batch tasks `(member_id, task_id, batch_id, day_number)` and one for program tasks `(member_id, task_id) WHERE batch_id IS NULL`. Batch-inline tasks (batch_id set, program_id null) and program tasks (program_id set, batch_id null) are differentiated by which FK is populated.
 30. **Gamification route prefix is `/api/tbt`** — the `gamification` module registers under `/api/tbt`, not `/api/gamification`. Reads for leaderboards, points, tier/badge/level all live there. Do not create a parallel `/api/gamification` prefix.
 31. **`chat-groups` raw SQL requires `::uuid` casts on every UUID param** — see commit `e3a5590f`. Missing the cast throws a Postgres type error at runtime. Example: `$queryRawUnsafe('SELECT ... WHERE id = $1::uuid', groupId)`.
@@ -736,7 +766,7 @@ Socket.IO rooms and the events each room receives:
 
 | Room | Events emitted |
 |---|---|
-| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`), `admin:helpdesk_ticket` (new ticket/reply — alarm starts), `admin:helpdesk_ticket_acknowledged` (`{ ticketId, acknowledgedBy, acknowledgedAt }` — alarm stops for that ticket only), `admin:helpdesk_ticket_escalated` (unacknowledged past `escalationMinutes`), `admin:helpdesk_ticket_updated` (assign/status/priority — list refresh only), `admin:credit_purchase` (`{ memberId, creditType, quantity, amountInr, purchaseId }` — MG-05), `admin:course_weekly_feedback` (`{ feedbackId, memberName, courseId }`) |
+| `'admin'` | `admin:member_joined`, `admin:member_pending`, `admin:member_approved`, `admin:product_inquiry`, `admin:workshop_access_request`, `admin:course_access_request`, `chat:conversation_new`, `chat:unread_ping`, `admin:day_submitted` (`{ memberId, batchId, dayNumber }`), `admin:helpdesk_ticket` (new ticket/reply — alarm starts), `admin:helpdesk_ticket_acknowledged` (`{ ticketId, acknowledgedBy, acknowledgedAt }` — alarm stops for that ticket only), `admin:helpdesk_ticket_escalated` (unacknowledged past `escalationMinutes`), `admin:helpdesk_ticket_updated` (assign/status/priority — list refresh only), `admin:credit_purchase` (`{ memberId, creditType, quantity, amountInr, purchaseId }` — MG-05), `admin:course_weekly_feedback` (`{ feedbackId, memberName, courseId }`), `admin:course_episode_feedback` (`{ feedbackId, memberName, episodeId }`) |
 | `user:{memberId}` | `notification`, `message:new`, `workshop:enrolled`, `workshop:removed`, `live_call:lock`, `live_call:admitted`, `live_call:poll`, `live:reminder`, `batch:day_approved` (`{ dayNumber, batchId, xpAwarded }`), `batch:stage_unlocked` (`{ processTitle, nextStageTitle }` — MG-03), `course:access_granted` (`{ courseId }`), `credit_approved` (`{ creditType, quantity }` — MG-05), `credit_rejected` (MG-05) |
 | `workshop:{slug}` | `qa:new_question`, `qa:new_reply` |
 | `live:{webinarId}` | `live:started`, `live:ended`, `live:attendee_count` |
@@ -830,3 +860,5 @@ Backend `onboarding` and `onboarding-meetings` modules merged. Frontend wizard (
 - **User-web moved from Vercel to Google Cloud Run (2026-09-10)** — see Deployment section.
 - **Video feedback** — post-episode rating/yes-no questions module (`/api/video-feedback`). See Video Feedback section above.
 - **Weekly course reports** — sibling to Batch reports, but for the VOD Course Platform (`CourseEnrollment`/`CourseEpisode`, not the Batch day-task program) and two-directional: admin → member weekly progress report AND member → admin weekly feedback, both over WhatsApp, continuing every week until `CourseEnrollment.completedAt` is set. New Prisma models `CourseWeeklyReport` / `CourseWeeklyFeedback` (`@@unique([memberId, courseId, weekNumber])`, WhatsApp delivery status stored inline). Backend: pure logic in `backend/src/lib/courseReportLogic.ts` (unit-tested); orchestration in `courseReports.ts` (`generateMemberCourseReport`, `deliverMemberCourseReport` — same function used by both the cron and the admin manual-send endpoint, `runWeeklyCourseReports`, `deliverMemberFeedbackToAdmin`); BullMQ cron queue `tbt-course-reports` (weekly Sun 20:30 IST = `0 15 * * 0` UTC, offset from `tbt-batch-reports` to avoid contention); HTTP fallback `POST /api/cron/weekly-course-report`. Module `backend/src/modules/course-reports/` follows the Helpdesk two-subscope pattern: `/api/course-reports/admin/*` (Clerk) for admin list/filter/send/remarks/feedback-status, `/api/course-reports/*` (JWT cookie, `req.memberId`-scoped) for the member's own current report, report history, feedback submission (upsert by member+course+week), and feedback history. Admin page: `admin-panel/app/course-weekly-reports/` (Reports + Feedback tabs). Admin hooks in `useTbt.ts`: `useListCourseWeeklyReports`, `useCreateOrSendCourseReport`, `useUpdateCourseReportRemarks`, `useListCourseWeeklyFeedback`, `useUpdateCourseFeedbackStatus`. User-web: `tbt-user-web/lib/hooks/useCourseReports.ts` + `lib/api/services/courseReports.service.ts`, surfaced at `/learning/[courseId]/weekly` (linked from the course detail page). Optional env var: `ADMIN_WHATSAPP_NUMBER` (member → admin feedback WhatsApp destination; if unset, feedback still saves + raises an in-app `admin_notifications`/`admin:course_weekly_feedback` socket alert, just isn't WhatsApp'd). Socket event `admin:course_weekly_feedback` added to the `'admin'` room table below; `resolveNotificationRoute` routes it to `/course-weekly-reports?tab=feedback&open=<id>`.
+
+  **Per-episode feedback (1–10 rating + free-text)** — a parallel feedback track on the same `course-reports` module but scoped to individual episodes rather than weekly course-level feedback. Member routes: `POST /api/course-reports/episode-feedback` (upsert by member+episode), `GET /api/course-reports/episode-feedback/mine`. Admin routes: `GET/PATCH /api/course-reports/admin/episode-feedback[/:id]/status` (status: `new|reviewed`). Admin hooks: `useListCourseEpisodeFeedback`, `useUpdateCourseEpisodeFeedbackStatus` in `useTbt.ts`. User-web hooks: `useMyEpisodeFeedback(episodeId)`, `useSubmitEpisodeFeedback()` in `lib/hooks/useCourseReports.ts`. Socket event: `admin:course_episode_feedback` → `'admin'` room. Admin page: `admin-panel/app/course-weekly-reports/` — new "Video Feedback" tab (alongside Reports and Feedback). `resolveNotificationRoute` maps `course_episode_feedback` → `/course-weekly-reports?tab=video-feedback&open=<id>`.
