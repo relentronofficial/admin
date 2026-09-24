@@ -32,7 +32,6 @@ const STATUS_COLORS: Record<string, string> = {
 
 const emptyTaskForm = (): Partial<TaskInitiativeInput> => ({
   programId: "",
-  stepId: "",
   dayNumber: 1,
   title: "",
   description: "",
@@ -200,7 +199,7 @@ export default function TasksPage() {
     setMemberSearch("");
     setTaskForm({
       programId:        task.programId  || "",
-      stepId:           task.stepId     || "",
+      stepId:           task.stepId     ?? undefined,
       dayNumber:        task.dayNumber,
       title:            task.title,
       description:      task.description  || "",
