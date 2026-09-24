@@ -288,14 +288,18 @@ export async function userRoutes(fastify: FastifyInstance) {
 // Webhook — registered separately (no authenticateUser hook).
 // Parses application/json but preserves the raw body string for HMAC.
 export async function userWebhookRoutes(fastify: FastifyInstance) {
-  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-    try {
-      const parsed = JSON.parse(body as string);
-      (req as any).rawBody = body as string;
-      done(null, parsed);
-    } catch (err: any) {
-      done(err);
-    }
+  // Register in an encapsulated child scope so the content-type parser override
+  // does not conflict with the root-level parser already registered by Fastify.
+  fastify.register(async (child) => {
+    child.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+      try {
+        const parsed = JSON.parse(body as string);
+        (req as any).rawBody = body as string;
+        done(null, parsed);
+      } catch (err: any) {
+        done(err);
+      }
+    });
+    child.post('/courses/razorpay/webhook', razorpayWebhookHandler);
   });
-  fastify.post('/courses/razorpay/webhook', razorpayWebhookHandler);
 }
