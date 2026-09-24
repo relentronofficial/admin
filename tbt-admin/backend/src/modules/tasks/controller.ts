@@ -61,7 +61,7 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
   const task = await request.server.prisma.task.create({
     data: {
       programId: body.programId,
-      stepId: body.stepId ?? null,
+      stepId: body.stepId || null,
       dayNumber: body.dayNumber,
       title: body.title,
       description: body.description ?? null,
@@ -115,8 +115,19 @@ export async function getTaskHandler(request: FastifyRequest, reply: FastifyRepl
 
 export async function updateTaskHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  const body = updateTaskSchema.parse(request.body);
-  const task = await request.server.prisma.task.update({ where: { id }, data: body as any });
+  let body: ReturnType<typeof updateTaskSchema.parse>;
+  try {
+    body = updateTaskSchema.parse(request.body);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return reply.status(400).send({ success: false, data: null, error: err.errors[0]?.message ?? 'Invalid input' });
+    }
+    throw err;
+  }
+  // Normalize empty-string UUID fields to null (Postgres rejects "" as invalid UUID)
+  const data: any = { ...body };
+  if (data.stepId === '') data.stepId = null;
+  const task = await request.server.prisma.task.update({ where: { id }, data });
   return reply.send({ success: true, data: task, error: null });
 }
 
