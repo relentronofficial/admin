@@ -38,7 +38,7 @@ import {
   type RequestContext,
 } from './eligibility.js';
 import { checkMediaReachable, cleanupCampaignCreative, resolveHlsUrl } from './media.js';
-import { cacheGet, cacheSet, invalidateCache } from '../../lib/cache.js';
+import { invalidateCache } from '../../lib/cache.js';
 
 // ── Response helpers (project convention) ───────────────────────────────────
 
@@ -579,25 +579,19 @@ export async function eligibleHandler(req: FastifyRequest, reply: FastifyReply) 
   const now = new Date();
 
   try {
-    const redis = (req.server as any).redis ?? null;
-    const campaignCacheKey = 'ads:campaigns:active';
-    const cachedRows = await cacheGet<any[]>(redis, campaignCacheKey);
-    let rows: Awaited<ReturnType<typeof req.server.prisma.adCampaign.findMany>>;
-    if (cachedRows !== null) {
-      rows = cachedRows as typeof rows;
-    } else {
-      rows = await req.server.prisma.adCampaign.findMany({
-        where: {
-          status: 'active',
-          deletedAt: null,
-          startAt: { lte: now },
-          endAt: { gt: now },
-        },
-        orderBy: [{ priority: 'desc' }, { startAt: 'asc' }, { createdAt: 'asc' }],
-        take: 200,
-      });
-      void cacheSet(redis, campaignCacheKey, rows, 30);
-    }
+    // Not cached: these rows carry BigInt counters (JSON.stringify throws on them)
+    // and Date fields the eligibility engine calls .getTime() on, which a JSON
+    // round-trip would turn into strings. Caching them crash-looped prod (351a8dd).
+    const rows = await req.server.prisma.adCampaign.findMany({
+      where: {
+        status: 'active',
+        deletedAt: null,
+        startAt: { lte: now },
+        endAt: { gt: now },
+      },
+      orderBy: [{ priority: 'desc' }, { startAt: 'asc' }, { createdAt: 'asc' }],
+      take: 200,
+    });
 
     if (rows.length === 0) return ok(reply, { showAd: false, campaign: null });
 
