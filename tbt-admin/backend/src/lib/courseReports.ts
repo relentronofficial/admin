@@ -172,6 +172,10 @@ export async function deliverMemberCourseReport(
     remarks,
   });
 
+  console.log(
+    `[CourseReport] send attempt — memberId:${memberId} courseId:${courseId} week:${report.weekNumber} force:${opts.force ?? false}`,
+  );
+
   let ok = false;
   let errMsg: string | null = null;
   try {
@@ -179,6 +183,16 @@ export async function deliverMemberCourseReport(
     if (!ok) errMsg = 'WABA send returned false';
   } catch (err) {
     errMsg = err instanceof Error ? err.message : String(err);
+  }
+
+  if (ok) {
+    console.log(
+      `[CourseReport] WhatsApp delivered — memberId:${memberId} courseId:${courseId} week:${report.weekNumber}`,
+    );
+  } else {
+    console.warn(
+      `[CourseReport] WhatsApp not delivered — memberId:${memberId} courseId:${courseId} week:${report.weekNumber} reason:${errMsg ?? 'unknown'}`,
+    );
   }
 
   await prisma.courseWeeklyReport.update({

@@ -67,6 +67,7 @@ function CreateSendPanel() {
   const [remarks, setRemarks] = useState("");
   const [force, setForce] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const { data: memberResults } = useListMembers({ search, limit: 8 });
   const members: any[] = memberResults?.data ?? [];
@@ -99,6 +100,7 @@ function CreateSendPanel() {
                 setSelectedMember(null);
                 setSearch(e.target.value);
                 setResult(null);
+                setSendError(null);
               }}
               placeholder="Search member by name, email, phone…"
               className="pl-9 pr-4 h-10 w-full text-sm bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-[#f0f0f0] placeholder-[#606060] outline-none focus:border-[#dc2626]"
@@ -129,7 +131,7 @@ function CreateSendPanel() {
           </label>
           <select
             value={courseId}
-            onChange={(e) => { setCourseId(e.target.value); setResult(null); }}
+            onChange={(e) => { setCourseId(e.target.value); setResult(null); setSendError(null); }}
             className="h-10 px-3 w-full text-sm bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-[#f0f0f0] outline-none focus:border-[#dc2626] cursor-pointer"
           >
             <option value="">Select a course…</option>
@@ -157,23 +159,36 @@ function CreateSendPanel() {
         <button
           disabled={!canAct || send.isPending}
           onClick={async () => {
-            const res = await send.mutateAsync({
-              memberId: selectedMember!.id,
-              courseId,
-              remarks: remarks.trim() || undefined,
-              force,
-            });
-            setResult(res);
+            setResult(null);
+            setSendError(null);
+            try {
+              const res = await send.mutateAsync({
+                memberId: selectedMember!.id,
+                courseId,
+                remarks: remarks.trim() || undefined,
+                force,
+              });
+              setResult(res);
+            } catch (err: any) {
+              setSendError(err?.message ?? 'Send failed — check backend logs for details.');
+            }
           }}
           className="inline-flex items-center gap-2 px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          <Send size={13} /> Send Now
+          <Send size={13} /> {send.isPending ? 'Sending…' : 'Send Now'}
         </button>
         <label className="flex items-center gap-1.5 text-[11px] text-[#888] cursor-pointer select-none">
           <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} className="accent-[#dc2626]" />
           Force (resend even if already sent this week)
         </label>
       </div>
+
+      {sendError && (
+        <div className="bg-[#0f0f0f] border border-[#dc2626]/30 rounded-lg p-4 text-xs space-y-1">
+          <p className="text-[#dc2626] font-semibold uppercase tracking-wider text-[10px] font-rajdhani">Send failed</p>
+          <p className="text-[#a0a0a0]">{sendError}</p>
+        </div>
+      )}
 
       {result && (
         <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg p-4 text-xs space-y-2">
