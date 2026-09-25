@@ -6306,6 +6306,10 @@ export async function verifyRazorpayPaymentHandler(request: FastifyRequest, repl
     request.body as any;
   const redis = (request.server as any).redis ?? null;
 
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
   const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id, status FROM course_payments WHERE id = $1::uuid AND member_id = $2::uuid AND course_id = $3::uuid`,
     paymentRecordId, memberId, courseId,
