@@ -117,8 +117,7 @@ export async function approvePurchaseHandler(
   // Emit socket notification
   const io = (req.server as any).io;
   if (io) {
-    io.to(`user:${member_id}`).emit('notification', {
-      type: 'credit_approved',
+    io.to(`user:${member_id}`).emit('credit_approved', {
       creditType: credit_type,
       quantity,
       message: `Your purchase of ${quantity}× ${credit_type.replace(/_/g, ' ')} has been approved!`,
@@ -152,8 +151,7 @@ export async function rejectPurchaseHandler(
 
   const io = (req.server as any).io;
   if (io) {
-    io.to(`user:${purchase.member_id}`).emit('notification', {
-      type: 'credit_rejected',
+    io.to(`user:${purchase.member_id}`).emit('credit_rejected', {
       message: adminNote ?? 'Your purchase request could not be approved.',
     });
   }
