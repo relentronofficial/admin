@@ -5,6 +5,7 @@ import {
 } from '../../lib/courseNotifications.js';
 import { invalidateCache } from '../../lib/cache.js';
 import { notifyMembers } from '../../lib/notifications.js';
+import { validateCoursePrice } from '../../lib/coursePriceValidation.js';
 
 // Any course/episode edit can change what the home sections render
 // (thumbnail, title, episode count, visibility). Busting home:* is
@@ -12,6 +13,16 @@ import { notifyMembers } from '../../lib/notifications.js';
 // section data for up to 5 min.
 function bustHome(req: FastifyRequest): void {
   void invalidateCache(req.server.redis ?? null, 'home:*');
+}
+
+// Admin controllers only get the Clerk subject string on req.user (there is
+// no req.admin) — look up the admin's own DB row to attribute an action.
+async function resolveAdminId(req: FastifyRequest): Promise<string | null> {
+  if (!req.user) return null;
+  const admin = await req.server.prisma.admin
+    .findFirst({ where: { clerkId: req.user as string }, select: { id: true } })
+    .catch(() => null);
+  return admin?.id ?? null;
 }
 
 // ── COURSES ───────────────────────────────────────────────────────────
@@ -43,35 +54,50 @@ export async function listCoursesHandler(req: FastifyRequest, reply: FastifyRepl
 export async function createCourseHandler(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as any;
   const slug = body.slug || body.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-  const count = await req.server.prisma.course.count();
-  const course = await req.server.prisma.course.create({
-    data: {
-      title: body.title,
-      slug,
-      description: body.description,
-      thumbnailUrl: body.thumbnailUrl,
-      requiredTier: Number(body.requiredTier) || 1,
-      isActive: body.isActive ?? true,
-      isPublished: body.isPublished ?? true,
-      sortOrder: body.order ?? count,
-      price: body.price != null ? body.price : null,
-      accessDurationDays: body.accessDurationDays ?? null,
-      maxEnrollments: body.maxEnrollments ?? null,
-      xpPerEpisode: body.xpPerEpisode ?? 10,
-      passingScorePercent: body.passingScorePercent ?? 70,
-      paymentLinkUrl: body.paymentLinkUrl ?? null,
-      requireSequential: body.requireSequential ?? true,
-      completionThresholdPercent: body.completionThresholdPercent ?? 95,
-    },
-  });
-  const module = body.module ?? null;
-  if (module) {
-    await req.server.prisma.$executeRawUnsafe(
-      `UPDATE courses SET module = $1 WHERE id = $2::uuid`, module, course.id,
-    );
+
+  let price: string | null = null;
+  if (body.price !== undefined && body.price !== null) {
+    const priceCheck = validateCoursePrice(body.price);
+    if (!priceCheck.valid) {
+      return reply.status(400).send({ success: false, data: null, error: priceCheck.error });
+    }
+    price = priceCheck.value;
   }
-  bustHome(req);
-  return reply.status(201).send({ success: true, data: { ...course, module }, error: null });
+
+  try {
+    const count = await req.server.prisma.course.count();
+    const course = await req.server.prisma.course.create({
+      data: {
+        title: body.title,
+        slug,
+        description: body.description,
+        thumbnailUrl: body.thumbnailUrl,
+        requiredTier: Number(body.requiredTier) || 1,
+        isActive: body.isActive ?? true,
+        isPublished: body.isPublished ?? true,
+        sortOrder: body.order ?? count,
+        price,
+        accessDurationDays: body.accessDurationDays ?? null,
+        maxEnrollments: body.maxEnrollments ?? null,
+        xpPerEpisode: body.xpPerEpisode ?? 10,
+        passingScorePercent: body.passingScorePercent ?? 70,
+        paymentLinkUrl: body.paymentLinkUrl ?? null,
+        requireSequential: body.requireSequential ?? true,
+        completionThresholdPercent: body.completionThresholdPercent ?? 95,
+      },
+    });
+    const module = body.module ?? null;
+    if (module) {
+      await req.server.prisma.$executeRawUnsafe(
+        `UPDATE courses SET module = $1 WHERE id = $2::uuid`, module, course.id,
+      );
+    }
+    bustHome(req);
+    return reply.status(201).send({ success: true, data: { ...course, module }, error: null });
+  } catch (err: any) {
+    req.log.error({ err }, 'createCourseHandler failed');
+    return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to create course' });
+  }
 }
 
 export async function getCourseHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -104,9 +130,14 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
     data.completionThresholdPercent = Math.min(100, Math.max(50, Math.round(data.completionThresholdPercent)));
   }
   if (body.order !== undefined) data.sortOrder = body.order;
-  // Coerce price to Decimal-compatible string to avoid Prisma type errors
+  // Coerce price to a Decimal-compatible string, and reject anything that
+  // isn't a valid non-negative number, before it ever reaches Prisma.
   if (data.price !== undefined && data.price !== null) {
-    data.price = String(data.price);
+    const priceCheck = validateCoursePrice(data.price);
+    if (!priceCheck.valid) {
+      return reply.status(400).send({ success: false, data: null, error: priceCheck.error });
+    }
+    data.price = priceCheck.value;
   }
   try {
     const course = await req.server.prisma.course.update({ where: { id }, data });
@@ -510,13 +541,8 @@ export async function grantCourseAccessHandler(req: FastifyRequest, reply: Fasti
   const course = await req.server.prisma.course.findUnique({ where: { id: courseId }, select: { id: true, title: true } });
   if (!course) return reply.status(404).send({ success: false, data: null, error: 'Course not found' });
 
-  // Resolve the acting admin's DB ID from their Clerk subject (req.user)
-  const adminRow = req.user
-    ? await req.server.prisma.admin.findFirst({ where: { clerkId: req.user }, select: { id: true } }).catch(() => null)
-    : null;
-  const adminId: string | null = adminRow?.id ?? null;
-
   try {
+    const adminId = await resolveAdminId(req);
     let paymentId: string | undefined;
 
     if (amount && Number(amount) > 0) {
@@ -584,55 +610,68 @@ export async function grantCourseAccessHandler(req: FastifyRequest, reply: Fasti
 }
 
 export async function revokeCourseAccessHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { accessId } = req.params as any;
-  const access = await (req.server.prisma as any).courseAccess.update({
-    where: { id: accessId },
-    data: { isActive: false, revokedAt: new Date(), revokedBy: (req as any).adminId ?? null },
-  });
-  return reply.send({ success: true, data: access, error: null });
+  try {
+    const { accessId } = req.params as any;
+    const adminId = await resolveAdminId(req);
+    const access = await req.server.prisma.courseAccess.update({
+      where: { id: accessId },
+      data: { isActive: false, revokedAt: new Date(), revokedBy: adminId },
+    });
+    return reply.send({ success: true, data: access, error: null });
+  } catch (err: any) {
+    req.log.error({ err }, 'revokeCourseAccessHandler failed');
+    return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to revoke access' });
+  }
 }
 
 export async function approveCoursePaymentHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id: courseId, paymentId } = req.params as any;
 
-  const payment = await (req.server.prisma as any).coursePayment.findUnique({
-    where: { id: paymentId },
-    select: { id: true, courseId: true, memberId: true, status: true, amount: true },
-  });
-  if (!payment || payment.courseId !== courseId) {
-    return reply.status(404).send({ success: false, data: null, error: 'Payment not found' });
+  try {
+    const payment = await req.server.prisma.coursePayment.findUnique({
+      where: { id: paymentId },
+      select: { id: true, courseId: true, memberId: true, status: true, amount: true },
+    });
+    if (!payment || payment.courseId !== courseId) {
+      return reply.status(404).send({ success: false, data: null, error: 'Payment not found' });
+    }
+    if (payment.status !== 'pending') {
+      return reply.status(409).send({ success: false, data: null, error: 'Payment is not pending' });
+    }
+
+    const adminId = await resolveAdminId(req);
+
+    await req.server.prisma.coursePayment.update({
+      where: { id: paymentId },
+      data: { status: 'completed', paidAt: new Date(), grantedBy: adminId },
+    });
+
+    await req.server.prisma.courseAccess.upsert({
+      where: { memberId_courseId: { memberId: payment.memberId, courseId } },
+      create: { memberId: payment.memberId, courseId, accessType: 'lifetime', isActive: true, paymentId, grantedBy: adminId },
+      update: { accessType: 'lifetime', isActive: true, revokedAt: null, revokedBy: null, paymentId, grantedBy: adminId },
+    });
+
+    await req.server.prisma.courseEnrollment.upsert({
+      where: { memberId_courseId: { memberId: payment.memberId, courseId } },
+      create: { memberId: payment.memberId, courseId, progressPercentage: 0 },
+      update: {},
+    });
+
+    const course = await req.server.prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+    void notifyCourseAccessGranted({
+      prisma: req.server.prisma as any,
+      io: req.server.io,
+      memberId: payment.memberId,
+      courseId,
+      courseTitle: course?.title ?? 'the course',
+    }).catch(() => {});
+
+    return reply.send({ success: true, data: { approved: true }, error: null });
+  } catch (err: any) {
+    req.log.error({ err, courseId, paymentId }, 'approveCoursePaymentHandler failed');
+    return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to approve payment' });
   }
-  if (payment.status !== 'pending') {
-    return reply.status(409).send({ success: false, data: null, error: 'Payment is not pending' });
-  }
-
-  await (req.server.prisma as any).coursePayment.update({
-    where: { id: paymentId },
-    data: { status: 'completed', paidAt: new Date(), grantedBy: (req as any).adminId ?? null },
-  });
-
-  await (req.server.prisma as any).courseAccess.upsert({
-    where: { memberId_courseId: { memberId: payment.memberId, courseId } },
-    create: { memberId: payment.memberId, courseId, accessType: 'lifetime', isActive: true, paymentId },
-    update: { accessType: 'lifetime', isActive: true, revokedAt: null, revokedBy: null, paymentId },
-  });
-
-  await req.server.prisma.courseEnrollment.upsert({
-    where: { memberId_courseId: { memberId: payment.memberId, courseId } },
-    create: { memberId: payment.memberId, courseId, progressPercentage: 0 },
-    update: {},
-  });
-
-  const course = await req.server.prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
-  void notifyCourseAccessGranted({
-    prisma: req.server.prisma as any,
-    io: req.server.io,
-    memberId: payment.memberId,
-    courseId,
-    courseTitle: course?.title ?? 'the course',
-  }).catch(() => {});
-
-  return reply.send({ success: true, data: { approved: true }, error: null });
 }
 
 export async function refundCoursePaymentHandler(req: FastifyRequest, reply: FastifyReply) {
