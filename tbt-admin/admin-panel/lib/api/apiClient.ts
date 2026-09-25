@@ -19,7 +19,13 @@ apiClient.interceptors.request.use(async (config) => {
 apiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    const message = error.response?.data?.error?.message || error.message || 'Something went wrong';
+    // Backend returns { error: "string message" } — not { error: { message: "..." } }.
+    // Guard against both shapes so neither swallows the real error text.
+    const backendError = error.response?.data?.error;
+    const message =
+      (typeof backendError === 'string' ? backendError : backendError?.message) ||
+      error.message ||
+      'Something went wrong';
     return Promise.reject({ ...error, message });
   }
 );

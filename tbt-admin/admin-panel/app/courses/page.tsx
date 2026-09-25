@@ -191,6 +191,15 @@ export default function CoursesPage() {
     }
   }, [autoOpenId, courses]);
 
+  // Keep selectedCourse in sync with the latest data from the server list.
+  // After a save, invalidateQueries re-fetches the course list; without this
+  // effect the detail panel would display the stale pre-save values.
+  useEffect(() => {
+    if (!selectedCourse || courses.length === 0) return;
+    const fresh = courses.find((c: any) => c.id === selectedCourse.id);
+    if (fresh) setSelectedCourse(fresh);
+  }, [courses]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const setCourseField = (k: string, v: any) => setCourseForm((f: any) => ({ ...f, [k]: v }));
 
   const openCreateCourse = () => { setCourseForm(EMPTY_COURSE); setEditingCourse(null); setShowCourseForm(true); };
@@ -234,8 +243,16 @@ export default function CoursesPage() {
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     try {
-      if (editingCourse) { await updateCourse.mutateAsync({ id: editingCourse.id, data: payload }); toast.success("Course updated"); }
-      else { await createCourse.mutateAsync(payload); toast.success("Course created"); }
+      if (editingCourse) {
+        const updated = await updateCourse.mutateAsync({ id: editingCourse.id, data: payload });
+        toast.success("Course updated");
+        // Refresh the detail panel so the price / fields don't appear to revert.
+        // The mutation returns the saved course object; merge it into selectedCourse
+        // when that course is currently open.
+        if (updated && selectedCourse?.id === editingCourse.id) {
+          setSelectedCourse((prev: any) => ({ ...prev, ...updated }));
+        }
+      } else { await createCourse.mutateAsync(payload); toast.success("Course created"); }
       setShowCourseForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }
   };
