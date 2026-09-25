@@ -257,7 +257,7 @@ export const useEpisodeResources = (episodeId: string | null | undefined) =>
 
 export const useAllCourseEpisodeResources = (courseId: string | null | undefined) =>
   useQuery({
-    queryKey: ["course-episode-resources", courseId],
+    queryKey: ["course-all-episode-resources", courseId],
     queryFn: async () => {
       const res = await coursesService.getAllCourseEpisodeResources(courseId!);
       return (res.data ?? {}) as Record<string, import("@/lib/api/services/courses.service").EpisodeResource[]>;
