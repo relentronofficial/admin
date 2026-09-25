@@ -395,8 +395,9 @@ export async function setPassword(fastify: FastifyInstance, request: any, reply:
     select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any,
   });
 
-  // Single-session enforcement.
+  // Single-session enforcement: wipe all Redis tokens and DB session records.
   await revokeAllForMember(getRedis(fastify), (member as any).id).catch(() => {});
+  await (fastify.prisma.memberSession as any).deleteMany({ where: { memberId: (member as any).id } }).catch(() => {});
 
   await issueTokens(fastify, reply, (member as any).id);
   return reply.send({ success: true, data: updated });
@@ -486,11 +487,16 @@ export async function refresh(fastify: FastifyInstance, request: any, reply: any
     return reply.status(401).send({ success: false, data: null, error: 'No refresh token' });
   }
 
+  const oldHash = hashRefreshToken(refreshToken);
+
   const memberId = await consumeRefreshToken(getRedis(fastify), refreshToken);
   if (!memberId) {
     clearAuthCookies(reply);
     return reply.status(401).send({ success: false, data: null, error: 'Invalid or expired refresh token' });
   }
+
+  // Delete the old session record so it doesn't accumulate stale entries
+  (fastify.prisma.memberSession as any).deleteMany({ where: { tokenHash: oldHash } }).catch(() => {});
 
   let member: { id: string; status: string } | null;
   try {
@@ -522,7 +528,12 @@ export async function refresh(fastify: FastifyInstance, request: any, reply: any
     return reply.status(403).send({ success: false, data: null, error: `Account is ${member.status}` });
   }
 
-  await issueTokens(fastify, reply, memberId);
+  const refreshMeta: SessionMeta = {
+    deviceId: request.headers['x-device-id'] as string | undefined,
+    userAgent: request.headers['user-agent'] as string | undefined,
+    ip: request.ip,
+  };
+  await issueTokens(fastify, reply, memberId, refreshMeta);
   return reply.send({ success: true, data: null });
 }
 

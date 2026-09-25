@@ -1658,6 +1658,7 @@ model ActivityLog {
 model MemberSession {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   memberId        String    @map("member_id") @db.Uuid
+  tokenHash       String?   @map("token_hash")
   deviceId        String?   @map("device_id")
   ipAddress       String?   @map("ip_address")
   userAgent       String?   @map("user_agent")
@@ -1671,6 +1672,7 @@ model MemberSession {
 
   @@index([memberId, lastActiveAt])
   @@index([memberId, deviceId])
+  @@index([tokenHash])
   @@map("member_sessions")
 }
 
