@@ -23,7 +23,7 @@ import {
   useCourseLeaderboard, useRequestCourseAccess,
   useSaveReflection, useReflections,
   useLessonFeedback,
-  useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
+  useEpisodeResources, useAllCourseEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
   useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
   useEpisodeLifelines, useUseEpisodeLifeline,
   useCreateRazorpayOrder, useVerifyRazorpayPayment,
@@ -1479,6 +1479,7 @@ export default function CourseDetailPage({
   const submitQuiz = useSubmitCourseQuiz(courseId, quizModal?.episodeId ?? "");
   const { data: certData } = useCertificateEligibility(courseId);
   const { data: episodeResources = [] } = useEpisodeResources(selectedLesson?.id);
+  const { data: allEpisodeResourcesMap = {} } = useAllCourseEpisodeResources(courseId);
   const { data: episodeTasks = [] } = useEpisodeTasks(selectedLesson?.id);
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
@@ -3112,6 +3113,7 @@ export default function CourseDetailPage({
               resources={episodeResources}
               heading={uiStrings?.courseResourcesHeading ?? "Resources"}
               defaultDownloadLabel={uiStrings?.resourcesDownloadLabel ?? "Download"}
+              showEmpty
             />
 
             {/* Episode Tasks */}
@@ -3511,6 +3513,16 @@ export default function CourseDetailPage({
                       </button>
                     </div>
                   )}
+
+                  {/* Per-lesson resources in lesson list */}
+                  <div className="px-3 pb-3">
+                    <EpisodeResourcesSection
+                      resources={allEpisodeResourcesMap[lesson.id] ?? []}
+                      heading={uiStrings?.courseResourcesHeading ?? "Resources"}
+                      defaultDownloadLabel={uiStrings?.resourcesDownloadLabel ?? "Download"}
+                      showEmpty
+                    />
+                  </div>
                   </div>
                   )}
                 </React.Fragment>

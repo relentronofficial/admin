@@ -27,11 +27,12 @@ interface Props {
   resources: EpisodeResource[];
   heading: string;
   defaultDownloadLabel: string;
+  showEmpty?: boolean;
 }
 
-export function EpisodeResourcesSection({ resources, heading, defaultDownloadLabel }: Props) {
+export function EpisodeResourcesSection({ resources, heading, defaultDownloadLabel, showEmpty = false }: Props) {
   const items = resources.filter((r) => !!r.fileUrl);
-  if (items.length === 0) return null;
+  if (items.length === 0 && !showEmpty) return null;
 
   return (
     <div
@@ -42,9 +43,14 @@ export function EpisodeResourcesSection({ resources, heading, defaultDownloadLab
       <div className="flex items-center gap-2 px-4 py-3" style={{ background: "var(--color-bg-surface)" }}>
         <Download size={14} style={{ color: "var(--color-accent)" }} />
         <span className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
-          {heading} ({items.length})
+          {heading}{items.length > 0 ? ` (${items.length})` : ""}
         </span>
       </div>
+      {items.length === 0 ? (
+        <div className="px-4 py-3">
+          <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>No resources for this lesson.</p>
+        </div>
+      ) : null}
       <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
         {items.map((r) => {
           const kind = getResourceKind(r);

@@ -53,6 +53,7 @@ import {
   getEpisodePlaybackHandler,
   postEpisodeProgressHandler,
   getUserEpisodeResourcesHandler,
+  getCourseAllEpisodeResourcesHandler,
   getUserEpisodeTasksHandler,
   submitUserEpisodeTaskHandler,
   getUserProductsHandler,
@@ -149,6 +150,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/courses/:courseId/reflections', listReflectionsHandler);
   fastify.put('/courses/:courseId/lesson-feedback/:lessonId', upsertLessonFeedbackHandler);
   fastify.get('/courses/:courseId/lesson-feedback', listLessonFeedbackHandler);
+  fastify.get('/courses/:courseId/episode-resources', getCourseAllEpisodeResourcesHandler);
 
   // ── Enrollments & lesson progress ─────────────────────────────────────────
   fastify.get('/enrollments', getEnrollmentsHandler);

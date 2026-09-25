@@ -4208,6 +4208,27 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
   return reply.send({ success: true, data: resources, error: null });
 }
 
+export async function getCourseAllEpisodeResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { courseId } = request.params as { courseId: string };
+  const resources = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT r.id, r.title, r.description, r.file_url AS "fileUrl", r.file_type AS "fileType",
+            r.file_type_icon_url AS "fileTypeIconUrl", r.download_label AS "downloadLabel",
+            r.course_episode_id AS "episodeId"
+     FROM app_resources r
+     INNER JOIN course_episodes e ON e.id = r.course_episode_id
+     WHERE e.course_id = $1::uuid AND r.is_visible = true
+     ORDER BY r."order" ASC`,
+    courseId,
+  );
+  const grouped: Record<string, any[]> = {};
+  for (const r of resources) {
+    const eid = r.episodeId as string;
+    if (!grouped[eid]) grouped[eid] = [];
+    grouped[eid].push({ id: r.id, title: r.title, description: r.description, fileUrl: r.fileUrl, fileType: r.fileType, fileTypeIconUrl: r.fileTypeIconUrl, downloadLabel: r.downloadLabel });
+  }
+  return reply.send({ success: true, data: grouped, error: null });
+}
+
 export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: episodeId } = request.params as { id: string };
   const ep = await (request.server.prisma as any).courseEpisode.findUnique({

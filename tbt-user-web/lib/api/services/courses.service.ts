@@ -77,6 +77,9 @@ export const coursesService = {
   getEpisodeResources: (episodeId: string) =>
     apiClient.get<never, ApiResponse<EpisodeResource[]>>(`/api/user/episodes/${episodeId}/resources`),
 
+  getAllCourseEpisodeResources: (courseId: string) =>
+    apiClient.get<never, ApiResponse<Record<string, EpisodeResource[]>>>(`/api/user/courses/${courseId}/episode-resources`),
+
   getEpisodeTasks: (episodeId: string) =>
     apiClient.get<never, ApiResponse<EpisodeTask[]>>(`/api/user/episodes/${episodeId}/tasks`),
 

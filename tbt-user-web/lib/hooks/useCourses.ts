@@ -255,6 +255,17 @@ export const useEpisodeResources = (episodeId: string | null | undefined) =>
     staleTime: 30 * 1000,
   });
 
+export const useAllCourseEpisodeResources = (courseId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["course-episode-resources", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getAllCourseEpisodeResources(courseId!);
+      return (res.data ?? {}) as Record<string, import("@/lib/api/services/courses.service").EpisodeResource[]>;
+    },
+    enabled: !!courseId,
+    staleTime: 30 * 1000,
+  });
+
 export const useEpisodeTasks = (episodeId: string | null | undefined) =>
   useQuery({
     queryKey: ["episode-tasks", episodeId],
