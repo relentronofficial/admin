@@ -38,6 +38,7 @@ import {
   type RequestContext,
 } from './eligibility.js';
 import { checkMediaReachable, cleanupCampaignCreative, resolveHlsUrl } from './media.js';
+import { invalidateCache } from '../../lib/cache.js';
 
 // ── Response helpers (project convention) ───────────────────────────────────
 
@@ -113,6 +114,7 @@ function announceCampaignChange(
   } catch {
     /* socket unavailable — see above */
   }
+  void invalidateCache((server as any).redis ?? null, 'ads:campaigns:active');
 }
 
 /**
@@ -577,6 +579,9 @@ export async function eligibleHandler(req: FastifyRequest, reply: FastifyReply) 
   const now = new Date();
 
   try {
+    // Not cached: these rows carry BigInt counters (JSON.stringify throws on them)
+    // and Date fields the eligibility engine calls .getTime() on, which a JSON
+    // round-trip would turn into strings. Caching them crash-looped prod (351a8dd).
     const rows = await req.server.prisma.adCampaign.findMany({
       where: {
         status: 'active',

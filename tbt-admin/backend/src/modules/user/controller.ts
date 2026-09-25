@@ -22,6 +22,8 @@ import {
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { computeMemberStats } from '../../lib/tbtStats.js';
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
+import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
+import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -151,7 +153,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 
   // Refresh member stats (throttled to once per 60 s) before reading DB so the
   // profile page always reflects current points/streak/health.
-  await recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined);
+  void recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined);
 
   const [member, allTiers, uiStrings] = await Promise.all([
     request.server.prisma.member.findUnique({
@@ -351,7 +353,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
     saveLabel: uiStrings?.profileSaveLabel ?? 'Save Changes',
     signOutLabel: uiStrings?.profileSignOutLabel ?? 'Sign Out',
   };
-  void cacheSet(redis, meKey, mePayload, 60);
+  void cacheSet(redis, meKey, mePayload, 300);
   return ok(reply, mePayload);
 }
 
@@ -606,11 +608,14 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, id);
   const hasAccess = isAccessValid(accessRecord);
 
-  // Check for a pending external payment request from this member
-  const pendingPayment = await (request.server.prisma as any).coursePayment.findFirst({
-    where: { memberId: request.memberId, courseId: id, status: 'pending' },
-    select: { id: true, status: true },
-  }).catch(() => null);
+  // Check for a pending payment from this member (any method)
+  const pendingPaymentRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, method, razorpay_order_id FROM course_payments
+     WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending'
+     ORDER BY created_at DESC LIMIT 1`,
+    request.memberId, id,
+  ).catch(() => [] as any[]);
+  const pendingPaymentRow = pendingPaymentRows[0] ?? null;
 
   // Resolve upsell / cross-sell course IDs to lightweight course objects
   const upsellIds: string[] = (course as any).upsellCourseIds ?? [];
@@ -801,7 +806,12 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     accessType: accessRecord?.accessType ?? null,
     accessExpiresAt: accessRecord?.expiresAt ?? null,
     paymentLinkUrl: course.paymentLinkUrl ?? null,
-    pendingPayment: pendingPayment ? { id: pendingPayment.id, paymentUrl: course.paymentLinkUrl ?? null } : null,
+    pendingPayment: pendingPaymentRow ? {
+      id: pendingPaymentRow.id,
+      paymentUrl: course.paymentLinkUrl ?? null,
+      method: pendingPaymentRow.method ?? null,
+      razorpayOrderId: pendingPaymentRow.razorpay_order_id ?? null,
+    } : null,
     xpPerEpisode: (course as any).xpPerEpisode ?? 10,
     passingScorePercent: (course as any).passingScorePercent ?? 70,
     requireSequential: (course as any).requireSequential ?? true,
@@ -1872,10 +1882,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
   const redis = request.server.redis ?? null;
   const clKey = `cont-learn:v3:${request.memberId}`;
   const cachedCl = await cacheGet<unknown[]>(redis, clKey);
-  // Only serve cache when it actually has items — an empty [] is falsy-adjacent
-  // but truthy in JS, so `if (cachedCl)` would serve a stale empty result even
-  // after the user starts watching their first video.
-  if (cachedCl !== null && cachedCl.length > 0) return ok(reply, cachedCl);
+  if (cachedCl !== null) return ok(reply, cachedCl);
 
   // Fetch recent activity across both types — no completion filter so recently-finished
   // items stay visible. Fetch more than needed so deduplication still yields up to 6.
@@ -4706,9 +4713,14 @@ export async function startConversationHandler(request: FastifyRequest, reply: F
 
 export async function getConversationUnreadCountHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
+  const redis = request.server.redis ?? null;
+  const cacheKey = `conv:unread:${memberId}`;
+  const cached = await cacheGet<{ count: number }>(redis, cacheKey);
+  if (cached !== null) return ok(reply, cached);
   const count = await request.server.prisma.conversation.count({
     where: { memberId, memberUnreadCount: { gt: 0 }, memberHidden: false },
   });
+  void cacheSet(redis, cacheKey, { count }, 30);
   return ok(reply, { count });
 }
 
@@ -6103,4 +6115,304 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
     oneToOne:     !!ent.one_to_one_enabled,
     lifelines:    { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
   });
+}
+
+// ── Psychometric Assessment ───────────────────────────────────────────────────
+
+const SCORE_LABEL = (pct: number): string => {
+  if (pct >= 81) return 'Expert';
+  if (pct >= 66) return 'Proficient';
+  if (pct >= 41) return 'Growing';
+  return 'Developing';
+};
+
+const CATEGORY_RECOMMENDATION: Record<string, string> = {
+  Vision:     'Focus on defining your long-term goals and creating a clear written roadmap for your business.',
+  Execution:  'Build consistent habits and follow-through systems to complete what you start.',
+  Leadership: 'Invest in developing your communication and team-building skills to inspire those around you.',
+  Innovation: 'Practice regular experimentation and stay curious about new approaches and industry trends.',
+  Resilience: 'Build stress management practices and embrace a growth mindset when facing setbacks.',
+};
+
+export async function getPsychometricQuestionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, question_text, category, options, sort_order
+     FROM psychometric_questions
+     WHERE is_active = true
+     ORDER BY sort_order ASC, created_at ASC`
+  );
+  return ok(reply, rows.map((r) => ({
+    id: r.id,
+    questionText: r.question_text,
+    category: r.category,
+    options: r.options,
+  })));
+}
+
+export async function submitPsychometricHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const { answers } = req.body as { answers: Record<string, string> };
+
+  if (!answers || typeof answers !== 'object') {
+    return reply.status(400).send({ success: false, data: null, error: { message: 'answers object required' } });
+  }
+
+  // Fetch all active questions
+  const questions = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, category, options FROM psychometric_questions WHERE is_active = true`
+  );
+
+  // Compute category scores
+  const catScores: Record<string, { sum: number; max: number }> = {};
+  for (const q of questions) {
+    const optionId = answers[q.id];
+    const opts: Array<{ id: string; score: number }> = Array.isArray(q.options) ? q.options : [];
+    const chosen = opts.find((o) => o.id === optionId);
+    const maxScore = opts.reduce((m, o) => Math.max(m, o.score), 0);
+    if (!catScores[q.category]) catScores[q.category] = { sum: 0, max: 0 };
+    catScores[q.category].sum += chosen?.score ?? 0;
+    catScores[q.category].max += maxScore;
+  }
+
+  const categories = Object.entries(catScores).map(([name, { sum, max }]) => {
+    const pct = max > 0 ? Math.round((sum / max) * 100) : 0;
+    return { name, score: sum, max, percentage: pct, label: SCORE_LABEL(pct) };
+  });
+
+  const totalPct = categories.length > 0
+    ? Math.round(categories.reduce((s, c) => s + c.percentage, 0) / categories.length)
+    : 0;
+
+  // Weakest category drives primary recommendation
+  const weakest = categories.slice().sort((a, b) => a.percentage - b.percentage)[0];
+  const recommendation = weakest ? (CATEGORY_RECOMMENDATION[weakest.name] ?? '') : '';
+
+  const results = { categories, overallPercentage: totalPct, overallLabel: SCORE_LABEL(totalPct), recommendation };
+
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO psychometric_responses (member_id, answers, results)
+     VALUES ($1::uuid, $2::jsonb, $3::jsonb)
+     RETURNING id, created_at`,
+    memberId, JSON.stringify(answers), JSON.stringify(results)
+  );
+
+  return ok(reply, { id: row.id, results, createdAt: row.created_at });
+}
+
+export async function getMyPsychometricResultHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, results, answers, created_at
+     FROM psychometric_responses
+     WHERE member_id = $1::uuid
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    memberId
+  );
+  if (!row) return ok(reply, null);
+  return ok(reply, { id: row.id, results: row.results, createdAt: row.created_at });
+}
+
+// ── Razorpay Course Payments ──────────────────────────────────────────────────
+
+// POST /api/user/courses/:id/razorpay/create-order
+export async function createRazorpayOrderHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const redis = (request.server as any).redis ?? null;
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
+  const course = await request.server.prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, title: true, isPublished: true },
+  });
+  if (!course || !course.isPublished) return fail(reply, 404, 'Course not found');
+
+  // Fetch raw SQL columns not in Prisma schema
+  const [priceRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT price, access_duration_days FROM courses WHERE id = $1::uuid`, courseId,
+  );
+  const price = priceRow?.price != null ? Number(priceRow.price) : null;
+  const accessDurationDays = priceRow?.access_duration_days != null ? Number(priceRow.access_duration_days) : null;
+
+  if (price == null || price <= 0) return fail(reply, 400, 'COURSE_IS_FREE');
+
+  const existingAccess = await getCourseAccessRecord(request.server.prisma as any, memberId, courseId);
+  if (isAccessValid(existingAccess)) return fail(reply, 409, 'ALREADY_HAS_ACCESS');
+
+  // Lazily expire stale pending Razorpay orders for this member+course.
+  // Razorpay orders expire at 15 min; records older than that can never
+  // capture, so marking them 'expired' unblocks future retry attempts.
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments SET status='expired', updated_at=NOW()
+     WHERE member_id = $1::uuid AND course_id = $2::uuid
+       AND status = 'pending' AND method = 'razorpay'
+       AND created_at < NOW() - INTERVAL '15 minutes'`,
+    memberId, courseId,
+  ).catch(() => {});
+
+  // Idempotency: reuse existing pending razorpay order if not yet expired
+  const existingPending = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, razorpay_order_id FROM course_payments
+     WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending' AND method = 'razorpay'
+     AND created_at > NOW() - INTERVAL '14 minutes'
+     ORDER BY created_at DESC LIMIT 1`,
+    memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (existingPending[0]?.razorpay_order_id) {
+    return ok(reply, {
+      orderId: existingPending[0].razorpay_order_id,
+      amount: Math.round(price * 100),
+      currency: 'INR',
+      keyId: env.RAZORPAY_KEY_ID,
+      paymentRecordId: existingPending[0].id,
+    });
+  }
+
+  let rzpOrder: any;
+  try {
+    rzpOrder = await getRazorpay().orders.create({
+      amount: Math.round(price * 100),
+      currency: 'INR',
+      receipt: `tbt-${courseId.slice(0, 8)}-${Date.now()}`,
+      notes: { courseId, memberId },
+    });
+  } catch (e: any) {
+    return fail(reply, 500, 'ORDER_CREATE_FAILED');
+  }
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO course_payments (id, member_id, course_id, amount, currency, method, status, razorpay_order_id)
+     VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3, 'INR', 'razorpay', 'pending', $4)
+     RETURNING id`,
+    memberId, courseId, price, rzpOrder.id,
+  );
+
+  return ok(reply, {
+    orderId: rzpOrder.id,
+    amount: Math.round(price * 100),
+    currency: 'INR',
+    keyId: env.RAZORPAY_KEY_ID,
+    paymentRecordId: paymentRow.id,
+  });
+}
+
+// POST /api/user/courses/:id/razorpay/verify
+export async function verifyRazorpayPaymentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature, paymentRecordId } =
+    request.body as any;
+  const redis = (request.server as any).redis ?? null;
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status FROM course_payments WHERE id = $1::uuid AND member_id = $2::uuid AND course_id = $3::uuid`,
+    paymentRecordId, memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (!paymentRow) return fail(reply, 404, 'Payment record not found');
+
+  // Idempotent — already granted
+  if (paymentRow.status === 'completed') return ok(reply, { accessGranted: true, courseId });
+
+  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+    return fail(reply, 400, 'SIGNATURE_INVALID');
+  }
+
+  const [courseRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, courseId,
+  ).catch(() => [] as any[]);
+
+  await grantCourseAccessAfterPayment({
+    prisma: request.server.prisma,
+    io: (request.server as any).io ?? null,
+    redis,
+    paymentRecordId,
+    razorpayPaymentId,
+    razorpaySignature,
+    memberId,
+    courseId,
+    accessDurationDays: courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null,
+  });
+
+  return ok(reply, { accessGranted: true, courseId });
+}
+
+// POST /api/user/courses/razorpay/webhook — unauthenticated, raw body required
+export async function razorpayWebhookHandler(request: FastifyRequest, reply: FastifyReply) {
+  // If webhook secret isn't configured, acknowledge without processing so
+  // Razorpay doesn't retry endlessly. The client-side /verify path is the
+  // primary grant mechanism; webhook is the edge-case fallback.
+  if (!env.RAZORPAY_WEBHOOK_SECRET) {
+    return reply.send({ ok: true });
+  }
+
+  const signature = (request.headers as any)['x-razorpay-signature'] as string | undefined;
+  if (!signature) return reply.status(400).send({ ok: false });
+
+  const rawBody = (request as any).rawBody as string | undefined;
+  if (!rawBody) return reply.status(400).send({ ok: false });
+
+  if (!verifyWebhookSignature(rawBody, signature)) {
+    return reply.status(400).send({ ok: false });
+  }
+
+  let body: any;
+  try { body = JSON.parse(rawBody); } catch { return reply.status(400).send({ ok: false }); }
+
+  if (body.event === 'payment.failed') {
+    const failedOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;
+    if (failedOrderId) {
+      await request.server.prisma.$executeRawUnsafe(
+        `UPDATE course_payments SET status='failed', updated_at=NOW()
+         WHERE razorpay_order_id = $1 AND method = 'razorpay' AND status = 'pending'`,
+        failedOrderId,
+      ).catch(() => {});
+    }
+    return reply.send({ ok: true });
+  }
+
+  if (body.event !== 'payment.captured') return reply.send({ ok: true });
+
+  const rzpOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;
+  if (!rzpOrderId) return reply.send({ ok: true });
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT cp.id, cp.status, cp.member_id, cp.course_id
+     FROM course_payments cp
+     WHERE cp.razorpay_order_id = $1 AND cp.method = 'razorpay'
+     LIMIT 1`,
+    rzpOrderId,
+  ).catch(() => [] as any[]);
+
+  if (!paymentRow || paymentRow.status === 'completed') return reply.send({ ok: true });
+
+  const [courseRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, paymentRow.course_id,
+  ).catch(() => [] as any[]);
+
+  const rzpPaymentId: string = body?.payload?.payment?.entity?.id ?? '';
+  const redis = (request.server as any).redis ?? null;
+
+  await grantCourseAccessAfterPayment({
+    prisma: request.server.prisma,
+    io: (request.server as any).io ?? null,
+    redis,
+    paymentRecordId: paymentRow.id,
+    razorpayPaymentId: rzpPaymentId,
+    razorpaySignature: undefined,
+    memberId: paymentRow.member_id,
+    courseId: paymentRow.course_id,
+    accessDurationDays: courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null,
+  }).catch(() => {});
+
+  return reply.send({ ok: true });
 }

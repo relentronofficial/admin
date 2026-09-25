@@ -22,3 +22,11 @@ export const submitFeedbackSchema = z.object({
   feedback: z.string().min(1).max(4000),
   remarks: z.string().max(2000).optional().nullable(),
 });
+
+export const submitEpisodeFeedbackSchema = z.object({
+  courseId: z.string().uuid(),
+  episodeId: z.string().uuid(),
+  feedback: z.string().trim().max(4000).optional(),
+  rating: z.number().int().min(1).max(10).optional(),
+  liked: z.boolean().optional(),
+});

@@ -71,6 +71,7 @@ const String kUserEpisodes = '/api/user/episodes';
 const String kUserBatch = '/api/user-batch';
 const String kUserBatchAttendance = '/api/user-batch/attendance';
 const String kUserBatchBreaks = '/api/user-batch/breaks';
+const String kUserBatchLifeline = '/api/user-batch/lifeline/use';
 // /api/user-batch/:dayNumber — built at call site
 // /api/user-batch/:dayNumber/submit — built at call site
 
@@ -215,3 +216,25 @@ const String kOnboardingSubmit = '/api/onboarding/submit';
 const String kOnboardingMeetings = '/api/onboarding-meetings';
 // /api/onboarding-meetings/:id/token — built at call site
 // /api/onboarding-meetings/:id/leave — built at call site
+
+// ── Psychometric Assessment ────────────────────────────────────────────────────
+const String kUserPsychometricQuestions = '/api/user/psychometric/questions';
+const String kUserPsychometricSubmit = '/api/user/psychometric/submit';
+const String kUserPsychometricResult = '/api/user/psychometric/result';
+
+// ── Lesson Feedback ────────────────────────────────────────────────────────────
+// /api/user/courses/:courseId/lesson-feedback — GET and PUT, built at call site
+
+// ── Course Module Tabs ─────────────────────────────────────────────────────────
+const String kUserCourseModuleTabs = '/api/user/courses/module-tabs';
+
+// ── Course Weekly Reports ──────────────────────────────────────────────────────
+const String kCourseMyReport = '/api/course-reports/my-report';        // GET ?courseId=xxx
+const String kCourseSubmitFeedback = '/api/course-reports/feedback';   // POST { courseId, weekNumber, feedbackText }
+const String kCourseFeedbackHistory = '/api/course-reports/feedback/history'; // GET ?courseId=xxx
+
+// ── Support Quota & Credit Purchases (MG-01 / MG-05) ─────────────────────────
+const String kUserSupportQuota = '/api/user/support-quota';
+const String kUserCreditPricing = '/api/user/credits/pricing';
+const String kUserCreditPurchase = '/api/user/credits/purchase';
+const String kUserCreditPurchases = '/api/user/credits/purchases';

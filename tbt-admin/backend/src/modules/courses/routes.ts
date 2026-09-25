@@ -7,7 +7,7 @@ import {
   updateCourseEpisodeHandler, deleteCourseEpisodeHandler, reorderCourseEpisodesHandler,
   listCoursePaymentsHandler,
   listCourseAccessHandler, grantCourseAccessHandler, revokeCourseAccessHandler,
-  approveCoursePaymentHandler,
+  approveCoursePaymentHandler, refundCoursePaymentHandler,
   getCourseAnalyticsHandler, getCourseLeaderboardAdminHandler,
   listCourseBadgesHandler, createCourseBadgeHandler, updateCourseBadgeHandler,
   deleteCourseBadgeHandler, awardCourseBadgeHandler,
@@ -43,6 +43,7 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.post('/:id/grant-access', grantCourseAccessHandler);
   fastify.delete('/:id/access/:accessId', revokeCourseAccessHandler);
   fastify.post('/:id/payments/:paymentId/approve', approveCoursePaymentHandler);
+  fastify.post('/:id/payments/:paymentId/refund', refundCoursePaymentHandler);
 
   // Analytics & leaderboard
   fastify.get('/:id/analytics', getCourseAnalyticsHandler);

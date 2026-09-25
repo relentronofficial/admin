@@ -18,6 +18,8 @@ import '../../auth/providers/auth_provider.dart';
 import '../domain/onboarding_meeting.dart';
 import '../domain/onboarding_state.dart';
 import '../providers/onboarding_provider.dart';
+import '../../courses/providers/courses_provider.dart';
+import '../../courses/data/courses_service.dart' show PsychometricQuestion, coursesServiceProvider;
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
@@ -333,6 +335,20 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
   bool _saving = false;
   bool _submitting = false;
 
+  // Skills step state (1–10 sliders for 6 skill areas)
+  final Map<String, int> _skills = {
+    'businessFoundation': 5,
+    'contentCreation': 5,
+    'funnels': 5,
+    'ads': 5,
+    'sales': 5,
+    'overallMarketing': 5,
+  };
+
+  // Psychometric step state
+  Map<String, String> _psychoAnswers = {};
+  bool _psychoSubmitting = false;
+
   @override
   void initState() {
     super.initState();
@@ -493,6 +509,23 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
     }
   }
 
+  Future<void> _submitPsychometricAndAdvance() async {
+    setState(() => _psychoSubmitting = true);
+    try {
+      await ref.read(coursesServiceProvider).submitPsychometric(_psychoAnswers);
+      ref.invalidate(psychometricResultProvider);
+      _goTo(_page + 1);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not submit assessment. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _psychoSubmitting = false);
+    }
+  }
+
   List<String> get _missingFields =>
       _requiredFields.where((f) => (_profile[f] ?? '').toString().isEmpty).toList();
 
@@ -510,7 +543,10 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
 
     // Dynamic indices — depend on how many admin content steps are active.
     final profileIdx = 1 + activeContent.length;   // welcome + N content steps
-    final reviewIdx  = profileIdx + 2;
+    final skillsIdx  = profileIdx + 1;             // skills rating step
+    final docsIdx    = profileIdx + 2;             // document upload step
+    final psychoIdx  = profileIdx + 3;             // psychometric assessment step
+    final reviewIdx  = profileIdx + 4;             // review & submit step
     final totalPages = reviewIdx + 1;
 
     // Show skeleton while content is loading and the user is already on a
@@ -542,6 +578,10 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
           });
         },
       ),
+      _SkillsStep(
+        skills: _skills,
+        onChanged: (k, v) => setState(() => _skills[k] = v),
+      ),
       _DocumentsStep(
         documentType: _documentType,
         onTypeChanged: (v) => setState(() => _documentType = v),
@@ -550,6 +590,10 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
         documents: widget.state.documents,
         onDelete: _deleteDocument,
         deleting: _deleting,
+      ),
+      _PsychometricWizardStep(
+        answers: _psychoAnswers,
+        onAnswerChanged: (qId, optId) => setState(() => _psychoAnswers[qId] = optId),
       ),
       _ReviewStep(
         profile: _profile,
@@ -562,6 +606,15 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
     VoidCallback? onNext;
     if (_page == profileIdx) {
       onNext = _saving ? null : _saveAndNext;
+    } else if (_page == skillsIdx) {
+      onNext = () => _goTo(_page + 1);
+    } else if (_page == docsIdx) {
+      onNext = () => _goTo(_page + 1);
+    } else if (_page == psychoIdx) {
+      final psycAsync = ref.read(psychometricQuestionsProvider);
+      final questions = psycAsync.valueOrNull ?? <PsychometricQuestion>[];
+      final allAnswered = questions.isEmpty || questions.every((q) => _psychoAnswers.containsKey(q.id));
+      onNext = allAnswered && !_psychoSubmitting ? _submitPsychometricAndAdvance : null;
     } else if (_page == reviewIdx) {
       onNext = (_ready && !_submitting) ? _submit : null;
     } else {
@@ -573,6 +626,8 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
       nextLabel = 'Get Started';
     } else if (_page == profileIdx) {
       nextLabel = _saving ? 'Saving…' : 'Continue';
+    } else if (_page == psychoIdx) {
+      nextLabel = _psychoSubmitting ? 'Submitting…' : 'Submit Assessment';
     } else if (_page == reviewIdx) {
       nextLabel = _submitting ? 'Submitting…' : 'Submit Application';
     } else {
@@ -2234,6 +2289,307 @@ Widget _shimmer({double? width, double height = 16, double radius = 8}) =>
         ),
       ),
     );
+
+// ── Step: Skills self-rating ──────────────────────────────────────────────────
+
+class _SkillsStep extends StatelessWidget {
+  const _SkillsStep({
+    required this.skills,
+    required this.onChanged,
+  });
+  final Map<String, int> skills;
+  final void Function(String key, int value) onChanged;
+
+  static const _skillLabels = <String, String>{
+    'businessFoundation': 'Business Foundation',
+    'contentCreation': 'Content Creation',
+    'funnels': 'Funnels',
+    'ads': 'Ads & Marketing',
+    'sales': 'Sales',
+    'overallMarketing': 'Overall Marketing',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(Icons.bar_chart_rounded, 'Rate Your Skills (1–10)'),
+          const SizedBox(height: 8),
+          const Text(
+            'Be honest — this helps us personalize your experience.',
+            style: TextStyle(color: _kMuted, fontSize: 13, height: 1.5),
+          ),
+          const SizedBox(height: 24),
+          ..._skillLabels.entries.map((entry) {
+            final key = entry.key;
+            final label = entry.value;
+            final value = skills[key] ?? 5;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: _kText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _kAccent.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _kAccent.withOpacity(0.35)),
+                        ),
+                        child: Text(
+                          '$value',
+                          style: const TextStyle(
+                            color: _kAccent,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: _kAccent,
+                      inactiveTrackColor: _kBorder,
+                      thumbColor: _kAccent,
+                      overlayColor: _kAccent.withOpacity(0.12),
+                      trackHeight: 4,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                    ),
+                    child: Slider(
+                      value: value.toDouble(),
+                      min: 1,
+                      max: 10,
+                      divisions: 9,
+                      onChanged: (v) => onChanged(key, v.round()),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: const [
+                      Text('1', style: TextStyle(color: _kMuted, fontSize: 11)),
+                      Text('10', style: TextStyle(color: _kMuted, fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Step: Psychometric assessment (inline) ────────────────────────────────────
+
+class _PsychometricWizardStep extends ConsumerWidget {
+  const _PsychometricWizardStep({
+    required this.answers,
+    required this.onAnswerChanged,
+  });
+  final Map<String, String> answers;
+  final void Function(String qId, String optId) onAnswerChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final questionsAsync = ref.watch(psychometricQuestionsProvider);
+
+    return questionsAsync.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: _kAccent),
+      ),
+      error: (_, __) => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Text(
+            'Could not load assessment questions.\nPlease try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _kMuted, fontSize: 14, height: 1.5),
+          ),
+        ),
+      ),
+      data: (questions) {
+        final answeredCount = questions.where((q) => answers.containsKey(q.id)).length;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionHeader(Icons.psychology_outlined, 'Psychometric Assessment'),
+              const SizedBox(height: 8),
+              if (questions.isNotEmpty) ...[
+                Row(
+                  children: [
+                    Text(
+                      '$answeredCount of ${questions.length} answered',
+                      style: TextStyle(
+                        color: answeredCount == questions.length ? _kGreen : _kAmber,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: questions.isEmpty ? 0 : answeredCount / questions.length,
+                          backgroundColor: _kBorder,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            answeredCount == questions.length ? _kGreen : _kAccent,
+                          ),
+                          minHeight: 6,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+              ...questions.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final q = entry.value;
+                final selectedOpt = answers[q.id];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _kCard,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: selectedOpt != null
+                          ? _kAccent.withOpacity(0.35)
+                          : _kBorder,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Question number + text
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 26,
+                            height: 26,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: _kAccent.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${idx + 1}',
+                              style: const TextStyle(
+                                color: _kAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              q.questionText,
+                              style: const TextStyle(
+                                color: _kText,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      // Options
+                      ...q.options.map((opt) {
+                        final isSelected = selectedOpt == opt.id;
+                        return GestureDetector(
+                          onTap: () => onAnswerChanged(q.id, opt.id),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? _kAccent.withOpacity(0.10)
+                                  : _kSurface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isSelected
+                                    ? _kAccent.withOpacity(0.60)
+                                    : _kBorder,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isSelected
+                                        ? _kAccent
+                                        : Colors.transparent,
+                                    border: Border.all(
+                                      color: isSelected ? _kAccent : _kMuted,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: isSelected
+                                      ? const Icon(Icons.check,
+                                          color: Colors.white, size: 11)
+                                      : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    opt.text,
+                                    style: TextStyle(
+                                      color: isSelected ? _kText : _kMuted,
+                                      fontSize: 13,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

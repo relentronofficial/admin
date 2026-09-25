@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Star, ThumbsUp, Loader2 } from "lucide-react";
+import { Star, Heart, Loader2 } from "lucide-react";
 import { useSaveLessonFeedback } from "@/lib/hooks/useCourses";
+import { useSubmitEpisodeFeedback } from "@/lib/hooks/useCourseReports";
 
 export interface LessonFeedbackExisting {
   rating: number;
@@ -24,9 +25,14 @@ export function LessonFeedbackSection({ lessonId, courseId, existing }: {
   const [rating, setRating] = useState(existing?.rating ?? 0);
   const [hoverRating, setHoverRating] = useState(0);
   const [text, setText] = useState(existing?.feedbackText ?? "");
-  const [liked, setLiked] = useState(existing?.liked ?? false);
+  // null = neither, true = liked, false = disliked
+  const [liked, setLiked] = useState<boolean | null>(existing?.liked ?? null);
   const [justSaved, setJustSaved] = useState(false);
   const saveFeedback = useSaveLessonFeedback(courseId);
+  // Also feeds Admin -> Courses -> Feedback (CourseEpisodeFeedback), so this one
+  // on-screen section reaches the admin panel. Best-effort: a failure here must
+  // never block the lesson_feedback save, which drives this section's state.
+  const submitEpisodeFeedback = useSubmitEpisodeFeedback();
   // Guards the prefill effect below from clobbering input the member has
   // already started once their previously-saved feedback loads.
   const userEditedRef = useRef(false);
@@ -40,7 +46,7 @@ export function LessonFeedbackSection({ lessonId, courseId, existing }: {
     if (existing && !userEditedRef.current) {
       setRating(existing.rating);
       setText(existing.feedbackText ?? "");
-      setLiked(existing.liked ?? false);
+      setLiked(existing.liked ?? null);
     }
   }, [existing]);
 
@@ -48,10 +54,18 @@ export function LessonFeedbackSection({ lessonId, courseId, existing }: {
 
   const handleSubmit = () => {
     if (!rating) return;
+    const trimmedText = text.trim() || undefined;
     saveFeedback.mutate(
-      { lessonId, rating, feedbackText: text.trim() || undefined, liked },
+      { lessonId, rating, feedbackText: trimmedText, liked: liked ?? undefined },
       { onSuccess: () => setJustSaved(true) }
     );
+    submitEpisodeFeedback.mutate({
+      courseId,
+      episodeId: lessonId,
+      rating,
+      liked: liked ?? undefined,
+      feedback: trimmedText,
+    });
   };
 
   return (
@@ -59,24 +73,34 @@ export function LessonFeedbackSection({ lessonId, courseId, existing }: {
       className="rounded-xl p-4 space-y-3"
       style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-card)" }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Star size={13} style={{ color: "var(--color-accent)" }} />
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>
-            Rate this lesson
-          </p>
-        </div>
+      <div className="flex items-center gap-2">
+        <Star size={13} style={{ color: "var(--color-accent)" }} />
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>
+          Rate this lesson
+        </p>
+      </div>
+
+      {/* Like / Dislike */}
+      <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => { userEditedRef.current = true; setLiked((l) => !l); setJustSaved(false); }}
-          aria-pressed={liked}
-          aria-label={liked ? "Unlike this lesson" : "Like this lesson"}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-          style={liked
-            ? { background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }
-            : { border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
+          onClick={() => { userEditedRef.current = true; setLiked(liked === true ? null : true); setJustSaved(false); }}
+          aria-pressed={liked === true}
+          aria-label="Like this lesson"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${liked === true ? "border-green-500 text-green-400 bg-green-500/10" : "border-transparent text-[var(--color-text-subtle)] bg-[var(--color-surface-overlay)] hover:border-green-500/50"}`}
         >
-          <ThumbsUp size={13} fill={liked ? "var(--color-accent)" : "none"} /> {liked ? "Liked" : "Like"}
+          <Heart size={13} fill={liked === true ? "currentColor" : "none"} />
+          Like
+        </button>
+        <button
+          type="button"
+          onClick={() => { userEditedRef.current = true; setLiked(liked === false ? null : false); setJustSaved(false); }}
+          aria-pressed={liked === false}
+          aria-label="Dislike this lesson"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${liked === false ? "border-red-500 text-red-400 bg-red-500/10" : "border-transparent text-[var(--color-text-subtle)] bg-[var(--color-surface-overlay)] hover:border-red-500/50"}`}
+        >
+          <Heart size={13} fill={liked === false ? "currentColor" : "none"} className={liked === false ? "rotate-180" : ""} />
+          Dislike
         </button>
       </div>
 

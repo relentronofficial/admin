@@ -134,13 +134,21 @@ class BatchProgramScreen extends ConsumerWidget {
           ),
         ),
         actions: [
-          if (programAsync.valueOrNull != null)
+          if (programAsync.valueOrNull != null) ...[
+            IconButton(
+              icon: Icon(Icons.calendar_month_outlined,
+                  color: context.tokens.textPrimary, size: 22),
+              tooltip: 'Attendance History',
+              onPressed: () =>
+                  context.push(AppRoutes.batchAttendance),
+            ),
             IconButton(
               icon: Icon(Icons.beach_access_outlined,
                   color: context.tokens.textPrimary, size: 22),
               tooltip: 'Request Break',
               onPressed: () => _openBreakSheet(context, programAsync.value!),
             ),
+          ],
         ],
       ),
       body: programAsync.when(

@@ -1472,6 +1472,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         CREATE INDEX IF NOT EXISTS idx_lesson_feedback_member_course
           ON lesson_feedback(member_id, course_id)
       `),
+      // Belt-and-suspenders: extend course_episode_feedback
+      // with rating + liked columns if not already present.
+      prisma.$executeRawUnsafe(`ALTER TABLE course_episode_feedback ADD COLUMN IF NOT EXISTS rating INT CHECK (rating >= 1 AND rating <= 10)`).catch(() => {}),
+      prisma.$executeRawUnsafe(`ALTER TABLE course_episode_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN`).catch(() => {}),
+      // NOTE: lesson_feedback.liked is added in the sequential block below,
+      // after CREATE TABLE completes, to avoid the Promise.all race condition.
       // ── Video Feedback (2026-08-28) ────────────────────────────────
       // Admin-configured questions per episode; member responses.
       prisma.$executeRawUnsafe(`
@@ -1507,6 +1513,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
 
+    // lesson_feedback.liked — must run after the parallel block because the
+    // CREATE TABLE and ALTER TABLE ran in parallel, creating a race condition
+    // where the ALTER could fire before the table existed (silently failing via
+    // .catch). Running sequentially here guarantees the table exists first.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE lesson_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN`
+    ).catch(() => {});
+
     // ── Course Sections — must run SEQUENTIALLY after the parallel block ──
     // CREATE TABLE must complete before the FK on course_episodes can reference
     // it; running these in the parallel Promise.all above causes a race
@@ -1520,7 +1534,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         sort_order INT NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ course_sections CREATE failed:', err); });
     await prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS idx_course_sections_course ON course_sections(course_id)
     `).catch(() => {});
@@ -1535,14 +1549,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`
       ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS timer_seconds INT
     `).catch(() => {});
-    // course_episode_id FK columns — must run AFTER course_episodes is no longer
-    // being altered (same lock-contention reason as course_sections above).
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE app_resources ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
-    `).catch(() => {});
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS course_episode_id UUID REFERENCES course_episodes(id) ON DELETE CASCADE
-    `).catch(() => {});
+    // course_episode_id FK columns are now managed by Prisma schema
+    // (AppResource.courseEpisodeId and Task.courseEpisodeId added 2026-09-24).
     // Per-task completion mode (2026-09): admin decides, per task, whether a
     // member submission is instantly self-approved (SELF_ASSESSMENT) or held
     // for admin review before it counts as complete (ADMIN_CHECK). Default is
@@ -1829,7 +1837,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         sort_order INT NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ course_modules CREATE failed:', err); });
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_course_modules_course ON course_modules(course_id)`
     ).catch(() => {});
@@ -1839,7 +1847,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         module_id UUID NOT NULL REFERENCES course_modules(id) ON DELETE CASCADE,
         PRIMARY KEY (episode_id, module_id)
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ course_episode_modules CREATE failed:', err); });
     // Seed E-commerce, Service, Coaching for every course that has no modules yet.
     // All existing episodes are assigned to all 3 modules so nothing is hidden by default.
     await prisma.$executeRawUnsafe(`
@@ -1869,6 +1877,51 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       END $$
     `).catch(() => {});
 
+    // ── Psychometric Assessment (2026-09-22) ────────────────────────────────
+    // Standalone test available to all members from the profile page.
+    // questions: admin-managed; responses: one per submission (members can retake).
+    prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psychometric_questions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        question_text TEXT NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        options JSONB NOT NULL DEFAULT '[]',
+        sort_order INT NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {}),
+    prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psychometric_questions_active ON psychometric_questions(is_active, sort_order)`).catch(() => {}),
+    prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psychometric_responses (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        answers JSONB NOT NULL DEFAULT '{}',
+        results JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {}),
+    prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psychometric_responses_member ON psychometric_responses(member_id, created_at DESC)`).catch(() => {}),
+    prisma.$executeRawUnsafe(`
+      INSERT INTO psychometric_questions (question_text, category, options, sort_order) VALUES
+        ('How clearly can you describe your business 5 years from now?', 'Vision', '[{"id":"a","text":"I have a specific written vision with clear milestones","score":4},{"id":"b","text":"I have a general idea of where I want to go","score":3},{"id":"c","text":"I think about it sometimes but haven''t defined it clearly","score":2},{"id":"d","text":"I focus on today rather than the future","score":1}]', 1),
+        ('When setting goals, how do you approach them?', 'Vision', '[{"id":"a","text":"I set SMART goals with deadlines and track progress weekly","score":4},{"id":"b","text":"I set goals at the start of the year and review occasionally","score":3},{"id":"c","text":"I have loose goals in mind but rarely write them down","score":2},{"id":"d","text":"I prefer to go with the flow rather than set goals","score":1}]', 2),
+        ('How aligned is your daily work with your long-term vision?', 'Vision', '[{"id":"a","text":"Every day I can trace my tasks back to my big vision","score":4},{"id":"b","text":"Most weeks my work connects to my long-term plan","score":3},{"id":"c","text":"Sometimes I lose track of the bigger picture in daily tasks","score":2},{"id":"d","text":"Day-to-day survival takes priority over long-term thinking","score":1}]', 3),
+        ('How consistently do you complete what you start?', 'Execution', '[{"id":"a","text":"I finish almost everything I commit to","score":4},{"id":"b","text":"I complete most things but sometimes lose momentum","score":3},{"id":"c","text":"I start many things but struggle to see them through","score":2},{"id":"d","text":"I often get distracted and leave things incomplete","score":1}]', 4),
+        ('How do you handle a large, complex task?', 'Execution', '[{"id":"a","text":"I break it into small steps, schedule them, and execute systematically","score":4},{"id":"b","text":"I plan a bit and then dive in, adjusting as I go","score":3},{"id":"c","text":"I tend to procrastinate until the deadline is close","score":2},{"id":"d","text":"I feel overwhelmed and find it hard to start","score":1}]', 5),
+        ('How disciplined is your daily work routine?', 'Execution', '[{"id":"a","text":"I have a structured routine I stick to 5+ days a week","score":4},{"id":"b","text":"I have a loose routine that works most days","score":3},{"id":"c","text":"My routine varies a lot depending on how I feel","score":2},{"id":"d","text":"I don''t have a regular work routine","score":1}]', 6),
+        ('How do you handle disagreements within your team or business?', 'Leadership', '[{"id":"a","text":"I address conflicts directly and find win-win resolutions","score":4},{"id":"b","text":"I try to resolve things but sometimes avoid tough conversations","score":3},{"id":"c","text":"I tend to let things settle on their own","score":2},{"id":"d","text":"Conflicts make me uncomfortable and I don''t handle them well","score":1}]', 7),
+        ('How do people typically respond to your ideas and direction?', 'Leadership', '[{"id":"a","text":"People are motivated and energized when I share my vision","score":4},{"id":"b","text":"Most people are supportive, a few are skeptical","score":3},{"id":"c","text":"Mixed responses — I''m still developing my communication skills","score":2},{"id":"d","text":"I find it hard to get others aligned with my ideas","score":1}]', 8),
+        ('How do you develop the people around you?', 'Leadership', '[{"id":"a","text":"I actively mentor, delegate, and invest in others'' growth","score":4},{"id":"b","text":"I support growth when asked but don''t proactively push it","score":3},{"id":"c","text":"I haven''t thought much about developing others yet","score":2},{"id":"d","text":"I prefer doing things myself rather than trusting others","score":1}]', 9),
+        ('When you face a business problem, what do you typically do?', 'Innovation', '[{"id":"a","text":"I research, brainstorm multiple solutions, and test quickly","score":4},{"id":"b","text":"I think it through and come up with a solution I believe in","score":3},{"id":"c","text":"I look for how others solved similar problems","score":2},{"id":"d","text":"I wait to see if the problem resolves itself","score":1}]', 10),
+        ('How do you stay updated on industry trends?', 'Innovation', '[{"id":"a","text":"I actively follow trends, attend events, and apply learnings regularly","score":4},{"id":"b","text":"I read or watch content when I can and apply some learnings","score":3},{"id":"c","text":"I am aware of trends but don''t actively keep up","score":2},{"id":"d","text":"I focus on my current work more than industry trends","score":1}]', 11),
+        ('How often do you experiment with new ideas in your business?', 'Innovation', '[{"id":"a","text":"I run small experiments every month","score":4},{"id":"b","text":"I try new things a few times a year","score":3},{"id":"c","text":"I try new things occasionally when pushed","score":2},{"id":"d","text":"I prefer to stick with what already works","score":1}]', 12),
+        ('How do you respond when a business plan fails?', 'Resilience', '[{"id":"a","text":"I analyze what went wrong, learn from it, and pivot quickly","score":4},{"id":"b","text":"I take some time to recover, then replan with new learnings","score":3},{"id":"c","text":"Setbacks discourage me for a significant period","score":2},{"id":"d","text":"Failures make me question if I should continue","score":1}]', 13),
+        ('How do you manage stress during challenging business periods?', 'Resilience', '[{"id":"a","text":"I have healthy coping strategies and stay productive under pressure","score":4},{"id":"b","text":"I manage stress reasonably well most of the time","score":3},{"id":"c","text":"Stress affects my focus and decision-making more than I''d like","score":2},{"id":"d","text":"I struggle significantly with stress and pressure","score":1}]', 14),
+        ('What is your attitude toward criticism and feedback?', 'Resilience', '[{"id":"a","text":"I actively seek feedback and use it to improve consistently","score":4},{"id":"b","text":"I accept feedback well even when it stings","score":3},{"id":"c","text":"I accept feedback but find it hard to act on sometimes","score":2},{"id":"d","text":"Criticism feels personal and discourages me","score":1}]', 15)
+      ON CONFLICT DO NOTHING
+    `).catch(() => {}),
+
     // ── Episode Timer Sessions (2026-09-16) ─────────────────────────────────
     // Server-side timer tracking so focus timers survive page refresh.
     // One row per (member, episode) — UPSERT resets/restarts the timer.
@@ -1885,7 +1938,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(member_id, episode_id)
       )
-    `).catch(() => {});
+    `).catch((err) => { fastify.log.warn('⚠️ lesson_timer_sessions CREATE failed:', err); });
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_lesson_timer_sessions_member ON lesson_timer_sessions(member_id)`
     ).catch(() => {});
@@ -1916,6 +1969,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ADD COLUMN IF NOT EXISTS lifeline_coin_cost INT NOT NULL DEFAULT 50,
         ADD COLUMN IF NOT EXISTS max_purchased_lifelines INT NOT NULL DEFAULT 5
     `).catch(() => {});
+
+    // ── Razorpay course payments (2026-09-23) ────────────────────────────────
+    // Three separate calls — see CLAUDE.md pitfall #32 (multi-statement fails).
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_order_id TEXT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_payment_id TEXT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_signature TEXT`
+    ).catch(() => {});
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.

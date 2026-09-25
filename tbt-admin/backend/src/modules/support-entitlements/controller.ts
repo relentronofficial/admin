@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { computeSupportQuota } from '../../lib/supportQuota.js';
 
 const updateEntitlementSchema = z.object({
   techSupportDays:  z.number().int().min(0),
@@ -61,41 +62,46 @@ export async function listUsageHandler(
   req: FastifyRequest<{ Querystring: { memberId?: string; type?: string; page?: string; limit?: string } }>,
   reply: FastifyReply,
 ) {
-  const { memberId, type, page = '1', limit = '50' } = req.query;
-  const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+  try {
+    const { memberId, type, page = '1', limit = '50' } = req.query;
+    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-  const conditions: string[] = [];
-  const values: any[] = [];
-  let idx = 1;
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
 
-  if (memberId) { conditions.push(`su.member_id = $${idx++}::uuid`); values.push(memberId); }
-  if (type)     { conditions.push(`su.type = $${idx++}`);             values.push(type); }
+    if (memberId) { conditions.push(`su.member_id = $${idx++}::uuid`); values.push(memberId); }
+    if (type)     { conditions.push(`su.type = $${idx++}`);             values.push(type); }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const [rows, total] = await Promise.all([
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT su.id, su.member_id, su.type, su.notes, su.recorded_by, su.used_at, su.batch_id,
-              m.first_name, m.last_name, m.phone
-       FROM support_usage su
-       JOIN members m ON m.id = su.member_id
-       ${where}
-       ORDER BY su.used_at DESC
-       LIMIT ${parseInt(limit, 10)} OFFSET ${offset}`,
-      ...values,
-    ),
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(*)::int AS count FROM support_usage su ${where}`,
-      ...values,
-    ),
-  ]);
+    const [rows, total] = await Promise.all([
+      req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT su.id, su.member_id, su.type, su.notes, su.recorded_by, su.used_at, su.batch_id,
+                m.first_name, m.last_name, m.phone
+         FROM support_usage su
+         JOIN members m ON m.id = su.member_id
+         ${where}
+         ORDER BY su.used_at DESC
+         LIMIT ${parseInt(limit, 10)} OFFSET ${offset}`,
+        ...values,
+      ),
+      req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT COUNT(*)::int AS count FROM support_usage su ${where}`,
+        ...values,
+      ),
+    ]);
 
-  return reply.send({
-    success: true,
-    data: rows,
-    meta: { total: (total[0] as any)?.count ?? 0, page: parseInt(page, 10), limit: parseInt(limit, 10) },
-    error: null,
-  });
+    return reply.send({
+      success: true,
+      data: rows,
+      meta: { total: (total[0] as any)?.count ?? 0, page: parseInt(page, 10), limit: parseInt(limit, 10) },
+      error: null,
+    });
+  } catch (err: any) {
+    req.server.log.error({ err, memberId: req.query?.memberId }, 'listUsageHandler failed');
+    return reply.status(500).send({ success: false, data: null, error: err?.message || 'Failed to load support usage' });
+  }
 }
 
 // POST /api/support-entitlements/usage — admin records a support session
@@ -139,51 +145,38 @@ export async function getMemberSupportQuotaHandler(
   reply: FastifyReply,
 ) {
   const { memberId } = req.params;
+  try {
+    const member = await req.server.prisma.member.findUnique({
+      where: { id: memberId },
+      select: { membershipPlan: true, batchId: true },
+    });
+    if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
 
-  const member = await req.server.prisma.member.findUnique({
-    where: { id: memberId },
-    select: { membershipPlan: true, batchId: true },
-  });
-  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+    const plan = (member.membershipPlan as string | null) ?? 'free';
 
-  const plan = (member.membershipPlan as string | null) ?? 'free';
+    const [entRows, usageRows, lifelineRows] = await Promise.all([
+      req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled
+         FROM plan_entitlements WHERE plan = $1`,
+        plan,
+      ),
+      req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT type, COUNT(*)::int AS cnt FROM support_usage WHERE member_id = $1::uuid GROUP BY type`,
+        memberId,
+      ),
+      member.batchId
+        ? req.server.prisma.$queryRawUnsafe<any[]>(
+            `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id = $1::uuid AND batch_id = $2::uuid LIMIT 1`,
+            memberId, member.batchId,
+          )
+        : Promise.resolve([]),
+    ]);
 
-  const [entRows, usageRows, lifelineRows] = await Promise.all([
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled
-       FROM plan_entitlements WHERE plan = $1`,
-      plan,
-    ),
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT type, COUNT(*)::int AS cnt FROM support_usage WHERE member_id = $1::uuid GROUP BY type`,
-      memberId,
-    ),
-    member.batchId
-      ? req.server.prisma.$queryRawUnsafe<any[]>(
-          `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id = $1::uuid AND batch_id = $2::uuid LIMIT 1`,
-          memberId, member.batchId,
-        )
-      : Promise.resolve([]),
-  ]);
+    const data = computeSupportQuota(plan, entRows, usageRows, lifelineRows);
 
-  const ent = entRows[0] ?? { tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false };
-  const usageMap: Record<string, number> = {};
-  for (const row of usageRows) usageMap[(row as any).type] = (row as any).cnt;
-
-  const lifelinesTotal = (lifelineRows[0] as any)?.lifelines_total ?? 3;
-  const lifelinesUsed  = (lifelineRows[0] as any)?.lifelines_used  ?? 0;
-
-  return reply.send({
-    success: true,
-    data: {
-      plan,
-      techSupport:  { allocated: ent.tech_support_days, used: usageMap['tech_support']  ?? 0, remaining: Math.max(0, ent.tech_support_days  - (usageMap['tech_support']  ?? 0)) },
-      adSupport:    { allocated: ent.ad_support_days,   used: usageMap['ad_support']    ?? 0, remaining: Math.max(0, ent.ad_support_days    - (usageMap['ad_support']    ?? 0)) },
-      groupCall:    { allocated: ent.group_call_count,  used: usageMap['group_call']    ?? 0, remaining: Math.max(0, ent.group_call_count    - (usageMap['group_call']    ?? 0)) },
-      callCredits:  { allocated: ent.call_credit_count, used: usageMap['one_to_one']    ?? 0, remaining: Math.max(0, ent.call_credit_count   - (usageMap['one_to_one']    ?? 0)) },
-      oneToOne:     !!ent.one_to_one_enabled,
-      lifelines:    { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
-    },
-    error: null,
-  });
+    return reply.send({ success: true, data, error: null });
+  } catch (err: any) {
+    req.server.log.error({ err, memberId }, 'getMemberSupportQuotaHandler failed');
+    return reply.status(500).send({ success: false, data: null, error: err?.message || 'Failed to load support quota' });
+  }
 }

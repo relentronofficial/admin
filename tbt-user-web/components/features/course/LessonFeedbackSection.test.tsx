@@ -10,6 +10,9 @@ const mutateMock = vi.fn();
 vi.mock("@/lib/hooks/useCourses", () => ({
   useSaveLessonFeedback: () => ({ mutate: mutateMock, isPending: false }),
 }));
+vi.mock("@/lib/hooks/useCourseReports", () => ({
+  useSubmitEpisodeFeedback: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 
 const PLACEHOLDER = "Share your feedback about this video...";
 
@@ -52,7 +55,8 @@ describe("LessonFeedbackSection — prefill race condition", () => {
     expect(getTextarea().value).toBe("My own opinion");
     expect(screen.getByText("7/10")).toBeTruthy();
     expect(screen.queryByText("3/10")).toBeNull();
-    expect(screen.getByLabelText("Like this lesson")).toBeTruthy(); // still unliked — user never touched it
+    // still neither liked nor disliked — user never touched it
+    expect(screen.getByLabelText("Like this lesson").getAttribute("aria-pressed")).toBe("false");
   });
 
   it("prefills correctly when existing feedback is present from the very first render", () => {
@@ -66,7 +70,7 @@ describe("LessonFeedbackSection — prefill race condition", () => {
 
     expect(getTextarea().value).toBe("Great lesson");
     expect(screen.getByText("5/10")).toBeTruthy();
-    expect(screen.getByLabelText("Unlike this lesson")).toBeTruthy(); // liked=true flips the label
+    expect(screen.getByLabelText("Like this lesson").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("Update Feedback")).toBeTruthy();
   });
 

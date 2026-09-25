@@ -119,15 +119,19 @@ function ScheduleMeetingModal({ memberId, memberLabel, onClose }: { memberId: st
 
   const handleSubmit = async () => {
     if (!scheduledAt) { window.alert("Pick a date/time for the call."); return; }
-    await create.mutateAsync({
-      memberId,
-      hostAdminId: hostAdminId || undefined,
-      title: title.trim() || undefined,
-      description: description.trim() || undefined,
-      scheduledAt: new Date(scheduledAt).toISOString(),
-      durationMinutes,
-    });
-    onClose();
+    try {
+      await create.mutateAsync({
+        memberId,
+        hostAdminId: hostAdminId || undefined,
+        title: title.trim() || undefined,
+        description: description.trim() || undefined,
+        scheduledAt: new Date(scheduledAt).toISOString(),
+        durationMinutes,
+      });
+      onClose();
+    } catch (err: any) {
+      window.alert(err?.response?.data?.error?.message ?? err?.message ?? "Failed to schedule meeting. Please try again.");
+    }
   };
 
   return (

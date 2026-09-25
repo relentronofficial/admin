@@ -280,10 +280,22 @@ export async function sendWhatsappMessage(
         text: message,
       }),
     });
+    const rawBody = await res.text().catch(() => '');
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error('[WhatsApp] sendWhatsappMessage failed', res.status, body, { to });
-      detectAndAlertLowBalance(res.status, body);
+      console.error('[WhatsApp] sendWhatsappMessage failed', res.status, rawBody, { to });
+      detectAndAlertLowBalance(res.status, rawBody);
+      return false;
+    }
+    // @zacx can return HTTP 200 with { "status": "failed" } — check body like sendOtpWhatsapp does.
+    try {
+      const json = JSON.parse(rawBody);
+      if (json?.status !== 'success' || !json?.data?.messageId) {
+        console.error('[WhatsApp] sendWhatsappMessage: provider rejected (HTTP 200, non-success body)', res.status, rawBody, { to });
+        detectAndAlertLowBalance(res.status, rawBody);
+        return false;
+      }
+    } catch {
+      console.error('[WhatsApp] sendWhatsappMessage: non-JSON 200 response', rawBody, { to });
       return false;
     }
     return true;
@@ -317,10 +329,22 @@ export async function sendWhatsappTemplateMessage(
         template: { name: templateName, language: env.WABA_TEMPLATE_LANGUAGE, body: variables },
       }),
     });
+    const rawBody = await res.text().catch(() => '');
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error('[WhatsApp] sendWhatsappTemplateMessage failed', res.status, body, { templateName, to });
-      detectAndAlertLowBalance(res.status, body);
+      console.error('[WhatsApp] sendWhatsappTemplateMessage failed', res.status, rawBody, { templateName, to });
+      detectAndAlertLowBalance(res.status, rawBody);
+      return false;
+    }
+    // @zacx can return HTTP 200 with { "status": "failed" } — check body like sendOtpWhatsapp does.
+    try {
+      const json = JSON.parse(rawBody);
+      if (json?.status !== 'success' || !json?.data?.messageId) {
+        console.error('[WhatsApp] sendWhatsappTemplateMessage: provider rejected (HTTP 200, non-success body)', res.status, rawBody, { templateName, to });
+        detectAndAlertLowBalance(res.status, rawBody);
+        return false;
+      }
+    } catch {
+      console.error('[WhatsApp] sendWhatsappTemplateMessage: non-JSON 200 response', rawBody, { templateName, to });
       return false;
     }
     return true;

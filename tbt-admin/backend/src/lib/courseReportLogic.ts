@@ -104,3 +104,32 @@ export function buildFeedbackMessage(params: {
     remarks?.trim() || 'None',
   ].join('\n');
 }
+
+/** "Video Feedback" message sent member → admin after watching a course
+ * episode. `submittedAt` is pre-formatted by the caller (courseReports.ts)
+ * so this function stays pure/timezone-agnostic and unit-testable. */
+export function buildEpisodeFeedbackMessage(params: {
+  userName: string;
+  courseName: string;
+  episodeName: string;
+  feedback?: string;
+  rating?: number;
+  liked?: boolean;
+  submittedAt: string;
+}): string {
+  const { userName, courseName, episodeName, feedback, rating, liked, submittedAt } = params;
+  const lines = [
+    'Video Feedback',
+    '',
+    `User: ${userName}`,
+    `Course: ${courseName}`,
+    `Video: ${episodeName}`,
+  ];
+  if (rating != null) lines.push(`Rating: ${rating}/10`);
+  if (liked != null) lines.push(`Liked: ${liked ? '👍 Yes' : '👎 No'}`);
+  if (feedback?.trim()) {
+    lines.push('', 'Comment:', feedback.trim());
+  }
+  lines.push('', `Submitted: ${submittedAt}`);
+  return lines.join('\n');
+}

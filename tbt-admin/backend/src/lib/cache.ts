@@ -72,11 +72,23 @@ export async function cacheSet(
   value: unknown,
   ttlSeconds: number,
 ): Promise<void> {
+  // Callers fire-and-forget this (`void cacheSet(...)`), so it must never reject:
+  // an unserializable value (e.g. a Prisma BigInt column) used to reject here and
+  // take the whole process down. Skip caching instead.
+  let raw: string;
+  try {
+    raw = JSON.stringify(value);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[cacheSet] value for key=${key} is not JSON-serializable, skipping cache`, err);
+    return;
+  }
+
   // Always populate L1 (capped at L1_TTL so per-instance data doesn't go stale).
-  memSet(key, value, Math.min(ttlSeconds, L1_TTL));
+  memCache.set(key, { value: raw, expiresAt: Date.now() + Math.min(ttlSeconds, L1_TTL) * 1000 });
 
   if (redis) {
-    try { await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds); } catch {}
+    try { await redis.set(key, raw, 'EX', ttlSeconds); } catch {}
     return;
   }
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCourseReportMessage,
+  buildEpisodeFeedbackMessage,
   buildFeedbackMessage,
   computeCourseStats,
   computeWeekNumberForDate,
@@ -167,5 +168,61 @@ describe('buildFeedbackMessage', () => {
       remarks: undefined,
     });
     expect(message).toContain('Additional Remarks:\nNone');
+  });
+});
+
+describe('buildEpisodeFeedbackMessage', () => {
+  it('renders structured format with rating, liked, and comment', () => {
+    const message = buildEpisodeFeedbackMessage({
+      userName: 'Kavya',
+      courseName: 'React Fundamentals',
+      episodeName: 'Intro to JSX',
+      feedback: 'This lesson was super clear.',
+      rating: 9,
+      liked: true,
+      submittedAt: '18 Sep 2026, 10:30 AM',
+    });
+
+    expect(message).toBe(
+      [
+        'Video Feedback',
+        '',
+        'User: Kavya',
+        'Course: React Fundamentals',
+        'Video: Intro to JSX',
+        'Rating: 9/10',
+        'Liked: 👍 Yes',
+        '',
+        'Comment:',
+        'This lesson was super clear.',
+        '',
+        'Submitted: 18 Sep 2026, 10:30 AM',
+      ].join('\n'),
+    );
+  });
+
+  it('omits Comment section when no feedback text is provided', () => {
+    const message = buildEpisodeFeedbackMessage({
+      userName: 'Arun',
+      courseName: 'Node Basics',
+      episodeName: 'Lesson 1',
+      rating: 7,
+      liked: false,
+      submittedAt: '18 Sep 2026, 10:30 AM',
+    });
+    expect(message).toContain('Rating: 7/10');
+    expect(message).toContain('Liked: 👎 No');
+    expect(message).not.toContain('Comment:');
+  });
+
+  it('trims surrounding whitespace from the feedback body', () => {
+    const message = buildEpisodeFeedbackMessage({
+      userName: 'Arun',
+      courseName: 'Node Basics',
+      episodeName: 'Lesson 1',
+      feedback: '  Great video!  ',
+      submittedAt: '18 Sep 2026, 10:30 AM',
+    });
+    expect(message).toContain('Comment:\nGreat video!');
   });
 });

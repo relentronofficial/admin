@@ -26,6 +26,7 @@ import {
   useEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
   useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
   useEpisodeLifelines, useUseEpisodeLifeline,
+  useCreateRazorpayOrder, useVerifyRazorpayPayment,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
 import { coursesService } from "@/lib/api/services/courses.service";
@@ -748,7 +749,98 @@ function RelatedCourses({ courses, title }: { courses: any[]; title: string }) {
 function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: string }) {
   const course = courseRaw as any;
   const requestAccess = useRequestCourseAccess();
+  const createOrder = useCreateRazorpayOrder();
+  const verifyPayment = useVerifyRazorpayPayment();
+  const { data: meData } = useMe();
+  const isCheckoutOpen = useRef(false);
   const lessons = course.lessons ?? [];
+
+  const showRazorpay =
+    Number(course.price) > 0 &&
+    !!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID &&
+    !course.pendingPayment;
+
+  // Load Razorpay Checkout.js once
+  useEffect(() => {
+    if (!showRazorpay) return;
+    if (document.getElementById("rzp-checkout-js")) return;
+    const s = document.createElement("script");
+    s.id = "rzp-checkout-js";
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.async = true;
+    document.body.appendChild(s);
+  }, [showRazorpay]);
+
+  const handleRazorpayPay = async () => {
+    // Fix #6: guard against script not yet loaded
+    if (!(window as any).Razorpay) {
+      toast.error("Payment system loading, please try again in a moment.");
+      return;
+    }
+    try {
+      const order = await createOrder.mutateAsync(courseId);
+      const { orderId, amount, currency, keyId, paymentRecordId } = order.data as any;
+
+      const options: any = {
+        key: keyId,
+        amount,
+        currency,
+        order_id: orderId,
+        name: "Tamil Business Tribe",
+        description: course.title,
+        image: course.thumbnailUrl ?? undefined,
+        handler: async (response: any) => {
+          isCheckoutOpen.current = false; // Fix #4: modal closed on payment
+          try {
+            await verifyPayment.mutateAsync({
+              courseId,
+              razorpayOrderId: orderId,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              paymentRecordId,
+            });
+            // Receipt copy (#8): show amount + payment ID so member has a reference
+            const paidAmount = `₹${(amount / 100).toLocaleString("en-IN")}`;
+            toast.success(
+              `Payment of ${paidAmount} successful! Check your WhatsApp for confirmation. Ref: ${response.razorpay_payment_id}`,
+              { duration: 8000 }
+            );
+          } catch {
+            toast.error(
+              `Payment received but verification failed. Keep your payment ID ${response.razorpay_payment_id} and contact support.`,
+              { duration: 10000 }
+            );
+          }
+        },
+        // Fix #2: prefill member details to skip re-entry in checkout form
+        prefill: {
+          name: (meData as any)?.name ?? "",
+          contact: (meData as any)?.phone ?? "",
+        },
+        theme: { color: "#dc2626" },
+        modal: {
+          ondismiss: () => { isCheckoutOpen.current = false; }, // Fix #4
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+
+      // Wire up card-decline / bank-rejection handler (#7)
+      rzp.on("payment.failed", (resp: any) => {
+        isCheckoutOpen.current = false;
+        const reason =
+          resp?.error?.description ??
+          resp?.error?.reason ??
+          "Payment failed. Please try a different card or contact your bank.";
+        toast.error(reason, { duration: 6000 });
+      });
+
+      isCheckoutOpen.current = true; // Fix #4: mark modal as open
+      rzp.open();
+    } catch (e: any) {
+      toast.error(e.message || "Could not initiate payment. Please try again.");
+    }
+  };
 
   const handleGetAccess = async () => {
     try {
@@ -841,7 +933,20 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
               <Loader2 size={14} style={{ color: "var(--color-alert)" }} className="animate-spin" />
               <span style={{ color: "var(--color-text-normal)" }}>Payment pending — awaiting confirmation</span>
             </div>
-            {course.pendingPayment.paymentUrl && (
+            {course.pendingPayment.method === "razorpay" && course.pendingPayment.razorpayOrderId ? (
+              <button
+                onClick={handleRazorpayPay}
+                disabled={createOrder.isPending || verifyPayment.isPending || isCheckoutOpen.current}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                style={{ background: "var(--color-accent)" }}
+              >
+                {createOrder.isPending || verifyPayment.isPending ? (
+                  <><Loader2 size={14} className="animate-spin" /> Processing...</>
+                ) : (
+                  <>Pay ₹{Number(course.price).toLocaleString("en-IN")} now</>
+                )}
+              </button>
+            ) : course.pendingPayment.paymentUrl ? (
               <button
                 onClick={() => window.open(course.pendingPayment.paymentUrl, "_blank")}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
@@ -849,8 +954,21 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
               >
                 <ExternalLink size={14} /> Complete Payment
               </button>
-            )}
+            ) : null}
           </div>
+        ) : showRazorpay ? (
+          <button
+            onClick={handleRazorpayPay}
+            disabled={createOrder.isPending || verifyPayment.isPending || isCheckoutOpen.current}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {createOrder.isPending || verifyPayment.isPending ? (
+              <><Loader2 size={14} className="animate-spin" /> Processing...</>
+            ) : (
+              <>Pay ₹{Number(course.price).toLocaleString("en-IN")} now</>
+            )}
+          </button>
         ) : (
           <button
             onClick={handleGetAccess}
@@ -931,17 +1049,35 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
 }
 
 // ── Episode Task Item (submit + review-status) ──────────────────────────────
-function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: EpisodeTask; index: number }) {
+function EpisodeTaskItem({
+  episodeId, task, index, onPauseVideo, onResumeVideo,
+}: {
+  episodeId: string;
+  task: EpisodeTask;
+  index: number;
+  onPauseVideo?: () => void;
+  onResumeVideo?: () => void;
+}) {
   const submitTask = useSubmitEpisodeTask(episodeId);
   const uploadProof = useUploadEpisodeTaskProof(episodeId);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [textValue, setTextValue] = useState(task.submission?.responseValue ?? "");
   const [urlValue, setUrlValue] = useState(task.submission?.proofUrl ?? "");
   const [uploading, setUploading] = useState(false);
+  // Tracks whether this task item has paused the video — ensures we only resume
+  // if we were the one to pause, and avoids calling pause more than once.
+  const didPauseRef = useRef(false);
 
   const proofType = task.proofType || "watch";
   const status = task.submission?.status ?? null;
   const isEditable = status === null || status === "pending" || status === "rejected" || status === "resubmission_required";
+
+  const pauseOnce = () => {
+    if (!didPauseRef.current) {
+      didPauseRef.current = true;
+      onPauseVideo?.();
+    }
+  };
 
   const handleFileSelect = async (file: File) => {
     setUploading(true);
@@ -949,6 +1085,10 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
       const publicUrl = await uploadProof(file, task.id);
       await submitTask.mutateAsync({ taskId: task.id, proofUrl: publicUrl, proofType });
       toast.success("Task submitted");
+      if (didPauseRef.current) {
+        didPauseRef.current = false;
+        onResumeVideo?.();
+      }
     } catch {
       toast.error("Upload failed — please try again");
     } finally {
@@ -967,6 +1107,10 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
         proofType,
       });
       toast.success(task.completionMode === "SELF_ASSESSMENT" ? "Task completed" : "Submitted for review");
+      if (didPauseRef.current) {
+        didPauseRef.current = false;
+        onResumeVideo?.();
+      }
     } catch {
       toast.error("Couldn't submit — please try again");
     }
@@ -1052,6 +1196,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                 <textarea
                   value={textValue}
                   onChange={(e) => setTextValue(e.target.value)}
+                  onFocus={pauseOnce}
                   rows={2}
                   placeholder="Describe what you did…"
                   className="w-full rounded-lg px-3 py-2 text-xs outline-none resize-none"
@@ -1063,6 +1208,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                   type="url"
                   value={urlValue}
                   onChange={(e) => setUrlValue(e.target.value)}
+                  onFocus={pauseOnce}
                   placeholder={proofType === "video" ? "Paste your video URL…" : "Paste your link URL…"}
                   className="w-full rounded-lg px-3 py-2 text-xs outline-none"
                   style={{ background: "var(--color-surface-xs)", color: "var(--color-text-normal)", border: "1px solid var(--color-border-card)" }}
@@ -1071,7 +1217,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
               <div className="flex items-center gap-2">
                 {(proofType === "image" || proofType === "file") ? (
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => { pauseOnce(); fileInputRef.current?.click(); }}
                     disabled={uploading}
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
                     style={{ background: "var(--color-accent)" }}
@@ -1083,7 +1229,7 @@ function EpisodeTaskItem({ episodeId, task, index }: { episodeId: string; task: 
                   </button>
                 ) : (
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => { pauseOnce(); handleSubmit(); }}
                     disabled={submitTask.isPending}
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-opacity hover:opacity-80 disabled:opacity-60"
                     style={{ background: "var(--color-accent)" }}
@@ -1483,6 +1629,9 @@ export default function CourseDetailPage({
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);
   const firedCuesRef = useRef<Set<string>>(new Set());
   const cueQuizActiveRef = useRef(false);
+  // When true, any unexpected play event is intercepted and re-paused.
+  // Set during cue quizzes; cleared on dismiss.
+  const videoBlockedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Pause/resume helpers — assigned each render so they always read fresh refs
@@ -1761,6 +1910,7 @@ export default function CourseDetailPage({
     setUpNextVisible(false);
     firedCuesRef.current = new Set();
     cueQuizActiveRef.current = false;
+    videoBlockedRef.current = false;
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
@@ -1829,6 +1979,12 @@ export default function CourseDetailPage({
   };
 
   const handleVideoPlay = () => {
+    // If a cue quiz is blocking playback, re-pause immediately instead of
+    // letting the video resume through HLS buffering or Plyr internal state.
+    if (videoBlockedRef.current) {
+      pausePlayerRef.current();
+      return;
+    }
     isPlayingRef.current = true;
     setWatchState((prev) => (prev === "completed" ? "completed" : "watching"));
   };
@@ -1855,6 +2011,7 @@ export default function CourseDetailPage({
         if (!firedCuesRef.current.has(cue.id) && s >= cue.atSeconds) {
           firedCuesRef.current.add(cue.id);
           cueQuizActiveRef.current = true;
+          videoBlockedRef.current = true;
           pausePlayerRef.current();
           // Exit fullscreen first — modal is in the parent document and won't
           // appear over a native fullscreen iframe/video element otherwise.
@@ -2054,6 +2211,7 @@ export default function CourseDetailPage({
               if (!firedCuesRef.current.has(cue.id) && currentTime >= cue.atSeconds) {
                 firedCuesRef.current.add(cue.id);
                 cueQuizActiveRef.current = true;
+                videoBlockedRef.current = true;
                 pausePlayerRef.current();
                 // Exit fullscreen first — modal is in the parent document and won't
                 // appear over a native fullscreen iframe/video element otherwise.
@@ -2082,8 +2240,12 @@ export default function CourseDetailPage({
       }
 
       if (isPlay && !isEnd) {
-        isPlayingRef.current = true;
-        setWatchState((s) => (s === "completed" ? "completed" : "watching"));
+        if (videoBlockedRef.current) {
+          pausePlayerRef.current();
+        } else {
+          isPlayingRef.current = true;
+          setWatchState((s) => (s === "completed" ? "completed" : "watching"));
+        }
       } else if (isPause && !isEnd) {
         isPlayingRef.current = false;
         setWatchState((s) => (s === "completed" ? "completed" : "paused"));
@@ -2168,6 +2330,7 @@ export default function CourseDetailPage({
   const handleCloseCueQuiz = useCallback(() => {
     setCueQuizModal(null);
     cueQuizActiveRef.current = false;
+    videoBlockedRef.current = false;
     // Skip resume if the video already ended while the cue quiz was showing (iframe race:
     // the `ended` postMessage can arrive before the pause postMessage is processed).
     // markCalledRef is set by handleVideoEnded / doMarkComplete on natural completion.
@@ -2930,7 +3093,10 @@ export default function CourseDetailPage({
             )}
 
             {/* Per-lesson rating + feedback — shown once this specific lesson
-                is completed; each lesson gets its own independent section. */}
+                is completed; each lesson gets its own independent section.
+                Submits to both lesson_feedback (rating) and
+                CourseEpisodeFeedback (admin panel — Courses -> Feedback);
+                this is the only feedback UI on this page. */}
             {(watchState === "completed" || !!selectedLesson.isCompleted) && (
               <LessonFeedbackSection
                 key={selectedLesson.id}
@@ -2962,7 +3128,7 @@ export default function CourseDetailPage({
                 </div>
                 <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
                   {episodeTasks.map((t: EpisodeTask, i: number) => (
-                    <EpisodeTaskItem key={t.id} episodeId={selectedLesson!.id} task={t} index={i} />
+                    <EpisodeTaskItem key={t.id} episodeId={selectedLesson!.id} task={t} index={i} onPauseVideo={() => pausePlayerRef.current()} onResumeVideo={() => resumePlayerRef.current()} />
                   ))}
                 </div>
               </div>

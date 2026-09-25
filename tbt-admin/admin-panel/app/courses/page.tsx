@@ -21,7 +21,7 @@ import {
   useDeleteCourseModule, useReorderCourseModules,
   useListTiers,
   useListCourseAccess, useGrantCourseAccess, useRevokeCourseAccess,
-  useListCoursePayments, useApproveCoursePayment,
+  useListCoursePayments, useApproveCoursePayment, useRefundCoursePayment,
   useCourseAnalyticsAdmin, useCourseLeaderboardAdmin, useAtRiskMembers,
   useListCourseBadges, useCreateCourseBadge, useUpdateCourseBadge,
   useDeleteCourseBadge, useAwardCourseBadge,
@@ -32,12 +32,14 @@ import {
   useListEpisodeTaskSubmissions, useReviewEpisodeTaskSubmission,
   useVideoFeedbackQuestions, useCreateVideoFeedbackQuestion, useUpdateVideoFeedbackQuestion,
   useDeleteVideoFeedbackQuestion, useReorderVideoFeedbackQuestions, useVideoFeedbackResponses,
+  useListCourseEpisodeFeedback, useUpdateCourseEpisodeFeedbackStatus,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
 import { getAdminSocket } from "@/lib/socket/client";
+import { format } from "date-fns";
 
 const toSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -189,6 +191,15 @@ export default function CoursesPage() {
     }
   }, [autoOpenId, courses]);
 
+  // Keep selectedCourse in sync with the latest data from the server list.
+  // After a save, invalidateQueries re-fetches the course list; without this
+  // effect the detail panel would display the stale pre-save values.
+  useEffect(() => {
+    if (!selectedCourse || courses.length === 0) return;
+    const fresh = courses.find((c: any) => c.id === selectedCourse.id);
+    if (fresh) setSelectedCourse(fresh);
+  }, [courses]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const setCourseField = (k: string, v: any) => setCourseForm((f: any) => ({ ...f, [k]: v }));
 
   const openCreateCourse = () => { setCourseForm(EMPTY_COURSE); setEditingCourse(null); setShowCourseForm(true); };
@@ -232,8 +243,16 @@ export default function CoursesPage() {
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     try {
-      if (editingCourse) { await updateCourse.mutateAsync({ id: editingCourse.id, data: payload }); toast.success("Course updated"); }
-      else { await createCourse.mutateAsync(payload); toast.success("Course created"); }
+      if (editingCourse) {
+        const updated = await updateCourse.mutateAsync({ id: editingCourse.id, data: payload });
+        toast.success("Course updated");
+        // Refresh the detail panel so the price / fields don't appear to revert.
+        // The mutation returns the saved course object; merge it into selectedCourse
+        // when that course is currently open.
+        if (updated && selectedCourse?.id === editingCourse.id) {
+          setSelectedCourse((prev: any) => ({ ...prev, ...updated }));
+        }
+      } else { await createCourse.mutateAsync(payload); toast.success("Course created"); }
       setShowCourseForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }
   };
@@ -419,7 +438,7 @@ export default function CoursesPage() {
                   <option value="">— No module —</option>
                   <option value="Product">Product</option>
                   <option value="Service">Service</option>
-                  <option value="Coach">Coach</option>
+                  <option value="Coach">CoachX</option>
                 </select>
               </div>
               <div>
@@ -2210,6 +2229,7 @@ function BadgesTab({ course }: { course: any }) {
 function PaymentsDashboard({ courses }: { courses: any[] }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [courseIdFilter, setCourseIdFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
   const [page, setPage] = useState(1);
   const qc = useQueryClient();
 
@@ -2223,9 +2243,22 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
     },
   });
 
+  const refundPayment = useRefundCoursePayment();
+
+  const handleRefund = async (payment: any) => {
+    if (!window.confirm(`Refund ₹${Number(payment.amount).toLocaleString("en-IN")} to ${payment.member?.firstName} ${payment.member?.lastName}? This cannot be undone.`)) return;
+    try {
+      await refundPayment.mutateAsync({ courseId: payment.course?.id, paymentId: payment.id });
+      toast.success("Refund initiated — course access revoked");
+    } catch (e: any) {
+      toast.error(e.message || "Refund failed");
+    }
+  };
+
   const { data, isLoading } = useListCoursePayments({
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(courseIdFilter ? { courseId: courseIdFilter } : {}),
+    ...(methodFilter ? { method: methodFilter } : {}),
     page,
     limit: 20,
   });
@@ -2233,10 +2266,8 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
   const payments: any[] = (data as any)?.data || [];
   const total = (data as any)?.meta?.total || 0;
   const totalPages = Math.ceil(total / 20);
-
-  const totalRevenue = payments
-    .filter((p: any) => p.status === "completed")
-    .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+  // Revenue from backend aggregate (all pages, not just current page)
+  const totalRevenue = (data as any)?.meta?.totalRevenue ?? 0;
 
   const handleApprove = async (payment: any) => {
     try {
@@ -2275,6 +2306,8 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
     if (status === "completed") return "bg-green-500/20 text-green-400";
     if (status === "pending") return "bg-amber-500/20 text-amber-400";
     if (status === "refunded") return "bg-blue-500/20 text-blue-400";
+    if (status === "failed") return "bg-red-500/20 text-red-400";
+    if (status === "expired") return "bg-[#333] text-[#666]";
     return "bg-[#333] text-[#888]";
   };
 
@@ -2309,6 +2342,17 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
             <option value="completed">Completed</option>
             <option value="pending">Pending</option>
             <option value="refunded">Refunded</option>
+            <option value="failed">Failed</option>
+            <option value="expired">Expired</option>
+          </select>
+          <select value={methodFilter} onChange={e => { setMethodFilter(e.target.value); setPage(1); }}
+            className="bg-[#141414] border border-[#333] rounded-md h-8 px-3 text-[12px] text-[#f0f0f0] outline-none focus:border-[#dc2626] appearance-none transition-all">
+            <option value="">All Methods</option>
+            <option value="razorpay">Razorpay</option>
+            <option value="manual">Manual</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="upi">UPI</option>
+            <option value="free">Free</option>
           </select>
           <select value={courseIdFilter} onChange={e => { setCourseIdFilter(e.target.value); setPage(1); }}
             className="bg-[#141414] border border-[#333] rounded-md h-8 px-3 text-[12px] text-[#f0f0f0] outline-none focus:border-[#dc2626] appearance-none transition-all max-w-[220px]">
@@ -2334,7 +2378,7 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[#2a2a2a]">
-                    {["Member", "Course", "Amount", "Method", "Status", "Date", ""].map(h => (
+                    {["Member", "Course", "Amount", "Method", "Razorpay Ref", "Status", "Date", ""].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-[#666] font-rajdhani whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -2355,6 +2399,18 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
                       <td className="px-4 py-3 whitespace-nowrap">
                         <p className="text-[11px] text-[#888] uppercase font-rajdhani">{p.method || "—"}</p>
                       </td>
+                      <td className="px-4 py-3 max-w-[160px]">
+                        {p.razorpayPaymentId ? (
+                          <div>
+                            <p className="text-[10px] text-[#888] font-mono truncate" title={p.razorpayPaymentId}>{p.razorpayPaymentId}</p>
+                            {p.razorpayOrderId && (
+                              <p className="text-[10px] text-[#606060] font-mono truncate" title={p.razorpayOrderId}>{p.razorpayOrderId}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-[#555]">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase font-rajdhani ${statusBadgeClass(p.status)}`}>{p.status}</span>
                       </td>
@@ -2362,10 +2418,19 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
                         <p className="text-[11px] text-[#888]">{fmtDate(p.createdAt)}</p>
                       </td>
                       <td className="px-4 py-3">
-                        {p.status === "pending" && (
+                        {p.status === "pending" && p.method !== "razorpay" && (
                           <button onClick={() => handleApprove(p)} disabled={approvePayment.isPending}
                             className="bg-green-600 hover:bg-green-700 text-white text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded disabled:opacity-60 flex items-center gap-1 transition-all whitespace-nowrap">
                             {approvePayment.isPending ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />} Approve
+                          </button>
+                        )}
+                        {p.status === "pending" && p.method === "razorpay" && (
+                          <span className="text-[10px] text-amber-400 font-rajdhani font-bold uppercase tracking-widest">Auto-pending</span>
+                        )}
+                        {p.status === "completed" && (
+                          <button onClick={() => handleRefund(p)} disabled={refundPayment.isPending}
+                            className="bg-[#1a1a1a] border border-[#333] hover:border-red-600 text-[#a0a0a0] hover:text-red-400 text-[10px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded disabled:opacity-60 flex items-center gap-1 transition-all whitespace-nowrap">
+                            {refundPayment.isPending ? <Loader2 size={10} className="animate-spin" /> : null} Refund
                           </button>
                         )}
                       </td>
@@ -3212,7 +3277,16 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ questionText: '', questionType: 'rating' });
   const [editId, setEditId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'questions' | 'analytics'>('questions');
+  const [activeTab, setActiveTab] = useState<'feedback' | 'questions' | 'analytics'>('feedback');
+
+  // User-submitted free-text feedback for this exact episode (CourseEpisodeFeedback,
+  // filtered by episodeId — never falls back to course-level). Distinct from the
+  // "Questions"/"Analytics" tabs above, which manage/aggregate the separate
+  // admin-authored rating-survey (video_feedback_questions/_responses).
+  const { data: userFeedbackData, isLoading: userFeedbackLoading, isError: userFeedbackError } =
+    useListCourseEpisodeFeedback({ episodeId: episode.id, limit: 100 });
+  const userFeedback: any[] = (userFeedbackData as any)?.data ?? [];
+  const updateFeedbackStatus = useUpdateCourseEpisodeFeedbackStatus();
 
   const serverItems: any[] = (data as any)?.data || [];
   const responses: any[] = (responsesData as any)?.data || [];
@@ -3257,7 +3331,7 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
           <div>
             <h3 className="text-[13px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider flex items-center gap-2">
               <MessageSquare size={14} className="text-purple-400" />
-              Feedback Questions
+              Episode Feedback
             </h3>
             <p className="text-[11px] text-[#666] mt-0.5 truncate max-w-xs">{episode.title}</p>
           </div>
@@ -3272,14 +3346,71 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
         </div>
 
         <div className="flex gap-1 px-5 pt-3">
-          {(['questions', 'analytics'] as const).map(tab => (
+          {(['feedback', 'questions', 'analytics'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide font-rajdhani rounded-lg transition-colors ${activeTab === tab ? 'bg-[#dc2626] text-white' : 'text-[#666] hover:text-[#f0f0f0]'}`}>
-              {tab === 'questions' ? 'Questions' : 'Analytics'}
+              {tab === 'feedback' ? 'User Feedback' : tab === 'questions' ? 'Questions' : 'Analytics'}
             </button>
           ))}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
+          {activeTab === 'feedback' && (
+            <>
+              {userFeedbackLoading ? (
+                <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-[#dc2626]" /></div>
+              ) : userFeedbackError ? (
+                <p className="text-[12px] text-[#dc2626] text-center py-6">Unable to load episode feedback. Please try again.</p>
+              ) : userFeedback.length === 0 ? (
+                <p className="text-[12px] text-[#555] text-center py-6">No feedback received for this episode yet.</p>
+              ) : (
+                userFeedback.map((f: any) => (
+                  <div key={f.id} className="p-3 border border-[#2a2a2a] bg-[#1a1a1a] rounded-lg space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[12px] font-bold text-[#f0f0f0]">
+                        {f.member?.firstName} {f.member?.lastName ?? ''}
+                      </p>
+                      {f.status === 'new' ? (
+                        <button
+                          onClick={() => updateFeedbackStatus.mutate({ id: f.id, status: 'reviewed' })}
+                          disabled={updateFeedbackStatus.isPending}
+                          className="text-[10px] font-bold uppercase tracking-wide text-[#dc2626] hover:text-red-400 disabled:opacity-40 transition-colors shrink-0"
+                        >
+                          Mark Reviewed
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-green-400 shrink-0">
+                          <CheckCircle2 size={10} /> Reviewed
+                        </span>
+                      )}
+                    </div>
+                    {/* Structured rating + liked badges */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {f.rating != null && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">
+                          <Star size={10} fill="currentColor" />{f.rating}/10
+                        </span>
+                      )}
+                      {f.liked === true && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+                          <ThumbsUp size={10} /> Liked
+                        </span>
+                      )}
+                      {f.liked === false && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full">
+                          <ThumbsUp size={10} className="rotate-180" /> Disliked
+                        </span>
+                      )}
+                    </div>
+                    {f.feedback?.trim() && (
+                      <p className="text-[12px] text-[#a0a0a0] whitespace-pre-wrap leading-relaxed">{f.feedback}</p>
+                    )}
+                    <p className="text-[10px] text-[#555]">{format(new Date(f.submittedAt), 'dd MMM yyyy, HH:mm')}</p>
+                  </div>
+                ))
+              )}
+            </>
+          )}
+
           {activeTab === 'questions' && (
             <>
               {isLoading ? (

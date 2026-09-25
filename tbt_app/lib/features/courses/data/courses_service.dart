@@ -110,6 +110,30 @@ class CourseAccessRequest {
       );
 }
 
+class RazorpayOrderResult {
+  const RazorpayOrderResult({
+    required this.orderId,
+    required this.amount,
+    required this.currency,
+    required this.keyId,
+    required this.paymentRecordId,
+  });
+  final String orderId;
+  final int amount;
+  final String currency;
+  final String keyId;
+  final String paymentRecordId;
+
+  factory RazorpayOrderResult.fromJson(Map<String, dynamic> json) =>
+      RazorpayOrderResult(
+        orderId: json['orderId'] as String,
+        amount: (json['amount'] as num).toInt(),
+        currency: json['currency'] as String? ?? 'INR',
+        keyId: json['keyId'] as String,
+        paymentRecordId: json['paymentRecordId'] as String,
+      );
+}
+
 class CourseXp {
   const CourseXp({
     required this.totalXp,
@@ -561,6 +585,105 @@ class CoursesService {
       throw mapDioError(e);
     }
   }
+
+  // ── Psychometric Assessment ────────────────────────────────────────────────
+  Future<List<PsychometricQuestion>> getPsychometricQuestions() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(kUserPsychometricQuestions);
+      final list = (res.data?['data'] as List<dynamic>?) ?? [];
+      return list.cast<Map<String, dynamic>>().map(PsychometricQuestion.fromJson).toList();
+    } on DioException catch (e) { throw mapDioError(e); }
+  }
+
+  Future<PsychometricResponse> submitPsychometric(Map<String, String> answers) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        kUserPsychometricSubmit,
+        data: {'answers': answers},
+      );
+      return PsychometricResponse.fromJson(res.data?['data'] as Map<String, dynamic>? ?? {});
+    } on DioException catch (e) { throw mapDioError(e); }
+  }
+
+  Future<PsychometricResponse?> getMyPsychometricResult() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(kUserPsychometricResult);
+      final data = res.data?['data'];
+      if (data == null) return null;
+      return PsychometricResponse.fromJson(data as Map<String, dynamic>);
+    } on DioException catch (e) { throw mapDioError(e); }
+  }
+
+  // ── Lesson 1–10 rating ────────────────────────────────────────────────────
+  Future<void> saveLessonFeedback(String courseId, String lessonId, int rating, {String? feedbackText}) async {
+    try {
+      await _dio.put<void>(
+        '$kUserCourses/$courseId/lesson-feedback',
+        data: {
+          'lessonId': lessonId,
+          'rating': rating,
+          if (feedbackText != null && feedbackText.isNotEmpty) 'feedbackText': feedbackText,
+        },
+      );
+    } on DioException catch (e) { throw mapDioError(e); }
+  }
+
+  // ── Course module tabs ────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getCourseModuleTabs() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(kUserCourseModuleTabs);
+      final list = (res.data?['data'] as List<dynamic>?) ?? [];
+      return list.cast<Map<String, dynamic>>();
+    } on DioException catch (e) { throw mapDioError(e); }
+  }
+
+  Future<List<Course>> listCoursesByModule(String module, {String? search}) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        kUserCourses,
+        queryParameters: {
+          'module': module,
+          if (search != null && search.isNotEmpty) 'search': search,
+        },
+      );
+      final list = (res.data?['data'] as List<dynamic>?) ?? [];
+      return list.cast<Map<String, dynamic>>().map(Course.fromJson).toList();
+    } on DioException catch (e) { throw mapDioError(e); }
+  }
+
+  Future<RazorpayOrderResult> createRazorpayOrder(String courseId) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '$kUserCourses/$courseId/razorpay/create-order',
+      );
+      final data = res.data?['data'] as Map<String, dynamic>? ?? {};
+      return RazorpayOrderResult.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  Future<void> verifyRazorpayPayment({
+    required String courseId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+    required String paymentRecordId,
+  }) async {
+    try {
+      await _dio.post<Map<String, dynamic>>(
+        '$kUserCourses/$courseId/razorpay/verify',
+        data: {
+          'razorpayOrderId': razorpayOrderId,
+          'razorpayPaymentId': razorpayPaymentId,
+          'razorpaySignature': razorpaySignature,
+          'paymentRecordId': paymentRecordId,
+        },
+      );
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
 }
 
 class VideoFeedbackQuestion {
@@ -596,6 +719,76 @@ class VideoFeedbackResponse {
         if (ratingValue != null) 'ratingValue': ratingValue,
         if (yesNoValue != null) 'yesNoValue': yesNoValue,
       };
+}
+
+// ── Psychometric Assessment models ────────────────────────────────────────────
+
+class PsychometricOption {
+  const PsychometricOption({required this.id, required this.text, required this.score});
+  final String id;
+  final String text;
+  final int score;
+  factory PsychometricOption.fromJson(Map<String, dynamic> j) => PsychometricOption(
+    id: j['id'] as String,
+    text: j['text'] as String? ?? '',
+    score: (j['score'] as num?)?.toInt() ?? 0,
+  );
+}
+
+class PsychometricQuestion {
+  const PsychometricQuestion({required this.id, required this.questionText, required this.category, required this.options});
+  final String id;
+  final String questionText;
+  final String category;
+  final List<PsychometricOption> options;
+  factory PsychometricQuestion.fromJson(Map<String, dynamic> j) => PsychometricQuestion(
+    id: j['id'] as String,
+    questionText: j['questionText'] as String? ?? '',
+    category: j['category'] as String? ?? '',
+    options: ((j['options'] as List<dynamic>?) ?? []).cast<Map<String, dynamic>>().map(PsychometricOption.fromJson).toList(),
+  );
+}
+
+class PsychometricCategoryResult {
+  const PsychometricCategoryResult({required this.name, required this.score, required this.max, required this.percentage, required this.label});
+  final String name;
+  final int score;
+  final int max;
+  final int percentage;
+  final String label;
+  factory PsychometricCategoryResult.fromJson(Map<String, dynamic> j) => PsychometricCategoryResult(
+    name: j['name'] as String? ?? '',
+    score: (j['score'] as num?)?.toInt() ?? 0,
+    max: (j['max'] as num?)?.toInt() ?? 0,
+    percentage: (j['percentage'] as num?)?.toInt() ?? 0,
+    label: j['label'] as String? ?? '',
+  );
+}
+
+class PsychometricResults {
+  const PsychometricResults({required this.categories, required this.overallPercentage, required this.overallLabel, required this.recommendation});
+  final List<PsychometricCategoryResult> categories;
+  final int overallPercentage;
+  final String overallLabel;
+  final String recommendation;
+  factory PsychometricResults.fromJson(Map<String, dynamic> j) => PsychometricResults(
+    categories: ((j['categories'] as List<dynamic>?) ?? []).cast<Map<String, dynamic>>().map(PsychometricCategoryResult.fromJson).toList(),
+    overallPercentage: (j['overallPercentage'] as num?)?.toInt() ?? 0,
+    overallLabel: j['overallLabel'] as String? ?? '',
+    recommendation: j['recommendation'] as String? ?? '',
+  );
+}
+
+class PsychometricResponse {
+  const PsychometricResponse({required this.id, required this.results, required this.createdAt});
+  final String id;
+  final PsychometricResults results;
+  final String createdAt;
+  factory PsychometricResponse.fromJson(Map<String, dynamic> j) => PsychometricResponse(
+    id: j['id'] as String? ?? '',
+    results: PsychometricResults.fromJson(j['results'] as Map<String, dynamic>? ?? {}),
+    createdAt: j['createdAt'] as String? ?? '',
+  );
 }
 
 final coursesServiceProvider = Provider<CoursesService>(

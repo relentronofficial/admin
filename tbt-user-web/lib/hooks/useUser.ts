@@ -133,3 +133,66 @@ export const useMyCreditPurchases = () =>
     },
     staleTime: 30_000,
   });
+
+// ── Psychometric Assessment ───────────────────────────────────────────────────
+
+export interface PsychometricOption {
+  id: string;
+  text: string;
+  score: number;
+}
+export interface PsychometricQuestion {
+  id: string;
+  questionText: string;
+  category: string;
+  options: PsychometricOption[];
+}
+export interface PsychometricCategoryResult {
+  name: string;
+  score: number;
+  max: number;
+  percentage: number;
+  label: string;
+}
+export interface PsychometricResults {
+  categories: PsychometricCategoryResult[];
+  overallPercentage: number;
+  overallLabel: string;
+  recommendation: string;
+}
+export interface PsychometricResponse {
+  id: string;
+  results: PsychometricResults;
+  createdAt: string;
+}
+
+export const usePsychometricQuestions = () =>
+  useQuery({
+    queryKey: ["user", "psychometric-questions"],
+    queryFn: async () => {
+      const res: any = await apiClient.get("/api/user/psychometric/questions");
+      return res.data as PsychometricQuestion[];
+    },
+    staleTime: 300_000,
+  });
+
+export const useMyPsychometricResult = () =>
+  useQuery({
+    queryKey: ["user", "psychometric-result"],
+    queryFn: async () => {
+      const res: any = await apiClient.get("/api/user/psychometric/result");
+      return (res.data ?? null) as PsychometricResponse | null;
+    },
+    staleTime: 60_000,
+  });
+
+export const useSubmitPsychometric = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (answers: Record<string, string>) => {
+      const res: any = await apiClient.post("/api/user/psychometric/submit", { answers });
+      return res.data as PsychometricResponse;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "psychometric-result"] }),
+  });
+};

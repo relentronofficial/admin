@@ -85,3 +85,11 @@ final ebookReadingStreakProvider =
     FutureProvider.autoDispose<EbookReadingStreak>((ref) async {
   return ref.watch(ebookServiceProvider).readingStreak();
 });
+
+// ── Reviews ──────────────────────────────────────────────────────
+// Per-book approved review list. Invalidate after submitReview so
+// the section refreshes immediately.
+final ebookReviewsProvider = FutureProvider.autoDispose
+    .family<List<EbookReview>, String>((ref, bookId) async {
+  return ref.watch(ebookServiceProvider).listReviews(bookId);
+});

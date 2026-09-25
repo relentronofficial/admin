@@ -5,6 +5,7 @@ import '../../../shared/models/course.dart';
 import '../../../shared/models/lesson.dart';
 import '../../../shared/providers/socket_provider.dart';
 import '../../../shared/socket/socket_events.dart';
+import '../data/course_reports_service.dart';
 import '../data/courses_service.dart';
 
 part 'courses_provider.g.dart';
@@ -85,6 +86,42 @@ final coursePendingPaymentProvider = FutureProvider.autoDispose
 @Riverpod(keepAlive: true)
 Future<List<CourseEnrollment>> learningCourses(Ref ref) =>
     ref.read(coursesServiceProvider).getEnrollments();
+
+// ── Course module tabs ────────────────────────────────────────────────────────
+final courseModuleTabsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) =>
+        ref.read(coursesServiceProvider).getCourseModuleTabs());
+
+// ── Courses filtered by module ────────────────────────────────────────────────
+// Used by courses_screen when a specific module tab is selected.
+final coursesByModuleProvider =
+    FutureProvider.autoDispose.family<List<Course>, String>((ref, module) =>
+        ref.read(coursesServiceProvider).listCoursesByModule(module));
+
+// ── Psychometric assessment ───────────────────────────────────────────────────
+final psychometricQuestionsProvider =
+    FutureProvider.autoDispose<List<PsychometricQuestion>>((ref) =>
+        ref.read(coursesServiceProvider).getPsychometricQuestions());
+
+final psychometricResultProvider =
+    FutureProvider.autoDispose<PsychometricResponse?>((ref) =>
+        ref.read(coursesServiceProvider).getMyPsychometricResult());
+
+// ── Course weekly report ──────────────────────────────────────────────────────
+
+final courseWeeklyReportProvider = FutureProvider.autoDispose
+    .family<CourseWeeklyReport?, String>(
+  (ref, courseId) =>
+      ref.read(courseReportsServiceProvider).getMyReport(courseId),
+);
+
+// ── Course feedback history ───────────────────────────────────────────────────
+
+final courseFeedbackHistoryProvider = FutureProvider.autoDispose
+    .family<List<CourseWeeklyReport>, String>(
+  (ref, courseId) =>
+      ref.read(courseReportsServiceProvider).getFeedbackHistory(courseId),
+);
 
 // ── Course access granted event (keepAlive) ───────────────────────────────────
 

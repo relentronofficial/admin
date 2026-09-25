@@ -9,8 +9,9 @@ import {
   CheckCircle2, Lock, Pencil, X, Save, Monitor, Smartphone, Tablet, Wifi,
   Camera, Loader2, Trophy, Flame, Heart, LogOut, Bell, Mail, MessageSquare,
   Headphones, Megaphone, Phone, Users, Star, Zap, ShoppingCart, ChevronRight, Clock,
+  Brain, ChevronLeft, RotateCcw,
 } from "lucide-react";
-import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, type CreditPricingItem } from "@/lib/hooks/useUser";
+import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric, type CreditPricingItem, type PsychometricQuestion, type PsychometricCategoryResult } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
 import { cn } from "@/lib/utils/cn";
@@ -823,6 +824,309 @@ function ActiveDevicesSection() {
   );
 }
 
+// ─── Psychometric Assessment ──────────────────────────────────────────────────
+
+const CATEGORY_COLORS: Record<string, string> = {
+  Vision:     "#3b82f6",
+  Execution:  "#f59e0b",
+  Leadership: "#8b5cf6",
+  Innovation: "#10b981",
+  Resilience: "#ef4444",
+};
+
+function CategoryBar({ cat }: { cat: PsychometricCategoryResult }) {
+  const color = CATEGORY_COLORS[cat.name] ?? "var(--color-accent)";
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-foreground">{cat.name}</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full"
+            style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}>
+            {cat.label}
+          </span>
+        </div>
+        <span className="text-sm font-bold text-foreground">{cat.percentage}%</span>
+      </div>
+      <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "var(--color-bg-surface, rgba(255,255,255,0.06))" }}>
+        <div
+          className="h-full rounded-full transition-all duration-700"
+          style={{ width: `${cat.percentage}%`, background: color }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PsychometricTestModal({
+  questions,
+  onClose,
+  onDone,
+}: {
+  questions: PsychometricQuestion[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const submit = useSubmitPsychometric();
+
+  const q = questions[step];
+  const totalSteps = questions.length;
+  const progress = Math.round(((step + 1) / totalSteps) * 100);
+  const selected = q ? answers[q.id] : undefined;
+
+  const handleNext = () => {
+    if (step < totalSteps - 1) {
+      setStep((s) => s + 1);
+    }
+  };
+
+  const handleFinish = async () => {
+    try {
+      await submit.mutateAsync(answers);
+      onDone();
+    } catch {
+      toast.error("Failed to save results. Please try again.");
+    }
+  };
+
+  if (!q) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-2xl border overflow-hidden shadow-2xl"
+        style={{ background: "var(--color-modal-bg, #1a1a1a)", borderColor: "var(--color-surface-overlay, rgba(255,255,255,0.1))" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b"
+          style={{ borderColor: "var(--color-surface-overlay, rgba(255,255,255,0.08))" }}>
+          <div className="flex items-center gap-2">
+            <Brain size={16} style={{ color: "var(--color-accent)" }} />
+            <span className="text-sm font-bold text-foreground">Business Psychometric Test</span>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Progress bar */}
+        <div className="w-full h-1" style={{ background: "var(--color-bg-surface, rgba(255,255,255,0.06))" }}>
+          <div className="h-full transition-all duration-300" style={{ width: `${progress}%`, background: "var(--color-accent)" }} />
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Question counter + category */}
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              {step + 1} of {totalSteps}
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+              style={{
+                color: CATEGORY_COLORS[q.category] ?? "var(--color-accent)",
+                background: `color-mix(in srgb, ${CATEGORY_COLORS[q.category] ?? "var(--color-accent)"} 12%, transparent)`,
+              }}>
+              {q.category}
+            </span>
+          </div>
+
+          {/* Question text */}
+          <p className="text-[15px] font-semibold text-foreground leading-relaxed">{q.questionText}</p>
+
+          {/* Options */}
+          <div className="space-y-2.5">
+            {q.options.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setAnswers((a) => ({ ...a, [q.id]: opt.id }))}
+                className="w-full text-left px-4 py-3 rounded-xl border transition-all text-sm"
+                style={{
+                  borderColor: selected === opt.id ? "var(--color-accent)" : "var(--color-surface-overlay, rgba(255,255,255,0.1))",
+                  background: selected === opt.id ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "transparent",
+                  color: "var(--color-text-normal, inherit)",
+                }}
+              >
+                <span className="font-bold mr-2" style={{ color: selected === opt.id ? "var(--color-accent)" : "var(--color-text-subtle, #999)" }}>
+                  {opt.id.toUpperCase()}.
+                </span>
+                {opt.text}
+              </button>
+            ))}
+          </div>
+
+          {/* Navigation */}
+          <div className="flex items-center gap-3 pt-1">
+            {step > 0 && (
+              <button
+                onClick={() => setStep((s) => s - 1)}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors"
+                style={{ borderColor: "var(--color-surface-overlay, rgba(255,255,255,0.1))", color: "var(--color-text-secondary, #a0a0a0)" }}
+              >
+                <ChevronLeft size={15} /> Back
+              </button>
+            )}
+            <div className="flex-1" />
+            {step < totalSteps - 1 ? (
+              <button
+                onClick={handleNext}
+                disabled={!selected}
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40"
+                style={{ background: "var(--color-accent)", color: "#fff" }}
+              >
+                Next <ChevronRight size={15} />
+              </button>
+            ) : (
+              <button
+                onClick={handleFinish}
+                disabled={!selected || submit.isPending}
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-40"
+                style={{ background: "var(--color-accent)", color: "#fff" }}
+              >
+                {submit.isPending ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                See Results
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PsychometricSection() {
+  const { data: result, isLoading } = useMyPsychometricResult();
+  const { data: questions = [] } = usePsychometricQuestions();
+  const [showTest, setShowTest] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+
+  const handleDone = () => {
+    setShowTest(false);
+    setShowResults(true);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-8 rounded-lg animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+        ))}
+      </div>
+    );
+  }
+
+  if (!result || showResults) {
+    return (
+      <>
+        <div className="space-y-4">
+          {result && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-2xl font-bold text-foreground leading-none">{result.results.overallPercentage}%</p>
+                  <p className="text-xs text-muted-foreground mt-1">{result.results.overallLabel} overall</p>
+                </div>
+                <button
+                  onClick={() => { setShowResults(false); setShowTest(true); }}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-colors"
+                  style={{ borderColor: "var(--color-surface-overlay, rgba(255,255,255,0.1))", color: "var(--color-text-secondary, #a0a0a0)" }}
+                >
+                  <RotateCcw size={12} /> Retake
+                </button>
+              </div>
+              <div className="space-y-3">
+                {result.results.categories.map((cat) => (
+                  <CategoryBar key={cat.name} cat={cat} />
+                ))}
+              </div>
+              {result.results.recommendation && (
+                <div className="p-4 rounded-xl border-l-4 text-sm text-muted-foreground leading-relaxed"
+                  style={{ borderColor: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 6%, transparent)" }}>
+                  <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: "var(--color-accent)" }}>Recommendation</p>
+                  {result.results.recommendation}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Completed {new Date(result.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+          )}
+
+          {!result && (
+            <div className="flex flex-col items-center gap-4 py-4 text-center">
+              <div className="p-4 rounded-2xl" style={{ background: "color-mix(in srgb, var(--color-accent) 8%, transparent)" }}>
+                <Brain size={32} style={{ color: "var(--color-accent)" }} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Discover Your Business Profile</p>
+                <p className="text-xs text-muted-foreground mt-1">15 questions across 5 dimensions — takes about 5 minutes</p>
+              </div>
+              <button
+                onClick={() => setShowTest(true)}
+                disabled={questions.length === 0}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold disabled:opacity-40 transition-all"
+                style={{ background: "var(--color-accent)", color: "#fff" }}
+              >
+                <Brain size={15} /> Start Assessment
+              </button>
+            </div>
+          )}
+        </div>
+
+        {showTest && questions.length > 0 && (
+          <PsychometricTestModal
+            questions={questions}
+            onClose={() => setShowTest(false)}
+            onDone={handleDone}
+          />
+        )}
+      </>
+    );
+  }
+
+  // Has result, not showing "results view" — show summary card
+  return (
+    <>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-2xl font-bold text-foreground leading-none">{result.results.overallPercentage}%</p>
+            <p className="text-xs text-muted-foreground mt-1">{result.results.overallLabel} overall</p>
+          </div>
+          <button
+            onClick={() => setShowTest(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-colors"
+            style={{ borderColor: "var(--color-surface-overlay, rgba(255,255,255,0.1))", color: "var(--color-text-secondary, #a0a0a0)" }}
+          >
+            <RotateCcw size={12} /> Retake
+          </button>
+        </div>
+        <div className="space-y-3">
+          {result.results.categories.map((cat) => (
+            <CategoryBar key={cat.name} cat={cat} />
+          ))}
+        </div>
+        {result.results.recommendation && (
+          <div className="p-4 rounded-xl border-l-4 text-sm text-muted-foreground leading-relaxed"
+            style={{ borderColor: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 6%, transparent)" }}>
+            <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: "var(--color-accent)" }}>Recommendation</p>
+            {result.results.recommendation}
+          </div>
+        )}
+        <p className="text-[11px] text-muted-foreground">
+          Completed {new Date(result.createdAt).toLocaleDateString()}
+        </p>
+      </div>
+
+      {showTest && questions.length > 0 && (
+        <PsychometricTestModal
+          questions={questions}
+          onClose={() => setShowTest(false)}
+          onDone={() => { setShowTest(false); }}
+        />
+      )}
+    </>
+  );
+}
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function ProfileSkeleton() {
@@ -907,6 +1211,15 @@ export default function ProfilePage() {
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
         <h3 className="text-sm font-bold text-foreground">Your Mentorship Benefits</h3>
         <MentorshipBenefitsSection />
+      </div>
+
+      {/* Psychometric Assessment */}
+      <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
+        <div className="flex items-center gap-2">
+          <Brain size={15} style={{ color: "var(--color-accent)" }} />
+          <h3 className="text-sm font-bold text-foreground">Business Psychometric Assessment</h3>
+        </div>
+        <PsychometricSection />
       </div>
 
       {/* Dynamic sections */}

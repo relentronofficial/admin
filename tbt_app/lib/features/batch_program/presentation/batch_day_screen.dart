@@ -41,11 +41,15 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
   final _journalController = TextEditingController();
 
   // ── Focus-mode gamification ──────────────────────────────────────────────────
+  // Initialized from cached service value in initState; updated by the backend
+  // after each lifeline use (MG-02).
   int _lifelinesLeft = 3;
   static const int _lifelineCoinCost = 50;
   final Set<String> _lockedTaskIds = {};
   bool _spendingCoins = false;
   final Map<String, GlobalKey<_TaskRowState>> _taskRowKeys = {};
+  // MG-04: taskId → epoch ms when the focus timer was started for that task.
+  final Map<String, int> _taskTimerStartedAt = {};
 
   GlobalKey<_TaskRowState> _keyFor(String taskId) =>
       _taskRowKeys.putIfAbsent(taskId, () => GlobalKey<_TaskRowState>());
@@ -54,6 +58,14 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed from the last-known service value so the badge reflects the real
+    // count before a fresh getBatchProgram fetch completes.
+    _lifelinesLeft = ref.read(batchServiceProvider).lifelinesRemaining;
   }
 
   @override
@@ -91,9 +103,18 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
 
   void _onTaskToggled(int index) {
     final task = _localTasks[index];
+    final nowCompleted = !task.isCompleted;
     setState(() {
-      _localTasks[index] = task.copyWith(isCompleted: !task.isCompleted);
+      _localTasks[index] = task.copyWith(isCompleted: nowCompleted);
     });
+    // MG-04: capture when the focus timer started so the backend can award
+    // early-completion bonus XP.
+    if (nowCompleted) {
+      final ts = _taskRowKeys[task.id]?.currentState?.timerStartedAtMs;
+      if (ts != null) {
+        _taskTimerStartedAt[task.id] = ts;
+      }
+    }
     _scheduleAutoSave();
   }
 
@@ -168,18 +189,32 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
       final taskSubmissions = <String, Map<String, String?>>{};
       for (final t in _localTasks) {
         final pt = meta[t.id]?.proofType ?? 'watch';
+        Map<String, String?>? entry;
         if (pt == 'file' || pt == 'image' || pt == 'video') {
           final url = _proofPublicUrls[t.id];
           if (url != null && url.isNotEmpty) {
-            taskSubmissions[t.id] = {'url': url, 'type': pt};
+            entry = {'url': url, 'type': pt};
           }
         } else if (pt == 'text' || pt == 'url') {
           final v = _responseCtrls[t.id]?.text.trim() ?? '';
           if (v.isNotEmpty) {
             // 'url' proof also goes in value — backend stores it in
             // response_value regardless of type.
-            taskSubmissions[t.id] = {'value': v, 'type': pt};
+            entry = {'value': v, 'type': pt};
           }
+        }
+        // MG-04: attach timerStartedAt and timerSeconds when available so the
+        // backend can detect early completion and award bonus XP.
+        if (t.isCompleted && _taskTimerStartedAt.containsKey(t.id)) {
+          entry ??= {};
+          entry['timerStartedAt'] = _taskTimerStartedAt[t.id].toString();
+          final timerSecs = meta[t.id]?.timerSeconds;
+          if (timerSecs != null) {
+            entry['timerSeconds'] = timerSecs.toString();
+          }
+        }
+        if (entry != null) {
+          taskSubmissions[t.id] = entry;
         }
       }
 
@@ -288,9 +323,150 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
     }
   }
 
+  // ── Task rendering (grouped by process) ─────────────────────────────────────
+
+  Widget _buildSingleTaskRow(
+    int index, {
+    required bool readOnly,
+    required int timerDurationSeconds,
+    bool stageLocked = false,
+    int? stagePosition,
+  }) {
+    final task = _localTasks[index];
+    final taskId = task.id;
+    final meta = ref.read(batchServiceProvider).taskMeta[taskId];
+    final pt = meta?.proofType ?? 'watch';
+    final needsInput = pt == 'text' || pt == 'url';
+    final taskTimerSecs = meta?.timerSeconds ?? timerDurationSeconds;
+    return _TaskRow(
+      key: _keyFor(taskId),
+      task: task,
+      proofName: _proofPaths[taskId],
+      hasPublicUrl: _proofPublicUrls.containsKey(taskId),
+      isUploading: _uploadingTaskId == taskId,
+      readOnly: readOnly,
+      proofType: pt,
+      description: meta?.description,
+      deliverables: meta?.deliverables,
+      timerDurationSeconds: taskTimerSecs,
+      isLocked: _lockedTaskIds.contains(taskId) && !task.isCompleted,
+      stageLocked: stageLocked,
+      stagePosition: stagePosition,
+      responseController: needsInput ? _ctrlFor(taskId) : null,
+      onResponseChanged: needsInput ? (_) => _scheduleAutoSave() : null,
+      onTaskTap: () => _handleTaskTap(index, taskId, task.title),
+      onPickProof: () => _pickProof(taskId),
+      onLifeline: () => _handleLifeline(taskId),
+      onTimerExpired: () => _onTimerExpired(index, taskId),
+    );
+  }
+
+  List<Widget> _buildTaskWidgets({
+    required bool readOnly,
+    required int timerDurationSeconds,
+  }) {
+    final meta = ref.read(batchServiceProvider).taskMeta;
+
+    // Separate process tasks from standalone tasks.
+    final standaloneIndices = <int>[];
+    final processGroups = <String, List<int>>{}; // processId → indices in _localTasks
+
+    for (int i = 0; i < _localTasks.length; i++) {
+      final t = _localTasks[i];
+      final m = meta[t.id];
+      if (m?.processId != null) {
+        processGroups.putIfAbsent(m!.processId!, () => []).add(i);
+      } else {
+        standaloneIndices.add(i);
+      }
+    }
+
+    final widgets = <Widget>[];
+
+    // 1. Standalone tasks (unchanged behaviour).
+    for (final idx in standaloneIndices) {
+      widgets.add(_buildSingleTaskRow(
+        idx,
+        readOnly: readOnly,
+        timerDurationSeconds: timerDurationSeconds,
+      ));
+    }
+
+    // 2. Process groups — one section per distinct processId.
+    for (final entry in processGroups.entries) {
+      final indices = entry.value;
+
+      // Sort by stagePosition so stages render in order regardless of API order.
+      indices.sort((a, b) {
+        final posA = meta[_localTasks[a].id]?.stagePosition ?? 0;
+        final posB = meta[_localTasks[b].id]?.stagePosition ?? 0;
+        return posA.compareTo(posB);
+      });
+
+      // Derive header values from the first task in the group.
+      final firstMeta = meta[_localTasks[indices.first].id];
+      final processTitle = firstMeta?.processTitle ?? 'Process';
+      final totalStages = firstMeta?.totalStagesInProcess ?? indices.length;
+
+      // Count completed stages in this group.
+      final completedStages =
+          indices.where((i) => _localTasks[i].isCompleted).length;
+
+      widgets.add(_ProcessSectionHeader(
+        processTitle: processTitle,
+        completedStages: completedStages,
+        totalStages: totalStages,
+      ));
+
+      // Render each stage inside a left-bordered container.
+      widgets.add(
+        Container(
+          margin: const EdgeInsets.only(left: 16, right: 16, bottom: 4),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: const Color(0xFFDC2626).withValues(alpha: 0.4),
+                width: 2,
+              ),
+            ),
+          ),
+          child: Column(
+            children: indices.map((idx) {
+              final taskMeta = meta[_localTasks[idx].id];
+              return Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: _buildSingleTaskRow(
+                  idx,
+                  readOnly: readOnly,
+                  timerDurationSeconds: timerDurationSeconds,
+                  stageLocked: taskMeta?.stageLocked ?? false,
+                  stagePosition: taskMeta?.stagePosition,
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
   // ── Gamification handlers ────────────────────────────────────────────────────
 
   void _handleTaskTap(int index, String taskId, String taskTitle) {
+    // MG-03: stage-locked tasks cannot be interacted with until prior stage approved.
+    final taskMetaEntry = ref.read(batchServiceProvider).taskMeta[taskId];
+    if (taskMetaEntry?.stageLocked == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complete the previous stage first'),
+          backgroundColor: Color(0xFF606060),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
     final task = _localTasks[index];
     if (task.isCompleted) {
       _onTaskToggled(index);
@@ -319,22 +495,34 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
     );
   }
 
-  void _handleLifeline(String taskId) {
+  Future<void> _handleLifeline(String taskId) async {
     if (_lifelinesLeft > 0) {
+      // Optimistic update — decrement locally so the UI responds instantly.
       setState(() {
         _lifelinesLeft--;
         _lockedTaskIds.remove(taskId);
       });
       _taskRowKeys[taskId]?.currentState?._startTimer();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Lifeline used! $_lifelinesLeft free lifeline'
-            '${_lifelinesLeft == 1 ? '' : 's'} remaining.',
+      // Best-effort backend sync — failure keeps the local decrement so the
+      // user isn't blocked mid-session.
+      try {
+        final remaining =
+            await ref.read(batchServiceProvider).useLifeline();
+        if (mounted) setState(() => _lifelinesLeft = remaining);
+      } catch (_) {
+        // Backend call failed — local decrement stays (optimistic).
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Lifeline used! $_lifelinesLeft free lifeline'
+              '${_lifelinesLeft == 1 ? '' : 's'} remaining.',
+            ),
+            backgroundColor: const Color(0xFF16a34a),
           ),
-          backgroundColor: const Color(0xFF16a34a),
-        ),
-      );
+        );
+      }
     } else {
       _showCoinDialog(taskId);
     }
@@ -768,38 +956,9 @@ class _BatchDayScreenState extends ConsumerState<BatchDayScreen> {
                   ],
                 ),
               ),
-              ..._localTasks.asMap().entries.map((e) {
-                final meta =
-                    ref.read(batchServiceProvider).taskMeta[e.value.id];
-                final pt = meta?.proofType ?? 'watch';
-                final needsInput = pt == 'text' || pt == 'url';
-                final taskId = e.value.id;
-                final taskTimerSecs =
-                    meta?.timerSeconds ?? timerDurationSeconds;
-                return _TaskRow(
-                  key: _keyFor(taskId),
-                  task: e.value,
-                  proofName: _proofPaths[taskId],
-                  hasPublicUrl: _proofPublicUrls.containsKey(taskId),
-                  isUploading: _uploadingTaskId == taskId,
+              ..._buildTaskWidgets(
                   readOnly: readOnly,
-                  proofType: pt,
-                  description: meta?.description,
-                  deliverables: meta?.deliverables,
-                  timerDurationSeconds: taskTimerSecs,
-                  isLocked: _lockedTaskIds.contains(taskId) &&
-                      !e.value.isCompleted,
-                  responseController:
-                      needsInput ? _ctrlFor(taskId) : null,
-                  onResponseChanged:
-                      needsInput ? (_) => _scheduleAutoSave() : null,
-                  onTaskTap: () =>
-                      _handleTaskTap(e.key, taskId, e.value.title),
-                  onPickProof: () => _pickProof(taskId),
-                  onLifeline: () => _handleLifeline(taskId),
-                  onTimerExpired: () => _onTimerExpired(e.key, taskId),
-                );
-              }),
+                  timerDurationSeconds: timerDurationSeconds),
             ],
             const SizedBox(height: 8),
             if (!readOnly)
@@ -1078,6 +1237,8 @@ class _TaskRow extends StatefulWidget {
     required this.onPickProof,
     required this.timerDurationSeconds,
     this.isLocked = false,
+    this.stageLocked = false,
+    this.stagePosition,
     this.proofType = 'watch',
     this.description,
     this.deliverables,
@@ -1093,6 +1254,10 @@ class _TaskRow extends StatefulWidget {
   final bool isUploading;
   final bool readOnly;
   final bool isLocked;
+  /// True when this task is a process stage and the previous stage is not yet approved.
+  final bool stageLocked;
+  /// The 1-based stage number of this task (null for non-process tasks).
+  final int? stagePosition;
   final VoidCallback onTaskTap;
   final VoidCallback onPickProof;
   final VoidCallback? onLifeline;
@@ -1112,6 +1277,10 @@ class _TaskRowState extends State<_TaskRow> {
   late int _secondsLeft = widget.timerDurationSeconds;
   bool _timerStarted = false;
   Timer? _countdownTimer;
+  DateTime? _timerStartedAt; // MG-04: when _startTimer() was called
+
+  /// MG-04: epoch ms when the focus timer started; null if not yet started.
+  int? get timerStartedAtMs => _timerStartedAt?.millisecondsSinceEpoch;
 
   @override
   void dispose() {
@@ -1121,6 +1290,7 @@ class _TaskRowState extends State<_TaskRow> {
 
   void _startTimer() {
     _countdownTimer?.cancel();
+    _timerStartedAt = DateTime.now(); // MG-04: record when timer started
     setState(() {
       _secondsLeft = widget.timerDurationSeconds;
       _timerStarted = true;
@@ -1174,21 +1344,25 @@ class _TaskRowState extends State<_TaskRow> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: widget.isLocked
-            ? const Color(0xFFdc2626).withValues(alpha: 0.05)
-            : context.tokens.bgSurface,
+        color: widget.stageLocked
+            ? const Color(0xFF606060).withValues(alpha: 0.05)
+            : widget.isLocked
+                ? const Color(0xFFdc2626).withValues(alpha: 0.05)
+                : context.tokens.bgSurface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: widget.isLocked
-              ? const Color(0xFFdc2626).withValues(alpha: 0.4)
-              : context.tokens.borderCard,
+          color: widget.stageLocked
+              ? const Color(0xFF606060).withValues(alpha: 0.3)
+              : widget.isLocked
+                  ? const Color(0xFFdc2626).withValues(alpha: 0.4)
+                  : context.tokens.borderCard,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: widget.readOnly ? null : widget.onTaskTap,
+            onTap: (widget.readOnly || widget.stageLocked) ? null : widget.onTaskTap,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1198,7 +1372,10 @@ class _TaskRowState extends State<_TaskRow> {
                   SizedBox(
                     width: 24,
                     height: 24,
-                    child: widget.isLocked
+                    child: widget.stageLocked
+                        ? const Icon(Icons.lock_outline,
+                            size: 18, color: Color(0xFF606060))
+                        : widget.isLocked
                         ? const Icon(Icons.lock_outline,
                             size: 18, color: Color(0xFFdc2626))
                         : Checkbox(
@@ -1407,6 +1584,36 @@ class _TaskRowState extends State<_TaskRow> {
               ),
             ),
 
+          // Stage-locked banner — shown when a previous process stage is not yet approved
+          if (widget.stageLocked && !widget.readOnly)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF606060).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: const Color(0xFF606060).withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline,
+                      size: 13, color: Color(0xFF606060)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Complete stage ${(widget.stagePosition ?? 2) - 1} first',
+                      style: const TextStyle(
+                        color: Color(0xFF606060),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           if (widget.proofName != null ||
               (widget.task.proofUrl != null && !widget.readOnly == false))
             Padding(
@@ -1557,6 +1764,65 @@ class _TaskRowState extends State<_TaskRow> {
       case BatchTaskType.flashcard:
         return 'Flashcard';
     }
+  }
+}
+
+// ── Process section header ────────────────────────────────────────────────────
+
+class _ProcessSectionHeader extends StatelessWidget {
+  const _ProcessSectionHeader({
+    required this.processTitle,
+    required this.completedStages,
+    required this.totalStages,
+  });
+
+  final String processTitle;
+  final int completedStages;
+  final int totalStages;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          const Icon(Icons.account_tree_rounded,
+              size: 14, color: Color(0xFFDC2626)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              processTitle,
+              style: const TextStyle(
+                color: Color(0xFFF0F0F0),
+                fontFamily: 'Rajdhani',
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: completedStages == totalStages
+                  ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+                  : const Color(0xFFDC2626).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '$completedStages / $totalStages stages',
+              style: TextStyle(
+                color: completedStages == totalStages
+                    ? const Color(0xFF22C55E)
+                    : const Color(0xFFA0A0A0),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

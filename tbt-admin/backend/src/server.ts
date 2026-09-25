@@ -25,13 +25,14 @@ import { adsRoutes } from './modules/ads/routes.js';
 import { videoFeedbackRoutes } from './modules/video-feedback/routes.js';
 import { supportEntitlementsRoutes } from './modules/support-entitlements/routes.js';
 import { creditsRoutes } from './modules/credits/routes.js';
+import { psychometricRoutes } from './modules/psychometric/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
 import { webinarRoutes } from './modules/webinar/routes.js';
 import { dashboardRoutes } from './modules/dashboard/routes.js';
 import { notificationRoutes } from './modules/notifications/routes.js';
 import { uploadRoutes } from './modules/upload/routes.js';
 import { locationRoutes } from './modules/location/routes.js';
-import { userRoutes } from './modules/user/routes.js';
+import { userRoutes, userWebhookRoutes } from './modules/user/routes.js';
 import { workshopRoutes } from './modules/workshops/routes.js';
 import { heroRoutes } from './modules/hero/routes.js';
 import { contentSectionRoutes } from './modules/content-sections/routes.js';
@@ -180,6 +181,7 @@ async function bootstrap() {
     await fastify.register(uploadRoutes, { prefix: '/api/upload' });
     await fastify.register(locationRoutes, { prefix: '/api/location' });
     await fastify.register(userRoutes, { prefix: '/api/user' });
+    await fastify.register(userWebhookRoutes, { prefix: '/api/user' });
     await fastify.register(workshopRoutes, { prefix: '/api/workshops' });
     await fastify.register(heroRoutes, { prefix: '/api/hero-slides' });
     await fastify.register(contentSectionRoutes, { prefix: '/api/content-sections' });
@@ -211,6 +213,7 @@ async function bootstrap() {
     await fastify.register(videoFeedbackRoutes, { prefix: '/api/video-feedback' });
     await fastify.register(supportEntitlementsRoutes, { prefix: '/api/support-entitlements' });
     await fastify.register(creditsRoutes, { prefix: '/api/credits' });
+    await fastify.register(psychometricRoutes, { prefix: '/api/psychometric/admin' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);

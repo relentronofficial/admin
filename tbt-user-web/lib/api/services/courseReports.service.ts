@@ -38,6 +38,27 @@ export interface SubmitFeedbackBody {
   remarks?: string;
 }
 
+export interface CourseEpisodeFeedback {
+  id: string;
+  memberId: string;
+  courseId: string;
+  episodeId: string;
+  feedback: string;
+  rating: number | null;
+  liked: boolean | null;
+  status: "new" | "reviewed";
+  whatsappStatus: "sent" | "failed" | "skipped" | null;
+  submittedAt: string;
+}
+
+export interface SubmitEpisodeFeedbackBody {
+  courseId: string;
+  episodeId: string;
+  feedback?: string;
+  rating?: number;
+  liked?: boolean;
+}
+
 export const courseReportsService = {
   getCurrentReport: (courseId: string) =>
     apiClient.get<never, ApiResponse<CourseWeeklyReport>>("/api/course-reports/current", {
@@ -58,5 +79,16 @@ export const courseReportsService = {
   getFeedbackHistory: (courseId: string) =>
     apiClient.get<never, ApiResponse<CourseWeeklyFeedback[]>>("/api/course-reports/feedback/mine", {
       params: { courseId },
+    }),
+
+  submitEpisodeFeedback: (body: SubmitEpisodeFeedbackBody) =>
+    apiClient.post<never, ApiResponse<{ status: string; feedbackId: string }>>(
+      "/api/course-reports/episode-feedback",
+      body,
+    ),
+
+  getMyEpisodeFeedback: (episodeId: string) =>
+    apiClient.get<never, ApiResponse<CourseEpisodeFeedback | null>>("/api/course-reports/episode-feedback/mine", {
+      params: { episodeId },
     }),
 };

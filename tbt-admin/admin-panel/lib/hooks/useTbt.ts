@@ -563,6 +563,19 @@ export const useApproveCoursePayment = (courseId: string) => {
   });
 };
 
+export const useRefundCoursePayment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ courseId, paymentId }: { courseId: string; paymentId: string }) => {
+      await apiClient.post(`/api/courses/${courseId}/payments/${paymentId}/refund`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['course-payments'] });
+      qc.invalidateQueries({ queryKey: ['course-access'] });
+    },
+  });
+};
+
 // ── Per-member progression admin controls ─────────────────────────────
 // Two mutations for the sequential-unlock feature. Both call
 // backend endpoints under /api/courses/:id/members/:memberId/... —
@@ -1870,6 +1883,29 @@ export const useUpdateCourseFeedbackStatus = () => {
   });
 };
 
+// ── Course video (episode) feedback — member → admin per-video feedback ──
+
+export const useListCourseEpisodeFeedback = (params: { page?: number; limit?: number; memberId?: string; courseId?: string; episodeId?: string; status?: string } = {}) =>
+  useQuery({
+    queryKey: ['course-episode-feedback', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/course-reports/admin/episode-feedback', { params });
+      return res;
+    },
+    staleTime: 30_000,
+  });
+
+export const useUpdateCourseEpisodeFeedbackStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'new' | 'reviewed' }) => {
+      const res: any = await apiClient.patch(`/api/course-reports/admin/episode-feedback/${id}/status`, { status });
+      return res.data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['course-episode-feedback'] }); },
+  });
+};
+
 // ── Episode Resources & Tasks ──────────────────────────────────────────
 
 export const useListEpisodeResources = (episodeId: string) =>
@@ -2330,3 +2366,57 @@ export const useReorderCourseModules = (courseId: string) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['course-modules', courseId] }),
   });
 };
+
+// ── Psychometric Admin ────────────────────────────────────────────────────────
+
+export const useAdminPsychometricQuestions = () =>
+  useQuery({
+    queryKey: ['psychometric', 'questions'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/psychometric/admin/questions');
+      return res?.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+export const useAdminCreatePsychometricQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { questionText: string; category: string; options: any[]; sortOrder?: number; isActive?: boolean }) => {
+      const res: any = await apiClient.post('/api/psychometric/admin/questions', data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['psychometric', 'questions'] }),
+  });
+};
+
+export const useAdminUpdatePsychometricQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; questionText?: string; category?: string; options?: any[]; sortOrder?: number; isActive?: boolean }) => {
+      const res: any = await apiClient.put(`/api/psychometric/admin/questions/${id}`, data);
+      return res?.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['psychometric', 'questions'] }),
+  });
+};
+
+export const useAdminDeletePsychometricQuestion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/psychometric/admin/questions/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['psychometric', 'questions'] }),
+  });
+};
+
+export const useAdminPsychometricResponses = (params?: { page?: number; limit?: number; memberId?: string }) =>
+  useQuery({
+    queryKey: ['psychometric', 'responses', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/psychometric/admin/responses', { params });
+      return res ?? { data: [], meta: { total: 0 } };
+    },
+    staleTime: 30_000,
+  });

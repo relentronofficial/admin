@@ -24,9 +24,12 @@ function parseCookies(header?: string): Record<string, string> {
 }
 
 async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) {
+  const extraOrigins = env.CORS_EXTRA_ORIGINS
+    ? env.CORS_EXTRA_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+    : [];
   const io = new Server(fastify.server, {
     cors: {
-      origin: [env.USER_WEB_URL, env.ADMIN_WEB_URL],
+      origin: [env.USER_WEB_URL, env.ADMIN_WEB_URL, ...extraOrigins],
       credentials: true,
     },
   });

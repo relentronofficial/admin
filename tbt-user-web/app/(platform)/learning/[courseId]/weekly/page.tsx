@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CheckCircle2, Circle, Clock, Send } from "lucide-react";
 
 import { useCourse } from "@/lib/hooks/useCourses";
@@ -58,6 +58,30 @@ export default function WeeklyCourseReportPage() {
   const [feedback, setFeedback] = useState(feedbackAlreadySubmitted?.feedback ?? "");
   const [remarks, setRemarks] = useState(feedbackAlreadySubmitted?.remarks ?? "");
   const [submitted, setSubmitted] = useState(false);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    };
+  }, []);
+
+  const handleSubmitFeedback = async () => {
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+      successTimeoutRef.current = undefined;
+    }
+    setSubmitted(false);
+    try {
+      await submitFeedback.mutateAsync({ feedback: feedback.trim(), remarks: remarks.trim() || undefined });
+      setFeedback("");
+      setRemarks("");
+      setSubmitted(true);
+      successTimeoutRef.current = setTimeout(() => setSubmitted(false), 3000);
+    } catch {
+      // Keep the entered feedback/remarks intact; error state is surfaced via submitFeedback.isError
+    }
+  };
 
   return (
     <div className="max-w-2xl mx-auto pb-8">
@@ -165,10 +189,7 @@ export default function WeeklyCourseReportPage() {
             />
             <button
               disabled={!feedback.trim() || submitFeedback.isPending}
-              onClick={async () => {
-                await submitFeedback.mutateAsync({ feedback: feedback.trim(), remarks: remarks.trim() || undefined });
-                setSubmitted(true);
-              }}
+              onClick={handleSubmitFeedback}
               className="w-full flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-semibold text-white disabled:opacity-40 transition-colors"
               style={{ background: "var(--color-accent)" }}
             >
@@ -178,6 +199,11 @@ export default function WeeklyCourseReportPage() {
             {submitted && (
               <p className="text-xs text-center" style={{ color: "var(--color-success)" }}>
                 Feedback sent to your mentor.
+              </p>
+            )}
+            {submitFeedback.isError && (
+              <p className="text-xs text-center" style={{ color: "var(--color-alert)" }}>
+                Couldn&apos;t send feedback. Please try again.
               </p>
             )}
           </div>

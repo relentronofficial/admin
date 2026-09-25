@@ -109,6 +109,12 @@ import {
   heartbeatEpisodeTimerHandler,
   getEpisodeLifelinesHandler,
   useEpisodeLifelineHandler,
+  getPsychometricQuestionsHandler,
+  submitPsychometricHandler,
+  getMyPsychometricResultHandler,
+  createRazorpayOrderHandler,
+  verifyRazorpayPaymentHandler,
+  razorpayWebhookHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
@@ -268,4 +274,33 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Global search ─────────────────────────────────────────────────────────
   fastify.get('/search', searchHandler);
+
+  // ── Psychometric Assessment ────────────────────────────────────────────────
+  fastify.get('/psychometric/questions', getPsychometricQuestionsHandler);
+  fastify.post('/psychometric/submit',   submitPsychometricHandler);
+  fastify.get('/psychometric/result',    getMyPsychometricResultHandler);
+
+  // ── Razorpay Course Payments (authenticated) ──────────────────────────────
+  fastify.post('/courses/:id/razorpay/create-order', createRazorpayOrderHandler);
+  fastify.post('/courses/:id/razorpay/verify', verifyRazorpayPaymentHandler);
+}
+
+// Webhook — registered separately (no authenticateUser hook).
+// Parses application/json but preserves the raw body string for HMAC.
+export async function userWebhookRoutes(fastify: FastifyInstance) {
+  fastify.register(async (child) => {
+    // Remove the inherited parser before adding our own so Fastify doesn't
+    // throw FST_ERR_CTP_ALREADY_PRESENT (child scopes inherit parent parsers).
+    child.removeContentTypeParser('application/json');
+    child.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+      try {
+        const parsed = JSON.parse(body as string);
+        (req as any).rawBody = body as string;
+        done(null, parsed);
+      } catch (err: any) {
+        done(err);
+      }
+    });
+    child.post('/courses/razorpay/webhook', razorpayWebhookHandler);
+  });
 }
