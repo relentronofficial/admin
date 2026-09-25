@@ -1007,7 +1007,12 @@ export async function listEpisodeResourcesHandler(req: FastifyRequest, reply: Fa
 
 export async function createEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
-  const body = req.body as any;
+  const body = (req.body ?? {}) as any;
+  if (!body.title?.trim() || !body.fileUrl?.trim()) {
+    return reply.status(400).send({ success: false, data: null, error: 'title and fileUrl are required' });
+  }
+  const episode = await req.server.prisma.courseEpisode.findUnique({ where: { id: eid }, select: { id: true } });
+  if (!episode) return reply.status(404).send({ success: false, data: null, error: 'Episode not found' });
   const order = await req.server.prisma.appResource.count({ where: { courseEpisodeId: eid } })
     .catch(() => 0);
   const resource = await req.server.prisma.appResource.create({
@@ -1032,7 +1037,7 @@ export async function createEpisodeResourceHandler(req: FastifyRequest, reply: F
 
 export async function updateEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const { rid } = req.params as any;
-  const body = req.body as any;
+  const body = (req.body ?? {}) as any;
   const data: any = {};
   ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'fileCount',
     'isVisible', 'previewLabel', 'downloadLabel', 'description'].forEach(f => {

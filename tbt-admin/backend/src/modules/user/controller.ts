@@ -1684,6 +1684,9 @@ export async function upsertLessonFeedbackHandler(request: FastifyRequest, reply
   if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 10) {
     return fail(reply, 400, 'rating must be an integer between 1 and 10');
   }
+  if (liked !== undefined && typeof liked !== 'boolean') {
+    return fail(reply, 400, 'liked must be a boolean');
+  }
 
   await request.server.prisma.$executeRawUnsafe(
     `INSERT INTO lesson_feedback (member_id, course_id, lesson_id, rating, feedback_text, liked, updated_at)
@@ -4201,7 +4204,7 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
      WHERE course_episode_id = $1::uuid AND is_visible = true
      ORDER BY "order" ASC`,
     episodeId,
-  ).catch(() => [] as any[]);
+  );
   return reply.send({ success: true, data: resources, error: null });
 }
 

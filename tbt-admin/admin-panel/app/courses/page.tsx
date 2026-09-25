@@ -2609,7 +2609,9 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
         bucket: "resources", pathPrefix: "episode-resources",
       });
       await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      setForm((f: any) => ({ ...f, [field]: publicUrl }));
+      // Auto-pick the type for media uploads so the course page renders them inline
+      const mediaType = ["image", "video", "audio"].find(t => file.type.startsWith(`${t}/`));
+      setForm((f: any) => ({ ...f, [field]: publicUrl, ...(field === "fileUrl" && mediaType ? { fileType: mediaType } : {}) }));
       toast.success("Uploaded");
     } catch (e: any) { toast.error(e.message || "Upload failed"); }
     finally { setUploading(null); }
@@ -2622,7 +2624,7 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
     if (!form.title.trim()) { toast.error("Title required"); return; }
     if (!form.fileUrl.trim()) { toast.error("File URL required"); return; }
     try {
-      if (editing) { await updateRes.mutateAsync({ id: editing.id, ...form }); toast.success("Resource updated"); }
+      if (editing) { await updateRes.mutateAsync({ id: editing.id, data: form }); toast.success("Resource updated"); }
       else { await createRes.mutateAsync(form); toast.success("Resource created"); }
       setShowForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }

@@ -1466,6 +1466,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         )
       `),
       prisma.$executeRawUnsafe(`
+        ALTER TABLE lesson_feedback ADD COLUMN IF NOT EXISTS liked BOOLEAN
+      `),
+      prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS idx_lesson_feedback_member_course
           ON lesson_feedback(member_id, course_id)
       `),
