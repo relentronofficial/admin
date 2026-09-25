@@ -203,7 +203,7 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=0 \
-            --build-arg="NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
+            --set-build-env-vars="NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
             --set-env-vars="NODE_ENV=production" \
             --quiet
 
@@ -234,6 +234,6 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=1 \
-            --build-arg="NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
+            --set-build-env-vars="NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
             --set-env-vars="NODE_ENV=production" \
             --quiet
