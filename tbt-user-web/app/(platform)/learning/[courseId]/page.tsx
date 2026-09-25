@@ -14,6 +14,7 @@ import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import { LessonFeedbackSection } from "@/components/features/course/LessonFeedbackSection";
+import { EpisodeResourcesSection } from "@/components/features/course/EpisodeResourcesSection";
 import { useRegisterMedia, useSuppressAds } from "@/lib/ads/useRegisterMedia";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -2940,43 +2941,12 @@ export default function CourseDetailPage({
             )}
 
             {/* Episode Resources */}
-            {episodeResources.length > 0 && (
-              <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--color-border-card)" }}>
-                <div
-                  className="flex items-center gap-2 px-4 py-3"
-                  style={{ background: "var(--color-bg-surface)" }}
-                >
-                  <Download size={14} style={{ color: "var(--color-accent)" }} />
-                  <span className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
-                    Resources ({episodeResources.length})
-                  </span>
-                </div>
-                <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
-                  {episodeResources.map((r: EpisodeResource) => (
-                    <div key={r.id} className="flex items-center gap-3 px-4 py-3">
-                      <FileText size={16} style={{ color: "var(--color-text-subtle)", flexShrink: 0 }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-normal)" }}>{r.title}</p>
-                        {r.description && (
-                          <p className="text-xs mt-0.5 line-clamp-1" style={{ color: "var(--color-text-subtle)" }}>{r.description}</p>
-                        )}
-                      </div>
-                      {r.fileUrl && (
-                        <a
-                          href={r.fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="shrink-0 flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold transition-opacity hover:opacity-80 text-white"
-                          style={{ background: "var(--color-accent)" }}
-                        >
-                          <Download size={11} /> {r.downloadLabel ?? "Download"}
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <EpisodeResourcesSection
+              key={selectedLesson.id}
+              resources={episodeResources}
+              heading={uiStrings?.courseResourcesHeading ?? "Resources"}
+              defaultDownloadLabel={uiStrings?.resourcesDownloadLabel ?? "Download"}
+            />
 
             {/* Episode Tasks */}
             {episodeTasks.length > 0 && (

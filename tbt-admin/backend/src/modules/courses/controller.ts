@@ -881,36 +881,46 @@ export async function listEpisodeResourcesHandler(req: FastifyRequest, reply: Fa
 
 export async function createEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
-  const body = req.body as any;
+  const body = (req.body ?? {}) as any;
+  if (!body.title?.trim() || !body.fileUrl?.trim()) {
+    return reply.status(400).send({ success: false, data: null, error: 'title and fileUrl are required' });
+  }
+  const episode = await req.server.prisma.courseEpisode.findUnique({ where: { id: eid }, select: { id: true } });
+  if (!episode) return reply.status(404).send({ success: false, data: null, error: 'Episode not found' });
   const countRows = await req.server.prisma.$queryRawUnsafe<{ count: string }[]>(
     `SELECT COUNT(*)::text AS count FROM app_resources WHERE course_episode_id = $1::uuid`, eid
   ).catch(() => [{ count: '0' }]);
   const order = parseInt(countRows[0]?.count ?? '0');
-  const resource = await req.server.prisma.appResource.create({
-    data: {
-      title: body.title,
-      author: body.author || null,
-      fileUrl: body.fileUrl,
-      previewUrl: body.previewUrl || null,
-      fileType: body.fileType || 'pdf',
-      fileTypeIconUrl: body.fileTypeIconUrl || null,
-      fileCount: body.fileCount ?? 1,
-      order,
-      isVisible: body.isVisible ?? true,
-      previewLabel: body.previewLabel || 'Preview',
-      downloadLabel: body.downloadLabel || 'Download',
-      description: body.description || null,
-    },
+  // Create + link in one transaction: if the link fails, no orphan row is left
+  // behind to surface on the global Resources page instead of under the episode.
+  const resource = await req.server.prisma.$transaction(async (tx) => {
+    const created = await tx.appResource.create({
+      data: {
+        title: body.title,
+        author: body.author || null,
+        fileUrl: body.fileUrl,
+        previewUrl: body.previewUrl || null,
+        fileType: body.fileType || 'pdf',
+        fileTypeIconUrl: body.fileTypeIconUrl || null,
+        fileCount: body.fileCount ?? 1,
+        order,
+        isVisible: body.isVisible ?? true,
+        previewLabel: body.previewLabel || 'Preview',
+        downloadLabel: body.downloadLabel || 'Download',
+        description: body.description || null,
+      },
+    });
+    await tx.$executeRawUnsafe(
+      `UPDATE app_resources SET course_episode_id = $1::uuid WHERE id = $2::uuid`, eid, created.id
+    );
+    return created;
   });
-  await req.server.prisma.$executeRawUnsafe(
-    `UPDATE app_resources SET course_episode_id = $1::uuid WHERE id = $2::uuid`, eid, resource.id
-  );
   return reply.status(201).send({ success: true, data: { ...resource, courseEpisodeId: eid }, error: null });
 }
 
 export async function updateEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const { rid } = req.params as any;
-  const body = req.body as any;
+  const body = (req.body ?? {}) as any;
   const data: any = {};
   ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'fileCount',
     'isVisible', 'previewLabel', 'downloadLabel', 'description'].forEach(f => {

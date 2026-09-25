@@ -349,6 +349,7 @@ export interface UiStrings {
   batchProofLabel?: string;
   batchAttachProofLabel?: string;
   batchLearningResourceLabel?: string;
+  courseResourcesHeading?: string;
   batchDeliverablesLabel?: string;
   batchTextProofPlaceholder?: string;
   batchVideoUrlPlaceholder?: string;

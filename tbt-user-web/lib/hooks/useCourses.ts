@@ -229,7 +229,8 @@ export const useEpisodeResources = (episodeId: string | null | undefined) =>
       return res.data ?? [];
     },
     enabled: !!episodeId,
-    staleTime: 5 * 60 * 1000,
+    // Short so resources an admin adds show up on the next lesson switch or tab focus
+    staleTime: 30 * 1000,
   });
 
 export const useEpisodeTasks = (episodeId: string | null | undefined) =>
