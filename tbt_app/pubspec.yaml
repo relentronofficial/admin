@@ -2,7 +2,7 @@ name: tbt_app
 description: Tamil Business Tribe — Flutter mobile application for Android and iOS.
 publish_to: 'none'
 
-version: 1.1.0+2
+version: 1.1.1+3
 
 environment:
   sdk: ">=3.7.0-0 <4.0.0"
