@@ -755,21 +755,22 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   const isCheckoutOpen = useRef(false);
   const lessons = course.lessons ?? [];
 
+  // Razorpay is shown whenever the course has a price — the keyId comes from
+  // the backend API on order creation, so no frontend env var is needed.
   const showRazorpay =
     Number(course.price) > 0 &&
-    !!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID &&
     !course.pendingPayment;
 
-  // Load Razorpay Checkout.js once
+  // Load Razorpay Checkout.js as soon as we know the course has a price
   useEffect(() => {
-    if (!showRazorpay) return;
+    if (Number(course.price) <= 0) return;
     if (document.getElementById("rzp-checkout-js")) return;
     const s = document.createElement("script");
     s.id = "rzp-checkout-js";
     s.src = "https://checkout.razorpay.com/v1/checkout.js";
     s.async = true;
     document.body.appendChild(s);
-  }, [showRazorpay]);
+  }, [course.price]);
 
   const handleRazorpayPay = async () => {
     // Fix #6: guard against script not yet loaded
