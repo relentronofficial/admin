@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -33,121 +32,27 @@ class CourseDetailScreen extends ConsumerStatefulWidget {
 class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final Razorpay _razorpay;
   bool _accessRequested = false;
   bool _requesting = false;
-  // Held during create-order + verify so the button shows a spinner.
-  String? _pendingOrderId;
-  String? _pendingPaymentRecordId;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _razorpay.clear();
     super.dispose();
   }
 
-  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    final orderId = _pendingOrderId;
-    final recordId = _pendingPaymentRecordId;
-    _pendingOrderId = null;
-    _pendingPaymentRecordId = null;
-    if (orderId == null || recordId == null) return;
-    try {
-      await ref.read(coursesServiceProvider).verifyRazorpayPayment(
-            courseId: widget.courseId,
-            razorpayOrderId: orderId,
-            razorpayPaymentId: response.paymentId ?? '',
-            razorpaySignature: response.signature ?? '',
-            paymentRecordId: recordId,
-          );
-      if (!mounted) return;
-      ref.invalidate(courseDetailProvider(widget.courseId));
-      ref.invalidate(coursePendingPaymentProvider(widget.courseId));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payment successful! You now have access.'),
-          backgroundColor: Color(0xFF16a34a),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Payment verification failed. Contact support if amount was deducted.'),
-          backgroundColor: Color(0xFFdc2626),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _requesting = false);
-    }
-  }
-
-  void _handlePaymentError(PaymentFailureResponse response) {
-    _pendingOrderId = null;
-    _pendingPaymentRecordId = null;
-    if (!mounted) return;
-    setState(() => _requesting = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(response.message ?? 'Payment cancelled or failed.'),
-      ),
-    );
-  }
-
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    _pendingOrderId = null;
-    _pendingPaymentRecordId = null;
-    if (mounted) setState(() => _requesting = false);
-  }
-
+  // Redirect to the web app for payment — avoids Google Play / App Store
+  // commission (15–30%) that would apply to in-app purchases.
   Future<void> _handleRazorpayPay(CourseDetail course) async {
-    if (_requesting) return;
-    setState(() => _requesting = true);
-    try {
-      final order = await ref
-          .read(coursesServiceProvider)
-          .createRazorpayOrder(widget.courseId);
-      _pendingOrderId = order.orderId;
-      _pendingPaymentRecordId = order.paymentRecordId;
-
-      final options = <String, dynamic>{
-        'key': order.keyId,
-        'amount': order.amount,
-        'currency': order.currency,
-        'order_id': order.orderId,
-        'name': 'Tamil Business Tribe',
-        'description': course.title,
-        if (course.thumbnailUrl != null) 'image': course.thumbnailUrl,
-        'theme': {'color': '#dc2626'},
-      };
-      _razorpay.open(options);
-    } catch (e) {
-      _pendingOrderId = null;
-      _pendingPaymentRecordId = null;
-      if (!mounted) return;
-      setState(() => _requesting = false);
-      if (e.toString().contains('RAZORPAY_NOT_CONFIGURED')) {
-        // Backend isn't configured for Razorpay — fall back to the manual
-        // access-request flow so the user isn't left with a raw error.
-        await _handleGetAccess(course);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
-    }
+    await _openExternal(
+      'https://app.tamilbusinesstribe.com/learning/${widget.courseId}',
+    );
   }
 
   // Mirrors the web `handleGetAccess` flow:
