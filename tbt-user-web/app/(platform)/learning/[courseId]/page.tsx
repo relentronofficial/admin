@@ -3513,15 +3513,18 @@ export default function CourseDetailPage({
                     </div>
                   )}
 
-                  {/* Per-lesson resources in lesson list */}
+                  {/* Per-lesson resources in lesson list — only rendered when the
+                      lesson actually has resources; showEmpty is intentionally
+                      omitted so empty lessons don't duplicate the card layout. */}
+                  {(allEpisodeResourcesMap[lesson.id]?.length ?? 0) > 0 && (
                   <div className="px-3 pb-3">
                     <EpisodeResourcesSection
                       resources={allEpisodeResourcesMap[lesson.id] ?? []}
                       heading={uiStrings?.courseResourcesHeading ?? "Resources"}
                       defaultDownloadLabel={uiStrings?.resourcesDownloadLabel ?? "Download"}
-                      showEmpty
                     />
                   </div>
+                  )}
                   </div>
                   )}
                 </React.Fragment>
