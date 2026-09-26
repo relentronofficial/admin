@@ -3109,7 +3109,6 @@ export default function CourseDetailPage({
 
             {/* Episode Resources */}
             <EpisodeResourcesSection
-              key={selectedLesson.id}
               resources={episodeResources}
               heading={uiStrings?.courseResourcesHeading ?? "Resources"}
               defaultDownloadLabel={uiStrings?.resourcesDownloadLabel ?? "Download"}
