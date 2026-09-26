@@ -29,8 +29,16 @@ class AuthService {
     }
   }
 
-  /// Step 2 of login: verify OTP and store the issued JWT cookies.
-  Future<void> verifyOtp({
+  /// Step 2 of login: verify OTP.
+  ///
+  /// Returns the `data` payload from the response. Callers must check
+  /// `data['step']`:
+  ///
+  ///   * `'done'` — success; session cookies have been stored.
+  ///   * `'session_conflict'` — another active session exists.
+  ///     Cookies are NOT issued yet. Caller should show a confirmation
+  ///     UI and call [completeLogin] with `data['pendingToken']`.
+  Future<Map<String, dynamic>> verifyOtp({
     required String phone,
     required String otp,
   }) async {
@@ -38,6 +46,30 @@ class AuthService {
       final res = await _dio.post<Map<String, dynamic>>(
         kAuthVerifyOtp,
         data: {'phone': phone, 'otp': otp},
+      );
+      final data = (res.data?['data'] as Map<String, dynamic>?) ?? {};
+      if (data['step'] != 'session_conflict') {
+        final setCookies = res.headers.map['set-cookie'];
+        final access =
+            TokenStorage.extractFromSetCookie(setCookies, 'tbt_access');
+        final refresh =
+            TokenStorage.extractFromSetCookie(setCookies, 'tbt_refresh');
+        if (access != null) await TokenStorage.writeAccessToken(access);
+        if (refresh != null) await TokenStorage.writeRefreshToken(refresh);
+      }
+      return data;
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
+  /// Completes a login that had a session conflict by revoking all other
+  /// active sessions for this member and issuing new session cookies.
+  Future<void> completeLogin(String pendingToken) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        kAuthCompleteLogin,
+        data: {'pendingToken': pendingToken},
       );
       final setCookies = res.headers.map['set-cookie'];
       final access =

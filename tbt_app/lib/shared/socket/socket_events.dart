@@ -94,6 +94,13 @@ const String kSocketJoinLive = 'join:live';
 /// Emitted by client to leave a live session room.
 const String kSocketLeaveLive = 'leave:live';
 
+// ── Session management ────────────────────────────────────────────────────────
+
+/// Emitted to `user:{memberId}` when another device completes login and revokes
+/// all prior sessions (single-device enforcement). The receiving device must
+/// clear its tokens and return to the login screen.
+const String kSocketSessionRevoked = 'session:revoked';
+
 // ── Advertisements (TBT_ADS_SPECKIT.md §12) ───────────────────────────────────
 
 /// A campaign changed in a way clients must react to.

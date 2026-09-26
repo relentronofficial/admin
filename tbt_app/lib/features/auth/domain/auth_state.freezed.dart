@@ -20,6 +20,10 @@ mixin _$AuthState {
   AuthStep get step => throw _privateConstructorUsedError;
   Member? get member => throw _privateConstructorUsedError;
 
+  /// Held during session_conflict so the OTP screen can pass it to
+  /// completeLogin() when the user confirms they want to continue here.
+  String? get pendingToken => throw _privateConstructorUsedError;
+
   /// Create a copy of AuthState
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -32,7 +36,7 @@ abstract class $AuthStateCopyWith<$Res> {
   factory $AuthStateCopyWith(AuthState value, $Res Function(AuthState) then) =
       _$AuthStateCopyWithImpl<$Res, AuthState>;
   @useResult
-  $Res call({AuthStep step, Member? member});
+  $Res call({AuthStep step, Member? member, String? pendingToken});
 
   $MemberCopyWith<$Res>? get member;
 }
@@ -51,7 +55,11 @@ class _$AuthStateCopyWithImpl<$Res, $Val extends AuthState>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? step = null, Object? member = freezed}) {
+  $Res call({
+    Object? step = null,
+    Object? member = freezed,
+    Object? pendingToken = freezed,
+  }) {
     return _then(
       _value.copyWith(
             step:
@@ -64,6 +72,11 @@ class _$AuthStateCopyWithImpl<$Res, $Val extends AuthState>
                     ? _value.member
                     : member // ignore: cast_nullable_to_non_nullable
                         as Member?,
+            pendingToken:
+                freezed == pendingToken
+                    ? _value.pendingToken
+                    : pendingToken // ignore: cast_nullable_to_non_nullable
+                        as String?,
           )
           as $Val,
     );
@@ -93,7 +106,7 @@ abstract class _$$AuthStateImplCopyWith<$Res>
   ) = __$$AuthStateImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({AuthStep step, Member? member});
+  $Res call({AuthStep step, Member? member, String? pendingToken});
 
   @override
   $MemberCopyWith<$Res>? get member;
@@ -112,7 +125,11 @@ class __$$AuthStateImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? step = null, Object? member = freezed}) {
+  $Res call({
+    Object? step = null,
+    Object? member = freezed,
+    Object? pendingToken = freezed,
+  }) {
     return _then(
       _$AuthStateImpl(
         step:
@@ -125,6 +142,11 @@ class __$$AuthStateImplCopyWithImpl<$Res>
                 ? _value.member
                 : member // ignore: cast_nullable_to_non_nullable
                     as Member?,
+        pendingToken:
+            freezed == pendingToken
+                ? _value.pendingToken
+                : pendingToken // ignore: cast_nullable_to_non_nullable
+                    as String?,
       ),
     );
   }
@@ -133,7 +155,11 @@ class __$$AuthStateImplCopyWithImpl<$Res>
 /// @nodoc
 
 class _$AuthStateImpl implements _AuthState {
-  const _$AuthStateImpl({this.step = AuthStep.idle, this.member});
+  const _$AuthStateImpl({
+    this.step = AuthStep.idle,
+    this.member,
+    this.pendingToken,
+  });
 
   @override
   @JsonKey()
@@ -141,9 +167,14 @@ class _$AuthStateImpl implements _AuthState {
   @override
   final Member? member;
 
+  /// Held during session_conflict so the OTP screen can pass it to
+  /// completeLogin() when the user confirms they want to continue here.
+  @override
+  final String? pendingToken;
+
   @override
   String toString() {
-    return 'AuthState(step: $step, member: $member)';
+    return 'AuthState(step: $step, member: $member, pendingToken: $pendingToken)';
   }
 
   @override
@@ -152,11 +183,13 @@ class _$AuthStateImpl implements _AuthState {
         (other.runtimeType == runtimeType &&
             other is _$AuthStateImpl &&
             (identical(other.step, step) || other.step == step) &&
-            (identical(other.member, member) || other.member == member));
+            (identical(other.member, member) || other.member == member) &&
+            (identical(other.pendingToken, pendingToken) ||
+                other.pendingToken == pendingToken));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, step, member);
+  int get hashCode => Object.hash(runtimeType, step, member, pendingToken);
 
   /// Create a copy of AuthState
   /// with the given fields replaced by the non-null parameter values.
@@ -168,13 +201,21 @@ class _$AuthStateImpl implements _AuthState {
 }
 
 abstract class _AuthState implements AuthState {
-  const factory _AuthState({final AuthStep step, final Member? member}) =
-      _$AuthStateImpl;
+  const factory _AuthState({
+    final AuthStep step,
+    final Member? member,
+    final String? pendingToken,
+  }) = _$AuthStateImpl;
 
   @override
   AuthStep get step;
   @override
   Member? get member;
+
+  /// Held during session_conflict so the OTP screen can pass it to
+  /// completeLogin() when the user confirms they want to continue here.
+  @override
+  String? get pendingToken;
 
   /// Create a copy of AuthState
   /// with the given fields replaced by the non-null parameter values.

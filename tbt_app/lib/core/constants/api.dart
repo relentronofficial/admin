@@ -14,6 +14,8 @@ const String kAuthLogout = '/api/user-auth/logout';
 const String kAuthForgotPassword = '/api/user-auth/forgot-password';
 const String kAuthResetPassword = '/api/user-auth/set-password';
 const String kAuthSignup = '/api/user-auth/signup';
+const String kAuthSessionRevoke = '/api/user-auth/session-revoke';
+const String kAuthCompleteLogin = '/api/user-auth/complete-login';
 
 // ── User / Profile ─────────────────────────────────────────────────────────────
 const String kUserMe = '/api/user/me';

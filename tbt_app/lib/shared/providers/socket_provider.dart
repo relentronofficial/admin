@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../api/token_storage.dart';
 import '../socket/socket_client.dart';
+import '../socket/socket_events.dart';
 import '../../features/auth/domain/auth_state.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
@@ -41,11 +42,28 @@ class SocketNotifier extends _$SocketNotifier {
       if (token != null) {
         _client.connect(token);
         state = true;
+        _registerSessionRevokedListener();
       }
     } else if (authState.step == AuthStep.idle) {
       _client.disconnect();
       state = false;
     }
+  }
+
+  /// Listens for `session:revoked` — emitted by the backend when another
+  /// device completes login and kicks this session (single-device policy).
+  /// Clears local tokens and sets auth to idle so the router sends the user
+  /// back to the login screen.
+  void _registerSessionRevokedListener() {
+    _client.off(kSocketSessionRevoked);
+    _client.on(kSocketSessionRevoked, (_) async {
+      await TokenStorage.clearAll();
+      // Use microtask so the socket.io event callback frame completes before
+      // the socket is disconnected by the auth-state change below.
+      Future.microtask(() {
+        ref.read(authNotifierProvider.notifier).markRevoked();
+      });
+    });
   }
 
   // ── Delegation helpers for CC-49 event wiring ──────────────────────────────

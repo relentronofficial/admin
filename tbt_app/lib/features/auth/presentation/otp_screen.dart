@@ -117,6 +117,102 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     }
   }
 
+  void _showSessionConflictSheet(String pendingToken) {
+    showModalBottomSheet<void>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: context.tokens.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: context.tokens.borderCard,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Icon(Icons.devices_other_rounded,
+                size: 48, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 16),
+            Text(
+              'Already Signed In',
+              style: TextStyle(
+                fontFamily: 'Rajdhani',
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: context.tokens.textPrimary,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You are already signed in on another device.\nContinuing will sign you out from there.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: context.tokens.textSecondary,
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  ref
+                      .read(authNotifierProvider.notifier)
+                      .completeLogin(pendingToken);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'SIGN IN HERE',
+                  style: TextStyle(
+                    fontFamily: 'Rajdhani',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                context.go(AppRoutes.login);
+              },
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: context.tokens.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _submit() {
     final otp = _otp;
     if (otp.length < 6) return;
@@ -136,6 +232,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
             context.go(dest);
           } else if (state.step == AuthStep.resetPassword) {
             context.go(AppRoutes.forgotPassword);
+          } else if (state.step == AuthStep.sessionConflict) {
+            final token = state.pendingToken;
+            if (token != null) _showSessionConflictSheet(token);
           }
         },
         error: (error, _) {

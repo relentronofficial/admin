@@ -344,6 +344,12 @@ export async function completeLogin(fastify: FastifyInstance, request: any, repl
   // Clean up all DB session records
   await (fastify.prisma.memberSession as any).deleteMany({ where: { memberId } }).catch(() => {});
 
+  // Kick the existing device immediately via socket
+  const io = (fastify as any).io;
+  if (io) {
+    io.to(`user:${memberId}`).emit('session:revoked', {});
+  }
+
   const member = await fastify.prisma.member.findUnique({
     where: { id: memberId },
     select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any,

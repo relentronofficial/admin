@@ -102,14 +102,35 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() async {
       final svc = ref.read(authServiceProvider);
-      await svc.verifyOtp(phone: phone, otp: otp);
+      final data = await svc.verifyOtp(phone: phone, otp: otp);
+      if (data['step'] == 'session_conflict') {
+        // Another active session exists — surface the conflict so the OTP
+        // screen can show a confirmation sheet before completing login.
+        return AuthState(
+          step: AuthStep.sessionConflict,
+          pendingToken: data['pendingToken'] as String?,
+        );
+      }
       final member = await svc.getMe();
       return AuthState(step: AuthStep.authenticated, member: member);
     });
     if (state.valueOrNull?.step == AuthStep.authenticated) {
-      // Fresh login → session is live; clear any prior offline/revoked
-      // signal so the reconnecting banner / expired-session prompt
-      // don't linger from a previous run.
+      ref.read(sessionStateProvider.notifier).state = SessionState.live;
+      _registerFcm();
+    }
+  }
+
+  /// Called after the user confirms they want to sign in here, revoking all
+  /// other active sessions for this account.
+  Future<void> completeLogin(String pendingToken) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      final svc = ref.read(authServiceProvider);
+      await svc.completeLogin(pendingToken);
+      final member = await svc.getMe();
+      return AuthState(step: AuthStep.authenticated, member: member);
+    });
+    if (state.valueOrNull?.step == AuthStep.authenticated) {
       ref.read(sessionStateProvider.notifier).state = SessionState.live;
       _registerFcm();
     }
