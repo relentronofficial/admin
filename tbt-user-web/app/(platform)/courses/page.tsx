@@ -485,66 +485,120 @@ export default function CoursesPage() {
     <div className="space-y-10">
 
       {/* ── Page header ─────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl px-6 py-8 md:px-10 md:py-10"
+      <div
+        className="relative overflow-hidden rounded-2xl"
         style={{
-          background: "color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-surface, #181818))",
-          border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)",
+          background: "var(--color-bg-surface)",
+          border: "1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle))",
         }}
       >
-        {/* Glow */}
+        {/* Top accent stripe */}
         <div
-          className="absolute -top-16 -right-16 w-64 h-64 rounded-full blur-3xl pointer-events-none"
-          style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
+          className="absolute top-0 inset-x-0 h-px pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--color-accent) 70%, transparent) 35%, color-mix(in srgb, var(--color-accent) 45%, transparent) 65%, transparent 100%)",
+          }}
         />
-        <div className="relative flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+
+        {/* Glow orbs */}
+        <div
+          className="absolute -top-24 -right-20 w-80 h-80 rounded-full blur-3xl pointer-events-none"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
+        />
+        <div
+          className="absolute -bottom-10 left-20 w-44 h-44 rounded-full blur-3xl pointer-events-none"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 5%, transparent)" }}
+        />
+
+        <div className="relative px-6 py-7 md:px-10 md:py-9">
+
+          {/* Label row + badges link */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2.5">
               <div
-                className="w-8 h-8 rounded-xl flex items-center justify-center"
-                style={{ background: "color-mix(in srgb, var(--color-accent) 18%, transparent)", border: "1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)" }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                style={{
+                  background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--color-accent) 28%, transparent)",
+                }}
               >
                 <BookOpen size={15} style={{ color: "var(--color-accent)" }} />
               </div>
-              <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-accent)" }}>
+              <span
+                className="text-[11px] font-bold uppercase tracking-[0.13em]"
+                style={{ color: "var(--color-accent)" }}
+              >
                 TBT Learning
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground leading-tight">Courses</h1>
-            <p className="text-sm text-muted-foreground mt-1.5 max-w-md">
-              Expand your skills with expert-led courses. Learn at your own pace and earn XP along the way.
-            </p>
-          </div>
-          <div className="hidden md:flex items-center gap-3 shrink-0">
+
             <Link
               href="/learning/badges"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-semibold transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all duration-200 hover:-translate-y-px hover:brightness-110"
               style={{
-                background: "var(--color-surface-overlay-md)",
-                border: "1px solid var(--color-border-medium)",
-                color: "var(--color-text-secondary)",
+                background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-overlay))",
+                border: "1px solid color-mix(in srgb, var(--color-accent) 24%, var(--color-border-subtle))",
+                color: "var(--color-accent)",
               }}
             >
-              <Award size={14} /> My Badges
+              <Award size={13} />
+              <span className="hidden sm:inline">My Badges</span>
             </Link>
           </div>
-        </div>
 
-        {/* Quick stats */}
-        {myEnrollments.length > 0 && (
-          <div className="flex items-center gap-6 mt-6 pt-5" style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
-            {[
-              { label: "Enrolled", value: myEnrollments.length, icon: <BookOpen size={13} /> },
-              { label: "Completed", value: completedEnrollments.length, icon: <CheckCircle2 size={13} /> },
-              { label: "In Progress", value: activeEnrollments.length, icon: <TrendingUp size={13} /> },
-            ].map((s) => (
-              <div key={s.label} className="flex items-center gap-2">
-                <span style={{ color: "var(--color-accent)" }}>{s.icon}</span>
-                <span className="text-sm font-bold text-foreground">{s.value}</span>
-                <span className="text-[11px] text-muted-foreground">{s.label}</span>
+          {/* Heading + stats two-column on large */}
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end">
+            <div className="flex-1">
+              <h1
+                className="text-3xl md:text-4xl font-extrabold leading-none tracking-tight"
+                style={{ color: "var(--color-text-normal)" }}
+              >
+                Courses
+              </h1>
+              <p
+                className="text-[13px] leading-relaxed mt-2.5 max-w-xs"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                Expand your skills with expert-led courses. Learn at your own pace and earn XP along the way.
+              </p>
+            </div>
+
+            {/* Metric tiles */}
+            {myEnrollments.length > 0 && (
+              <div className="flex items-stretch gap-2.5">
+                {[
+                  { label: "Enrolled",     value: myEnrollments.length,        icon: <BookOpen     size={13} /> },
+                  { label: "Completed",    value: completedEnrollments.length,  icon: <CheckCircle2 size={13} /> },
+                  { label: "In Progress",  value: activeEnrollments.length,     icon: <TrendingUp   size={13} /> },
+                ].map((s) => (
+                  <div
+                    key={s.label}
+                    className="flex flex-col items-center justify-center gap-0.5 px-4 py-3.5 rounded-xl text-center min-w-[76px]"
+                    style={{
+                      background: "color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-overlay-xs))",
+                      border: "1px solid color-mix(in srgb, var(--color-accent) 16%, var(--color-border-subtle))",
+                    }}
+                  >
+                    <span style={{ color: "var(--color-accent)" }}>{s.icon}</span>
+                    <span
+                      className="text-[22px] font-extrabold leading-none mt-1"
+                      style={{ color: "var(--color-text-normal)" }}
+                    >
+                      {s.value}
+                    </span>
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-wider mt-0.5"
+                      style={{ color: "var(--color-text-subtle)" }}
+                    >
+                      {s.label}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── Module cards ────────────────────────────────────────────── */}
