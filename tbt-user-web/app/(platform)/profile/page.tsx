@@ -1152,6 +1152,12 @@ export default function ProfilePage() {
   const { data: profile, isLoading } = useMe();
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  // Force a fresh /me fetch every time the profile page mounts so streak,
+  // health, and points are never served from the 5-minute TanStack cache.
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+  }, [queryClient]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const getPresign = useGetAvatarPresignUrl();
   const updateAvatar = useUpdateAvatar();
