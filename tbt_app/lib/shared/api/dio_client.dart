@@ -33,12 +33,21 @@ import 'session_state.dart';
 /// via `http_certificate_pinning` or a custom `HttpClientAdapter` — see
 /// `dio_client.dart` docstring for the wiring stub if / when a security
 /// team greenlights pinning with a rotation calendar.
-/// Builds the app's Dio client. [onSessionState], if provided, is called
-/// whenever the [RefreshInterceptor] observes a session outcome (success
-/// after refresh, transient failure, or server-declared revocation).
-/// Callers wire this to `sessionStateProvider` so the router + UI can
-/// react without inspecting Dio directly.
-Dio createDioClient({void Function(SessionState)? onSessionState}) {
+/// Builds the app's Dio client.
+///
+/// [onSessionState], if provided, is called whenever the [RefreshInterceptor]
+/// observes a session outcome (success after refresh, transient failure, or
+/// server-declared revocation). Callers wire this to `sessionStateProvider`
+/// so the router + UI can react without inspecting Dio directly.
+///
+/// [onSessionRevoked], if provided, is called by [AuthInterceptor] when the
+/// backend returns a `401 { code: 'SESSION_REVOKED' }` response — indicating
+/// that another device has signed in and this session has been forcibly
+/// terminated. Callers should clear auth state and navigate to the login screen.
+Dio createDioClient({
+  void Function(SessionState)? onSessionState,
+  void Function()? onSessionRevoked,
+}) {
   if (kReleaseMode) {
     assert(
       kApiBaseUrl.startsWith('https://'),
@@ -61,7 +70,7 @@ Dio createDioClient({void Function(SessionState)? onSessionState}) {
 
   dio.interceptors.addAll([
     DedupInterceptor(),
-    AuthInterceptor(),
+    AuthInterceptor(onSessionRevoked: onSessionRevoked),
     RefreshInterceptor(dio, onSessionState: onSessionState),
     TbtLogInterceptor(),
   ]);

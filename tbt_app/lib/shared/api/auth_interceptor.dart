@@ -29,7 +29,28 @@ import 'token_storage.dart';
 /// through unchanged. Login / verify-otp / signup don't need any cookie
 /// attached — the server rejects nothing on absence, and any stale
 /// access token wouldn't help them anyway.
+///
+/// ── SESSION_REVOKED handling ──────────────────────────────────────────────
+///
+/// When the backend enforces single-device sessions it returns:
+///   HTTP 401 { code: 'SESSION_REVOKED' }
+/// This is distinct from an expired access token (which the RefreshInterceptor
+/// can recover from by exchanging the refresh token). A revoked session means
+/// the refresh token itself has been wiped on the server — retrying is
+/// pointless. The interceptor detects this code, clears both stored tokens,
+/// and calls [onSessionRevoked] so the app can transition to the logged-out
+/// state without the user having to tap anything.
+///
+/// [onSessionRevoked] is injected at construction time (from dioProvider via
+/// createDioClient) so this interceptor stays free of Riverpod imports.
 class AuthInterceptor extends Interceptor {
+  /// Called when the backend sends `{ code: 'SESSION_REVOKED' }` in a 401.
+  /// Wired in [createDioClient] to clear Riverpod auth state and navigate to
+  /// the login screen via the router's existing revocation guard.
+  final void Function()? onSessionRevoked;
+
+  const AuthInterceptor({this.onSessionRevoked});
+
   @override
   Future<void> onRequest(
     RequestOptions options,
@@ -49,5 +70,25 @@ class AuthInterceptor extends Interceptor {
     }
 
     handler.next(options);
+  }
+
+  @override
+  Future<void> onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    final status = err.response?.statusCode;
+    final data = err.response?.data;
+    final code = data is Map ? data['code'] as String? : null;
+
+    if (status == 401 && code == 'SESSION_REVOKED') {
+      // The server has forcibly terminated this session (single-device
+      // enforcement). Clear stored tokens so the app starts clean, then
+      // signal the auth layer to transition back to idle/login.
+      await TokenStorage.clearAll();
+      onSessionRevoked?.call();
+    }
+
+    handler.next(err);
   }
 }
