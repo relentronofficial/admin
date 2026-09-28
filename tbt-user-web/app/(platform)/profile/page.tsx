@@ -826,12 +826,6 @@ function ActiveDevicesSection() {
 
 // ─── Psychometric Assessment ──────────────────────────────────────────────────
 
-// Standalone Psychometric Assessment Platform — it has its own login + access
-// code flow (no TBT SSO), so we only link to it; nothing about the TBT session
-// is passed along.
-const PSYCHOMETRIC_APP_URL =
-  process.env.NEXT_PUBLIC_PSYCHOMETRIC_URL || "https://psychometric.tamilbusinesstribe.com";
-
 const CATEGORY_COLORS: Record<string, string> = {
   Vision:     "#3b82f6",
   Execution:  "#f59e0b",
@@ -1000,7 +994,7 @@ function PsychometricTestModal({
 
 function PsychometricSection() {
   const { data: result, isLoading } = useMyPsychometricResult();
-  const { data: questions = [] } = usePsychometricQuestions();
+  const { data: questions = [], isLoading: questionsLoading } = usePsychometricQuestions();
   const [showTest, setShowTest] = useState(false);
   const [showResults, setShowResults] = useState(false);
 
@@ -1065,15 +1059,21 @@ function PsychometricSection() {
                 <p className="text-sm font-semibold text-foreground">Discover Your Business Profile</p>
                 <p className="text-xs text-muted-foreground mt-1">15 questions across 5 dimensions — takes about 5 minutes</p>
               </div>
-              <a
-                href={PSYCHOMETRIC_APP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all"
-                style={{ background: "var(--color-accent)", color: "#fff" }}
-              >
-                <Brain size={15} /> Start Assessment
-              </a>
+              {questionsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 size={15} className="animate-spin" /> Loading assessment…
+                </div>
+              ) : questions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Assessment coming soon.</p>
+              ) : (
+                <button
+                  onClick={() => setShowTest(true)}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all"
+                  style={{ background: "var(--color-accent)", color: "#fff" }}
+                >
+                  <Brain size={15} /> Start Assessment
+                </button>
+              )}
             </div>
           )}
         </div>

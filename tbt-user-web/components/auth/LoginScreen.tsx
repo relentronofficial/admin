@@ -71,6 +71,20 @@ export function LoginScreen() {
   const [resolvedPhone, setResolvedPhone] = useState("");
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [pendingToken, setPendingToken] = useState("");
+  const [kickedBanner, setKickedBanner] = useState("");
+
+  // Show "signed in on another device" banner if the session was revoked by a
+  // new login elsewhere (flag set by either the 401 SESSION_REVOKED interceptor
+  // in lib/api/client.ts or the SessionRevocationGuard socket listener).
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const kicked = sessionStorage.getItem("tbt_session_kicked");
+      if (kicked) {
+        setKickedBanner("Your account was signed in on another device. You have been logged out from this device.");
+        sessionStorage.removeItem("tbt_session_kicked");
+      }
+    }
+  }, []);
 
   // Check if already logged in — uses a public endpoint that always returns 200
   // (avoids a 401 console error when the user has no active session)
@@ -325,6 +339,27 @@ export function LoginScreen() {
                     : `Enter the OTP sent to ${resolvedPhone}`}
                 </p>
               </motion.div>
+
+              {/* Session-kicked Banner */}
+              <AnimatePresence>
+                {kickedBanner && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    animate={{ opacity: 1, height: "auto", marginBottom: 16 }}
+                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="overflow-hidden"
+                  >
+                    <div
+                      className="flex items-start gap-2 px-4 py-3 rounded-xl text-sm text-amber-300"
+                      style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)" }}
+                    >
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+                      {kickedBanner}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Error Banner */}
               <AnimatePresence>

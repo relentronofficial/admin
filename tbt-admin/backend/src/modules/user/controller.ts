@@ -98,7 +98,7 @@ async function recalculateMemberStats(
         prisma.memberEpisodeProgress.count({ where: { memberId, isCompleted: true } }),
         (prisma as any).courseEpisodeProgress.count({ where: { memberId, completed: true } }).catch(() => 0),
         (prisma as any).courseEpisodeProgress.count({ where: { memberId } }).catch(() => 0),
-        prisma.member.findUnique({ where: { id: memberId }, select: { lastActiveAt: true } }),
+        prisma.member.findUnique({ where: { id: memberId }, select: { lastActiveAt: true, totalPoints: true, currentStreak: true, healthScore: true } }),
       ]);
 
       const now = new Date();
@@ -117,8 +117,13 @@ async function recalculateMemberStats(
         where: { id: memberId },
         data: { totalPoints, currentStreak, healthScore, ...(markActive ? { lastActiveAt: now } : {}) },
       });
-      // Drop the 5-min cached /me payload so the profile shows the new values.
-      if (markActive) await invalidateCache(redis ?? null, `me:${memberId}`);
+      // Invalidate the /me cache whenever real activity happens OR whenever
+      // the computed stats differ from what was previously stored — ensures the
+      // profile page never shows a stale streak/health even for view-only recalcs.
+      const statsChanged = totalPoints !== Number(member?.totalPoints ?? 0)
+        || currentStreak !== (member?.currentStreak ?? 0)
+        || healthScore !== (member?.healthScore ?? 0);
+      if (markActive || statsChanged) await invalidateCache(redis ?? null, `me:${memberId}`);
     } catch { /* fire-and-forget */ }
   })();
 
@@ -1430,6 +1435,10 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       (courseForXp as any)?.xpPerEpisode ?? 10,
     );
     void awardVideoStreakPoints(request.server.prisma as any, request.memberId!, episodeId);
+
+    // Stamp lastActiveAt, update streak/health, and invalidate /me cache so
+    // the profile reflects this lesson immediately (not after the next 5-min TTL).
+    void recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis, { markActive: true });
 
     // 7.1 — episode complete notification
     void notifyEpisodeCompleted({
