@@ -13,7 +13,7 @@ export async function getPaymentStatsHandler(req: FastifyRequest, reply: Fastify
       COALESCE(SUM(CASE WHEN status='refunded' THEN amount ELSE 0 END), 0)                                        AS "refundedTotal",
       COALESCE(SUM(CASE WHEN status='completed' AND created_at >= date_trunc('month', NOW()) THEN amount ELSE 0 END), 0) AS "thisMonthRevenue",
       COALESCE(SUM(CASE WHEN status='completed' AND method='razorpay' THEN amount ELSE 0 END), 0)                 AS "razorpayRevenue",
-      COALESCE(SUM(CASE WHEN status='completed' AND method IN ('manual','bank_transfer','upi') THEN amount ELSE 0 END), 0) AS "manualRevenue",
+      COALESCE(SUM(CASE WHEN status='completed' AND method IN ('manual','bank_transfer','upi','external') THEN amount ELSE 0 END), 0) AS "manualRevenue",
       COUNT(CASE WHEN status='failed' THEN 1 END)::int                                                            AS "failedCount"
     FROM course_payments
   `).catch(() => [{}] as any[]);
@@ -145,7 +145,7 @@ export async function getPaymentAnalyticsHandler(req: FastifyRequest, reply: Fas
         TO_CHAR(gs.period, '${dateFormat}') AS date,
         COALESCE(SUM(cp.amount), 0) AS total,
         COALESCE(SUM(CASE WHEN cp.method = 'razorpay' THEN cp.amount ELSE 0 END), 0) AS razorpay,
-        COALESCE(SUM(CASE WHEN cp.method IN ('manual','bank_transfer','upi') THEN cp.amount ELSE 0 END), 0) AS manual
+        COALESCE(SUM(CASE WHEN cp.method IN ('manual','bank_transfer','upi','external') THEN cp.amount ELSE 0 END), 0) AS manual
       FROM generate_series(
         date_trunc('${dateTrunc}', NOW() - INTERVAL '${days} days'),
         date_trunc('${dateTrunc}', NOW()),
@@ -375,7 +375,7 @@ export async function getRevenueByCourseHandler(req: FastifyRequest, reply: Fast
       COUNT(cp.id)::int AS "paymentCount",
       COALESCE(SUM(CASE WHEN cp.status='completed' THEN cp.amount ELSE 0 END), 0) AS "totalRevenue",
       COALESCE(SUM(CASE WHEN cp.status='completed' AND cp.method='razorpay' THEN cp.amount ELSE 0 END), 0) AS "razorpayRevenue",
-      COALESCE(SUM(CASE WHEN cp.status='completed' AND cp.method IN ('manual','bank_transfer','upi') THEN cp.amount ELSE 0 END), 0) AS "manualRevenue",
+      COALESCE(SUM(CASE WHEN cp.status='completed' AND cp.method IN ('manual','bank_transfer','upi','external') THEN cp.amount ELSE 0 END), 0) AS "manualRevenue",
       COUNT(CASE WHEN cp.status='pending' THEN 1 END)::int AS "pendingCount",
       COUNT(CASE WHEN cp.status='completed' THEN 1 END)::int AS "completedCount"
     FROM course_payments cp

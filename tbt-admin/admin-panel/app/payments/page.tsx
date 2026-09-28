@@ -431,7 +431,7 @@ export default function PaymentsPage() {
           <StatCard label="Total Revenue" value={fmt(stats.totalRevenue ?? 0)} />
           <StatCard label="This Month" value={fmt(stats.thisMonthRevenue ?? 0)} />
           <StatCard label="Razorpay" value={fmt(stats.razorpayRevenue ?? 0)} />
-          <StatCard label="Manual" value={fmt(stats.manualRevenue ?? 0)} />
+          <StatCard label="Manual / Other" value={fmt(stats.manualRevenue ?? 0)} />
           <StatCard label="Pending" value={String(stats.pendingCount ?? 0)} sub="requires approval" />
           <StatCard label="Refunded" value={fmt(stats.refundedTotal ?? 0)} />
           <StatCard label="Failed" value={String(stats.failedCount ?? 0)} />
@@ -506,7 +506,7 @@ export default function PaymentsPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard label="Period Revenue" value={fmt(analytics.summary.totalRevenue ?? 0)} />
               <StatCard label="Razorpay" value={fmt(analytics.summary.razorpayRevenue ?? 0)} />
-              <StatCard label="Manual" value={fmt(analytics.summary.manualRevenue ?? 0)} />
+              <StatCard label="Manual / Other" value={fmt(analytics.summary.manualRevenue ?? 0)} />
               <StatCard
                 label="Growth vs Prior Period"
                 value={
@@ -587,7 +587,7 @@ export default function PaymentsPage() {
           {analytics.summary && (analytics.summary.totalRevenue ?? 0) > 0 && (() => {
             const pieData = [
               { name: "Razorpay", value: analytics.summary.razorpayRevenue ?? 0, color: "#dc2626" },
-              { name: "Manual / Bank / UPI", value: analytics.summary.manualRevenue ?? 0, color: "#4a4a4a" },
+              { name: "Manual / Bank / UPI / Ext", value: analytics.summary.manualRevenue ?? 0, color: "#4a4a4a" },
             ].filter((d) => d.value > 0);
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
