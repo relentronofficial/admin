@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { RefreshCw, CheckCircle, RotateCcw, Download, Search, Filter, X, Copy } from "lucide-react";
 import toast from "react-hot-toast";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -383,12 +384,16 @@ export default function PaymentsPage() {
   };
 
   return (
-    <div>
+    <DashboardLayout>
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">Payments</h1>
-          <p className="text-[#606060] text-sm mt-0.5">Revenue tracking and payment management</p>
+      <div className="flex items-center justify-between">
+        <div className="flex gap-3 items-start">
+          <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
+          <div>
+            <h1 className="font-rajdhani text-2xl font-bold tracking-tight text-[#f0f0f0] uppercase">Payments</h1>
+            <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">Revenue tracking and payment management</p>
+          </div>
         </div>
         <div className="flex gap-2">
           <button
@@ -799,5 +804,6 @@ export default function PaymentsPage() {
         <SyncModal payment={syncTarget} onClose={() => setSyncTarget(null)} />
       )}
     </div>
+    </DashboardLayout>
   );
 }
