@@ -2378,7 +2378,7 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[#2a2a2a]">
-                    {["Member", "Course", "Amount", "Method", "Razorpay Ref", "Status", "Date", ""].map(h => (
+                    {["Member", "Course", "Amount", "Method", "Razorpay Order", "Razorpay Payment", "Status", "Date", ""].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-[#666] font-rajdhani whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -2400,16 +2400,14 @@ function PaymentsDashboard({ courses }: { courses: any[] }) {
                         <p className="text-[11px] text-[#888] uppercase font-rajdhani">{p.method || "—"}</p>
                       </td>
                       <td className="px-4 py-3 max-w-[160px]">
-                        {p.razorpayPaymentId ? (
-                          <div>
-                            <p className="text-[10px] text-[#888] font-mono truncate" title={p.razorpayPaymentId}>{p.razorpayPaymentId}</p>
-                            {p.razorpayOrderId && (
-                              <p className="text-[10px] text-[#606060] font-mono truncate" title={p.razorpayOrderId}>{p.razorpayOrderId}</p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-[#555]">—</span>
-                        )}
+                        {p.razorpayOrderId
+                          ? <p className="text-[10px] text-[#606060] font-mono truncate" title={p.razorpayOrderId}>{p.razorpayOrderId}</p>
+                          : <span className="text-[11px] text-[#555]">—</span>}
+                      </td>
+                      <td className="px-4 py-3 max-w-[160px]">
+                        {p.razorpayPaymentId
+                          ? <p className="text-[10px] text-[#606060] font-mono truncate" title={p.razorpayPaymentId}>{p.razorpayPaymentId}</p>
+                          : <span className="text-[11px] text-[#555]">—</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase font-rajdhani ${statusBadgeClass(p.status)}`}>{p.status}</span>
