@@ -1240,7 +1240,19 @@ export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, re
 
   if (body.status === 'approved' && !alreadyApproved) {
     const task = (existing as any).task;
-    if (task?.basePoints > 0) {
+    // approve → reject → approve passes the status check again; the ledger is
+    // the record of what was paid, so never pay base/milestone points twice.
+    const [basePaid, milestonePaid] = await Promise.all([
+      req.server.prisma.pointsLedger.findFirst({
+        where: { memberId: existing.memberId, referenceType: 'task_submission', referenceId: sid },
+        select: { id: true },
+      }),
+      req.server.prisma.pointsLedger.findFirst({
+        where: { memberId: existing.memberId, referenceType: 'milestone', referenceId: existing.taskId },
+        select: { id: true },
+      }),
+    ]);
+    if (task?.basePoints > 0 && !basePaid) {
       await req.server.prisma.pointsLedger.create({
         data: {
           memberId: existing.memberId,
@@ -1251,7 +1263,7 @@ export async function reviewEpisodeTaskSubmissionHandler(req: FastifyRequest, re
         },
       }).catch(() => {});
     }
-    if (task?.isMilestone && task.bonusPoints > 0) {
+    if (task?.isMilestone && task.bonusPoints > 0 && !milestonePaid) {
       await req.server.prisma.pointsLedger.create({
         data: {
           memberId: existing.memberId,

@@ -179,9 +179,24 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
   );
 
   if (action === 'approve') {
+    // Status alone isn't enough: approve → reject → approve passes the
+    // alreadyApproved check again. The ledger is the record of what was paid
+    // (same check as the member self-assessment path), so never pay base or
+    // milestone points for the same submission/task twice.
+    const [basePaid, milestonePaid] = await Promise.all([
+      request.server.prisma.pointsLedger.findFirst({
+        where: { memberId: s.member_id, referenceType: 'task_submission', referenceId: subId },
+        select: { id: true },
+      }),
+      request.server.prisma.pointsLedger.findFirst({
+        where: { memberId: s.member_id, referenceType: 'milestone', referenceId: s.task_id },
+        select: { id: true },
+      }),
+    ]);
+
     // Base points — only award on first approval. If the day-approval path already set
     // status='approved', skip base points entirely to prevent double XP.
-    if (!alreadyApproved && s.basePoints > 0) {
+    if (!alreadyApproved && !basePaid && s.basePoints > 0) {
       await request.server.prisma.pointsLedger.create({
         data: {
           memberId: s.member_id,
@@ -194,7 +209,7 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
     }
 
     // Milestone bonus — only on first approval
-    if (!alreadyApproved && s.isMilestone && s.bonusPoints > 0) {
+    if (!alreadyApproved && !milestonePaid && s.isMilestone && s.bonusPoints > 0) {
       await request.server.prisma.pointsLedger.create({
         data: {
           memberId: s.member_id,
