@@ -826,6 +826,12 @@ function ActiveDevicesSection() {
 
 // ─── Psychometric Assessment ──────────────────────────────────────────────────
 
+// Standalone Psychometric Assessment Platform — it has its own login + access
+// code flow (no TBT SSO), so we only link to it; nothing about the TBT session
+// is passed along.
+const PSYCHOMETRIC_APP_URL =
+  process.env.NEXT_PUBLIC_PSYCHOMETRIC_URL || "https://psychometric.tamilbusinesstribe.com";
+
 const CATEGORY_COLORS: Record<string, string> = {
   Vision:     "#3b82f6",
   Execution:  "#f59e0b",
@@ -1059,14 +1065,15 @@ function PsychometricSection() {
                 <p className="text-sm font-semibold text-foreground">Discover Your Business Profile</p>
                 <p className="text-xs text-muted-foreground mt-1">15 questions across 5 dimensions — takes about 5 minutes</p>
               </div>
-              <button
-                onClick={() => setShowTest(true)}
-                disabled={questions.length === 0}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold disabled:opacity-40 transition-all"
+              <a
+                href={PSYCHOMETRIC_APP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all"
                 style={{ background: "var(--color-accent)", color: "#fff" }}
               >
                 <Brain size={15} /> Start Assessment
-              </button>
+              </a>
             </div>
           )}
         </div>
