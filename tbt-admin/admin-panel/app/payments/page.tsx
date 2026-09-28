@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   usePaymentStats,
   usePaymentList,
@@ -13,7 +13,7 @@ import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { RefreshCw, CheckCircle, RotateCcw, Download, Search, Filter, X } from "lucide-react";
+import { RefreshCw, CheckCircle, RotateCcw, Download, Search, Filter, X, Copy } from "lucide-react";
 import toast from "react-hot-toast";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -31,14 +31,35 @@ const statusColor: Record<string, string> = {
   refunded:  "bg-purple-900/40 text-purple-400 border border-purple-800",
 };
 
-const methodLabel: Record<string, string> = {
-  razorpay: "Razorpay",
-  manual: "Manual",
-  bank_transfer: "Bank Transfer",
-  upi: "UPI",
-  free: "Free",
-  external: "External",
+const methodBadge: Record<string, { label: string; cls: string }> = {
+  razorpay:     { label: "Razorpay",     cls: "bg-blue-900/40 text-blue-400 border border-blue-800" },
+  manual:       { label: "Manual",       cls: "bg-[#2a2a2a] text-[#a0a0a0] border border-[#333]" },
+  bank_transfer:{ label: "Bank",         cls: "bg-[#2a2a2a] text-[#a0a0a0] border border-[#333]" },
+  upi:          { label: "UPI",          cls: "bg-green-900/40 text-green-400 border border-green-800" },
+  free:         { label: "Free",         cls: "bg-[#1a1a1a] text-[#606060] border border-[#2a2a2a]" },
+  external:     { label: "External",     cls: "bg-[#1a1a1a] text-[#606060] border border-[#2a2a2a]" },
 };
+
+function CopyableId({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  const truncated = value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+  return (
+    <button
+      onClick={copy}
+      title={value}
+      className="flex items-center gap-1 font-mono text-xs text-[#606060] hover:text-[#a0a0a0] group"
+    >
+      <span>{copied ? "Copied!" : truncated}</span>
+      <Copy size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+    </button>
+  );
+}
 
 // ── Stat Card ────────────────────────────────────────────────────────────────
 
@@ -127,7 +148,7 @@ function RefundModal({
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm"
             />
           </div>
-          {payment.method === "razorpay" && (
+          {payment.method === "razorpay" ? (
             <div>
               <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">
                 Refund Speed
@@ -137,9 +158,13 @@ function RefundModal({
                 onChange={(e) => setSpeed(e.target.value as "normal" | "optimum")}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm"
               >
-                <option value="normal">Normal (5-7 business days)</option>
-                <option value="optimum">Optimum (instant, if eligible)</option>
+                <option value="normal">Normal (3–5 business days)</option>
+                <option value="optimum">Optimum (instant, higher fee)</option>
               </select>
+            </div>
+          ) : (
+            <div className="p-3 bg-yellow-900/20 border border-yellow-800 rounded-lg text-yellow-400 text-xs">
+              This will mark the payment as refunded in TBT only — no actual payment gateway refund will be initiated.
             </div>
           )}
         </div>
@@ -156,7 +181,7 @@ function RefundModal({
             disabled={refundMutation.isPending}
             className="flex-1 h-10 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm disabled:opacity-50"
           >
-            {refundMutation.isPending ? "Processing..." : "Issue Refund"}
+            {refundMutation.isPending ? "Processing..." : `Refund ${amount ? fmtSmall(parseFloat(amount) || 0) : fmtSmall(payment.amount)}`}
           </button>
         </div>
       </div>
@@ -264,6 +289,15 @@ export default function PaymentsPage() {
     search: "", dateFrom: "", dateTo: "", days: 30, groupBy: "day",
   });
   const [tab, setTab] = useState<"overview" | "list">("overview");
+  const [searchInput, setSearchInput] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setFilters((f) => ({ ...f, search: value, page: 1 }));
+    }, 300);
+  }, []);
   const [refundTarget, setRefundTarget] = useState<any>(null);
   const [syncTarget, setSyncTarget] = useState<any>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -545,8 +579,8 @@ export default function PaymentsPage() {
               <input
                 type="text"
                 placeholder="Search by name, email…"
-                value={filters.search}
-                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
+                value={searchInput}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 pl-9 pr-4 text-white text-sm outline-none focus:border-[#dc2626]"
               />
             </div>
@@ -673,7 +707,7 @@ export default function PaymentsPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="text-[#a0a0a0] text-xs">{methodLabel[p.method] ?? p.method}</span>
+                          {(() => { const b = methodBadge[p.method]; return b ? <span className={`px-2 py-0.5 rounded text-xs ${b.cls}`}>{b.label}</span> : <span className="text-[#a0a0a0] text-xs">{p.method}</span>; })()}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span className={`px-2 py-0.5 rounded text-xs ${statusColor[p.status] ?? "text-[#a0a0a0]"}`}>
@@ -682,7 +716,7 @@ export default function PaymentsPage() {
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {p.razorpayPaymentId ? (
-                            <span className="font-mono text-xs text-[#606060]">{p.razorpayPaymentId}</span>
+                            <CopyableId value={p.razorpayPaymentId} />
                           ) : (
                             <span className="text-[#333]">—</span>
                           )}
