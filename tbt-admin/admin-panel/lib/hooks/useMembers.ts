@@ -95,16 +95,14 @@ export const useListMembers = (params: {
   limit?: number;
   search?: string;
   status?: string;
-  showArchived?: boolean;
   facets?: MemberFilters;
 } = {}, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: ['members', params],
     queryFn: async () => {
-      const { page = 1, limit = 10, search = '', status = '', showArchived = false, facets } = params;
+      const { page = 1, limit = 10, search = '', status = '', facets } = params;
       let url = `/api/members?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`;
-      if (status && !showArchived) url += `&status=${status}`;
-      if (showArchived) url += `&showArchived=true`;
+      if (status) url += `&status=${status}`;
       const facetQs = encodeMemberFilters(facets);
       if (facetQs) url += `&${facetQs}`;
       const res: any = await apiClient.get(url);
