@@ -18,11 +18,12 @@ interface GrantParams {
 export async function grantCourseAccessAfterPayment(params: GrantParams): Promise<void> {
   const { prisma, io, redis, paymentRecordId, razorpayPaymentId, razorpaySignature, memberId, courseId, accessDurationDays } = params;
 
-  // 1. Mark payment completed
+  // 1. Mark payment completed — always stamp method='razorpay' so records originally
+  //    created with method='external'/'manual' are corrected when paid via Razorpay.
   await prisma.$executeRawUnsafe(
     `UPDATE course_payments
-     SET status='completed', razorpay_payment_id=$1, razorpay_signature=$2,
-         reference=$1, updated_at=NOW()
+     SET status='completed', method='razorpay', razorpay_payment_id=$1, razorpay_signature=$2,
+         reference=$1, paid_at=NOW(), updated_at=NOW()
      WHERE id=$3::uuid`,
     razorpayPaymentId,
     razorpaySignature ?? null,
