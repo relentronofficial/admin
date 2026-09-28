@@ -121,6 +121,35 @@ export type MemberStats = {
   currentStreak: number;
 };
 
+/**
+ * Pure consecutive-day streak counter — exported for unit testing.
+ *
+ * Rules:
+ *   - Count backwards from `today` (UTC).
+ *   - If today has no activity, skip it and start the check from yesterday
+ *     (a user who was active at 10am should keep their streak at 11pm).
+ *   - Stop (don't increment) on the first day with no activity.
+ *
+ * `dateKeys` must use the format `YYYY-M-D` (non-padded UTC components),
+ * matching what `computeMemberStats` builds from `tbt_activity_log.activity_date`.
+ */
+export function countConsecutiveStreak(dateKeys: Set<string>, today?: Date): number {
+  const ref = today ?? new Date();
+  let streak = 0;
+  for (let i = 0; i < 366; i++) {
+    const d = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate() - i));
+    const key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+    if (dateKeys.has(key)) {
+      streak++;
+    } else if (i === 0) {
+      continue; // today can be empty; still allow yesterday
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
 export async function computeMemberStats(
   prisma: PrismaLike,
   memberId: string,
@@ -149,17 +178,7 @@ export async function computeMemberStats(
     }),
   );
 
-  let currentStreak = 0;
-  const today = new Date();
-  for (let i = 0; i < 366; i++) {
-    const d = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i),
-    );
-    const key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
-    if (dateKeys.has(key)) currentStreak++;
-    else if (i === 0) continue; // today can be empty; still allow yesterday
-    else break;
-  }
+  const currentStreak = countConsecutiveStreak(dateKeys);
 
   return { totalPoints, currentStreak };
 }
