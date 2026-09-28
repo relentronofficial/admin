@@ -4,10 +4,12 @@ import { SubscriptionGate } from "./SubscriptionGate";
 import { AudioController } from "@/components/features/podcasts/AudioController";
 import { MiniPlayer } from "@/components/features/podcasts/MiniPlayer";
 import { AdHost } from "@/components/features/ads/AdHost";
+import { SessionRevocationGuard } from "@/components/guards/SessionRevocationGuard";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col min-h-screen">
+      <SessionRevocationGuard />
       <Navbar />
       <main className="flex-1 pt-20">
         <SubscriptionGate>

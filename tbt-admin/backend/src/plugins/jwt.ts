@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import fastifyJwt from '@fastify/jwt';
 import crypto from 'crypto';
 import { env } from '../config/env.js';
+import { isLoginRevoked } from '../lib/sessionRevocation.js';
 
 // ── Cookie helpers ──────────────────────────────────────────────────────────────
 
@@ -212,6 +213,11 @@ export async function revokeAllForMember(redis: any, memberId: string): Promise<
         deleted += await redis.del(...toDelete, ...graceToDelete);
       }
     } while (cursor !== '0');
+    // Set REVOKED sentinel so any in-flight access token with the old loginId
+    // is rejected immediately (within the 15-min access-token TTL window).
+    // issueTokens called right after this will overwrite with the new loginId.
+    await redis.set(`active_login:${memberId}`, 'REVOKED', 'EX', 900).catch(() => {});
+    _activeLoginCache.delete(memberId);
   } catch (err) {
     _log('revokeAllForMember scan failed:', err);
   }
@@ -228,6 +234,46 @@ function _log(msg: string, err?: unknown): void {
   // Never log the token itself — only the failure metadata.
   // eslint-disable-next-line no-console
   console.warn(`[jwt/refresh] ${msg}`, err instanceof Error ? err.message : err);
+}
+
+// ── Active login ID cache (single-session enforcement) ──────────────────────────
+//
+// `active_login:{memberId}` in Redis holds the loginId that the current valid
+// session was issued with. authenticateUser rejects any access token whose
+// loginId claim doesn't match — this closes the 15-minute window where a
+// kicked device's unexpired access token would otherwise still work.
+//
+// In-memory cache (15 s) keeps hot-path latency low; invalidated immediately
+// on every mutation (revokeAllForMember / setActiveLoginId).
+
+const ACTIVE_LOGIN_CACHE_TTL = 15_000;
+const _activeLoginCache = new Map<string, { value: string | null; expiresAt: number }>();
+
+async function getCachedActiveLoginId(redis: any, memberId: string): Promise<string | null> {
+  const cached = _activeLoginCache.get(memberId);
+  if (cached && Date.now() < cached.expiresAt) return cached.value;
+  _activeLoginCache.delete(memberId);
+  if (!redis) return null; // Redis unavailable — fail open
+  try {
+    const raw = await redis.get(`active_login:${memberId}`);
+    const value = raw != null ? String(raw) : null;
+    _activeLoginCache.set(memberId, { value, expiresAt: Date.now() + ACTIVE_LOGIN_CACHE_TTL });
+    return value;
+  } catch {
+    return null; // Redis error — fail open
+  }
+}
+
+export function invalidateActiveLoginIdCache(memberId: string): void {
+  _activeLoginCache.delete(memberId);
+}
+
+/// Store the active loginId for a member. TTL mirrors the refresh token so the
+/// key stays alive as long as the session can possibly be refreshed.
+export async function setActiveLoginId(redis: any, memberId: string, loginId: string): Promise<void> {
+  if (!redis) return;
+  _activeLoginCache.delete(memberId);
+  await redis.set(`active_login:${memberId}`, loginId, 'EX', REFRESH_TTL).catch(() => {});
 }
 
 // ── Member status in-process cache ──────────────────────────────────────────────
@@ -266,12 +312,29 @@ async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) 
     }
 
     let memberId: string;
+    let loginId: string | undefined;
     try {
-      const decoded = await (fastify as any).jwt.verify(token) as { memberId: string };
+      const decoded = await (fastify as any).jwt.verify(token) as { memberId: string; loginId?: string };
       memberId = decoded.memberId;
+      loginId = decoded.loginId;
       if (!memberId) throw new Error('No memberId in token');
     } catch {
       return reply.status(401).send({ success: false, data: null, error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    // Single-session check: reject tokens whose loginId no longer matches
+    // the active session recorded in Redis. Skipped for pre-migration tokens
+    // (no loginId claim) and when Redis is unavailable (fail open).
+    const redis = (fastify as any).redis ?? null;
+    const activeLoginId = await getCachedActiveLoginId(redis, memberId);
+    const verdict = isLoginRevoked(loginId, activeLoginId);
+    if (verdict === 'revoked') {
+      return reply.status(401).send({
+        success: false,
+        data: null,
+        error: 'Session expired. Please sign in again.',
+        code: 'SESSION_REVOKED',
+      });
     }
 
     // Fast path: in-memory status cache

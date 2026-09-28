@@ -78,6 +78,17 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    // Kicked session (another device logged in): navigate to login immediately.
+    // Do NOT attempt a refresh — the server has already revoked this session.
+    if (error.response?.status === 401 && error.response?.data?.code === "SESSION_REVOKED") {
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("tbt_session_kicked", "1");
+        localStorage.removeItem(ACCESS_EXP_KEY);
+        window.location.href = "/login";
+      }
+      return Promise.reject(new Error("Session was revoked by another login"));
+    }
+
     // Reactive refresh: catches the rare case where the proactive check was
     // skipped (no localStorage hint, e.g. first-ever session or cleared storage).
     // Skip for user-auth endpoints — a 401 there is a real credential error.

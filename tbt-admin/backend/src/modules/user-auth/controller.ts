@@ -21,6 +21,7 @@ import {
   revokeRefreshTokenByHash,
   revokeAllForMember,
   hashRefreshToken,
+  setActiveLoginId,
 } from '../../plugins/jwt.js';
 import crypto from 'crypto';
 
@@ -64,10 +65,19 @@ function parseCookies(header?: string): Record<string, string> {
 
 interface SessionMeta { deviceId?: string; userAgent?: string; ip?: string; }
 
-async function issueTokens(fastify: FastifyInstance, reply: any, memberId: string, meta?: SessionMeta) {
-  const accessToken: string = await (fastify as any).jwt.sign({ memberId }, { expiresIn: 900 });
+// existingLoginId: pass on normal token refresh so concurrent in-flight requests
+// carrying the old access token aren't invalidated mid-flight. Leave undefined
+// on a new login (generates a fresh loginId and updates active_login in Redis).
+async function issueTokens(fastify: FastifyInstance, reply: any, memberId: string, meta?: SessionMeta, existingLoginId?: string) {
+  const loginId = existingLoginId ?? crypto.randomBytes(16).toString('hex');
+  const accessToken: string = await (fastify as any).jwt.sign({ memberId, loginId }, { expiresIn: 900 });
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(getRedis(fastify), refreshToken, memberId);
+  // Only update active_login when issuing a brand-new session (not on rotate).
+  // On refresh the loginId is preserved so concurrent requests aren't kicked.
+  if (!existingLoginId) {
+    await setActiveLoginId(getRedis(fastify), memberId, loginId);
+  }
   setAuthCookies(reply, accessToken, refreshToken);
   // Record session in DB — best effort, never block login on failure
   const tokenHash = hashRefreshToken(refreshToken);
@@ -539,7 +549,17 @@ export async function refresh(fastify: FastifyInstance, request: any, reply: any
     userAgent: request.headers['user-agent'] as string | undefined,
     ip: request.ip,
   };
-  await issueTokens(fastify, reply, memberId, refreshMeta);
+  // Preserve the existing loginId so the new access token is compatible with
+  // any in-flight requests still carrying the old token. Only if active_login
+  // is missing or REVOKED do we generate a fresh loginId (that would mean a
+  // concurrent completeLogin invalidated the session — this path would have
+  // already returned 401 from consumeRefreshToken, so this is defensive only).
+  const redis = getRedis(fastify);
+  const rawLoginId: string | null = redis
+    ? await redis.get(`active_login:${memberId}`).catch(() => null)
+    : null;
+  const existingLoginId = rawLoginId && rawLoginId !== 'REVOKED' ? rawLoginId : undefined;
+  await issueTokens(fastify, reply, memberId, refreshMeta, existingLoginId);
   return reply.send({ success: true, data: null });
 }
 
