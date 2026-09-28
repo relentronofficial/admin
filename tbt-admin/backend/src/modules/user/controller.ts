@@ -54,15 +54,26 @@ async function logActivity(prisma: any, memberId: string, action: string, metada
 // caller in the same tick awaits the same Promise.
 const _recalcInflight = new Map<string, Promise<void>>();
 
-async function recalculateMemberStats(prisma: any, memberId: string, redis?: any): Promise<void> {
-  const existing = _recalcInflight.get(memberId);
+// `markActive` is true for real member activity (lesson/episode/challenge/
+// assignment). A profile read (`GET /me`) passes false: viewing or refreshing
+// the page must not stamp `lastActiveAt`, which drives the Health recency
+// score. Reads and activity use separate singleflight/throttle keys so a
+// profile view can never swallow a real activity recalc.
+async function recalculateMemberStats(
+  prisma: any,
+  memberId: string,
+  redis?: any,
+  { markActive = true }: { markActive?: boolean } = {},
+): Promise<void> {
+  const flightKey = `${memberId}:${markActive ? 'activity' : 'view'}`;
+  const existing = _recalcInflight.get(flightKey);
   if (existing) return existing;
 
   const promise = (async () => {
     // Throttle: at most once per minute per member across processes.
     // The in-memory map above handles the intra-process race; Redis
     // covers cross-instance calls and the 60-second re-run window.
-    const throttleKey = `stats:recalc:${memberId}`;
+    const throttleKey = markActive ? `stats:recalc:${memberId}` : `stats:recalc:view:${memberId}`;
     const allowed = await cacheNxSet(redis ?? null, throttleKey, 60);
     if (!allowed) return;
 
@@ -104,13 +115,15 @@ async function recalculateMemberStats(prisma: any, memberId: string, redis?: any
 
       await prisma.member.update({
         where: { id: memberId },
-        data: { totalPoints, currentStreak, healthScore, lastActiveAt: now },
+        data: { totalPoints, currentStreak, healthScore, ...(markActive ? { lastActiveAt: now } : {}) },
       });
+      // Drop the 5-min cached /me payload so the profile shows the new values.
+      if (markActive) await invalidateCache(redis ?? null, `me:${memberId}`);
     } catch { /* fire-and-forget */ }
   })();
 
-  _recalcInflight.set(memberId, promise);
-  promise.finally(() => _recalcInflight.delete(memberId));
+  _recalcInflight.set(flightKey, promise);
+  promise.finally(() => _recalcInflight.delete(flightKey));
   return promise;
 }
 
@@ -152,8 +165,10 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
   if (cachedMe) return ok(reply, cachedMe);
 
   // Refresh member stats (throttled to once per 60 s) before reading DB so the
-  // profile page always reflects current points/streak/health.
-  void recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined);
+  // profile page always reflects current points/streak/health. Awaited so the
+  // read below sees the update; markActive=false so a page view/refresh never
+  // counts as activity (it would inflate the Health recency score).
+  await recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined, { markActive: false });
 
   const [member, allTiers, uiStrings] = await Promise.all([
     request.server.prisma.member.findUnique({
