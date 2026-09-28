@@ -755,11 +755,8 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   const isCheckoutOpen = useRef(false);
   const lessons = course.lessons ?? [];
 
-  // Razorpay is shown whenever the course has a price — the keyId comes from
-  // the backend API on order creation, so no frontend env var is needed.
-  const showRazorpay =
-    Number(course.price) > 0 &&
-    !course.pendingPayment;
+  const hasPriceForRazorpay = course.price != null && Number(course.price) > 0 && !course.pendingPayment;
+  const showRazorpay = hasPriceForRazorpay && Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID);
 
   // Load Razorpay Checkout.js as soon as we know the course has a price
   useEffect(() => {
@@ -3709,7 +3706,7 @@ export default function CourseDetailPage({
       )}
 
       {/* Reflections viewer — opened from the panel */}
-      {reflectionsOpen && reflectionCount > 0 && visibleReflections.length > 0 && (
+      {reflectionsOpen && reflectionCount > 0 && (
         <ReflectionsViewerModal
           reflections={visibleReflections}
           lessons={course?.lessons ?? []}
