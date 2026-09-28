@@ -7,6 +7,7 @@ import { normalizeMasterName } from '../masters/controller.js';
 import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
 import { notifyMembers } from '../../lib/notifications.js';
+import { revokeAllForMember } from '../../plugins/jwt.js';
 
 /**
  * Ensure a member-supplied city / state / businessType value is present
@@ -140,7 +141,6 @@ export function buildMembersWhereClause(query: any): any {
   const {
     search,
     status,           // single value (kept for backwards-compat with the tab bar)
-    showArchived,
     batchId,          // multi
     membershipPlan,   // multi
     verificationStatus, // multi
@@ -157,13 +157,13 @@ export function buildMembersWhereClause(query: any): any {
     hasVideoEditing,  // boolean
   } = query;
 
-  const where: any = showArchived === 'true'
-    ? { deletedAt: { not: null } }
-    : { deletedAt: null };
+  // Delete is permanent now; this still hides legacy rows soft-deleted by the
+  // old archive flow before it was removed.
+  const where: any = { deletedAt: null };
 
   // Status tab (single-select at the top of the page) takes priority
   // over any multi-select status filter to keep the tab UX intuitive.
-  if (status && showArchived !== 'true') where.status = status;
+  if (status) where.status = status;
 
   // Text search across the identity fields most admins look for by.
   if (search) {
@@ -747,24 +747,56 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
 
 export async function deleteMemberHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
-  const member = await request.server.prisma.member.findUnique({
+  const prisma = request.server.prisma;
+  const member = await prisma.member.findUnique({
     where: { id },
-    select: { id: true, phone: true, email: true, deletedAt: true } as any,
+    select: { id: true, clerkId: true },
   });
-  if (!member || (member as any).deletedAt) {
+  if (!member) {
     return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
   }
-  // Anonymize phone/email so their unique DB slots are freed — lets the same
-  // person re-register after an admin-delete without hitting constraint errors.
-  await request.server.prisma.member.update({
-    where: { id },
-    data: {
-      deletedAt: new Date(),
-      phone: `${(member as any).phone}_deleted_${id}`,
-      email: `${(member as any).email}_deleted_${id}`,
-    } as any,
-  });
-  return reply.send({ success: true, data: null, error: null });
+
+  // Permanent delete. Every Prisma relation and raw-SQL table that references
+  // members(id) is ON DELETE CASCADE or SET NULL, so deleting the row removes
+  // (or detaches) all related records. The four tables below store member_id
+  // without a foreign key, so they are handled explicitly in the same
+  // transaction: ad frequency caps are per-member and go; ad analytics rows and
+  // support-thread replies are kept but detached, matching how helpdesk_tickets
+  // already SET NULL.
+  try {
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`DELETE FROM ad_user_frequency WHERE member_id = $1::uuid`, id),
+      prisma.$executeRawUnsafe(`UPDATE ad_impressions SET member_id = NULL WHERE member_id = $1::uuid`, id),
+      prisma.$executeRawUnsafe(`UPDATE ad_events SET member_id = NULL WHERE member_id = $1::uuid`, id),
+      prisma.$executeRawUnsafe(`UPDATE helpdesk_ticket_replies SET member_id = NULL WHERE member_id = $1::uuid`, id),
+      prisma.member.delete({ where: { id } }),
+    ]);
+  } catch (err: any) {
+    request.log.error({ err, memberId: id }, 'member hard delete failed');
+    return reply.status(500).send({ success: false, data: null, error: 'Failed to delete member' });
+  }
+
+  // Kill every refresh token now; the access-token check then 401s
+  // ("Account not found") once the per-instance status cache expires.
+  await revokeAllForMember(request.server.redis ?? null, id).catch(() => 0);
+  void invalidateCache(request.server.redis ?? null, `me:${id}`);
+
+  // Clerk account — best-effort after the DB delete (the DB is the source of
+  // truth; member login is JWT-cookie based, not Clerk). A 404 means it's
+  // already gone.
+  let clerkDeleted = true;
+  if (member.clerkId && request.server.clerk) {
+    try {
+      await request.server.clerk.users.deleteUser(member.clerkId);
+    } catch (err: any) {
+      if (err?.status !== 404) {
+        clerkDeleted = false;
+        request.log.error({ err, memberId: id, clerkId: member.clerkId }, 'Clerk user delete failed after member delete');
+      }
+    }
+  }
+
+  return reply.send({ success: true, data: { id, clerkDeleted }, error: null });
 }
 
 export async function getManagersHandler(request: FastifyRequest, reply: FastifyReply) {

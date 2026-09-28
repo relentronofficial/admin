@@ -125,7 +125,6 @@ export default function MembersListPage() {
   const [editProfilePhotoUrl, setEditProfilePhotoUrl] = useState<string>("");
   const [editIsUploadingPhoto, setEditIsUploadingPhoto] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("");
-  const [showArchived, setShowArchived] = useState(false);
   const [pendingBadge, setPendingBadge] = useState(0);
   // Multi-dimensional facet state (batch, plan, verification, etc.).
   // Applied on top of the search + status-tab filter. Owns nothing
@@ -143,7 +142,7 @@ export default function MembersListPage() {
   const editKycRef = useRef<HTMLInputElement>(null);
   const editPhotoRef = useRef<HTMLInputElement>(null);
 
-  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: showArchived ? '' : statusFilter, showArchived, facets });
+  const { data, isLoading, isError, refetch } = useListMembers({ page, limit, search, status: statusFilter, facets });
   const { data: pendingData, refetch: refetchPending } = useListMembers({ page: 1, limit: 1, status: 'pending' });
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
@@ -225,13 +224,12 @@ export default function MembersListPage() {
     if (exportBusy) return;
     setExportBusy(true);
     try {
-      // The same facet + status + search + archived params the list
-      // endpoint sees. Backend `buildMembersWhereClause` handles them
-      // identically for /api/members and /api/members/export.
+      // The same facet + status + search params the list endpoint sees.
+      // Backend `buildMembersWhereClause` handles them identically for
+      // /api/members and /api/members/export.
       let qs = '';
       if (search) qs += `search=${encodeURIComponent(search)}&`;
-      if (statusFilter && !showArchived) qs += `status=${statusFilter}&`;
-      if (showArchived) qs += `showArchived=true&`;
+      if (statusFilter) qs += `status=${statusFilter}&`;
       const facetQs = encodeMemberFilters(facets);
       if (facetQs) qs += facetQs;
       // apiClient normally unwraps response.data; for a CSV blob we
@@ -430,13 +428,18 @@ export default function MembersListPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (deleteMember.isPending) return;
     try {
-      await deleteMember.mutateAsync(id);
-      toast.success("Member archived successfully");
+      const result: any = await deleteMember.mutateAsync(id);
+      if (result?.clerkDeleted === false) {
+        toast("Member deleted, but their Clerk account could not be removed — delete it in the Clerk dashboard.", { icon: "⚠️", duration: 8000 });
+      } else {
+        toast.success("Member deleted permanently");
+      }
       setDeletingMemberId(null);
       refetch();
     } catch (err: any) {
-      toast.error(err.message || "Failed to archive member");
+      toast.error(err.message || "Failed to delete member");
     }
   };
 
@@ -497,10 +500,10 @@ export default function MembersListPage() {
             ].map((tab) => (
               <button
                 key={tab.value}
-                onClick={() => { setStatusFilter(tab.value); setShowArchived(false); setPage(1); }}
+                onClick={() => { setStatusFilter(tab.value); setPage(1); }}
                 className={cn(
                   "relative px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani border-b-2 transition-all flex items-center gap-1.5",
-                  !showArchived && statusFilter === tab.value
+                  statusFilter === tab.value
                     ? "text-[#dc2626] border-[#dc2626]"
                     : "text-[#888] border-transparent hover:text-[#a0a0a0]"
                 )}
@@ -513,17 +516,6 @@ export default function MembersListPage() {
                 )}
               </button>
             ))}
-            <button
-              onClick={() => { setShowArchived(true); setStatusFilter(''); setPage(1); }}
-              className={cn(
-                "relative px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani border-b-2 transition-all flex items-center gap-1.5",
-                showArchived
-                  ? "text-[#dc2626] border-[#dc2626]"
-                  : "text-[#888] border-transparent hover:text-[#a0a0a0]"
-              )}
-            >
-              Archived
-            </button>
           </div>
 
           <div className="p-4 border-b border-[#2a2a2a] flex flex-col md:flex-row gap-4 items-center justify-between bg-[#1a1a1a]/50">
@@ -694,7 +686,7 @@ export default function MembersListPage() {
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-[12px] text-[#a0a0a0] hover:text-red-500 hover:bg-red-500/10 transition-colors font-bold uppercase tracking-wider font-rajdhani"
                               >
-                                <Trash2 size={14} className="text-red-500" /> Archive Member
+                                <Trash2 size={14} className="text-red-500" /> Delete Member
                               </button>
                             </div>
                           )}
@@ -866,7 +858,7 @@ export default function MembersListPage() {
                 onClick={() => setViewingMember(null)}
                 className="bg-[#333] hover:bg-[#444] text-white px-8 py-2.5 rounded-md font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all"
               >
-                Close Archive
+                Close
               </button>
             </div>
           </div>
@@ -1427,21 +1419,24 @@ export default function MembersListPage() {
               <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
                 <AlertCircle className="text-red-500" size={32} />
               </div>
-              <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest mb-2 text-[#f0f0f0]">Archive Member?</h3>
+              <h3 className="font-rajdhani text-xl font-bold uppercase tracking-widest mb-2 text-[#f0f0f0]">Delete Member Permanently?</h3>
               <p className="text-[#888] text-sm leading-relaxed mb-8">
-                This member will be hidden from the platform and will no longer be able to log in.
-                Their batch progress, points, and history are preserved and can be reviewed by the tech team.
+                This permanently deletes the member, their login account, and all their records —
+                progress, points, payments, enrollments, and history. This cannot be undone.
               </p>
               <div className="flex flex-col gap-3">
                 <button
                   onClick={() => handleDelete(deletingMemberId)}
-                  className="w-full bg-[#dc2626] hover:bg-red-700 text-white py-3 rounded-lg font-rajdhani font-bold text-[13px] uppercase tracking-[2px] transition-all shadow-lg active:scale-95"
+                  disabled={deleteMember.isPending}
+                  className="w-full flex items-center justify-center gap-2 bg-[#dc2626] hover:bg-red-700 text-white py-3 rounded-lg font-rajdhani font-bold text-[13px] uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100 disabled:hover:bg-[#dc2626]"
                 >
-                  Confirm Archive
+                  {deleteMember.isPending && <Loader2 size={14} className="animate-spin" />}
+                  {deleteMember.isPending ? "Deleting..." : "Delete Permanently"}
                 </button>
                 <button
                   onClick={() => setDeletingMemberId(null)}
-                  className="w-full bg-[#1a1a1a] border border-[#333] hover:border-[#444] text-[#a0a0a0] hover:text-white py-3 rounded-lg font-rajdhani font-bold text-[13px] uppercase tracking-[2px] transition-all"
+                  disabled={deleteMember.isPending}
+                  className="w-full bg-[#1a1a1a] border border-[#333] hover:border-[#444] text-[#a0a0a0] hover:text-white py-3 rounded-lg font-rajdhani font-bold text-[13px] uppercase tracking-[2px] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-[#333] disabled:hover:text-[#a0a0a0]"
                 >
                   Cancel
                 </button>
