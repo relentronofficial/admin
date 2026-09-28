@@ -124,7 +124,10 @@ async function recalculateMemberStats(
         || currentStreak !== (member?.currentStreak ?? 0)
         || healthScore !== (member?.healthScore ?? 0);
       if (markActive || statsChanged) await invalidateCache(redis ?? null, `me:${memberId}`);
-    } catch { /* fire-and-forget */ }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[recalculateMemberStats] failed for member=${memberId}:`, err);
+    }
   })();
 
   _recalcInflight.set(flightKey, promise);
@@ -1427,7 +1430,9 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       where: { id: courseId },
       select: { xpPerEpisode: true, title: true },
     });
-    void awardEpisodeXp(
+    // Await XP award first so tbt_activity_log has today's row before
+    // recalculateMemberStats reads it. The function is fast (1–2 DB writes).
+    await awardEpisodeXp(
       request.server.prisma as any,
       request.memberId,
       courseId,
@@ -1549,12 +1554,28 @@ async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, e
     // INSERT ... ON CONFLICT DO NOTHING prevents duplicate XP when the client retries
     // the progress POST (e.g. on network flicker). The unique index on
     // (member_id, episode_id) WHERE episode_id IS NOT NULL enforces this at DB level.
-    await prisma.$executeRawUnsafe(
+    // RETURNING id lets us immediately write the matching tbt_activity_log row so
+    // the streak is visible without waiting for the lazy syncLegacyPointsToLedger
+    // backfill that runs on the next /me request.
+    const xpRows = (await prisma.$queryRawUnsafe(
       `INSERT INTO member_xp (id, member_id, course_id, episode_id, source, amount, earned_at)
        VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, 'episode_complete', $4, NOW())
-       ON CONFLICT (member_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING`,
+       ON CONFLICT (member_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING
+       RETURNING id`,
       memberId, courseId, episodeId, xpAmount,
-    );
+    )) as Array<{ id: string }>;
+    const xpRow = xpRows[0];
+
+    // Write tbt_activity_log immediately (same row syncLegacyPointsToLedger would
+    // create, so subsequent backfill calls hit ON CONFLICT and are no-ops).
+    if (xpRow?.id) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+         VALUES ($1::uuid, $2, 'course_xp', $3::uuid, NOW()::DATE)
+         ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+        memberId, xpAmount, xpRow.id,
+      );
+    }
 
     // Update course streak
     const now = new Date();
