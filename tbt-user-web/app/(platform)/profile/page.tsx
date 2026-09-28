@@ -9,7 +9,7 @@ import {
   CheckCircle2, Lock, Pencil, X, Save, Monitor, Smartphone, Tablet, Wifi,
   Camera, Loader2, Trophy, Heart, LogOut, Bell, Mail, MessageSquare,
   Headphones, Megaphone, Phone, Users, Star, Zap, ShoppingCart, ChevronRight, Clock,
-  Brain, ChevronLeft, RotateCcw,
+  Brain, ChevronLeft, RotateCcw, Flame,
 } from "lucide-react";
 import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric, type CreditPricingItem, type PsychometricQuestion, type PsychometricCategoryResult } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
@@ -121,6 +121,13 @@ function StatsStrip({ profile }: { profile: MemberProfile }) {
       tooltip: "XP earned by completing lessons and passing quizzes",
     },
     {
+      label: "Streak",
+      value: `${profile.currentStreak ?? 0}d`,
+      Icon: Flame,
+      color: "#f97316",
+      tooltip: "Consecutive days you have been active on the platform",
+    },
+    {
       label: "Health",
       value: `${profile.healthScore ?? 0}%`,
       Icon: Heart,
@@ -129,7 +136,7 @@ function StatsStrip({ profile }: { profile: MemberProfile }) {
     },
   ];
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-3 gap-3">
       {stats.map(({ label, value, Icon, color, tooltip }) => (
         <div
           key={label}
