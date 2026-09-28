@@ -8,10 +8,12 @@ import {
   useSyncRazorpayPayment,
   useApprovePayment,
   useRefundPayment,
+  useRevenueByCourse,
 } from "@/lib/hooks/useTbt";
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  PieChart, Pie, Cell,
 } from "recharts";
 import { RefreshCw, CheckCircle, RotateCcw, Download, Search, Filter, X, Copy } from "lucide-react";
 import toast from "react-hot-toast";
@@ -289,7 +291,7 @@ export default function PaymentsPage() {
     page: 1, limit: 25, method: "", status: "",
     search: "", dateFrom: "", dateTo: "", days: 30, groupBy: "day",
   });
-  const [tab, setTab] = useState<"overview" | "list">("overview");
+  const [tab, setTab] = useState<"overview" | "list" | "razorpay">("overview");
   const [searchInput, setSearchInput] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const handleSearchChange = useCallback((value: string) => {
@@ -309,6 +311,16 @@ export default function PaymentsPage() {
     page: filters.page,
     limit: filters.limit,
     method: filters.method || undefined,
+    status: filters.status || undefined,
+    search: filters.search || undefined,
+    dateFrom: filters.dateFrom || undefined,
+    dateTo: filters.dateTo || undefined,
+  });
+  const revenueByCourseQuery = useRevenueByCourse();
+  const razorpayListQuery = usePaymentList({
+    page: filters.page,
+    limit: filters.limit,
+    method: "razorpay",
     status: filters.status || undefined,
     search: filters.search || undefined,
     dateFrom: filters.dateFrom || undefined,
@@ -407,14 +419,15 @@ export default function PaymentsPage() {
       </div>
 
       {/* Stats */}
+      {/* Stat Cards */}
       {statsQuery.isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
           {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5 h-24 animate-pulse" />
+            <div key={i} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 h-20 animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
           <StatCard label="Total Revenue" value={fmt(stats.totalRevenue ?? 0)} />
           <StatCard label="This Month" value={fmt(stats.thisMonthRevenue ?? 0)} />
           <StatCard label="Razorpay" value={fmt(stats.razorpayRevenue ?? 0)} />
@@ -425,19 +438,39 @@ export default function PaymentsPage() {
         </div>
       )}
 
+      {/* Pending alert */}
+      {!statsQuery.isLoading && (stats.pendingCount ?? 0) > 0 && (
+        <div
+          className="flex items-center justify-between px-4 py-3 bg-yellow-900/20 border border-yellow-800/50 rounded-xl cursor-pointer hover:bg-yellow-900/30 transition-colors"
+          onClick={() => { setTab("list"); setFilters((f) => ({ ...f, status: "pending", page: 1 })); }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+            <span className="text-yellow-400 text-sm font-semibold">
+              {stats.pendingCount} payment{stats.pendingCount > 1 ? "s" : ""} pending approval
+            </span>
+          </div>
+          <span className="text-yellow-600 text-xs">Click to review →</span>
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-[#2a2a2a]">
-        {(["overview", "list"] as const).map((t) => (
+      <div className="flex gap-1 border-b border-[#2a2a2a]">
+        {([
+          { key: "overview", label: "Revenue Overview" },
+          { key: "list", label: "All Payments" },
+          { key: "razorpay", label: "Razorpay" },
+        ] as const).map(({ key, label }) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-semibold capitalize border-b-2 -mb-px transition-colors ${
-              tab === t
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              tab === key
                 ? "border-[#dc2626] text-[#f0f0f0]"
                 : "border-transparent text-[#606060] hover:text-[#a0a0a0]"
             }`}
           >
-            {t === "overview" ? "Revenue Overview" : "All Payments"}
+            {label}
           </button>
         ))}
       </div>
@@ -541,38 +574,163 @@ export default function PaymentsPage() {
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={analytics.series} margin={{ top: 4, right: 16, left: 16, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "#606060", fontSize: 11 }}
-                    tickLine={false}
-                    axisLine={{ stroke: "#2a2a2a" }}
-                  />
-                  <YAxis
-                    tick={{ fill: "#606060", fontSize: 11 }}
-                    tickLine={false}
-                    axisLine={{ stroke: "#2a2a2a" }}
-                    tickFormatter={(v) => `₹${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
-                  />
-                  <Tooltip
-                    contentStyle={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: 8 }}
-                    labelStyle={{ color: "#a0a0a0" }}
-                    formatter={(value: unknown) => [fmtSmall(Number(value)), "Revenue"]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    name="Total"
-                    stroke="#dc2626"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4, fill: "#dc2626" }}
-                  />
+                  <XAxis dataKey="date" tick={{ fill: "#606060", fontSize: 11 }} tickLine={false} axisLine={{ stroke: "#2a2a2a" }} />
+                  <YAxis tick={{ fill: "#606060", fontSize: 11 }} tickLine={false} axisLine={{ stroke: "#2a2a2a" }} tickFormatter={(v) => `₹${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+                  <Tooltip contentStyle={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: 8 }} labelStyle={{ color: "#a0a0a0" }} formatter={(value: unknown) => [fmtSmall(Number(value)), "Revenue"]} />
+                  <Line type="monotone" dataKey="total" name="Total" stroke="#dc2626" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#dc2626" }} />
                 </LineChart>
               </ResponsiveContainer>
             )}
           </div>
+
+          {/* Method Distribution */}
+          {analytics.summary && (analytics.summary.totalRevenue ?? 0) > 0 && (() => {
+            const pieData = [
+              { name: "Razorpay", value: analytics.summary.razorpayRevenue ?? 0, color: "#dc2626" },
+              { name: "Manual / Bank / UPI", value: analytics.summary.manualRevenue ?? 0, color: "#4a4a4a" },
+            ].filter((d) => d.value > 0);
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-4">Payment Method Mix</p>
+                  <div className="flex items-center gap-6">
+                    <ResponsiveContainer width={120} height={120}>
+                      <PieChart>
+                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={34} outerRadius={54} dataKey="value" strokeWidth={0}>
+                          {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                        </Pie>
+                        <Tooltip contentStyle={{ background: "#141414", border: "1px solid #2a2a2a", borderRadius: 8 }} formatter={(value: unknown) => [fmtSmall(Number(value)), ""]} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="space-y-3">
+                      {pieData.map((d) => (
+                        <div key={d.name} className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: d.color }} />
+                          <div>
+                            <div className="text-xs text-[#a0a0a0]">{d.name}</div>
+                            <div className="text-sm font-semibold text-[#f0f0f0]">{fmtSmall(d.value)}</div>
+                            <div className="text-xs text-[#606060]">{((d.value / (analytics.summary.totalRevenue ?? 1)) * 100).toFixed(1)}%</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Revenue by Course */}
+                <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-4">Revenue by Course</p>
+                  {revenueByCourseQuery.isLoading ? (
+                    <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-[#1a1a1a] rounded animate-pulse" />)}</div>
+                  ) : (revenueByCourseQuery.data ?? []).length === 0 ? (
+                    <div className="text-[#606060] text-sm">No data</div>
+                  ) : (() => {
+                    const courses = revenueByCourseQuery.data ?? [];
+                    const max = courses[0]?.totalRevenue ?? 1;
+                    return (
+                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                        {courses.map((c) => (
+                          <div key={c.courseId}>
+                            <div className="flex justify-between text-xs mb-0.5">
+                              <span className="text-[#a0a0a0] truncate max-w-[160px]" title={c.courseTitle}>{c.courseTitle}</span>
+                              <span className="text-[#f0f0f0] font-semibold flex-shrink-0 ml-2">{fmt(c.totalRevenue)}</span>
+                            </div>
+                            <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                              <div className="h-full bg-[#dc2626] rounded-full" style={{ width: `${(c.totalRevenue / max) * 100}%` }} />
+                            </div>
+                            <div className="text-[10px] text-[#606060] mt-0.5">{c.completedCount} paid · {c.pendingCount} pending</div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
+
+      {/* Razorpay Tab */}
+      {tab === "razorpay" && (() => {
+        const rzPayments: any[] = razorpayListQuery.data?.data ?? [];
+        const rzMeta = razorpayListQuery.data?.meta ?? { total: 0, page: 1, limit: 25, totalRevenue: 0 };
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-[#a0a0a0]">{rzMeta.total} Razorpay payments · revenue: <span className="text-[#f0f0f0] font-semibold">{fmt(rzMeta.totalRevenue)}</span></p>
+              <div className="flex gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060]" />
+                  <input type="text" placeholder="Search…" value={searchInput} onChange={(e) => handleSearchChange(e.target.value)} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 pl-9 pr-4 text-white text-sm outline-none focus:border-[#dc2626] w-48" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[#2a2a2a]">
+                      {["Member", "Course", "Amount", "Order ID", "Payment ID", "Status", "Date", "Actions"].map((h) => (
+                        <th key={h} className="text-left text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani px-4 py-3 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {razorpayListQuery.isLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={i} className="border-b border-[#1e1e1e]">
+                          {Array.from({ length: 8 }).map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-[#1a1a1a] rounded animate-pulse" /></td>)}
+                        </tr>
+                      ))
+                    ) : rzPayments.length === 0 ? (
+                      <tr><td colSpan={8} className="text-center py-12 text-[#606060]">No Razorpay payments found</td></tr>
+                    ) : rzPayments.map((p) => (
+                      <tr key={p.id} className="border-b border-[#1e1e1e] hover:bg-[#1a1a1a] transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="text-[#f0f0f0] font-medium">{p.member?.firstName} {p.member?.lastName}</div>
+                          <div className="text-[#606060] text-xs">{p.member?.email}</div>
+                        </td>
+                        <td className="px-4 py-3"><div className="text-[#a0a0a0] max-w-[160px] truncate">{p.course?.title}</div></td>
+                        <td className="px-4 py-3 whitespace-nowrap text-[#f0f0f0] font-semibold">{fmtSmall(p.amount)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{p.razorpayOrderId ? <CopyableId value={p.razorpayOrderId} /> : <span className="text-[#333]">—</span>}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{p.razorpayPaymentId ? <CopyableId value={p.razorpayPaymentId} /> : <span className="text-[#333]">—</span>}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-xs ${statusColor[p.status] ?? "text-[#a0a0a0]"}`}>{p.status}</span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-xs text-[#606060]">
+                          {p.paidAt ? new Date(p.paidAt).toLocaleDateString("en-IN") : p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "—"}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            {p.status === "completed" && (
+                              <button onClick={() => setRefundTarget(p)} title="Refund" className="p-1.5 rounded bg-purple-900/30 border border-purple-800 text-purple-400 hover:bg-purple-900/60">
+                                <RotateCcw size={13} />
+                              </button>
+                            )}
+                            <button onClick={() => setSyncTarget(p)} title="Sync with Razorpay" className="p-1.5 rounded bg-blue-900/30 border border-blue-800 text-blue-400 hover:bg-blue-900/60">
+                              <RefreshCw size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {rzMeta.total > rzMeta.limit && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-[#2a2a2a]">
+                  <span className="text-xs text-[#606060]">{(rzMeta.page - 1) * rzMeta.limit + 1}–{Math.min(rzMeta.page * rzMeta.limit, rzMeta.total)} of {rzMeta.total}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))} disabled={filters.page <= 1} className="px-3 h-8 rounded border border-[#2a2a2a] text-[#a0a0a0] text-xs disabled:opacity-40 hover:bg-[#1a1a1a]">Previous</button>
+                    <button onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))} disabled={filters.page * rzMeta.limit >= rzMeta.total} className="px-3 h-8 rounded border border-[#2a2a2a] text-[#a0a0a0] text-xs disabled:opacity-40 hover:bg-[#1a1a1a]">Next</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* List Tab */}
       {tab === "list" && (

@@ -2491,3 +2491,17 @@ export const useRefundPayment = () => {
     },
   });
 };
+
+export const useRevenueByCourse = () =>
+  useQuery({
+    queryKey: ['payments', 'revenue-by-course'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/payments/revenue-by-course');
+      return (res?.data ?? []) as Array<{
+        courseId: string; courseTitle: string; paymentCount: number;
+        totalRevenue: number; razorpayRevenue: number; manualRevenue: number;
+        pendingCount: number; completedCount: number;
+      }>;
+    },
+    staleTime: 60_000,
+  });
