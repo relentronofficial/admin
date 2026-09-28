@@ -359,6 +359,41 @@ export async function refundPaymentHandler(req: FastifyRequest, reply: FastifyRe
   return reply.send({ success: true, data: { refunded: true, razorpayRefundId, refundedAmount: refundAmount } });
 }
 
+// ── RZ-02-G: GET /api/payments/revenue-by-course ──────────────────────────────
+
+export async function getRevenueByCourseHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(`
+    SELECT
+      c.id AS "courseId",
+      c.title AS "courseTitle",
+      COUNT(cp.id)::int AS "paymentCount",
+      COALESCE(SUM(CASE WHEN cp.status='completed' THEN cp.amount ELSE 0 END), 0) AS "totalRevenue",
+      COALESCE(SUM(CASE WHEN cp.status='completed' AND cp.method='razorpay' THEN cp.amount ELSE 0 END), 0) AS "razorpayRevenue",
+      COALESCE(SUM(CASE WHEN cp.status='completed' AND cp.method IN ('manual','bank_transfer','upi') THEN cp.amount ELSE 0 END), 0) AS "manualRevenue",
+      COUNT(CASE WHEN cp.status='pending' THEN 1 END)::int AS "pendingCount",
+      COUNT(CASE WHEN cp.status='completed' THEN 1 END)::int AS "completedCount"
+    FROM course_payments cp
+    JOIN courses c ON c.id = cp.course_id
+    GROUP BY c.id, c.title
+    ORDER BY "totalRevenue" DESC
+    LIMIT 20
+  `).catch(() => [] as any[]);
+
+  return reply.send({
+    success: true,
+    data: rows.map((r: any) => ({
+      courseId: r.courseId,
+      courseTitle: r.courseTitle,
+      paymentCount: Number(r.paymentCount ?? 0),
+      totalRevenue: Number(r.totalRevenue ?? 0),
+      razorpayRevenue: Number(r.razorpayRevenue ?? 0),
+      manualRevenue: Number(r.manualRevenue ?? 0),
+      pendingCount: Number(r.pendingCount ?? 0),
+      completedCount: Number(r.completedCount ?? 0),
+    })),
+  });
+}
+
 // ── Helper ─────────────────────────────────────────────────────────────────────
 
 async function resolveAdminId(req: FastifyRequest): Promise<string | null> {
