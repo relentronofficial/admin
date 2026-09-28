@@ -641,10 +641,17 @@ export async function approveCoursePaymentHandler(req: FastifyRequest, reply: Fa
 
     const adminId = await resolveAdminId(req);
 
-    await req.server.prisma.coursePayment.update({
-      where: { id: paymentId },
-      data: { status: 'completed', paidAt: new Date(), grantedBy: adminId },
-    });
+    // Auto-detect method: if razorpay_payment_id is set, the payment went through
+    // Razorpay even if it was originally created as manual/external.
+    const [rzpRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT method, razorpay_payment_id FROM course_payments WHERE id = $1::uuid`, paymentId,
+    ).catch(() => [] as any[]);
+    const effectiveMethod = rzpRow?.razorpay_payment_id ? 'razorpay' : (rzpRow?.method ?? 'manual');
+
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE course_payments SET status='completed', method=$1, paid_at=NOW(), granted_by=$2, updated_at=NOW() WHERE id=$3::uuid`,
+      effectiveMethod, adminId, paymentId,
+    );
 
     await req.server.prisma.courseAccess.upsert({
       where: { memberId_courseId: { memberId: payment.memberId, courseId } },

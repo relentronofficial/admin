@@ -1991,6 +1991,16 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS refund_note TEXT`
     ).catch(() => {});
+    // Backfill: any completed payment that has razorpay_payment_id set but
+    // method != 'razorpay' was created before grantCourseAccessAfterPayment
+    // stamped the method. Correct them in place — idempotent.
+    await prisma.$executeRawUnsafe(
+      `UPDATE course_payments
+       SET method = 'razorpay', updated_at = NOW()
+       WHERE razorpay_payment_id IS NOT NULL
+         AND status = 'completed'
+         AND method::text != 'razorpay'`
+    ).catch(() => {});
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
