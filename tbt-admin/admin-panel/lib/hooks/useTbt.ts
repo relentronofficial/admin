@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import apiClient from '../api/apiClient';
 
 // ── WORKSHOPS ─────────────────────────────────────────────────────────
@@ -2444,6 +2444,7 @@ export const usePaymentList = (params?: {
       return res ?? { data: [], meta: { total: 0, page: 1, limit: 25, totalRevenue: 0 } };
     },
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 
 export const usePaymentAnalytics = (params?: { days?: number; groupBy?: 'day' | 'month' }) =>

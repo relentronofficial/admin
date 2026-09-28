@@ -297,28 +297,55 @@ export default function PaymentsPage() {
     }
   };
 
-  const exportCsv = () => {
-    if (!payments.length) return;
-    const headers = ["ID", "Member", "Email", "Course", "Amount", "Method", "Status", "Razorpay Payment ID", "Created At"];
-    const rows = payments.map((p) => [
-      p.id,
-      `${p.member?.firstName ?? ""} ${p.member?.lastName ?? ""}`.trim(),
-      p.member?.email ?? "",
-      p.course?.title ?? "",
-      p.amount,
-      p.method,
-      p.status,
-      p.razorpayPaymentId ?? "",
-      p.createdAt ? new Date(p.createdAt).toLocaleString() : "",
-    ]);
-    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `payments-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportCsv = async () => {
+    try {
+      const res: any = await import("@/lib/api/apiClient").then(({ default: client }) =>
+        client.get("/api/payments/list", {
+          params: {
+            limit: 9999, page: 1,
+            method: filters.method || undefined,
+            status: filters.status || undefined,
+            search: filters.search || undefined,
+            dateFrom: filters.dateFrom || undefined,
+            dateTo: filters.dateTo || undefined,
+          },
+        }),
+      );
+      const allPayments: any[] = res?.data ?? payments;
+      if (!allPayments.length) return;
+      const headers = [
+        "id", "member_name", "member_email", "course",
+        "amount", "currency", "method", "status",
+        "razorpay_payment_id", "razorpay_order_id", "razorpay_refund_id",
+        "refunded_amount", "created_at", "paid_at",
+      ];
+      const rows = allPayments.map((p: any) => [
+        p.id,
+        `${p.member?.firstName ?? ""} ${p.member?.lastName ?? ""}`.trim(),
+        p.member?.email ?? "",
+        p.course?.title ?? "",
+        p.amount,
+        p.currency ?? "INR",
+        p.method,
+        p.status,
+        p.razorpayPaymentId ?? "",
+        p.razorpayOrderId ?? "",
+        p.razorpayRefundId ?? "",
+        p.refundedAmount ?? "",
+        p.createdAt ? new Date(p.createdAt).toISOString() : "",
+        p.paidAt ? new Date(p.paidAt).toISOString() : "",
+      ]);
+      const csv = [headers, ...rows].map((r) => r.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `payments-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Export failed");
+    }
   };
 
   return (

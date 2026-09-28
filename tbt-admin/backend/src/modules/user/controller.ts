@@ -6424,18 +6424,12 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
   // RZ-03 — refund.failed: notify admins so they can retry
   if (body.event === 'refund.failed') {
     const entity = body?.payload?.refund?.entity ?? {};
-    const rzpRefundId: string | undefined = entity.id;
-    void (async () => {
-      try {
-        const { createAdminNotification: notify } = await import('../../lib/adminNotifications.js');
-        await notify(request.server.prisma, {
-          title: 'Razorpay Refund Failed',
-          body: `Refund ${rzpRefundId ?? 'unknown'} failed. Please retry from the Payments dashboard.`,
-          type: 'course_access_request',
-          metadata: { refundId: rzpRefundId },
-        });
-      } catch {}
-    })();
+    void createAdminNotification(request.server.prisma, {
+      title: 'Razorpay Refund Failed',
+      body: `Refund for payment ${entity?.payment_id ?? 'unknown'} failed on Razorpay. Check the Razorpay dashboard.`,
+      type: 'course_access_request',
+      metadata: { paymentId: entity?.payment_id, refundId: entity?.id },
+    }).catch(() => {});
     return reply.send({ ok: true });
   }
 
