@@ -1981,6 +1981,16 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_signature TEXT`
     ).catch(() => {});
+    // RZ-01 — refund-tracking columns (2026-09-28)
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS razorpay_refund_id TEXT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS refunded_amount DECIMAL(10,2)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS refund_note TEXT`
+    ).catch(() => {});
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.

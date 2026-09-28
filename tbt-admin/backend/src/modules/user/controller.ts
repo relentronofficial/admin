@@ -6401,6 +6401,44 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
     return reply.send({ ok: true });
   }
 
+  // RZ-03 — refund.processed: store Razorpay refund ID + amount on the payment row
+  if (body.event === 'refund.processed') {
+    const entity = body?.payload?.refund?.entity ?? body?.payload?.payment?.entity ?? {};
+    const rzpRefundId: string | undefined = entity.id;
+    const rzpPaymentId: string | undefined = entity.payment_id ?? body?.payload?.payment?.entity?.id;
+    const refundAmountPaise: number | undefined = entity.amount;
+    if (rzpRefundId && rzpPaymentId) {
+      await request.server.prisma.$executeRawUnsafe(
+        `UPDATE course_payments
+         SET status='refunded', razorpay_refund_id=$1,
+             refunded_amount=COALESCE($2::numeric / 100, amount), updated_at=NOW()
+         WHERE razorpay_payment_id = $3 AND method = 'razorpay'`,
+        rzpRefundId,
+        refundAmountPaise != null ? String(refundAmountPaise) : null,
+        rzpPaymentId,
+      ).catch(() => {});
+    }
+    return reply.send({ ok: true });
+  }
+
+  // RZ-03 — refund.failed: notify admins so they can retry
+  if (body.event === 'refund.failed') {
+    const entity = body?.payload?.refund?.entity ?? {};
+    const rzpRefundId: string | undefined = entity.id;
+    void (async () => {
+      try {
+        const { createAdminNotification: notify } = await import('../../lib/adminNotifications.js');
+        await notify(request.server.prisma, {
+          title: 'Razorpay Refund Failed',
+          body: `Refund ${rzpRefundId ?? 'unknown'} failed. Please retry from the Payments dashboard.`,
+          type: 'course_access_request',
+          metadata: { refundId: rzpRefundId },
+        });
+      } catch {}
+    })();
+    return reply.send({ ok: true });
+  }
+
   if (body.event !== 'payment.captured') return reply.send({ ok: true });
 
   const rzpOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;

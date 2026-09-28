@@ -30,6 +30,7 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.51.5",
     "react-hot-toast": "^2.6.0",
+    "recharts": "^3.10.1",
     "socket.io-client": "^4.8.3",
     "styled-jsx": "^5.1.1",
     "tailwind-merge": "^2.3.0",

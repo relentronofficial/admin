@@ -2420,3 +2420,73 @@ export const useAdminPsychometricResponses = (params?: { page?: number; limit?: 
     },
     staleTime: 30_000,
   });
+
+// ── RZ-04: Payments Dashboard Hooks ───────────────────────────────────────────
+
+export const usePaymentStats = () =>
+  useQuery({
+    queryKey: ['payments', 'stats'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/payments/stats');
+      return res?.data ?? {};
+    },
+    staleTime: 60_000,
+  });
+
+export const usePaymentList = (params?: {
+  page?: number; limit?: number; method?: string; status?: string;
+  courseId?: string; memberId?: string; dateFrom?: string; dateTo?: string; search?: string;
+}) =>
+  useQuery({
+    queryKey: ['payments', 'list', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/payments/list', { params });
+      return res ?? { data: [], meta: { total: 0, page: 1, limit: 25, totalRevenue: 0 } };
+    },
+    staleTime: 30_000,
+  });
+
+export const usePaymentAnalytics = (params?: { days?: number; groupBy?: 'day' | 'month' }) =>
+  useQuery({
+    queryKey: ['payments', 'analytics', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/payments/analytics', { params });
+      return res?.data ?? { series: [], summary: { totalRevenue: 0, razorpayRevenue: 0, manualRevenue: 0, growthPercent: null } };
+    },
+    staleTime: 60_000,
+  });
+
+export const useSyncRazorpayPayment = () => {
+  return useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res: any = await apiClient.get(`/api/payments/${paymentId}/razorpay-sync`);
+      return res?.data ?? {};
+    },
+  });
+};
+
+export const useApprovePayment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res: any = await apiClient.post(`/api/payments/${paymentId}/approve`);
+      return res?.data ?? {};
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payments'] });
+    },
+  });
+};
+
+export const useRefundPayment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ paymentId, amount, note, speed }: { paymentId: string; amount?: number; note?: string; speed?: string }) => {
+      const res: any = await apiClient.post(`/api/payments/${paymentId}/refund`, { amount, note, speed });
+      return res?.data ?? {};
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payments'] });
+    },
+  });
+};

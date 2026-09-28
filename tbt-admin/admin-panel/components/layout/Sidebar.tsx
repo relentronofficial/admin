@@ -35,6 +35,7 @@ import {
   Shield,
   ShoppingCart,
   Coins,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -57,6 +58,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Hero Carousel", href: "/hero-carousel", icon: Tv2 },
       { name: "Content Sections", href: "/content-sections", icon: Layers },
       { name: "Courses", href: "/courses", icon: BookOpen },
+      { name: "Payments", href: "/payments", icon: CreditCard },
       { name: "Workshops", href: "/workshops", icon: Clapperboard },
       { name: "Podcasts", href: "/podcasts", icon: Headphones },
       { name: "E-Books", href: "/ebooks", icon: BookOpen },
