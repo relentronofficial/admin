@@ -176,7 +176,7 @@ function StepProgress({ step, stepOrder }: { step: Step; stepOrder: Step[] }) {
 
 // ─── Content blocks (education steps) ────────────────────────────────────────
 
-function ContentBlock({ content }: { content: OnboardingContentStep }) {
+function ContentBlock({ content, onCtaClick }: { content: OnboardingContentStep; onCtaClick?: () => void }) {
   const isHls = content.videoUrl?.endsWith(".m3u8");
   return (
     <div className="space-y-5">
@@ -198,6 +198,19 @@ function ContentBlock({ content }: { content: OnboardingContentStep }) {
       {content.audioUrl && (
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <audio src={content.audioUrl} controls className="w-full" />
+      )}
+      {content.ctaLabel && onCtaClick && (
+        <button
+          type="button"
+          onClick={onCtaClick}
+          className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+          style={{
+            background: "var(--color-accent)",
+            boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
+          }}
+        >
+          {content.ctaLabel}
+        </button>
       )}
     </div>
   );
@@ -655,7 +668,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               onBack={prevStep ? () => setStep(prevStep) : undefined}
               onNext={() => setStep(nextStep ?? "review")}
             >
-              {contentLoading ? <ContentStepSkeleton /> : content ? <ContentBlock content={content} /> : (
+              {contentLoading ? <ContentStepSkeleton /> : content ? <ContentBlock content={content} onCtaClick={() => setStep(nextStep ?? "review")} /> : (
                 <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
                   We&apos;ll ask you for a few business details and a document to verify your account.
                 </p>

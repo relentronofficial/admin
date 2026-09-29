@@ -656,7 +656,7 @@ function ApplicationsTab({ onOpenRoom, onOpenDetail }: { onOpenRoom: (creds: any
 type QuizOption = { id: string; text: string; correct: boolean };
 type QuizQuestion = { id: string; question: string; options: QuizOption[]; explanation: string };
 
-const EMPTY_FORM = { stepKey: "", title: "", textBody: "", videoUrl: "", audioUrl: "", imageUrl: "", lottieUrl: "", sortOrder: 0 };
+const EMPTY_FORM = { stepKey: "", title: "", textBody: "", videoUrl: "", audioUrl: "", imageUrl: "", lottieUrl: "", ctaLabel: "", sortOrder: 0 };
 
 function QuizPreview({ questions }: { questions: QuizQuestion[] }) {
   if (!questions?.length) return <p className="text-xs text-[#888] p-4">No questions</p>;
@@ -1090,8 +1090,9 @@ function ContentTab() {
   // Quiz preview state
   const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
 
-  // Create form state
+  // Create/edit form state
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [quizQs, setQuizQs] = useState<QuizQuestion[]>([]);
   const [showQuizBuilder, setShowQuizBuilder] = useState(false);
 
@@ -1162,10 +1163,33 @@ function ContentTab() {
   const handleCreate = async () => {
     if (!form.stepKey.trim() || !form.title.trim()) { window.alert("Step key and title are required."); return; }
     const quizData = quizQs.length > 0 ? { questions: quizQs } : undefined;
-    await create.mutateAsync({ ...form, quizData, isActive: true } as any);
+    if (editingRowId) {
+      await update.mutateAsync({ id: editingRowId, data: { ...form, ctaLabel: form.ctaLabel || null, quizData } as any });
+      setEditingRowId(null);
+    } else {
+      await create.mutateAsync({ ...form, ctaLabel: form.ctaLabel || null, quizData, isActive: true } as any);
+    }
     setForm({ ...EMPTY_FORM });
     setQuizQs([]);
     setShowQuizBuilder(false);
+  };
+
+  const handleEditRow = (row: any) => {
+    setEditingRowId(row.id);
+    setForm({
+      stepKey: row.stepKey ?? "",
+      title: row.title ?? "",
+      textBody: row.textBody ?? "",
+      videoUrl: row.videoUrl ?? "",
+      audioUrl: row.audioUrl ?? "",
+      imageUrl: row.imageUrl ?? "",
+      lottieUrl: row.lottieUrl ?? "",
+      ctaLabel: row.ctaLabel ?? "",
+      sortOrder: row.sortOrder ?? 0,
+    });
+    setQuizQs(row.quizData?.questions ?? []);
+    setShowQuizBuilder((row.quizData?.questions?.length ?? 0) > 0);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleDelete = async (id: string, title: string) => {
@@ -1180,7 +1204,7 @@ function ContentTab() {
       <OnboardingButtonsSection />
 
       <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-5 space-y-4">
-        <h3 className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Add Step Content</h3>
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">{editingRowId ? "Edit Step Content" : "Add Step Content"}</h3>
 
         {/* Basic fields */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1230,6 +1254,12 @@ function ContentTab() {
           <input placeholder="Image URL (hero illustration, optional)" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} className={inputCls} />
           <input placeholder="Lottie URL (.json animation, optional)" value={form.lottieUrl} onChange={(e) => setForm({ ...form, lottieUrl: e.target.value })} className={inputCls} />
         </div>
+        <input
+          placeholder="CTA Button Label (optional — shown as a button below the video, e.g. &quot;Get Started&quot;)"
+          value={form.ctaLabel}
+          onChange={(e) => setForm({ ...form, ctaLabel: e.target.value })}
+          className={inputCls}
+        />
 
         {/* Quiz builder */}
         <div className="border border-[#2a2a2a] rounded-lg overflow-hidden">
@@ -1293,9 +1323,19 @@ function ContentTab() {
           )}
         </div>
 
-        <button onClick={handleCreate} disabled={create.isPending} className="inline-flex items-center gap-2 px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40 transition-colors">
-          <Plus size={13} /> Add Step
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={handleCreate} disabled={create.isPending || update.isPending} className="inline-flex items-center gap-2 px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40 transition-colors">
+            {editingRowId ? <><Pencil size={13} /> Save Changes</> : <><Plus size={13} /> Add Step</>}
+          </button>
+          {editingRowId && (
+            <button
+              onClick={() => { setEditingRowId(null); setForm({ ...EMPTY_FORM }); setQuizQs([]); setShowQuizBuilder(false); }}
+              className="px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg border border-[#2a2a2a] text-[#a0a0a0] hover:text-[#f0f0f0] transition-colors"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-[#111] border border-[#2a2a2a] rounded-xl overflow-hidden">
@@ -1373,6 +1413,7 @@ function ContentTab() {
                         row.videoUrl && "video",
                         row.audioUrl && "audio",
                         row.quizData && "quiz",
+                        row.ctaLabel && `cta:${row.ctaLabel}`,
                       ].filter(Boolean).join(", ") || "text only"}
                     </td>
                     <td className="px-4 py-3">
@@ -1394,7 +1435,10 @@ function ContentTab() {
                             {previewQuizId === row.id ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
                         )}
-                        <button onClick={() => handleDelete(row.id, row.title)} className="text-[#dc2626] hover:text-red-400 transition-colors">
+                        <button onClick={() => handleEditRow(row)} className="text-[#888] hover:text-[#f0f0f0] transition-colors" title="Edit">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => handleDelete(row.id, row.title)} className="text-[#dc2626] hover:text-red-400 transition-colors" title="Delete">
                           <Trash2 size={14} />
                         </button>
                       </div>

@@ -25,6 +25,7 @@ export interface OnboardingContentStep {
   textBody: string | null;
   videoUrl: string | null;
   audioUrl: string | null;
+  ctaLabel: string | null;
   sortOrder: number;
 }
 

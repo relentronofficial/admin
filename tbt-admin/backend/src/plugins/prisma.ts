@@ -318,6 +318,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS lottie_url TEXT,
           ADD COLUMN IF NOT EXISTS quiz_data JSONB
       `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE onboarding_content
+          ADD COLUMN IF NOT EXISTS cta_label TEXT
+      `),
       // Onboarding CTA buttons — admin-managed, simple name + active/inactive
       // toggle shown in the onboarding wizard's welcome step.
       prisma.$executeRawUnsafe(`

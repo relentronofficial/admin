@@ -75,6 +75,7 @@ export const onboardingContentSchema = z.object({
   imageUrl: z.string().optional(),
   lottieUrl: z.string().optional(),
   quizData: z.record(z.unknown()).optional(),
+  ctaLabel: z.string().optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
 });

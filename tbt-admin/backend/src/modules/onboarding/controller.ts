@@ -158,7 +158,7 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
   return reply.send({ success: true, data: { ...updated, ...(skillRow ?? {}) }, error: null });
 }
 
-const CONTENT_COLS = `id, step_key AS "stepKey", title, text_body AS "textBody", video_url AS "videoUrl", audio_url AS "audioUrl", image_url AS "imageUrl", lottie_url AS "lottieUrl", quiz_data AS "quizData", sort_order AS "sortOrder", is_active AS "isActive"`;
+const CONTENT_COLS = `id, step_key AS "stepKey", title, text_body AS "textBody", video_url AS "videoUrl", audio_url AS "audioUrl", image_url AS "imageUrl", lottie_url AS "lottieUrl", quiz_data AS "quizData", cta_label AS "ctaLabel", sort_order AS "sortOrder", is_active AS "isActive"`;
 
 // GET /api/onboarding/content — active step content (member-facing)
 export async function getOnboardingContentHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -391,13 +391,13 @@ export async function adminCreateOnboardingContentHandler(req: FastifyRequest, r
   }
   const d = parsed.data;
   const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `INSERT INTO onboarding_content (step_key, title, text_body, video_url, audio_url, image_url, lottie_url, quiz_data, sort_order, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+    `INSERT INTO onboarding_content (step_key, title, text_body, video_url, audio_url, image_url, lottie_url, quiz_data, cta_label, sort_order, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
      RETURNING ${CONTENT_COLS}`,
     d.stepKey, d.title, d.textBody ?? null, d.videoUrl ?? null, d.audioUrl ?? null,
     d.imageUrl ?? null, d.lottieUrl ?? null,
     d.quizData ? JSON.stringify(d.quizData) : null,
-    d.sortOrder ?? 0, d.isActive ?? true,
+    d.ctaLabel ?? null, d.sortOrder ?? 0, d.isActive ?? true,
   );
   return reply.status(201).send({ success: true, data: row, error: null });
 }
@@ -419,6 +419,7 @@ export async function adminUpdateOnboardingContentHandler(req: FastifyRequest<{ 
   if (d.imageUrl !== undefined) { setClauses.push(`image_url = $${idx++}`);   vals.push(d.imageUrl); }
   if (d.lottieUrl !== undefined){ setClauses.push(`lottie_url = $${idx++}`);  vals.push(d.lottieUrl); }
   if (d.quizData !== undefined) { setClauses.push(`quiz_data = $${idx++}::jsonb`); vals.push(d.quizData ? JSON.stringify(d.quizData) : null); }
+  if (d.ctaLabel !== undefined) { setClauses.push(`cta_label = $${idx++}`);   vals.push(d.ctaLabel ?? null); }
   if (d.sortOrder !== undefined){ setClauses.push(`sort_order = $${idx++}`);  vals.push(d.sortOrder); }
   if (d.isActive !== undefined) { setClauses.push(`is_active = $${idx++}`);   vals.push(d.isActive); }
   if (setClauses.length === 0) return reply.send({ success: true, data: null, error: null });
