@@ -20,7 +20,13 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
 
   const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
     'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
-  ).catch(() => []);
+  ).catch((err) => {
+    // A missing raw-SQL column (e.g. courses_banner_url) fails this whole
+    // SELECT and silently defaults every extra field — make it visible.
+    req.log.error({ err }, '[pub/site-config] extra site_configs columns query failed');
+    return null;
+  });
+  const extrasFailed = extraRows === null;
 
   const data = {
     siteName: config.siteName,
@@ -39,12 +45,14 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     loginBgUrl: config.loginBgUrl ?? null,
     loginBgMobileUrl: config.loginBgMobileUrl ?? null,
     loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
-    taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
-    freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
-    earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
-    coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
+    taskTimerSeconds: extraRows?.[0]?.task_timer_seconds ?? 300,
+    freeLifelinesPerSession: extraRows?.[0]?.free_lifelines_per_session ?? 3,
+    earlyCompletionBonusXp: extraRows?.[0]?.early_completion_bonus_xp ?? 5,
+    coursesBannerUrl: extraRows?.[0]?.courses_banner_url ?? null,
   };
-  await cacheSet(redis, CACHE_KEY, data, 300);
+  // Never cache a degraded (defaulted) response — it would hide the real
+  // values for the full TTL once the underlying query recovers.
+  if (!extrasFailed) await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });
 }
 

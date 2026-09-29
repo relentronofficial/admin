@@ -15,7 +15,10 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
   }
   const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
     'SELECT task_timer_seconds, free_lifelines_per_session, hidden_menu_keys, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
-  ).catch(() => []);
+  ).catch((err) => {
+    req.log.error({ err }, '[config/site] extra site_configs columns query failed');
+    return [];
+  });
   return reply.send({
     success: true,
     data: {

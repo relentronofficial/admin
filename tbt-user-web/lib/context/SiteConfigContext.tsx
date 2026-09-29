@@ -61,9 +61,9 @@ function setFavicon(url: string) {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-async function fetchJson<T>(path: string): Promise<T | null> {
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(`${API_BASE}${path}`);
+    const res = await fetch(`${API_BASE}${path}`, init);
     if (!res.ok) return null;
     const json = await res.json();
     return (json?.data ?? null) as T | null;
@@ -100,7 +100,18 @@ export function SiteConfigProvider({
       if (initialConfig.theme) applyTheme(initialConfig.theme, useUIStore.getState().theme);
       if (initialConfig.faviconUrl) setFavicon(initialConfig.faviconUrl);
       setIsLoading(false);
-      return;
+
+      // The server-rendered config comes from the Next.js data cache
+      // (layout.tsx, revalidate: 300), so an admin change — e.g. a new
+      // Courses Page Banner — could stay invisible for 5+ minutes, even
+      // across hard refreshes. Re-read the live config once per app load,
+      // bypassing the browser HTTP cache, and adopt it if it differs.
+      let cancelled = false;
+      fetchJson<SiteConfig>("/api/pub/config/site", { cache: "no-store" }).then((fresh) => {
+        if (cancelled || !fresh) return;
+        setConfig((prev) => (JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh));
+      });
+      return () => { cancelled = true; };
     }
 
     // Fallback: client-side bootstrap (used when server data unavailable, e.g. local dev cold start)
