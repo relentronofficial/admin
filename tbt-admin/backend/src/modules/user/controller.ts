@@ -1441,9 +1441,10 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     );
     void awardVideoStreakPoints(request.server.prisma as any, request.memberId!, episodeId);
 
-    // Stamp lastActiveAt, update streak/health, and invalidate /me cache so
-    // the profile reflects this lesson immediately (not after the next 5-min TTL).
-    void recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis, { markActive: true });
+    // Await so the Redis me: cache is invalidated before the 200 reaches the client.
+    // Profile page fetches /me immediately on mount; awaiting here guarantees a
+    // cache miss (fresh DB read) instead of a stale Redis hit.
+    await recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis, { markActive: true });
 
     // 7.1 — episode complete notification
     void notifyEpisodeCompleted({
