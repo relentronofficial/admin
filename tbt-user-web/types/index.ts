@@ -215,6 +215,7 @@ export interface SiteConfig {
   taskTimerSeconds?: number;
   freeLifelinesPerSession?: number;
   earlyCompletionBonusXp?: number;
+  coursesBannerUrl?: string | null;
 }
 
 export interface NavItem {

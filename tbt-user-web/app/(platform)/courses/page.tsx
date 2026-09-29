@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
+import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
 import type { ContinueLearningItem } from "@/types";
 
@@ -451,6 +452,9 @@ export default function CoursesPage() {
   const [sort, setSort] = useState<"newest" | "popular">("newest");
   const [category, setCategory] = useState("all");
 
+  const { config } = useSiteConfig();
+  const coursesBannerUrl = config?.coursesBannerUrl ?? null;
+
   const { data: categories } = useCourseCategories();
 
   const { data: catalogData, isLoading: catalogLoading } = useCourses({
@@ -488,10 +492,20 @@ export default function CoursesPage() {
       <div
         className="relative overflow-hidden rounded-2xl"
         style={{
-          background: "var(--color-bg-surface)",
+          background: coursesBannerUrl
+            ? `url(${coursesBannerUrl}) center / cover no-repeat`
+            : "var(--color-bg-surface)",
           border: "1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle))",
         }}
       >
+        {/* Dark overlay when banner is set — preserves text readability */}
+        {coursesBannerUrl && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: "linear-gradient(135deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.45) 100%)" }}
+          />
+        )}
+
         {/* Top accent stripe */}
         <div
           className="absolute top-0 inset-x-0 h-px pointer-events-none"
@@ -501,15 +515,19 @@ export default function CoursesPage() {
           }}
         />
 
-        {/* Glow orbs */}
-        <div
-          className="absolute -top-24 -right-20 w-80 h-80 rounded-full blur-3xl pointer-events-none"
-          style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
-        />
-        <div
-          className="absolute -bottom-10 left-20 w-44 h-44 rounded-full blur-3xl pointer-events-none"
-          style={{ background: "color-mix(in srgb, var(--color-accent) 5%, transparent)" }}
-        />
+        {/* Glow orbs — only shown without a banner image */}
+        {!coursesBannerUrl && (
+          <>
+            <div
+              className="absolute -top-24 -right-20 w-80 h-80 rounded-full blur-3xl pointer-events-none"
+              style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
+            />
+            <div
+              className="absolute -bottom-10 left-20 w-44 h-44 rounded-full blur-3xl pointer-events-none"
+              style={{ background: "color-mix(in srgb, var(--color-accent) 5%, transparent)" }}
+            />
+          </>
+        )}
 
         <div className="relative px-6 py-7 md:px-10 md:py-9">
 
@@ -551,14 +569,14 @@ export default function CoursesPage() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end">
             <div className="flex-1">
               <h1
-                className="text-3xl md:text-4xl font-extrabold leading-none tracking-tight"
-                style={{ color: "var(--color-text-normal)" }}
+                className={coursesBannerUrl ? "overlay-text text-3xl md:text-4xl font-extrabold leading-none tracking-tight" : "text-3xl md:text-4xl font-extrabold leading-none tracking-tight"}
+                style={coursesBannerUrl ? undefined : { color: "var(--color-text-normal)" }}
               >
                 Courses
               </h1>
               <p
-                className="text-[13px] leading-relaxed mt-2.5 max-w-xs"
-                style={{ color: "var(--color-text-secondary)" }}
+                className={coursesBannerUrl ? "overlay-meta text-[13px] leading-relaxed mt-2.5 max-w-xs" : "text-[13px] leading-relaxed mt-2.5 max-w-xs"}
+                style={coursesBannerUrl ? undefined : { color: "var(--color-text-secondary)" }}
               >
                 Expand your skills with expert-led courses. Learn at your own pace and earn XP along the way.
               </p>
