@@ -60,10 +60,10 @@
                 <data android:scheme="tbt"/>
             </intent-filter>
         </activity>
-        <!-- FCM: default notification channel shown when no channel is specified -->
+        <!-- FCM: default notification channel — must match the channel id created in initLocalNotifications() -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="tbt_default"/>
+            android:value="tbt_general"/>
         <!-- FCM: default notification icon (monochrome, white on transparent) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

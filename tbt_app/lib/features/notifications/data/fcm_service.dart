@@ -19,6 +19,32 @@ bool _localNotifsInitialized = false;
 bool _refreshListenerSet = false;
 bool _handlersSet = false;
 
+/// Set in [FcmService.initHandlers] once the router is available.
+/// Used by [_onLocalNotificationTap] to navigate when a foreground
+/// local notification banner is tapped.
+GoRouter? _routerRef;
+
+/// Called when the user taps a local notification banner shown while the
+/// app is in the foreground. The [details.payload] is the FCM data map
+/// JSON-encoded by [FcmService._onForegroundMessage].
+void _onLocalNotificationTap(NotificationResponse details) {
+  final payload = details.payload;
+  if (payload == null || payload.isEmpty) return;
+  try {
+    final data = jsonDecode(payload) as Map<String, dynamic>;
+    final type = data['type'] as String?;
+    if (type == null || type.isEmpty) return;
+    // Pass the rest of the data map as metadata so the router can use
+    // fields like dayNumber, courseId, batchId, etc.
+    final metadata = Map<String, dynamic>.from(data)..remove('type');
+    final route = resolveNotificationRoute(
+      type: type,
+      metadata: metadata.isEmpty ? null : metadata,
+    );
+    _routerRef?.go(route);
+  } catch (_) {}
+}
+
 // ── Local notifications bootstrap (called once from main()) ──────────────────
 
 Future<void> initLocalNotifications() async {
@@ -31,6 +57,7 @@ Future<void> initLocalNotifications() async {
 
   await _localNotifs.initialize(
     const InitializationSettings(android: androidSettings, iOS: iosSettings),
+    onDidReceiveNotificationResponse: _onLocalNotificationTap,
   );
 
   // Create the Android notification channel (idempotent).
@@ -102,6 +129,9 @@ class FcmService {
   /// Wire up foreground + background-tap handlers. Idempotent — safe to call
   /// multiple times (e.g. on each `TbtApp.build` invocation).
   void initHandlers(GoRouter router) {
+    // Always update the router ref so foreground-tap navigation stays current.
+    _routerRef = router;
+
     if (_handlersSet) return;
     _handlersSet = true;
 
@@ -128,6 +158,7 @@ class FcmService {
           priority: Priority.high,
         ),
       ),
+      payload: message.data.isNotEmpty ? jsonEncode(message.data) : null,
     );
   }
 
