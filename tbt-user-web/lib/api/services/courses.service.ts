@@ -128,6 +128,12 @@ export const coursesService = {
         paymentRecordId: params.paymentRecordId,
       },
     ),
+
+  createCoinOrder: () =>
+    apiClient.post<never, ApiResponse<CoinOrderResult>>(`/api/user/coins/razorpay/create-order`),
+
+  verifyCoinPayment: (params: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string }) =>
+    apiClient.post<never, ApiResponse<{ coinsAdded: number; totalCoins: number; alreadyProcessed: boolean }>>(`/api/user/coins/razorpay/verify`, params),
 };
 
 export interface RazorpayOrderResult {
@@ -136,6 +142,14 @@ export interface RazorpayOrderResult {
   currency: string;
   keyId: string;
   paymentRecordId: string;
+}
+
+export interface CoinOrderResult {
+  orderId: string;
+  amount: number;
+  currency: string;
+  keyId: string;
+  coins: number;
 }
 
 export interface StreakPointsHistoryEntry {

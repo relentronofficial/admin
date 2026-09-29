@@ -6515,3 +6515,72 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
 
   return reply.send({ ok: true });
 }
+
+// ── TBT Coin Purchase via Razorpay ────────────────────────────────────────────
+
+const COIN_PACKAGE_COINS = 200;
+const COIN_PACKAGE_PRICE_INR = 99;
+
+// POST /api/user/coins/razorpay/create-order
+export async function createCoinOrderHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+  let rzpOrder: any;
+  try {
+    rzpOrder = await getRazorpay().orders.create({
+      amount: COIN_PACKAGE_PRICE_INR * 100,
+      currency: 'INR',
+      receipt: `tbt-coins-${memberId.slice(0, 8)}-${Date.now()}`,
+      notes: { memberId, type: 'coin_purchase', coins: String(COIN_PACKAGE_COINS) },
+    });
+  } catch {
+    return fail(reply, 500, 'ORDER_CREATE_FAILED');
+  }
+  return ok(reply, {
+    orderId: rzpOrder.id,
+    amount: COIN_PACKAGE_PRICE_INR * 100,
+    currency: 'INR',
+    keyId: env.RAZORPAY_KEY_ID,
+    coins: COIN_PACKAGE_COINS,
+  });
+}
+
+// POST /api/user/coins/razorpay/verify
+export async function verifyCoinPaymentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = request.body as any;
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+    return fail(reply, 400, 'SIGNATURE_INVALID');
+  }
+  // Idempotent — use razorpay_payment_id as reference to prevent double-credit
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     VALUES ($1::uuid, $2, 'coin_purchase', $3, NOW()::DATE)
+     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING
+     RETURNING id`,
+    memberId, COIN_PACKAGE_COINS, razorpayPaymentId,
+  );
+  const inserted = rows.length > 0;
+  if (inserted) {
+    // Directly increment member.totalPoints so the value is immediately
+    // visible on re-fetch without waiting for the 60-second recalc throttle.
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE members SET total_points = COALESCE(total_points, 0) + $1 WHERE id = $2::uuid`,
+      COIN_PACKAGE_COINS, memberId,
+    ).catch(() => {});
+    await invalidateCache((request.server as any).redis ?? null, `me:${memberId}`);
+  }
+  const [statsRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT total_points FROM members WHERE id = $1::uuid`, memberId,
+  ).catch(() => [] as any[]);
+  return ok(reply, {
+    coinsAdded: inserted ? COIN_PACKAGE_COINS : 0,
+    totalCoins: Number(statsRow?.total_points ?? 0),
+    alreadyProcessed: !inserted,
+  });
+}

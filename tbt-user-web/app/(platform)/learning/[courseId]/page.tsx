@@ -27,6 +27,7 @@ import {
   useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
   useEpisodeLifelines, useUseEpisodeLifeline,
   useCreateRazorpayOrder, useVerifyRazorpayPayment,
+  useCreateCoinOrder, useVerifyCoinPayment,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
 import { coursesService } from "@/lib/api/services/courses.service";
@@ -84,6 +85,13 @@ function fmtDuration(seconds: number): string {
   if (m === 0) return `${s}s`;
   if (s === 0) return `${m}m`;
   return `${m}m ${s}s`;
+}
+
+function ordinal(n: number): string {
+  if (n === 1) return "1st";
+  if (n === 2) return "2nd";
+  if (n === 3) return "3rd";
+  return `${n}th`;
 }
 
 interface SelectedLesson {
@@ -1513,6 +1521,12 @@ export default function CourseDetailPage({
   // preventing an infinite loop when selectedLesson stays null (user hasn't confirmed yet).
   const urlFocusDialogShownRef = useRef<string | null>(null);
   const spendCoins = useSpendCoins();
+  // Coin package for Razorpay purchase (mirrors COIN_PACKAGE_* constants in backend)
+  const COIN_PACKAGE_COINS = 200;
+  const COIN_PACKAGE_PRICE = 99; // INR
+  const createCoinOrder = useCreateCoinOrder();
+  const verifyCoinPayment = useVerifyCoinPayment();
+  const coinPurchaseOpenRef = useRef(false);
   // Server-side timer session + per-episode lifeline persistence
   const startEpisodeTimerMutation = useStartEpisodeTimer();
   const heartbeatEpisodeTimerMutation = useHeartbeatEpisodeTimer();
@@ -1580,6 +1594,16 @@ export default function CourseDetailPage({
       heartbeatMutateRef.current({ episodeId: lessonId });
     }, 30_000);
     return () => clearInterval(id);
+  }, []);
+  // Preload Razorpay Checkout.js for the coin purchase flow
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID) return;
+    if (document.getElementById("rzp-checkout-js")) return;
+    const s = document.createElement("script");
+    s.id = "rzp-checkout-js";
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.async = true;
+    document.body.appendChild(s);
   }, []);
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
@@ -2541,6 +2565,65 @@ export default function CourseDetailPage({
     }
   };
 
+  const handleGetTbtCoins = async () => {
+    if (!(window as any).Razorpay) {
+      toast.error("Payment system loading, please try again in a moment.");
+      return;
+    }
+    if (coinPurchaseOpenRef.current) return;
+    coinPurchaseOpenRef.current = true;
+    const lesson = coinDialog?.lesson;
+    const duration = coinDialog?.duration ?? 0;
+    try {
+      const orderRes = await createCoinOrder.mutateAsync();
+      const { orderId, amount, currency, keyId, coins } = (orderRes as any).data as any;
+      const rzp = new (window as any).Razorpay({
+        key: keyId,
+        amount,
+        currency,
+        order_id: orderId,
+        name: "Tamil Business Tribe",
+        description: `${coins} TBT Coins`,
+        handler: async (response: any) => {
+          coinPurchaseOpenRef.current = false;
+          try {
+            const result = await verifyCoinPayment.mutateAsync({
+              razorpayOrderId: orderId,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+            });
+            const totalCoins = (result as any).data?.totalCoins ?? "?";
+            toast.success(`${coins} TBT Coins added! Balance: ${totalCoins} coins.`, { duration: 5000 });
+            // Now spend 50 coins to resume the lesson automatically
+            if (lesson) {
+              setCoinDialog(null);
+              try {
+                const res = await coursesService.useEpisodeLifeline(lesson.id, "coin");
+                setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
+                startLessonTimer(lesson.id, duration);
+                handleSelectLesson(lesson);
+                toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted.`);
+              } catch (spendErr: any) {
+                toast.error(spendErr?.response?.data?.error ?? "Not enough TBT coins");
+              }
+            } else {
+              setCoinDialog(null);
+            }
+          } catch {
+            coinPurchaseOpenRef.current = false;
+            toast.error("Payment received but verification failed. Contact support.", { duration: 8000 });
+          }
+        },
+        modal: { ondismiss: () => { coinPurchaseOpenRef.current = false; } },
+      });
+      rzp.on("payment.failed", () => { coinPurchaseOpenRef.current = false; });
+      rzp.open();
+    } catch {
+      coinPurchaseOpenRef.current = false;
+      toast.error("Could not open payment — please try again.");
+    }
+  };
+
   const handleManualUseLifeline = async (lesson: any, duration: number) => {
     setLifelineDialog(null);
     if (isProgramLifeline && batchId) {
@@ -2704,55 +2787,96 @@ export default function CourseDetailPage({
       )}
 
       {/* ── Coin-Spend Lifeline Dialog ──────────────────────────────────── */}
-      {coinDialog && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
-            <div className="flex items-start gap-3">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(251,191,36,0.15)" }}>
-                <Coins size={22} style={{ color: "#fbbf24" }} />
+      {coinDialog && (() => {
+        const hasEnoughCoins = (me?.totalPoints ?? 0) >= LIFELINE_COIN_COST;
+        const allLifelinesUsed = lifelinesLeft === 0;
+        const showGetCoinsPath = allLifelinesUsed && !hasEnoughCoins && Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID);
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+            <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(251,191,36,0.15)" }}>
+                  <Coins size={22} style={{ color: "#fbbf24" }} />
+                </div>
+                <div>
+                  <p className="font-bold text-base">{showGetCoinsPath ? "Get TBT Coins" : "Use TBT Coins?"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {showGetCoinsPath ? `${COIN_PACKAGE_COINS} coins for ₹${COIN_PACKAGE_PRICE}` : "No free lifelines remaining"}
+                  </p>
+                </div>
+                <button onClick={() => setCoinDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
+                  <X size={16} className="opacity-50" />
+                </button>
               </div>
-              <div>
-                <p className="font-bold text-base">Use TBT Coins?</p>
-                <p className="text-xs text-muted-foreground mt-0.5">No free lifelines remaining</p>
+              <div className="rounded-xl p-4 space-y-2" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)" }}>
+                {showGetCoinsPath ? (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Coin package</span>
+                      <span className="font-bold" style={{ color: "#fbbf24" }}>{COIN_PACKAGE_COINS} TBT Coins</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Price</span>
+                      <span className="font-bold">₹{COIN_PACKAGE_PRICE}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Your balance</span>
+                      <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Lifeline cost</span>
+                      <span className="font-bold" style={{ color: "#fbbf24" }}>{LIFELINE_COIN_COST} coins</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Your balance</span>
+                      <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
+                    </div>
+                  </>
+                )}
               </div>
-              <button onClick={() => setCoinDialog(null)} className="ml-auto p-1 rounded-lg hover:opacity-70">
-                <X size={16} className="opacity-50" />
-              </button>
-            </div>
-            <div className="rounded-xl p-4 space-y-2" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)" }}>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Lifeline cost</span>
-                <span className="font-bold" style={{ color: "#fbbf24" }}>{LIFELINE_COIN_COST} coins</span>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                {allLifelinesUsed
+                  ? `You have used all ${MAX_FREE_LIFELINES} Lifelines, but the video is still not completed. You need additional TBT Coins to continue watching this video.`
+                  : `Spending ${LIFELINE_COIN_COST} TBT coins will reset the ${fmtTime(coinDialog.duration)} focus timer for this lesson.`
+                }
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setCoinDialog(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border"
+                  style={{ borderColor: "var(--color-border-medium)" }}
+                >
+                  Cancel
+                </button>
+                {showGetCoinsPath ? (
+                  <button
+                    onClick={handleGetTbtCoins}
+                    disabled={createCoinOrder.isPending || verifyCoinPayment.isPending}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    {(createCoinOrder.isPending || verifyCoinPayment.isPending) ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+                    Get TBT Coins
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleSpendCoinsForLesson(coinDialog.lesson, coinDialog.duration)}
+                    disabled={spendCoins.isPending || !hasEnoughCoins}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                    style={{ background: "#d97706" }}
+                  >
+                    {spendCoins.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+                    Spend {LIFELINE_COIN_COST} Coins
+                  </button>
+                )}
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Your balance</span>
-                <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
-              </div>
-            </div>
-            <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
-              Spending {LIFELINE_COIN_COST} TBT coins will reset the {fmtTime(coinDialog.duration)} focus timer for this lesson.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setCoinDialog(null)}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border"
-                style={{ borderColor: "var(--color-border-medium)" }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSpendCoinsForLesson(coinDialog.lesson, coinDialog.duration)}
-                disabled={spendCoins.isPending || (me?.totalPoints ?? 0) < LIFELINE_COIN_COST}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
-                style={{ background: "#d97706" }}
-              >
-                {spendCoins.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
-                Spend {LIFELINE_COIN_COST} Coins
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Time's Up — Manual Lifeline Dialog ────────────────────────────── */}
       {lifelineDialog && (
@@ -2768,9 +2892,11 @@ export default function CourseDetailPage({
               </div>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-              The focus timer has ended and the video has been paused.
-              Use a lifeline to reset the timer and continue watching.
-              You have <strong style={{ color: "var(--color-text-normal)" }}>{lifelinesLeft} lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
+              {lifelinesLeft === MAX_FREE_LIFELINES ? (
+                <>Your allotted time has ended. Please use your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(1)} Lifeline</strong> to continue watching this video.</>
+              ) : (
+                <>You have completed your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(MAX_FREE_LIFELINES - lifelinesLeft)}</strong> Lifeline. Please use your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(MAX_FREE_LIFELINES - lifelinesLeft + 1)} Lifeline</strong> to continue watching this video.</>
+              )}
             </p>
             <div className="flex gap-3">
               <button

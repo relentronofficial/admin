@@ -116,6 +116,8 @@ import {
   createRazorpayOrderHandler,
   verifyRazorpayPaymentHandler,
   razorpayWebhookHandler,
+  createCoinOrderHandler,
+  verifyCoinPaymentHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
@@ -285,6 +287,10 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Razorpay Course Payments (authenticated) ──────────────────────────────
   fastify.post('/courses/:id/razorpay/create-order', createRazorpayOrderHandler);
   fastify.post('/courses/:id/razorpay/verify', verifyRazorpayPaymentHandler);
+
+  // ── TBT Coin Purchase via Razorpay ─────────────────────────────────────────
+  fastify.post('/coins/razorpay/create-order', createCoinOrderHandler);
+  fastify.post('/coins/razorpay/verify', verifyCoinPaymentHandler);
 }
 
 // Webhook — registered separately (no authenticateUser hook).
