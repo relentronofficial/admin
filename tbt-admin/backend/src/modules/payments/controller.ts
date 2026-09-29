@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { getRazorpay } from '../../lib/razorpay.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { invalidateCache } from '../../lib/cache.js';
+import { notifyCourseAccessGranted } from '../../lib/courseNotifications.js';
 
 // ── RZ-02-A: GET /api/payments/stats ──────────────────────────────────────────
 
@@ -279,16 +280,12 @@ export async function approvePaymentHandler(req: FastifyRequest, reply: FastifyR
   const course = await req.server.prisma.course.findUnique({ where: { id: payment.courseId }, select: { title: true } });
   const courseTitle = course?.title ?? 'the course';
 
-  try { req.server.io?.to(`user:${payment.memberId}`).emit('course:access_granted', { courseId: payment.courseId }); } catch {}
-
-  void req.server.prisma.appNotification.create({
-    data: {
-      title: 'Course Access Granted',
-      message: `You now have access to "${courseTitle}". Start learning!`,
-      type: 'course_access',
-      actionUrl: `/learning/${payment.courseId}`,
-      recipients: { create: [{ memberId: payment.memberId }] },
-    },
+  void notifyCourseAccessGranted({
+    prisma: req.server.prisma as any,
+    io: req.server.io,
+    memberId: payment.memberId,
+    courseId: payment.courseId,
+    courseTitle,
   }).catch(() => {});
 
   void createAdminNotification(req.server.prisma, {
