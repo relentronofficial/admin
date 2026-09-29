@@ -21,6 +21,18 @@ import 'shared/cache/response_cache.dart';
 import 'shared/providers/me_provider.dart';
 import 'shared/providers/site_config_provider.dart';
 
+/// Handles FCM messages that arrive while the app is in the background or
+/// terminated. Must be a top-level function — not a method — so that the
+/// Firebase plugin can invoke it on an isolate.
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Firebase must already be initialized in the main isolate, but the
+  // background isolate needs its own initialization.
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // The notification is surfaced by the OS automatically (via FCM data/
+  // notification payloads). No UI work is needed here.
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Firebase must be initialized before runApp — native plugin channels.
@@ -98,6 +110,9 @@ Future<void> _prefetchProviders(
 
 /// Local setup tasks that can run concurrently with network prefetch.
 Future<void> _localSetup() async {
+  // Register the background message handler before any other FCM setup.
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   // Local notifications channel must exist before FCM fires any tap callbacks.
   await initLocalNotifications();
 

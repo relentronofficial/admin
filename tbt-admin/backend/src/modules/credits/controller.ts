@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { sendPushToMember } from '../../lib/pushNotifications.js';
 
 function ok(reply: FastifyReply, data: any) {
   return reply.send({ success: true, data, error: null });
@@ -114,15 +115,29 @@ export async function approvePurchaseHandler(
     }
   }
 
-  // Emit socket notification
+  const approveTitle = 'Purchase Approved';
+  const approveBody = `Your purchase of ${quantity}× ${credit_type.replace(/_/g, ' ')} has been approved!`;
+
+  // In-app notification
+  await req.server.prisma.appNotification.create({
+    data: {
+      title: approveTitle,
+      message: approveBody,
+      type: 'credit_approved',
+      actionUrl: '/profile',
+      recipients: { create: [{ memberId: member_id }] },
+    },
+  });
+
+  // Socket notification
   const io = (req.server as any).io;
   if (io) {
-    io.to(`user:${member_id}`).emit('credit_approved', {
-      creditType: credit_type,
-      quantity,
-      message: `Your purchase of ${quantity}× ${credit_type.replace(/_/g, ' ')} has been approved!`,
-    });
+    io.to(`user:${member_id}`).emit('notification', { type: 'credit_approved', title: approveTitle, message: approveBody, actionUrl: '/profile' });
+    io.to(`user:${member_id}`).emit('credit_approved', { creditType: credit_type, quantity, message: approveBody });
   }
+
+  // Push notification
+  await sendPushToMember(req.server.prisma, member_id, approveTitle, approveBody, { type: 'credit_approved', creditType: credit_type });
 
   return ok(reply, { id, status: 'approved' });
 }
@@ -149,12 +164,29 @@ export async function rejectPurchaseHandler(
     adminNote ?? null, reviewedBy, id,
   );
 
+  const rejectTitle = 'Purchase Not Approved';
+  const rejectBody = adminNote ?? 'Your purchase request could not be approved.';
+
+  // In-app notification
+  await req.server.prisma.appNotification.create({
+    data: {
+      title: rejectTitle,
+      message: rejectBody,
+      type: 'credit_rejected',
+      actionUrl: '/profile',
+      recipients: { create: [{ memberId: purchase.member_id }] },
+    },
+  });
+
+  // Socket notification
   const io = (req.server as any).io;
   if (io) {
-    io.to(`user:${purchase.member_id}`).emit('credit_rejected', {
-      message: adminNote ?? 'Your purchase request could not be approved.',
-    });
+    io.to(`user:${purchase.member_id}`).emit('notification', { type: 'credit_rejected', title: rejectTitle, message: rejectBody, actionUrl: '/profile' });
+    io.to(`user:${purchase.member_id}`).emit('credit_rejected', { message: rejectBody });
   }
+
+  // Push notification
+  await sendPushToMember(req.server.prisma, purchase.member_id, rejectTitle, rejectBody, { type: 'credit_rejected' });
 
   return ok(reply, { id, status: 'rejected' });
 }

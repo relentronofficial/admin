@@ -77,6 +77,7 @@ import 'features/gamification/presentation/tbt_points_screen.dart';
 import 'features/gamification/presentation/wins_screen.dart';
 import 'features/batch_program/providers/batch_provider.dart';
 import 'features/courses/providers/courses_provider.dart';
+import 'features/profile/providers/credits_provider.dart';
 import 'features/workshops/providers/workshops_provider.dart';
 import 'shared/providers/site_config_provider.dart';
 import 'shared/providers/socket_provider.dart';
@@ -680,6 +681,8 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
     ref.read(batchDayApprovedNotifierProvider);
     ref.read(courseAccessEventNotifierProvider);
     ref.read(workshopEventHandlerProvider);
+    ref.read(creditApprovedNotifierProvider);
+    ref.read(creditRejectedNotifierProvider);
   }
 
   @override

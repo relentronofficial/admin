@@ -68,6 +68,11 @@ String resolveNotificationRoute({
       if (slug != null && callId != null) return '/live/$slug/$callId';
       return '/notifications';
 
+    // ── Credits ──────────────────────────────────────────────────────────────
+    case 'credit_approved':
+    case 'credit_rejected':
+      return '/profile';
+
     // ── Announcements / system ────────────────────────────────────────────────
     case 'announcement':
     case 'new_announcement': // plan alias

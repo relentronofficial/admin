@@ -17,6 +17,7 @@ import '../../../shared/providers/me_provider.dart';
 import '../../../shared/providers/theme_mode_provider.dart';
 import '../data/profile_extras_service.dart';
 import '../data/support_quota_service.dart';
+import '../providers/credits_provider.dart';
 import '../providers/profile_provider.dart';
 import '../providers/support_quota_provider.dart';
 import 'widgets/membership_card.dart';
@@ -156,6 +157,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show snackbar when a credit purchase is approved or rejected.
+    ref.listen<CreditApprovedEvent?>(creditApprovedNotifierProvider, (_, event) {
+      if (event == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(event.message),
+          backgroundColor: Colors.green.shade700,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    });
+    ref.listen<CreditRejectedEvent?>(creditRejectedNotifierProvider, (_, event) {
+      if (event == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(event.message),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    });
+
     final meAsync = ref.watch(meNotifierProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgGradient = LinearGradient(

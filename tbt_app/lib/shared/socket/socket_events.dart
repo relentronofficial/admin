@@ -42,6 +42,14 @@ const String kSocketBatchCompleted = 'batch:completed';
 /// Payload: `{ courseId: String }`.
 const String kSocketCourseAccessGranted = 'course:access_granted';
 
+/// A credit purchase was approved by an admin.
+/// Payload: `{ creditType: String, quantity: int, message: String }`.
+const String kSocketCreditApproved = 'credit_approved';
+
+/// A credit purchase was rejected by an admin.
+/// Payload: `{ message: String }`.
+const String kSocketCreditRejected = 'credit_rejected';
+
 // ── Workshop room events (workshop:{slug}) ────────────────────────────────────
 
 /// A new Q&A question was posted in the workshop.
