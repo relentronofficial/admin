@@ -83,7 +83,7 @@ async function writeSkillFields(prisma: any, memberId: string, fields: {
 // GET /api/onboarding — current wizard state (member-facing)
 export async function getOnboardingHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
-  const [member, documents, skillRows] = await Promise.all([
+  const [member, documents, skillRows, watchedRows] = await Promise.all([
     req.server.prisma.member.findUnique({
       where: { id: memberId },
       select: {
@@ -100,6 +100,9 @@ export async function getOnboardingHandler(req: FastifyRequest, reply: FastifyRe
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT ${SKILL_RAW_SELECT} FROM members WHERE id = $1::uuid`, memberId,
     ).catch(() => [] as any[]),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT watched_video_steps AS "watchedVideoSteps" FROM members WHERE id = $1::uuid`, memberId,
+    ).catch(() => [] as any[]),
   ]);
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
@@ -107,7 +110,11 @@ export async function getOnboardingHandler(req: FastifyRequest, reply: FastifyRe
   const { status, verificationStatus, onboardingCompleted, onboardingSubmittedAt, onboardingReviewNote, ...profile } = member as any;
   return reply.send({
     success: true,
-    data: { status, verificationStatus, onboardingCompleted, onboardingSubmittedAt, onboardingReviewNote, profile: { ...profile, ...(skillRows[0] ?? {}) }, documents },
+    data: {
+      status, verificationStatus, onboardingCompleted, onboardingSubmittedAt, onboardingReviewNote,
+      profile: { ...profile, ...(skillRows[0] ?? {}), watchedVideoSteps: watchedRows[0]?.watchedVideoSteps ?? [] },
+      documents,
+    },
     error: null,
   });
 }
@@ -131,6 +138,7 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
     skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
     weeklyLearningHours,
     teamSize, businessStartedFrom, instagramStats, facebookStats, websiteUrl, revenueGoalAfterTbt,
+    watchedVideoSteps,
     ...prismaFields
   } = parsed.data;
 
@@ -138,7 +146,7 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
   if (data.dob) data.dob = new Date(data.dob as string);
   if (data.businessEstablishedOn) data.businessEstablishedOn = new Date(data.businessEstablishedOn as string);
 
-  const [updated] = await Promise.all([
+  const promises: Promise<unknown>[] = [
     req.server.prisma.member.update({
       where: { id: memberId },
       data: data as any,
@@ -150,12 +158,24 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
       weeklyLearningHours,
       teamSize, businessStartedFrom, instagramStats, facebookStats, websiteUrl, revenueGoalAfterTbt,
     }),
-  ]);
+  ];
+  if (watchedVideoSteps !== undefined) {
+    promises.push(
+      req.server.prisma.$executeRawUnsafe(
+        `UPDATE members SET watched_video_steps = $1::jsonb WHERE id = $2::uuid`,
+        JSON.stringify(watchedVideoSteps), memberId,
+      ),
+    );
+  }
+  const [updated] = await Promise.all(promises);
 
   const [skillRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT ${SKILL_RAW_SELECT} FROM members WHERE id = $1::uuid`, memberId,
   );
-  return reply.send({ success: true, data: { ...updated, ...(skillRow ?? {}) }, error: null });
+  const [watchedRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT watched_video_steps AS "watchedVideoSteps" FROM members WHERE id = $1::uuid`, memberId,
+  );
+  return reply.send({ success: true, data: { ...updated as object, ...(skillRow ?? {}), watchedVideoSteps: watchedRow?.watchedVideoSteps ?? [] }, error: null });
 }
 
 const CONTENT_COLS = `id, step_key AS "stepKey", title, text_body AS "textBody", video_url AS "videoUrl", audio_url AS "audioUrl", image_url AS "imageUrl", lottie_url AS "lottieUrl", quiz_data AS "quizData", cta_label AS "ctaLabel", sort_order AS "sortOrder", is_active AS "isActive"`;
@@ -333,24 +353,32 @@ export async function deleteOnboardingDocumentHandler(req: FastifyRequest<{ Para
 // POST /api/onboarding/submit — member-facing, submit for admin review
 export async function submitOnboardingHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
-  const [member, documentCount] = await Promise.all([
+  const [member, documentCount, videoContentRows, watchedRows] = await Promise.all([
     req.server.prisma.member.findUnique({
       where: { id: memberId },
       select: { verificationStatus: true, ...PROFILE_SELECT } as any,
     }),
     req.server.prisma.kycDocument.count({ where: { memberId } }),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT step_key AS "stepKey" FROM onboarding_content WHERE is_active = true AND video_url IS NOT NULL AND video_url <> '' ORDER BY sort_order ASC`,
+    ),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT watched_video_steps AS "watchedVideoSteps" FROM members WHERE id = $1::uuid`, memberId,
+    ).catch(() => [] as any[]),
   ]);
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
   if (!canSubmitOnboarding((member as any).verificationStatus)) {
     return reply.status(403).send({ success: false, data: null, error: 'Onboarding cannot be submitted in its current state' });
   }
 
-  const check = checkOnboardingReadyToSubmit(member as any, documentCount);
+  const requiredVideoStepKeys = videoContentRows.map((r: any) => r.stepKey as string);
+  const profileWithWatched = { ...(member as any), watchedVideoSteps: watchedRows[0]?.watchedVideoSteps ?? [] };
+  const check = checkOnboardingReadyToSubmit(profileWithWatched, documentCount, requiredVideoStepKeys);
   if (!check.valid) {
     return reply.status(400).send({
       success: false,
-      data: { missingFields: check.missingFields, hasDocument: check.hasDocument },
-      error: 'Please complete all required fields and upload at least one document before submitting',
+      data: { missingFields: check.missingFields, hasDocument: check.hasDocument, unwatchedVideoSteps: check.unwatchedVideoSteps },
+      error: 'Please complete all required fields, upload at least one document, and watch all required videos before submitting',
     });
   }
 

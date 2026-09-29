@@ -72,7 +72,7 @@ describe('checkOnboardingReadyToSubmit', () => {
 
   it('is valid when every required field is present and at least one document exists', () => {
     const result = checkOnboardingReadyToSubmit(completeProfile, 1);
-    expect(result).toEqual({ valid: true, missingFields: [], hasDocument: true });
+    expect(result).toEqual({ valid: true, missingFields: [], hasDocument: true, unwatchedVideoSteps: [] });
   });
 
   it('lists every missing required field', () => {
@@ -92,6 +92,26 @@ describe('checkOnboardingReadyToSubmit', () => {
     expect(result.valid).toBe(false);
     expect(result.hasDocument).toBe(false);
     expect(result.missingFields).toEqual([]);
+  });
+
+  it('is invalid when required video steps have not been watched', () => {
+    const profile = { ...completeProfile, watchedVideoSteps: ['intro_welcome_video'] };
+    const result = checkOnboardingReadyToSubmit(profile, 1, ['intro_welcome_video', 'mentorship_comparison']);
+    expect(result.valid).toBe(false);
+    expect(result.unwatchedVideoSteps).toEqual(['mentorship_comparison']);
+  });
+
+  it('is valid when all required video steps have been watched', () => {
+    const profile = { ...completeProfile, watchedVideoSteps: ['intro_welcome_video', 'mentorship_comparison'] };
+    const result = checkOnboardingReadyToSubmit(profile, 1, ['intro_welcome_video', 'mentorship_comparison']);
+    expect(result.valid).toBe(true);
+    expect(result.unwatchedVideoSteps).toEqual([]);
+  });
+
+  it('treats missing watchedVideoSteps as none watched', () => {
+    const result = checkOnboardingReadyToSubmit(completeProfile, 1, ['intro_welcome_video']);
+    expect(result.valid).toBe(false);
+    expect(result.unwatchedVideoSteps).toEqual(['intro_welcome_video']);
   });
 
   it('required field list matches the documented minimal set', () => {

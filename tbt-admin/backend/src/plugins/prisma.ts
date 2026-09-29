@@ -322,6 +322,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ALTER TABLE onboarding_content
           ADD COLUMN IF NOT EXISTS cta_label TEXT
       `),
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE members
+          ADD COLUMN IF NOT EXISTS watched_video_steps JSONB DEFAULT '[]'::jsonb
+      `),
       // Onboarding CTA buttons — admin-managed, simple name + active/inactive
       // toggle shown in the onboarding wizard's welcome step.
       prisma.$executeRawUnsafe(`

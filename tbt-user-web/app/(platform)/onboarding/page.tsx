@@ -176,8 +176,68 @@ function StepProgress({ step, stepOrder }: { step: Step; stepOrder: Step[] }) {
 
 // ─── Content blocks (education steps) ────────────────────────────────────────
 
-function ContentBlock({ content, onCtaClick }: { content: OnboardingContentStep; onCtaClick?: () => void }) {
+function ContentBlock({
+  content,
+  onCtaClick,
+  onWatched,
+  alreadyWatched,
+}: {
+  content: OnboardingContentStep;
+  onCtaClick?: () => void;
+  onWatched?: () => void;
+  alreadyWatched?: boolean;
+}) {
   const isHls = content.videoUrl?.endsWith(".m3u8");
+  const hasVideo = !!content.videoUrl;
+  const watchedRef = useRef(alreadyWatched ?? false);
+
+  // Keep watchedRef in sync if parent marks it done from another source
+  useEffect(() => {
+    if (alreadyWatched) watchedRef.current = true;
+  }, [alreadyWatched]);
+
+  // Bunny iframe: listen for postMessage timeupdate / ended events
+  useEffect(() => {
+    if (!hasVideo || isHls || watchedRef.current) return;
+    const handler = (e: MessageEvent) => {
+      if (watchedRef.current) return;
+      const msg = e.data;
+      const type: string = msg?.type ?? msg?.event ?? "";
+      if (type === "ended") {
+        watchedRef.current = true;
+        onWatched?.();
+        return;
+      }
+      if (type === "timeupdate") {
+        const { seconds, duration } = msg?.value ?? {};
+        if (typeof seconds === "number" && typeof duration === "number" && duration > 0 && seconds / duration >= 0.8) {
+          watchedRef.current = true;
+          onWatched?.();
+        }
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasVideo, isHls]);
+
+  const handleHlsTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (watchedRef.current) return;
+    const v = e.currentTarget;
+    if (v.duration > 0 && v.currentTime / v.duration >= 0.8) {
+      watchedRef.current = true;
+      onWatched?.();
+    }
+  };
+
+  const handleHlsEnded = () => {
+    if (watchedRef.current) return;
+    watchedRef.current = true;
+    onWatched?.();
+  };
+
+  const videoUnlocked = !hasVideo || alreadyWatched;
+
   return (
     <div className="space-y-5">
       {content.textBody && (
@@ -186,12 +246,25 @@ function ContentBlock({ content, onCtaClick }: { content: OnboardingContentStep;
         </p>
       )}
       {content.videoUrl && (
-        <div className="rounded-2xl overflow-hidden bg-black aspect-video">
-          {isHls ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
-            <video src={content.videoUrl} controls className="w-full h-full" />
-          ) : (
-            <iframe src={content.videoUrl} className="w-full h-full" allow="autoplay; fullscreen" />
+        <div className="space-y-2">
+          <div className="rounded-2xl overflow-hidden bg-black aspect-video">
+            {isHls ? (
+              // eslint-disable-next-line jsx-a11y/media-has-caption
+              <video
+                src={content.videoUrl}
+                controls
+                className="w-full h-full"
+                onTimeUpdate={handleHlsTimeUpdate}
+                onEnded={handleHlsEnded}
+              />
+            ) : (
+              <iframe src={content.videoUrl} className="w-full h-full" allow="autoplay; fullscreen" />
+            )}
+          </div>
+          {!videoUnlocked && (
+            <p className="text-xs text-center font-medium" style={{ color: "var(--color-text-subtle)" }}>
+              Watch the video to continue
+            </p>
           )}
         </div>
       )}
@@ -199,7 +272,7 @@ function ContentBlock({ content, onCtaClick }: { content: OnboardingContentStep;
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <audio src={content.audioUrl} controls className="w-full" />
       )}
-      {content.ctaLabel && onCtaClick && (
+      {content.ctaLabel && onCtaClick && videoUnlocked && (
         <button
           type="button"
           onClick={onCtaClick}
@@ -409,8 +482,25 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const stepOrder = useMemo(() => buildStepOrder(contentSteps ?? []), [contentSteps]);
   const [step, setStep] = useState<Step>("welcome");
 
+  const [watchedSteps, setWatchedSteps] = useState<Set<string>>(
+    () => new Set(Array.isArray(initialProfile.watchedVideoSteps) ? (initialProfile.watchedVideoSteps as string[]) : []),
+  );
+
+  const markVideoWatched = async (stepKey: string) => {
+    if (watchedSteps.has(stepKey)) return;
+    const updated = new Set(watchedSteps);
+    updated.add(stepKey);
+    setWatchedSteps(updated);
+    try {
+      await saveProgress.mutateAsync({ watchedVideoSteps: [...updated] } as any);
+    } catch {
+      // non-blocking — backend also enforces at submit time
+    }
+  };
+
   const [profile, setProfileState] = useState<Record<string, any>>(() => {
     const p = { ...initialProfile };
+    delete p.watchedVideoSteps; // managed separately in watchedSteps state
     if (Array.isArray(p.currentChallenges)) {
       p.challenge1 = p.currentChallenges[0] ?? "";
       p.challenge2 = p.currentChallenges[1] ?? "";
@@ -492,7 +582,8 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   };
 
   const missingFields = REQUIRED_FIELDS.filter((f) => !profile[f]);
-  const readyToSubmit = missingFields.length === 0 && initialDocuments.length > 0;
+  const unwatchedVideoSteps = (contentSteps ?? []).filter((c) => c.videoUrl && !watchedSteps.has(c.stepKey));
+  const readyToSubmit = missingFields.length === 0 && initialDocuments.length > 0 && unwatchedVideoSteps.length === 0;
   const currentIndex = stepOrder.indexOf(step);
   const prevStep = currentIndex > 0 ? stepOrder[currentIndex - 1] : undefined;
   const nextStep = currentIndex < stepOrder.length - 1 ? stepOrder[currentIndex + 1] : undefined;
@@ -662,13 +753,23 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         {step.startsWith("education:") && (() => {
           const key = step.slice("education:".length);
           const content = contentSteps?.find((c) => c.stepKey === key);
+          const hasVideo = !!content?.videoUrl;
+          const videoWatched = !hasVideo || watchedSteps.has(key);
           return (
             <StepShell
               title={content?.title || "Before you continue"}
               onBack={prevStep ? () => setStep(prevStep) : undefined}
               onNext={() => setStep(nextStep ?? "review")}
+              nextDisabled={!videoWatched}
             >
-              {contentLoading ? <ContentStepSkeleton /> : content ? <ContentBlock content={content} onCtaClick={() => setStep(nextStep ?? "review")} /> : (
+              {contentLoading ? <ContentStepSkeleton /> : content ? (
+                <ContentBlock
+                  content={content}
+                  onCtaClick={videoWatched ? () => setStep(nextStep ?? "review") : undefined}
+                  onWatched={() => markVideoWatched(key)}
+                  alreadyWatched={watchedSteps.has(key)}
+                />
+              ) : (
                 <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
                   We&apos;ll ask you for a few business details and a document to verify your account.
                 </p>
@@ -1441,6 +1542,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               {!readyToSubmit && missingFields.length > 0 && (
                 <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: "color-mix(in srgb, var(--color-alert, #ef4444) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert, #ef4444) 20%, transparent)", color: "var(--color-alert, #ef4444)" }}>
                   Please fill in: {missingFields.join(", ")}
+                </p>
+              )}
+              {unwatchedVideoSteps.length > 0 && (
+                <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: "color-mix(in srgb, var(--color-alert, #ef4444) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert, #ef4444) 20%, transparent)", color: "var(--color-alert, #ef4444)" }}>
+                  Please watch the required video{unwatchedVideoSteps.length > 1 ? "s" : ""} before submitting
                 </p>
               )}
 

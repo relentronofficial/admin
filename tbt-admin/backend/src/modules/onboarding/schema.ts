@@ -53,6 +53,7 @@ export const onboardingUpdateSchema = z.object({
   facebookStats: z.string().optional(),
   websiteUrl: z.string().optional(),
   revenueGoalAfterTbt: z.string().optional(),
+  watchedVideoSteps: z.array(z.string()).optional(),
 }).strict();
 
 export const registerDocumentSchema = z.object({

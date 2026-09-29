@@ -54,6 +54,7 @@ export interface OnboardingReadyCheck {
   valid: boolean;
   missingFields: string[];
   hasDocument: boolean;
+  unwatchedVideoSteps: string[];
 }
 
 function isBlank(value: unknown): boolean {
@@ -63,12 +64,16 @@ function isBlank(value: unknown): boolean {
 export function checkOnboardingReadyToSubmit(
   profile: Record<string, unknown>,
   documentCount: number,
+  requiredVideoStepKeys: string[] = [],
 ): OnboardingReadyCheck {
   const missingFields = REQUIRED_ONBOARDING_FIELDS.filter((field) => isBlank(profile[field]));
   const hasDocument = documentCount > 0;
+  const watched = Array.isArray(profile.watchedVideoSteps) ? (profile.watchedVideoSteps as string[]) : [];
+  const unwatchedVideoSteps = requiredVideoStepKeys.filter((k) => !watched.includes(k));
   return {
-    valid: missingFields.length === 0 && hasDocument,
+    valid: missingFields.length === 0 && hasDocument && unwatchedVideoSteps.length === 0,
     missingFields,
     hasDocument,
+    unwatchedVideoSteps,
   };
 }
