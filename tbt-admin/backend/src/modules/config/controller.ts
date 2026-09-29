@@ -1,7 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { invalidateCache } from '../../lib/cache.js';
 
-const PUB_SITE_CONFIG_CACHE_KEY = 'pub:site-config:v2';
+const PUB_SITE_CONFIG_CACHE_KEY = 'pub:site-config:v3';
 const PUB_NAV_CACHE_KEY = 'pub:nav';
 
 // ── SITE CONFIG ───────────────────────────────────────────────────────
@@ -13,8 +13,8 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       data: { siteName: 'TBT', footerText: '© Tamil Business Tribe' },
     });
   }
-  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown; early_completion_bonus_xp: number }>>(
-    'SELECT task_timer_seconds, free_lifelines_per_session, hidden_menu_keys, early_completion_bonus_xp FROM site_configs WHERE id = $1::uuid', config.id
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
+    'SELECT task_timer_seconds, free_lifelines_per_session, hidden_menu_keys, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
   return reply.send({
     success: true,
@@ -24,13 +24,14 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
       hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
       earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
+      coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
     },
     error: null,
   });
 }
 
 export async function updateSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, earlyCompletionBonusXp, ...prismaBody } = req.body as any;
+  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, earlyCompletionBonusXp, coursesBannerUrl, ...prismaBody } = req.body as any;
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
     config = await req.server.prisma.siteConfig.create({ data: prismaBody });
@@ -61,9 +62,15 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
       Math.max(0, Math.min(100, Number(earlyCompletionBonusXp))), config.id
     );
   }
+  if (coursesBannerUrl !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE site_configs SET courses_banner_url = $1 WHERE id = $2::uuid',
+      coursesBannerUrl || null, config.id
+    );
+  }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
   void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
-  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 3, hiddenMenuKeys: hiddenMenuKeys ?? [] }, error: null });
+  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 3, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null }, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────

@@ -107,6 +107,7 @@ export default function SiteConfigPage() {
     splashLogoUrl: "",
     loginBgUrl: "",
     loginBgMobileUrl: "",
+    coursesBannerUrl: "",
     footerText: "",
     splashDurationMs: 2000,
     accentColor: "#00c4cc",
@@ -160,6 +161,7 @@ export default function SiteConfigPage() {
       await updateConfig.mutateAsync({
         ...rest,
         loginBgImages,
+        coursesBannerUrl: form.coursesBannerUrl || null,
         taskTimerSeconds: Math.max(60, taskTimerMinutes * 60),
         freeLifelinesPerSession: Math.max(0, Math.min(20, Number(freeLifelinesPerSession ?? 3))),
         earlyCompletionBonusXp: Math.max(0, Math.min(100, Number(earlyCompletionBonusXp ?? 5))),
@@ -252,6 +254,15 @@ export default function SiteConfigPage() {
             label="Login Background — Mobile (optional)"
             value={form.loginBgMobileUrl}
             fieldKey="loginBgMobileUrl"
+            onUploaded={set}
+            uploading={uploadingField}
+            setUploading={setUploadingField}
+          />
+
+          <ImageUploadField
+            label="Courses Page Banner"
+            value={form.coursesBannerUrl}
+            fieldKey="coursesBannerUrl"
             onUploaded={set}
             uploading={uploadingField}
             setUploading={setUploadingField}
