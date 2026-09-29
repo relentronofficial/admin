@@ -15,7 +15,6 @@ import '../../../shared/api/services/members_service.dart';
 import '../../../shared/models/member.dart';
 import '../../../shared/providers/me_provider.dart';
 import '../../../shared/providers/theme_mode_provider.dart';
-import '../../../shared/theme/design_constants.dart';
 import '../data/profile_extras_service.dart';
 import '../data/support_quota_service.dart';
 import '../providers/profile_provider.dart';
@@ -34,40 +33,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  final _nameController = TextEditingController();
-  bool _editMode = false;
-  bool _savingName = false;
   bool _uploadingAvatar = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  void _enterEdit(Member member) {
-    _nameController.text = member.name;
-    setState(() => _editMode = true);
-  }
-
-  void _cancelEdit() => setState(() => _editMode = false);
-
-  Future<void> _saveName() async {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
-    setState(() => _savingName = true);
-    try {
-      await updateProfileName(ref, name);
-      if (mounted) setState(() { _editMode = false; _savingName = false; });
-    } catch (_) {
-      if (mounted) {
-        setState(() => _savingName = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.profileNameSaveError)),
-        );
-      }
-    }
-  }
 
   Future<void> _pickAvatar() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -612,23 +578,38 @@ class _HeroSectionState extends ConsumerState<_HeroSection> {
             ],
           ),
         ],
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            _HeroBadge(
-              label: '10X Growth Club',
-              color: Color(0xFFD30814),
-            ),
-            SizedBox(width: 8),
-            _HeroBadge(
-              label: 'Pillar of Sakthi',
-              color: Color(0xFFD4AF37),
-            ),
-          ],
-        ),
+        ..._buildHeroBadges(),
       ],
     );
+  }
+
+  List<Widget> _buildHeroBadges() {
+    final tiers = (_raw?['tiers'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .where((t) {
+          final status = (t['status'] as String?) ?? 'locked';
+          return status == 'unlocked' || t['unlocked'] == true;
+        })
+        .toList();
+    if (tiers.isEmpty) return const [];
+    const colors = [Color(0xFFD30814), Color(0xFFD4AF37), Color(0xFF2F80ED)];
+    return [
+      const SizedBox(height: 16),
+      Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (var i = 0; i < tiers.length; i++)
+            _HeroBadge(
+              label: (tiers[i]['label'] as String?) ??
+                  (tiers[i]['name'] as String?) ??
+                  '',
+              color: colors[i % colors.length],
+            ),
+        ],
+      ),
+    ];
   }
 
   Widget _initialsFallback(BuildContext context) {
@@ -1150,17 +1131,15 @@ class _NotificationPrefsSectionState
   Widget build(BuildContext context) {
     if (_loading || _prefs == null) return const SizedBox.shrink();
     final p = _prefs!;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.tokens.borderCard),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             Padding(
               padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
               child: Text(
@@ -1199,7 +1178,6 @@ class _NotificationPrefsSectionState
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -1309,17 +1287,15 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
     if (_loading) return const SizedBox.shrink();
     final devices = _devices ?? [];
     if (devices.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.tokens.borderCard),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             Padding(
               padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
               child: Text(
@@ -1340,7 +1316,6 @@ class _DevicesSectionState extends ConsumerState<_DevicesSection> {
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -1777,15 +1752,13 @@ class _SubscriptionSectionState extends ConsumerState<_SubscriptionSection> {
   Widget build(BuildContext context) {
     if (_loading) return const SizedBox.shrink();
     final plan = _plan ?? 'free';
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.tokens.borderCard),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1840,7 +1813,6 @@ class _SubscriptionSectionState extends ConsumerState<_SubscriptionSection> {
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -1899,20 +1871,18 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
     if (_loading) return const SizedBox.shrink();
     final tiers = _tiers ?? [];
     if (tiers.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: context.tokens.bgSurface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.tokens.borderCard),
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'TIER ACCESS',
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.bgSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.tokens.borderCard),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TIER ACCESS',
               style: TextStyle(
                 fontFamily: 'Rajdhani',
                 fontSize: 11,
@@ -1928,7 +1898,6 @@ class _TiersSectionState extends ConsumerState<_TiersSection> {
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -1999,16 +1968,14 @@ class _PsychometricCard extends ConsumerWidget {
 
     final resultAsync = ref.watch(psychometricResultProvider);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: border),
-        ),
-        padding: const EdgeInsets.all(16),
-        child: Row(
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
           children: [
             Container(
               width: 42,
@@ -2080,7 +2047,6 @@ class _PsychometricCard extends ConsumerWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }
@@ -2154,13 +2120,11 @@ class _MentorshipBenefitsSection extends ConsumerWidget {
     final border = isDark ? const Color(0xFF232326) : const Color(0xFFE5E5EA);
     final tokens = context.tokens;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // ── Benefits card ──────────────────────────────────────────────
-          Container(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Benefits card ──────────────────────────────────────────────
+        Container(
             decoration: BoxDecoration(
               color: cardBg,
               borderRadius: BorderRadius.circular(14),
@@ -2275,7 +2239,6 @@ class _MentorshipBenefitsSection extends ConsumerWidget {
           // ── Purchase history card ──────────────────────────────────────
           _PurchaseHistoryCard(cardBg: cardBg, border: border),
         ],
-      ),
     );
   }
 }

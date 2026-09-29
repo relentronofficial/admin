@@ -122,7 +122,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       context: context,
       isDismissible: false,
       enableDrag: false,
-      backgroundColor: context.tokens.bgCard,
+      backgroundColor: context.tokens.bgModal,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
