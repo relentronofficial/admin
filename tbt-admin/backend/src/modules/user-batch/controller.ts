@@ -707,6 +707,14 @@ export async function approveDayHandler(
           nextStageTitle: nextStage[0].title,
           stagePosition: (sub.stagePosition ?? 0) + 1,
         });
+        void sendBatchNotif(
+          req.server,
+          req.params.memberId,
+          `Stage Unlocked: ${sub.processTitle}`,
+          `Next stage "${nextStage[0].title}" is now available.`,
+          'batch_stage_unlocked',
+          { processTitle: sub.processTitle, nextStageTitle: nextStage[0].title },
+        ).catch(() => {});
       }
     }
   })().catch(() => {});

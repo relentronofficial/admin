@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createPostSchema, updatePostPinSchema, submitPostSchema, approvePostSchema } from './schema.js';
 import { cacheGet, cacheSet } from '../../lib/cache.js';
+import { notifyMembers } from '../../lib/notifications.js';
 
 // ── Member-facing: submit + list approved feed (Module 9A) ─────────
 //
@@ -395,7 +396,7 @@ export async function memberAddCommentHandler(request: FastifyRequest, reply: Fa
 
   const post = await request.server.prisma.post.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, memberId: true },
   });
   if (!post) {
     return reply.status(404).send({
@@ -456,6 +457,18 @@ export async function memberAddCommentHandler(request: FastifyRequest, reply: Fa
       commentId: created.id,
     });
   } catch (_) {}
+
+  // Notify the post author (skip if they commented on their own post)
+  if (post.memberId && post.memberId !== memberId) {
+    const commenterName = `${created.member.firstName} ${created.member.lastName ?? ''}`.trim();
+    void notifyMembers(request.server, {
+      memberIds: [post.memberId],
+      title: 'New Comment on Your Post',
+      body: `${commenterName} commented on your post.`,
+      type: 'community_comment',
+      actionUrl: `/community`,
+    }).catch(() => {});
+  }
 
   return reply.status(201).send({ success: true, data: created, error: null });
 }
@@ -872,6 +885,25 @@ export async function memberToggleFollowHandler(
   await request.server.prisma.memberConnection.create({
     data: { followerId, followingId: id },
   });
+
+  // Notify the followed member
+  void (async () => {
+    try {
+      const follower = await request.server.prisma.member.findUnique({
+        where: { id: followerId },
+        select: { firstName: true, lastName: true },
+      });
+      const followerName = follower ? `${follower.firstName} ${follower.lastName ?? ''}`.trim() : 'Someone';
+      await notifyMembers(request.server, {
+        memberIds: [id],
+        title: 'New Follower',
+        body: `${followerName} started following you.`,
+        type: 'community_follow',
+        actionUrl: `/community`,
+      });
+    } catch { /* Non-fatal */ }
+  })();
+
   return reply.send({
     success: true,
     data: { following: true },

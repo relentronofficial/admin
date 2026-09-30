@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { env } from '../../config/env.js';
 import { invalidateCache } from '../../lib/cache.js';
+import { notifyMembers } from '../../lib/notifications.js';
 
 function bustHome(req: FastifyRequest): void {
   void invalidateCache(req.server.redis ?? null, 'home:*');
@@ -159,6 +160,13 @@ export async function enrollMembersHandler(req: FastifyRequest, reply: FastifyRe
         void invalidateCache(req.server.redis, `ws:detail:${memberId}:${workshop.slug}`);
       }
     });
+    void notifyMembers(req.server, {
+      memberIds,
+      title: 'Workshop Access Granted',
+      body: `You've been enrolled in "${workshop.title}". Start learning now!`,
+      type: 'workshop_enrolled',
+      actionUrl: `/workshop/${workshop.slug}`,
+    }).catch(() => {});
   }
 
   return reply.status(201).send({ success: true, data: created, error: null });
@@ -179,7 +187,7 @@ export async function deleteEnrollmentHandler(req: FastifyRequest, reply: Fastif
 
   const enrollment = await req.server.prisma.workshopEnrollment.findUnique({
     where: { id: enrollmentId },
-    select: { memberId: true, workshopId: true },
+    select: { memberId: true, workshopId: true, workshop: { select: { title: true, slug: true } } },
   });
 
   await req.server.prisma.workshopEnrollment.delete({ where: { id: enrollmentId } });
@@ -188,6 +196,13 @@ export async function deleteEnrollmentHandler(req: FastifyRequest, reply: Fastif
     req.server.io.to(`user:${enrollment.memberId}`).emit('workshop:removed', {
       workshopId: enrollment.workshopId,
     });
+    void notifyMembers(req.server, {
+      memberIds: [enrollment.memberId],
+      title: 'Workshop Access Removed',
+      body: `Your access to "${(enrollment as any).workshop?.title ?? 'a workshop'}" has been removed.`,
+      type: 'workshop_removed',
+      actionUrl: '/workshops',
+    }).catch(() => {});
   }
 
   return reply.send({ success: true, data: null, error: null });
@@ -557,20 +572,20 @@ export async function getLiveCallHostTokenHandler(req: FastifyRequest, reply: Fa
   });
 
   if (isFirstJoin) {
-    // Notify all enrolled members in this workshop via socket
     try {
       const enrollments = await req.server.prisma.workshopEnrollment.findMany({
         where: { workshopId: lc.workshopId },
         select: { memberId: true },
       });
-      const notifPayload = {
-        title: 'Live Session Started',
-        body: `${lc.title} is now live — join now!`,
-        type: 'live_call',
-        actionUrl: `/workshop/${lc.workshop?.slug ?? lc.workshopId}`,
-      };
-      for (const { memberId } of enrollments) {
-        req.server.io.to(`user:${memberId}`).emit('notification', notifPayload);
+      const memberIds = enrollments.map((e: any) => e.memberId);
+      if (memberIds.length > 0) {
+        await notifyMembers(req.server, {
+          memberIds,
+          title: 'Live Session Started',
+          body: `${lc.title} is now live — join now!`,
+          type: 'live_call',
+          actionUrl: `/workshop/${lc.workshop?.slug ?? lc.workshopId}`,
+        });
       }
     } catch {
       // Non-fatal — notification failure should not block the host
@@ -1067,6 +1082,17 @@ export async function sendRemindersHandler(req: FastifyRequest, reply: FastifyRe
     ? (await import('twilio')).default(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN)
     : null;
 
+  // Push + in-app notifications for all enrolled members
+  if (enrollments.length > 0) {
+    void notifyMembers(req.server, {
+      memberIds: enrollments.map((e) => e.member.id),
+      title: 'Live Session Reminder',
+      body: `"${lc.title}" starts soon. Don't miss it!`,
+      type: 'live_call',
+      actionUrl: reminderActionUrl,
+    }).catch(() => {/* Non-fatal */});
+  }
+
   let emailsSent = 0, smsSent = 0;
 
   // Process in batches of 20 to avoid overwhelming external APIs while still parallelising
@@ -1074,14 +1100,6 @@ export async function sendRemindersHandler(req: FastifyRequest, reply: FastifyRe
   for (let i = 0; i < enrollments.length; i += BATCH) {
     const batch = enrollments.slice(i, i + BATCH);
     const results = await Promise.allSettled(batch.map(async ({ member }) => {
-      // In-app notification via socket (synchronous emit, no await needed)
-      req.server.io.to(`user:${member.id}`).emit('notification', {
-        title: 'Live Session Reminder',
-        body: `"${lc.title}" starts soon. Don't miss it!`,
-        type: 'live_call',
-        actionUrl: reminderActionUrl,
-      });
-
       if (resend && member.email) {
         await resend.emails.send({
           from: 'TBT <noreply@tamillbiznesstribe.com>',
