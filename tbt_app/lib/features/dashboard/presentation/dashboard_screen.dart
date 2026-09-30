@@ -407,7 +407,7 @@ class _QuickLinksRow extends StatelessWidget {
               Expanded(
                 child: _QuickTile(
                   icon: Icons.school_outlined,
-                  label: 'Courses',
+                  label: 'Mentorship',
                   accent: accent,
                   onTap: () => GoRouter.of(context).push(AppRoutes.courses),
                 ),

@@ -79,7 +79,7 @@ export default function SearchPage() {
 
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: "workshops", label: "Workshops", count: workshops.length },
-    { id: "courses",   label: "Courses",   count: courses.length },
+    { id: "courses",   label: "Mentorship", count: courses.length },
     { id: "events",    label: "Events",    count: events.length },
   ];
 

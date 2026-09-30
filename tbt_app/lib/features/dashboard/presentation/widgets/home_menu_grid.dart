@@ -27,7 +27,7 @@ class HomeMenuGrid extends StatelessWidget {
         onTap: () => GoRouter.of(context).push(AppRoutes.community),
       ),
       _MenuItem(
-        title: 'Courses',
+        title: 'Mentorship',
         icon: Icons.school_rounded,
         onTap: () => GoRouter.of(context).push(AppRoutes.courses),
       ),

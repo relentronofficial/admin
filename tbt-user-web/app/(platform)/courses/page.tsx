@@ -572,7 +572,7 @@ export default function CoursesPage() {
                 className={coursesBannerUrl ? "overlay-text text-3xl md:text-4xl font-extrabold leading-none tracking-tight" : "text-3xl md:text-4xl font-extrabold leading-none tracking-tight"}
                 style={coursesBannerUrl ? undefined : { color: "var(--color-text-normal)" }}
               >
-                Courses
+                Mentorship
               </h1>
               <p
                 className={coursesBannerUrl ? "overlay-meta text-[13px] leading-relaxed mt-2.5 max-w-xs" : "text-[13px] leading-relaxed mt-2.5 max-w-xs"}
@@ -714,7 +714,7 @@ export default function CoursesPage() {
             <section className="space-y-4">
               <h2 className="text-base font-bold text-foreground flex items-center gap-2">
                 <BookOpen size={15} style={{ color: "var(--color-accent)" }} />
-                Enrolled Courses
+                Enrolled Mentorship
               </h2>
               <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
                 {enrollLoading

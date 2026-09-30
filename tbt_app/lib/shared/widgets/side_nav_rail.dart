@@ -47,7 +47,7 @@ class AppSideNavRail extends ConsumerWidget {
       path: AppRoutes.courses,
       icon: Icons.school_outlined,
       activeIcon: Icons.school,
-      label: 'Courses',
+      label: 'Mentorship',
     ),
     (
       path: AppRoutes.profile,
