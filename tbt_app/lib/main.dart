@@ -36,7 +36,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Firebase must be initialized before runApp — native plugin channels.
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Guard against duplicate-app error when the background isolate already ran.
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  }
 
   // Route Flutter framework errors and uncaught async errors to Crashlytics.
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;

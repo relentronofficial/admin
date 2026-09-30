@@ -60,6 +60,7 @@ class AuthNotifier extends _$AuthNotifier {
           }
         }
       }
+      _registerFcm();
       return const AuthState(step: AuthStep.authenticated);
     }
     return const AuthState(step: AuthStep.idle);
