@@ -453,7 +453,7 @@ export default function CoursesPage() {
   const [category, setCategory] = useState("all");
 
   const { config } = useSiteConfig();
-  const coursesBannerUrl = config?.coursesBannerUrl ?? null;
+  const coursesBannerUrl = config?.coursesBannerUrl?.trim() || null;
 
   const { data: categories } = useCourseCategories();
 
@@ -493,7 +493,7 @@ export default function CoursesPage() {
         className="relative overflow-hidden rounded-2xl"
         style={{
           background: coursesBannerUrl
-            ? `url(${coursesBannerUrl}) center / cover no-repeat`
+            ? `url(${JSON.stringify(coursesBannerUrl)}) center / cover no-repeat`
             : "var(--color-bg-surface)",
           border: "1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle))",
         }}

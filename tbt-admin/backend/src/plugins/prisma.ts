@@ -158,7 +158,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS task_timer_seconds INT NOT NULL DEFAULT 300`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS free_lifelines_per_session INT NOT NULL DEFAULT 3`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS hidden_menu_keys JSONB DEFAULT '[]'::jsonb`).catch(() => {}),
-      prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS courses_banner_url TEXT`).catch(() => {}),
+      prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS courses_banner_url TEXT`).catch((err) => fastify.log.error({ err }, "[startup] failed to add site_configs.courses_banner_url")),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS timer_seconds INT`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS member_id UUID REFERENCES members(id) ON DELETE SET NULL`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE member_episode_progress ADD COLUMN IF NOT EXISTS watched_segments TEXT`),
