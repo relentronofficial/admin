@@ -455,11 +455,17 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
 // ─── Courses (user-facing, published only) ────────────────────────────────────
 
 export async function listUserCourseCategories(request: FastifyRequest, reply: FastifyReply) {
+  const redis = request.server.redis ?? null;
+  const cacheKey = 'courses:categories:v1';
+  const cached = await cacheGet<any[]>(redis, cacheKey);
+  if (cached) return ok(reply, cached);
+
   const categories = await request.server.prisma.category.findMany({
     where: { courses: { some: { isPublished: true } } },
     select: { id: true, name: true },
     orderBy: { sortOrder: 'asc' },
   });
+  void cacheSet(redis, cacheKey, categories, 300);
   return ok(reply, categories);
 }
 
@@ -484,117 +490,129 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     moduleTitle?: string;
   };
 
-  const where: Record<string, unknown> = { isPublished: true };
-  if (level) where.level = level;
-  if (category) where.categoryId = category;
-  if (search?.trim()) {
-    where.OR = [
-      { title: { contains: search.trim(), mode: 'insensitive' } },
-      { description: { contains: search.trim(), mode: 'insensitive' } },
-    ];
+  const redis = request.server.redis ?? null;
+
+  // Only cache non-search requests (search results vary per query and are rare)
+  const canCache = !search?.trim();
+  const catalogKey = canCache
+    ? `courses:catalog:v2:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}`
+    : null;
+
+  type CatalogEntry = {
+    id: string; title: string; slug: string; description: string | null;
+    thumbnailUrl: string | null; level: string | null; durationHours: number | null;
+    durationDisplay: string | null; price: number | null; isPublished: boolean;
+    isFeatured: boolean; createdAt: Date; xpPerEpisode: number;
+    instructor: any; module: string | null;
+    _count: { lessons: number; enrollments: number };
+  };
+  type CatalogCache = { entries: CatalogEntry[]; total: number };
+
+  let catalogEntries: CatalogEntry[] | null = null;
+  let total = 0;
+
+  if (catalogKey) {
+    const hit = await cacheGet<CatalogCache>(redis, catalogKey);
+    if (hit) {
+      catalogEntries = hit.entries;
+      total = hit.total;
+    }
   }
-  if (moduleTitle) {
-    const modRows = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM courses WHERE module = $1 AND is_published = true`,
-      moduleTitle
-    ).catch(() => [] as { id: string }[]);
-    const ids = modRows.map(r => r.id);
-    where.id = ids.length > 0 ? { in: ids } : { in: [] };
-  }
 
-  const orderBy =
-    sort === 'popular'  ? [{ enrollments: { _count: 'desc' } }] :
-    sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
-                          [{ isFeatured: 'desc' }, { createdAt: 'desc' }]; // newest (default)
+  if (!catalogEntries) {
+    const where: Record<string, unknown> = { isPublished: true };
+    if (level) where.level = level;
+    if (category) where.categoryId = category;
+    if (search?.trim()) {
+      where.OR = [
+        { title: { contains: search.trim(), mode: 'insensitive' } },
+        { description: { contains: search.trim(), mode: 'insensitive' } },
+      ];
+    }
+    if (moduleTitle) {
+      const modRows = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM courses WHERE module = $1 AND is_published = true`,
+        moduleTitle
+      ).catch(() => [] as { id: string }[]);
+      const ids = modRows.map(r => r.id);
+      where.id = ids.length > 0 ? { in: ids } : { in: [] };
+    }
 
-  const [courses, total] = await Promise.all([
-    (request.server.prisma.course.findMany as any)({
-      where: where,
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        description: true,
-        thumbnailUrl: true,
-        level: true,
-        durationHours: true,
-        price: true,
-        isPublished: true,
-        isFeatured: true,
-        createdAt: true,
-        xpPerEpisode: true,
-        creator: {
-          select: { id: true, fullName: true, profilePhotoUrl: true, designation: true },
+    const orderBy =
+      sort === 'popular'  ? [{ enrollments: { _count: 'desc' } }] :
+      sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
+                            [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
+
+    const [courses, courseTotal] = await Promise.all([
+      (request.server.prisma.course.findMany as any)({
+        where,
+        select: {
+          id: true, title: true, slug: true, description: true, thumbnailUrl: true,
+          level: true, durationHours: true, price: true, isPublished: true,
+          isFeatured: true, createdAt: true, xpPerEpisode: true,
+          creator: { select: { id: true, fullName: true, profilePhotoUrl: true, designation: true } },
+          _count: { select: { enrollments: true } },
+          courseEpisodes: { where: { isVisible: true }, select: { durationSeconds: true } },
         },
-        _count: { select: { enrollments: true } },
-        courseEpisodes: {
-          where: { isVisible: true },
-          select: { durationSeconds: true },
-        },
-      },
-      orderBy,
-      take: Number(limit),
-      skip: (Number(page) - 1) * Number(limit),
-    }) as Promise<any[]>,
-    request.server.prisma.course.count({ where: where as any }),
-  ]);
+        orderBy,
+        take: Number(limit),
+        skip: (Number(page) - 1) * Number(limit),
+      }) as Promise<any[]>,
+      request.server.prisma.course.count({ where: where as any }),
+    ]);
+    total = courseTotal;
 
-  // Batch-check course access for this member
-  const courseIds = (courses as any[]).map((c: any) => c.id);
-  const [accessRecords, moduleRows] = await Promise.all([
-    courseIds.length > 0
-      ? (request.server.prisma as any).courseAccess.findMany({
-          where: { memberId: request.memberId, courseId: { in: courseIds } },
-          select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
-        }).catch(() => [] as any[])
-      : Promise.resolve([] as any[]),
-    courseIds.length > 0
-      ? request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
+    const courseIds = (courses as any[]).map((c: any) => c.id);
+    const moduleRows = courseIds.length
+      ? await request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
           `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`,
           courseIds
         ).catch(() => [] as { id: string; module: string | null }[])
-      : Promise.resolve([] as { id: string; module: string | null }[]),
-  ]);
-  const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
-  const moduleMap = new Map<string, string | null>(moduleRows.map(r => [r.id, r.module]));
+      : [];
+    const moduleMap = new Map<string, string | null>(moduleRows.map(r => [r.id, r.module]));
 
-  const data = (courses as any[]).map((c: any) => {
-    const access = accessMap.get(c.id) ?? null;
-    const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
-    const episodeCount = episodes.length;
-    const totalSecs = episodes.reduce((sum, ep) => sum + (ep.durationSeconds || 0), 0);
-    const storedHours = c.durationHours ? Number(c.durationHours) : null;
-    const durationHours = totalSecs > 0
-      ? Math.round(totalSecs / 360) / 10
-      : storedHours;
-    // Human-readable display: "2m", "45m", "1.3h"
-    let durationDisplay: string | null = null;
-    if (totalSecs > 0) {
-      const mins = Math.ceil(totalSecs / 60);
-      durationDisplay = mins < 60 ? `${mins}m` : `${Math.round(mins / 6) / 10}h`;
-    } else if (storedHours && storedHours > 0) {
-      durationDisplay = `${storedHours}h`;
+    catalogEntries = (courses as any[]).map((c: any) => {
+      const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
+      const episodeCount = episodes.length;
+      const totalSecs = episodes.reduce((sum: number, ep: any) => sum + (ep.durationSeconds || 0), 0);
+      const storedHours = c.durationHours ? Number(c.durationHours) : null;
+      const durationHours = totalSecs > 0 ? Math.round(totalSecs / 360) / 10 : storedHours;
+      let durationDisplay: string | null = null;
+      if (totalSecs > 0) {
+        const mins = Math.ceil(totalSecs / 60);
+        durationDisplay = mins < 60 ? `${mins}m` : `${Math.round(mins / 6) / 10}h`;
+      } else if (storedHours && storedHours > 0) {
+        durationDisplay = `${storedHours}h`;
+      }
+      return {
+        id: c.id, title: c.title, slug: c.slug, description: c.description,
+        thumbnailUrl: c.thumbnailUrl, level: c.level, durationHours, durationDisplay,
+        price: c.price ? Number(c.price) : null, isPublished: c.isPublished,
+        isFeatured: c.isFeatured, createdAt: c.createdAt, xpPerEpisode: c.xpPerEpisode ?? 10,
+        instructor: c.creator ?? null, module: moduleMap.get(c.id) ?? null,
+        _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
+      };
+    });
+
+    if (catalogKey) {
+      void cacheSet(redis, catalogKey, { entries: catalogEntries, total }, 60);
     }
-    return {
-      id: c.id,
-      title: c.title,
-      slug: c.slug,
-      description: c.description,
-      thumbnailUrl: c.thumbnailUrl,
-      level: c.level,
-      durationHours,
-      durationDisplay,
-      price: c.price ? Number(c.price) : null,
-      isPublished: c.isPublished,
-      isFeatured: c.isFeatured,
-      createdAt: c.createdAt,
-      xpPerEpisode: c.xpPerEpisode ?? 10,
-      instructor: c.creator ?? null,
-      hasAccess: isAccessValid(access),
-      module: moduleMap.get(c.id) ?? null,
-      _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
-    };
-  });
+  }
+
+  // Overlay per-member access — always live, never cached
+  const courseIds = catalogEntries.map((c) => c.id);
+  const accessRecords = courseIds.length
+    ? await (request.server.prisma as any).courseAccess.findMany({
+        where: { memberId: request.memberId, courseId: { in: courseIds } },
+        select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
+      }).catch(() => [] as any[])
+    : [];
+  const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
+
+  const data = catalogEntries.map((c) => ({
+    ...c,
+    hasAccess: isAccessValid(accessMap.get(c.id) ?? null),
+  }));
 
   return ok(reply, data, { total, page: Number(page), limit: Number(limit) });
 }
@@ -1830,17 +1848,24 @@ export async function getUserCourseLeaderboardHandler(request: FastifyRequest, r
 }
 
 export async function getUserBadgesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const redis = request.server.redis ?? null;
+  const cacheKey = `user:badges:${request.memberId}`;
+  const cached = await cacheGet<any[]>(redis, cacheKey);
+  if (cached) return ok(reply, cached);
+
   const badges = await (request.server.prisma as any).memberCourseBadge.findMany({
     where: { memberId: request.memberId },
     include: { badge: true },
     orderBy: { earnedAt: 'desc' },
   });
 
-  return ok(reply, (badges as any[]).map((b: any) => ({
+  const data = (badges as any[]).map((b: any) => ({
     id: b.id,
     earnedAt: b.earnedAt,
     badge: b.badge,
-  })));
+  }));
+  void cacheSet(redis, cacheKey, data, 120);
+  return ok(reply, data);
 }
 
 // Streak Points history — reads the existing points_ledger for the two award
@@ -2699,13 +2724,20 @@ export async function getUserNotificationsHandler(request: FastifyRequest, reply
     unread?: string;
   };
 
+  const redis = request.server.redis ?? null;
+  const cacheKey = `notif:list:v1:${request.memberId}:${page}:${limit}:${unread ?? ''}`;
+  const cachedResult = await cacheGet<{ data: any[]; total: number }>(redis, cacheKey);
+  if (cachedResult) {
+    return ok(reply, cachedResult.data, { total: cachedResult.total, page: Number(page), limit: Number(limit) });
+  }
+
   const where: Record<string, unknown> = { memberId: request.memberId };
   if (unread === 'true') where.readAt = null;
 
   const [recipients, total] = await Promise.all([
     request.server.prisma.appNotificationRecipient.findMany({
       where: where as any,
-      orderBy: { notification: { createdAt: 'desc' } },
+      orderBy: { createdAt: 'desc' },
       take: Number(limit),
       skip: (Number(page) - 1) * Number(limit),
       include: {
@@ -2731,6 +2763,7 @@ export async function getUserNotificationsHandler(request: FastifyRequest, reply
     createdAt: r.notification.createdAt,
   }));
 
+  void cacheSet(redis, cacheKey, { data, total }, 120);
   return ok(reply, data, { total, page: Number(page), limit: Number(limit) });
 }
 
@@ -2748,7 +2781,9 @@ export async function markNotificationReadHandler(request: FastifyRequest, reply
     include: { notification: { select: { title: true, message: true, type: true, actionUrl: true, mediaType: true, mediaUrl: true, createdAt: true } } },
   });
 
-  void invalidateCache(request.server.redis ?? null, `notif:unread:${request.memberId}`);
+  const redis = request.server.redis ?? null;
+  void invalidateCache(redis, `notif:unread:${request.memberId}`);
+  void invalidateCache(redis, `notif:list:v1:${request.memberId}:`);
 
   return ok(reply, {
     id: updated.id,
@@ -2769,7 +2804,9 @@ export async function markAllNotificationsReadHandler(request: FastifyRequest, r
     where: { memberId: request.memberId, readAt: null },
     data: { readAt: new Date() },
   });
-  void invalidateCache(request.server.redis ?? null, `notif:unread:${request.memberId}`);
+  const redis = request.server.redis ?? null;
+  void invalidateCache(redis, `notif:unread:${request.memberId}`);
+  void invalidateCache(redis, `notif:list:v1:${request.memberId}:`);
   return ok(reply, { updated: result.count });
 }
 
@@ -4145,6 +4182,11 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
 // ─── Products & Resources ─────────────────────────────────────────────────────
 
 export async function getUserProductsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const redis = request.server.redis ?? null;
+  const cacheKey = 'user:products:v1';
+  const cached = await cacheGet<any>(redis, cacheKey);
+  if (cached) return ok(reply, cached);
+
   const [pageConfig, products] = await Promise.all([
     request.server.prisma.productsPageConfig.findFirst(),
     request.server.prisma.product.findMany({
@@ -4154,7 +4196,7 @@ export async function getUserProductsHandler(request: FastifyRequest, reply: Fas
     }),
   ]);
 
-  return ok(reply, {
+  const result = {
     pageTitle: pageConfig?.pageTitle ?? 'TBT Store',
     pageBg: pageConfig?.pageBg ?? '',
     products: products.map((p) => ({
@@ -4175,7 +4217,9 @@ export async function getUserProductsHandler(request: FastifyRequest, reply: Fas
         openInNewTab: c.openInNewTab,
       })),
     })),
-  });
+  };
+  void cacheSet(redis, cacheKey, result, 300);
+  return ok(reply, result);
 }
 
 export async function getMyInquiredProductsHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -6045,6 +6089,11 @@ export async function searchHandler(request: FastifyRequest, reply: FastifyReply
   const query = q.trim();
   if (!query) return ok(reply, { workshops: [], courses: [], episodes: [], resources: [] });
 
+  const redis = request.server.redis ?? null;
+  const cacheKey = `search:v1:${query.toLowerCase()}`;
+  const cached = await cacheGet<any>(redis, cacheKey);
+  if (cached) return ok(reply, cached);
+
   const like = { contains: query, mode: 'insensitive' as const };
 
   const [workshops, courses, episodes, resources] = await Promise.all([
@@ -6070,12 +6119,14 @@ export async function searchHandler(request: FastifyRequest, reply: FastifyReply
     }),
   ]);
 
-  return ok(reply, {
+  const result = {
     workshops: workshops.map((w) => ({ id: w.id, title: w.title, slug: w.slug, thumbnailUrl: w.thumbnailUrl ?? null })),
     courses: courses.map((c: any) => ({ id: c.id, title: c.title, thumbnailUrl: c.thumbnailUrl ?? null })),
     episodes: episodes.map((e: any) => ({ id: e.id, title: e.title, courseId: e.courseId })),
     resources: resources.map((r) => ({ id: r.id, title: r.title, fileType: r.fileType ?? null })),
-  });
+  };
+  void cacheSet(redis, cacheKey, result, 60);
+  return ok(reply, result);
 }
 
 // ── Profile: connections + own posts ──────────────────────────────────────────

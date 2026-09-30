@@ -10,6 +10,7 @@ async function sendOtpWithFallback(phone: string, otp: string): Promise<boolean>
   // WhatsApp delivery failed — fall back to SMS via MSG91
   return sendOtpSms(phone, otp);
 }
+import { cacheGet, cacheSet, invalidateCache } from '../../lib/cache.js';
 import { env } from '../../config/env.js';
 import {
   setAuthCookies,
@@ -695,6 +696,11 @@ export async function adminRevokeMemberSessions(
 
 // GET /api/user-auth/me  (protected by authenticateUser)
 export async function me(fastify: FastifyInstance, request: any, reply: any) {
+  const redis = (fastify as any).redis ?? null;
+  const cacheKey = `user-auth:me:${request.memberId}`;
+  const cached = await cacheGet<any>(redis, cacheKey);
+  if (cached) return reply.send({ success: true, data: cached });
+
   const member = await fastify.prisma.member.findUnique({
     where: { id: request.memberId },
     select: {
@@ -715,6 +721,7 @@ export async function me(fastify: FastifyInstance, request: any, reply: any) {
   });
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Not found' });
+  void cacheSet(redis, cacheKey, member, 300);
   return reply.send({ success: true, data: member });
 }
 

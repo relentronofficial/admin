@@ -26,6 +26,7 @@ import {
   submitProgressSchema,
   markCompletedSchema,
 } from './schema.js';
+import { cacheGet, cacheSet } from '../../lib/cache.js';
 
 function ok(reply: FastifyReply, data: any, extra?: any) {
   return reply.send({ success: true, data, error: null, ...extra });
@@ -277,29 +278,41 @@ export async function listEpisodesHandler(req: FastifyRequest, reply: FastifyRep
   } = req.query as Record<string, string>;
   const p = Math.max(1, Number(page) || 1);
   const l = Math.min(100, Math.max(1, Number(limit) || 20));
+  const redis = (req.server as any).redis ?? null;
 
   const where: any = { status: 'active' };
   if (category && category !== 'all' && category !== 'All') {
-    // The mobile client passes the slug; look up the id first so the
-    // main query stays index-friendly.
-    const cat = await req.server.prisma.podcastCategory.findUnique({
-      where: { slug: category },
-    });
-    if (!cat) {
-      return reply.send({
-        success: true,
-        data: [],
-        meta: { total: 0, page: p, limit: l },
-        error: null,
-      });
+    // Cache the slug→id map so concurrent requests don't each hit the DB
+    const slugMapKey = 'podcast:cats:slug-map';
+    let slugMap = await cacheGet<Record<string, string>>(redis, slugMapKey);
+    if (!slugMap) {
+      const cats = await req.server.prisma.podcastCategory.findMany({ select: { id: true, slug: true } });
+      slugMap = Object.fromEntries(cats.map(c => [c.slug, c.id]));
+      void cacheSet(redis, slugMapKey, slugMap, 300);
     }
-    where.categoryId = cat.id;
+    const catId = slugMap[category];
+    if (!catId) {
+      return reply.send({ success: true, data: [], meta: { total: 0, page: p, limit: l }, error: null });
+    }
+    where.categoryId = catId;
   }
   if (seriesId) where.seriesId = seriesId;
   if (search && search.trim()) {
     where.title = { contains: search.trim(), mode: 'insensitive' };
   }
   if (featured === 'true') where.isFeatured = true;
+
+  // Cache episode list for non-search requests
+  const canCache = !search?.trim();
+  const epKey = canCache
+    ? `podcasts:eps:v1:${category ?? ''}:${seriesId ?? ''}:${featured ?? ''}:${p}:${l}`
+    : null;
+  if (epKey) {
+    const cached = await cacheGet<{ rows: any[]; total: number }>(redis, epKey);
+    if (cached) {
+      return reply.send({ success: true, data: cached.rows, meta: { total: cached.total, page: p, limit: l }, error: null });
+    }
+  }
 
   const [rows, total] = await Promise.all([
     req.server.prisma.podcastEpisode.findMany({
@@ -311,12 +324,10 @@ export async function listEpisodesHandler(req: FastifyRequest, reply: FastifyRep
     }),
     req.server.prisma.podcastEpisode.count({ where }),
   ]);
-  return reply.send({
-    success: true,
-    data: rows,
-    meta: { total, page: p, limit: l },
-    error: null,
-  });
+
+  if (epKey) void cacheSet(redis, epKey, { rows, total }, 180);
+
+  return reply.send({ success: true, data: rows, meta: { total, page: p, limit: l }, error: null });
 }
 
 export async function getEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {

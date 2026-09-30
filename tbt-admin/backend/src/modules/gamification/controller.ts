@@ -385,6 +385,14 @@ export async function leaderboardHandler(req: FastifyRequest, reply: FastifyRepl
   const { limit = '20', period = 'all' } = req.query as Record<string, string>;
   const l = Math.min(100, Math.max(1, Number(limit) || 20));
 
+  const cacheKey = `leaderboard:v1:${period}:${l}`;
+  const redis = (req.server as any).redis ?? null;
+  const cached = await cacheGet<any[]>(redis, cacheKey);
+  if (cached) {
+    const rows = cached.map((r) => ({ ...r, isMe: r.memberId === req.memberId }));
+    return ok(reply, rows);
+  }
+
   // Compute the activityDate lower-bound for the period filter.
   // `week` → last 7 calendar days; `month` → last 30 days; `all` → no filter.
   const now = new Date();
@@ -411,13 +419,14 @@ export async function leaderboardHandler(req: FastifyRequest, reply: FastifyRepl
       })
     : [];
   const byId = new Map(members.map((m) => [m.id, m]));
-  const rows = grouped.map((g, i) => ({
+  const baseRows = grouped.map((g, i) => ({
     rank: i + 1,
     memberId: g.memberId,
     totalPoints: g._sum.points ?? 0,
-    isMe: g.memberId === req.memberId,
     member: byId.get(g.memberId) ?? null,
   }));
+  void cacheSet(redis, cacheKey, baseRows, 60);
+  const rows = baseRows.map((r) => ({ ...r, isMe: r.memberId === req.memberId }));
   return ok(reply, rows);
 }
 

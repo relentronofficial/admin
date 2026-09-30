@@ -6,8 +6,12 @@ import { env } from '../config/env.js';
 function buildDatasourceUrl(raw: string): string {
   try {
     const url = new URL(raw);
-    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '15');
-    if (!url.searchParams.has('pool_timeout')) url.searchParams.set('pool_timeout', '30');
+    // 40 connections: sized for 230-VU concurrent load on a single Cloud Run instance.
+    // DATABASE_URL points to Supabase PgBouncer (transaction mode, port 6543), so Prisma
+    // connections are multiplexed — it's safe to hold more than direct Postgres allows.
+    // Formula: peak_concurrent_db_requests ≈ 60 (after caching) / avg_hold_time_ms * 1000 ≈ 30–40.
+    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '40');
+    if (!url.searchParams.has('pool_timeout')) url.searchParams.set('pool_timeout', '15');
     return url.toString();
   } catch {
     return raw;
@@ -2009,6 +2013,48 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
        WHERE razorpay_payment_id IS NOT NULL
          AND status = 'completed'
          AND method::text != 'razorpay'`
+    ).catch(() => {});
+
+    // Performance indexes for high-traffic endpoints
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_app_notifications_created_at ON app_notifications(created_at DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_podcast_episodes_status_sort ON podcast_episodes(status, sort_order ASC, publish_date DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_products_visible_order ON products(is_visible, "order" ASC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_courses_module ON courses(module) WHERE module IS NOT NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_workshops_title_fts ON workshops USING GIN(to_tsvector('english', coalesce(title,'')))`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_courses_title_fts ON courses USING GIN(to_tsvector('english', coalesce(title,'')))`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_course_episodes_title_fts ON course_episodes USING GIN(to_tsvector('english', coalesce(title,'')))`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_app_resources_title_fts ON app_resources USING GIN(to_tsvector('english', coalesce(title,'')))`
+    ).catch(() => {});
+    // Leaderboard range aggregate — ORDER BY / GROUP BY across date-filtered rows
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_tbt_activity_log_date ON tbt_activity_log(activity_date)`
+    ).catch(() => {});
+    // Courses catalog ORDER BY: filter on is_published, sort by is_featured + created_at
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_courses_published_featured ON courses(is_published, is_featured DESC, created_at DESC) WHERE is_published = true`
+    ).catch(() => {});
+    // Categories EXISTS subquery — filter by category_id where published
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_courses_category_published ON courses(category_id, is_published) WHERE is_published = true`
+    ).catch(() => {});
+    // Notifications list — same-table ORDER BY after switching from cross-table JOIN sort
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_app_notif_recipients_member_created ON app_notification_recipients(member_id, created_at DESC)`
     ).catch(() => {});
 
   } catch (err) {
