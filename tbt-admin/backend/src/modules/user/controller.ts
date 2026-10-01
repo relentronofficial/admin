@@ -491,6 +491,9 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   };
 
   const redis = request.server.redis ?? null;
+  const _t0 = Date.now();
+  let _catalogSource = 'cache_hit';
+  let _dbFindMs = 0, _modMs = 0, _computeMs = 0, _accessMs = 0;
 
   // Only cache non-search requests (search results vary per query and are rare)
   const canCache = !search?.trim();
@@ -514,7 +517,9 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   if (catalogKey) {
     // Singleflight: all concurrent cache misses for the same catalog key share one DB round-trip.
     // TTL raised to 300s to reduce stampede frequency under real traffic.
+    const _cacheStart = Date.now();
     const result = await cacheGetOrCompute<CatalogCache>(redis, catalogKey, 300, async () => {
+      _catalogSource = 'db_compute';
       const where: Record<string, unknown> = { isPublished: true };
       if (level) where.level = level;
       if (category) where.categoryId = category;
@@ -532,6 +537,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
                               [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
 
+      const _dbFindStart = Date.now();
       const [courses, courseTotal] = await Promise.all([
         (request.server.prisma.course.findMany as any)({
           where,
@@ -549,8 +555,10 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         }) as Promise<any[]>,
         request.server.prisma.course.count({ where: where as any }),
       ]);
+      _dbFindMs = Date.now() - _dbFindStart;
 
       const cIds = (courses as any[]).map((c: any) => c.id);
+      const _modStart = Date.now();
       const modRows = cIds.length
         ? await request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
             `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`,
@@ -558,6 +566,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           ).catch(() => [] as { id: string; module: string | null }[])
         : [];
       const moduleMap = new Map<string, string | null>(modRows.map(r => [r.id, r.module]));
+      _modMs = Date.now() - _modStart;
 
       const entries: CatalogEntry[] = (courses as any[]).map((c: any) => {
         const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
@@ -584,11 +593,16 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
 
       return { entries, total: courseTotal };
     });
+    _computeMs = Date.now() - _cacheStart;
+    if (_catalogSource === 'cache_hit') {
+      _catalogSource = _computeMs < 20 ? 'l1_hit' : 'redis_hit';
+    }
     catalogEntries = result.entries;
     total = result.total;
   }
 
   if (!catalogEntries) {
+    _catalogSource = 'search_nocache';
     // search-only path: canCache=false → catalogKey=null → no singleflight needed
     const where: Record<string, unknown> = { isPublished: true };
     if (search?.trim()) {
@@ -654,12 +668,14 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
 
   // Overlay per-member access — always live, never cached
   const courseIds = catalogEntries.map((c) => c.id);
+  const _accessStart = Date.now();
   const accessRecords = courseIds.length
     ? await (request.server.prisma as any).courseAccess.findMany({
         where: { memberId: request.memberId, courseId: { in: courseIds } },
         select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
       }).catch(() => [] as any[])
     : [];
+  _accessMs = Date.now() - _accessStart;
   const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
 
   const data = catalogEntries.map((c) => ({
@@ -667,6 +683,19 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     hasAccess: isAccessValid(accessMap.get(c.id) ?? null),
   }));
 
+  request.log.info({
+    event: 'courses:perf',
+    source: _catalogSource,
+    cacheMs: _computeMs,
+    dbFindMs: _dbFindMs,
+    modMs: _modMs,
+    accessMs: _accessMs,
+    totalMs: Date.now() - _t0,
+    count: data.length,
+    accessCount: (accessRecords as any[]).length,
+    mid: request.memberId?.slice(0, 8),
+    catalogKey,
+  }, '[PERF] courses');
   return ok(reply, data, { total, page: Number(page), limit: Number(limit) });
 }
 
@@ -1956,24 +1985,34 @@ export async function getMyStreakPointsHandler(request: FastifyRequest, reply: F
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
 export async function getDashboardStatsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const _t0 = Date.now();
   const now = new Date();
   const redis = request.server.redis ?? null;
   const statsKey = `dash:stats:${request.memberId}`;
   const cachedStats = await cacheGet<Record<string, unknown>>(redis, statsKey);
-  if (cachedStats) return ok(reply, cachedStats);
+  if (cachedStats) {
+    request.log.info({ event: 'stats:perf', source: 'cache_hit', totalMs: Date.now() - _t0, mid: request.memberId?.slice(0, 8) }, '[PERF] stats');
+    return ok(reply, cachedStats);
+  }
 
   // upcomingEvents is user-agnostic — cache it globally for 60 seconds
   const eventsKey = 'events:upcoming-count';
+  const _eventsStart = Date.now();
   let upcomingEvents = await cacheGet<number>(redis, eventsKey);
+  const _eventsCacheMs = Date.now() - _eventsStart;
+  let _eventsDbMs = 0;
   if (upcomingEvents === null) {
+    const _evd = Date.now();
     upcomingEvents = await request.server.prisma.event.count({
       where: { eventDate: { gt: now }, status: 'scheduled' },
     });
+    _eventsDbMs = Date.now() - _evd;
     await cacheSet(redis, eventsKey, upcomingEvents, 60);
   }
 
   // Merge the two enrollment counts into one raw query to halve the DB round-trips
   // under concurrent load (150 VUs × 4 queries → 150 VUs × 3 queries).
+  const _dbStart = Date.now();
   const [enrollmentCounts, member, unreadNotifications] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<{ total: string; completed: string }[]>(
       `SELECT COUNT(*)::text AS total, COUNT(completed_at)::text AS completed
@@ -1988,6 +2027,7 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
       where: { memberId: request.memberId, isRead: false },
     }),
   ]);
+  const _dbMs = Date.now() - _dbStart;
 
   const totalCourses = parseInt(enrollmentCounts[0]?.total ?? '0', 10);
   const completedCourses = parseInt(enrollmentCounts[0]?.completed ?? '0', 10);
@@ -2002,6 +2042,15 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
     unreadNotifications,
   };
   void cacheSet(redis, statsKey, statsPayload, 120);
+  request.log.info({
+    event: 'stats:perf',
+    source: 'db_compute',
+    eventsCacheMs: _eventsCacheMs,
+    eventsDbMs: _eventsDbMs,
+    dbMs: _dbMs,
+    totalMs: Date.now() - _t0,
+    mid: request.memberId?.slice(0, 8),
+  }, '[PERF] stats');
   return ok(reply, statsPayload);
 }
 
