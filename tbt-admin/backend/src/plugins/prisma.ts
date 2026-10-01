@@ -2056,6 +2056,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_app_notif_recipients_member_created ON app_notification_recipients(member_id, created_at DESC)`
     ).catch(() => {});
+    // Fix C: enrollment count GROUP BY course_id in catalog query — avoids full table scan at scale
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_course_enrollments_course_id ON course_enrollments(course_id)`
+    ).catch(() => {});
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
