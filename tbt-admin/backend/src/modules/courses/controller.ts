@@ -602,6 +602,7 @@ export async function grantCourseAccessHandler(req: FastifyRequest, reply: Fasti
       courseTitle: course.title,
     }).catch(() => {});
 
+    void invalidateCache(req.server.redis ?? null, `courses:access:${memberId}`);
     return reply.status(201).send({ success: true, data: access, error: null });
   } catch (err: any) {
     req.log.error({ err, courseId, memberId }, 'grantCourseAccessHandler failed');
@@ -617,6 +618,7 @@ export async function revokeCourseAccessHandler(req: FastifyRequest, reply: Fast
       where: { id: accessId },
       data: { isActive: false, revokedAt: new Date(), revokedBy: adminId },
     });
+    void invalidateCache(req.server.redis ?? null, `courses:access:${access.memberId}`);
     return reply.send({ success: true, data: access, error: null });
   } catch (err: any) {
     req.log.error({ err }, 'revokeCourseAccessHandler failed');
@@ -674,6 +676,7 @@ export async function approveCoursePaymentHandler(req: FastifyRequest, reply: Fa
       courseTitle: course?.title ?? 'the course',
     }).catch(() => {});
 
+    void invalidateCache(req.server.redis ?? null, `courses:access:${payment.memberId}`);
     return reply.send({ success: true, data: { approved: true }, error: null });
   } catch (err: any) {
     req.log.error({ err, courseId, paymentId }, 'approveCoursePaymentHandler failed');

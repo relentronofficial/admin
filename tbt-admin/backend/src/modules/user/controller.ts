@@ -666,14 +666,20 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     });
   }
 
-  // Overlay per-member access — always live, never cached
+  // Overlay per-member access — cached per member, TTL 60s.
+  // courseAccess changes only when an admin grants/revokes access; 60s stale window is acceptable.
+  // Cache is invalidated in courses/controller.ts on grant, revoke, and payment approval.
   const courseIds = catalogEntries.map((c) => c.id);
+  const accessKey = `courses:access:${request.memberId}`;
   const _accessStart = Date.now();
+  type AccessRow = { courseId: string; isActive: boolean; accessType: string; expiresAt: Date | null };
   const accessRecords = courseIds.length
-    ? await (request.server.prisma as any).courseAccess.findMany({
-        where: { memberId: request.memberId, courseId: { in: courseIds } },
-        select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
-      }).catch(() => [] as any[])
+    ? await cacheGetOrCompute<AccessRow[]>(redis, accessKey, 60, () =>
+        (request.server.prisma as any).courseAccess.findMany({
+          where: { memberId: request.memberId },
+          select: { courseId: true, isActive: true, accessType: true, expiresAt: true },
+        }).catch(() => [] as AccessRow[])
+      )
     : [];
   _accessMs = Date.now() - _accessStart;
   const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
