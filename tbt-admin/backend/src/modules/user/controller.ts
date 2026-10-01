@@ -520,59 +520,62 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     const _cacheStart = Date.now();
     const result = await cacheGetOrCompute<CatalogCache>(redis, catalogKey, 300, async () => {
       _catalogSource = 'db_compute';
-      const where: Record<string, unknown> = { isPublished: true };
-      if (level) where.level = level;
-      if (category) where.categoryId = category;
-      if (moduleTitle) {
-        const modRows = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
-          `SELECT id FROM courses WHERE module = $1 AND is_published = true`,
-          moduleTitle
-        ).catch(() => [] as { id: string }[]);
-        const ids = modRows.map(r => r.id);
-        where.id = ids.length > 0 ? { in: ids } : { in: [] };
-      }
 
-      const orderBy =
-        sort === 'popular'  ? [{ enrollments: { _count: 'desc' } }] :
-        sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
-                              [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
+      // Fix B: single raw-SQL round-trip replaces count + findMany + modRows (3 → 1).
+      const sqlParams: any[] = [];
+      const conditions: string[] = ['c.is_published = true'];
+      if (level) { sqlParams.push(level); conditions.push(`c.level = $${sqlParams.length}`); }
+      if (category) { sqlParams.push(category); conditions.push(`c.category_id = $${sqlParams.length}::uuid`); }
+      if (moduleTitle) { sqlParams.push(moduleTitle); conditions.push(`c.module = $${sqlParams.length}`); }
+
+      const orderClause = sort === 'popular'
+        ? 'COALESCE(enr.enrollment_count, 0) DESC, c.is_featured DESC, c.created_at DESC'
+        : 'c.is_featured DESC, c.created_at DESC';
+
+      sqlParams.push(Number(limit));
+      const limitParam = sqlParams.length;
+      sqlParams.push((Number(page) - 1) * Number(limit));
+      const offsetParam = sqlParams.length;
+
+      const catalogSql = `
+        SELECT
+          c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
+          c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
+          c.xp_per_episode, c.module,
+          a.id AS creator_id, a.full_name AS creator_full_name,
+          a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
+          COALESCE(ea.episode_count, 0)::int AS lesson_count,
+          COALESCE(ea.total_secs, 0)::bigint AS total_secs,
+          COALESCE(enr.enrollment_count, 0)::int AS enrollment_count,
+          COUNT(*) OVER () AS total_count
+        FROM courses c
+        LEFT JOIN admins a ON a.id = c.created_by
+        LEFT JOIN (
+          SELECT course_id, COUNT(*)::int AS episode_count,
+                 SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs
+          FROM course_episodes WHERE is_visible = true GROUP BY course_id
+        ) ea ON ea.course_id = c.id
+        LEFT JOIN (
+          SELECT course_id, COUNT(*)::int AS enrollment_count
+          FROM course_enrollments GROUP BY course_id
+        ) enr ON enr.course_id = c.id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY ${orderClause}
+        LIMIT $${limitParam} OFFSET $${offsetParam}
+      `;
 
       const _dbFindStart = Date.now();
-      const [courses, courseTotal] = await Promise.all([
-        (request.server.prisma.course.findMany as any)({
-          where,
-          select: {
-            id: true, title: true, slug: true, description: true, thumbnailUrl: true,
-            level: true, durationHours: true, price: true, isPublished: true,
-            isFeatured: true, createdAt: true, xpPerEpisode: true,
-            creator: { select: { id: true, fullName: true, profilePhotoUrl: true, designation: true } },
-            _count: { select: { enrollments: true } },
-            courseEpisodes: { where: { isVisible: true }, select: { durationSeconds: true } },
-          },
-          orderBy,
-          take: Number(limit),
-          skip: (Number(page) - 1) * Number(limit),
-        }) as Promise<any[]>,
-        request.server.prisma.course.count({ where: where as any }),
-      ]);
+      const rows = await request.server.prisma.$queryRawUnsafe<any[]>(catalogSql, ...sqlParams)
+        .catch(() => [] as any[]);
       _dbFindMs = Date.now() - _dbFindStart;
+      _modMs = 0;
 
-      const cIds = (courses as any[]).map((c: any) => c.id);
-      const _modStart = Date.now();
-      const modRows = cIds.length
-        ? await request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
-            `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`,
-            cIds
-          ).catch(() => [] as { id: string; module: string | null }[])
-        : [];
-      const moduleMap = new Map<string, string | null>(modRows.map(r => [r.id, r.module]));
-      _modMs = Date.now() - _modStart;
+      const courseTotal = rows.length > 0 ? Number(rows[0].total_count) : 0;
 
-      const entries: CatalogEntry[] = (courses as any[]).map((c: any) => {
-        const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
-        const episodeCount = episodes.length;
-        const totalSecs = episodes.reduce((sum: number, ep: any) => sum + (ep.durationSeconds || 0), 0);
-        const storedHours = c.durationHours ? Number(c.durationHours) : null;
+      const entries: CatalogEntry[] = rows.map((r: any) => {
+        const episodeCount = Number(r.lesson_count);
+        const totalSecs = Number(r.total_secs);
+        const storedHours = r.duration_hours ? Number(r.duration_hours) : null;
         const durationHours = totalSecs > 0 ? Math.round(totalSecs / 360) / 10 : storedHours;
         let durationDisplay: string | null = null;
         if (totalSecs > 0) {
@@ -581,13 +584,17 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         } else if (storedHours && storedHours > 0) {
           durationDisplay = `${storedHours}h`;
         }
+        const creator = r.creator_id ? {
+          id: r.creator_id, fullName: r.creator_full_name,
+          profilePhotoUrl: r.creator_profile_photo_url, designation: r.creator_designation,
+        } : null;
         return {
-          id: c.id, title: c.title, slug: c.slug, description: c.description,
-          thumbnailUrl: c.thumbnailUrl, level: c.level, durationHours, durationDisplay,
-          price: c.price ? Number(c.price) : null, isPublished: c.isPublished,
-          isFeatured: c.isFeatured, createdAt: c.createdAt, xpPerEpisode: c.xpPerEpisode ?? 10,
-          instructor: c.creator ?? null, module: moduleMap.get(c.id) ?? null,
-          _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
+          id: r.id, title: r.title, slug: r.slug, description: r.description,
+          thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay,
+          price: r.price ? Number(r.price) : null, isPublished: r.is_published,
+          isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
+          instructor: creator, module: r.module ?? null,
+          _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
         };
       });
 
@@ -604,49 +611,55 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   if (!catalogEntries) {
     _catalogSource = 'search_nocache';
     // search-only path: canCache=false → catalogKey=null → no singleflight needed
-    const where: Record<string, unknown> = { isPublished: true };
-    if (search?.trim()) {
-      where.OR = [
-        { title: { contains: search.trim(), mode: 'insensitive' } },
-        { description: { contains: search.trim(), mode: 'insensitive' } },
-      ];
+    // Search path: same single-query approach (no caching since results vary by query string).
+    const searchTerm = search?.trim() ?? '';
+    const searchParams: any[] = [];
+    const searchConds: string[] = ['c.is_published = true'];
+    if (searchTerm) {
+      searchParams.push(`%${searchTerm}%`);
+      const p = searchParams.length;
+      searchConds.push(`(c.title ILIKE $${p} OR c.description ILIKE $${p})`);
     }
+    searchParams.push(Number(limit));
+    const searchLimit = searchParams.length;
+    searchParams.push((Number(page) - 1) * Number(limit));
+    const searchOffset = searchParams.length;
 
-    const orderBy: any[] = [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
+    const searchSql = `
+      SELECT
+        c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
+        c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
+        c.xp_per_episode, c.module,
+        a.id AS creator_id, a.full_name AS creator_full_name,
+        a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
+        COALESCE(ea.episode_count, 0)::int AS lesson_count,
+        COALESCE(ea.total_secs, 0)::bigint AS total_secs,
+        COALESCE(enr.enrollment_count, 0)::int AS enrollment_count,
+        COUNT(*) OVER () AS total_count
+      FROM courses c
+      LEFT JOIN admins a ON a.id = c.created_by
+      LEFT JOIN (
+        SELECT course_id, COUNT(*)::int AS episode_count,
+               SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs
+        FROM course_episodes WHERE is_visible = true GROUP BY course_id
+      ) ea ON ea.course_id = c.id
+      LEFT JOIN (
+        SELECT course_id, COUNT(*)::int AS enrollment_count
+        FROM course_enrollments GROUP BY course_id
+      ) enr ON enr.course_id = c.id
+      WHERE ${searchConds.join(' AND ')}
+      ORDER BY c.is_featured DESC, c.created_at DESC
+      LIMIT $${searchLimit} OFFSET $${searchOffset}
+    `;
 
-    const [courses, courseTotal] = await Promise.all([
-      (request.server.prisma.course.findMany as any)({
-        where,
-        select: {
-          id: true, title: true, slug: true, description: true, thumbnailUrl: true,
-          level: true, durationHours: true, price: true, isPublished: true,
-          isFeatured: true, createdAt: true, xpPerEpisode: true,
-          creator: { select: { id: true, fullName: true, profilePhotoUrl: true, designation: true } },
-          _count: { select: { enrollments: true } },
-          courseEpisodes: { where: { isVisible: true }, select: { durationSeconds: true } },
-        },
-        orderBy,
-        take: Number(limit),
-        skip: (Number(page) - 1) * Number(limit),
-      }) as Promise<any[]>,
-      request.server.prisma.course.count({ where: where as any }),
-    ]);
-    total = courseTotal;
+    const searchRows = await request.server.prisma.$queryRawUnsafe<any[]>(searchSql, ...searchParams)
+      .catch(() => [] as any[]);
+    total = searchRows.length > 0 ? Number(searchRows[0].total_count) : 0;
 
-    const courseIds = (courses as any[]).map((c: any) => c.id);
-    const moduleRows = courseIds.length
-      ? await request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
-          `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`,
-          courseIds
-        ).catch(() => [] as { id: string; module: string | null }[])
-      : [];
-    const moduleMap = new Map<string, string | null>(moduleRows.map(r => [r.id, r.module]));
-
-    catalogEntries = (courses as any[]).map((c: any) => {
-      const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
-      const episodeCount = episodes.length;
-      const totalSecs = episodes.reduce((sum: number, ep: any) => sum + (ep.durationSeconds || 0), 0);
-      const storedHours = c.durationHours ? Number(c.durationHours) : null;
+    catalogEntries = searchRows.map((r: any) => {
+      const episodeCount = Number(r.lesson_count);
+      const totalSecs = Number(r.total_secs);
+      const storedHours = r.duration_hours ? Number(r.duration_hours) : null;
       const durationHours = totalSecs > 0 ? Math.round(totalSecs / 360) / 10 : storedHours;
       let durationDisplay: string | null = null;
       if (totalSecs > 0) {
@@ -655,13 +668,17 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       } else if (storedHours && storedHours > 0) {
         durationDisplay = `${storedHours}h`;
       }
+      const creator = r.creator_id ? {
+        id: r.creator_id, fullName: r.creator_full_name,
+        profilePhotoUrl: r.creator_profile_photo_url, designation: r.creator_designation,
+      } : null;
       return {
-        id: c.id, title: c.title, slug: c.slug, description: c.description,
-        thumbnailUrl: c.thumbnailUrl, level: c.level, durationHours, durationDisplay,
-        price: c.price ? Number(c.price) : null, isPublished: c.isPublished,
-        isFeatured: c.isFeatured, createdAt: c.createdAt, xpPerEpisode: c.xpPerEpisode ?? 10,
-        instructor: c.creator ?? null, module: moduleMap.get(c.id) ?? null,
-        _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
+        id: r.id, title: r.title, slug: r.slug, description: r.description,
+        thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay,
+        price: r.price ? Number(r.price) : null, isPublished: r.is_published,
+        isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
+        instructor: creator, module: r.module ?? null,
+        _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
       };
     });
   }
