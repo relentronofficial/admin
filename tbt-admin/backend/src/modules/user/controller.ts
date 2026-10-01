@@ -491,9 +491,6 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   };
 
   const redis = request.server.redis ?? null;
-  const _t0 = Date.now();
-  let _catalogSource = 'cache_hit';
-  let _dbFindMs = 0, _modMs = 0, _computeMs = 0, _accessMs = 0;
 
   // Only cache non-search requests (search results vary per query and are rare)
   const canCache = !search?.trim();
@@ -517,10 +514,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   if (catalogKey) {
     // Singleflight: all concurrent cache misses for the same catalog key share one DB round-trip.
     // TTL raised to 300s to reduce stampede frequency under real traffic.
-    const _cacheStart = Date.now();
     const result = await cacheGetOrCompute<CatalogCache>(redis, catalogKey, 300, async () => {
-      _catalogSource = 'db_compute';
-
       // Fix B: single raw-SQL round-trip replaces count + findMany + modRows (3 → 1).
       const sqlParams: any[] = [];
       const conditions: string[] = ['c.is_published = true'];
@@ -564,11 +558,8 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         LIMIT $${limitParam} OFFSET $${offsetParam}
       `;
 
-      const _dbFindStart = Date.now();
       const rows = await request.server.prisma.$queryRawUnsafe<any[]>(catalogSql, ...sqlParams)
         .catch(() => [] as any[]);
-      _dbFindMs = Date.now() - _dbFindStart;
-      _modMs = 0;
 
       const courseTotal = rows.length > 0 ? Number(rows[0].total_count) : 0;
 
@@ -600,16 +591,11 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
 
       return { entries, total: courseTotal };
     });
-    _computeMs = Date.now() - _cacheStart;
-    if (_catalogSource === 'cache_hit') {
-      _catalogSource = _computeMs < 20 ? 'l1_hit' : 'redis_hit';
-    }
     catalogEntries = result.entries;
     total = result.total;
   }
 
   if (!catalogEntries) {
-    _catalogSource = 'search_nocache';
     // search-only path: canCache=false → catalogKey=null → no singleflight needed
     // Search path: same single-query approach (no caching since results vary by query string).
     const searchTerm = search?.trim() ?? '';
@@ -688,7 +674,6 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   // Cache is invalidated in courses/controller.ts on grant, revoke, and payment approval.
   const courseIds = catalogEntries.map((c) => c.id);
   const accessKey = `courses:access:${request.memberId}`;
-  const _accessStart = Date.now();
   type AccessRow = { courseId: string; isActive: boolean; accessType: string; expiresAt: Date | null };
   const accessRecords = courseIds.length
     ? await cacheGetOrCompute<AccessRow[]>(redis, accessKey, 60, () =>
@@ -698,7 +683,6 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         }).catch(() => [] as AccessRow[])
       )
     : [];
-  _accessMs = Date.now() - _accessStart;
   const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
 
   const data = catalogEntries.map((c) => ({
@@ -706,19 +690,6 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     hasAccess: isAccessValid(accessMap.get(c.id) ?? null),
   }));
 
-  request.log.info({
-    event: 'courses:perf',
-    source: _catalogSource,
-    cacheMs: _computeMs,
-    dbFindMs: _dbFindMs,
-    modMs: _modMs,
-    accessMs: _accessMs,
-    totalMs: Date.now() - _t0,
-    count: data.length,
-    accessCount: (accessRecords as any[]).length,
-    mid: request.memberId?.slice(0, 8),
-    catalogKey,
-  }, '[PERF] courses');
   return ok(reply, data, { total, page: Number(page), limit: Number(limit) });
 }
 
@@ -1247,64 +1218,51 @@ export async function getCourseCertificateHandler(request: FastifyRequest, reply
 // ─── Enrollments ─────────────────────────────────────────────────────────────
 
 export async function getEnrollmentsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const enrollments = await (request.server.prisma.courseEnrollment.findMany as any)({
-    where: { memberId: request.memberId },
-    include: {
-      course: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          description: true,
-          thumbnailUrl: true,
-          level: true,
-          durationHours: true,
-          totalLessons: true,
-          isPublished: true,
-          isFeatured: true,
-          createdAt: true,
-          creator: {
-            select: { id: true, fullName: true, profilePhotoUrl: true, designation: true },
+  const redis = request.server.redis ?? null;
+  const cacheKey = `enrollments:v1:${request.memberId}`;
+  const data = await cacheGetOrCompute<any[]>(redis, cacheKey, 60, async () => {
+    const [enrollments, completedRows] = await Promise.all([
+      (request.server.prisma.courseEnrollment.findMany as any)({
+        where: { memberId: request.memberId },
+        include: {
+          course: {
+            select: {
+              id: true, title: true, slug: true, description: true,
+              thumbnailUrl: true, level: true, durationHours: true,
+              totalLessons: true, isPublished: true, isFeatured: true, createdAt: true,
+              creator: { select: { id: true, fullName: true, profilePhotoUrl: true, designation: true } },
+              _count: { select: { enrollments: true } },
+            },
           },
-          _count: { select: { enrollments: true } },
+        },
+        orderBy: { enrolledAt: 'desc' },
+      }),
+      request.server.prisma.$queryRawUnsafe<Array<{ course_id: string; count: number }>>(
+        `SELECT ce.course_id, COUNT(*)::int AS count
+         FROM course_episode_progress cep
+         JOIN course_episodes ce ON cep.episode_id = ce.id
+         WHERE cep.member_id = $1::uuid AND cep.completed = true
+         GROUP BY ce.course_id`,
+        request.memberId,
+      ).catch(() => [] as Array<{ course_id: string; count: number }>),
+    ]);
+    const completedMap = new Map(completedRows.map((r: any) => [r.course_id, Number(r.count)]));
+    return (enrollments as any[]).map((e: any) => ({
+      id: e.id, courseId: e.courseId, memberId: e.memberId, enrolledAt: e.enrolledAt,
+      completedAt: e.completedAt ?? null, progressPercent: e.progressPercentage,
+      completedLessons: completedMap.get(e.courseId) ?? 0,
+      totalLessons: e.course?.totalLessons ?? 0,
+      course: {
+        ...e.course,
+        durationHours: e.course?.durationHours ? Number(e.course.durationHours) : null,
+        instructor: e.course?.creator ?? null,
+        _count: {
+          lessons: e.course?.totalLessons ?? 0,
+          enrollments: e.course?._count?.enrollments ?? 0,
         },
       },
-    },
-    orderBy: { enrolledAt: 'desc' },
-  }) as any[];
-
-  const completedRows = await request.server.prisma.$queryRawUnsafe<
-    Array<{ course_id: string; count: number }>
-  >(
-    `SELECT ce.course_id, COUNT(*)::int AS count
-     FROM course_episode_progress cep
-     JOIN course_episodes ce ON cep.episode_id = ce.id
-     WHERE cep.member_id = $1::uuid AND cep.completed = true
-     GROUP BY ce.course_id`,
-    request.memberId,
-  );
-  const completedMap = new Map(completedRows.map((r) => [r.course_id, Number(r.count)]));
-
-  const data = enrollments.map((e: any) => ({
-    id: e.id,
-    courseId: e.courseId,
-    memberId: e.memberId,
-    enrolledAt: e.enrolledAt,
-    completedAt: e.completedAt ?? null,
-    progressPercent: e.progressPercentage,
-    completedLessons: completedMap.get(e.courseId) ?? 0,
-    totalLessons: e.course?.totalLessons ?? 0,
-    course: {
-      ...e.course,
-      durationHours: e.course?.durationHours ? Number(e.course.durationHours) : null,
-      instructor: e.course?.creator ?? null,
-      _count: {
-        lessons: e.course?.totalLessons ?? 0,
-        enrollments: e.course?._count?.enrollments ?? 0,
-      },
-    },
-  }));
-
+    }));
+  });
   return ok(reply, data);
 }
 
@@ -2008,34 +1966,26 @@ export async function getMyStreakPointsHandler(request: FastifyRequest, reply: F
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
 export async function getDashboardStatsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const _t0 = Date.now();
   const now = new Date();
   const redis = request.server.redis ?? null;
   const statsKey = `dash:stats:${request.memberId}`;
   const cachedStats = await cacheGet<Record<string, unknown>>(redis, statsKey);
   if (cachedStats) {
-    request.log.info({ event: 'stats:perf', source: 'cache_hit', totalMs: Date.now() - _t0, mid: request.memberId?.slice(0, 8) }, '[PERF] stats');
     return ok(reply, cachedStats);
   }
 
   // upcomingEvents is user-agnostic — cache it globally for 60 seconds
   const eventsKey = 'events:upcoming-count';
-  const _eventsStart = Date.now();
   let upcomingEvents = await cacheGet<number>(redis, eventsKey);
-  const _eventsCacheMs = Date.now() - _eventsStart;
-  let _eventsDbMs = 0;
   if (upcomingEvents === null) {
-    const _evd = Date.now();
     upcomingEvents = await request.server.prisma.event.count({
       where: { eventDate: { gt: now }, status: 'scheduled' },
     });
-    _eventsDbMs = Date.now() - _evd;
     await cacheSet(redis, eventsKey, upcomingEvents, 60);
   }
 
   // Merge the two enrollment counts into one raw query to halve the DB round-trips
   // under concurrent load (150 VUs × 4 queries → 150 VUs × 3 queries).
-  const _dbStart = Date.now();
   const [enrollmentCounts, member, unreadNotifications] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<{ total: string; completed: string }[]>(
       `SELECT COUNT(*)::text AS total, COUNT(completed_at)::text AS completed
@@ -2050,7 +2000,6 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
       where: { memberId: request.memberId, isRead: false },
     }),
   ]);
-  const _dbMs = Date.now() - _dbStart;
 
   const totalCourses = parseInt(enrollmentCounts[0]?.total ?? '0', 10);
   const completedCourses = parseInt(enrollmentCounts[0]?.completed ?? '0', 10);
@@ -2065,23 +2014,13 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
     unreadNotifications,
   };
   void cacheSet(redis, statsKey, statsPayload, 120);
-  request.log.info({
-    event: 'stats:perf',
-    source: 'db_compute',
-    eventsCacheMs: _eventsCacheMs,
-    eventsDbMs: _eventsDbMs,
-    dbMs: _dbMs,
-    totalMs: Date.now() - _t0,
-    mid: request.memberId?.slice(0, 8),
-  }, '[PERF] stats');
   return ok(reply, statsPayload);
 }
 
 export async function getContinueLearningHandler(request: FastifyRequest, reply: FastifyReply) {
   const redis = request.server.redis ?? null;
   const clKey = `cont-learn:v3:${request.memberId}`;
-  const cachedCl = await cacheGet<unknown[]>(redis, clKey);
-  if (cachedCl !== null) return ok(reply, cachedCl);
+  const data = await cacheGetOrCompute<unknown[]>(redis, clKey, 120, async () => {
 
   // Fetch recent activity across both types — no completion filter so recently-finished
   // items stay visible. Fetch more than needed so deduplication still yields up to 6.
@@ -2271,11 +2210,9 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
     .slice(0, 6)
     .map(({ _ms: _ignored, ...rest }) => rest);
 
-  // Only cache when there is at least one item — caching an empty result freezes
-  // the "No course in progress" state for 120 s even after the user watches their
-  // first lesson.
-  if (combined.length > 0) void cacheSet(redis, clKey, combined, 120);
-  return ok(reply, combined);
+    return combined;
+  });
+  return ok(reply, data);
 }
 
 // ─── Events ──────────────────────────────────────────────────────────────────
@@ -3671,38 +3608,54 @@ export async function getWorkshopFlowHandler(request: FastifyRequest, reply: Fas
 export async function getWorkshopQaHandler(request: FastifyRequest, reply: FastifyReply) {
   const { slug } = request.params as { slug: string };
   const { page = 1, limit = 20 } = request.query as { page?: number; limit?: number };
+  const redis = request.server.redis ?? null;
 
-  const workshop = await request.server.prisma.workshop.findFirst({
-    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
-    select: { id: true },
-  });
+  // Layer 1: cache workshop slug → id (TTL 300s — workshop meta rarely changes)
+  const workshop = await cacheGetOrCompute<{ id: string } | null>(
+    redis, `ws:meta:${slug}`, 300,
+    () => request.server.prisma.workshop.findFirst({
+      where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
+      select: { id: true },
+    }).then((r) => r ?? null),
+  );
   if (!workshop) return fail(reply, 404, 'Workshop not found');
 
-  const qaEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
-    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
-    select: { status: true },
-  });
-  if (!isEnrolled(qaEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+  // Layer 2: cache enrollment check per member+workshop (TTL 60s — enrollment rarely changes)
+  const enrollStatus = await cacheGetOrCompute<string | null>(
+    redis, `ws:enroll:${workshop.id}:${request.memberId}`, 60,
+    () => request.server.prisma.workshopEnrollment.findUnique({
+      where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId! } },
+      select: { status: true },
+    }).then((r) => r?.status ?? null),
+  );
+  if (!isEnrolled(enrollStatus ?? undefined)) return fail(reply, 403, 'Enrollment required to access this workshop');
 
-  const [posts, total] = await Promise.all([
-    request.server.prisma.qAPost.findMany({
-      where: { workshopId: workshop.id },
-      orderBy: { createdAt: 'desc' },
-      take: Number(limit),
-      skip: (Number(page) - 1) * Number(limit),
-      include: {
-        member: { select: { firstName: true, lastName: true, profilePhotoUrl: true } },
-        replies: {
-          include: {
-            member: { select: { firstName: true, lastName: true, profilePhotoUrl: true } },
-            admin: { select: { fullName: true, profilePhotoUrl: true } },
+  // Layer 3: cache QA posts per workshop+page+limit (TTL 15s — polled every 15s by client)
+  const qaKey = `ws:qa:${workshop.id}:${page}:${limit}`;
+  const qa = await cacheGetOrCompute<{ posts: any[]; total: number }>(redis, qaKey, 15, async () => {
+    const [rawPosts, total] = await Promise.all([
+      request.server.prisma.qAPost.findMany({
+        where: { workshopId: workshop.id },
+        orderBy: { createdAt: 'desc' },
+        take: Number(limit),
+        skip: (Number(page) - 1) * Number(limit),
+        include: {
+          member: { select: { firstName: true, lastName: true, profilePhotoUrl: true } },
+          replies: {
+            include: {
+              member: { select: { firstName: true, lastName: true, profilePhotoUrl: true } },
+              admin: { select: { fullName: true, profilePhotoUrl: true } },
+            },
+            orderBy: { createdAt: 'asc' },
           },
-          orderBy: { createdAt: 'asc' },
         },
-      },
-    }),
-    request.server.prisma.qAPost.count({ where: { workshopId: workshop.id } }),
-  ]);
+      }),
+      request.server.prisma.qAPost.count({ where: { workshopId: workshop.id } }),
+    ]);
+    return { posts: rawPosts, total };
+  });
+  const posts = qa.posts;
+  const total = qa.total;
 
   const timeAgo = (d: Date) => {
     const diff = Date.now() - d.getTime();
@@ -3728,7 +3681,7 @@ export async function getWorkshopQaHandler(request: FastifyRequest, reply: Fasti
       timeAgo: timeAgo(p.createdAt),
       questionText: p.questionText,
       replyLabel: 'Reply',
-      replies: p.replies.map((r) => ({
+      replies: p.replies.map((r: any) => ({
         id: r.id,
         author: r.admin
           ? { name: r.admin.fullName, avatarUrl: r.admin.profilePhotoUrl ?? null }
@@ -3767,6 +3720,9 @@ export async function postWorkshopQaHandler(request: FastifyRequest, reply: Fast
     select: { id: true, questionText: true, createdAt: true, member: { select: { firstName: true, lastName: true } } },
   });
 
+  // Invalidate QA cache for this workshop so the new question is visible immediately
+  void invalidateCache(request.server.redis ?? null, `ws:qa:${workshop.id}:*`);
+
   const memberName = [post.member.firstName, post.member.lastName].filter(Boolean).join(' ');
   request.server.io.to(`workshop:${slug}`).emit('qa:new_question', {
     id: post.id,
@@ -3787,7 +3743,7 @@ export async function postQaReplyHandler(request: FastifyRequest, reply: Fastify
 
   const post = await request.server.prisma.qAPost.findUnique({
     where: { id: postId },
-    select: { id: true, workshop: { select: { slug: true } } },
+    select: { id: true, workshopId: true, workshop: { select: { slug: true } } },
   });
   if (!post) return fail(reply, 404, 'Post not found');
 
@@ -3795,6 +3751,9 @@ export async function postQaReplyHandler(request: FastifyRequest, reply: Fastify
     data: { postId, memberId: request.memberId, replyText: replyText.trim() },
     select: { id: true, replyText: true, createdAt: true },
   });
+
+  // Invalidate QA cache for this workshop so the new reply is visible immediately
+  void invalidateCache(request.server.redis ?? null, `ws:qa:${post.workshopId}:*`);
 
   request.server.io.to(`workshop:${post.workshop.slug}`).emit('qa:new_reply', {
     postId,
@@ -6048,6 +6007,9 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
 
   const take = Number(limit);
   const skip = (Number(page) - 1) * take;
+  const redis = request.server.redis ?? null;
+  const cacheKey = `watch-hist:v1:${request.memberId}:${page}:${take}:${filter}`;
+  const cached = await cacheGetOrCompute<{ items: any[]; total: number }>(redis, cacheKey, 60, async () => {
 
   const workshopWhere = {
     memberId: request.memberId,
@@ -6164,12 +6126,14 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
     _ms: p.updatedAt.getTime() as number,
   }));
 
-  // Merge across types, sort by most recent, paginate
-  const merged = [...workshopItems, ...courseItems].sort((a, b) => b._ms - a._ms);
-  const total = merged.length;
-  const items = merged.slice(skip, skip + take).map(({ _ms: _ignored, ...rest }) => rest);
+    // Merge across types, sort by most recent, paginate
+    const merged = [...workshopItems, ...courseItems].sort((a, b) => b._ms - a._ms);
+    const total = merged.length;
+    const items = merged.slice(skip, skip + take).map(({ _ms: _ignored, ...rest }) => rest);
+    return { items, total };
+  });
 
-  return ok(reply, items, { total, page: Number(page), limit: take });
+  return ok(reply, cached.items, { total: cached.total, page: Number(page), limit: take });
 }
 
 export async function removeFromHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
