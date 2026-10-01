@@ -119,6 +119,37 @@ export async function cacheNxSet(
   return true;
 }
 
+// Per-key inflight map for DB computations. Prevents N concurrent cache misses from all
+// hitting the DB simultaneously — only the first caller computes; the rest await the same
+// promise and get the result from L1 once it resolves.
+const _inflightComputations = new Map<string, Promise<unknown>>();
+
+/**
+ * Cache-or-compute with singleflight: returns cached value if present, otherwise calls
+ * `compute()` exactly once even under concurrent load. All concurrent callers for the
+ * same key await the same promise instead of each issuing a separate DB query.
+ */
+export async function cacheGetOrCompute<T>(
+  redis: RedisLike | null,
+  key: string,
+  ttlSeconds: number,
+  compute: () => Promise<T>,
+): Promise<T> {
+  const cached = await cacheGet<T>(redis, key);
+  if (cached !== null) return cached;
+
+  let p = _inflightComputations.get(key) as Promise<T> | undefined;
+  if (!p) {
+    p = compute().then((v) => {
+      void cacheSet(redis, key, v, ttlSeconds);
+      return v;
+    });
+    _inflightComputations.set(key, p);
+    void p.finally(() => _inflightComputations.delete(key));
+  }
+  return p;
+}
+
 export async function invalidateCache(redis: RedisLike | null, pattern: string): Promise<void> {
   // Always clear L1 first — cacheGet checks L1 before Redis, so stale L1 wins even after
   // Redis is cleared. The prefix strip handles both exact keys and glob patterns like "pub:*".

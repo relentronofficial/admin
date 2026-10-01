@@ -11,7 +11,7 @@ import {
 
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
+import { cacheGet, cacheSet, cacheNxSet, invalidateCache, cacheGetOrCompute } from '../../lib/cache.js';
 import { checkRateLimit } from '../../lib/rateLimit.js';
 import {
   notifyCourseEnrolled,
@@ -512,36 +512,93 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   let total = 0;
 
   if (catalogKey) {
-    const hit = await cacheGet<CatalogCache>(redis, catalogKey);
-    if (hit) {
-      catalogEntries = hit.entries;
-      total = hit.total;
-    }
+    // Singleflight: all concurrent cache misses for the same catalog key share one DB round-trip.
+    // TTL raised to 300s to reduce stampede frequency under real traffic.
+    const result = await cacheGetOrCompute<CatalogCache>(redis, catalogKey, 300, async () => {
+      const where: Record<string, unknown> = { isPublished: true };
+      if (level) where.level = level;
+      if (category) where.categoryId = category;
+      if (moduleTitle) {
+        const modRows = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
+          `SELECT id FROM courses WHERE module = $1 AND is_published = true`,
+          moduleTitle
+        ).catch(() => [] as { id: string }[]);
+        const ids = modRows.map(r => r.id);
+        where.id = ids.length > 0 ? { in: ids } : { in: [] };
+      }
+
+      const orderBy =
+        sort === 'popular'  ? [{ enrollments: { _count: 'desc' } }] :
+        sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
+                              [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
+
+      const [courses, courseTotal] = await Promise.all([
+        (request.server.prisma.course.findMany as any)({
+          where,
+          select: {
+            id: true, title: true, slug: true, description: true, thumbnailUrl: true,
+            level: true, durationHours: true, price: true, isPublished: true,
+            isFeatured: true, createdAt: true, xpPerEpisode: true,
+            creator: { select: { id: true, fullName: true, profilePhotoUrl: true, designation: true } },
+            _count: { select: { enrollments: true } },
+            courseEpisodes: { where: { isVisible: true }, select: { durationSeconds: true } },
+          },
+          orderBy,
+          take: Number(limit),
+          skip: (Number(page) - 1) * Number(limit),
+        }) as Promise<any[]>,
+        request.server.prisma.course.count({ where: where as any }),
+      ]);
+
+      const cIds = (courses as any[]).map((c: any) => c.id);
+      const modRows = cIds.length
+        ? await request.server.prisma.$queryRawUnsafe<{ id: string; module: string | null }[]>(
+            `SELECT id, module FROM courses WHERE id = ANY($1::uuid[])`,
+            cIds
+          ).catch(() => [] as { id: string; module: string | null }[])
+        : [];
+      const moduleMap = new Map<string, string | null>(modRows.map(r => [r.id, r.module]));
+
+      const entries: CatalogEntry[] = (courses as any[]).map((c: any) => {
+        const episodes: { durationSeconds: number }[] = c.courseEpisodes ?? [];
+        const episodeCount = episodes.length;
+        const totalSecs = episodes.reduce((sum: number, ep: any) => sum + (ep.durationSeconds || 0), 0);
+        const storedHours = c.durationHours ? Number(c.durationHours) : null;
+        const durationHours = totalSecs > 0 ? Math.round(totalSecs / 360) / 10 : storedHours;
+        let durationDisplay: string | null = null;
+        if (totalSecs > 0) {
+          const mins = Math.ceil(totalSecs / 60);
+          durationDisplay = mins < 60 ? `${mins}m` : `${Math.round(mins / 6) / 10}h`;
+        } else if (storedHours && storedHours > 0) {
+          durationDisplay = `${storedHours}h`;
+        }
+        return {
+          id: c.id, title: c.title, slug: c.slug, description: c.description,
+          thumbnailUrl: c.thumbnailUrl, level: c.level, durationHours, durationDisplay,
+          price: c.price ? Number(c.price) : null, isPublished: c.isPublished,
+          isFeatured: c.isFeatured, createdAt: c.createdAt, xpPerEpisode: c.xpPerEpisode ?? 10,
+          instructor: c.creator ?? null, module: moduleMap.get(c.id) ?? null,
+          _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
+        };
+      });
+
+      return { entries, total: courseTotal };
+    });
+    catalogEntries = result.entries;
+    total = result.total;
   }
 
   if (!catalogEntries) {
+    // search-only path: canCache=false → catalogKey=null → no singleflight needed
     const where: Record<string, unknown> = { isPublished: true };
-    if (level) where.level = level;
-    if (category) where.categoryId = category;
     if (search?.trim()) {
       where.OR = [
         { title: { contains: search.trim(), mode: 'insensitive' } },
         { description: { contains: search.trim(), mode: 'insensitive' } },
       ];
     }
-    if (moduleTitle) {
-      const modRows = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
-        `SELECT id FROM courses WHERE module = $1 AND is_published = true`,
-        moduleTitle
-      ).catch(() => [] as { id: string }[]);
-      const ids = modRows.map(r => r.id);
-      where.id = ids.length > 0 ? { in: ids } : { in: [] };
-    }
 
-    const orderBy =
-      sort === 'popular'  ? [{ enrollments: { _count: 'desc' } }] :
-      sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }] :
-                            [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
+    const orderBy: any[] = [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
 
     const [courses, courseTotal] = await Promise.all([
       (request.server.prisma.course.findMany as any)({
@@ -593,10 +650,6 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         _count: { lessons: episodeCount, enrollments: c._count?.enrollments ?? 0 },
       };
     });
-
-    if (catalogKey) {
-      void cacheSet(redis, catalogKey, { entries: catalogEntries, total }, 60);
-    }
   }
 
   // Overlay per-member access — always live, never cached
@@ -1919,22 +1972,25 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
     await cacheSet(redis, eventsKey, upcomingEvents, 60);
   }
 
-  const [totalCourses, completedCourses, member, unreadNotifications] =
-    await Promise.all([
-      request.server.prisma.courseEnrollment.count({
-        where: { memberId: request.memberId },
-      }),
-      request.server.prisma.courseEnrollment.count({
-        where: { memberId: request.memberId, completedAt: { not: null } },
-      }),
-      request.server.prisma.member.findUnique({
-        where: { id: request.memberId },
-        select: { totalPoints: true, currentStreak: true },
-      }),
-      request.server.prisma.notification.count({
-        where: { memberId: request.memberId, isRead: false },
-      }),
-    ]);
+  // Merge the two enrollment counts into one raw query to halve the DB round-trips
+  // under concurrent load (150 VUs × 4 queries → 150 VUs × 3 queries).
+  const [enrollmentCounts, member, unreadNotifications] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<{ total: string; completed: string }[]>(
+      `SELECT COUNT(*)::text AS total, COUNT(completed_at)::text AS completed
+       FROM course_enrollments WHERE member_id = $1::uuid`,
+      request.memberId
+    ).catch(() => [{ total: '0', completed: '0' }] as { total: string; completed: string }[]),
+    request.server.prisma.member.findUnique({
+      where: { id: request.memberId },
+      select: { totalPoints: true, currentStreak: true },
+    }),
+    request.server.prisma.notification.count({
+      where: { memberId: request.memberId, isRead: false },
+    }),
+  ]);
+
+  const totalCourses = parseInt(enrollmentCounts[0]?.total ?? '0', 10);
+  const completedCourses = parseInt(enrollmentCounts[0]?.completed ?? '0', 10);
 
   const statsPayload = {
     totalCourses,

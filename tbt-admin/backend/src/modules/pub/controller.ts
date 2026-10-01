@@ -1,50 +1,46 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifyToken } from '@clerk/backend';
 import { env } from '../../config/env.js';
-import { cacheGet, cacheSet } from '../../lib/cache.js';
+import { cacheGet, cacheSet, cacheGetOrCompute } from '../../lib/cache.js';
 
 export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
 
   const redis = req.server.redis ?? null;
   const CACHE_KEY = 'pub:site-config:v3';
-  const cached = await cacheGet<object>(redis, CACHE_KEY);
-  if (cached) return reply.send({ success: true, data: cached, error: null });
-
-  let config = await req.server.prisma.siteConfig.findFirst();
-  if (!config) {
-    config = await req.server.prisma.siteConfig.create({
-      data: { siteName: 'TBT', footerText: '© TBT' },
-    });
-  }
-
-  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
-    'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
-  ).catch(() => []);
-
-  const data = {
-    siteName: config.siteName,
-    logoUrl: config.logoUrl ?? null,
-    faviconUrl: config.faviconUrl ?? null,
-    footerText: config.footerText,
-    theme: {
-      accentColor: config.accentColor,
-      alertColor: config.alertColor,
-      successColor: config.successColor,
-      bgPrimary: config.bgPrimary,
-      bgSurface: config.bgSurface,
-    },
-    splashLogoUrl: config.splashLogoUrl ?? null,
-    splashDurationMs: config.splashDurationMs,
-    loginBgUrl: config.loginBgUrl ?? null,
-    loginBgMobileUrl: config.loginBgMobileUrl ?? null,
-    loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
-    taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
-    freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
-    earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
-    coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
-  };
-  await cacheSet(redis, CACHE_KEY, data, 300);
+  const data = await cacheGetOrCompute<object>(redis, CACHE_KEY, 300, async () => {
+    let config = await req.server.prisma.siteConfig.findFirst();
+    if (!config) {
+      config = await req.server.prisma.siteConfig.create({
+        data: { siteName: 'TBT', footerText: '© TBT' },
+      });
+    }
+    const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
+      'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
+    ).catch(() => []);
+    return {
+      siteName: config.siteName,
+      logoUrl: config.logoUrl ?? null,
+      faviconUrl: config.faviconUrl ?? null,
+      footerText: config.footerText,
+      theme: {
+        accentColor: config.accentColor,
+        alertColor: config.alertColor,
+        successColor: config.successColor,
+        bgPrimary: config.bgPrimary,
+        bgSurface: config.bgSurface,
+      },
+      splashLogoUrl: config.splashLogoUrl ?? null,
+      splashDurationMs: config.splashDurationMs,
+      loginBgUrl: config.loginBgUrl ?? null,
+      loginBgMobileUrl: config.loginBgMobileUrl ?? null,
+      loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
+      taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
+      freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
+      earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
+      coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
+    };
+  });
   return reply.send({ success: true, data, error: null });
 }
 
@@ -53,33 +49,29 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
 
   const redis = req.server.redis ?? null;
   const CACHE_KEY = 'pub:nav';
-  const cached = await cacheGet<object>(redis, CACHE_KEY);
-  if (cached) return reply.send({ success: true, data: cached, error: null });
-
-  const [items, config] = await Promise.all([
-    req.server.prisma.navItem.findMany({
-      where: { isVisible: true },
-      orderBy: { order: 'asc' },
-    }),
-    req.server.prisma.siteConfig.findFirst(),
-  ]);
-
-  const rawCols = config
-    ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown }>>(
-        'SELECT hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
-      ).catch(() => [])
-    : [];
-
-  const data = {
-    items,
-    rightIcons: {
-      notifications: config?.navShowNotifications ?? true,
-      messages: config?.navShowMessages ?? true,
-      profile: config?.navShowProfile ?? true,
-    },
-    hiddenMenuKeys: (Array.isArray(rawCols[0]?.hidden_menu_keys) ? rawCols[0].hidden_menu_keys : []) as string[],
-  };
-  await cacheSet(redis, CACHE_KEY, data, 300);
+  const data = await cacheGetOrCompute<object>(redis, CACHE_KEY, 300, async () => {
+    const [items, config] = await Promise.all([
+      req.server.prisma.navItem.findMany({
+        where: { isVisible: true },
+        orderBy: { order: 'asc' },
+      }),
+      req.server.prisma.siteConfig.findFirst(),
+    ]);
+    const rawCols = config
+      ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown }>>(
+          'SELECT hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
+        ).catch(() => [])
+      : [];
+    return {
+      items,
+      rightIcons: {
+        notifications: config?.navShowNotifications ?? true,
+        messages: config?.navShowMessages ?? true,
+        profile: config?.navShowProfile ?? true,
+      },
+      hiddenMenuKeys: (Array.isArray(rawCols[0]?.hidden_menu_keys) ? rawCols[0].hidden_menu_keys : []) as string[],
+    };
+  });
   return reply.send({ success: true, data, error: null });
 }
 
