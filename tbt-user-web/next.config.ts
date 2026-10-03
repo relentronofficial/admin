@@ -23,7 +23,6 @@ const nextConfig: NextConfig = {
       { source: "/eiflix/:path*", destination: "/tbt/:path*", permanent: true },
       { source: "/sign-in", destination: "/login", permanent: false },
       { source: "/sign-up", destination: "/login", permanent: false },
-      { source: "/courses", destination: "/batch-program/mentorship", permanent: false },
     ];
   },
   images: {

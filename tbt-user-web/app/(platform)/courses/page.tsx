@@ -13,6 +13,7 @@ import { useMe, useUpdateProfile } from "@/lib/hooks/useUser";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
 import type { ContinueLearningItem } from "@/types";
+import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -482,6 +483,9 @@ export default function CoursesPage() {
 
   return (
     <div className="space-y-10">
+
+      {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
+      <MentorshipDashboard />
 
       {/* ── Page header ─────────────────────────────────────────────── */}
       <div
