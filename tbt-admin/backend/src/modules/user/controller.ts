@@ -3657,8 +3657,8 @@ export async function getWorkshopQaHandler(request: FastifyRequest, reply: Fasti
   const posts = qa.posts;
   const total = qa.total;
 
-  const timeAgo = (d: Date) => {
-    const diff = Date.now() - d.getTime();
+  const timeAgo = (d: Date | string) => {
+    const diff = Date.now() - new Date(d).getTime();
     const h = Math.floor(diff / 3600000);
     if (h < 24) return `${h || 1}h`;
     const days = Math.floor(h / 24);
