@@ -26,6 +26,21 @@ import {
 } from '../../plugins/jwt.js';
 import crypto from 'crypto';
 
+// In-memory fallback for login_pending tokens — same resilience pattern as OTP store.
+// Protects against Upstash ETIMEDOUT spikes where the Redis SET silently fails but
+// the pendingToken is already returned to the client.
+const _pendingStore = new Map<string, { value: string; expiresAt: number }>();
+
+function storePending(key: string, value: string, ttlSeconds: number) {
+  _pendingStore.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+}
+function getPending(key: string): string | null {
+  const entry = _pendingStore.get(key);
+  if (!entry || Date.now() >= entry.expiresAt) { _pendingStore.delete(key); return null; }
+  return entry.value;
+}
+function deletePending(key: string) { _pendingStore.delete(key); }
+
 function parseUserAgent(ua: string | undefined | null): {
   browser: string; os: string; deviceType: 'desktop' | 'mobile' | 'tablet';
 } {
@@ -275,10 +290,13 @@ export async function verifyOtp(fastify: FastifyInstance, request: any, reply: a
     // after the user decides which device to remove.
     const pendingId = crypto.randomUUID();
     const redis = getRedis(fastify);
+    const pendingVal = JSON.stringify({ memberId: (member as any).id, meta });
+    // Always mirror to in-memory first (Redis may ETIMEDOUT silently)
+    storePending(`login_pending:${pendingId}`, pendingVal, 300);
     if (redis) {
       await redis.set(
         `login_pending:${pendingId}`,
-        JSON.stringify({ memberId: (member as any).id, meta }),
+        pendingVal,
         'EX', 300, // 5 minutes
       ).catch(() => {});
     }
@@ -311,9 +329,11 @@ export async function sessionRevokeDuringLogin(fastify: FastifyInstance, request
   }
 
   const redis = getRedis(fastify);
-  const raw = redis ? await redis.get(`login_pending:${pendingToken}`).catch(() => null) : null;
-  if (!raw) return reply.status(400).send({ success: false, data: null, error: 'Login session expired. Please try logging in again.' });
-  const { memberId } = JSON.parse(raw);
+  const pendingKey2 = `login_pending:${pendingToken}`;
+  let raw2 = redis ? await redis.get(pendingKey2).catch(() => null) : null;
+  if (!raw2) raw2 = getPending(pendingKey2); // in-memory fallback
+  if (!raw2) return reply.status(400).send({ success: false, data: null, error: 'Login session expired. Please try logging in again.' });
+  const { memberId } = JSON.parse(raw2);
 
   const session = await (fastify.prisma.memberSession as any).findFirst({ where: { id: sessionId, memberId } });
   if (!session) return reply.status(404).send({ success: false, data: null, error: 'Session not found' });
@@ -344,10 +364,13 @@ export async function completeLogin(fastify: FastifyInstance, request: any, repl
   }
 
   const redis = getRedis(fastify);
-  const raw = redis ? await redis.get(`login_pending:${pendingToken}`).catch(() => null) : null;
+  const pendingKey = `login_pending:${pendingToken}`;
+  let raw = redis ? await redis.get(pendingKey).catch(() => null) : null;
+  if (!raw) raw = getPending(pendingKey); // in-memory fallback
   if (!raw) return reply.status(400).send({ success: false, data: null, error: 'Login session expired. Please try logging in again.' });
 
-  await redis.del(`login_pending:${pendingToken}`).catch(() => {});
+  if (redis) await redis.del(pendingKey).catch(() => {});
+  deletePending(pendingKey);
   const { memberId, meta } = JSON.parse(raw);
 
   // Revoke all remaining Redis tokens for this member
