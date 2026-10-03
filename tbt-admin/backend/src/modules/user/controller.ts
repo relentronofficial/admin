@@ -3121,112 +3121,120 @@ export async function getHomeSectionsHandler(request: FastifyRequest, reply: Fas
 // ─── Workshops (user-facing) ──────────────────────────────────────────────────
 
 export async function listWorkshopsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const [member, workshops, enrollments] = await Promise.all([
-    request.server.prisma.member.findUnique({
-      where: { id: request.memberId },
-      select: { batchId: true },
-    }),
-    request.server.prisma.workshop.findMany({
-      where: { isActive: true },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        description: true,
-        thumbnailUrl: true,
-        deliveryMode: true,
-        requiredTier: true,
-        batchIds: true,
-        _count: { select: { challenges: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    }),
-    request.server.prisma.workshopEnrollment.findMany({
-      where: { memberId: request.memberId },
-      select: { workshopId: true, status: true },
-    }),
-  ]);
+  const redis = request.server.redis ?? null;
+  const data = await cacheGetOrCompute<unknown[]>(redis, `ws:list:v1:${request.memberId}`, 60, async () => {
+    const [member, workshops, enrollments] = await Promise.all([
+      request.server.prisma.member.findUnique({
+        where: { id: request.memberId },
+        select: { batchId: true },
+      }),
+      request.server.prisma.workshop.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          description: true,
+          thumbnailUrl: true,
+          deliveryMode: true,
+          requiredTier: true,
+          batchIds: true,
+          _count: { select: { challenges: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      request.server.prisma.workshopEnrollment.findMany({
+        where: { memberId: request.memberId },
+        select: { workshopId: true, status: true },
+      }),
+    ]);
 
-  const memberBatchId = member?.batchId ?? null;
-  const enrollmentMap = new Map(enrollments.map((e) => [e.workshopId, e.status]));
+    const memberBatchId = member?.batchId ?? null;
+    const enrollmentMap = new Map(enrollments.map((e) => [e.workshopId, e.status]));
 
-  const data = workshops.map((w) => {
-    const enrollStatus = enrollmentMap.get(w.id) ?? null;
-    const batchIds = w.batchIds as string[] | null;
-    const locked = batchIds && batchIds.length > 0
-      ? !memberBatchId || !batchIds.includes(memberBatchId)
-      : false;
-    return {
-      id: w.id,
-      title: w.title,
-      slug: w.slug,
-      description: w.description ?? null,
-      thumbnailUrl: w.thumbnailUrl ?? null,
-      deliveryMode: w.deliveryMode,
-      deliveryModeLabel:
-        w.deliveryMode === 'online' ? 'Online'
-        : w.deliveryMode === 'offline' ? 'In-Person'
-        : 'Hybrid',
-      requiredTier: w.requiredTier,
-      challengeCount: w._count.challenges,
-      enrollmentStatus: enrollStatus,
-      enrolledBadge: enrollStatus === 'active' ? { label: 'Enrolled', color: '#22c55e' } : null,
-      completedBadgeIconType: enrollStatus === 'completed' ? 'checkmark' : null,
-      locked,
-    };
+    return workshops.map((w) => {
+      const enrollStatus = enrollmentMap.get(w.id) ?? null;
+      const batchIds = w.batchIds as string[] | null;
+      const locked = batchIds && batchIds.length > 0
+        ? !memberBatchId || !batchIds.includes(memberBatchId)
+        : false;
+      return {
+        id: w.id,
+        title: w.title,
+        slug: w.slug,
+        description: w.description ?? null,
+        thumbnailUrl: w.thumbnailUrl ?? null,
+        deliveryMode: w.deliveryMode,
+        deliveryModeLabel:
+          w.deliveryMode === 'online' ? 'Online'
+          : w.deliveryMode === 'offline' ? 'In-Person'
+          : 'Hybrid',
+        requiredTier: w.requiredTier,
+        challengeCount: w._count.challenges,
+        enrollmentStatus: enrollStatus,
+        enrolledBadge: enrollStatus === 'active' ? { label: 'Enrolled', color: '#22c55e' } : null,
+        completedBadgeIconType: enrollStatus === 'completed' ? 'checkmark' : null,
+        locked,
+      };
+    });
   });
 
   return ok(reply, data);
 }
 
 export async function getMyWorkshopsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const enrollments = await request.server.prisma.workshopEnrollment.findMany({
-    where: { memberId: request.memberId },
-    include: {
-      workshop: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          thumbnailUrl: true,
-          deliveryMode: true,
-          isActive: true,
+  const redis = request.server.redis ?? null;
+  const result = await cacheGetOrCompute<{ sections: unknown[] }>(redis, `ws:my:v1:${request.memberId}`, 60, async () => {
+    const enrollments = await request.server.prisma.workshopEnrollment.findMany({
+      where: { memberId: request.memberId },
+      include: {
+        workshop: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            thumbnailUrl: true,
+            deliveryMode: true,
+            isActive: true,
+          },
         },
       },
-    },
-    orderBy: { enrolledAt: 'desc' },
+      orderBy: { enrolledAt: 'desc' },
+    });
+
+    const active = enrollments.filter((e) => e.status === 'active');
+    const completed = enrollments.filter((e) => e.status === 'completed');
+
+    const mapItem = (e: (typeof enrollments)[0]) => ({
+      id: e.workshop.id,
+      title: e.workshop.title,
+      thumbnailUrl: e.workshop.thumbnailUrl ?? null,
+      slug: e.workshop.slug,
+      enrollmentStatus: e.status,
+      enrolledBadge: e.status === 'active' ? { label: 'Enrolled', color: '#22c55e' } : null,
+      completedBadgeIconType: e.status === 'completed' ? 'checkmark' : null,
+      deliveryMode: e.workshop.deliveryMode,
+      deliveryModeLabel:
+        e.workshop.deliveryMode === 'online'
+          ? 'Online'
+          : e.workshop.deliveryMode === 'offline'
+            ? 'In-Person'
+            : 'Hybrid',
+    });
+
+    return {
+      sections: [
+        ...(active.length > 0
+          ? [{ id: 'active', label: 'Workshops', items: active.map(mapItem) }]
+          : []),
+        ...(completed.length > 0
+          ? [{ id: 'completed', label: 'Completed Workshops', items: completed.map(mapItem) }]
+          : []),
+      ],
+    };
   });
 
-  const active = enrollments.filter((e) => e.status === 'active');
-  const completed = enrollments.filter((e) => e.status === 'completed');
-
-  const mapItem = (e: (typeof enrollments)[0]) => ({
-    id: e.workshop.id,
-    title: e.workshop.title,
-    thumbnailUrl: e.workshop.thumbnailUrl ?? null,
-    slug: e.workshop.slug,
-    enrollmentStatus: e.status,
-    enrolledBadge: e.status === 'active' ? { label: 'Enrolled', color: '#22c55e' } : null,
-    completedBadgeIconType: e.status === 'completed' ? 'checkmark' : null,
-    deliveryMode: e.workshop.deliveryMode,
-    deliveryModeLabel:
-      e.workshop.deliveryMode === 'online'
-        ? 'Online'
-        : e.workshop.deliveryMode === 'offline'
-          ? 'In-Person'
-          : 'Hybrid',
-  });
-
-  return ok(reply, {
-    sections: [
-      ...(active.length > 0
-        ? [{ id: 'active', label: 'Workshops', items: active.map(mapItem) }]
-        : []),
-      ...(completed.length > 0
-        ? [{ id: 'completed', label: 'Completed Workshops', items: completed.map(mapItem) }]
-        : []),
-    ],
-  });
+  return ok(reply, result);
 }
 
 export async function getWorkshopDetailHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -3474,134 +3482,124 @@ export async function getWorkshopCertificateHandler(request: FastifyRequest, rep
 export async function getWorkshopFlowHandler(request: FastifyRequest, reply: FastifyReply) {
   const { slug } = request.params as { slug: string };
   const redis = request.server.redis ?? null;
-  const wsFlowKey = `ws:flow:${request.memberId}:${slug}`;
-  const cachedFlow = await cacheGet<Record<string, unknown>>(redis, wsFlowKey);
-  if (cachedFlow) return ok(reply, cachedFlow);
 
-  const workshop = await request.server.prisma.workshop.findFirst({
-    where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
-    include: {
-      flowItems: {
-        orderBy: { order: 'asc' },
+  // Layer 1: workshop id (shared with QA handler — 300s TTL)
+  const workshopMeta = await cacheGetOrCompute<{ id: string } | null>(
+    redis, `ws:meta:${slug}`, 300,
+    () => request.server.prisma.workshop.findFirst({
+      where: UUID_RE.test(slug) ? { OR: [{ slug }, { id: slug }] } : { slug },
+      select: { id: true },
+    }).then((r) => r ?? null),
+  );
+  if (!workshopMeta) return fail(reply, 404, 'Workshop not found');
+
+  // Layer 2: enrollment check (shared with QA handler — 60s TTL)
+  const enrollStatus = await cacheGetOrCompute<string | null>(
+    redis, `ws:enroll:${workshopMeta.id}:${request.memberId}`, 60,
+    () => request.server.prisma.workshopEnrollment.findUnique({
+      where: { workshopId_memberId: { workshopId: workshopMeta.id, memberId: request.memberId } },
+      select: { status: true },
+    }).then((r) => r?.status ?? null),
+  );
+  if (!isEnrolled(enrollStatus ?? undefined)) return fail(reply, 403, 'Enrollment required to access this workshop');
+
+  // Layer 3: full flow data (per-member progress — 60s TTL)
+  const wsFlowPayload = await cacheGetOrCompute<{ flowItems: unknown[] }>(
+    redis, `ws:flow:${request.memberId}:${slug}`, 60,
+    async () => {
+      const workshop = await request.server.prisma.workshop.findFirst({
+        where: { id: workshopMeta.id },
         include: {
-          challenge: {
+          flowItems: {
+            orderBy: { order: 'asc' },
             include: {
-              episodes: { orderBy: { order: 'asc' } },
+              challenge: { include: { episodes: { orderBy: { order: 'asc' } } } },
+              liveCall: true,
             },
           },
-          liveCall: true,
         },
-      },
-    },
-  });
+      });
 
-  if (!workshop) return fail(reply, 404, 'Workshop not found');
+      // Single flat query for all episode progress (no N+1)
+      const allEpisodeIds = (workshop as any).flowItems.flatMap(
+        (item: any) => (item.challenge?.episodes ?? []).map((e: any) => e.id)
+      );
+      const progressRows = allEpisodeIds.length > 0
+        ? await request.server.prisma.memberEpisodeProgress.findMany({
+            where: { memberId: request.memberId, episodeId: { in: allEpisodeIds } },
+            select: { episodeId: true, isCompleted: true },
+          })
+        : [];
+      const progressMap = new Map(progressRows.map((p) => [p.episodeId, p.isCompleted]));
 
-  const flowEnrollment = await request.server.prisma.workshopEnrollment.findUnique({
-    where: { workshopId_memberId: { workshopId: workshop.id, memberId: request.memberId } },
-    select: { status: true },
-  });
-  if (!isEnrolled(flowEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
+      const flowItems = (workshop as any).flowItems.map((item: any) => {
+        if (item.type === 'challenge' && item.challenge) {
+          const ch = item.challenge;
+          const totalEps = ch.episodes.length;
+          const completedEps = ch.episodes.filter((e: any) => progressMap.get(e.id) === true).length;
+          return {
+            id: item.id, order: item.order, type: item.type,
+            challengeNumber: ch.challengeNumber ?? null,
+            numberLabel: ch.numberLabel ?? `Challenge ${String(ch.challengeNumber ?? '').padStart(2, '0')}:`,
+            numberColor: ch.numberColor ?? '#00c4cc',
+            title: ch.title, description: ch.description ?? null,
+            progressPercent: totalEps > 0 ? Math.round((completedEps / totalEps) * 100) : 0,
+            isExpanded: false,
+            episodes: ch.episodes.map((ep: any) => ({
+              id: ep.id, order: ep.order, title: ep.title,
+              type: ep.type, typeLabel: ep.typeLabel,
+              durationSeconds: ep.durationSeconds ?? null,
+              durationLabel: ep.durationLabel ?? null,
+              isCompleted: progressMap.get(ep.id) ?? false,
+              isLocked: false,
+              lockIconType: ep.lockIconType,
+              completedIconType: ep.completedIconType,
+            })),
+          };
+        }
 
-  // Single flat query for all episode progress instead of N+1 nested includes
-  const allEpisodeIds = (workshop as any).flowItems.flatMap(
-    (item: any) => (item.challenge?.episodes ?? []).map((e: any) => e.id)
-  );
-  const progressRows = allEpisodeIds.length > 0
-    ? await request.server.prisma.memberEpisodeProgress.findMany({
-        where: { memberId: request.memberId, episodeId: { in: allEpisodeIds } },
-        select: { episodeId: true, isCompleted: true },
-      })
-    : [];
-  const progressMap = new Map(progressRows.map((p) => [p.episodeId, p.isCompleted]));
-
-  const flowItems = (workshop as any).flowItems.map((item: any) => {
-      if (item.type === 'challenge' && item.challenge) {
-        const ch = item.challenge;
-        const totalEps = ch.episodes.length;
-        const completedEps = ch.episodes.filter((e: any) => progressMap.get(e.id) === true).length;
-
-        return {
-          id: item.id,
-          order: item.order,
-          type: item.type,
-          challengeNumber: ch.challengeNumber ?? null,
-          numberLabel: ch.numberLabel ?? `Challenge ${String(ch.challengeNumber ?? '').padStart(2, '0')}:`,
-          numberColor: ch.numberColor ?? '#00c4cc',
-          title: ch.title,
-          description: ch.description ?? null,
-          progressPercent: totalEps > 0 ? Math.round((completedEps / totalEps) * 100) : 0,
-          isExpanded: false,
-          episodes: ch.episodes.map((ep: any) => ({
-            id: ep.id,
-            order: ep.order,
-            title: ep.title,
-            type: ep.type,
-            typeLabel: ep.typeLabel,
-            durationSeconds: ep.durationSeconds ?? null,
-            durationLabel: ep.durationLabel ?? null,
-            isCompleted: progressMap.get(ep.id) ?? false,
-            isLocked: false,
-            lockIconType: ep.lockIconType,
-            completedIconType: ep.completedIconType,
-          })),
-        };
-      }
-
-      if ((item.type === 'live_call' || item.type === 'custom') && item.liveCall) {
-        const lc = item.liveCall;
-        const now = new Date();
-        const scheduledAt = new Date(lc.scheduledAt);
-        // "past" only once the admin explicitly ends the meeting
-        const status = lc.endedAt ? 'past' : 'upcoming';
-        const unlockAt = lc.liveUrlUnlocksMinutesBefore
-          ? new Date(scheduledAt.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000)
-          : null;
-        const isUnlocked = !lc.endedAt && (unlockAt ? now >= unlockAt : true);
-
-        return {
-          id: item.id,
-          order: item.order,
-          type: 'live_call',
-          liveCallId: lc.id,
-          label: lc.label,
-          labelColor: lc.labelColor,
-          title: lc.title,
-          scheduledAt: lc.scheduledAt,
-          status,
-          isUnlocked,
-          recordingAvailable: status === 'past' && !!lc.recordingUrl,
-          recordingLabel: lc.recordingUrl ? (lc.recordingLabel ?? 'Missed it? View the recording.') : null,
-          prerequisiteNote: lc.prerequisiteNote ?? null,
-          liveUrl: isUnlocked ? (lc.liveUrl ?? null) : null,
-          liveUrlUnlocksMinutesBefore: lc.liveUrlUnlocksMinutesBefore ?? 30,
-          facilitatorName: lc.facilitatorName ?? null,
-          facilitatorTitle: lc.facilitatorTitle ?? null,
-          facilitatorDescription: lc.facilitatorDescription ?? null,
-          countdownConfig:
-            status === 'upcoming'
+        if ((item.type === 'live_call' || item.type === 'custom') && item.liveCall) {
+          const lc = item.liveCall;
+          const now = new Date();
+          const scheduledAt = new Date(lc.scheduledAt);
+          const status = lc.endedAt ? 'past' : 'upcoming';
+          const unlockAt = lc.liveUrlUnlocksMinutesBefore
+            ? new Date(scheduledAt.getTime() - lc.liveUrlUnlocksMinutesBefore * 60 * 1000)
+            : null;
+          const isUnlocked = !lc.endedAt && (unlockAt ? now >= unlockAt : true);
+          return {
+            id: item.id, order: item.order, type: 'live_call',
+            liveCallId: lc.id, label: lc.label, labelColor: lc.labelColor, title: lc.title,
+            scheduledAt: lc.scheduledAt, status, isUnlocked,
+            recordingAvailable: status === 'past' && !!lc.recordingUrl,
+            recordingLabel: lc.recordingUrl ? (lc.recordingLabel ?? 'Missed it? View the recording.') : null,
+            prerequisiteNote: lc.prerequisiteNote ?? null,
+            liveUrl: isUnlocked ? (lc.liveUrl ?? null) : null,
+            liveUrlUnlocksMinutesBefore: lc.liveUrlUnlocksMinutesBefore ?? 30,
+            facilitatorName: lc.facilitatorName ?? null,
+            facilitatorTitle: lc.facilitatorTitle ?? null,
+            facilitatorDescription: lc.facilitatorDescription ?? null,
+            countdownConfig: status === 'upcoming'
               ? { stayTunedMessage: lc.stayTunedMessage, stayTunedColor: lc.stayTunedColor }
               : null,
-          isCompleted: status === 'past',
-          externalMeetingUrl: isUnlocked ? (lc.externalMeetingUrl ?? null) : null,
-          externalMeetingProvider: lc.externalMeetingProvider ?? null,
-          aiSummary: status === 'past' ? (lc.aiSummary ?? null) : null,
+            isCompleted: status === 'past',
+            externalMeetingUrl: isUnlocked ? (lc.externalMeetingUrl ?? null) : null,
+            externalMeetingProvider: lc.externalMeetingProvider ?? null,
+            aiSummary: status === 'past' ? (lc.aiSummary ?? null) : null,
+          };
+        }
+
+        return {
+          id: item.id, order: item.order, type: item.type,
+          label: item.label ?? null, description: item.description ?? null,
+          isCompleted: item.isCompleted, isExpanded: false,
         };
-      }
+      });
 
-      return {
-        id: item.id,
-        order: item.order,
-        type: item.type,
-        label: item.label ?? null,
-        description: item.description ?? null,
-        isCompleted: item.isCompleted,
-        isExpanded: false,
-      };
-    });
+      return { flowItems };
+    },
+  );
 
-  const wsFlowPayload = { flowItems };
-  void cacheSet(redis, wsFlowKey, wsFlowPayload, 60);
   return ok(reply, wsFlowPayload);
 }
 
