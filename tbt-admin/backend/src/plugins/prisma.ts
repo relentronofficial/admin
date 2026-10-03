@@ -2065,6 +2065,50 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `UPDATE courses SET module = 'Coaching' WHERE module = 'Coach'`
     ).catch(() => {});
 
+    // ── MP-01: Member Revenue Reports (2026-10-03) ───────────────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_revenue_reports (
+        id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id           UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        week_number         INT NOT NULL,
+        year                INT NOT NULL,
+        revenue_generated   DECIMAL(15,2),
+        revenue_prev        DECIMAL(15,2),
+        number_of_orders    INT,
+        orders_prev         INT,
+        ad_budget_spent     DECIMAL(15,2),
+        roas                DECIMAL(8,2),
+        customer_acq_cost   DECIMAL(10,2),
+        organic_leads       INT,
+        leads_prev          INT,
+        avg_order_value     DECIMAL(10,2),
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(member_id, week_number, year)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_revenue_reports_member ON member_revenue_reports(member_id, year DESC, week_number DESC)`
+    ).catch(() => {});
+
+    // ── MP-02: Extend plan_entitlements with sales + content call counts ─────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE plan_entitlements ADD COLUMN IF NOT EXISTS sales_call_count  INT NOT NULL DEFAULT 0`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE plan_entitlements ADD COLUMN IF NOT EXISTS content_call_count INT NOT NULL DEFAULT 0`
+    ).catch(() => {});
+    // Seed default values for the new columns (only updates rows where column is still 0 to keep admin overrides)
+    await prisma.$executeRawUnsafe(`
+      UPDATE plan_entitlements SET sales_call_count = 3,  content_call_count = 3  WHERE plan = 'starter'  AND sales_call_count = 0
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      UPDATE plan_entitlements SET sales_call_count = 7,  content_call_count = 7  WHERE plan = 'premium'  AND sales_call_count = 0
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      UPDATE plan_entitlements SET sales_call_count = 15, content_call_count = 15 WHERE plan = 'vip'      AND sales_call_count = 0
+    `).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

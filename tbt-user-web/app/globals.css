@@ -229,3 +229,24 @@ select option {
   background-color: #ffffff;
   color: #0d0d0d;
 }
+
+/* ── Mentorship Dashboard Animations ─────────────────────────────────────── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0px 0px color-mix(in srgb, var(--color-accent) 0%, transparent); }
+  50%       { box-shadow: 0 0 18px 4px color-mix(in srgb, var(--color-accent) 35%, transparent); }
+}
+.mentorship-kpi-card {
+  animation: glow-pulse 2.4s ease-in-out 0.5s 2;
+}
+
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  14%       { transform: scale(1.18); }
+  28%       { transform: scale(1); }
+  42%       { transform: scale(1.1); }
+  56%       { transform: scale(1); }
+}
+.mentorship-streak-badge {
+  animation: heartbeat 1.6s ease-in-out 0.8s 1;
+  display: inline-block;
+}

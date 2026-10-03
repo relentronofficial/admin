@@ -118,6 +118,9 @@ import {
   razorpayWebhookHandler,
   createCoinOrderHandler,
   verifyCoinPaymentHandler,
+  getMentorshipStatsHandler,
+  getMentorshipRevenueHandler,
+  upsertMentorshipRevenueHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
@@ -133,6 +136,11 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/me/connections', getMyConnectionsHandler);
   fastify.get('/me/posts', getMyPostsHandler);
   fastify.get('/support-quota', getSupportQuotaHandler);
+
+  // ── Mentorship Dashboard ───────────────────────────────────────────────────
+  fastify.get('/mentorship/stats',   getMentorshipStatsHandler);
+  fastify.get('/mentorship/revenue', getMentorshipRevenueHandler);
+  fastify.put('/mentorship/revenue', upsertMentorshipRevenueHandler);
 
   // ── Credits ───────────────────────────────────────────────────────────────
   fastify.get('/credits/pricing', getUserCreditPricingHandler);

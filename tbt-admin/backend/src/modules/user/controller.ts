@@ -6291,7 +6291,8 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
 
   const [entRows, usageRows, lifelineRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled
+      `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
+              COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
        FROM plan_entitlements WHERE plan = $1`,
       plan,
     ),
@@ -6307,7 +6308,7 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
       : Promise.resolve([]),
   ]);
 
-  const ent = entRows[0] ?? { tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false };
+  const ent = entRows[0] ?? { tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false, sales_call_count: 0, content_call_count: 0 };
   const usageMap: Record<string, number> = {};
   for (const row of usageRows) usageMap[row.type] = row.cnt;
 
@@ -6316,12 +6317,14 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
 
   return ok(reply, {
     plan,
-    techSupport:  { allocated: ent.tech_support_days, used: usageMap['tech_support']  ?? 0, remaining: Math.max(0, ent.tech_support_days  - (usageMap['tech_support']  ?? 0)) },
-    adSupport:    { allocated: ent.ad_support_days,   used: usageMap['ad_support']    ?? 0, remaining: Math.max(0, ent.ad_support_days    - (usageMap['ad_support']    ?? 0)) },
-    groupCall:    { allocated: ent.group_call_count,  used: usageMap['group_call']    ?? 0, remaining: Math.max(0, ent.group_call_count    - (usageMap['group_call']    ?? 0)) },
-    callCredits:  { allocated: ent.call_credit_count, used: usageMap['one_to_one']    ?? 0, remaining: Math.max(0, ent.call_credit_count   - (usageMap['one_to_one']    ?? 0)) },
-    oneToOne:     !!ent.one_to_one_enabled,
-    lifelines:    { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
+    techSupport:    { allocated: ent.tech_support_days,   used: usageMap['tech_support']    ?? 0, remaining: Math.max(0, ent.tech_support_days   - (usageMap['tech_support']    ?? 0)) },
+    adSupport:      { allocated: ent.ad_support_days,     used: usageMap['ad_support']      ?? 0, remaining: Math.max(0, ent.ad_support_days     - (usageMap['ad_support']      ?? 0)) },
+    groupCall:      { allocated: ent.group_call_count,    used: usageMap['group_call']      ?? 0, remaining: Math.max(0, ent.group_call_count     - (usageMap['group_call']      ?? 0)) },
+    callCredits:    { allocated: ent.call_credit_count,   used: usageMap['one_to_one']      ?? 0, remaining: Math.max(0, ent.call_credit_count    - (usageMap['one_to_one']      ?? 0)) },
+    salesSupport:   { allocated: ent.sales_call_count,    used: usageMap['sales_support']   ?? 0, remaining: Math.max(0, ent.sales_call_count     - (usageMap['sales_support']   ?? 0)) },
+    contentSupport: { allocated: ent.content_call_count,  used: usageMap['content_support'] ?? 0, remaining: Math.max(0, ent.content_call_count   - (usageMap['content_support'] ?? 0)) },
+    oneToOne:       !!ent.one_to_one_enabled,
+    lifelines:      { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
   });
 }
 
@@ -6723,5 +6726,257 @@ export async function verifyCoinPaymentHandler(request: FastifyRequest, reply: F
     coinsAdded: inserted ? COIN_PACKAGE_COINS : 0,
     totalCoins: Number(statsRow?.total_points ?? 0),
     alreadyProcessed: !inserted,
+  });
+}
+
+// ── MP-03/04: Mentorship Dashboard ───────────────────────────────────────────
+
+/** ISO week + year for a given UTC Date (IST offset +5:30). */
+function isoWeekPartsForDate(utcNow: Date): { isoWeek: number; isoYear: number } {
+  // Shift to IST
+  const ist = new Date(utcNow.getTime() + 5.5 * 60 * 60 * 1000);
+  const d = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7; // Mon=0
+  d.setUTCDate(d.getUTCDate() - dayNum + 3); // nearest Thursday
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstThursdayDay = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDay + 3);
+  const isoWeek = 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86400 * 1000));
+  return { isoWeek, isoYear: d.getUTCFullYear() };
+}
+
+export async function getMentorshipStatsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const redis = (request.server as any).redis ?? null;
+
+  const result = await cacheGetOrCompute(
+    redis,
+    `mentorship:stats:${memberId}`,
+    60,
+    async () => {
+      const prisma = request.server.prisma;
+
+      // Resolve member's batch
+      const member = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: { batchId: true },
+      });
+
+      const batchId = member?.batchId ?? null;
+
+      // Core queries in parallel
+      const [
+        timeRows,
+        episodeCountRows,
+        completedEpRows,
+        taskRows,
+        rankRows,
+        streakRow,
+        batchData,
+        settingsRows,
+        weeklyFbRows,
+      ] = await Promise.all([
+        // Q1: today's watched time (IST date comparison)
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT COALESCE(SUM(watched_seconds), 0)::float AS total_secs
+           FROM member_episode_progress
+           WHERE member_id = $1::uuid
+             AND DATE(updated_at AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE AT TIME ZONE 'Asia/Kolkata'`,
+          memberId,
+        ).catch(() => [{ total_secs: 0 }]),
+
+        // Q2: total enrolled episodes across all enrolled courses
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT COUNT(ce.id)::int AS cnt
+           FROM course_episodes ce
+           JOIN course_enrollments enr ON enr.course_id = ce.course_id
+           WHERE enr.member_id = $1::uuid`,
+          memberId,
+        ).catch(() => [{ cnt: 0 }]),
+
+        // Q3: completed episodes
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT COUNT(*)::int AS cnt FROM member_episode_progress
+           WHERE member_id = $1::uuid AND is_completed = true`,
+          memberId,
+        ).catch(() => [{ cnt: 0 }]),
+
+        // Q4: batch task stats (approved submissions / total active tasks)
+        batchId
+          ? prisma.$queryRawUnsafe<any[]>(
+              `SELECT
+                 COUNT(DISTINCT t.id)::int AS total_tasks,
+                 COUNT(DISTINCT ts.task_id) FILTER (WHERE ts.status = 'approved')::int AS completed_tasks
+               FROM tasks t
+               LEFT JOIN task_submissions ts ON ts.task_id = t.id AND ts.member_id = $1::uuid
+               WHERE t.batch_id = $2::uuid AND t.is_active = true`,
+              memberId, batchId,
+            ).catch(() => [{ total_tasks: 0, completed_tasks: 0 }])
+          : Promise.resolve([{ total_tasks: 0, completed_tasks: 0 }]),
+
+        // Q5: leaderboard rank (best-effort — timeout guard via catch)
+        prisma.$queryRawUnsafe<any[]>(
+          `WITH ranked AS (
+             SELECT member_id, RANK() OVER (ORDER BY SUM(points) DESC) AS rk
+             FROM tbt_activity_log GROUP BY member_id
+           ) SELECT rk::int AS rk FROM ranked WHERE member_id = $1::uuid LIMIT 1`,
+          memberId,
+        ).catch(() => []),
+
+        // Q6: course streak
+        (prisma as any).courseStreak.findUnique({
+          where: { memberId },
+          select: { currentStreak: true },
+        }).catch(() => null),
+
+        // Q7: batch details (name, startedAt, totalDays)
+        batchId
+          ? prisma.batch.findUnique({
+              where: { id: batchId },
+              select: { name: true, startsAt: true, snapshotDays: true, program: { select: { name: true, durationDays: true } } },
+            }).catch(() => null)
+          : Promise.resolve(null),
+
+        // Q8: extended days from member_batch_settings
+        batchId
+          ? prisma.$queryRawUnsafe<any[]>(
+              `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
+              batchId, memberId,
+            ).catch(() => [])
+          : Promise.resolve([]),
+
+        // Q9: weekly report submitted for current ISO week
+        (async () => {
+          const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+          return prisma.$queryRawUnsafe<any[]>(
+            `SELECT id FROM course_weekly_feedback WHERE member_id = $1::uuid AND week_number = $2 LIMIT 1`,
+            memberId, isoWeek,
+          ).catch(() => []);
+        })(),
+      ]);
+
+      const dailyTimeSpentHrs = Number(timeRows[0]?.total_secs ?? 0) / 3600;
+      const totalEpisodes = Number(episodeCountRows[0]?.cnt ?? 0);
+      const completedEpisodes = Number(completedEpRows[0]?.cnt ?? 0);
+      const tasksTotal = Number(taskRows[0]?.total_tasks ?? 0);
+      const tasksCompleted = Number(taskRows[0]?.completed_tasks ?? 0);
+      const leaderboardRank = rankRows[0]?.rk ? Number(rankRows[0].rk) : null;
+      const streakDays = Number((streakRow as any)?.currentStreak ?? 0);
+      const weeklyReportSubmitted = weeklyFbRows.length > 0;
+
+      // Days elapsed since batch started
+      let daysElapsed = 0;
+      if (batchData && (batchData as any).startsAt) {
+        const startMs = new Date((batchData as any).startsAt).getTime();
+        daysElapsed = Math.max(0, Math.floor((Date.now() - startMs) / (86400 * 1000)));
+      }
+
+      const baseDays = (batchData as any)?.snapshotDays ?? (batchData as any)?.program?.durationDays ?? 90;
+      const extendedDays = (settingsRows[0] as any)?.extended_days ?? 0;
+      const totalDays = baseDays + extendedDays;
+      const programName = (batchData as any)?.program?.name ?? (batchData as any)?.name ?? null;
+
+      return {
+        dailyTimeSpentHrs: Math.round(dailyTimeSpentHrs * 100) / 100,
+        dailyTimeGoalHrs: 2.0,
+        weeklyReportSubmitted,
+        streakDays,
+        totalEpisodes,
+        completedEpisodes,
+        tasksCompleted,
+        tasksTotal,
+        leaderboardRank,
+        daysElapsed,
+        totalDays,
+        programName,
+      };
+    },
+  );
+
+  return ok(reply, result);
+}
+
+export async function getMentorshipRevenueHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM member_revenue_reports
+     WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
+    memberId, isoWeek, isoYear,
+  ).catch(() => []);
+
+  if (!rows.length) return ok(reply, null);
+
+  const r = rows[0];
+  return ok(reply, {
+    weekNumber:       isoWeek,
+    year:             isoYear,
+    revenueGenerated: r.revenue_generated != null ? Number(r.revenue_generated) : null,
+    revenuePrev:      r.revenue_prev != null ? Number(r.revenue_prev) : null,
+    numberOfOrders:   r.number_of_orders != null ? Number(r.number_of_orders) : null,
+    ordersPrev:       r.orders_prev != null ? Number(r.orders_prev) : null,
+    adBudgetSpent:    r.ad_budget_spent != null ? Number(r.ad_budget_spent) : null,
+    roas:             r.roas != null ? Number(r.roas) : null,
+    customerAcqCost:  r.customer_acq_cost != null ? Number(r.customer_acq_cost) : null,
+    organicLeads:     r.organic_leads != null ? Number(r.organic_leads) : null,
+    leadsPrev:        r.leads_prev != null ? Number(r.leads_prev) : null,
+    avgOrderValue:    r.avg_order_value != null ? Number(r.avg_order_value) : null,
+    updatedAt:        r.updated_at ? new Date(r.updated_at).toISOString() : null,
+  });
+}
+
+export async function upsertMentorshipRevenueHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+  const body = request.body as Record<string, number | null>;
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO member_revenue_reports
+       (member_id, week_number, year, revenue_generated, revenue_prev,
+        number_of_orders, orders_prev, ad_budget_spent, roas,
+        customer_acq_cost, organic_leads, leads_prev, avg_order_value, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+     ON CONFLICT (member_id, week_number, year) DO UPDATE SET
+       revenue_generated  = EXCLUDED.revenue_generated,
+       revenue_prev       = EXCLUDED.revenue_prev,
+       number_of_orders   = EXCLUDED.number_of_orders,
+       orders_prev        = EXCLUDED.orders_prev,
+       ad_budget_spent    = EXCLUDED.ad_budget_spent,
+       roas               = EXCLUDED.roas,
+       customer_acq_cost  = EXCLUDED.customer_acq_cost,
+       organic_leads      = EXCLUDED.organic_leads,
+       leads_prev         = EXCLUDED.leads_prev,
+       avg_order_value    = EXCLUDED.avg_order_value,
+       updated_at         = now()
+     RETURNING *`,
+    memberId, isoWeek, isoYear,
+    body.revenueGenerated ?? null,
+    body.revenuePrev ?? null,
+    body.numberOfOrders ?? null,
+    body.ordersPrev ?? null,
+    body.adBudgetSpent ?? null,
+    body.roas ?? null,
+    body.customerAcqCost ?? null,
+    body.organicLeads ?? null,
+    body.leadsPrev ?? null,
+    body.avgOrderValue ?? null,
+  );
+
+  const r = rows[0];
+  return ok(reply, {
+    weekNumber:       isoWeek,
+    year:             isoYear,
+    revenueGenerated: r.revenue_generated != null ? Number(r.revenue_generated) : null,
+    revenuePrev:      r.revenue_prev != null ? Number(r.revenue_prev) : null,
+    numberOfOrders:   r.number_of_orders != null ? Number(r.number_of_orders) : null,
+    ordersPrev:       r.orders_prev != null ? Number(r.orders_prev) : null,
+    adBudgetSpent:    r.ad_budget_spent != null ? Number(r.ad_budget_spent) : null,
+    roas:             r.roas != null ? Number(r.roas) : null,
+    customerAcqCost:  r.customer_acq_cost != null ? Number(r.customer_acq_cost) : null,
+    organicLeads:     r.organic_leads != null ? Number(r.organic_leads) : null,
+    leadsPrev:        r.leads_prev != null ? Number(r.leads_prev) : null,
+    avgOrderValue:    r.avg_order_value != null ? Number(r.avg_order_value) : null,
+    updatedAt:        r.updated_at ? new Date(r.updated_at).toISOString() : null,
   });
 }

@@ -64,12 +64,14 @@ export const useUpdateNotificationPrefs = () => {
 
 export type SupportQuota = {
   plan: string;
-  techSupport:  { allocated: number; used: number; remaining: number };
-  adSupport:    { allocated: number; used: number; remaining: number };
-  groupCall:    { allocated: number; used: number; remaining: number };
-  callCredits:  { allocated: number; used: number; remaining: number };
-  oneToOne:     boolean;
-  lifelines:    { total: number; used: number; remaining: number };
+  techSupport:    { allocated: number; used: number; remaining: number };
+  adSupport:      { allocated: number; used: number; remaining: number };
+  groupCall:      { allocated: number; used: number; remaining: number };
+  callCredits:    { allocated: number; used: number; remaining: number };
+  salesSupport:   { allocated: number; used: number; remaining: number };
+  contentSupport: { allocated: number; used: number; remaining: number };
+  oneToOne:       boolean;
+  lifelines:      { total: number; used: number; remaining: number };
 };
 
 export const useUserSupportQuota = () =>
