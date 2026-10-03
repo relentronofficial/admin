@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createPostSchema, updatePostPinSchema, submitPostSchema, approvePostSchema } from './schema.js';
-import { cacheGet, cacheSet } from '../../lib/cache.js';
+import { cacheGetOrCompute, invalidateCache } from '../../lib/cache.js';
 import { notifyMembers } from '../../lib/notifications.js';
 
 // ── Member-facing: submit + list approved feed (Module 9A) ─────────
@@ -16,30 +16,14 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
   const { page = 1, limit = 20, filter = 'all' } = request.query as any;
   const memberId = request.memberId;
 
-  // Short-lived per-member cache for the read-heavy 'all' / 'mentors'
-  // paths. Each request otherwise runs FIVE Prisma queries (posts +
-  // likes-by-me + first-liker + top-comment + bookmarks-by-me) —
-  // painful under a tab-switch scroll pattern (open feed → screen →
-  // back → open feed). 15 s TTL covers that pattern without meaningful
-  // staleness because the mobile client uses optimistic updates on
-  // like / bookmark, so the delayed server response isn't user-visible.
-  // 'mine' and 'following' are skipped: 'mine' includes pending posts
-  // the author has to see immediately after submit; 'following'
-  // depends on the connection set which changes off-band.
+  // 'mine' includes pending posts the author must see immediately after
+  // submit. 'following' depends on connection set which changes off-band.
+  // Only 'all' and 'mentors' are cached.
   const canCache = filter === 'all' || filter === 'mentors';
   const redis = request.server.redis ?? null;
   const feedCacheKey = canCache
     ? `feed:page:${memberId}:${filter}:${page}:${limit}`
     : null;
-  if (feedCacheKey) {
-    const cached = await cacheGet<{
-      data: unknown;
-      meta: { total: number; page: number; limit: number };
-    }>(redis, feedCacheKey);
-    if (cached) {
-      return reply.send({ success: true, ...cached, error: null });
-    }
-  }
 
   const where: Record<string, unknown> = { status: 'active' };
   switch (filter) {
@@ -48,12 +32,9 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
       where.isMentor = true;
       break;
     case 'mine':
-      // Author sees their own posts including pending — no isApproved
-      // filter here.
       where.memberId = memberId;
       break;
     case 'following': {
-      // Item #21: return posts by anyone the caller follows.
       if (!memberId) {
         return reply.send({
           success: true,
@@ -85,167 +66,73 @@ export async function memberListFeedHandler(request: FastifyRequest, reply: Fast
       break;
   }
 
-  const [posts, total] = await Promise.all([
-    request.server.prisma.post.findMany({
-      where: where as any,
-      skip: (Number(page) - 1) * Number(limit),
-      take: Number(limit),
-      orderBy: [{ isPinned: 'desc' }, { isMentor: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        member: {
-          select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true },
-        },
-      },
-    }),
-    request.server.prisma.post.count({ where: where as any }),
-  ]);
+  // Compute feed: posts + 4 enrichment queries run in parallel (one DB
+  // round-trip each, versus 4 sequential round-trips in the old path).
+  // Each enrichment query uses .catch(() => []) so a table hiccup
+  // degrades gracefully (same behaviour as the old per-query try/catch).
+  type MemberRef = { id: string; firstName: string | null; lastName: string | null; profilePhotoUrl: string | null };
+  type TopComment = { id: string; content: string; createdAt: Date; member: MemberRef | null };
 
-  // Attach `isLikedByMe` per post — a single query joined in memory
-  // avoids N+1. Wrapped in try/catch so any Prisma-side hiccup on the
-  // Like table degrades gracefully to `isLikedByMe: false` instead of
-  // taking down the whole feed.
-  const likedIds = new Set<string>();
-  if (memberId && posts.length > 0) {
-    try {
-      const likes = await request.server.prisma.like.findMany({
-        where: {
-          memberId,
-          postId: { in: posts.map((p) => p.id) },
-        },
-        select: { postId: true },
-      });
-      for (const l of likes) {
-        if (l.postId) likedIds.add(l.postId);
-      }
-    } catch (err) {
-      request.log.warn({ err }, 'community feed: like-enrichment failed');
+  const computeFeed = async () => {
+    const prisma = request.server.prisma;
+    const [posts, total] = await Promise.all([
+      prisma.post.findMany({
+        where: where as any,
+        skip: (Number(page) - 1) * Number(limit),
+        take: Number(limit),
+        orderBy: [{ isPinned: 'desc' }, { isMentor: 'desc' }, { createdAt: 'desc' }],
+        include: { member: { select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true } } },
+      }),
+      prisma.post.count({ where: where as any }),
+    ]);
+
+    const postIds = posts.map((p) => p.id);
+
+    const [likeRows, firstLikerRows, commentRows, bookmarkRows] = await Promise.all([
+      memberId && postIds.length > 0
+        ? prisma.like.findMany({ where: { memberId, postId: { in: postIds } }, select: { postId: true } }).catch(() => [] as { postId: string | null }[])
+        : ([] as { postId: string | null }[]),
+      postIds.length > 0
+        ? prisma.like.findMany({ where: { postId: { in: postIds } }, orderBy: { createdAt: 'asc' }, select: { postId: true, member: { select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true } } } }).catch(() => [] as any[])
+        : ([] as any[]),
+      postIds.length > 0
+        ? prisma.comment.findMany({ where: { postId: { in: postIds } }, orderBy: { createdAt: 'asc' }, select: { id: true, postId: true, content: true, createdAt: true, member: { select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true } } } }).catch(() => [] as any[])
+        : ([] as any[]),
+      memberId && postIds.length > 0
+        ? prisma.postBookmark.findMany({ where: { memberId, postId: { in: postIds } }, select: { postId: true } }).catch(() => [] as { postId: string }[])
+        : ([] as { postId: string }[]),
+    ]);
+
+    const likedIds = new Set<string>(likeRows.map((l) => l.postId!).filter(Boolean));
+
+    const firstLikerByPost = new Map<string, MemberRef>();
+    for (const l of firstLikerRows as any[]) {
+      if (l.postId && !firstLikerByPost.has(l.postId) && l.member) firstLikerByPost.set(l.postId, l.member);
     }
-  }
 
-  // Item #6: batch first-liker per post. Single query for all posts in
-  // the feed batch — no N+1. Ordered by createdAt asc so "first liker"
-  // === "earliest liker", which matches LinkedIn's "Liked by <first
-  // person> and N others" convention.
-  type MemberRef = {
-    id: string;
-    firstName: string | null;
-    lastName: string | null;
-    profilePhotoUrl: string | null;
+    const topCommentByPost = new Map<string, TopComment>();
+    for (const c of commentRows as any[]) {
+      if (c.postId && !topCommentByPost.has(c.postId)) topCommentByPost.set(c.postId, { id: c.id, content: c.content, createdAt: c.createdAt, member: c.member });
+    }
+
+    const bookmarkedIds = new Set<string>(bookmarkRows.map((b) => b.postId));
+
+    const data = posts.map((p) => ({
+      ...p,
+      isLikedByMe: likedIds.has(p.id),
+      isBookmarkedByMe: bookmarkedIds.has(p.id),
+      firstLiker: firstLikerByPost.get(p.id) ?? null,
+      topComment: topCommentByPost.get(p.id) ?? null,
+    }));
+
+    return { data, meta: { total, page: Number(page), limit: Number(limit) } };
   };
-  const firstLikerByPost = new Map<string, MemberRef>();
-  if (posts.length > 0) {
-    try {
-      const likes = await request.server.prisma.like.findMany({
-        where: { postId: { in: posts.map((p) => p.id) } },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          postId: true,
-          member: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePhotoUrl: true,
-            },
-          },
-        },
-      });
-      for (const l of likes) {
-        if (l.postId && !firstLikerByPost.has(l.postId) && l.member) {
-          firstLikerByPost.set(l.postId, l.member);
-        }
-      }
-    } catch (err) {
-      request.log.warn({ err }, 'community feed: first-liker enrichment failed');
-    }
-  }
 
-  // Item #11: batch top-comment per post. Same no-N+1 pattern — one
-  // findMany + dedupe in memory. Ordered by createdAt asc so "top" is
-  // the oldest comment (feed-first pattern, matches how LinkedIn shows
-  // it — encourages engagement with early commenters).
-  type TopComment = {
-    id: string;
-    content: string;
-    createdAt: Date;
-    member: MemberRef | null;
-  };
-  const topCommentByPost = new Map<string, TopComment>();
-  if (posts.length > 0) {
-    try {
-      const comments = await request.server.prisma.comment.findMany({
-        where: { postId: { in: posts.map((p) => p.id) } },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          postId: true,
-          content: true,
-          createdAt: true,
-          member: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePhotoUrl: true,
-            },
-          },
-        },
-      });
-      for (const c of comments) {
-        if (c.postId && !topCommentByPost.has(c.postId)) {
-          topCommentByPost.set(c.postId, {
-            id: c.id,
-            content: c.content,
-            createdAt: c.createdAt,
-            member: c.member,
-          });
-        }
-      }
-    } catch (err) {
-      request.log.warn({ err }, 'community feed: top-comment enrichment failed');
-    }
-  }
+  const result = feedCacheKey
+    ? await cacheGetOrCompute<{ data: unknown[]; meta: { total: number; page: number; limit: number } }>(redis, feedCacheKey, 15, computeFeed)
+    : await computeFeed();
 
-  // Item #16: batch bookmark state per post. Single query for all
-  // posts. Wrapped in try/catch same pattern as likes/comments — the
-  // feed still renders if the bookmark table has a hiccup.
-  const bookmarkedIds = new Set<string>();
-  if (memberId && posts.length > 0) {
-    try {
-      const bookmarks = await request.server.prisma.postBookmark.findMany({
-        where: {
-          memberId,
-          postId: { in: posts.map((p) => p.id) },
-        },
-        select: { postId: true },
-      });
-      for (const b of bookmarks) bookmarkedIds.add(b.postId);
-    } catch (err) {
-      request.log.warn(
-        { err },
-        'community feed: bookmark-enrichment failed',
-      );
-    }
-  }
-
-  const enriched = posts.map((p) => ({
-    ...p,
-    isLikedByMe: likedIds.has(p.id),
-    isBookmarkedByMe: bookmarkedIds.has(p.id),
-    firstLiker: firstLikerByPost.get(p.id) ?? null,
-    topComment: topCommentByPost.get(p.id) ?? null,
-  }));
-
-  const meta = { total, page: Number(page), limit: Number(limit) };
-  if (feedCacheKey) {
-    await cacheSet(redis, feedCacheKey, { data: enriched, meta }, 15);
-  }
-  return reply.send({
-    success: true,
-    data: enriched,
-    meta,
-    error: null,
-  });
+  return reply.send({ success: true, ...result, error: null });
 }
 
 // ── Member: toggle like on a post ──────────────────────────────────
@@ -288,6 +175,9 @@ export async function memberToggleLikeHandler(request: FastifyRequest, reply: Fa
       likesCount: result.likesCount,
     });
   } catch (_) {}
+
+  // Invalidate this member's feed cache so isLikedByMe reflects immediately
+  void invalidateCache(request.server.redis ?? null, `feed:page:${memberId}:*`);
 
   return reply.send({ success: true, data: result, error: null });
 }
@@ -1050,6 +940,7 @@ export async function memberToggleBookmarkHandler(
     await request.server.prisma.postBookmark.delete({
       where: { id: existing.id },
     });
+    void invalidateCache(request.server.redis ?? null, `feed:page:${memberId}:*`);
     return reply.send({
       success: true,
       data: { bookmarked: false },
@@ -1071,6 +962,7 @@ export async function memberToggleBookmarkHandler(
     await request.server.prisma.postBookmark.create({
       data: { memberId, postId: id },
     });
+    void invalidateCache(request.server.redis ?? null, `feed:page:${memberId}:*`);
     return reply.send({
       success: true,
       data: { bookmarked: true },
