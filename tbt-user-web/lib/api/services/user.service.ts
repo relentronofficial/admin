@@ -13,6 +13,7 @@ export const userService = {
     city?: string | null;
     state?: string | null;
     businessName?: string | null;
+    businessType?: string | null;
   }) =>
     apiClient.patch<never, ApiResponse<Partial<MemberProfile>>>("/api/user/me", data),
 

@@ -960,6 +960,24 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Course Track</label>
+                  <select
+                    value={profile.businessType ?? ""}
+                    onChange={(e) => setField("businessType", e.target.value || null)}
+                    className={INPUT_CLS}
+                    style={inputStyle("businessType")}
+                  >
+                    <option value="">Select your track…</option>
+                    <option value="Product">Product — Build &amp; sell products</option>
+                    <option value="Service">Service — Offer your expertise</option>
+                    <option value="Coaching">Coaching — Coach &amp; mentor others</option>
+                  </select>
+                </div>
+                <div />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div data-field-error={errors.teamSize ? true : undefined}>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Team Size *</label>
                   <input value={profile.teamSize ?? ""} onChange={(e) => setField("teamSize", e.target.value)} placeholder="e.g. 5" className={INPUT_CLS} style={inputStyle("teamSize")} />

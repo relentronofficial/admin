@@ -6,10 +6,10 @@ import Image from "next/image";
 import {
   Search, BookOpen, Play, Zap, Clock, Lock,
   ChevronRight, Award, TrendingUp, CheckCircle2, Layers,
-  ShoppingBag, Briefcase, Users,
 } from "lucide-react";
 import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
+import { useMe, useUpdateProfile } from "@/lib/hooks/useUser";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
 import type { ContinueLearningItem } from "@/types";
@@ -21,16 +21,6 @@ function formatSeconds(secs: number): string {
   const s = Math.floor(secs % 60);
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
-
-// ── Module config ─────────────────────────────────────────────────────────────
-
-const MODULE_TABS = ["Product", "Service", "Coach"] as const;
-
-const MODULE_CONFIG: Record<string, { displayLabel: string; icon: React.ReactNode; description: string }> = {
-  Product: { displayLabel: "Product",  icon: <ShoppingBag size={28} />, description: "Build & sell products" },
-  Service: { displayLabel: "Service",  icon: <Briefcase size={28} />, description: "Offer your services" },
-  Coach:   { displayLabel: "CoachX",   icon: <Users    size={28} />, description: "Coach & mentor others" },
-};
 
 // ── Level config ──────────────────────────────────────────────────────────────
 
@@ -455,6 +445,10 @@ export default function CoursesPage() {
   const { config } = useSiteConfig();
   const coursesBannerUrl = config?.coursesBannerUrl ?? null;
 
+  const { data: me } = useMe();
+  const updateProfile = useUpdateProfile();
+  const memberTrack = (me as any)?.businessType as string | null | undefined;
+
   const { data: categories } = useCourseCategories();
 
   const { data: catalogData, isLoading: catalogLoading } = useCourses({
@@ -462,6 +456,7 @@ export default function CoursesPage() {
     level: level !== "all" ? level : undefined,
     sort,
     category: category !== "all" ? category : undefined,
+    moduleTitle: memberTrack ?? undefined,
     limit: 24,
   });
   const { data: enrollments, isLoading: enrollLoading } = useMyEnrollments();
@@ -619,63 +614,6 @@ export default function CoursesPage() {
         </div>
       </div>
 
-      {/* ── Module cards ────────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-          <Layers size={15} style={{ color: "var(--color-accent)" }} />
-          Browse by Module
-        </h2>
-        <div className="grid grid-cols-3 gap-4">
-          {MODULE_TABS.map((m) => {
-            const cfg = MODULE_CONFIG[m];
-            return (
-              <Link
-                key={m}
-                href={`/courses/${m.toLowerCase()}`}
-                className="group relative flex flex-col items-center gap-3 p-6 rounded-2xl text-center transition-all duration-200 hover:-translate-y-0.5"
-                style={{
-                  background: "var(--color-bg-surface)",
-                  border: "2px solid var(--color-border-subtle)",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.border = "2px solid var(--color-accent)";
-                  (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 24px color-mix(in srgb, var(--color-accent) 20%, transparent)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.border = "2px solid var(--color-border-subtle)";
-                  (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
-                }}
-              >
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200 group-hover:bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)]"
-                  style={{
-                    background: "var(--color-surface-overlay-md)",
-                    color: "var(--color-text-secondary)",
-                  }}
-                >
-                  {cfg.icon}
-                </div>
-                <div>
-                  <p className="text-[15px] font-bold tracking-wide transition-colors group-hover:text-[var(--color-accent)]"
-                    style={{ color: "var(--color-text-normal)" }}>
-                    {cfg.displayLabel}
-                  </p>
-                  <p className="text-[11px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-                    {cfg.description}
-                  </p>
-                </div>
-                <ChevronRight
-                  size={14}
-                  className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ color: "var(--color-accent)" }}
-                />
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
           {/* Continue Learning */}
           <section className="space-y-4">
             <h2 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -727,11 +665,83 @@ export default function CoursesPage() {
 
           {/* Browse All */}
           <section className="space-y-5">
+            {/* Track selector — shown only when member hasn't set a business track */}
+            {me && !memberTrack && (
+              <div
+                className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4 rounded-2xl"
+                style={{
+                  background: "color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-surface))",
+                  border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
+                }}
+              >
+                <div className="flex-1">
+                  <p className="text-[13px] font-semibold" style={{ color: "var(--color-text-normal)" }}>
+                    Select your business track
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                    We'll show you the most relevant courses for your business.
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {(["Product", "Service", "Coaching"] as const).map((track) => (
+                    <button
+                      key={track}
+                      onClick={() => updateProfile.mutate({ businessType: track })}
+                      disabled={updateProfile.isPending}
+                      className="px-4 py-2 rounded-xl text-[12px] font-semibold transition-all duration-150 disabled:opacity-50"
+                      style={{
+                        background: "var(--color-surface-overlay)",
+                        border: "1px solid var(--color-border-subtle)",
+                        color: "var(--color-text-secondary)",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = "var(--color-accent)";
+                        (e.currentTarget as HTMLElement).style.color = "#fff";
+                        (e.currentTarget as HTMLElement).style.borderColor = "transparent";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = "var(--color-surface-overlay)";
+                        (e.currentTarget as HTMLElement).style.color = "var(--color-text-secondary)";
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--color-border-subtle)";
+                      }}
+                    >
+                      {track}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                <Layers size={15} style={{ color: "var(--color-accent)" }} />
-                Browse All
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Layers size={15} style={{ color: "var(--color-accent)" }} />
+                  {memberTrack ? `${memberTrack} Courses` : "Browse All"}
+                </h2>
+                {/* Active track badge + clear */}
+                {memberTrack && (
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full"
+                      style={{
+                        background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-overlay))",
+                        border: "1px solid color-mix(in srgb, var(--color-accent) 28%, transparent)",
+                        color: "var(--color-accent)",
+                      }}
+                    >
+                      {memberTrack} Track
+                    </span>
+                    <button
+                      onClick={() => updateProfile.mutate({ businessType: null })}
+                      disabled={updateProfile.isPending}
+                      className="text-[11px] underline underline-offset-2 disabled:opacity-50"
+                      style={{ color: "var(--color-text-subtle)" }}
+                    >
+                      Show all
+                    </button>
+                  </div>
+                )}
+              </div>
               {!catalogLoading && catalogCourses.length > 0 && (
                 <span className="text-[11px] text-muted-foreground">{catalogCourses.length} courses</span>
               )}

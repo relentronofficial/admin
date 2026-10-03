@@ -2060,6 +2060,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_course_enrollments_course_id ON course_enrollments(course_id)`
     ).catch(() => {});
+    // BT-01: rename legacy "Coach" module value to "Coaching" (idempotent — no-op after first run)
+    await prisma.$executeRawUnsafe(
+      `UPDATE courses SET module = 'Coaching' WHERE module = 'Coach'`
+    ).catch(() => {});
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.

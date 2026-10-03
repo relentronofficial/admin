@@ -798,6 +798,7 @@ export default function MembersListPage() {
                     <div className="space-y-4 bg-[#0a0a0a]/30 p-5 rounded-xl border border-[#1f1f1f]">
                       <InfoItem label="Enterprise Name" value={viewingMember.businessName || 'N/A'} />
                       <InfoItem label="Business Type" value={viewingMember.productServiceType || 'N/A'} />
+                      <InfoItem label="Course Track" value={(viewingMember as any).businessType || 'Not set'} />
                       <InfoItem label="Established" value={safeFormatDate(viewingMember.businessEstablishedOn)} />
                       <InfoItem label="Annual Turnover" value={viewingMember.annualTurnover || 'N/A'} />
                       <InfoItem label="GST Identifier" value={viewingMember.gstNumber || 'N/A'} />
@@ -1041,6 +1042,18 @@ export default function MembersListPage() {
                           <input {...register("instagramLink")} className="w-full h-full bg-transparent pr-4 text-white text-sm outline-none" />
                         </div>
                       </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Course Track</label>
+                        <select {...register("businessType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
+                          <option value="">— Not set —</option>
+                          <option value="Product">Product</option>
+                          <option value="Service">Service</option>
+                          <option value="Coaching">Coaching</option>
+                        </select>
+                      </div>
+                      <div />
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
