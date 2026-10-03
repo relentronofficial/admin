@@ -4,12 +4,11 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   Flame, Heart, CheckCircle2, Clock, TrendingUp, TrendingDown,
-  Users, BookOpen, BarChart3, Target, Zap, Phone, X, Edit3,
-  ChevronRight, RefreshCw, Trophy, Star, Activity,
+  BookOpen, BarChart3, Target, Phone, ChevronRight, Trophy, Star, Activity,
 } from "lucide-react";
 import { useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue } from "@/lib/hooks/useMentorship";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
-import { useUserSupportQuota, useMe } from "@/lib/hooks/useUser";
+import { useUserSupportQuota } from "@/lib/hooks/useUser";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
@@ -208,46 +207,13 @@ function SupportCallTile({ label, used, total }: { label: string; used: number; 
   );
 }
 
-function RevenueCard({
-  label,
-  primary,
-  sub1,
-  sub2,
-  badge,
-  badgeColor,
-  growth,
-}: {
-  label: string;
-  primary: string;
-  sub1?: string;
-  sub2?: string;
-  badge?: string;
-  badgeColor?: string;
-  growth?: number | null;
-}) {
+function SkeletonCard({ className }: { className?: string }) {
   return (
-    <div
-      className="rounded-2xl p-4 flex flex-col gap-2"
-      style={{
-        background: "var(--color-bg-surface, #141414)",
-        border: "1px solid rgba(255,255,255,0.06)",
-      }}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
-        {growth != null && <GrowthBadge value={growth} />}
-      </div>
-      <div className="text-xl font-black text-white">{primary}</div>
-      {badge && (
-        <span className="self-start text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: badgeColor ?? "rgba(34,197,94,0.15)", color: "#22c55e" }}>
-          {badge}
-        </span>
-      )}
-      {sub1 && <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{sub1}</p>}
-      {sub2 && <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>{sub2}</p>}
-    </div>
+    <div className={`rounded-2xl animate-pulse ${className ?? ""}`} style={{ background: "rgba(255,255,255,0.05)", minHeight: 90 }} />
   );
 }
+
+// ─── Revenue Stats inline calculator ─────────────────────────────────────────
 
 type RevenueFormState = {
   revenueGenerated: string;
@@ -262,132 +228,347 @@ type RevenueFormState = {
   avgOrderValue: string;
 };
 
-function RevenueModal({
-  onClose,
-  initial,
-}: {
-  onClose: () => void;
-  initial: Record<string, number | null>;
-}) {
-  const upsert = useUpsertMentorshipRevenue();
-  const [form, setForm] = useState<RevenueFormState>({
-    revenueGenerated: initial.revenueGenerated?.toString() ?? "",
-    revenuePrev: initial.revenuePrev?.toString() ?? "",
-    numberOfOrders: initial.numberOfOrders?.toString() ?? "",
-    ordersPrev: initial.ordersPrev?.toString() ?? "",
-    adBudgetSpent: initial.adBudgetSpent?.toString() ?? "",
-    roas: initial.roas?.toString() ?? "",
-    customerAcqCost: initial.customerAcqCost?.toString() ?? "",
-    organicLeads: initial.organicLeads?.toString() ?? "",
-    leadsPrev: initial.leadsPrev?.toString() ?? "",
-    avgOrderValue: initial.avgOrderValue?.toString() ?? "",
-  });
+const EMPTY_FORM: RevenueFormState = {
+  revenueGenerated: "", revenuePrev: "",
+  numberOfOrders: "", ordersPrev: "",
+  adBudgetSpent: "", roas: "",
+  customerAcqCost: "", organicLeads: "",
+  leadsPrev: "", avgOrderValue: "",
+};
 
-  const field = (key: keyof RevenueFormState, label: string, prefix?: string) => (
-    <div>
-      <label className="block text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--color-text-subtle)" }}>
-        {label}
-      </label>
-      <div className="flex items-center gap-1">
-        {prefix && <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{prefix}</span>}
+function RevenueStatsSection() {
+  const upsert = useUpsertMentorshipRevenue();
+  const { data: revenue } = useMentorshipRevenue();
+
+  const [form, setForm] = useState<RevenueFormState>(EMPTY_FORM);
+  const [isDirty, setIsDirty] = useState(false);
+
+  useEffect(() => {
+    if (!revenue) return;
+    setForm({
+      revenueGenerated: revenue.revenueGenerated?.toString() ?? "",
+      revenuePrev: revenue.revenuePrev?.toString() ?? "",
+      numberOfOrders: revenue.numberOfOrders?.toString() ?? "",
+      ordersPrev: revenue.ordersPrev?.toString() ?? "",
+      adBudgetSpent: revenue.adBudgetSpent?.toString() ?? "",
+      roas: revenue.roas?.toString() ?? "",
+      customerAcqCost: revenue.customerAcqCost?.toString() ?? "",
+      organicLeads: revenue.organicLeads?.toString() ?? "",
+      leadsPrev: revenue.leadsPrev?.toString() ?? "",
+      avgOrderValue: revenue.avgOrderValue?.toString() ?? "",
+    });
+    setIsDirty(false);
+  }, [revenue?.weekNumber]);
+
+  const set = (key: keyof RevenueFormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+    setIsDirty(true);
+  };
+
+  // Live calculations
+  const n = (v: string): number | null => (v === "" ? null : Number(v));
+  const rev = n(form.revenueGenerated);
+  const revPrev = n(form.revenuePrev);
+  const orders = n(form.numberOfOrders);
+  const ordersPrev = n(form.ordersPrev);
+  const adSpend = n(form.adBudgetSpent);
+  const roas = n(form.roas);
+  const cac = n(form.customerAcqCost);
+  const leads = n(form.organicLeads);
+  const leadsPrevVal = n(form.leadsPrev);
+  const aov = n(form.avgOrderValue);
+
+  const revGrowth = growthPct(rev, revPrev);
+  const ordersGrowth = growthPct(orders, ordersPrev);
+  const leadsGrowth = growthPct(leads, leadsPrevVal);
+  const autoAov = rev != null && orders != null && orders > 0 ? Math.round(rev / orders) : null;
+  const effectiveAov = aov ?? autoAov;
+  const btoRatio = adSpend != null && rev != null && rev > 0
+    ? Math.round((adSpend / rev) * 1000) / 10
+    : null;
+  const roasLabel = roas != null
+    ? (roas >= 3 ? "Highly Profitable" : roas >= 1.5 ? "Moderate" : "Watch Out")
+    : null;
+  const roasColor = roas != null
+    ? (roas >= 3 ? { bg: "rgba(34,197,94,0.15)", text: "#22c55e" }
+      : roas >= 1.5 ? { bg: "rgba(251,146,60,0.15)", text: "#fb923c" }
+      : { bg: "rgba(239,68,68,0.15)", text: "#ef4444" })
+    : null;
+  const btoRisk = btoRatio != null
+    ? (btoRatio < 5 ? "Low Risk" : btoRatio < 20 ? "Moderate" : "High Risk")
+    : null;
+  const btoColor = btoRatio != null
+    ? (btoRatio < 5 ? { bg: "rgba(34,197,94,0.15)", text: "#22c55e" }
+      : btoRatio < 20 ? { bg: "rgba(251,146,60,0.15)", text: "#fb923c" }
+      : { bg: "rgba(239,68,68,0.15)", text: "#ef4444" })
+    : null;
+
+  const handleSave = async () => {
+    try {
+      await upsert.mutateAsync({
+        revenueGenerated: rev,
+        revenuePrev: revPrev,
+        numberOfOrders: orders != null ? Math.round(orders) : null,
+        ordersPrev: ordersPrev != null ? Math.round(ordersPrev) : null,
+        adBudgetSpent: adSpend,
+        roas,
+        customerAcqCost: cac,
+        organicLeads: leads != null ? Math.round(leads) : null,
+        leadsPrev: leadsPrevVal != null ? Math.round(leadsPrevVal) : null,
+        avgOrderValue: aov,
+      });
+      setIsDirty(false);
+      toast.success("Revenue stats saved!");
+    } catch {
+      toast.error("Failed to save.");
+    }
+  };
+
+  // Input field renderer
+  const inp = (
+    key: keyof RevenueFormState,
+    placeholder: string,
+    opts?: { prefix?: string; isAuto?: boolean; autoVal?: number | null },
+  ) => {
+    const hasAuto = opts?.isAuto && opts.autoVal != null && form[key] === "";
+    return (
+      <div className="relative">
+        {opts?.prefix && (
+          <span
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none select-none"
+            style={{ color: "var(--color-text-subtle)" }}
+          >
+            {opts.prefix}
+          </span>
+        )}
         <input
           type="number"
           min={0}
           step="any"
+          placeholder={hasAuto ? opts!.autoVal!.toLocaleString("en-IN") : placeholder}
           value={form[key]}
-          onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-          className="w-full rounded-lg px-3 py-2 text-sm text-white outline-none transition-all"
-          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}
+          onChange={set(key)}
+          className="w-full rounded-xl py-2.5 text-sm text-white outline-none transition-colors"
+          style={{
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            paddingLeft: opts?.prefix ? "1.6rem" : "0.75rem",
+            paddingRight: "0.75rem",
+          }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-accent)"; e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
         />
+        {hasAuto && (
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: "rgba(255,255,255,0.06)", color: "var(--color-text-subtle)" }}>
+            auto
+          </span>
+        )}
       </div>
-    </div>
-  );
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const n = (v: string) => (v === "" ? null : Number(v));
-    try {
-      await upsert.mutateAsync({
-        revenueGenerated: n(form.revenueGenerated),
-        revenuePrev: n(form.revenuePrev),
-        numberOfOrders: n(form.numberOfOrders) ? Math.round(n(form.numberOfOrders)!) : null,
-        ordersPrev: n(form.ordersPrev) ? Math.round(n(form.ordersPrev)!) : null,
-        adBudgetSpent: n(form.adBudgetSpent),
-        roas: n(form.roas),
-        customerAcqCost: n(form.customerAcqCost),
-        organicLeads: n(form.organicLeads) ? Math.round(n(form.organicLeads)!) : null,
-        leadsPrev: n(form.leadsPrev) ? Math.round(n(form.leadsPrev)!) : null,
-        avgOrderValue: n(form.avgOrderValue),
-      });
-      toast.success("Revenue stats updated!");
-      onClose();
-    } catch {
-      toast.error("Failed to save. Please try again.");
-    }
+    );
   };
 
+  // Calculated result row
+  const resultRow = (children: React.ReactNode) => (
+    <div className="flex items-center gap-2 flex-wrap pt-1.5 min-h-[22px]">{children}</div>
+  );
+
+  const badge = (label: string, colors: { bg: string; text: string }) => (
+    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: colors.bg, color: colors.text }}>
+      {label}
+    </span>
+  );
+
+  const divider = () => (
+    <div className="w-full h-px my-1" style={{ background: "rgba(255,255,255,0.06)" }} />
+  );
+
+  const groupLabel = (text: string) => (
+    <p className="text-[9px] font-bold uppercase tracking-widest mb-2.5" style={{ color: "var(--color-text-subtle)" }}>{text}</p>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }} onClick={onClose}>
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 30 }}
-        transition={{ duration: 0.28, ease: "easeOut" }}
-        className="w-full max-w-lg rounded-2xl p-5 max-h-[90vh] overflow-y-auto"
-        style={{ background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.1)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-bold text-white text-base">Update This Week&apos;s Stats</h2>
-          <button onClick={onClose} className="p-1 rounded-lg" style={{ color: "var(--color-text-subtle)" }}>
-            <X className="w-4 h-4" />
-          </button>
+    <div className="space-y-4">
+
+      {/* ── Revenue Performance ─────────────────────────────────────── */}
+      <div>
+        {groupLabel("Revenue Performance")}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>This Week</p>
+            {inp("revenueGenerated", "0", { prefix: "₹" })}
+          </div>
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Last Week</p>
+            {inp("revenuePrev", "0", { prefix: "₹" })}
+          </div>
         </div>
-        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
-          {field("revenueGenerated", "Revenue Generated", "₹")}
-          {field("revenuePrev", "Revenue — Prev Week", "₹")}
-          {field("numberOfOrders", "Number of Orders")}
-          {field("ordersPrev", "Orders — Prev Week")}
-          {field("adBudgetSpent", "Ad Budget Spent", "₹")}
-          {field("roas", "ROAS")}
-          {field("customerAcqCost", "Customer Acq. Cost", "₹")}
-          {field("organicLeads", "Organic Inbound Leads")}
-          {field("leadsPrev", "Leads — Prev Week")}
-          {field("avgOrderValue", "Avg Order Value", "₹")}
-          <div className="col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm" style={{ color: "var(--color-text-secondary)", background: "rgba(255,255,255,0.05)" }}>
-              Cancel
-            </button>
+        {resultRow(
+          <>
+            {rev != null && (
+              <span className="text-sm font-extrabold text-white">
+                ₹{rev.toLocaleString("en-IN")}
+              </span>
+            )}
+            {revGrowth != null && <GrowthBadge value={revGrowth} />}
+            {rev != null && revPrev != null && (
+              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+                vs ₹{revPrev.toLocaleString("en-IN")} last week
+              </span>
+            )}
+          </>
+        )}
+      </div>
+
+      {divider()}
+
+      {/* ── Order Metrics ────────────────────────────────────────────── */}
+      <div>
+        {groupLabel("Order Metrics")}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Orders This Week</p>
+            {inp("numberOfOrders", "0")}
+          </div>
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Orders Last Week</p>
+            {inp("ordersPrev", "0")}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Avg Order Value</p>
+            {inp("avgOrderValue", "0", { prefix: "₹", isAuto: true, autoVal: autoAov })}
+          </div>
+        </div>
+        {resultRow(
+          <>
+            {orders != null && (
+              <span className="text-sm font-extrabold text-white">{orders.toLocaleString("en-IN")} orders</span>
+            )}
+            {ordersGrowth != null && <GrowthBadge value={ordersGrowth} />}
+            {effectiveAov != null && (
+              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+                Avg ₹{effectiveAov.toLocaleString("en-IN")}/order
+                {autoAov != null && aov == null && (
+                  <span className="ml-1 text-[9px]" style={{ color: "var(--color-text-subtle)" }}>(calculated)</span>
+                )}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+
+      {divider()}
+
+      {/* ── Ad Performance ───────────────────────────────────────────── */}
+      <div>
+        {groupLabel("Ad Performance")}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Ad Budget Spent</p>
+            {inp("adBudgetSpent", "0", { prefix: "₹" })}
+          </div>
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>ROAS</p>
+            {inp("roas", "0")}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Customer Acq. Cost</p>
+            {inp("customerAcqCost", "0", { prefix: "₹" })}
+          </div>
+          {/* Revenue from ads = roas × ad spend */}
+          {roas != null && adSpend != null && (
+            <div className="flex flex-col justify-end pb-0.5">
+              <p className="text-[9px] mb-1" style={{ color: "var(--color-text-secondary)" }}>Revenue from Ads</p>
+              <p className="text-sm font-extrabold text-white">
+                ₹{Math.round(roas * adSpend).toLocaleString("en-IN")}
+              </p>
+            </div>
+          )}
+        </div>
+        {resultRow(
+          <>
+            {btoRatio != null && btoColor && (
+              <>
+                <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+                  BTO {btoRatio}%
+                </span>
+                {badge(btoRisk!, btoColor)}
+              </>
+            )}
+            {roasLabel && roasColor && badge(roasLabel, roasColor)}
+            {cac != null && (
+              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+                CAC ₹{cac.toLocaleString("en-IN")}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+
+      {divider()}
+
+      {/* ── Organic Growth ───────────────────────────────────────────── */}
+      <div>
+        {groupLabel("Organic Growth")}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Leads This Week</p>
+            {inp("organicLeads", "0")}
+          </div>
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Leads Last Week</p>
+            {inp("leadsPrev", "0")}
+          </div>
+        </div>
+        {resultRow(
+          <>
+            {leads != null && (
+              <span className="text-sm font-extrabold text-white">{leads.toLocaleString("en-IN")} leads</span>
+            )}
+            {leadsGrowth != null && <GrowthBadge value={leadsGrowth} />}
+            {leads != null && effectiveAov != null && (
+              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+                Est. ₹{Math.round(leads * effectiveAov).toLocaleString("en-IN")} organic revenue
+              </span>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Save button ───────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isDirty && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            className="flex justify-end pt-1"
+          >
             <button
-              type="submit"
+              onClick={handleSave}
               disabled={upsert.isPending}
-              className="px-5 py-2 rounded-lg text-sm font-bold text-white"
-              style={{ background: "var(--color-accent)", opacity: upsert.isPending ? 0.6 : 1 }}
+              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-60"
+              style={{ background: "var(--color-accent)" }}
             >
               {upsert.isPending ? "Saving…" : "Save Stats"}
             </button>
-          </div>
-        </form>
-      </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  );
-}
-
-function SkeletonCard({ className }: { className?: string }) {
-  return (
-    <div className={`rounded-2xl animate-pulse ${className ?? ""}`} style={{ background: "rgba(255,255,255,0.05)", minHeight: 90 }} />
   );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MentorshipDashboard({ showBackLink = false }: { showBackLink?: boolean }) {
-  const [revenueModalOpen, setRevenueModalOpen] = useState(false);
-
   const { data: stats, isLoading: statsLoading } = useMentorshipStats();
   const { data: batchData, isLoading: batchLoading } = useMyBatchProgram();
   const { data: quota, isLoading: quotaLoading } = useUserSupportQuota();
-  const { data: revenue, isLoading: revenueLoading } = useMentorshipRevenue();
+  const { data: revenue } = useMentorshipRevenue();
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
 
@@ -410,15 +591,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   const allCallsRemaining = Math.max(0, allCallsAllocated - allCallsUsed);
 
   const revGrowth = growthPct(revenue?.revenueGenerated ?? null, revenue?.revenuePrev ?? null);
-  const ordersGrowth = growthPct(revenue?.numberOfOrders ?? null, revenue?.ordersPrev ?? null);
-  const leadsGrowth = growthPct(revenue?.organicLeads ?? null, revenue?.leadsPrev ?? null);
-  const btoRatio = revenue?.adBudgetSpent && revenue?.revenueGenerated
-    ? Math.round((revenue.adBudgetSpent / revenue.revenueGenerated) * 1000) / 10
-    : null;
-  const roasVal = revenue?.roas ?? null;
-  const roasBadge = roasVal != null ? (roasVal >= 3 ? "Highly Profitable" : roasVal >= 1.5 ? "Moderate" : "Watch Out") : null;
-  const roasBadgeColor = roasVal != null ? (roasVal >= 3 ? "rgba(34,197,94,0.15)" : roasVal >= 1.5 ? "rgba(251,146,60,0.15)" : "rgba(239,68,68,0.15)") : undefined;
-  const roasBadgeText = roasVal != null ? (roasVal >= 3 ? "#22c55e" : roasVal >= 1.5 ? "#fb923c" : "#ef4444") : undefined;
+  const leadsGrowthVal = growthPct(revenue?.organicLeads ?? null, revenue?.leadsPrev ?? null);
 
   const daysLeft = Math.max(0, (stats?.totalDays ?? 0) - (stats?.daysElapsed ?? 0));
   const totalDays = stats?.totalDays ?? 0;
@@ -428,7 +601,6 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   const dailyHrsCount = useCountUp(dailyHrs, 1200, 2);
   const allCallsUsedCount = useCountUp(allCallsUsed, 900);
   const revenueCount = useCountUp(revenue?.revenueGenerated ?? 0, 1400);
-  const leadsGrowthVal = growthPct(revenue?.organicLeads ?? null, revenue?.leadsPrev ?? null);
 
   if (isLoading) {
     return (
@@ -448,215 +620,142 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   }
 
   return (
-    <>
-      <motion.div
-        className="space-y-6"
-        variants={container}
-        initial="hidden"
-        animate="show"
-      >
-        <MentorshipHeader
-          programName={programName}
-          weeklyReportSubmitted={weeklyReportSubmitted}
-          streakDays={streakDays}
-          lifelinesTotal={lifelinesTotal}
-          lifelinesUsed={lifelinesUsed}
+    <motion.div
+      className="space-y-6"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
+      <MentorshipHeader
+        programName={programName}
+        weeklyReportSubmitted={weeklyReportSubmitted}
+        streakDays={streakDays}
+        lifelinesTotal={lifelinesTotal}
+        lifelinesUsed={lifelinesUsed}
+      />
+
+      {/* ── KPI Strip ────────────────────────────────────────────────── */}
+      <motion.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard
+          label="Daily Time Spent"
+          value={`${dailyHrsCount} hrs`}
+          sub={`vs ${dailyGoal}hr goal`}
+          growth={dailyGrowth}
+          icon={Clock}
         />
-
-        {/* KPI Strip */}
-        <motion.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <KpiCard
-            label="Daily Time Spent"
-            value={`${dailyHrsCount} hrs`}
-            sub={`vs ${dailyGoal}hr goal`}
-            growth={dailyGrowth}
-            icon={Clock}
-          />
-          <KpiCard
-            label="Support Delivered"
-            value={`${allCallsUsedCount} Calls`}
-            sub={`${allCallsAllocated} Total Calls`}
-            icon={Phone}
-            accentColor="#818cf8"
-          />
-          <KpiCard
-            label="Revenue Generated"
-            value={revenue?.revenueGenerated != null ? `₹${revenueCount}` : "—"}
-            sub={revenue?.revenueGenerated != null ? `Avg ₹${Math.round((revenue.revenueGenerated ?? 0) / Math.max(1, revenue?.numberOfOrders ?? 1)).toLocaleString("en-IN")} / order` : "No data yet"}
-            growth={revGrowth}
-            icon={BarChart3}
-            accentColor="#34d399"
-          />
-          <KpiCard
-            label="Organic Growth"
-            value={leadsGrowthVal != null ? `${leadsGrowthVal >= 0 ? "+" : ""}${leadsGrowthVal}%` : "—"}
-            sub="Weekly vs prior week"
-            growth={leadsGrowthVal}
-            icon={TrendingUp}
-            accentColor="#f472b6"
-          />
-        </motion.div>
-
-        {/* Customer Journey */}
-        <motion.div
-          variants={fadeUp}
-          className="rounded-2xl p-4"
-          style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
-              Customer Journey
-            </h2>
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}>
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Live Update
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <JourneyTile label="Daily Usage" used={attendanceCount} total={totalDays} icon={Activity} />
-            <JourneyTile label="Modules" used={stats?.completedEpisodes ?? 0} total={stats?.totalEpisodes ?? 0} icon={BookOpen} />
-            <JourneyTile label="Tasks" used={stats?.tasksCompleted ?? 0} total={stats?.tasksTotal ?? 0} icon={CheckCircle2} />
-            <JourneyTile label="Support Days" used={daysLeft} suffix="d left" icon={Target} noBar />
-            <JourneyTile label="Tier Access" used={daysElapsed} total={totalDays} suffix="d" icon={Star} />
-            <JourneyTile
-              label="Leaderboard"
-              used={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}` : "#—"}
-              icon={Trophy}
-              noBar
-            />
-          </div>
-        </motion.div>
-
-        {/* Expert Support Calls */}
-        <motion.div
-          variants={fadeUp}
-          className="rounded-2xl p-4"
-          style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
-        >
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
-              Expert Support Calls
-            </h2>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(129,140,248,0.15)", color: "#818cf8" }}>
-                {allCallsUsed} MC Completed
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(251,146,60,0.12)", color: "#fb923c" }}>
-                {allCallsRemaining}/{allCallsAllocated} Quota Remaining
-              </span>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <SupportCallTile label="Sales Calls"     used={quota?.salesSupport.used ?? 0}   total={quota?.salesSupport.allocated ?? 0} />
-            <SupportCallTile label="Tech Calls"      used={quota?.techSupport.used ?? 0}    total={quota?.techSupport.allocated ?? 0} />
-            <SupportCallTile label="Content Calls"   used={quota?.contentSupport.used ?? 0} total={quota?.contentSupport.allocated ?? 0} />
-            <SupportCallTile label="Marketing Calls" used={quota?.adSupport.used ?? 0}      total={quota?.adSupport.allocated ?? 0} />
-            <SupportCallTile label="Mentor 1-On-1"   used={quota?.callCredits.used ?? 0}    total={quota?.callCredits.allocated ?? 0} />
-            <SupportCallTile label="Live Group Q&A"  used={quota?.groupCall.used ?? 0}      total={quota?.groupCall.allocated ?? 0} />
-          </div>
-        </motion.div>
-
-        {/* Revenue Stats */}
-        <motion.div
-          variants={fadeUp}
-          className="rounded-2xl p-4"
-          style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
-        >
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
-              Your Revenue Stats
-            </h2>
-            <button
-              onClick={() => setRevenueModalOpen(true)}
-              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
-              style={{ background: "var(--color-accent)", color: "white" }}
-            >
-              <Edit3 className="w-3 h-3" />
-              {revenue ? "Update Stats" : "Add This Week's Stats"}
-            </button>
-          </div>
-
-          {!revenue ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-3" style={{ color: "var(--color-text-subtle)" }}>
-              <BarChart3 className="w-8 h-8 opacity-30" />
-              <p className="text-sm">No revenue data for this week yet.</p>
-              <button
-                onClick={() => setRevenueModalOpen(true)}
-                className="text-sm font-semibold inline-flex items-center gap-1 hover:opacity-80 transition-opacity"
-                style={{ color: "var(--color-accent)" }}
-              >
-                Add Your Stats <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <RevenueCard
-                key={`rev-${revenue.weekNumber}-${revenue.revenueGenerated}`}
-                label="Revenue Generated"
-                primary={formatINR(revenue.revenueGenerated)}
-                sub1={revenue.avgOrderValue != null ? `Avg Order Value ${formatINR(revenue.avgOrderValue)}` : undefined}
-                sub2={revenue.numberOfOrders != null ? `Last ${revenue.numberOfOrders} orders` : undefined}
-                growth={revGrowth}
-              />
-              <RevenueCard
-                label="Number of Orders"
-                primary={revenue.numberOfOrders != null ? `${revenue.numberOfOrders.toLocaleString("en-IN")} Orders` : "—"}
-                sub1={btoRatio != null ? `BTO/Revenue: ${btoRatio}%` : undefined}
-                badge={btoRatio != null ? (btoRatio < 5 ? "Low Risk" : btoRatio < 20 ? "Moderate" : "High Risk") : undefined}
-                badgeColor={btoRatio != null ? (btoRatio < 5 ? "rgba(34,197,94,0.15)" : btoRatio < 20 ? "rgba(251,146,60,0.15)" : "rgba(239,68,68,0.15)") : undefined}
-                growth={ordersGrowth}
-              />
-              <RevenueCard
-                label="Ad Budget Spent"
-                primary={formatINR(revenue.adBudgetSpent)}
-                sub1={revenue.roas != null ? `ROAS ${revenue.roas}×` : undefined}
-                sub2={revenue.customerAcqCost != null ? `Customer Acq. Cost ${formatINR(revenue.customerAcqCost)}/c` : undefined}
-                badge={roasBadge ?? undefined}
-                badgeColor={roasBadgeColor != null ? roasBadgeColor.replace("0.15)", `0.15) color: ${roasBadgeText}`) : undefined}
-              />
-              <RevenueCard
-                label="Organic Inbound Leads"
-                primary={revenue.organicLeads != null ? `${revenue.organicLeads.toLocaleString("en-IN")} Leads` : "—"}
-                sub1="Free Customers"
-                growth={leadsGrowth}
-              />
-            </div>
-          )}
-        </motion.div>
-
-        {showBackLink && (
-          <motion.div variants={fadeUp}>
-            <Link
-              href="/batch-program"
-              className="inline-flex items-center gap-2 text-sm font-medium hover:opacity-80 transition-opacity"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              <ChevronRight className="w-4 h-4 rotate-180" />
-              Back to Batch Program
-            </Link>
-          </motion.div>
-        )}
+        <KpiCard
+          label="Support Delivered"
+          value={`${allCallsUsedCount} Calls`}
+          sub={`${allCallsAllocated} Total Calls`}
+          icon={Phone}
+          accentColor="#818cf8"
+        />
+        <KpiCard
+          label="Revenue Generated"
+          value={revenue?.revenueGenerated != null ? `₹${revenueCount}` : "—"}
+          sub={revenue?.revenueGenerated != null ? `Avg ₹${Math.round((revenue.revenueGenerated ?? 0) / Math.max(1, revenue?.numberOfOrders ?? 1)).toLocaleString("en-IN")} / order` : "No data yet"}
+          growth={revGrowth}
+          icon={BarChart3}
+          accentColor="#34d399"
+        />
+        <KpiCard
+          label="Organic Growth"
+          value={leadsGrowthVal != null ? `${leadsGrowthVal >= 0 ? "+" : ""}${leadsGrowthVal}%` : "—"}
+          sub="Weekly vs prior week"
+          growth={leadsGrowthVal}
+          icon={TrendingUp}
+          accentColor="#f472b6"
+        />
       </motion.div>
 
-      <AnimatePresence>
-        {revenueModalOpen && (
-          <RevenueModal
-            onClose={() => setRevenueModalOpen(false)}
-            initial={{
-              revenueGenerated: revenue?.revenueGenerated ?? null,
-              revenuePrev: revenue?.revenuePrev ?? null,
-              numberOfOrders: revenue?.numberOfOrders ?? null,
-              ordersPrev: revenue?.ordersPrev ?? null,
-              adBudgetSpent: revenue?.adBudgetSpent ?? null,
-              roas: revenue?.roas ?? null,
-              customerAcqCost: revenue?.customerAcqCost ?? null,
-              organicLeads: revenue?.organicLeads ?? null,
-              leadsPrev: revenue?.leadsPrev ?? null,
-              avgOrderValue: revenue?.avgOrderValue ?? null,
-            }}
+      {/* ── Customer Journey ─────────────────────────────────────────── */}
+      <motion.div
+        variants={fadeUp}
+        className="rounded-2xl p-4"
+        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+            Customer Journey
+          </h2>
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+            Live Update
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <JourneyTile label="Daily Usage" used={attendanceCount} total={totalDays} icon={Activity} />
+          <JourneyTile label="Modules" used={stats?.completedEpisodes ?? 0} total={stats?.totalEpisodes ?? 0} icon={BookOpen} />
+          <JourneyTile label="Tasks" used={stats?.tasksCompleted ?? 0} total={stats?.tasksTotal ?? 0} icon={CheckCircle2} />
+          <JourneyTile label="Support Days" used={daysLeft} suffix="d left" icon={Target} noBar />
+          <JourneyTile label="Tier Access" used={daysElapsed} total={totalDays} suffix="d" icon={Star} />
+          <JourneyTile
+            label="Leaderboard"
+            used={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}` : "#—"}
+            icon={Trophy}
+            noBar
           />
-        )}
-      </AnimatePresence>
-    </>
+        </div>
+      </motion.div>
+
+      {/* ── Expert Support Calls ─────────────────────────────────────── */}
+      <motion.div
+        variants={fadeUp}
+        className="rounded-2xl p-4"
+        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+            Expert Support Calls
+          </h2>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(129,140,248,0.15)", color: "#818cf8" }}>
+              {allCallsUsed} MC Completed
+            </span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(251,146,60,0.12)", color: "#fb923c" }}>
+              {allCallsRemaining}/{allCallsAllocated} Quota Remaining
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <SupportCallTile label="Sales Calls"     used={quota?.salesSupport?.used ?? 0}   total={quota?.salesSupport?.allocated ?? 0} />
+          <SupportCallTile label="Tech Calls"      used={quota?.techSupport.used ?? 0}    total={quota?.techSupport.allocated ?? 0} />
+          <SupportCallTile label="Content Calls"   used={quota?.contentSupport?.used ?? 0} total={quota?.contentSupport?.allocated ?? 0} />
+          <SupportCallTile label="Marketing Calls" used={quota?.adSupport.used ?? 0}      total={quota?.adSupport.allocated ?? 0} />
+          <SupportCallTile label="Mentor 1-On-1"   used={quota?.callCredits.used ?? 0}    total={quota?.callCredits.allocated ?? 0} />
+          <SupportCallTile label="Live Group Q&A"  used={quota?.groupCall.used ?? 0}      total={quota?.groupCall.allocated ?? 0} />
+        </div>
+      </motion.div>
+
+      {/* ── Revenue Stats ────────────────────────────────────────────── */}
+      <motion.div
+        variants={fadeUp}
+        className="rounded-2xl p-4"
+        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        <div className="mb-5">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+            Your Revenue Stats
+          </h2>
+          <p className="text-[11px] mt-1" style={{ color: "var(--color-text-secondary)" }}>
+            Fill in your numbers — results calculate instantly as you type.
+          </p>
+        </div>
+        <RevenueStatsSection />
+      </motion.div>
+
+      {showBackLink && (
+        <motion.div variants={fadeUp}>
+          <Link
+            href="/batch-program"
+            className="inline-flex items-center gap-2 text-sm font-medium hover:opacity-80 transition-opacity"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            <ChevronRight className="w-4 h-4 rotate-180" />
+            Back to Batch Program
+          </Link>
+        </motion.div>
+      )}
+    </motion.div>
   );
 }
