@@ -121,6 +121,8 @@ import {
   getMentorshipStatsHandler,
   getMentorshipRevenueHandler,
   upsertMentorshipRevenueHandler,
+  getMentorshipSocialHandler,
+  upsertMentorshipSocialHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 
@@ -141,6 +143,8 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/mentorship/stats',   getMentorshipStatsHandler);
   fastify.get('/mentorship/revenue', getMentorshipRevenueHandler);
   fastify.put('/mentorship/revenue', upsertMentorshipRevenueHandler);
+  fastify.get('/mentorship/social',  getMentorshipSocialHandler);
+  fastify.put('/mentorship/social',  upsertMentorshipSocialHandler);
 
   // ── Credits ───────────────────────────────────────────────────────────────
   fastify.get('/credits/pricing', getUserCreditPricingHandler);

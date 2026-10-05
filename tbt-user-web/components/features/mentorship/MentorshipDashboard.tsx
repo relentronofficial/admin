@@ -6,7 +6,10 @@ import {
   Flame, Heart, CheckCircle2, Clock, TrendingUp, TrendingDown,
   BookOpen, BarChart3, Target, Phone, ChevronRight, Trophy, Star, Activity,
 } from "lucide-react";
-import { useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue } from "@/lib/hooks/useMentorship";
+import {
+  useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
+  useMentorshipSocial, useUpsertMentorshipSocial,
+} from "@/lib/hooks/useMentorship";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useUserSupportQuota } from "@/lib/hooks/useUser";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
@@ -226,6 +229,11 @@ type RevenueFormState = {
   organicLeads: string;
   leadsPrev: string;
   avgOrderValue: string;
+  rtoReturnsPercent: string;
+  conversionRate: string;
+  platformBadge: string;
+  dailyRevenue: string[];
+  dailyOrders: string[];
 };
 
 const EMPTY_FORM: RevenueFormState = {
@@ -234,6 +242,9 @@ const EMPTY_FORM: RevenueFormState = {
   adBudgetSpent: "", roas: "",
   customerAcqCost: "", organicLeads: "",
   leadsPrev: "", avgOrderValue: "",
+  rtoReturnsPercent: "", conversionRate: "", platformBadge: "",
+  dailyRevenue: ["", "", "", "", "", "", ""],
+  dailyOrders:  ["", "", "", "", "", "", ""],
 };
 
 function RevenueStatsSection() {
@@ -256,12 +267,25 @@ function RevenueStatsSection() {
       organicLeads: revenue.organicLeads?.toString() ?? "",
       leadsPrev: revenue.leadsPrev?.toString() ?? "",
       avgOrderValue: revenue.avgOrderValue?.toString() ?? "",
+      rtoReturnsPercent: revenue.rtoReturnsPercent?.toString() ?? "",
+      conversionRate: revenue.conversionRate?.toString() ?? "",
+      platformBadge: revenue.platformBadge ?? "",
+      dailyRevenue: revenue.dailyRevenue?.map(String) ?? ["", "", "", "", "", "", ""],
+      dailyOrders:  revenue.dailyOrders?.map(String)  ?? ["", "", "", "", "", "", ""],
     });
     setIsDirty(false);
   }, [revenue?.weekNumber]);
 
   const set = (key: keyof RevenueFormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((f) => ({ ...f, [key]: e.target.value }));
+    setIsDirty(true);
+  };
+  const setDailyRev = (i: number, v: string) => {
+    setForm(f => { const arr = [...f.dailyRevenue]; arr[i] = v; return { ...f, dailyRevenue: arr }; });
+    setIsDirty(true);
+  };
+  const setDailyOrd = (i: number, v: string) => {
+    setForm(f => { const arr = [...f.dailyOrders]; arr[i] = v; return { ...f, dailyOrders: arr }; });
     setIsDirty(true);
   };
 
@@ -316,6 +340,11 @@ function RevenueStatsSection() {
         organicLeads: leads != null ? Math.round(leads) : null,
         leadsPrev: leadsPrevVal != null ? Math.round(leadsPrevVal) : null,
         avgOrderValue: aov,
+        rtoReturnsPercent: n(form.rtoReturnsPercent),
+        conversionRate: n(form.conversionRate),
+        platformBadge: form.platformBadge || null,
+        dailyRevenue: form.dailyRevenue.map(v => n(v)),
+        dailyOrders:  form.dailyOrders.map(v => n(v) != null ? Math.round(n(v)!) : null),
       });
       setIsDirty(false);
       toast.success("Revenue stats saved!");
@@ -386,8 +415,29 @@ function RevenueStatsSection() {
     <p className="text-[9px] font-bold uppercase tracking-widest mb-2.5" style={{ color: "var(--color-text-subtle)" }}>{text}</p>
   );
 
+  const textInp = (key: keyof RevenueFormState, placeholder: string) => (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={form[key] as string}
+      onChange={(e) => { setForm(f => ({ ...f, [key]: e.target.value })); setIsDirty(true); }}
+      className="w-full rounded-xl py-2.5 px-3 text-sm text-white outline-none transition-colors"
+      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-accent)"; e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+    />
+  );
+
   return (
     <div className="space-y-4">
+
+      {/* ── Platform Badge ───────────────────────────────────────────── */}
+      <div>
+        {groupLabel("Platform Badge (optional)")}
+        {textInp("platformBadge", "e.g. Platinum Seller, Top Merchant…")}
+      </div>
+
+      {divider()}
 
       {/* ── Revenue Performance ─────────────────────────────────────── */}
       <div>
@@ -438,6 +488,10 @@ function RevenueStatsSection() {
           <div>
             <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Avg Order Value</p>
             {inp("avgOrderValue", "0", { prefix: "₹", isAuto: true, autoVal: autoAov })}
+          </div>
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>RTO / Returns %</p>
+            {inp("rtoReturnsPercent", "0")}
           </div>
         </div>
         {resultRow(
@@ -513,7 +567,7 @@ function RevenueStatsSection() {
       {/* ── Organic Growth ───────────────────────────────────────────── */}
       <div>
         {groupLabel("Organic Growth")}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 mb-2">
           <div>
             <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Leads This Week</p>
             {inp("organicLeads", "0")}
@@ -521,6 +575,12 @@ function RevenueStatsSection() {
           <div>
             <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Leads Last Week</p>
             {inp("leadsPrev", "0")}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Conversion Rate %</p>
+            {inp("conversionRate", "0")}
           </div>
         </div>
         {resultRow(
@@ -537,6 +597,9 @@ function RevenueStatsSection() {
           </>
         )}
       </div>
+
+      {/* ── Weekly Chart ─────────────────────────────────────────────── */}
+      <WeeklyChartSection form={form} setDailyRev={setDailyRev} setDailyOrd={setDailyOrd} />
 
       {/* ── Save button ───────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -559,6 +622,630 @@ function RevenueStatsSection() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getWeekDays(): { label: string; day: number }[] {
+  const now = new Date();
+  const dow = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return labels.map((label, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return { label, day: d.getDate() };
+  });
+}
+
+function fmtK(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K+`;
+  return v.toLocaleString("en-IN");
+}
+
+// ─── Part 2 — Revenue Summary KPI Cards ──────────────────────────────────────
+
+function RevenueSummarySection({ revenue }: { revenue: any }) {
+  const n = (v: string | null | undefined): number | null =>
+    v == null || v === "" ? null : Number(v);
+
+  const rev = revenue?.revenueGenerated ?? null;
+  const revPrev = revenue?.revenuePrev ?? null;
+  const orders = revenue?.numberOfOrders ?? null;
+  const ordersPrev = revenue?.ordersPrev ?? null;
+  const adSpend = revenue?.adBudgetSpent ?? null;
+  const roas = revenue?.roas ?? null;
+  const cac = revenue?.customerAcqCost ?? null;
+  const leads = revenue?.organicLeads ?? null;
+  const leadsPrev = revenue?.leadsPrev ?? null;
+  const aov = revenue?.avgOrderValue ?? null;
+  const autoAov = rev != null && orders != null && orders > 0 ? Math.round(rev / orders) : null;
+  const effectiveAov = aov ?? autoAov;
+  const rto = revenue?.rtoReturnsPercent ?? null;
+  const cr = revenue?.conversionRate ?? null;
+  const platform = revenue?.platformBadge ?? null;
+
+  const revGrowth = growthPct(rev, revPrev);
+  const ordersGrowth = growthPct(orders, ordersPrev);
+  const leadsGrowth = growthPct(leads, leadsPrev);
+  const btoRatio = adSpend != null && rev != null && rev > 0
+    ? Math.round((adSpend / rev) * 1000) / 10 : null;
+  const roasLabel = roas != null
+    ? (roas >= 3 ? "Highly Profitable" : roas >= 1.5 ? "Moderate" : "Watch Out") : null;
+  const roasColor = roas != null
+    ? (roas >= 3 ? "#22c55e" : roas >= 1.5 ? "#fb923c" : "#ef4444") : null;
+  const btoRisk = btoRatio != null
+    ? (btoRatio < 5 ? "Low Risk" : btoRatio < 20 ? "Moderate" : "High Risk") : null;
+  const btoColor = btoRatio != null
+    ? (btoRatio < 5 ? "#22c55e" : btoRatio < 20 ? "#fb923c" : "#ef4444") : null;
+  const crFlow = cr != null ? (cr >= 20 ? "High Converter" : cr >= 10 ? "Free Customer Flow" : "Needs Nurturing") : null;
+  const crColor = cr != null ? (cr >= 20 ? "#22c55e" : cr >= 10 ? "#34d399" : "#fb923c") : null;
+
+  if (!revenue) return null;
+
+  const card = (
+    label: string,
+    main: React.ReactNode,
+    meta1: React.ReactNode,
+    meta2?: React.ReactNode,
+    growth?: number | null,
+    badge?: { text: string; color: string } | null,
+  ) => (
+    <div
+      className="rounded-2xl p-4 flex flex-col gap-2 min-w-0"
+      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+        {growth != null && <GrowthBadge value={growth} />}
+      </div>
+      <div className="text-2xl font-black tracking-tight text-white leading-none">{main}</div>
+      {badge && (
+        <span className="self-start text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${badge.color}26`, color: badge.color }}>
+          {badge.text}
+        </span>
+      )}
+      <div className="space-y-0.5">
+        <p className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{meta1}</p>
+        {meta2 && <p className="text-[10px]" style={{ color: "var(--color-text-subtle)" }}>{meta2}</p>}
+      </div>
+    </div>
+  );
+
+  return (
+    <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Your Revenue Stats</h2>
+        {platform && (
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+            {platform}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {card(
+          "Revenue Generated",
+          rev != null ? `₹${rev.toLocaleString("en-IN")}` : "—",
+          effectiveAov != null ? `Avg Order Value: ₹${effectiveAov.toLocaleString("en-IN")}` : "No AOV data",
+          revPrev != null ? `vs ₹${revPrev.toLocaleString("en-IN")} last wk` : undefined,
+          revGrowth,
+        )}
+        {card(
+          "Number of Orders",
+          orders != null ? `${orders.toLocaleString("en-IN")} Orders` : "—",
+          rto != null ? `RTO / Returns: ${rto}%` : "No RTO data",
+          undefined,
+          ordersGrowth,
+          btoRisk && btoColor ? { text: btoRisk, color: btoColor } : null,
+        )}
+        {card(
+          "Ad Budget Spent",
+          adSpend != null ? `₹${adSpend.toLocaleString("en-IN")}` : "—",
+          cac != null ? `Customer Acq Cost: ₹${cac.toLocaleString("en-IN")}` : "No CAC data",
+          roas != null ? `ROAS ${roas}×` : undefined,
+          null,
+          roasLabel && roasColor ? { text: roasLabel, color: roasColor } : null,
+        )}
+        {card(
+          "Organic Inbound Leads",
+          leads != null ? `${leads.toLocaleString("en-IN")} Leads` : "—",
+          cr != null ? `Conversion Rate: ${cr}%` : "No CR data",
+          undefined,
+          leadsGrowth,
+          crFlow && crColor ? { text: crFlow, color: crColor } : null,
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Part 2 — Weekly Revenue & Order Trajectory Chart ────────────────────────
+
+const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function WeeklyLineChart({
+  revData,
+  ordData,
+  weekDays,
+  mode,
+}: {
+  revData: number[];
+  ordData: number[];
+  weekDays: { label: string; day: number }[];
+  mode: "daily" | "cumulative";
+}) {
+  const cum = (arr: number[]) => arr.map((_, i, a) => a.slice(0, i + 1).reduce((s, v) => s + v, 0));
+  const displayRev = mode === "cumulative" ? cum(revData) : revData;
+  const displayOrd = mode === "cumulative" ? cum(ordData) : ordData;
+
+  const W = 700, H = 200;
+  const PL = 58, PR = 16, PT = 20, PB = 32;
+  const PW = W - PL - PR;
+  const PH = H - PT - PB;
+
+  const maxRev = Math.max(...displayRev, 1);
+  const maxOrd = Math.max(...displayOrd, 1);
+
+  const xOf = (i: number) => PL + (i / 6) * PW;
+  const yRev = (v: number) => PT + (1 - v / maxRev) * PH;
+  const yOrd = (v: number) => PT + (1 - v / maxOrd) * PH;
+
+  const revPoints = displayRev.map((v, i) => `${xOf(i).toFixed(1)},${yRev(v).toFixed(1)}`).join(" ");
+  const ordPoints = displayOrd.map((v, i) => `${xOf(i).toFixed(1)},${yOrd(v).toFixed(1)}`).join(" ");
+  const revFillPoints = `${xOf(0).toFixed(1)},${(PT + PH).toFixed(1)} ${revPoints} ${xOf(6).toFixed(1)},${(PT + PH).toFixed(1)}`;
+
+  const peakIdx = displayRev.indexOf(Math.max(...displayRev));
+  const peakX = xOf(peakIdx);
+  const peakY = yRev(displayRev[peakIdx]);
+
+  const fmtY = (v: number) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`;
+
+  // Y-axis ticks (4 levels)
+  const yTicks = [0, 0.33, 0.67, 1].map(p => ({
+    val: Math.round(maxRev * p),
+    y: PT + (1 - p) * PH,
+  }));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }} preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+
+      {/* Grid lines */}
+      {yTicks.map(({ val, y }) => (
+        <g key={val}>
+          <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+          <text x={PL - 4} y={y + 4} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.3)">{fmtY(val)}</text>
+        </g>
+      ))}
+
+      {/* Revenue area fill */}
+      <polygon points={revFillPoints} fill="url(#revGrad)" />
+
+      {/* Order velocity line (dashed yellow) */}
+      <polyline points={ordPoints} fill="none" stroke="#eab308" strokeWidth="1.5" strokeDasharray="5 3" strokeLinejoin="round" />
+
+      {/* Revenue line (solid red) */}
+      <polyline points={revPoints} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+
+      {/* Data points on revenue line */}
+      {displayRev.map((v, i) => v > 0 && (
+        <circle key={i} cx={xOf(i)} cy={yRev(v)} r="3" fill="var(--color-accent)" stroke="#1a1a1a" strokeWidth="1.5" />
+      ))}
+
+      {/* Peak callout */}
+      {displayRev[peakIdx] > 0 && (
+        <g>
+          <line x1={peakX} y1={PT} x2={peakX} y2={PT + PH} stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="3 2" />
+          <rect x={peakX - 44} y={peakY - 36} width={88} height={30} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+          <text x={peakX} y={peakY - 22} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.5)" fontWeight="600">
+            PEAK DAY ({weekDays[peakIdx]?.label?.toUpperCase()})
+          </text>
+          <text x={peakX} y={peakY - 11} textAnchor="middle" fontSize="10" fill="var(--color-accent)" fontWeight="800">
+            ₹{displayRev[peakIdx].toLocaleString("en-IN")}
+          </text>
+          {displayOrd[peakIdx] > 0 && (
+            <text x={peakX} y={peakY - 1} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)">
+              {displayOrd[peakIdx]} Orders
+            </text>
+          )}
+        </g>
+      )}
+
+      {/* X-axis labels */}
+      {weekDays.map((d, i) => (
+        <text key={i} x={xOf(i)} y={H - 6} textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.35)" fontWeight={i === peakIdx ? "700" : "400"}>
+          {d.label}({d.day})
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+function WeeklyChartSection({
+  form,
+  setDailyRev,
+  setDailyOrd,
+}: {
+  form: RevenueFormState;
+  setDailyRev: (i: number, v: string) => void;
+  setDailyOrd: (i: number, v: string) => void;
+}) {
+  const [mode, setMode] = useState<"daily" | "cumulative">("daily");
+  const weekDays = getWeekDays();
+
+  const revData = form.dailyRevenue.map(v => (v === "" ? 0 : Number(v)));
+  const ordData = form.dailyOrders.map(v => (v === "" ? 0 : Number(v)));
+  const hasData = revData.some(v => v > 0) || ordData.some(v => v > 0);
+
+  return (
+    <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="flex items-start justify-between mb-1 gap-3">
+        <div>
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Weekly Revenue & Order Trajectory</h2>
+          <p className="text-[10px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+            Comparative trendline for {weekDays[0]?.label} {weekDays[0]?.day} – {weekDays[6]?.label} {weekDays[6]?.day} with peak weekend momentum
+          </p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-2 mr-3">
+            <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+              <span className="inline-block w-5 h-0.5 rounded" style={{ background: "var(--color-accent)" }} /> Daily Revenue (₹)
+            </span>
+            <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+              <span className="inline-block w-5 border-t border-dashed border-yellow-400" /> Order Velocity
+            </span>
+          </div>
+          {(["daily", "cumulative"] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all capitalize"
+              style={{
+                background: mode === m ? "var(--color-accent)" : "rgba(255,255,255,0.05)",
+                color: mode === m ? "white" : "var(--color-text-subtle)",
+              }}
+            >
+              {m.charAt(0).toUpperCase() + m.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="relative mt-3 rounded-xl overflow-hidden" style={{ background: "rgba(0,0,0,0.2)" }}>
+        {hasData ? (
+          <WeeklyLineChart revData={revData} ordData={ordData} weekDays={weekDays} mode={mode} />
+        ) : (
+          <div className="flex items-center justify-center" style={{ height: 200 }}>
+            <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>Enter daily data below to see the chart</p>
+          </div>
+        )}
+      </div>
+
+      {/* Daily data inputs */}
+      <div className="mt-4">
+        <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>Daily Inputs</p>
+        <div className="grid grid-cols-7 gap-1.5">
+          {weekDays.map((d, i) => (
+            <div key={i} className="flex flex-col gap-1">
+              <p className="text-[8px] font-bold text-center uppercase" style={{ color: "var(--color-text-subtle)" }}>
+                {d.label}
+              </p>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                placeholder="Rev"
+                value={form.dailyRevenue[i]}
+                onChange={e => setDailyRev(i, e.target.value)}
+                className="w-full rounded-lg py-1.5 px-1.5 text-[10px] text-white outline-none text-center transition-colors"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
+                onFocus={e => { e.currentTarget.style.borderColor = "var(--color-accent)"; }}
+                onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
+              />
+              <input
+                type="number"
+                min={0}
+                step="1"
+                placeholder="Ord"
+                value={form.dailyOrders[i]}
+                onChange={e => setDailyOrd(i, e.target.value)}
+                className="w-full rounded-lg py-1.5 px-1.5 text-[10px] text-white outline-none text-center transition-colors"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+                onFocus={e => { e.currentTarget.style.borderColor = "#eab308"; }}
+                onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-4 mt-1.5">
+          <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+            <span className="inline-block w-3 h-0.5 rounded" style={{ background: "var(--color-accent)" }} /> Top row = Revenue (₹)
+          </span>
+          <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+            <span className="inline-block w-3 border-t border-dashed border-yellow-400" /> Bottom row = Orders
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Part 2 — Social Media Organic Growth ────────────────────────────────────
+
+type SocialFormState = {
+  totalFollowers: string;
+  followersPrev: string;
+  videoViews: string;
+  videoViewsPrev: string;
+  contentUploads: string;
+  contentUploadTarget: string;
+  interactions: string;
+  interactionsPrev: string;
+  dmLeads: string;
+  bioLinkClicks: string;
+  bioLinkClicksPrev: string;
+};
+
+const EMPTY_SOCIAL: SocialFormState = {
+  totalFollowers: "", followersPrev: "",
+  videoViews: "", videoViewsPrev: "",
+  contentUploads: "", contentUploadTarget: "7",
+  interactions: "", interactionsPrev: "",
+  dmLeads: "",
+  bioLinkClicks: "", bioLinkClicksPrev: "",
+};
+
+function SocialGrowthSection({ batchData }: { batchData: any }) {
+  const upsert = useUpsertMentorshipSocial();
+  const { data: social } = useMentorshipSocial();
+
+  const [form, setForm] = useState<SocialFormState>(EMPTY_SOCIAL);
+  const [isDirty, setIsDirty] = useState(false);
+
+  useEffect(() => {
+    if (!social) return;
+    setForm({
+      totalFollowers:       social.totalFollowers?.toString() ?? "",
+      followersPrev:        social.followersPrev?.toString() ?? "",
+      videoViews:           social.videoViews?.toString() ?? "",
+      videoViewsPrev:       social.videoViewsPrev?.toString() ?? "",
+      contentUploads:       social.contentUploads?.toString() ?? "",
+      contentUploadTarget:  social.contentUploadTarget?.toString() ?? "7",
+      interactions:         social.interactions?.toString() ?? "",
+      interactionsPrev:     social.interactionsPrev?.toString() ?? "",
+      dmLeads:              social.dmLeads?.toString() ?? "",
+      bioLinkClicks:        social.bioLinkClicks?.toString() ?? "",
+      bioLinkClicksPrev:    social.bioLinkClicksPrev?.toString() ?? "",
+    });
+    setIsDirty(false);
+  }, [social?.weekNumber]);
+
+  const set = (key: keyof SocialFormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(f => ({ ...f, [key]: e.target.value }));
+    setIsDirty(true);
+  };
+
+  const n = (v: string): number | null => (v === "" ? null : Number(v));
+
+  // Calculations
+  const followers = n(form.totalFollowers);
+  const followersPrev = n(form.followersPrev);
+  const videoViews = n(form.videoViews);
+  const videoViewsPrev = n(form.videoViewsPrev);
+  const contentUploads = n(form.contentUploads);
+  const contentTarget = n(form.contentUploadTarget) ?? 7;
+  const interactions = n(form.interactions);
+  const interactionsPrev = n(form.interactionsPrev);
+  const dmLeads = n(form.dmLeads);
+  const bioClicks = n(form.bioLinkClicks);
+  const bioClicksPrev = n(form.bioLinkClicksPrev);
+
+  const followersGrowth = growthPct(followers, followersPrev);
+  const videoGrowth = growthPct(videoViews, videoViewsPrev);
+  const interactionsGrowth = growthPct(interactions, interactionsPrev);
+  const bioGrowth = growthPct(bioClicks, bioClicksPrev);
+  const contentPct = contentUploads != null && contentTarget > 0 ? Math.round((contentUploads / contentTarget) * 100) : null;
+  const targetPace = contentPct ?? 0;
+
+  const handleSave = async () => {
+    try {
+      await upsert.mutateAsync({
+        totalFollowers:      followers != null ? Math.round(followers) : null,
+        followersPrev:       followersPrev != null ? Math.round(followersPrev) : null,
+        videoViews:          videoViews != null ? Math.round(videoViews) : null,
+        videoViewsPrev:      videoViewsPrev != null ? Math.round(videoViewsPrev) : null,
+        contentUploads:      contentUploads != null ? Math.round(contentUploads) : null,
+        contentUploadTarget: Math.round(contentTarget),
+        interactions:        interactions != null ? Math.round(interactions) : null,
+        interactionsPrev:    interactionsPrev != null ? Math.round(interactionsPrev) : null,
+        dmLeads:             dmLeads != null ? Math.round(dmLeads) : null,
+        bioLinkClicks:       bioClicks != null ? Math.round(bioClicks) : null,
+        bioLinkClicksPrev:   bioClicksPrev != null ? Math.round(bioClicksPrev) : null,
+      });
+      setIsDirty(false);
+      toast.success("Social stats saved!");
+    } catch {
+      toast.error("Failed to save.");
+    }
+  };
+
+  // Social metric tile: compact input pair + calculated % badge
+  const tile = (
+    label: string,
+    currKey: keyof SocialFormState,
+    prevKey: keyof SocialFormState | null,
+    growth: number | null,
+    badge: string,
+    opts?: { isQuota?: boolean; targetKey?: keyof SocialFormState; noGrowth?: boolean; suffix?: string },
+  ) => {
+    const currVal = n(form[currKey]);
+    const target = opts?.targetKey ? n(form[opts.targetKey]) : null;
+    const displayVal = currVal != null
+      ? (opts?.suffix ? `${fmtK(currVal)}${opts.suffix}` : fmtK(currVal))
+      : "—";
+
+    return (
+      <div
+        className="rounded-xl p-3 flex flex-col gap-2"
+        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+      >
+        <p className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</p>
+        <div className="text-lg font-extrabold text-white leading-none">
+          {displayVal}
+          {opts?.isQuota && target != null && (
+            <span className="text-xs font-semibold ml-0.5" style={{ color: "var(--color-text-secondary)" }}>/{target}</span>
+          )}
+        </div>
+
+        {/* Input fields */}
+        <div className="flex gap-1">
+          <input
+            type="number"
+            min={0}
+            placeholder="This wk"
+            value={form[currKey]}
+            onChange={set(currKey)}
+            className="min-w-0 flex-1 rounded-lg py-1 px-2 text-[10px] text-white outline-none"
+            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+            onFocus={e => { e.currentTarget.style.borderColor = "var(--color-accent)"; }}
+            onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
+          />
+          {prevKey && (
+            <input
+              type="number"
+              min={0}
+              placeholder={opts?.isQuota ? "Target" : "Last wk"}
+              value={form[prevKey]}
+              onChange={set(prevKey)}
+              className="min-w-0 flex-1 rounded-lg py-1 px-2 text-[10px] text-white outline-none"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+              onFocus={e => { e.currentTarget.style.borderColor = "#818cf8"; }}
+              onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+            />
+          )}
+        </div>
+
+        {/* Result badge */}
+        {!opts?.noGrowth && growth != null ? (
+          <GrowthBadge value={growth} />
+        ) : (
+          <span className="text-[10px] font-semibold" style={{ color: "var(--color-text-subtle)" }}>{badge}</span>
+        )}
+        {opts?.isQuota && contentPct != null && (
+          <div className="w-full h-1 rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div className="h-1 rounded-full" style={{ width: `${Math.min(100, contentPct)}%`, background: contentPct >= 100 ? "#22c55e" : "var(--color-accent)", transition: "width 0.8s ease" }} />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Tasks row from batch data
+  const recentDays: any[] = (batchData?.days ?? [])
+    .slice()
+    .sort((a: any, b: any) => b.dayNumber - a.dayNumber)
+    .slice(0, 6);
+
+  const taskIcon = (status: string) => {
+    if (status === "approved") return { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.25)", icon: "✓", color: "#22c55e" };
+    if (status === "submitted") return { bg: "rgba(251,191,36,0.12)", border: "rgba(251,191,36,0.25)", icon: "→", color: "#fbbf24" };
+    if (status === "rejected") return { bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.25)", icon: "!", color: "#ef4444" };
+    return { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.09)", icon: "○", color: "rgba(255,255,255,0.3)" };
+  };
+
+  return (
+    <motion.div variants={fadeUp} className="space-y-4">
+      {/* Social Growth card */}
+      <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Social Media Organic Growth</h2>
+          <span
+            className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0"
+            style={{
+              background: targetPace >= 100 ? "rgba(34,197,94,0.15)" : targetPace >= 50 ? "rgba(251,146,60,0.12)" : "rgba(255,255,255,0.05)",
+              color: targetPace >= 100 ? "#22c55e" : targetPace >= 50 ? "#fb923c" : "rgba(255,255,255,0.4)",
+              border: `1px solid ${targetPace >= 100 ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.08)"}`,
+            }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: targetPace >= 100 ? "#22c55e" : targetPace >= 50 ? "#fb923c" : "rgba(255,255,255,0.3)" }} />
+            Target Pace: {contentPct ?? 0}%
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {tile("Total Followers", "totalFollowers", "followersPrev", followersGrowth, "+6.8% new fans")}
+          {tile("Video Views", "videoViews", "videoViewsPrev", videoGrowth, "+12.8% this wk")}
+          {tile("Content Uploads", "contentUploads", "contentUploadTarget", null, "Weekly Quota", { isQuota: true, noGrowth: true })}
+          {tile("Interactions", "interactions", "interactionsPrev", interactionsGrowth, "+0.5% Increase")}
+          {tile("Inbound DM Leads", "dmLeads", null, null, "Organic", { noGrowth: true })}
+          {tile("Bio Link Clicks", "bioLinkClicks", "bioLinkClicksPrev", bioGrowth, "+16.4% CTR")}
+        </div>
+
+        <AnimatePresence>
+          {isDirty && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              className="flex justify-end pt-4"
+            >
+              <button
+                onClick={handleSave}
+                disabled={upsert.isPending}
+                className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-60"
+                style={{ background: "var(--color-accent)" }}
+              >
+                {upsert.isPending ? "Saving…" : "Save Social Stats"}
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Tasks row */}
+      {recentDays.length > 0 && (
+        <div>
+          <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>Tasks</p>
+          <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
+            {recentDays.map((day: any) => {
+              const t = taskIcon(day.status ?? "pending");
+              return (
+                <div
+                  key={day.dayNumber}
+                  className="shrink-0 rounded-2xl p-3.5 flex flex-col gap-2 w-44"
+                  style={{ background: t.bg, border: `1px solid ${t.border}` }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+                      Tasks · Day {day.dayNumber}
+                    </span>
+                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0" style={{ background: t.border, color: t.color }}>
+                      {t.icon}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold leading-snug" style={{ color: "var(--color-text-normal)" }}>
+                    {day.category ?? `Day ${day.dayNumber}`}
+                  </p>
+                  <p className="text-[9px] capitalize" style={{ color: "var(--color-text-subtle)" }}>
+                    {day.status ?? "pending"}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </motion.div>
   );
 }
 
@@ -743,6 +1430,12 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         </div>
         <RevenueStatsSection />
       </motion.div>
+
+      {/* ── Revenue Summary KPI Cards ────────────────────────────────── */}
+      <RevenueSummarySection revenue={revenue} />
+
+      {/* ── Social Media Organic Growth ──────────────────────────────── */}
+      <SocialGrowthSection batchData={batchData} />
 
       {showBackLink && (
         <motion.div variants={fadeUp}>

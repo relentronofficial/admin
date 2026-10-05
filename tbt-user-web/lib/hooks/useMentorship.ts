@@ -37,3 +37,23 @@ export const useUpsertMentorshipRevenue = () => {
     },
   });
 };
+
+export const useMentorshipSocial = () =>
+  useQuery({
+    queryKey: ["user", "mentorship-social"],
+    queryFn: async () => {
+      const res = await mentorshipService.getSocial();
+      return res.data ?? null;
+    },
+    staleTime: 300_000,
+  });
+
+export const useUpsertMentorshipSocial = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: mentorshipService.upsertSocial,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user", "mentorship-social"] });
+    },
+  });
+};

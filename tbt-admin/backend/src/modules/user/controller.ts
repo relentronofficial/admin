@@ -6910,45 +6910,60 @@ export async function getMentorshipRevenueHandler(request: FastifyRequest, reply
 
   const r = rows[0];
   return ok(reply, {
-    weekNumber:       isoWeek,
-    year:             isoYear,
-    revenueGenerated: r.revenue_generated != null ? Number(r.revenue_generated) : null,
-    revenuePrev:      r.revenue_prev != null ? Number(r.revenue_prev) : null,
-    numberOfOrders:   r.number_of_orders != null ? Number(r.number_of_orders) : null,
-    ordersPrev:       r.orders_prev != null ? Number(r.orders_prev) : null,
-    adBudgetSpent:    r.ad_budget_spent != null ? Number(r.ad_budget_spent) : null,
-    roas:             r.roas != null ? Number(r.roas) : null,
-    customerAcqCost:  r.customer_acq_cost != null ? Number(r.customer_acq_cost) : null,
-    organicLeads:     r.organic_leads != null ? Number(r.organic_leads) : null,
-    leadsPrev:        r.leads_prev != null ? Number(r.leads_prev) : null,
-    avgOrderValue:    r.avg_order_value != null ? Number(r.avg_order_value) : null,
-    updatedAt:        r.updated_at ? new Date(r.updated_at).toISOString() : null,
+    weekNumber:          isoWeek,
+    year:                isoYear,
+    revenueGenerated:    r.revenue_generated != null ? Number(r.revenue_generated) : null,
+    revenuePrev:         r.revenue_prev != null ? Number(r.revenue_prev) : null,
+    numberOfOrders:      r.number_of_orders != null ? Number(r.number_of_orders) : null,
+    ordersPrev:          r.orders_prev != null ? Number(r.orders_prev) : null,
+    adBudgetSpent:       r.ad_budget_spent != null ? Number(r.ad_budget_spent) : null,
+    roas:                r.roas != null ? Number(r.roas) : null,
+    customerAcqCost:     r.customer_acq_cost != null ? Number(r.customer_acq_cost) : null,
+    organicLeads:        r.organic_leads != null ? Number(r.organic_leads) : null,
+    leadsPrev:           r.leads_prev != null ? Number(r.leads_prev) : null,
+    avgOrderValue:       r.avg_order_value != null ? Number(r.avg_order_value) : null,
+    rtoReturnsPercent:   r.rto_returns_percent != null ? Number(r.rto_returns_percent) : null,
+    conversionRate:      r.conversion_rate != null ? Number(r.conversion_rate) : null,
+    platformBadge:       r.platform_badge ?? null,
+    dailyRevenue:        r.daily_revenue ?? null,
+    dailyOrders:         r.daily_orders ?? null,
+    updatedAt:           r.updated_at ? new Date(r.updated_at).toISOString() : null,
   });
 }
 
 export async function upsertMentorshipRevenueHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
-  const body = request.body as Record<string, number | null>;
+  const body = request.body as Record<string, any>;
+
+  const dailyRevenue = Array.isArray(body.dailyRevenue) ? JSON.stringify(body.dailyRevenue) : null;
+  const dailyOrders  = Array.isArray(body.dailyOrders)  ? JSON.stringify(body.dailyOrders)  : null;
 
   const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO member_revenue_reports
-       (member_id, week_number, year, revenue_generated, revenue_prev,
-        number_of_orders, orders_prev, ad_budget_spent, roas,
-        customer_acq_cost, organic_leads, leads_prev, avg_order_value, updated_at)
-     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+       (member_id, week_number, year,
+        revenue_generated, revenue_prev, number_of_orders, orders_prev,
+        ad_budget_spent, roas, customer_acq_cost, organic_leads, leads_prev, avg_order_value,
+        rto_returns_percent, conversion_rate, platform_badge, daily_revenue, daily_orders,
+        updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, now())
      ON CONFLICT (member_id, week_number, year) DO UPDATE SET
-       revenue_generated  = EXCLUDED.revenue_generated,
-       revenue_prev       = EXCLUDED.revenue_prev,
-       number_of_orders   = EXCLUDED.number_of_orders,
-       orders_prev        = EXCLUDED.orders_prev,
-       ad_budget_spent    = EXCLUDED.ad_budget_spent,
-       roas               = EXCLUDED.roas,
-       customer_acq_cost  = EXCLUDED.customer_acq_cost,
-       organic_leads      = EXCLUDED.organic_leads,
-       leads_prev         = EXCLUDED.leads_prev,
-       avg_order_value    = EXCLUDED.avg_order_value,
-       updated_at         = now()
+       revenue_generated   = EXCLUDED.revenue_generated,
+       revenue_prev        = EXCLUDED.revenue_prev,
+       number_of_orders    = EXCLUDED.number_of_orders,
+       orders_prev         = EXCLUDED.orders_prev,
+       ad_budget_spent     = EXCLUDED.ad_budget_spent,
+       roas                = EXCLUDED.roas,
+       customer_acq_cost   = EXCLUDED.customer_acq_cost,
+       organic_leads       = EXCLUDED.organic_leads,
+       leads_prev          = EXCLUDED.leads_prev,
+       avg_order_value     = EXCLUDED.avg_order_value,
+       rto_returns_percent = EXCLUDED.rto_returns_percent,
+       conversion_rate     = EXCLUDED.conversion_rate,
+       platform_badge      = EXCLUDED.platform_badge,
+       daily_revenue       = EXCLUDED.daily_revenue,
+       daily_orders        = EXCLUDED.daily_orders,
+       updated_at          = now()
      RETURNING *`,
     memberId, isoWeek, isoYear,
     body.revenueGenerated ?? null,
@@ -6961,22 +6976,121 @@ export async function upsertMentorshipRevenueHandler(request: FastifyRequest, re
     body.organicLeads ?? null,
     body.leadsPrev ?? null,
     body.avgOrderValue ?? null,
+    body.rtoReturnsPercent ?? null,
+    body.conversionRate ?? null,
+    body.platformBadge ?? null,
+    dailyRevenue,
+    dailyOrders,
   );
 
   const r = rows[0];
   return ok(reply, {
-    weekNumber:       isoWeek,
-    year:             isoYear,
-    revenueGenerated: r.revenue_generated != null ? Number(r.revenue_generated) : null,
-    revenuePrev:      r.revenue_prev != null ? Number(r.revenue_prev) : null,
-    numberOfOrders:   r.number_of_orders != null ? Number(r.number_of_orders) : null,
-    ordersPrev:       r.orders_prev != null ? Number(r.orders_prev) : null,
-    adBudgetSpent:    r.ad_budget_spent != null ? Number(r.ad_budget_spent) : null,
-    roas:             r.roas != null ? Number(r.roas) : null,
-    customerAcqCost:  r.customer_acq_cost != null ? Number(r.customer_acq_cost) : null,
-    organicLeads:     r.organic_leads != null ? Number(r.organic_leads) : null,
-    leadsPrev:        r.leads_prev != null ? Number(r.leads_prev) : null,
-    avgOrderValue:    r.avg_order_value != null ? Number(r.avg_order_value) : null,
-    updatedAt:        r.updated_at ? new Date(r.updated_at).toISOString() : null,
+    weekNumber:          isoWeek,
+    year:                isoYear,
+    revenueGenerated:    r.revenue_generated != null ? Number(r.revenue_generated) : null,
+    revenuePrev:         r.revenue_prev != null ? Number(r.revenue_prev) : null,
+    numberOfOrders:      r.number_of_orders != null ? Number(r.number_of_orders) : null,
+    ordersPrev:          r.orders_prev != null ? Number(r.orders_prev) : null,
+    adBudgetSpent:       r.ad_budget_spent != null ? Number(r.ad_budget_spent) : null,
+    roas:                r.roas != null ? Number(r.roas) : null,
+    customerAcqCost:     r.customer_acq_cost != null ? Number(r.customer_acq_cost) : null,
+    organicLeads:        r.organic_leads != null ? Number(r.organic_leads) : null,
+    leadsPrev:           r.leads_prev != null ? Number(r.leads_prev) : null,
+    avgOrderValue:       r.avg_order_value != null ? Number(r.avg_order_value) : null,
+    rtoReturnsPercent:   r.rto_returns_percent != null ? Number(r.rto_returns_percent) : null,
+    conversionRate:      r.conversion_rate != null ? Number(r.conversion_rate) : null,
+    platformBadge:       r.platform_badge ?? null,
+    dailyRevenue:        r.daily_revenue ?? null,
+    dailyOrders:         r.daily_orders ?? null,
+    updatedAt:           r.updated_at ? new Date(r.updated_at).toISOString() : null,
+  });
+}
+
+export async function getMentorshipSocialHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM member_social_reports WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
+    memberId, isoWeek, isoYear,
+  ).catch(() => []);
+
+  if (!rows.length) return ok(reply, null);
+
+  const r = rows[0];
+  return ok(reply, {
+    weekNumber:           isoWeek,
+    year:                 isoYear,
+    totalFollowers:       r.total_followers != null ? Number(r.total_followers) : null,
+    followersPrev:        r.followers_prev != null ? Number(r.followers_prev) : null,
+    videoViews:           r.video_views != null ? Number(r.video_views) : null,
+    videoViewsPrev:       r.video_views_prev != null ? Number(r.video_views_prev) : null,
+    contentUploads:       r.content_uploads != null ? Number(r.content_uploads) : null,
+    contentUploadTarget:  r.content_upload_target != null ? Number(r.content_upload_target) : 7,
+    interactions:         r.interactions != null ? Number(r.interactions) : null,
+    interactionsPrev:     r.interactions_prev != null ? Number(r.interactions_prev) : null,
+    dmLeads:              r.dm_leads != null ? Number(r.dm_leads) : null,
+    bioLinkClicks:        r.bio_link_clicks != null ? Number(r.bio_link_clicks) : null,
+    bioLinkClicksPrev:    r.bio_link_clicks_prev != null ? Number(r.bio_link_clicks_prev) : null,
+    updatedAt:            r.updated_at ? new Date(r.updated_at).toISOString() : null,
+  });
+}
+
+export async function upsertMentorshipSocialHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+  const body = request.body as Record<string, number | null>;
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO member_social_reports
+       (member_id, week_number, year,
+        total_followers, followers_prev, video_views, video_views_prev,
+        content_uploads, content_upload_target, interactions, interactions_prev,
+        dm_leads, bio_link_clicks, bio_link_clicks_prev, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
+     ON CONFLICT (member_id, week_number, year) DO UPDATE SET
+       total_followers       = EXCLUDED.total_followers,
+       followers_prev        = EXCLUDED.followers_prev,
+       video_views           = EXCLUDED.video_views,
+       video_views_prev      = EXCLUDED.video_views_prev,
+       content_uploads       = EXCLUDED.content_uploads,
+       content_upload_target = EXCLUDED.content_upload_target,
+       interactions          = EXCLUDED.interactions,
+       interactions_prev     = EXCLUDED.interactions_prev,
+       dm_leads              = EXCLUDED.dm_leads,
+       bio_link_clicks       = EXCLUDED.bio_link_clicks,
+       bio_link_clicks_prev  = EXCLUDED.bio_link_clicks_prev,
+       updated_at            = now()
+     RETURNING *`,
+    memberId, isoWeek, isoYear,
+    body.totalFollowers ?? null,
+    body.followersPrev ?? null,
+    body.videoViews ?? null,
+    body.videoViewsPrev ?? null,
+    body.contentUploads ?? null,
+    body.contentUploadTarget ?? 7,
+    body.interactions ?? null,
+    body.interactionsPrev ?? null,
+    body.dmLeads ?? null,
+    body.bioLinkClicks ?? null,
+    body.bioLinkClicksPrev ?? null,
+  );
+
+  const r = rows[0];
+  return ok(reply, {
+    weekNumber:           isoWeek,
+    year:                 isoYear,
+    totalFollowers:       r.total_followers != null ? Number(r.total_followers) : null,
+    followersPrev:        r.followers_prev != null ? Number(r.followers_prev) : null,
+    videoViews:           r.video_views != null ? Number(r.video_views) : null,
+    videoViewsPrev:       r.video_views_prev != null ? Number(r.video_views_prev) : null,
+    contentUploads:       r.content_uploads != null ? Number(r.content_uploads) : null,
+    contentUploadTarget:  r.content_upload_target != null ? Number(r.content_upload_target) : 7,
+    interactions:         r.interactions != null ? Number(r.interactions) : null,
+    interactionsPrev:     r.interactions_prev != null ? Number(r.interactions_prev) : null,
+    dmLeads:              r.dm_leads != null ? Number(r.dm_leads) : null,
+    bioLinkClicks:        r.bio_link_clicks != null ? Number(r.bio_link_clicks) : null,
+    bioLinkClicksPrev:    r.bio_link_clicks_prev != null ? Number(r.bio_link_clicks_prev) : null,
+    updatedAt:            r.updated_at ? new Date(r.updated_at).toISOString() : null,
   });
 }

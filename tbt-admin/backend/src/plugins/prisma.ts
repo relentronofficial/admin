@@ -2091,6 +2091,46 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_revenue_reports_member ON member_revenue_reports(member_id, year DESC, week_number DESC)`
     ).catch(() => {});
 
+    // ── MP-01b: Extend member_revenue_reports with Part 2 fields ─────────────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_revenue_reports ADD COLUMN IF NOT EXISTS rto_returns_percent DECIMAL(5,2)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_revenue_reports ADD COLUMN IF NOT EXISTS conversion_rate DECIMAL(5,2)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_revenue_reports ADD COLUMN IF NOT EXISTS platform_badge TEXT`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_revenue_reports ADD COLUMN IF NOT EXISTS daily_revenue JSONB`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE member_revenue_reports ADD COLUMN IF NOT EXISTS daily_orders JSONB`
+    ).catch(() => {});
+
+    // ── MP-01c: Social Media Reports ─────────────────────────────────────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_social_reports (
+        id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id             UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        week_number           INT NOT NULL,
+        year                  INT NOT NULL,
+        total_followers       INT,
+        followers_prev        INT,
+        video_views           INT,
+        video_views_prev      INT,
+        content_uploads       INT,
+        content_upload_target INT DEFAULT 7,
+        interactions          INT,
+        interactions_prev     INT,
+        dm_leads              INT,
+        bio_link_clicks       INT,
+        bio_link_clicks_prev  INT,
+        updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(member_id, week_number, year)
+      )
+    `).catch(() => {});
+
     // ── MP-02: Extend plan_entitlements with sales + content call counts ─────
     await prisma.$executeRawUnsafe(
       `ALTER TABLE plan_entitlements ADD COLUMN IF NOT EXISTS sales_call_count  INT NOT NULL DEFAULT 0`
