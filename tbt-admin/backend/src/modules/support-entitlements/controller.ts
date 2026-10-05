@@ -8,11 +8,14 @@ const updateEntitlementSchema = z.object({
   groupCallCount:   z.number().int().min(0),
   callCreditCount:  z.number().int().min(0),
   oneToOneEnabled:  z.boolean(),
+  // Optional so older admin clients that don't send them keep working (existing value is kept).
+  salesCallCount:   z.number().int().min(0).optional(),
+  contentCallCount: z.number().int().min(0).optional(),
 });
 
 const recordUsageSchema = z.object({
   memberId: z.string().uuid(),
-  type:     z.enum(['tech_support', 'ad_support', 'group_call', 'one_to_one']),
+  type:     z.enum(['tech_support', 'ad_support', 'group_call', 'one_to_one', 'sales_support', 'content_support']),
   batchId:  z.string().uuid().optional(),
   notes:    z.string().optional(),
 });
@@ -21,7 +24,7 @@ const recordUsageSchema = z.object({
 export async function listEntitlementsHandler(req: FastifyRequest, reply: FastifyReply) {
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT plan, tech_support_days, ad_support_days, group_call_count, call_credit_count,
-            one_to_one_enabled, updated_at
+            one_to_one_enabled, sales_call_count, content_call_count, updated_at
      FROM plan_entitlements ORDER BY
        CASE plan WHEN 'free' THEN 1 WHEN 'starter' THEN 2 WHEN 'premium' THEN 3
                  WHEN 'vip' THEN 4 WHEN 'enterprise' THEN 5 ELSE 9 END`
@@ -39,19 +42,23 @@ export async function updateEntitlementHandler(
   if (!parsed.success) {
     return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
   }
-  const { techSupportDays, adSupportDays, groupCallCount, callCreditCount, oneToOneEnabled } = parsed.data;
+  const { techSupportDays, adSupportDays, groupCallCount, callCreditCount, oneToOneEnabled, salesCallCount, contentCallCount } = parsed.data;
 
   await req.server.prisma.$executeRawUnsafe(
-    `INSERT INTO plan_entitlements (plan, tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW())
+    `INSERT INTO plan_entitlements (plan, tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
+                                    sales_call_count, content_call_count, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::int, 0), COALESCE($8::int, 0), NOW())
      ON CONFLICT (plan) DO UPDATE SET
        tech_support_days  = EXCLUDED.tech_support_days,
        ad_support_days    = EXCLUDED.ad_support_days,
        group_call_count   = EXCLUDED.group_call_count,
        call_credit_count  = EXCLUDED.call_credit_count,
        one_to_one_enabled = EXCLUDED.one_to_one_enabled,
+       sales_call_count   = COALESCE($7::int, plan_entitlements.sales_call_count),
+       content_call_count = COALESCE($8::int, plan_entitlements.content_call_count),
        updated_at         = NOW()`,
     plan, techSupportDays, adSupportDays, groupCallCount, callCreditCount, oneToOneEnabled,
+    salesCallCount ?? null, contentCallCount ?? null,
   );
 
   return reply.send({ success: true, data: { plan }, error: null });
@@ -156,7 +163,8 @@ export async function getMemberSupportQuotaHandler(
 
     const [entRows, usageRows, lifelineRows] = await Promise.all([
       req.server.prisma.$queryRawUnsafe<any[]>(
-        `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled
+        `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
+                COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
          FROM plan_entitlements WHERE plan = $1`,
         plan,
       ),

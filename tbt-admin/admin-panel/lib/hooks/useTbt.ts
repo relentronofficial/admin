@@ -2019,7 +2019,7 @@ export const useGetPlanEntitlements = () =>
 export const useUpdatePlanEntitlement = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ plan, data }: { plan: string; data: { techSupportDays: number; adSupportDays: number; groupCallCount: number; callCreditCount: number; oneToOneEnabled: boolean } }) => {
+    mutationFn: async ({ plan, data }: { plan: string; data: { techSupportDays: number; adSupportDays: number; groupCallCount: number; callCreditCount: number; oneToOneEnabled: boolean; salesCallCount?: number; contentCallCount?: number } }) => {
       const res: any = await apiClient.put(`/api/support-entitlements/${plan}`, data);
       return res.data;
     },

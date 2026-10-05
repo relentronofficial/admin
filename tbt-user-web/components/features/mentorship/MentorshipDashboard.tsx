@@ -73,11 +73,12 @@ function MentorshipHeader({
   programName: string | null;
   weeklyReportSubmitted: boolean;
   streakDays: number;
-  lifelinesTotal: number;
-  lifelinesUsed: number;
+  lifelinesTotal: number | null;
+  lifelinesUsed: number | null;
 }) {
-  const totalHearts = Math.max(5, lifelinesTotal);
-  const filledHearts = lifelinesTotal - lifelinesUsed;
+  // Only draw hearts the member actually has — no padding, no assumed default.
+  const totalHearts = lifelinesTotal ?? 0;
+  const filledHearts = lifelinesTotal != null ? lifelinesTotal - (lifelinesUsed ?? 0) : 0;
 
   return (
     <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-3 mb-6">
@@ -159,6 +160,7 @@ function JourneyTile({
   suffix,
   icon: Icon,
   noBar,
+  pct: pctOverride,
 }: {
   label: string;
   used: number | string;
@@ -166,10 +168,13 @@ function JourneyTile({
   suffix?: string;
   icon: React.ElementType;
   noBar?: boolean;
+  pct?: number | null;
 }) {
-  const pct = typeof used === "number" && typeof total === "number" && total > 0
-    ? (used / total) * 100
-    : 0;
+  const pct = pctOverride != null
+    ? Math.min(100, pctOverride)
+    : typeof used === "number" && typeof total === "number" && total > 0
+      ? (used / total) * 100
+      : 0;
   return (
     <div
       className="rounded-xl p-3 flex flex-col gap-1"
@@ -599,7 +604,7 @@ function RevenueStatsSection() {
       </div>
 
       {/* ── Weekly Chart ─────────────────────────────────────────────── */}
-      <WeeklyChartSection form={form} setDailyRev={setDailyRev} setDailyOrd={setDailyOrd} />
+      <DailyInputsGrid form={form} weekDays={weekDaysFor(revenue)} setDailyRev={setDailyRev} setDailyOrd={setDailyOrd} />
 
       {/* ── Save button ───────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -637,6 +642,35 @@ function getWeekDays(): { label: string; day: number }[] {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return { label, day: d.getDate() };
+  });
+}
+
+// Mon–Sun of a given ISO week (UTC date math — the backend stores weeks by IST ISO week).
+function isoWeekDays(isoWeek: number, isoYear: number): { label: string; day: number }[] {
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return labels.map((label, i) => {
+    const d = new Date(week1Monday);
+    d.setUTCDate(week1Monday.getUTCDate() + (isoWeek - 1) * 7 + i);
+    return { label, day: d.getUTCDate() };
+  });
+}
+
+// Prefer the week the saved report belongs to; fall back to the current local week
+// only when there is no report yet (nothing is plotted in that case).
+function weekDaysFor(revenue: { weekNumber?: number; year?: number } | null | undefined) {
+  return revenue?.weekNumber && revenue?.year ? isoWeekDays(revenue.weekNumber, revenue.year) : getWeekDays();
+}
+
+// Daily series as stored: blank / missing days stay null (not plotted), never coerced to 0.
+function toSeries(arr: (number | string | null)[] | null | undefined): (number | null)[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const v = arr?.[i];
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
   });
 }
 
@@ -684,8 +718,6 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
   const crFlow = cr != null ? (cr >= 20 ? "High Converter" : cr >= 10 ? "Free Customer Flow" : "Needs Nurturing") : null;
   const crColor = cr != null ? (cr >= 20 ? "#22c55e" : cr >= 10 ? "#34d399" : "#fb923c") : null;
 
-  if (!revenue) return null;
-
   const card = (
     label: string,
     main: React.ReactNode,
@@ -726,6 +758,11 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
           </span>
         )}
       </div>
+      {!revenue ? (
+        <p className="text-[11px] py-6 text-center" style={{ color: "var(--color-text-subtle)" }}>
+          No revenue numbers saved for this week yet.
+        </p>
+      ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {card(
           "Revenue Generated",
@@ -759,6 +796,7 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
           crFlow && crColor ? { text: crFlow, color: crColor } : null,
         )}
       </div>
+      )}
     </motion.div>
   );
 }
@@ -773,12 +811,16 @@ function WeeklyLineChart({
   weekDays,
   mode,
 }: {
-  revData: number[];
-  ordData: number[];
+  revData: (number | null)[];
+  ordData: (number | null)[];
   weekDays: { label: string; day: number }[];
   mode: "daily" | "cumulative";
 }) {
-  const cum = (arr: number[]) => arr.map((_, i, a) => a.slice(0, i + 1).reduce((s, v) => s + v, 0));
+  // Cumulative: running total over entered days; a missing day stays a gap.
+  const cum = (arr: (number | null)[]) => {
+    let run = 0;
+    return arr.map((v) => (v == null ? null : (run += v)));
+  };
   const displayRev = mode === "cumulative" ? cum(revData) : revData;
   const displayOrd = mode === "cumulative" ? cum(ordData) : ordData;
 
@@ -787,20 +829,36 @@ function WeeklyLineChart({
   const PW = W - PL - PR;
   const PH = H - PT - PB;
 
-  const maxRev = Math.max(...displayRev, 1);
-  const maxOrd = Math.max(...displayOrd, 1);
+  const nums = (a: (number | null)[]) => a.filter((v): v is number => v != null);
+  const maxRev = Math.max(...nums(displayRev), 1);
+  const maxOrd = Math.max(...nums(displayOrd), 1);
 
   const xOf = (i: number) => PL + (i / 6) * PW;
   const yRev = (v: number) => PT + (1 - v / maxRev) * PH;
   const yOrd = (v: number) => PT + (1 - v / maxOrd) * PH;
 
-  const revPoints = displayRev.map((v, i) => `${xOf(i).toFixed(1)},${yRev(v).toFixed(1)}`).join(" ");
-  const ordPoints = displayOrd.map((v, i) => `${xOf(i).toFixed(1)},${yOrd(v).toFixed(1)}`).join(" ");
-  const revFillPoints = `${xOf(0).toFixed(1)},${(PT + PH).toFixed(1)} ${revPoints} ${xOf(6).toFixed(1)},${(PT + PH).toFixed(1)}`;
+  // Split a series into contiguous runs so missing days render as gaps.
+  const segments = (a: (number | null)[], y: (v: number) => number) => {
+    const out: { first: number; last: number; pts: string }[] = [];
+    let cur: number[] = [];
+    const flush = () => {
+      if (cur.length) out.push({ first: cur[0], last: cur[cur.length - 1], pts: cur.map((i) => `${xOf(i).toFixed(1)},${y(a[i] as number).toFixed(1)}`).join(" ") });
+      cur = [];
+    };
+    a.forEach((v, i) => { if (v == null) flush(); else cur.push(i); });
+    flush();
+    return out;
+  };
+  const revSegs = segments(displayRev, yRev);
+  const ordSegs = segments(displayOrd, yOrd);
 
-  const peakIdx = displayRev.indexOf(Math.max(...displayRev));
-  const peakX = xOf(peakIdx);
-  const peakY = yRev(displayRev[peakIdx]);
+  // Peak day is always the best DAILY revenue (in cumulative mode the last point
+  // would otherwise always "peak"). The callout sits on the displayed line.
+  const dailyRevNums = nums(revData);
+  const peakIdx = dailyRevNums.length ? revData.indexOf(Math.max(...dailyRevNums)) : -1;
+  const peakDisplay = peakIdx >= 0 ? displayRev[peakIdx] : null;
+  const peakX = peakIdx >= 0 ? xOf(peakIdx) : 0;
+  const peakY = peakDisplay != null ? yRev(peakDisplay) : 0;
 
   const fmtY = (v: number) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`;
 
@@ -811,7 +869,7 @@ function WeeklyLineChart({
   }));
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }} preserveAspectRatio="xMidYMid meet">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Weekly revenue and order trajectory">
       <defs>
         <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
@@ -820,41 +878,47 @@ function WeeklyLineChart({
       </defs>
 
       {/* Grid lines */}
-      {yTicks.map(({ val, y }) => (
-        <g key={val}>
+      {yTicks.map(({ val, y }, i) => (
+        <g key={i}>
           <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
           <text x={PL - 4} y={y + 4} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.3)">{fmtY(val)}</text>
         </g>
       ))}
 
-      {/* Revenue area fill */}
-      <polygon points={revFillPoints} fill="url(#revGrad)" />
+      {/* Revenue area fill (per contiguous run) */}
+      {revSegs.map((seg, i) => (
+        <polygon key={i} points={`${xOf(seg.first).toFixed(1)},${(PT + PH).toFixed(1)} ${seg.pts} ${xOf(seg.last).toFixed(1)},${(PT + PH).toFixed(1)}`} fill="url(#revGrad)" />
+      ))}
 
       {/* Order velocity line (dashed yellow) */}
-      <polyline points={ordPoints} fill="none" stroke="#eab308" strokeWidth="1.5" strokeDasharray="5 3" strokeLinejoin="round" />
+      {ordSegs.map((seg, i) => (
+        <polyline key={i} points={seg.pts} fill="none" stroke="#eab308" strokeWidth="1.5" strokeDasharray="5 3" strokeLinejoin="round" />
+      ))}
 
       {/* Revenue line (solid red) */}
-      <polyline points={revPoints} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {revSegs.map((seg, i) => (
+        <polyline key={i} points={seg.pts} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      ))}
 
       {/* Data points on revenue line */}
-      {displayRev.map((v, i) => v > 0 && (
+      {displayRev.map((v, i) => v != null && (
         <circle key={i} cx={xOf(i)} cy={yRev(v)} r="3" fill="var(--color-accent)" stroke="#1a1a1a" strokeWidth="1.5" />
       ))}
 
-      {/* Peak callout */}
-      {displayRev[peakIdx] > 0 && (
-        <g>
+      {/* Peak callout — values from the member's saved daily data */}
+      {peakIdx >= 0 && peakDisplay != null && (
+        <g data-testid="peak-callout">
           <line x1={peakX} y1={PT} x2={peakX} y2={PT + PH} stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="3 2" />
           <rect x={peakX - 44} y={peakY - 36} width={88} height={30} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
           <text x={peakX} y={peakY - 22} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.5)" fontWeight="600">
             PEAK DAY ({weekDays[peakIdx]?.label?.toUpperCase()})
           </text>
           <text x={peakX} y={peakY - 11} textAnchor="middle" fontSize="10" fill="var(--color-accent)" fontWeight="800">
-            ₹{displayRev[peakIdx].toLocaleString("en-IN")}
+            ₹{(revData[peakIdx] as number).toLocaleString("en-IN")}
           </text>
-          {displayOrd[peakIdx] > 0 && (
+          {ordData[peakIdx] != null && (
             <text x={peakX} y={peakY - 1} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)">
-              {displayOrd[peakIdx]} Orders
+              {ordData[peakIdx]} Orders
             </text>
           )}
         </g>
@@ -870,21 +934,13 @@ function WeeklyLineChart({
   );
 }
 
-function WeeklyChartSection({
-  form,
-  setDailyRev,
-  setDailyOrd,
-}: {
-  form: RevenueFormState;
-  setDailyRev: (i: number, v: string) => void;
-  setDailyOrd: (i: number, v: string) => void;
-}) {
+function WeeklyChartSection({ revenue }: { revenue: any }) {
   const [mode, setMode] = useState<"daily" | "cumulative">("daily");
-  const weekDays = getWeekDays();
+  const weekDays = weekDaysFor(revenue);
 
-  const revData = form.dailyRevenue.map(v => (v === "" ? 0 : Number(v)));
-  const ordData = form.dailyOrders.map(v => (v === "" ? 0 : Number(v)));
-  const hasData = revData.some(v => v > 0) || ordData.some(v => v > 0);
+  const revData = toSeries(revenue?.dailyRevenue);
+  const ordData = toSeries(revenue?.dailyOrders);
+  const hasData = revData.some(v => v != null) || ordData.some(v => v != null);
 
   return (
     <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -892,7 +948,7 @@ function WeeklyChartSection({
         <div>
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Weekly Revenue & Order Trajectory</h2>
           <p className="text-[10px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-            Comparative trendline for {weekDays[0]?.label} {weekDays[0]?.day} – {weekDays[6]?.label} {weekDays[6]?.day} with peak weekend momentum
+            Comparative trendline for {weekDays[0]?.label} {weekDays[0]?.day} – {weekDays[6]?.label} {weekDays[6]?.day}
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -926,13 +982,29 @@ function WeeklyChartSection({
           <WeeklyLineChart revData={revData} ordData={ordData} weekDays={weekDays} mode={mode} />
         ) : (
           <div className="flex items-center justify-center" style={{ height: 200 }}>
-            <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>Enter daily data below to see the chart</p>
+            <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>No daily revenue saved for this week yet</p>
           </div>
         )}
       </div>
+    </motion.div>
+  );
+}
 
+function DailyInputsGrid({
+  form,
+  weekDays,
+  setDailyRev,
+  setDailyOrd,
+}: {
+  form: RevenueFormState;
+  weekDays: { label: string; day: number }[];
+  setDailyRev: (i: number, v: string) => void;
+  setDailyOrd: (i: number, v: string) => void;
+}) {
+  return (
+    <div>
       {/* Daily data inputs */}
-      <div className="mt-4">
+      <div>
         <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>Daily Inputs</p>
         <div className="grid grid-cols-7 gap-1.5">
           {weekDays.map((d, i) => (
@@ -976,7 +1048,7 @@ function WeeklyChartSection({
           </span>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -1252,29 +1324,31 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MentorshipDashboard({ showBackLink = false }: { showBackLink?: boolean }) {
-  const { data: stats, isLoading: statsLoading } = useMentorshipStats();
+  const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useMentorshipStats();
   const { data: batchData, isLoading: batchLoading } = useMyBatchProgram();
-  const { data: quota, isLoading: quotaLoading } = useUserSupportQuota();
+  const { data: quota, isLoading: quotaLoading, isError: quotaError, refetch: refetchQuota } = useUserSupportQuota();
   const { data: revenue } = useMentorshipRevenue();
+  const [showRevenueForm, setShowRevenueForm] = useState(false);
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
 
   const programName = stats?.programName ?? batchData?.batch?.program?.name ?? batchData?.batch?.name ?? null;
   const streakDays = stats?.streakDays ?? 0;
   const weeklyReportSubmitted = stats?.weeklyReportSubmitted ?? false;
-  const lifelinesTotal = batchData?.lifelinesTotal ?? 3;
-  const lifelinesUsed = batchData?.lifelinesUsed ?? 0;
+  // null when the member has no batch settings yet — header then shows no hearts
+  const lifelinesTotal: number | null = batchData?.lifelinesTotal ?? null;
+  const lifelinesUsed: number | null = batchData?.lifelinesUsed ?? null;
 
   const dailyHrs = stats?.dailyTimeSpentHrs ?? 0;
-  const dailyGoal = stats?.dailyTimeGoalHrs ?? 2;
-  const dailyGrowth = dailyGoal > 0 ? Math.round(((dailyHrs - dailyGoal) / dailyGoal) * 1000) / 10 : null;
+  const dailyGoal: number | null = stats?.dailyTimeGoalHrs ?? null;
+  const dailyGrowth = dailyGoal != null && dailyGoal > 0 ? Math.round(((dailyHrs - dailyGoal) / dailyGoal) * 1000) / 10 : null;
 
-  const allCallsUsed = quota
-    ? (quota.techSupport.used + quota.adSupport.used + quota.groupCall.used + quota.callCredits.used)
-    : 0;
-  const allCallsAllocated = quota
-    ? (quota.techSupport.allocated + quota.adSupport.allocated + quota.groupCall.allocated + quota.callCredits.allocated)
-    : 0;
+  // All six Expert Support Call types count toward the totals shown in the KPI + badges.
+  const callTypes = quota
+    ? [quota.salesSupport, quota.techSupport, quota.contentSupport, quota.adSupport, quota.callCredits, quota.groupCall]
+    : [];
+  const allCallsUsed = callTypes.reduce((s, q) => s + (q?.used ?? 0), 0);
+  const allCallsAllocated = callTypes.reduce((s, q) => s + (q?.allocated ?? 0), 0);
   const allCallsRemaining = Math.max(0, allCallsAllocated - allCallsUsed);
 
   const revGrowth = growthPct(revenue?.revenueGenerated ?? null, revenue?.revenuePrev ?? null);
@@ -1283,7 +1357,6 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   const daysLeft = Math.max(0, (stats?.totalDays ?? 0) - (stats?.daysElapsed ?? 0));
   const totalDays = stats?.totalDays ?? 0;
   const daysElapsed = stats?.daysElapsed ?? 0;
-  const attendanceCount = batchData?.attendance?.filter((a: any) => a.status === "present").length ?? 0;
 
   const dailyHrsCount = useCountUp(dailyHrs, 1200, 2);
   const allCallsUsedCount = useCountUp(allCallsUsed, 900);
@@ -1302,6 +1375,21 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         <SkeletonCard className="h-40" />
         <SkeletonCard className="h-36" />
         <SkeletonCard className="h-48" />
+      </div>
+    );
+  }
+
+  if (statsError || quotaError || !stats || !quota) {
+    return (
+      <div className="rounded-2xl p-6 text-center space-y-3" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+        <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn&apos;t load your mentorship stats.</p>
+        <button
+          onClick={() => { void refetchStats(); void refetchQuota(); }}
+          className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+          style={{ background: "var(--color-accent)" }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -1326,7 +1414,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         <KpiCard
           label="Daily Time Spent"
           value={`${dailyHrsCount} hrs`}
-          sub={`vs ${dailyGoal}hr goal`}
+          sub={dailyGoal != null ? `vs ${dailyGoal}hr goal` : "Today"}
           growth={dailyGrowth}
           icon={Clock}
         />
@@ -1340,7 +1428,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         <KpiCard
           label="Revenue Generated"
           value={revenue?.revenueGenerated != null ? `₹${revenueCount}` : "—"}
-          sub={revenue?.revenueGenerated != null ? `Avg ₹${Math.round((revenue.revenueGenerated ?? 0) / Math.max(1, revenue?.numberOfOrders ?? 1)).toLocaleString("en-IN")} / order` : "No data yet"}
+          sub={revenue?.revenueGenerated != null && revenue?.numberOfOrders ? `Avg ₹${Math.round(revenue.revenueGenerated / revenue.numberOfOrders).toLocaleString("en-IN")} / order` : revenue?.revenueGenerated != null ? "No order count yet" : "No data yet"}
           growth={revGrowth}
           icon={BarChart3}
           accentColor="#34d399"
@@ -1371,9 +1459,16 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           </span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <JourneyTile label="Daily Usage" used={attendanceCount} total={totalDays} icon={Activity} />
-          <JourneyTile label="Modules" used={stats?.completedEpisodes ?? 0} total={stats?.totalEpisodes ?? 0} icon={BookOpen} />
-          <JourneyTile label="Tasks" used={stats?.tasksCompleted ?? 0} total={stats?.tasksTotal ?? 0} icon={CheckCircle2} />
+          <JourneyTile
+            label="Daily Usage"
+            used={Number(dailyHrs.toFixed(2))}
+            suffix="h"
+            icon={Activity}
+            pct={dailyGoal != null && dailyGoal > 0 ? (dailyHrs / dailyGoal) * 100 : null}
+            noBar={dailyGoal == null}
+          />
+          <JourneyTile label="Modules" used={stats.completedEpisodes} total={stats.totalEpisodes} icon={BookOpen} />
+          <JourneyTile label="Tasks" used={stats.tasksCompleted} total={stats.tasksTotal} icon={CheckCircle2} />
           <JourneyTile label="Support Days" used={daysLeft} suffix="d left" icon={Target} noBar />
           <JourneyTile label="Tier Access" used={daysElapsed} total={totalDays} suffix="d" icon={Star} />
           <JourneyTile
@@ -1405,37 +1500,36 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <SupportCallTile label="Sales Calls"     used={quota?.salesSupport?.used ?? 0}   total={quota?.salesSupport?.allocated ?? 0} />
-          <SupportCallTile label="Tech Calls"      used={quota?.techSupport.used ?? 0}    total={quota?.techSupport.allocated ?? 0} />
-          <SupportCallTile label="Content Calls"   used={quota?.contentSupport?.used ?? 0} total={quota?.contentSupport?.allocated ?? 0} />
-          <SupportCallTile label="Marketing Calls" used={quota?.adSupport.used ?? 0}      total={quota?.adSupport.allocated ?? 0} />
-          <SupportCallTile label="Mentor 1-On-1"   used={quota?.callCredits.used ?? 0}    total={quota?.callCredits.allocated ?? 0} />
-          <SupportCallTile label="Live Group Q&A"  used={quota?.groupCall.used ?? 0}      total={quota?.groupCall.allocated ?? 0} />
+          <SupportCallTile label="Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} />
+          <SupportCallTile label="Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} />
+          <SupportCallTile label="Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} />
+          <SupportCallTile label="Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} />
+          <SupportCallTile label="Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} />
+          <SupportCallTile label="Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} />
         </div>
       </motion.div>
 
-      {/* ── Revenue Stats ────────────────────────────────────────────── */}
-      <motion.div
-        variants={fadeUp}
-        className="rounded-2xl p-4"
-        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
-      >
-        <div className="mb-5">
-          <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
-            Your Revenue Stats
-          </h2>
-          <p className="text-[11px] mt-1" style={{ color: "var(--color-text-secondary)" }}>
-            Fill in your numbers — results calculate instantly as you type.
-          </p>
-        </div>
-        <RevenueStatsSection />
-      </motion.div>
-
-      {/* ── Revenue Summary KPI Cards ────────────────────────────────── */}
+      {/* ── E. Your Revenue Stats (saved weekly numbers) ───────────────── */}
       <RevenueSummarySection revenue={revenue} />
 
-      {/* ── Social Media Organic Growth ──────────────────────────────── */}
-      <SocialGrowthSection batchData={batchData} />
+      {/* ── F. Weekly Revenue & Order Trajectory (saved daily numbers) ──── */}
+      <WeeklyChartSection revenue={revenue} />
+
+      {/* ── Data entry: the member's own weekly numbers feed E and F ────── */}
+      <motion.div variants={fadeUp} className="flex flex-col gap-3">
+        <button
+          onClick={() => setShowRevenueForm((v) => !v)}
+          className="self-end text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+          style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.08)" }}
+        >
+          {showRevenueForm ? "Close" : "Update this week\u2019s numbers"}
+        </button>
+        {showRevenueForm && (
+          <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <RevenueStatsSection />
+          </div>
+        )}
+      </motion.div>
 
       {showBackLink && (
         <motion.div variants={fadeUp}>

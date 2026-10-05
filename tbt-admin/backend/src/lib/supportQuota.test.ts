@@ -53,6 +53,31 @@ describe('computeSupportQuota', () => {
     expect(result.lifelines).toEqual({ total: 3, used: 0, remaining: 3 });
   });
 
+  it('computes sales and content call buckets from their own allocation + usage types', () => {
+    const result = computeSupportQuota(
+      'premium',
+      [{ tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false, sales_call_count: 7, content_call_count: 5 }],
+      [
+        { type: 'sales_support', cnt: 2 },
+        { type: 'content_support', cnt: 4 },
+      ],
+      [],
+    );
+    expect(result.salesSupport).toEqual({ allocated: 7, used: 2, remaining: 5 });
+    expect(result.contentSupport).toEqual({ allocated: 5, used: 4, remaining: 1 });
+  });
+
+  it('treats a plan row without sales/content columns as zero allocation', () => {
+    const result = computeSupportQuota(
+      'free',
+      [{ tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false }],
+      [{ type: 'sales_support', cnt: 1 }],
+      [],
+    );
+    expect(result.salesSupport).toEqual({ allocated: 0, used: 1, remaining: 0 });
+    expect(result.contentSupport).toEqual({ allocated: 0, used: 0, remaining: 0 });
+  });
+
   it('ignores usage rows for types not tracked in the response shape', () => {
     const result = computeSupportQuota(
       'free',
