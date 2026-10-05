@@ -8,13 +8,14 @@ import apiClient from "@/lib/api/client";
 import {
   CheckCircle2, Lock, Pencil, X, Save, Monitor, Smartphone, Tablet, Wifi,
   Camera, Loader2, Trophy, Heart, LogOut, Bell, Mail, MessageSquare,
-  Headphones, Megaphone, Phone, Users, Star, Zap, ShoppingCart, ChevronRight, Clock,
+  ShoppingCart, ChevronRight, Clock,
   Brain, ChevronLeft, RotateCcw, Flame,
 } from "lucide-react";
-import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric, type CreditPricingItem, type PsychometricQuestion, type PsychometricCategoryResult } from "@/lib/hooks/useUser";
+import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric, type CreditPricingItem, type PsychometricQuestion, type PsychometricCategoryResult } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
 import { cn } from "@/lib/utils/cn";
+import MentorshipDashboard from "./MentorshipDashboard";
 import toast from "react-hot-toast";
 import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge, DeviceSession } from "@/types";
 
@@ -383,7 +384,6 @@ function CreditPurchaseModal({
 }
 
 function MentorshipBenefitsSection() {
-  const { data: quota, isLoading } = useUserSupportQuota();
   const [buyModal, setBuyModal] = useState<string | null>(null);
   const qc = useQueryClient();
   const { socket } = useSocket();
@@ -406,84 +406,10 @@ function MentorshipBenefitsSection() {
     };
   }, [socket, qc]);
 
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="h-24 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
-        ))}
-      </div>
-    );
-  }
-  if (!quota) return null;
-
-  const quotaCards: Array<{ quotaKey: string; icon: any; label: string; allocated: number; used: number; remaining: number; color: string; buyable: boolean }> = [
-    { quotaKey: "techSupport",  icon: Headphones, label: "Tech Support",  allocated: quota.techSupport.allocated,  used: quota.techSupport.used,  remaining: quota.techSupport.remaining,  color: "#3b82f6", buyable: true },
-    { quotaKey: "adSupport",    icon: Megaphone,  label: "Ad Support",    allocated: quota.adSupport.allocated,    used: quota.adSupport.used,    remaining: quota.adSupport.remaining,    color: "#8b5cf6", buyable: true },
-    { quotaKey: "groupCall",    icon: Users,      label: "Group Calls",   allocated: quota.groupCall.allocated,    used: quota.groupCall.used,    remaining: quota.groupCall.remaining,    color: "#10b981", buyable: true },
-    { quotaKey: "callCredits",  icon: Phone,      label: "Extra Calls",   allocated: quota.callCredits.allocated,  used: quota.callCredits.used,  remaining: quota.callCredits.remaining,  color: "#f59e0b", buyable: true },
-    { quotaKey: "lifelines",    icon: Zap,        label: "Lifelines",     allocated: quota.lifelines.total,        used: quota.lifelines.used,    remaining: quota.lifelines.remaining,    color: "#dc2626", buyable: true },
-  ];
-
   return (
     <>
       <div className="space-y-3">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {quotaCards.map(({ quotaKey, icon: Icon, label, allocated, used, remaining, color, buyable }) => {
-            const pct = allocated > 0 ? Math.min(100, (used / allocated) * 100) : 0;
-            const exhausted = allocated > 0 && remaining === 0;
-            return (
-              <div key={quotaKey} className="flex flex-col gap-2 p-4 rounded-xl border border-border bg-card">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg" style={{ background: `color-mix(in srgb, ${color} 12%, transparent)` }}>
-                    <Icon size={14} style={{ color }} />
-                  </div>
-                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex-1">{label}</span>
-                </div>
-                <div className="flex items-end gap-1.5">
-                  <span className="text-2xl font-bold text-foreground leading-none">{remaining}</span>
-                  <span className="text-xs text-muted-foreground mb-0.5">/ {allocated} remaining</span>
-                </div>
-                {allocated > 0 && (
-                  <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: pct >= 100 ? "var(--color-alert)" : color }} />
-                  </div>
-                )}
-                {buyable && exhausted && (
-                  <button
-                    onClick={() => setBuyModal(quotaKey)}
-                    className="flex items-center justify-center gap-1.5 mt-1 py-1.5 rounded-lg text-xs font-bold transition-all"
-                    style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}
-                  >
-                    <ShoppingCart size={11} /> Buy Extra
-                  </button>
-                )}
-              </div>
-            );
-          })}
-
-          {/* One-to-One card */}
-          <div className="flex flex-col gap-2 p-4 rounded-xl border border-border bg-card">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg" style={{ background: quota.oneToOne ? "color-mix(in srgb, #eab308 12%, transparent)" : "var(--color-bg-surface)" }}>
-                <Star size={14} style={{ color: quota.oneToOne ? "#eab308" : "var(--color-locked, #4a4a4a)" }} />
-              </div>
-              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">1-on-1 with Shakthi</span>
-            </div>
-            <span className="text-sm font-bold" style={{ color: quota.oneToOne ? "#eab308" : "var(--color-locked, #4a4a4a)" }}>
-              {quota.oneToOne ? "Included in your plan" : "Not in your plan"}
-            </span>
-            {!quota.oneToOne && (
-              <button
-                onClick={() => setBuyModal("callCredits")}
-                className="flex items-center justify-center gap-1.5 mt-1 py-1.5 rounded-lg text-xs font-bold transition-all"
-                style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}
-              >
-                <ShoppingCart size={11} /> Buy a Session
-              </button>
-            )}
-          </div>
-        </div>
+        <MentorshipDashboard onBuyCredit={setBuyModal} />
 
         {/* Purchase history link */}
         <PurchaseHistoryRow />
@@ -1220,11 +1146,8 @@ export default function ProfilePage() {
       {/* Streak Points — video + task points from points_ledger; hides itself until there's history */}
       <StreakPointsSection />
 
-      {/* Mentorship Benefits */}
-      <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
-        <h3 className="text-sm font-bold text-foreground">Your Mentorship Benefits</h3>
-        <MentorshipBenefitsSection />
-      </div>
+      {/* Mentorship dashboard (replaces "Your Mentorship Benefits") */}
+      <MentorshipBenefitsSection />
 
       {/* Psychometric Assessment */}
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
