@@ -15,6 +15,7 @@ import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNo
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
 import { cn } from "@/lib/utils/cn";
+import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import toast from "react-hot-toast";
 import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge, DeviceSession } from "@/types";
 
@@ -1219,6 +1220,9 @@ export default function ProfilePage() {
 
       {/* Streak Points — video + task points from points_ledger; hides itself until there's history */}
       <StreakPointsSection />
+
+      {/* Mentorship dashboard — same component as /batch-program/mentorship; all values from live APIs */}
+      <MentorshipDashboard />
 
       {/* Mentorship Benefits */}
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
