@@ -18,6 +18,8 @@ class SiteConfig with _$SiteConfig {
     String? loginBgMobileUrl,
     List<String>? loginBgImages,
     @Default(300) int taskTimerSeconds,
+    /// Admin-controlled light/dark mode (Admin → Navigation): 'light' | 'dark'.
+    @Default('light') String themeMode,
   }) = _SiteConfig;
 
   factory SiteConfig.fromJson(Map<String, dynamic> json) =>

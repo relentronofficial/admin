@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils/cn";
 import toast from "react-hot-toast";
 import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
-import { ThemeToggle } from "./ThemeToggle";
 import { StreakButton } from "./StreakButton";
 import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
 import type { Notification } from "@/types";
@@ -624,9 +623,6 @@ export function Navbar() {
 
         {/* Right icons */}
         <div className="flex items-center gap-1 ml-auto lg:ml-0">
-
-          {/* Theme toggle */}
-          <ThemeToggle />
 
           {/* Learning streak (dropdown) */}
           {!hiddenMenuKeys.includes("streak") && <StreakButton />}
