@@ -1480,7 +1480,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         <KpiCard
           label="Support Delivered"
           value={`${allCallsUsedCount} Calls`}
-          sub={`${allCallsAllocated} Total Calls`}
+          sub={`${allCallsAllocated} All-Time Calls`}
           icon={Phone}
           accentColor="#818cf8"
         />
@@ -1582,10 +1582,10 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           </h2>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(129,140,248,0.15)", color: "#818cf8" }}>
-              {allCallsUsed} MC Completed
+              {allCallsUsed}/{allCallsAllocated} Completed
             </span>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(251,146,60,0.12)", color: "#fb923c" }}>
-              {allCallsRemaining}/{allCallsAllocated} Quota Remaining
+              {allCallsRemaining} Quota Remaining
             </span>
           </div>
         </div>
