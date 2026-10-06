@@ -46,6 +46,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Validate Prisma schema
+        working-directory: tbt-admin/backend
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+        run: npx prisma validate
+
+      - name: Backend unit tests (incl. schema guard)
+        run: npm test
+
       - name: Build Backend
         run: npm run build:backend
 
@@ -112,15 +122,24 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Apply database schema (staging)
-        continue-on-error: true
+      # Additive-only schema sync. Never `db push --accept-data-loss`: it dropped
+      # every table/column created by the startup DDL (src/plugins/prisma.ts) on
+      # each deploy. The guard (scripts/schema-guard.ts) fails this step — and so
+      # the deploy — on any destructive or unreviewed change, before touching the DB.
+      # NOTE: this staging job targets the PRODUCTION database (PROD_DATABASE_URL).
+      - name: Apply database schema (staging) — additive only, guarded
         working-directory: tbt-admin/backend
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
         run: |
+          set -euo pipefail
           npm install --ignore-scripts
-          npx prisma db push --skip-generate --accept-data-loss
+          npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
+          npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
+          if [ -s schema-apply.sql ]; then
+            npx prisma db execute --url "$DIRECT_URL" --file schema-apply.sql
+          fi
 
       - name: Deploy to Cloud Run (staging)
         run: |
@@ -155,15 +174,20 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Apply database schema (production)
-        continue-on-error: true
+      # Additive-only schema sync — see the staging job above for why.
+      - name: Apply database schema (production) — additive only, guarded
         working-directory: tbt-admin/backend
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
         run: |
+          set -euo pipefail
           npm install --ignore-scripts
-          npx prisma db push --skip-generate --accept-data-loss
+          npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
+          npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
+          if [ -s schema-apply.sql ]; then
+            npx prisma db execute --url "$DIRECT_URL" --file schema-apply.sql
+          fi
 
       - name: Deploy to Cloud Run (production)
         run: |
